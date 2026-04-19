@@ -3,7 +3,6 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  TouchSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -43,7 +42,10 @@ function UnitRect({ unit, overlay = false }: { unit: Unit; overlay?: boolean }) 
 
 function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragging?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: unit.id })
-  const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined
+  const style = {
+    touchAction: 'none' as const,
+    ...(transform ? { transform: CSS.Translate.toString(transform) } : {}),
+  }
 
   return (
     <div
@@ -200,8 +202,7 @@ export function Map() {
   const [activeId, setActiveId] = useState<string | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   )
 
   const activeUnit = units.find((u) => u.id === activeId) ?? null
