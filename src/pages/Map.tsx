@@ -41,7 +41,7 @@ function UnitRect({ unit, overlay = false }: { unit: Unit; overlay?: boolean }) 
 
 // ── DraggableUnit ─────────────────────────────────────────────────────────────
 
-function DraggableUnit({ unit }: { unit: Unit }) {
+function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragging?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: unit.id })
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined
 
@@ -51,7 +51,7 @@ function DraggableUnit({ unit }: { unit: Unit }) {
       style={style}
       {...listeners}
       {...attributes}
-      className={isDragging ? 'opacity-40' : ''}
+      className={isDragging || groupDragging ? 'opacity-30' : ''}
     >
       <UnitRect unit={unit} />
     </div>
@@ -60,7 +60,7 @@ function DraggableUnit({ unit }: { unit: Unit }) {
 
 // ── UnassignedPool ────────────────────────────────────────────────────────────
 
-function UnassignedPool({ units }: { units: Unit[] }) {
+function UnassignedPool({ units, selectedDragging }: { units: Unit[]; selectedDragging: string[] }) {
   const { isOver, setNodeRef } = useDroppable({ id: 'unassigned' })
 
   return (
@@ -76,7 +76,7 @@ function UnassignedPool({ units }: { units: Unit[] }) {
       </div>
       <div className="flex flex-wrap gap-2 min-h-[44px]">
         {units.map((u) => (
-          <DraggableUnit key={u.id} unit={u} />
+          <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
         ))}
         {units.length === 0 && (
           <span className="text-xs text-game-muted italic self-center">All units assigned</span>
@@ -88,7 +88,7 @@ function UnassignedPool({ units }: { units: Unit[] }) {
 
 // ── LocationSection ───────────────────────────────────────────────────────────
 
-function LocationSection({ location, units }: { location: Location; units: Unit[] }) {
+function LocationSection({ location, units, selectedDragging }: { location: Location; units: Unit[]; selectedDragging: string[] }) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
   const isExpanded = useGameStore((s) => s.expandedLocationIds.includes(location.id))
   const toggleLocation = useGameStore((s) => s.toggleLocation)
@@ -121,7 +121,7 @@ function LocationSection({ location, units }: { location: Location; units: Unit[
           <p className="text-game-text-dim text-sm mt-3 mb-4">{location.description}</p>
           <div className="flex flex-wrap gap-2 min-h-[44px]">
             {units.map((u) => (
-              <DraggableUnit key={u.id} unit={u} />
+              <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
             ))}
             {units.length === 0 && (
               <span className="text-xs text-game-muted italic">Drop units here</span>
@@ -205,7 +205,8 @@ export function Map() {
   )
 
   const activeUnit = units.find((u) => u.id === activeId) ?? null
-  const dragCount = activeId && selectedUnitIds.includes(activeId) ? selectedUnitIds.length : 1
+  const draggingGroup = activeId !== null && selectedUnitIds.includes(activeId)
+  const dragCount = draggingGroup ? selectedUnitIds.length : 1
 
   function handleDragStart({ active }: DragStartEvent) {
     setActiveId(active.id as string)
@@ -224,12 +225,16 @@ export function Map() {
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="p-4 space-y-3 pb-32">
-        <UnassignedPool units={units.filter((u) => u.locationId === null)} />
+        <UnassignedPool
+          units={units.filter((u) => u.locationId === null)}
+          selectedDragging={draggingGroup ? selectedUnitIds : []}
+        />
         {locations.map((loc) => (
           <LocationSection
             key={loc.id}
             location={loc}
             units={units.filter((u) => u.locationId === loc.id)}
+            selectedDragging={draggingGroup ? selectedUnitIds : []}
           />
         ))}
       </div>
