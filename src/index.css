@@ -13,14 +13,14 @@
 }
 
 @layer components {
-  .panel {
-    @apply bg-game-surface border border-game-border rounded-lg p-4;
-  }
   .btn-primary {
     @apply px-4 py-2 bg-game-primary hover:bg-indigo-500 text-white rounded-lg
     font-medium transition-colors duration-150 cursor-pointer select-none;
   }
-  .resource-value {
-    @apply text-game-gold font-mono font-semibold;
+}
+
+@layer utilities {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
   }
 }
