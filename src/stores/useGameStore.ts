@@ -143,7 +143,7 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
 
 export type EquipSlot   = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory'
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
-export type TabId        = 'map' | 'units' | 'inventory'
+export type TabId        = 'map' | 'units' | 'inventory' | 'guild' | 'time'
 
 export interface Abilities {
   strength: number; agility: number; dexterity: number; constitution: number; intelligence: number
@@ -218,6 +218,24 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   'rock-crab':     { id: 'rock-crab',    name: 'Rock Crab',     level: 3, stats: { attack: 10, defense: 14, magicAttack: 1,  magicDefense: 6,  attackSpeed: 6,  accuracy: 10, dodge: 4  }, drops: [{ itemId: 'drop-crab-shell',     dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-crab-claw',     dropRate: 0.45, quantityMin: 1, quantityMax: 2 }] },
   'stone-golem':   { id: 'stone-golem',  name: 'Stone Golem',   level: 7, stats: { attack: 22, defense: 24, magicAttack: 3,  magicDefense: 10, attackSpeed: 6,  accuracy: 12, dodge: 3  }, drops: [{ itemId: 'drop-stone-shard',    dropRate: 0.85, quantityMin: 1, quantityMax: 4 }, { itemId: 'drop-golem-core',    dropRate: 0.10, quantityMin: 1, quantityMax: 1 }] },
   'ruins-specter': { id: 'ruins-specter',name: 'Ruins Specter', level: 6, stats: { attack: 8,  defense: 4,  magicAttack: 20, magicDefense: 18, attackSpeed: 10, accuracy: 16, dodge: 12 }, drops: [{ itemId: 'drop-ectoplasm',      dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ancient-coin',  dropRate: 0.20, quantityMin: 1, quantityMax: 3 }] },
+}
+
+// ── Crafting recipes ──────────────────────────────────────────────────────────
+
+export interface RecipeIngredient { itemId: string; quantity: number }
+
+export interface CraftingRecipe {
+  id: string; name: string; description: string
+  ingredients: RecipeIngredient[]
+  outputItemId: string; outputName: string; outputQuantity: number
+}
+
+export const RECIPE_REGISTRY: Record<string, CraftingRecipe> = {
+  'recipe-plank':      { id: 'recipe-plank',      name: 'Wooden Plank',  description: 'Processed timber for construction.',            ingredients: [{ itemId: 'm1', quantity: 2  }],                                  outputItemId: 'craft-plank',      outputName: 'Wooden Plank',  outputQuantity: 3 },
+  'recipe-iron-ingot': { id: 'recipe-iron-ingot',  name: 'Iron Ingot',    description: 'Smelted iron bar ready for smithing.',           ingredients: [{ itemId: 'm2', quantity: 3  }],                                  outputItemId: 'craft-iron-ingot', outputName: 'Iron Ingot',    outputQuantity: 1 },
+  'recipe-fish-stew':  { id: 'recipe-fish-stew',   name: 'Fish Stew',     description: 'Hearty meal. Restores health in the field.',     ingredients: [{ itemId: 'm3', quantity: 2  }, { itemId: 'm4', quantity: 1 }],   outputItemId: 'craft-fish-stew',  outputName: 'Fish Stew',     outputQuantity: 2 },
+  'recipe-herb-salve': { id: 'recipe-herb-salve',  name: 'Herb Salve',    description: 'Soothing ointment for minor wounds.',           ingredients: [{ itemId: 'm4', quantity: 3  }],                                  outputItemId: 'craft-herb-salve', outputName: 'Herb Salve',    outputQuantity: 1 },
+  'recipe-preserved-fish': { id: 'recipe-preserved-fish', name: 'Preserved Fish', description: 'Salted fish that keeps for long journeys.', ingredients: [{ itemId: 'm3', quantity: 10 }],                               outputItemId: 'craft-preserved-fish', outputName: 'Preserved Fish', outputQuantity: 5 },
 }
 
 // ── Slot / category metadata ──────────────────────────────────────────────────
@@ -348,6 +366,7 @@ interface GameState {
   equipContext: { unitId: string; slot: EquipSlot } | null
   discoveredMonsters: string[]
   discoveredDrops: string[]
+  learnedRecipes: string[]
 
   setActiveTab: (tab: TabId) => void
   toggleLocation: (id: string) => void
@@ -362,6 +381,8 @@ interface GameState {
   learnSkill: (unitId: string, skillId: string) => void
   discoverMonster: (monsterId: string) => void
   discoverDrop: (monsterId: string, itemId: string) => void
+  recruitUnit: () => void
+  craft: (recipeId: string) => void
 }
 
 export const useGameStore = create<GameState>((set) => ({
@@ -369,6 +390,7 @@ export const useGameStore = create<GameState>((set) => ({
   activeTab: 'map', selectedUnitIds: [], expandedLocationIds: [], expandedUnitIds: [], equipContext: null,
   discoveredMonsters: ['wolf', 'poacher', 'harpy', 'giant-frog', 'rock-crab'],
   discoveredDrops: ['wolf:drop-wolf-pelt', 'harpy:drop-harpy-feather', 'giant-frog:drop-frog-leg'],
+  learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   toggleLocation: (id) => set((s) => ({ expandedLocationIds: s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id] })),
@@ -396,6 +418,41 @@ export const useGameStore = create<GameState>((set) => ({
   discoverDrop: (monsterId, itemId) => set((s) => {
     const key = `${monsterId}:${itemId}`
     return { discoveredDrops: s.discoveredDrops.includes(key) ? s.discoveredDrops : [...s.discoveredDrops, key] }
+  }),
+
+  recruitUnit: () => set((s) => {
+    const NAMES = ['Brom','Cass','Dara','Fen','Gale','Holt','Issa','Jorn','Kara','Lexa','Mack','Nira','Orin','Pell','Quinn','Roan','Sela','Tarn','Vex','Wren','Zora']
+    const used = new Set(s.units.map((u) => u.name))
+    const pool = NAMES.filter((n) => !used.has(n))
+    const name = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : `Recruit ${s.units.length + 1}`
+    const r = (lo: number, hi: number) => Math.floor(Math.random() * (hi - lo + 1)) + lo
+    const unit: Unit = {
+      id: `u${Date.now()}`, name, level: 1, exp: 0, expToNext: 100,
+      age: r(16, 30), health: 100, class: null, proficiencies: [],
+      abilities: { strength: r(2,5), agility: r(2,5), dexterity: r(2,5), constitution: r(2,5), intelligence: r(2,5) },
+      abilityPoints: 3, skillPoints: 1, learnedSkills: {}, locationId: null,
+      equipment: { mainHand: null, offHand: null, tool: null, armor: null, accessory: null },
+    }
+    return { units: [...s.units, unit] }
+  }),
+
+  craft: (recipeId) => set((s) => {
+    const recipe = RECIPE_REGISTRY[recipeId]; if (!recipe) return s
+    for (const ing of recipe.ingredients) {
+      const item = s.miscItems.find((i) => i.id === ing.itemId)
+      if (!item || item.quantity < ing.quantity) return s
+    }
+    let items = s.miscItems.map((item) => {
+      const ing = recipe.ingredients.find((i) => i.itemId === item.id)
+      return ing ? { ...item, quantity: item.quantity - ing.quantity } : item
+    })
+    const existing = items.find((i) => i.id === recipe.outputItemId)
+    if (existing) {
+      items = items.map((i) => i.id === recipe.outputItemId ? { ...i, quantity: i.quantity + recipe.outputQuantity } : i)
+    } else {
+      items = [...items, { id: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity, description: recipe.description }]
+    }
+    return { miscItems: items }
   }),
 
   learnSkill: (unitId, skillId) => set((s) => {

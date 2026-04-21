@@ -1,9 +1,11 @@
 import { useGameStore, type TabId } from '@/stores/useGameStore'
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: 'map', label: 'Map', icon: '🗺' },
-  { id: 'units', label: 'Units', icon: '⚔' },
-  { id: 'inventory', label: 'Inventory', icon: '🎒' },
+  { id: 'map',       label: 'Map',       icon: '🗺'  },
+  { id: 'units',     label: 'Units',     icon: '⚔'  },
+  { id: 'inventory', label: 'Inventory', icon: '🎒'  },
+  { id: 'guild',     label: 'Guild',     icon: '⚜'  },
+  { id: 'time',      label: 'Time',      icon: '⏳'  },
 ]
 
 export function TabBar() {
@@ -25,7 +27,7 @@ export function TabBar() {
           <button
             key={tab.id}
             className={[
-              'flex-1 flex flex-col items-center gap-1 py-3 transition-colors',
+              'flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors',
               activeTab === tab.id
                 ? 'text-game-primary'
                 : 'text-game-muted hover:text-game-text-dim',
