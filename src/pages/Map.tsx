@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   DndContext,
   DragOverlay,
@@ -11,7 +12,10 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, TRAIT_REGISTRY, type Unit, type Location } from '@/stores/useGameStore'
+import {
+  useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, DROP_ITEMS,
+  type Unit, type Location, type MonsterDef,
+} from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 
 // ── UnitRect ──────────────────────────────────────────────────────────────────
@@ -89,6 +93,165 @@ function UnassignedPool({ units, selectedDragging }: { units: Unit[]; selectedDr
   )
 }
 
+// ── MonsterCodex ──────────────────────────────────────────────────────────────
+
+const STAT_ROWS = [
+  { key: 'attack'      as const, label: 'ATK',   color: 'text-game-gold'   },
+  { key: 'defense'     as const, label: 'DEF',   color: 'text-sky-400'     },
+  { key: 'magicAttack' as const, label: 'M.ATK', color: 'text-game-accent' },
+  { key: 'magicDefense'as const, label: 'M.DEF', color: 'text-violet-400'  },
+  { key: 'attackSpeed' as const, label: 'SPD',   color: 'text-game-green'  },
+  { key: 'accuracy'    as const, label: 'ACC',   color: 'text-orange-400'  },
+  { key: 'dodge'       as const, label: 'DOD',   color: 'text-pink-400'    },
+]
+
+function MonsterCodex({ monster, onClose }: { monster: MonsterDef; onClose: () => void }) {
+  const discoveredDrops = useGameStore((s) => s.discoveredDrops)
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/70"
+      onClick={onClose}
+    >
+      <div
+        className="bg-game-surface border border-game-border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 pt-5 pb-4 border-b border-game-border">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-game-text text-lg leading-tight">{monster.name}</span>
+              <span className="text-xs text-game-text-dim bg-game-border rounded-full px-2 py-0.5">Lv.{monster.level}</span>
+            </div>
+            <div className="text-xs text-game-muted mt-0.5 uppercase tracking-widest">Codex Entry</div>
+          </div>
+          <button
+            className="text-game-muted text-2xl leading-none hover:text-game-text shrink-0"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+          {/* Stats */}
+          <div>
+            <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Combat Stats</div>
+            <div className="grid grid-cols-4 gap-2">
+              {STAT_ROWS.slice(0, 4).map(({ key, label, color }) => (
+                <div key={key} className="bg-game-bg rounded-lg py-2.5 text-center">
+                  <div className={`text-xl font-bold font-mono leading-none ${color}`}>{monster.stats[key]}</div>
+                  <div className="text-xs text-game-text-dim mt-1">{label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              {STAT_ROWS.slice(4).map(({ key, label, color }) => (
+                <div key={key} className="bg-game-bg rounded-lg py-2.5 text-center">
+                  <div className={`text-xl font-bold font-mono leading-none ${color}`}>{monster.stats[key]}</div>
+                  <div className="text-xs text-game-text-dim mt-1">{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Drops */}
+          <div>
+            <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">
+              Drops · {monster.drops.length}
+            </div>
+            <div className="space-y-2">
+              {monster.drops.map((drop, i) => {
+                const known = discoveredDrops.includes(`${monster.id}:${drop.itemId}`)
+                const name  = DROP_ITEMS[drop.itemId] ?? drop.itemId
+                const pct   = Math.round(drop.dropRate * 100)
+                const qty   = drop.quantityMin === drop.quantityMax
+                  ? `×${drop.quantityMin}`
+                  : `×${drop.quantityMin}–${drop.quantityMax}`
+
+                return (
+                  <div
+                    key={i}
+                    className={[
+                      'flex items-center gap-3 bg-game-bg rounded-lg px-3 py-2.5',
+                      !known ? 'opacity-60' : '',
+                    ].join(' ')}
+                  >
+                    {known ? (
+                      <>
+                        <span className="text-sm text-game-text flex-1">{name}</span>
+                        <span className="text-xs text-game-text-dim font-mono">{pct}%</span>
+                        <span className="text-xs text-game-text-dim font-mono">{qty}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm text-game-muted italic flex-1">???</span>
+                        <span className="text-xs text-game-muted">undiscovered</span>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ── MonsterList ───────────────────────────────────────────────────────────────
+
+function MonsterRow({ monsterId }: { monsterId: string }) {
+  const [codexOpen, setCodexOpen] = useState(false)
+  const discoveredMonsters = useGameStore((s) => s.discoveredMonsters)
+  const discoverMonster    = useGameStore((s) => s.discoverMonster)
+  const isDiscovered = discoveredMonsters.includes(monsterId)
+  const monster = MONSTER_REGISTRY[monsterId]
+
+  if (!monster) return null
+
+  if (!isDiscovered) {
+    return (
+      <button
+        onClick={() => discoverMonster(monsterId)}
+        className="px-3 py-2 rounded-lg border border-dashed border-game-border bg-game-bg text-center min-w-[72px] opacity-60 hover:opacity-80 transition-opacity"
+      >
+        <div className="text-sm font-semibold text-game-muted">???</div>
+        <div className="text-xs text-game-muted">Lv.?</div>
+      </button>
+    )
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setCodexOpen(true)}
+        className="px-3 py-2 rounded-lg border border-game-border bg-game-bg text-center min-w-[72px] hover:border-game-accent/60 hover:bg-game-accent/5 transition-colors"
+      >
+        <div className="text-sm font-semibold text-game-text">{monster.name}</div>
+        <div className="text-xs text-game-accent">Lv.{monster.level}</div>
+      </button>
+      {codexOpen && <MonsterCodex monster={monster} onClose={() => setCodexOpen(false)} />}
+    </>
+  )
+}
+
+function MonsterList({ location }: { location: Location }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Monsters</div>
+      <div className="flex flex-wrap gap-2">
+        {location.monsterIds.map((id) => (
+          <MonsterRow key={id} monsterId={id} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── LocationSection ───────────────────────────────────────────────────────────
 
 function LocationSection({ location, units, selectedDragging }: {
@@ -132,19 +295,22 @@ function LocationSection({ location, units, selectedDragging }: {
       )}
 
       {isExpanded && (
-        <div className="px-4 pb-4 border-t border-game-border">
-          <p className="text-game-text-dim text-sm mt-3 mb-3">{location.description}</p>
+        <div className="px-4 pb-4 border-t border-game-border space-y-4">
+          <p className="text-game-text-dim text-sm mt-3">{location.description}</p>
           <TraitRow
             traits={location.traits.map((id) => TRAIT_REGISTRY[id]).filter(Boolean) as any}
-            className="mb-4"
           />
-          <div className="flex flex-wrap gap-2 min-h-[44px]">
-            {units.map((u) => (
-              <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
-            ))}
-            {units.length === 0 && (
-              <span className="text-xs text-game-muted italic">Drop units here</span>
-            )}
+          <MonsterList location={location} />
+          <div>
+            <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Units</div>
+            <div className="flex flex-wrap gap-2 min-h-[44px]">
+              {units.map((u) => (
+                <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
+              ))}
+              {units.length === 0 && (
+                <span className="text-xs text-game-muted italic self-center">Drop units here</span>
+              )}
+            </div>
           </div>
         </div>
       )}

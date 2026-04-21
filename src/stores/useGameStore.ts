@@ -165,7 +165,22 @@ export interface Unit {
   equipment: Record<EquipSlot, string | null>
 }
 
-export interface Location { id: string; name: string; description: string; traits: string[] }
+export interface Location { id: string; name: string; description: string; traits: string[]; monsterIds: string[] }
+
+export interface MonsterDrop {
+  itemId: string
+  dropRate: number
+  quantityMin: number
+  quantityMax: number
+}
+
+export interface MonsterDef {
+  id: string
+  name: string
+  level: number
+  stats: DerivedStats
+  drops: MonsterDrop[]
+}
 
 export interface EquipmentItem {
   id: string; name: string; category: ItemCategory; traits: string[]
@@ -174,6 +189,36 @@ export interface EquipmentItem {
 }
 
 export interface MiscItem { id: string; name: string; quantity: number; description?: string }
+
+// ── Monster registry ──────────────────────────────────────────────────────────
+
+export const DROP_ITEMS: Record<string, string> = {
+  'drop-wolf-pelt':     'Wolf Pelt',     'drop-wolf-fang':     'Wolf Fang',
+  'drop-spirit-dust':   'Spirit Dust',   'drop-emerald-leaf':  'Emerald Leaf',
+  'drop-iron-dagger':   'Iron Dagger',   'drop-coin-pouch':    'Coin Pouch',
+  'drop-harpy-feather': 'Harpy Feather', 'drop-talon':         'Talon',
+  'drop-shadow-essence':'Shadow Essence','drop-dark-pelt':     'Dark Pelt',
+  'drop-slime-gel':     'Slime Gel',     'drop-dark-core':     'Dark Core',
+  'drop-frog-leg':      'Frog Leg',      'drop-sticky-tongue': 'Sticky Tongue',
+  'drop-serpent-scale': 'Serpent Scale', 'drop-venom-sac':     'Venom Sac',
+  'drop-crab-shell':    'Crab Shell',    'drop-crab-claw':     'Crab Claw',
+  'drop-stone-shard':   'Stone Shard',   'drop-golem-core':    'Golem Core',
+  'drop-ectoplasm':     'Ectoplasm',     'drop-ancient-coin':  'Ancient Coin',
+}
+
+export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
+  'wolf':          { id: 'wolf',         name: 'Wolf',          level: 2, stats: { attack: 8,  defense: 4,  magicAttack: 1,  magicDefense: 2,  attackSpeed: 14, accuracy: 10, dodge: 8  }, drops: [{ itemId: 'drop-wolf-pelt',     dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-wolf-fang',     dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
+  'forest-sprite': { id: 'forest-sprite',name: 'Forest Sprite', level: 3, stats: { attack: 5,  defense: 3,  magicAttack: 12, magicDefense: 10, attackSpeed: 16, accuracy: 12, dodge: 14 }, drops: [{ itemId: 'drop-spirit-dust',    dropRate: 0.50, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-emerald-leaf',  dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },
+  'poacher':       { id: 'poacher',      name: 'Poacher',       level: 4, stats: { attack: 14, defense: 8,  magicAttack: 2,  magicDefense: 4,  attackSpeed: 10, accuracy: 16, dodge: 6  }, drops: [{ itemId: 'drop-coin-pouch',     dropRate: 0.60, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-iron-dagger',   dropRate: 0.40, quantityMin: 1, quantityMax: 1 }] },
+  'harpy':         { id: 'harpy',        name: 'Harpy',         level: 4, stats: { attack: 12, defense: 5,  magicAttack: 8,  magicDefense: 6,  attackSpeed: 18, accuracy: 14, dodge: 16 }, drops: [{ itemId: 'drop-harpy-feather',  dropRate: 0.65, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-talon',         dropRate: 0.35, quantityMin: 1, quantityMax: 2 }] },
+  'shadow-wolf':   { id: 'shadow-wolf',  name: 'Shadow Wolf',   level: 5, stats: { attack: 16, defense: 7,  magicAttack: 6,  magicDefense: 8,  attackSpeed: 18, accuracy: 14, dodge: 12 }, drops: [{ itemId: 'drop-dark-pelt',      dropRate: 0.55, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-shadow-essence',dropRate: 0.40, quantityMin: 1, quantityMax: 1 }] },
+  'dark-slime':    { id: 'dark-slime',   name: 'Dark Slime',    level: 3, stats: { attack: 6,  defense: 10, magicAttack: 4,  magicDefense: 12, attackSpeed: 6,  accuracy: 8,  dodge: 4  }, drops: [{ itemId: 'drop-slime-gel',      dropRate: 0.80, quantityMin: 1, quantityMax: 4 }, { itemId: 'drop-dark-core',     dropRate: 0.15, quantityMin: 1, quantityMax: 1 }] },
+  'giant-frog':    { id: 'giant-frog',   name: 'Giant Frog',    level: 2, stats: { attack: 7,  defense: 6,  magicAttack: 2,  magicDefense: 4,  attackSpeed: 8,  accuracy: 9,  dodge: 10 }, drops: [{ itemId: 'drop-frog-leg',       dropRate: 0.75, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-sticky-tongue', dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
+  'river-serpent': { id: 'river-serpent',name: 'River Serpent', level: 5, stats: { attack: 15, defense: 9,  magicAttack: 4,  magicDefense: 7,  attackSpeed: 12, accuracy: 13, dodge: 11 }, drops: [{ itemId: 'drop-serpent-scale',  dropRate: 0.50, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-venom-sac',     dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },
+  'rock-crab':     { id: 'rock-crab',    name: 'Rock Crab',     level: 3, stats: { attack: 10, defense: 14, magicAttack: 1,  magicDefense: 6,  attackSpeed: 6,  accuracy: 10, dodge: 4  }, drops: [{ itemId: 'drop-crab-shell',     dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-crab-claw',     dropRate: 0.45, quantityMin: 1, quantityMax: 2 }] },
+  'stone-golem':   { id: 'stone-golem',  name: 'Stone Golem',   level: 7, stats: { attack: 22, defense: 24, magicAttack: 3,  magicDefense: 10, attackSpeed: 6,  accuracy: 12, dodge: 3  }, drops: [{ itemId: 'drop-stone-shard',    dropRate: 0.85, quantityMin: 1, quantityMax: 4 }, { itemId: 'drop-golem-core',    dropRate: 0.10, quantityMin: 1, quantityMax: 1 }] },
+  'ruins-specter': { id: 'ruins-specter',name: 'Ruins Specter', level: 6, stats: { attack: 8,  defense: 4,  magicAttack: 20, magicDefense: 18, attackSpeed: 10, accuracy: 16, dodge: 12 }, drops: [{ itemId: 'drop-ectoplasm',      dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ancient-coin',  dropRate: 0.20, quantityMin: 1, quantityMax: 3 }] },
+}
 
 // ── Slot / category metadata ──────────────────────────────────────────────────
 
@@ -256,10 +301,10 @@ export function getLearnedSkills(unit: Unit) {
 // ── Initial data ──────────────────────────────────────────────────────────────
 
 const LOCATIONS: Location[] = [
-  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'] },
-  { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'] },
-  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'] },
-  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'] },
+  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'],    monsterIds: ['wolf', 'forest-sprite', 'poacher'] },
+  { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'],   monsterIds: ['harpy', 'shadow-wolf', 'dark-slime'] },
+  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'],        monsterIds: ['giant-frog', 'river-serpent'] },
+  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'],        monsterIds: ['rock-crab', 'stone-golem', 'ruins-specter'] },
 ]
 
 const UNITS: Unit[] = [
@@ -301,6 +346,8 @@ interface GameState {
   miscItems: MiscItem[]; activeTab: TabId; selectedUnitIds: string[]
   expandedLocationIds: string[]; expandedUnitIds: string[]
   equipContext: { unitId: string; slot: EquipSlot } | null
+  discoveredMonsters: string[]
+  discoveredDrops: string[]
 
   setActiveTab: (tab: TabId) => void
   toggleLocation: (id: string) => void
@@ -313,11 +360,15 @@ interface GameState {
   closeEquipContext: () => void
   spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
   learnSkill: (unitId: string, skillId: string) => void
+  discoverMonster: (monsterId: string) => void
+  discoverDrop: (monsterId: string, itemId: string) => void
 }
 
 export const useGameStore = create<GameState>((set) => ({
   units: UNITS, locations: LOCATIONS, equipment: EQUIPMENT, miscItems: MISC,
   activeTab: 'map', selectedUnitIds: [], expandedLocationIds: [], expandedUnitIds: [], equipContext: null,
+  discoveredMonsters: ['wolf', 'poacher', 'harpy', 'giant-frog', 'rock-crab'],
+  discoveredDrops: ['wolf:drop-wolf-pelt', 'harpy:drop-harpy-feather', 'giant-frog:drop-frog-leg'],
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   toggleLocation: (id) => set((s) => ({ expandedLocationIds: s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id] })),
@@ -337,6 +388,14 @@ export const useGameStore = create<GameState>((set) => ({
     const cost = abilityPointCost(current)
     if (unit.abilityPoints < cost) return s
     return { units: s.units.map((u) => u.id === unitId ? { ...u, abilityPoints: u.abilityPoints - cost, abilities: { ...u.abilities, [ability]: current + 1 } } : u) }
+  }),
+
+  discoverMonster: (id) => set((s) => ({
+    discoveredMonsters: s.discoveredMonsters.includes(id) ? s.discoveredMonsters : [...s.discoveredMonsters, id],
+  })),
+  discoverDrop: (monsterId, itemId) => set((s) => {
+    const key = `${monsterId}:${itemId}`
+    return { discoveredDrops: s.discoveredDrops.includes(key) ? s.discoveredDrops : [...s.discoveredDrops, key] }
   }),
 
   learnSkill: (unitId, skillId) => set((s) => {
