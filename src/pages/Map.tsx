@@ -105,24 +105,42 @@ function EncounterDots({ count }: { count: number }) {
 
 function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: string }) {
   const [codexOpen, setCodexOpen] = useState(false)
-  const seenCount      = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
-  const activeSlots    = useGameStore((s) => s.activeEncounters[locationId] ?? [])
-  const dotCount       = activeSlots.filter((id) => id === monsterId).length
-  const monster        = MONSTER_REGISTRY[monsterId]
+  const seenCount         = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
+  const activeSlots       = useGameStore((s) => s.activeEncounters[locationId] ?? [])
+  const encounterProgress = useGameStore((s) => s.encounterProgress[locationId] ?? [])
+  const dotCount          = activeSlots.filter((id) => id === monsterId).length
+  const monster           = MONSTER_REGISTRY[monsterId]
+
+  const slotProgresses = activeSlots
+    .map((id, i) => ({ id, prog: encounterProgress[i] ?? 0 }))
+    .filter(({ id }) => id === monsterId)
+    .map(({ prog }) => prog)
 
   if (!monster) return null
 
   return (
     <>
-      <div className="flex flex-col items-center">
+      <div className="flex flex-col items-center gap-1" style={{ minWidth: 72 }}>
         <EncounterDots count={dotCount} />
         <button
           onClick={() => setCodexOpen(true)}
-          className="px-3 py-2 rounded-lg border border-game-border bg-game-bg text-center min-w-[72px] hover:border-game-accent/60 hover:bg-game-accent/5 transition-colors"
+          className="w-full px-3 py-2 rounded-lg border border-game-border bg-game-bg text-center hover:border-game-accent/60 hover:bg-game-accent/5 transition-colors"
         >
           <div className="text-sm font-semibold text-game-text">{monster.name}</div>
           <div className="text-xs text-game-accent">Lv.{monster.level}</div>
         </button>
+        {slotProgresses.length > 0 && (
+          <div className="w-full space-y-0.5">
+            {slotProgresses.map((prog, i) => (
+              <div key={i} className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
+                <div
+                  className="bg-game-green h-1.5 rounded-full"
+                  style={{ width: `${prog * 100}%`, transition: 'width 0.7s linear' }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {codexOpen && <MonsterCodex monster={monster} seenCount={seenCount} onClose={() => setCodexOpen(false)} />}
     </>

@@ -145,6 +145,23 @@ export type EquipSlot   = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
 export type TabId = 'map' | 'units' | 'inventory' | 'guild' | 'time' | 'codex'
 
+export const TICKS_PER_DAY    = 200
+export const DAYS_PER_SEASON  = 100
+export const SEASONS_PER_YEAR = 4
+export const TICKS_PER_SEASON = TICKS_PER_DAY * DAYS_PER_SEASON
+export const TICKS_PER_YEAR   = TICKS_PER_SEASON * SEASONS_PER_YEAR
+export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as const
+
+export function ticksToCalendar(ticks: number) {
+  const tickOfDay   = ticks % TICKS_PER_DAY
+  const totalDays   = Math.floor(ticks / TICKS_PER_DAY)
+  const dayOfSeason = (totalDays % DAYS_PER_SEASON) + 1
+  const totalSeasons = Math.floor(totalDays / DAYS_PER_SEASON)
+  const seasonIndex  = totalSeasons % SEASONS_PER_YEAR
+  const year         = Math.floor(totalSeasons / SEASONS_PER_YEAR) + 1
+  return { year, seasonIndex, seasonName: SEASON_NAMES[seasonIndex], dayOfSeason, tickOfDay }
+}
+
 export interface Abilities {
   strength: number; agility: number; dexterity: number; constitution: number; intelligence: number
 }
@@ -354,10 +371,11 @@ const EQUIPMENT: EquipmentItem[] = [
 ]
 
 const MISC: MiscItem[] = [
-  { id: 'm1', name: 'Wood',     quantity: 42, description: 'Raw timber.' },
-  { id: 'm2', name: 'Iron Ore', quantity: 18, description: 'Unrefined ore.' },
-  { id: 'm3', name: 'Fish',     quantity:  7, description: 'Fresh catch.' },
-  { id: 'm4', name: 'Herbs',    quantity: 23, description: 'Medicinal herbs.' },
+  { id: 'm1',    name: 'Wood',     quantity: 42, description: 'Raw timber.' },
+  { id: 'm2',    name: 'Iron Ore', quantity: 18, description: 'Unrefined ore.' },
+  { id: 'm3',    name: 'Fish',     quantity:  7, description: 'Fresh catch.' },
+  { id: 'm4',    name: 'Herbs',    quantity: 23, description: 'Medicinal herbs.' },
+  { id: 'm-gold', name: 'Gold',    quantity:  0, description: 'Currency.' },
 ]
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -373,6 +391,11 @@ interface GameState {
   monsterSeen: Record<string, number>                // monsterId → total global sighting count
   activeEncounters: Record<string, string[]>         // locationId → active monster slots (up to 4, may repeat)
 
+  ticks: number                                      // total real-second ticks elapsed
+  encounterProgress: Record<string, number[]>        // locationId → per-slot progress (0..1)
+  monsterDefeated: Record<string, number>            // monsterId → total defeat count
+
+  tick: () => void
   setActiveTab: (tab: TabId) => void
   toggleLocation: (id: string) => void
   toggleUnit: (id: string) => void
@@ -396,6 +419,69 @@ export const useGameStore = create<GameState>((set) => ({
   locationMonstersSeen:   { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': [], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
   monsterSeen:            { wolf: 15, 'forest-sprite': 3, poacher: 1, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
   activeEncounters:       { 'kings-forest': ['wolf', 'wolf'], 'gray-hills': ['rock-crab', 'stone-golem'] },
+
+  ticks: 0,
+  encounterProgress: {
+    'kings-forest': [0, 0],
+    'gray-hills':   [0, 0],
+  },
+  monsterDefeated: {},
+
+  tick: () => set((s) => {
+    const newTicks   = s.ticks + 1
+    const yearChanged = Math.floor(newTicks / TICKS_PER_YEAR) > Math.floor(s.ticks / TICKS_PER_YEAR)
+
+    const encounterProgress: Record<string, number[]> = {}
+    const monsterDefeated = { ...s.monsterDefeated }
+    const expGained: Record<string, number> = {}
+    let goldEarned = 0
+
+    for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
+      const locationUnits = s.units.filter((u) => u.locationId === locationId)
+      const prevProgress  = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
+
+      if (locationUnits.length === 0) {
+        encounterProgress[locationId] = prevProgress
+        continue
+      }
+
+      const totalDPS = locationUnits.reduce(
+        (sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0,
+      )
+
+      encounterProgress[locationId] = prevProgress.map((prog, i) => {
+        const monster = MONSTER_REGISTRY[monsterSlots[i]]
+        if (!monster) return prog
+        // monsterHP drives base duration; clamp between 1s and 300s
+        const hp      = (monster.stats.attack + monster.stats.defense) * 3
+        const seconds = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
+        const next    = prog + 1 / seconds
+        if (next >= 1) {
+          monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + 1
+          expGained[locationId]       = (expGained[locationId] ?? 0) + 1
+          goldEarned++
+          return 0
+        }
+        return next
+      })
+    }
+
+    const anyExpGained = Object.keys(expGained).length > 0
+    const units = (yearChanged || anyExpGained)
+      ? s.units.map((u) => {
+          let next = yearChanged ? { ...u, age: u.age + 1 } : u
+          const exp = u.locationId ? (expGained[u.locationId] ?? 0) : 0
+          if (exp > 0) next = { ...next, exp: next.exp + exp }
+          return next
+        })
+      : s.units
+
+    const miscItems = goldEarned > 0
+      ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
+      : s.miscItems
+
+    return { ticks: newTicks, units, encounterProgress, monsterDefeated, miscItems }
+  }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   toggleLocation: (id) => set((s) => ({ expandedLocationIds: s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id] })),

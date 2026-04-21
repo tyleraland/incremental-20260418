@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
 import { TabBar } from '@/components/TabBar'
 import { Map } from '@/pages/Map'
@@ -9,6 +10,12 @@ import { Codex } from '@/pages/Codex'
 
 function App() {
   const activeTab = useGameStore((s) => s.activeTab)
+  const tick      = useGameStore((s) => s.tick)
+
+  useEffect(() => {
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [tick])
 
   return (
     <div className="min-h-full flex flex-col">
