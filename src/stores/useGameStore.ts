@@ -165,7 +165,7 @@ export interface Unit {
   equipment: Record<EquipSlot, string | null>
 }
 
-export interface Location { id: string; name: string; description: string; traits: string[]; monsterIds: string[]; familiarityMax: number }
+export interface Location { id: string; name: string; description: string; traits: string[]; monsterIds: string[]; familiarityMax: number; region: string }
 
 // Seen-count thresholds: how many sightings unlock each info tier in the codex
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
@@ -322,10 +322,10 @@ export function getLearnedSkills(unit: Unit) {
 // ── Initial data ──────────────────────────────────────────────────────────────
 
 const LOCATIONS: Location[] = [
-  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'],   monsterIds: ['wolf', 'forest-sprite', 'poacher'],    familiarityMax: 100 },
-  { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'], monsterIds: ['harpy', 'shadow-wolf', 'dark-slime'],  familiarityMax: 100 },
-  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'],      monsterIds: ['giant-frog', 'river-serpent'],         familiarityMax: 100 },
-  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'],      monsterIds: ['rock-crab', 'stone-golem', 'ruins-specter'], familiarityMax: 100 },
+  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'],   monsterIds: ['wolf', 'forest-sprite', 'poacher'],         familiarityMax: 100, region: 'Aundair' },
+  { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'], monsterIds: ['harpy', 'shadow-wolf', 'dark-slime'],        familiarityMax: 100, region: 'Aundair' },
+  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'],      monsterIds: ['giant-frog', 'river-serpent'],               familiarityMax: 100, region: 'Geffen'  },
+  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'],      monsterIds: ['rock-crab', 'stone-golem', 'ruins-specter'], familiarityMax: 100, region: 'Geffen'  },
 ]
 
 const UNITS: Unit[] = [

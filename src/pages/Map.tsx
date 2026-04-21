@@ -205,10 +205,12 @@ function LocationSection({ location, units, selectedDragging }: {
   selectedDragging: string[]
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
-  const isExpanded   = useGameStore((s) => s.expandedLocationIds.includes(location.id))
+  const isExpanded    = useGameStore((s) => s.expandedLocationIds.includes(location.id))
   const toggleLocation = useGameStore((s) => s.toggleLocation)
-  const allEquipment = useGameStore((s) => s.equipment)
+  const allEquipment  = useGameStore((s) => s.equipment)
+  const familiarity   = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
   const effectiveness = locationEffectiveness(units, location, allEquipment)
+  const unexplored    = familiarity === 0
 
   return (
     <div
@@ -222,7 +224,10 @@ function LocationSection({ location, units, selectedDragging }: {
         className="w-full flex items-center justify-between px-4 py-4 text-left"
         onClick={() => toggleLocation(location.id)}
       >
-        <span className="font-semibold text-game-text">{location.name}</span>
+        <span className="font-semibold text-game-text">
+          {location.name}
+          {unexplored && <span className="text-game-gold text-xs ml-1.5">(!)</span>}
+        </span>
         <div className="flex items-center gap-2">
           {effectiveness !== null && <DifficultyPill pct={effectiveness} />}
           {units.length > 0 && (
@@ -351,6 +356,8 @@ export function Map() {
     assignUnits(idsToMove, locationId)
   }
 
+  const regions = Array.from(new Set(locations.map((l) => l.region)))
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="p-4 space-y-3 pb-32">
@@ -358,13 +365,18 @@ export function Map() {
           units={units.filter((u) => u.locationId === null)}
           selectedDragging={draggingGroup ? selectedUnitIds : []}
         />
-        {locations.map((loc) => (
-          <LocationSection
-            key={loc.id}
-            location={loc}
-            units={units.filter((u) => u.locationId === loc.id)}
-            selectedDragging={draggingGroup ? selectedUnitIds : []}
-          />
+        {regions.map((region) => (
+          <div key={region} className="space-y-3">
+            <div className="text-xs uppercase tracking-widest text-game-text-dim pt-1">{region}</div>
+            {locations.filter((l) => l.region === region).map((loc) => (
+              <LocationSection
+                key={loc.id}
+                location={loc}
+                units={units.filter((u) => u.locationId === loc.id)}
+                selectedDragging={draggingGroup ? selectedUnitIds : []}
+              />
+            ))}
+          </div>
         ))}
       </div>
 
