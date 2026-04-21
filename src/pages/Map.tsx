@@ -90,7 +90,11 @@ function UnassignedPool({ units, selectedDragging }: { units: Unit[]; selectedDr
 
 // ── LocationSection ───────────────────────────────────────────────────────────
 
-function LocationSection({ location, units, selectedDragging }: { location: Location; units: Unit[]; selectedDragging: string[] }) {
+function LocationSection({ location, units, selectedDragging }: {
+  location: Location
+  units: Unit[]
+  selectedDragging: string[]
+}) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
   const isExpanded = useGameStore((s) => s.expandedLocationIds.includes(location.id))
   const toggleLocation = useGameStore((s) => s.toggleLocation)
@@ -151,9 +155,7 @@ function SelectionBar() {
   return (
     <div className="fixed bottom-16 inset-x-0 z-30 px-4 pb-2 pointer-events-none">
       <div className="pointer-events-auto bg-game-surface border border-game-primary rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl shadow-game-primary/30">
-        <span className="flex-1 text-sm font-medium">
-          {selectedUnitIds.length} selected
-        </span>
+        <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} selected</span>
         <div className="relative">
           <button
             className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1"
@@ -217,8 +219,7 @@ export function Map() {
     setActiveId(null)
     if (!over) return
     const unitId = active.id as string
-    const targetId = over.id as string
-    const locationId = targetId === 'unassigned' ? null : targetId
+    const locationId = (over.id as string) === 'unassigned' ? null : (over.id as string)
     const idsToMove = selectedUnitIds.includes(unitId) ? selectedUnitIds : [unitId]
     assignUnits(idsToMove, locationId)
   }

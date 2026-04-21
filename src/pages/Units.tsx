@@ -1,32 +1,148 @@
-import { useGameStore, type Unit, type EquipSlot } from '@/stores/useGameStore'
+import { useGameStore, type Unit, type EquipSlot, SLOT_LABELS } from '@/stores/useGameStore'
 
-const SLOT_LABELS: Record<EquipSlot, string> = {
-  weapon: 'Weapon',
-  tool: 'Tool',
-  armor: 'Armor',
-  accessory: 'Acc.',
+// ── Shared primitives ─────────────────────────────────────────────────────────
+
+function ProgressBar({ value, max, colorClass }: { value: number; max: number; colorClass: string }) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
+  return (
+    <div className="h-1.5 bg-game-border rounded-full overflow-hidden">
+      <div className={`h-full rounded-full transition-all ${colorClass}`} style={{ width: `${pct}%` }} />
+    </div>
+  )
 }
 
-function EquipSlotButton({ unit, slot }: { unit: Unit; slot: EquipSlot }) {
-  const { equipment, openEquipFor } = useGameStore((s) => ({
-    equipment: s.equipment,
-    openEquipFor: s.openEquipFor,
-  }))
-  const itemId = unit.equipment[slot]
-  const item = equipment.find((e) => e.id === itemId)
+function healthColor(hp: number) {
+  if (hp >= 75) return 'text-game-green'
+  if (hp >= 40) return 'text-game-gold'
+  return 'text-red-400'
+}
+function healthBar(hp: number) {
+  if (hp >= 75) return 'bg-game-green'
+  if (hp >= 40) return 'bg-game-gold'
+  return 'bg-red-400'
+}
+function healthDot(hp: number) {
+  if (hp >= 75) return 'bg-game-green'
+  if (hp >= 40) return 'bg-game-gold'
+  return 'bg-red-400'
+}
+
+// ── Equipment slot button ─────────────────────────────────────────────────────
+
+function EquipSlotBtn({ unit, slot }: { unit: Unit; slot: EquipSlot }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const openEquipFor = useGameStore((s) => s.openEquipFor)
+
+  const item = equipment.find((e) => e.id === unit.equipment[slot])
+  const mainHandItem = equipment.find((e) => e.id === unit.equipment.mainHand)
+  const locked = slot === 'offHand' && mainHandItem?.category === 'weapon-2h'
 
   return (
     <button
-      className="flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg border border-game-border hover:border-game-primary/60 hover:bg-game-primary/5 transition-colors"
-      onClick={() => openEquipFor(unit.id, slot)}
+      disabled={locked}
+      onClick={() => !locked && openEquipFor(unit.id, slot)}
+      className={[
+        'flex flex-col gap-0.5 p-2.5 rounded-lg border text-left w-full transition-colors',
+        locked
+          ? 'border-game-border opacity-40 cursor-not-allowed'
+          : 'border-game-border hover:border-game-primary/70 active:bg-game-primary/5 cursor-pointer',
+      ].join(' ')}
     >
-      <span className="text-xs text-game-text-dim w-14 shrink-0">{SLOT_LABELS[slot]}</span>
-      <span className={['text-sm', item ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>
-        {item ? item.name : 'Empty'}
+      <span className="text-xs text-game-text-dim">{SLOT_LABELS[slot]}</span>
+      <span className={['text-sm leading-snug', item ? 'text-game-text font-medium' : 'text-game-muted italic'].join(' ')}>
+        {locked ? '2H locked' : (item?.name ?? '—')}
       </span>
     </button>
   )
 }
+
+// ── Expanded unit detail ──────────────────────────────────────────────────────
+
+function UnitDetail({ unit }: { unit: Unit }) {
+  const combatStats = [
+    { label: 'ATK', value: unit.stats.attack, color: 'text-game-gold' },
+    { label: 'DEF', value: unit.stats.defense, color: 'text-sky-400' },
+    { label: 'SP.ATK', value: unit.stats.specialAttack, color: 'text-game-accent' },
+    { label: 'SP.DEF', value: unit.stats.specialDefense, color: 'text-violet-400' },
+  ]
+
+  return (
+    <div className="border-t border-game-border px-4 pb-5 pt-4 space-y-5">
+
+      {/* Identity + bars */}
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Level', value: unit.level },
+            { label: 'Age', value: `${unit.age}y` },
+            { label: 'Class', value: unit.class ?? '—' },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-game-bg rounded-lg px-3 py-2">
+              <div className="text-xs text-game-text-dim mb-0.5">{label}</div>
+              <div className="text-sm font-semibold text-game-text">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          <div>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-game-text-dim">Health</span>
+              <span className={healthColor(unit.health)}>{unit.health}%</span>
+            </div>
+            <ProgressBar value={unit.health} max={100} colorClass={healthBar(unit.health)} />
+          </div>
+          <div>
+            <div className="flex justify-between text-xs mb-1">
+              <span className="text-game-text-dim">EXP</span>
+              <span className="text-game-text-dim">{unit.exp} / {unit.expToNext}</span>
+            </div>
+            <ProgressBar value={unit.exp} max={unit.expToNext} colorClass="bg-game-primary" />
+          </div>
+        </div>
+      </div>
+
+      {/* Proficiencies */}
+      {unit.proficiencies.length > 0 && (
+        <div>
+          <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Proficiencies</div>
+          <div className="flex flex-wrap gap-1.5">
+            {unit.proficiencies.map((p) => (
+              <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-game-border text-game-text-dim">
+                {p}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Combat stats */}
+      <div>
+        <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Combat</div>
+        <div className="grid grid-cols-4 gap-2">
+          {combatStats.map(({ label, value, color }) => (
+            <div key={label} className="bg-game-bg rounded-lg py-2.5 text-center">
+              <div className={`text-xl font-bold font-mono leading-none ${color}`}>{value}</div>
+              <div className="text-xs text-game-text-dim mt-1">{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Equipment */}
+      <div>
+        <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Equipment</div>
+        <div className="grid grid-cols-2 gap-2">
+          {(['mainHand', 'offHand', 'armor', 'accessory'] as EquipSlot[]).map((slot) => (
+            <EquipSlotBtn key={slot} unit={unit} slot={slot} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Unit row ──────────────────────────────────────────────────────────────────
 
 function UnitRow({ unit }: { unit: Unit }) {
   const { selectedUnitIds, expandedUnitIds, toggleSelectUnit, toggleUnit, locations } = useGameStore(
@@ -43,8 +159,13 @@ function UnitRow({ unit }: { unit: Unit }) {
   const location = locations.find((l) => l.id === unit.locationId)
 
   return (
-    <div className={['border rounded-xl overflow-hidden transition-colors', isSelected ? 'border-game-primary' : 'border-game-border'].join(' ')}>
-      <div className="flex items-center gap-3 px-4 py-3">
+    <div className={[
+      'border rounded-xl overflow-hidden transition-colors duration-100',
+      isSelected ? 'border-game-primary' : 'border-game-border',
+    ].join(' ')}>
+
+      {/* Row header */}
+      <div className="flex items-center gap-3 px-3 py-3">
         {/* Checkbox */}
         <button
           className={[
@@ -57,15 +178,20 @@ function UnitRow({ unit }: { unit: Unit }) {
           {isSelected && <span className="text-white text-xs leading-none">✓</span>}
         </button>
 
-        {/* Main row — tap to expand */}
-        <button
-          className="flex-1 flex items-center gap-2 text-left min-w-0"
-          onClick={() => toggleUnit(unit.id)}
-        >
-          <span className="font-semibold text-game-text truncate">{unit.name}</span>
+        {/* Health dot */}
+        <span className={`w-2 h-2 rounded-full shrink-0 ${healthDot(unit.health)}`} />
+
+        {/* Main tap area */}
+        <button className="flex-1 flex items-center gap-2 text-left min-w-0" onClick={() => toggleUnit(unit.id)}>
+          <span className="font-semibold text-game-text">{unit.name}</span>
           <span className="text-xs text-game-text-dim shrink-0">Lv.{unit.level}</span>
+          {unit.class && (
+            <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded shrink-0">
+              {unit.class}
+            </span>
+          )}
           {location && (
-            <span className="text-xs text-game-accent bg-game-accent/10 px-2 py-0.5 rounded-full shrink-0 truncate max-w-[100px]">
+            <span className="text-xs text-game-accent bg-game-accent/10 px-1.5 py-0.5 rounded truncate max-w-[90px] shrink-0">
               {location.name}
             </span>
           )}
@@ -73,24 +199,12 @@ function UnitRow({ unit }: { unit: Unit }) {
         </button>
       </div>
 
-      {isExpanded && (
-        <div className="px-4 pb-4 border-t border-game-border space-y-3">
-          <div className="flex gap-4 pt-3">
-            <div className="text-sm">
-              <span className="text-game-text-dim">Attack </span>
-              <span className="text-game-gold font-mono font-semibold">{unit.stats.attack}</span>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            {(['weapon', 'tool', 'armor', 'accessory'] as EquipSlot[]).map((slot) => (
-              <EquipSlotButton key={slot} unit={unit} slot={slot} />
-            ))}
-          </div>
-        </div>
-      )}
+      {isExpanded && <UnitDetail unit={unit} />}
     </div>
   )
 }
+
+// ── Units page ────────────────────────────────────────────────────────────────
 
 export function Units() {
   const { units, selectedUnitIds, clearSelection } = useGameStore((s) => ({
