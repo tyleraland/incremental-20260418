@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
@@ -162,6 +162,41 @@ function MonsterList({ location }: { location: Location }) {
   )
 }
 
+// ── Difficulty indicator ──────────────────────────────────────────────────────
+
+function locationEffectiveness(units: Unit[], location: Location, allEquipment: Parameters<typeof getDerivedStats>[1]): number | null {
+  if (units.length === 0) return null
+  const monsters = location.monsterIds.map((id) => MONSTER_REGISTRY[id]).filter(Boolean)
+  if (monsters.length === 0) return null
+
+  const avgUnitAtk = units.reduce((s, u) => s + getDerivedStats(u, allEquipment).attack, 0) / units.length
+  const avgUnitDef = units.reduce((s, u) => s + getDerivedStats(u, allEquipment).defense, 0) / units.length
+  const avgMonAtk  = monsters.reduce((s, m) => s + m!.stats.attack,  0) / monsters.length
+  const avgMonDef  = monsters.reduce((s, m) => s + m!.stats.defense, 0) / monsters.length
+
+  return Math.round(((avgUnitAtk / avgMonDef + avgUnitDef / avgMonAtk) / 2) * 100)
+}
+
+type DifficultyTier = { label: string; pill: string }
+
+function difficultyTier(pct: number): DifficultyTier {
+  if (pct < 25)  return { label: 'Impossible', pill: 'bg-game-border text-game-muted border-game-border' }
+  if (pct < 50)  return { label: 'V. Hard',    pill: 'bg-red-950 text-red-300 border-red-800/60' }
+  if (pct < 75)  return { label: 'Hard',       pill: 'bg-orange-950 text-orange-300 border-orange-800/60' }
+  if (pct < 100) return { label: 'Tough',      pill: 'bg-yellow-950 text-yellow-300 border-yellow-800/60' }
+  if (pct < 125) return { label: 'Effective',  pill: 'bg-emerald-950 text-emerald-300 border-emerald-800/60' }
+  return               { label: 'Easy',        pill: 'bg-sky-950 text-sky-300 border-sky-800/60' }
+}
+
+function DifficultyPill({ pct }: { pct: number }) {
+  const { label, pill } = difficultyTier(pct)
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${pill}`}>
+      {label}
+    </span>
+  )
+}
+
 // ── LocationSection ───────────────────────────────────────────────────────────
 
 function LocationSection({ location, units, selectedDragging }: {
@@ -170,8 +205,10 @@ function LocationSection({ location, units, selectedDragging }: {
   selectedDragging: string[]
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
-  const isExpanded = useGameStore((s) => s.expandedLocationIds.includes(location.id))
+  const isExpanded   = useGameStore((s) => s.expandedLocationIds.includes(location.id))
   const toggleLocation = useGameStore((s) => s.toggleLocation)
+  const allEquipment = useGameStore((s) => s.equipment)
+  const effectiveness = locationEffectiveness(units, location, allEquipment)
 
   return (
     <div
@@ -186,7 +223,8 @@ function LocationSection({ location, units, selectedDragging }: {
         onClick={() => toggleLocation(location.id)}
       >
         <span className="font-semibold text-game-text">{location.name}</span>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {effectiveness !== null && <DifficultyPill pct={effectiveness} />}
           {units.length > 0 && (
             <span className="text-xs text-game-text-dim bg-game-border rounded-full px-2 py-0.5">
               {units.length}
