@@ -332,7 +332,7 @@ function SelectionBar() {
   }
 
   return (
-    <div className="fixed bottom-16 inset-x-0 z-30 px-4 pb-2 pointer-events-none">
+    <div className="fixed bottom-4 inset-x-0 z-30 px-4 pointer-events-none">
       <div className="pointer-events-auto bg-game-surface border border-game-primary rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl shadow-game-primary/30">
         <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} selected</span>
         <div className="relative">

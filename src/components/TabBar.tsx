@@ -19,7 +19,7 @@ export function TabBar() {
   }
 
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 bg-game-surface border-t border-game-border safe-area-bottom">
+    <nav className="fixed top-0 inset-x-0 z-40 bg-game-surface border-b border-game-border">
       <div className="flex">
         {TABS.map((tab) => (
           <button
