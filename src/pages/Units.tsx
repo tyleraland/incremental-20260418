@@ -141,7 +141,7 @@ function StatsTab({ unit }: { unit: Unit }) {
       {/* Traits */}
       {traits.length > 0 && <TraitRow traits={traits} />}
 
-      {/* Abilities */}
+      {/* Abilities + Derived stats side by side */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs uppercase tracking-widest text-game-text-dim">Abilities</div>
@@ -151,53 +151,45 @@ function StatsTab({ unit }: { unit: Unit }) {
             </span>
           )}
         </div>
-        <div className="space-y-1.5">
-          {ABILITY_DEFS.map(({ key, label, color }) => {
-            const val     = unit.abilities[key]
-            const cost    = abilityPointCost(val)
-            const canSpend = unit.abilityPoints >= cost && val < 99
-            return (
-              <div key={key} className="flex items-center gap-2 bg-game-bg rounded-lg px-3 py-2">
-                <span className={`text-xs font-bold w-7 ${color}`}>{label}</span>
-                <span className="text-sm font-mono font-semibold text-game-text w-8">{val}</span>
-                <div className="flex-1" />
-                {canSpend && <span className="text-xs text-game-text-dim mr-1">{cost}pt</span>}
-                <button
-                  disabled={!canSpend}
-                  onClick={() => spendAbilityPoint(unit.id, key)}
-                  className={[
-                    'w-6 h-6 rounded flex items-center justify-center text-sm font-bold transition-colors',
-                    canSpend
-                      ? 'bg-game-primary text-white hover:bg-game-primary/80 active:scale-95'
-                      : 'bg-game-border text-game-muted cursor-not-allowed opacity-40',
-                  ].join(' ')}
-                >
-                  +
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      </div>
+        <div className="flex gap-2">
+          {/* Ability rows */}
+          <div className="flex-1 space-y-1.5">
+            {ABILITY_DEFS.map(({ key, label, color }) => {
+              const val      = unit.abilities[key]
+              const cost     = abilityPointCost(val)
+              const canSpend = unit.abilityPoints >= cost && val < 99
+              return (
+                <div key={key} className="flex items-center gap-1.5 bg-game-bg rounded-lg px-2.5 py-2">
+                  <span className={`text-xs font-bold w-7 shrink-0 ${color}`}>{label}</span>
+                  <span className="text-sm font-mono font-semibold text-game-text w-7">{val}</span>
+                  <div className="flex-1" />
+                  {canSpend && <span className="text-[10px] text-game-text-dim">{cost}p</span>}
+                  <button
+                    disabled={!canSpend}
+                    onClick={() => spendAbilityPoint(unit.id, key)}
+                    className={[
+                      'w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold transition-colors shrink-0',
+                      canSpend
+                        ? 'bg-game-primary text-white hover:bg-game-primary/80 active:scale-95'
+                        : 'bg-game-border text-game-muted cursor-not-allowed opacity-40',
+                    ].join(' ')}
+                  >
+                    +
+                  </button>
+                </div>
+              )
+            })}
+          </div>
 
-      {/* Derived stats */}
-      <div>
-        <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Combat</div>
-        <div className="grid grid-cols-4 gap-2">
-          {derivedStats.slice(0, 4).map(({ label, value, color }) => (
-            <div key={label} className="bg-game-bg rounded-lg py-2.5 text-center">
-              <div className={`text-xl font-bold font-mono leading-none ${color}`}>{value}</div>
-              <div className="text-xs text-game-text-dim mt-1">{label}</div>
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-3 gap-2 mt-2">
-          {derivedStats.slice(4).map(({ label, value, color }) => (
-            <div key={label} className="bg-game-bg rounded-lg py-2.5 text-center">
-              <div className={`text-xl font-bold font-mono leading-none ${color}`}>{value}</div>
-              <div className="text-xs text-game-text-dim mt-1">{label}</div>
-            </div>
-          ))}
+          {/* Derived stats — 2-col compact grid */}
+          <div className="w-[104px] grid grid-cols-2 gap-1 content-start">
+            {derivedStats.map(({ label, value, color }) => (
+              <div key={label} className="bg-game-bg rounded-lg py-2 text-center">
+                <div className={`text-sm font-bold font-mono leading-none ${color}`}>{value}</div>
+                <div className="text-[10px] text-game-text-dim mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
