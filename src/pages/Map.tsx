@@ -11,7 +11,8 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, TRAIT_REGISTRY, type Unit, type Location } from '@/stores/useGameStore'
+import { TraitRow } from '@/components/TraitBubble'
 
 // ── UnitRect ──────────────────────────────────────────────────────────────────
 
@@ -124,7 +125,11 @@ function LocationSection({ location, units, selectedDragging }: {
 
       {isExpanded && (
         <div className="px-4 pb-4 border-t border-game-border">
-          <p className="text-game-text-dim text-sm mt-3 mb-4">{location.description}</p>
+          <p className="text-game-text-dim text-sm mt-3 mb-3">{location.description}</p>
+          <TraitRow
+            traits={location.traits.map((id) => TRAIT_REGISTRY[id]).filter(Boolean) as any}
+            className="mb-4"
+          />
           <div className="flex flex-wrap gap-2 min-h-[44px]">
             {units.map((u) => (
               <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
