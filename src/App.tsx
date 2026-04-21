@@ -5,6 +5,7 @@ import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
 import { Guild } from '@/pages/Guild'
 import { Time } from '@/pages/Time'
+import { Codex } from '@/pages/Codex'
 
 function App() {
   const activeTab = useGameStore((s) => s.activeTab)
@@ -16,6 +17,7 @@ function App() {
         {activeTab === 'units'     && <Units />}
         {activeTab === 'inventory' && <Inventory />}
         {activeTab === 'guild'     && <Guild />}
+        {activeTab === 'codex'     && <Codex />}
         {activeTab === 'time'      && <Time />}
       </main>
       <TabBar />

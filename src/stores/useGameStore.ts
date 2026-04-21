@@ -143,7 +143,7 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
 
 export type EquipSlot   = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory'
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
-export type TabId        = 'map' | 'units' | 'inventory' | 'guild' | 'time'
+export type TabId = 'map' | 'units' | 'inventory' | 'guild' | 'time' | 'codex'
 
 export interface Abilities {
   strength: number; agility: number; dexterity: number; constitution: number; intelligence: number
@@ -165,7 +165,10 @@ export interface Unit {
   equipment: Record<EquipSlot, string | null>
 }
 
-export interface Location { id: string; name: string; description: string; traits: string[]; monsterIds: string[] }
+export interface Location { id: string; name: string; description: string; traits: string[]; monsterIds: string[]; familiarityMax: number }
+
+// Seen-count thresholds: how many sightings unlock each info tier in the codex
+export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
 
 export interface MonsterDrop {
   itemId: string
@@ -319,10 +322,10 @@ export function getLearnedSkills(unit: Unit) {
 // ── Initial data ──────────────────────────────────────────────────────────────
 
 const LOCATIONS: Location[] = [
-  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'],    monsterIds: ['wolf', 'forest-sprite', 'poacher'] },
-  { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'],   monsterIds: ['harpy', 'shadow-wolf', 'dark-slime'] },
-  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'],        monsterIds: ['giant-frog', 'river-serpent'] },
-  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'],        monsterIds: ['rock-crab', 'stone-golem', 'ruins-specter'] },
+  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'],   monsterIds: ['wolf', 'forest-sprite', 'poacher'],    familiarityMax: 100 },
+  { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'], monsterIds: ['harpy', 'shadow-wolf', 'dark-slime'],  familiarityMax: 100 },
+  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'],      monsterIds: ['giant-frog', 'river-serpent'],         familiarityMax: 100 },
+  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'],      monsterIds: ['rock-crab', 'stone-golem', 'ruins-specter'], familiarityMax: 100 },
 ]
 
 const UNITS: Unit[] = [
@@ -364,9 +367,11 @@ interface GameState {
   miscItems: MiscItem[]; activeTab: TabId; selectedUnitIds: string[]
   expandedLocationIds: string[]; expandedUnitIds: string[]
   equipContext: { unitId: string; slot: EquipSlot } | null
-  discoveredMonsters: string[]
-  discoveredDrops: string[]
   learnedRecipes: string[]
+  locationFamiliarity: Record<string, number>        // locationId → current (0..familiarityMax)
+  locationMonstersSeen: Record<string, string[]>     // locationId → monsterIds seen at that location
+  monsterSeen: Record<string, number>                // monsterId → total global sighting count
+  activeEncounters: Record<string, string[]>         // locationId → active monster slots (up to 4, may repeat)
 
   setActiveTab: (tab: TabId) => void
   toggleLocation: (id: string) => void
@@ -379,8 +384,6 @@ interface GameState {
   closeEquipContext: () => void
   spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
   learnSkill: (unitId: string, skillId: string) => void
-  discoverMonster: (monsterId: string) => void
-  discoverDrop: (monsterId: string, itemId: string) => void
   recruitUnit: () => void
   craft: (recipeId: string) => void
 }
@@ -388,9 +391,11 @@ interface GameState {
 export const useGameStore = create<GameState>((set) => ({
   units: UNITS, locations: LOCATIONS, equipment: EQUIPMENT, miscItems: MISC,
   activeTab: 'map', selectedUnitIds: [], expandedLocationIds: [], expandedUnitIds: [], equipContext: null,
-  discoveredMonsters: ['wolf', 'poacher', 'harpy', 'giant-frog', 'rock-crab'],
-  discoveredDrops: ['wolf:drop-wolf-pelt', 'harpy:drop-harpy-feather', 'giant-frog:drop-frog-leg'],
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
+  locationFamiliarity:    { 'kings-forest': 100, 'duskwood': 0, 'lake-arawok': 50, 'gray-hills': 75 },
+  locationMonstersSeen:   { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': [], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
+  monsterSeen:            { wolf: 15, 'forest-sprite': 3, poacher: 1, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
+  activeEncounters:       { 'kings-forest': ['wolf', 'wolf'], 'gray-hills': ['rock-crab', 'stone-golem'] },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   toggleLocation: (id) => set((s) => ({ expandedLocationIds: s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id] })),
@@ -410,14 +415,6 @@ export const useGameStore = create<GameState>((set) => ({
     const cost = abilityPointCost(current)
     if (unit.abilityPoints < cost) return s
     return { units: s.units.map((u) => u.id === unitId ? { ...u, abilityPoints: u.abilityPoints - cost, abilities: { ...u.abilities, [ability]: current + 1 } } : u) }
-  }),
-
-  discoverMonster: (id) => set((s) => ({
-    discoveredMonsters: s.discoveredMonsters.includes(id) ? s.discoveredMonsters : [...s.discoveredMonsters, id],
-  })),
-  discoverDrop: (monsterId, itemId) => set((s) => {
-    const key = `${monsterId}:${itemId}`
-    return { discoveredDrops: s.discoveredDrops.includes(key) ? s.discoveredDrops : [...s.discoveredDrops, key] }
   }),
 
   recruitUnit: () => set((s) => {

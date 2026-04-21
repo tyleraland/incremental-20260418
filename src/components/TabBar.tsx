@@ -1,11 +1,12 @@
 import { useGameStore, type TabId } from '@/stores/useGameStore'
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: 'map',       label: 'Map',       icon: '🗺'  },
-  { id: 'units',     label: 'Units',     icon: '⚔'  },
-  { id: 'inventory', label: 'Inventory', icon: '🎒'  },
-  { id: 'guild',     label: 'Guild',     icon: '⚜'  },
-  { id: 'time',      label: 'Time',      icon: '⏳'  },
+  { id: 'map',       label: 'Map',   icon: '🗺' },
+  { id: 'units',     label: 'Units', icon: '⚔' },
+  { id: 'inventory', label: 'Inv',   icon: '🎒' },
+  { id: 'guild',     label: 'Guild', icon: '⚜' },
+  { id: 'codex',     label: 'Codex', icon: '📖' },
+  { id: 'time',      label: 'Time',  icon: '⏳' },
 ]
 
 export function TabBar() {
