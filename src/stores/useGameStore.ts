@@ -452,17 +452,19 @@ export const useGameStore = create<GameState>((set) => ({
       encounterProgress[locationId] = prevProgress.map((prog, i) => {
         const monster = MONSTER_REGISTRY[monsterSlots[i]]
         if (!monster) return prog
-        // monsterHP drives base duration; clamp between 1s and 300s
-        const hp      = (monster.stats.attack + monster.stats.defense) * 3
-        const seconds = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
-        const next    = prog + 1 / seconds
-        if (next >= 1) {
+        // If bar was at 100% last tick, apply rewards now and reset to 0
+        if (prog >= 1) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + 1
           expGained[locationId]       = (expGained[locationId] ?? 0) + 1
           goldEarned++
           return 0
         }
-        return next
+        // monsterHP drives base duration; clamp between 1s and 300s
+        const hp      = (monster.stats.attack + monster.stats.defense) * 3
+        const seconds = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
+        const next    = prog + 1 / seconds
+        // Return exactly 1 so the bar visually reaches 100%; reset fires next tick
+        return Math.min(next, 1)
       })
     }
 
