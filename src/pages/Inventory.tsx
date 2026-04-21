@@ -4,6 +4,7 @@ import {
   type EquipmentItem,
   type EquipSlot,
   type ItemCategory,
+  type RecipeSection,
   SLOT_COMPATIBLE,
   SLOT_LABELS,
   CATEGORY_LABELS,
@@ -212,10 +213,16 @@ function MiscSection() {
 
 // ── Crafting section ──────────────────────────────────────────────────────────
 
+const RECIPE_SECTIONS: { id: RecipeSection; label: string }[] = [
+  { id: 'weapon', label: 'Weapons' },
+  { id: 'armor',  label: 'Armor'   },
+  { id: 'other',  label: 'Other'   },
+]
+
 function CraftingSection() {
-  const [expanded, setExpanded]       = useState(true)
+  const [expanded, setExpanded]               = useState(true)
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
-  const { miscItems, learnedRecipes, craft } = useGameStore((s) => ({
+  const { miscItems, learnedRecipes, craft }  = useGameStore((s) => ({
     miscItems: s.miscItems,
     learnedRecipes: s.learnedRecipes,
     craft: s.craft,
@@ -234,6 +241,77 @@ function CraftingSection() {
     })
   }
 
+  function renderRecipe(recipeId: string) {
+    const recipe     = RECIPE_REGISTRY[recipeId]
+    if (!recipe) return null
+    const affordable = canCraft(recipeId)
+    const isOpen     = expandedRecipes.includes(recipeId)
+
+    return (
+      <div key={recipeId} className={affordable ? '' : 'opacity-50'}>
+        <button
+          className="w-full flex items-center gap-3 px-4 py-3 text-left"
+          onClick={() => toggleRecipe(recipeId)}
+        >
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-game-text">{recipe.name}</span>
+              <span className="text-xs text-game-text-dim">×{recipe.outputQuantity}</span>
+            </div>
+            {!affordable && (
+              <div className="text-xs text-game-muted mt-0.5">Missing resources</div>
+            )}
+          </div>
+          <span className="text-game-muted text-sm shrink-0">{isOpen ? '▲' : '▼'}</span>
+        </button>
+
+        {isOpen && (
+          <div className="px-4 pb-4 space-y-3">
+            <p className="text-xs text-game-text-dim">{recipe.description}</p>
+
+            <div>
+              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1.5">Ingredients</div>
+              <div className="space-y-1">
+                {recipe.ingredients.map((ing) => {
+                  const have = miscItems.find((i) => i.id === ing.itemId)?.quantity ?? 0
+                  const ok   = have >= ing.quantity
+                  return (
+                    <div key={ing.itemId} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1 text-game-text">
+                        {miscItems.find((i) => i.id === ing.itemId)?.name ?? ing.itemId}
+                      </span>
+                      <span className={`font-mono text-xs ${ok ? 'text-game-green' : 'text-red-400'}`}>
+                        {have} / {ing.quantity}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-game-text-dim">
+                Produces: <span className="text-game-text font-medium">{recipe.outputName} ×{recipe.outputQuantity}</span>
+              </div>
+              <button
+                disabled={!affordable}
+                onClick={() => craft(recipeId)}
+                className={[
+                  'text-sm py-1.5 px-4 rounded-lg font-medium transition-colors',
+                  affordable
+                    ? 'bg-game-primary text-white hover:bg-game-primary/80'
+                    : 'bg-game-border text-game-muted cursor-not-allowed',
+                ].join(' ')}
+              >
+                Craft
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
       <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => setExpanded((v) => !v)}>
@@ -242,74 +320,18 @@ function CraftingSection() {
       </button>
 
       {expanded && (
-        <div className="border-t border-game-border divide-y divide-game-border/50">
-          {learnedRecipes.map((recipeId) => {
-            const recipe = RECIPE_REGISTRY[recipeId]
-            if (!recipe) return null
-            const affordable  = canCraft(recipeId)
-            const isExpanded  = expandedRecipes.includes(recipeId)
-
+        <div className="border-t border-game-border">
+          {RECIPE_SECTIONS.map(({ id, label }) => {
+            const sectionRecipes = learnedRecipes.filter((rid) => RECIPE_REGISTRY[rid]?.section === id)
+            if (sectionRecipes.length === 0) return null
             return (
-              <div key={recipeId} className={affordable ? '' : 'opacity-50'}>
-                <button
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                  onClick={() => toggleRecipe(recipeId)}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-game-text">{recipe.name}</span>
-                      <span className="text-xs text-game-text-dim">×{recipe.outputQuantity}</span>
-                    </div>
-                    {!affordable && (
-                      <div className="text-xs text-game-muted mt-0.5">Missing resources</div>
-                    )}
-                  </div>
-                  <span className="text-game-muted text-sm shrink-0">{isExpanded ? '▲' : '▼'}</span>
-                </button>
-
-                {isExpanded && (
-                  <div className="px-4 pb-4 space-y-3">
-                    <p className="text-xs text-game-text-dim">{recipe.description}</p>
-
-                    <div>
-                      <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1.5">Ingredients</div>
-                      <div className="space-y-1">
-                        {recipe.ingredients.map((ing) => {
-                          const have = miscItems.find((i) => i.id === ing.itemId)?.quantity ?? 0
-                          const ok   = have >= ing.quantity
-                          return (
-                            <div key={ing.itemId} className="flex items-center gap-2 text-sm">
-                              <span className="flex-1 text-game-text">
-                                {miscItems.find((i) => i.id === ing.itemId)?.name ?? ing.itemId}
-                              </span>
-                              <span className={`font-mono text-xs ${ok ? 'text-game-green' : 'text-red-400'}`}>
-                                {have} / {ing.quantity}
-                              </span>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs text-game-text-dim">
-                        Produces: <span className="text-game-text font-medium">{recipe.outputName} ×{recipe.outputQuantity}</span>
-                      </div>
-                      <button
-                        disabled={!affordable}
-                        onClick={() => craft(recipeId)}
-                        className={[
-                          'text-sm py-1.5 px-4 rounded-lg font-medium transition-colors',
-                          affordable
-                            ? 'bg-game-primary text-white hover:bg-game-primary/80'
-                            : 'bg-game-border text-game-muted cursor-not-allowed',
-                        ].join(' ')}
-                      >
-                        Craft
-                      </button>
-                    </div>
-                  </div>
-                )}
+              <div key={id}>
+                <div className="px-4 pt-3 pb-1 text-xs uppercase tracking-widest text-game-text-dim">
+                  {label}
+                </div>
+                <div className="divide-y divide-game-border/50">
+                  {sectionRecipes.map(renderRecipe)}
+                </div>
               </div>
             )
           })}
