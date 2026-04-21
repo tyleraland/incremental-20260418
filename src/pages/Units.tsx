@@ -25,10 +25,10 @@ function healthDot(hp: number)   { return hp >= 75 ? 'bg-game-green' : hp >= 40 
 
 type DetailTab = 'stats' | 'skills' | 'gear'
 
-function DetailTabBar({ active, onChange }: { active: DetailTab; onChange: (t: DetailTab) => void }) {
-  const tabs: { id: DetailTab; label: string }[] = [
-    { id: 'stats',  label: 'Stats'  },
-    { id: 'skills', label: 'Skills' },
+function DetailTabBar({ active, onChange, unit }: { active: DetailTab; onChange: (t: DetailTab) => void; unit: Unit }) {
+  const tabs: { id: DetailTab; label: string; alert?: boolean }[] = [
+    { id: 'stats',  label: 'Stats',  alert: unit.abilityPoints > 0 },
+    { id: 'skills', label: 'Skills', alert: unit.skillPoints > 0   },
     { id: 'gear',   label: 'Gear'   },
   ]
   return (
@@ -44,7 +44,7 @@ function DetailTabBar({ active, onChange }: { active: DetailTab; onChange: (t: D
               : 'text-game-text-dim hover:text-game-text',
           ].join(' ')}
         >
-          {t.label}
+          {t.label}{t.alert && <span className="ml-1 text-game-gold text-xs">(!)</span>}
         </button>
       ))}
     </div>
@@ -326,7 +326,7 @@ function UnitDetail({ unit }: { unit: Unit }) {
 
   return (
     <div className="border-t border-game-border">
-      <DetailTabBar active={tab} onChange={setTab} />
+      <DetailTabBar active={tab} onChange={setTab} unit={unit} />
       <div className="px-4 pb-5 pt-4">
         {tab === 'stats'  && <StatsTab  unit={unit} />}
         {tab === 'skills' && <SkillsTab unit={unit} />}
