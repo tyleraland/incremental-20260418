@@ -3,224 +3,275 @@ import { create } from 'zustand'
 // ── Trait system ──────────────────────────────────────────────────────────────
 
 export type TraitCategory =
-  | 'damage-type'
-  | 'element'
-  | 'stat'
-  | 'item-type'
-  | 'environment'
-  | 'class'
-  | 'proficiency'
-  | 'general'
+  | 'damage-type' | 'element' | 'stat' | 'item-type'
+  | 'environment' | 'class' | 'proficiency' | 'general'
 
 export interface Trait {
   id: string
   label: string
   category: TraitCategory
   description: string
-  colorClass?: string // overrides category default
+  colorClass?: string
 }
 
 export const TRAIT_REGISTRY: Record<string, Trait> = {
-  // Damage types
   slashing:    { id: 'slashing',    label: 'Slashing',    category: 'damage-type', description: 'Deals cutting damage. Effective against lightly armored targets.' },
   piercing:    { id: 'piercing',    label: 'Piercing',    category: 'damage-type', description: 'Deals puncturing damage. Bypasses a portion of physical defense.' },
   bludgeoning: { id: 'bludgeoning', label: 'Bludgeoning', category: 'damage-type', description: 'Deals blunt force damage. Effective against heavy or rigid armor.' },
-  // Elements
-  fire:        { id: 'fire',        label: 'Fire',        category: 'element', description: 'Imbued with fire energy. Has a chance to inflict Burning.', colorClass: 'bg-orange-950 text-orange-300 border-orange-700/50' },
+  fire:        { id: 'fire',        label: 'Fire',        category: 'element', description: 'Imbued with fire energy. May inflict Burning.', colorClass: 'bg-orange-950 text-orange-300 border-orange-700/50' },
   lightning:   { id: 'lightning',   label: 'Lightning',   category: 'element', description: 'Imbued with electrical energy. Fast and unpredictable.', colorClass: 'bg-yellow-950 text-yellow-300 border-yellow-700/50' },
-  ice:         { id: 'ice',         label: 'Ice',         category: 'element', description: 'Imbued with cold energy. May reduce target\'s speed.', colorClass: 'bg-sky-950 text-sky-300 border-sky-700/50' },
+  ice:         { id: 'ice',         label: 'Ice',         category: 'element', description: 'Imbued with cold energy. May slow the target.', colorClass: 'bg-sky-950 text-sky-300 border-sky-700/50' },
   earth:       { id: 'earth',       label: 'Earth',       category: 'element', description: 'Imbued with earth energy. Stable and powerful.', colorClass: 'bg-lime-950 text-lime-300 border-lime-700/50' },
   wind:        { id: 'wind',        label: 'Wind',        category: 'element', description: 'Imbued with wind energy. High speed, reduced weight.', colorClass: 'bg-teal-950 text-teal-300 border-teal-700/50' },
-  // Item types
-  '1h':        { id: '1h',          label: '1H',          category: 'item-type', description: 'One-handed. Can be paired with a shield, second weapon, or accessory in the off-hand.' },
-  '2h':        { id: '2h',          label: '2H',          category: 'item-type', description: 'Two-handed. Requires both hands — the off-hand slot is locked while equipped.' },
-  'tool':      { id: 'tool',        label: 'Tool',        category: 'item-type', description: 'Utility tool for gathering, crafting, or exploration. Occupies the dedicated Tool slot.' },
-  'shield':    { id: 'shield',      label: 'Shield',      category: 'item-type', description: 'Off-hand defensive equipment. Provides bonus Defense when equipped.' },
-  // Weight
-  light:       { id: 'light',       label: 'Light',       category: 'general',   description: 'Lightweight equipment. Minimal movement penalty.' },
-  heavy:       { id: 'heavy',       label: 'Heavy',       category: 'general',   description: 'Heavy equipment. May reduce speed but offers better protection.' },
-  versatile:   { id: 'versatile',   label: 'Versatile',   category: 'general',   description: 'Can be used effectively in multiple contexts.' },
-  // Environment
+  '1h':        { id: '1h',          label: '1H',          category: 'item-type', description: 'One-handed. Pairs with a shield, off-hand weapon, or accessory.' },
+  '2h':        { id: '2h',          label: '2H',          category: 'item-type', description: 'Two-handed. Off-hand slot is locked while equipped.' },
+  'tool':      { id: 'tool',        label: 'Tool',        category: 'item-type', description: 'Utility item for gathering or exploration. Uses the dedicated Tool slot.' },
+  'shield':    { id: 'shield',      label: 'Shield',      category: 'item-type', description: 'Off-hand defensive gear. Provides bonus Defense.' },
+  light:       { id: 'light',       label: 'Light',       category: 'general',   description: 'Lightweight. Minimal speed penalty.' },
+  heavy:       { id: 'heavy',       label: 'Heavy',       category: 'general',   description: 'Heavy. Better protection, possible speed penalty.' },
+  versatile:   { id: 'versatile',   label: 'Versatile',   category: 'general',   description: 'Effective in multiple contexts.' },
   forest:      { id: 'forest',      label: 'Forest',      category: 'environment', description: 'Dense woodland. Good for timber, herbs, and hunting.' },
   shadow:      { id: 'shadow',      label: 'Shadow',      category: 'environment', description: 'Dimly lit and treacherous. Increases risk, may yield rare finds.' },
   water:       { id: 'water',       label: 'Water',       category: 'environment', description: 'Aquatic environment. Enables fishing and water-based gathering.' },
   mining:      { id: 'mining',      label: 'Mining',      category: 'environment', description: 'Rich in ore deposits. Requires a Pickaxe to extract efficiently.' },
   ruins:       { id: 'ruins',       label: 'Ruins',       category: 'environment', description: 'Ancient structures that may contain hidden items or dangers.' },
-  hunting:     { id: 'hunting',     label: 'Hunting',     category: 'environment', description: 'Abundant game. A Skinning Knife improves yield from hunted animals.' },
+  hunting:     { id: 'hunting',     label: 'Hunting',     category: 'environment', description: 'Abundant game. A Skinning Knife improves yield.' },
   fishing:     { id: 'fishing',     label: 'Fishing',     category: 'environment', description: 'Active fishing grounds. Requires a Fishing Rod.' },
-  lumber:      { id: 'lumber',      label: 'Lumber',      category: 'environment', description: 'Harvestable timber. A Handaxe or Woodcutter\'s Axe is recommended.' },
+  lumber:      { id: 'lumber',      label: 'Lumber',      category: 'environment', description: 'Harvestable timber. A Handaxe is recommended.' },
   dangerous:   { id: 'dangerous',   label: 'Dangerous',   category: 'environment', description: 'High threat level. Units assigned here face greater risk.' },
   rocky:       { id: 'rocky',       label: 'Rocky',       category: 'environment', description: 'Rugged terrain with exposed rock faces and ore veins.' },
   calm:        { id: 'calm',        label: 'Calm',        category: 'environment', description: 'Peaceful area with low threat level.' },
-  // Classes
   warrior:     { id: 'warrior',     label: 'Warrior',     category: 'class', description: 'A combat-trained fighter. Proficient with swords, shields, and heavy armor.' },
-  mage:        { id: 'mage',        label: 'Mage',        category: 'class', description: 'A student of arcane arts. Specializes in magical weaponry and high SP.ATK.' },
+  mage:        { id: 'mage',        label: 'Mage',        category: 'class', description: 'A student of arcane arts. Specializes in magical weaponry and high M.ATK.' },
   rogue:       { id: 'rogue',       label: 'Rogue',       category: 'class', description: 'A nimble operative. Favors light weapons, tools, and stealth.' },
-  // Proficiencies
-  'prof-swords':    { id: 'prof-swords',    label: 'Swords',    category: 'proficiency', description: 'Trained with swords. Improved accuracy and damage with sword-type weapons.' },
-  'prof-heavy-armor': { id: 'prof-heavy-armor', label: 'Heavy Armor', category: 'proficiency', description: 'Accustomed to heavy armor. No movement penalty when wearing chain or plate.' },
-  'prof-tools':     { id: 'prof-tools',     label: 'Tools',     category: 'proficiency', description: 'Experienced with gathering tools. Improved yield from tool-based activities.' },
-  'prof-staves':    { id: 'prof-staves',    label: 'Staves',    category: 'proficiency', description: 'Proficient with staves. Increases magical power when using staff weapons.' },
-  'prof-wands':     { id: 'prof-wands',     label: 'Wands',     category: 'proficiency', description: 'Proficient with wands. Faster casting speed with wand-type weapons.' },
-  'prof-mining':    { id: 'prof-mining',    label: 'Mining',    category: 'proficiency', description: 'Skilled miner. Greater ore yield and faster extraction.' },
-  'prof-daggers':   { id: 'prof-daggers',   label: 'Daggers',   category: 'proficiency', description: 'Proficient with daggers. High critical hit rate.' },
-  'prof-lockpicks': { id: 'prof-lockpicks', label: 'Lockpicks', category: 'proficiency', description: 'Experienced with lockpicks. Can unlock doors and chests.' },
+  'prof-swords':      { id: 'prof-swords',      label: 'Swords',      category: 'proficiency', description: 'Trained with swords. Improved accuracy and damage.' },
+  'prof-heavy-armor': { id: 'prof-heavy-armor', label: 'Heavy Armor', category: 'proficiency', description: 'No movement penalty in chain or plate.' },
+  'prof-tools':       { id: 'prof-tools',       label: 'Tools',       category: 'proficiency', description: 'Improved yield from tool-based activities.' },
+  'prof-staves':      { id: 'prof-staves',      label: 'Staves',      category: 'proficiency', description: 'Increases magical power with staves.' },
+  'prof-wands':       { id: 'prof-wands',       label: 'Wands',       category: 'proficiency', description: 'Faster casting speed with wands.' },
+  'prof-mining':      { id: 'prof-mining',      label: 'Mining',      category: 'proficiency', description: 'Greater ore yield and faster extraction.' },
+  'prof-daggers':     { id: 'prof-daggers',     label: 'Daggers',     category: 'proficiency', description: 'High critical hit rate with daggers.' },
+  'prof-lockpicks':   { id: 'prof-lockpicks',   label: 'Lockpicks',   category: 'proficiency', description: 'Can unlock doors and chests.' },
 }
 
-// Map proficiency strings to trait IDs
 const PROF_TO_TRAIT: Record<string, string> = {
-  'Swords': 'prof-swords',
-  'Heavy Armor': 'prof-heavy-armor',
-  'Tools': 'prof-tools',
-  'Staves': 'prof-staves',
-  'Wands': 'prof-wands',
-  'Mining': 'prof-mining',
-  'Daggers': 'prof-daggers',
-  'Lockpicks': 'prof-lockpicks',
+  'Swords': 'prof-swords', 'Heavy Armor': 'prof-heavy-armor',
+  'Tools': 'prof-tools',   'Staves': 'prof-staves',
+  'Wands': 'prof-wands',   'Mining': 'prof-mining',
+  'Daggers': 'prof-daggers', 'Lockpicks': 'prof-lockpicks',
 }
 
-/** Returns all trait objects for a unit (class + proficiencies). */
 export function getUnitTraits(unit: Unit): Trait[] {
-  const traits: Trait[] = []
-  if (unit.class) {
-    const t = TRAIT_REGISTRY[unit.class.toLowerCase()]
-    if (t) traits.push(t)
-  }
-  for (const prof of unit.proficiencies) {
-    const id = PROF_TO_TRAIT[prof]
-    const t = id ? TRAIT_REGISTRY[id] : undefined
-    if (t) traits.push(t)
-  }
-  return traits
+  const out: Trait[] = []
+  if (unit.class) { const t = TRAIT_REGISTRY[unit.class.toLowerCase()]; if (t) out.push(t) }
+  for (const p of unit.proficiencies) { const t = TRAIT_REGISTRY[PROF_TO_TRAIT[p]]; if (t) out.push(t) }
+  return out
 }
 
-/** Returns all trait objects for an equipment item (explicit + stat-derived). */
 export function getItemTraits(item: EquipmentItem): Trait[] {
-  const traits: Trait[] = item.traits
-    .map((id) => TRAIT_REGISTRY[id])
-    .filter(Boolean) as Trait[]
-
-  const statEntries: [keyof EquipmentItem['stats'], string, string][] = [
-    ['attack',        'ATK',    'physical attack power'],
-    ['defense',       'DEF',    'physical defense'],
-    ['specialAttack', 'SP.ATK', 'magical attack power'],
-    ['specialDefense','SP.DEF', 'magical defense'],
+  const out: Trait[] = item.traits.map((id) => TRAIT_REGISTRY[id]).filter(Boolean) as Trait[]
+  const statMap: [keyof EquipmentItem['stats'], string, string][] = [
+    ['attack',        'ATK',   'physical attack'],
+    ['defense',       'DEF',   'physical defense'],
+    ['specialAttack', 'M.ATK', 'magic attack'],
+    ['specialDefense','M.DEF', 'magic defense'],
   ]
-  for (const [key, short, desc] of statEntries) {
-    const v = item.stats[key]
-    if (v) {
-      traits.push({
-        id: `gen-${key}-${v}`,
-        label: `+${v} ${short}`,
-        category: 'stat',
-        description: `Increases ${desc} by ${v} points.`,
-      })
-    }
+  for (const [k, short, desc] of statMap) {
+    const v = item.stats[k]
+    if (v) out.push({ id: `stat-${k}-${v}`, label: `+${v} ${short}`, category: 'stat', description: `Increases ${desc} by ${v}.` })
   }
-  return traits
+  return out
+}
+
+// ── Skill system ──────────────────────────────────────────────────────────────
+
+export interface SkillBonuses {
+  attack?: number; defense?: number; magicAttack?: number; magicDefense?: number
+  attackSpeed?: number; accuracy?: number; dodge?: number
+  strength?: number; agility?: number; dexterity?: number; constitution?: number
+}
+
+export interface SkillDef {
+  id: string
+  name: string
+  maxLevel: number
+  description: (level: number) => string
+  requires: { skillId: string; minLevel: number }[]
+  getBonuses: (level: number) => SkillBonuses
+}
+
+export const SKILL_REGISTRY: Record<string, SkillDef> = {
+  'sword-mastery-1h': {
+    id: 'sword-mastery-1h', name: '1H Sword Mastery', maxLevel: 10,
+    description: (lv) => `+${lv * 3} ATK when wielding a 1H sword`,
+    requires: [],
+    getBonuses: (lv) => ({ attack: lv * 3 }),
+  },
+  'sword-mastery-2h': {
+    id: 'sword-mastery-2h', name: '2H Sword Mastery', maxLevel: 10,
+    description: (lv) => `+${lv * 5} ATK when wielding a 2H sword`,
+    requires: [{ skillId: 'sword-mastery-1h', minLevel: 1 }],
+    getBonuses: (lv) => ({ attack: lv * 5 }),
+  },
+  'keen-eyes': {
+    id: 'keen-eyes', name: 'Keen Eyes', maxLevel: 10,
+    description: (lv) => `+${lv} DEX`,
+    requires: [],
+    getBonuses: (lv) => ({ dexterity: lv }),
+  },
+  'eagle-eyes': {
+    id: 'eagle-eyes', name: 'Eagle Eyes', maxLevel: 10,
+    description: (lv) => `+${lv} AGI`,
+    requires: [{ skillId: 'keen-eyes', minLevel: 1 }],
+    getBonuses: (lv) => ({ agility: lv }),
+  },
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type EquipSlot = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory'
+export type EquipSlot   = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory'
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
-export type TabId = 'map' | 'units' | 'inventory'
+export type TabId        = 'map' | 'units' | 'inventory'
+
+export interface Abilities {
+  strength: number; agility: number; dexterity: number; constitution: number
+}
+
+export interface DerivedStats {
+  attack: number; defense: number; magicAttack: number; magicDefense: number
+  attackSpeed: number; accuracy: number; dodge: number
+}
 
 export interface Unit {
-  id: string
-  name: string
-  level: number
-  exp: number
-  expToNext: number
-  age: number
-  health: number
-  class: string | null
-  proficiencies: string[]
-  stats: { attack: number; defense: number; specialAttack: number; specialDefense: number }
+  id: string; name: string; level: number; exp: number; expToNext: number
+  age: number; health: number; class: string | null; proficiencies: string[]
+  abilities: Abilities
+  abilityPoints: number
+  skillPoints: number
+  learnedSkills: Record<string, number>
   locationId: string | null
   equipment: Record<EquipSlot, string | null>
 }
 
-export interface Location {
-  id: string
-  name: string
-  description: string
-  traits: string[]
-}
+export interface Location { id: string; name: string; description: string; traits: string[] }
 
 export interface EquipmentItem {
-  id: string
-  name: string
-  category: ItemCategory
-  traits: string[]
+  id: string; name: string; category: ItemCategory; traits: string[]
   stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number }
   description?: string
 }
 
-export interface MiscItem {
-  id: string
-  name: string
-  quantity: number
-  description?: string
-}
+export interface MiscItem { id: string; name: string; quantity: number; description?: string }
+
+// ── Slot / category metadata ──────────────────────────────────────────────────
 
 export const SLOT_COMPATIBLE: Record<EquipSlot, ItemCategory[]> = {
-  mainHand: ['weapon-1h', 'weapon-2h'],
-  offHand:  ['weapon-1h', 'shield', 'accessory'],
-  tool:     ['tool'],
-  armor:    ['armor'],
-  accessory:['accessory'],
+  mainHand:  ['weapon-1h', 'weapon-2h'],
+  offHand:   ['weapon-1h', 'shield', 'accessory'],
+  tool:      ['tool'],
+  armor:     ['armor'],
+  accessory: ['accessory'],
 }
 
 export const SLOT_LABELS: Record<EquipSlot, string> = {
-  mainHand:  'Main Hand',
-  offHand:   'Off Hand',
-  tool:      'Tool',
-  armor:     'Armor',
-  accessory: 'Accessory',
+  mainHand: 'Main Hand', offHand: 'Off Hand', tool: 'Tool', armor: 'Armor', accessory: 'Accessory',
 }
 
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
-  'weapon-1h': '1H Weapon',
-  'weapon-2h': '2H Weapon',
-  tool:        'Tool',
-  shield:      'Shield',
-  armor:       'Armor',
-  accessory:   'Accessory',
+  'weapon-1h': '1H Weapon', 'weapon-2h': '2H Weapon',
+  tool: 'Tool', shield: 'Shield', armor: 'Armor', accessory: 'Accessory',
+}
+
+// ── Derived-stat helpers ──────────────────────────────────────────────────────
+
+function skillBonusTotal(unit: Unit): SkillBonuses {
+  const b: SkillBonuses = {}
+  for (const [id, lv] of Object.entries(unit.learnedSkills)) {
+    if (!lv) continue
+    const skill = SKILL_REGISTRY[id]; if (!skill) continue
+    for (const [k, v] of Object.entries(skill.getBonuses(lv)) as [keyof SkillBonuses, number][])
+      b[k] = (b[k] ?? 0) + v
+  }
+  return b
+}
+
+export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): DerivedStats {
+  const sb = skillBonusTotal(unit)
+  const str = unit.abilities.strength    + (sb.strength    ?? 0)
+  const agi = unit.abilities.agility     + (sb.agility     ?? 0)
+  const dex = unit.abilities.dexterity   + (sb.dexterity   ?? 0)
+  const con = unit.abilities.constitution + (sb.constitution ?? 0)
+
+  const eq = { atk: 0, def: 0, matk: 0, mdef: 0 }
+  for (const id of Object.values(unit.equipment)) {
+    const item = allEquipment.find((e) => e.id === id); if (!item) continue
+    eq.atk  += item.stats.attack        ?? 0
+    eq.def  += item.stats.defense       ?? 0
+    eq.matk += item.stats.specialAttack ?? 0
+    eq.mdef += item.stats.specialDefense ?? 0
+  }
+
+  return {
+    attack:      Math.max(1, Math.floor(str * 2)              + eq.atk  + (sb.attack      ?? 0)),
+    defense:     Math.max(1, Math.floor(con * 1.5)            + eq.def  + (sb.defense     ?? 0)),
+    magicAttack: Math.max(1, Math.floor(dex * 1.5)            + eq.matk + (sb.magicAttack ?? 0)),
+    magicDefense:Math.max(1, Math.floor(con + dex * 0.5)      + eq.mdef + (sb.magicDefense ?? 0)),
+    attackSpeed: Math.max(1, Math.floor(agi * 2)                        + (sb.attackSpeed  ?? 0)),
+    accuracy:    Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)         + (sb.accuracy     ?? 0)),
+    dodge:       Math.max(1, Math.floor(agi * 2   + dex * 0.5)         + (sb.dodge        ?? 0)),
+  }
+}
+
+export function abilityPointCost(current: number): number {
+  return Math.floor((current - 1) / 10) + 1
+}
+
+export function getAvailableSkills(unit: Unit) {
+  return Object.values(SKILL_REGISTRY).map((skill) => {
+    const current = unit.learnedSkills[skill.id] ?? 0
+    const prereqsMet = skill.requires.every((r) => (unit.learnedSkills[r.skillId] ?? 0) >= r.minLevel)
+    return { skill, current, prereqsMet, maxed: current >= skill.maxLevel }
+  })
+}
+
+export function getLearnedSkills(unit: Unit) {
+  return Object.values(SKILL_REGISTRY)
+    .filter((s) => (unit.learnedSkills[s.id] ?? 0) >= 1)
+    .map((skill) => ({ skill, current: unit.learnedSkills[skill.id]! }))
 }
 
 // ── Initial data ──────────────────────────────────────────────────────────────
 
 const LOCATIONS: Location[] = [
-  { id: 'kings-forest', name: "King's Forest", description: 'A dense royal forest rich with timber and game.', traits: ['forest', 'lumber', 'hunting'] },
+  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'] },
   { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'] },
-  { id: 'lake-arawok',  name: 'Lake Arawok', description: 'A vast freshwater lake, calm on the surface.', traits: ['water', 'fishing', 'calm'] },
-  { id: 'gray-hills',   name: 'Gray Hills', description: 'Rocky highlands rich with ore and ancient ruins.', traits: ['rocky', 'mining', 'ruins'] },
+  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'] },
+  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'] },
 ]
 
 const UNITS: Unit[] = [
-  { id: 'u1', name: 'Aldric',  level: 3, exp: 245, expToNext: 312, age: 24, health: 95,  class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], stats: { attack: 5, defense: 4, specialAttack: 1, specialDefense: 2 }, locationId: null,          equipment: { mainHand: 'eq-sword-1h',  offHand: 'eq-shield-wood', tool: null,         armor: 'eq-leather', accessory: null } },
-  { id: 'u2', name: 'Mira',    level: 2, exp:  80, expToNext: 180, age: 19, health: 100, class: null,       proficiencies: ['Tools'],                  stats: { attack: 2, defense: 2, specialAttack: 2, specialDefense: 2 }, locationId: 'kings-forest', equipment: { mainHand: null,           offHand: null,             tool: 'eq-handaxe', armor: null,         accessory: null } },
-  { id: 'u3', name: 'Theron',  level: 4, exp: 420, expToNext: 520, age: 31, health: 82,  class: 'Mage',     proficiencies: ['Staves', 'Wands'],        stats: { attack: 2, defense: 1, specialAttack: 8, specialDefense: 5 }, locationId: 'gray-hills',   equipment: { mainHand: 'eq-staff',     offHand: null,             tool: null,         armor: null,         accessory: null } },
-  { id: 'u4', name: 'Sera',    level: 1, exp:  20, expToNext: 100, age: 16, health: 100, class: null,       proficiencies: [],                         stats: { attack: 2, defense: 1, specialAttack: 1, specialDefense: 1 }, locationId: null,          equipment: { mainHand: null,           offHand: null,             tool: null,         armor: null,         accessory: null } },
-  { id: 'u5', name: 'Davan',   level: 2, exp: 120, expToNext: 180, age: 28, health: 67,  class: null,       proficiencies: ['Tools', 'Mining'],        stats: { attack: 3, defense: 2, specialAttack: 1, specialDefense: 2 }, locationId: null,          equipment: { mainHand: null,           offHand: null,             tool: 'eq-pickaxe', armor: null,         accessory: null } },
-  { id: 'u6', name: 'Lyra',    level: 5, exp: 750, expToNext: 800, age: 35, health: 90,  class: 'Rogue',    proficiencies: ['Daggers', 'Lockpicks'],   stats: { attack: 7, defense: 3, specialAttack: 4, specialDefense: 3 }, locationId: 'lake-arawok',  equipment: { mainHand: 'eq-shortsword',offHand: null,             tool: null,         armor: 'eq-leather', accessory: null } },
+  { id: 'u1', name: 'Aldric',  level: 3, exp: 245, expToNext: 312, age: 24, health: 95,  class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,           abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7 }, abilityPoints: 2, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 }, equipment: { mainHand: 'eq-sword-1h', offHand: 'eq-shield-wood', tool: null,         armor: 'eq-leather', accessory: null } },
+  { id: 'u2', name: 'Mira',    level: 2, exp:  80, expToNext: 180, age: 19, health: 100, class: null,       proficiencies: ['Tools'],                  locationId: 'kings-forest', abilities: { strength: 4, agility: 5, dexterity: 6, constitution: 4 }, abilityPoints: 0, skillPoints: 1, learnedSkills: {},                           equipment: { mainHand: null,           offHand: null,             tool: 'eq-handaxe', armor: null,         accessory: null } },
+  { id: 'u3', name: 'Theron',  level: 4, exp: 420, expToNext: 520, age: 31, health: 82,  class: 'Mage',     proficiencies: ['Staves', 'Wands'],        locationId: 'gray-hills',   abilities: { strength: 3, agility: 5, dexterity: 9, constitution: 4 }, abilityPoints: 1, skillPoints: 2, learnedSkills: { 'keen-eyes': 3 },          equipment: { mainHand: 'eq-staff',     offHand: null,             tool: null,         armor: null,         accessory: null } },
+  { id: 'u4', name: 'Sera',    level: 1, exp:  20, expToNext: 100, age: 16, health: 100, class: null,       proficiencies: [],                         locationId: null,           abilities: { strength: 3, agility: 3, dexterity: 3, constitution: 3 }, abilityPoints: 3, skillPoints: 1, learnedSkills: {},                           equipment: { mainHand: null,           offHand: null,             tool: null,         armor: null,         accessory: null } },
+  { id: 'u5', name: 'Davan',   level: 2, exp: 120, expToNext: 180, age: 28, health: 67,  class: null,       proficiencies: ['Tools', 'Mining'],        locationId: null,           abilities: { strength: 6, agility: 4, dexterity: 5, constitution: 6 }, abilityPoints: 0, skillPoints: 1, learnedSkills: {},                           equipment: { mainHand: null,           offHand: null,             tool: 'eq-pickaxe', armor: null,         accessory: null } },
+  { id: 'u6', name: 'Lyra',    level: 5, exp: 750, expToNext: 800, age: 35, health: 90,  class: 'Rogue',    proficiencies: ['Daggers', 'Lockpicks'],   locationId: 'lake-arawok',  abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5 }, abilityPoints: 2, skillPoints: 3, learnedSkills: { 'keen-eyes': 5 },          equipment: { mainHand: 'eq-shortsword',offHand: null,             tool: null,         armor: 'eq-leather', accessory: null } },
 ]
 
 const EQUIPMENT: EquipmentItem[] = [
-  { id: 'eq-handaxe',       name: 'Handaxe',          category: 'tool',      traits: ['tool', 'slashing', 'light'],             stats: {},                description: 'Good for gathering wood.' },
-  { id: 'eq-pickaxe',       name: 'Pickaxe',           category: 'tool',      traits: ['tool', 'piercing'],                      stats: {},                description: 'Essential for mining ore.' },
-  { id: 'eq-skinning-knife',name: 'Skinning Knife',    category: 'tool',      traits: ['tool', 'slashing', 'light'],             stats: { attack: 1 },    description: 'Sharp blade for preparing game.' },
-  { id: 'eq-lockpick',      name: 'Lockpick',          category: 'tool',      traits: ['tool', 'light'],                         stats: {},                description: 'Opens locks without a key.' },
-  { id: 'eq-sword-1h',      name: 'Iron Sword',        category: 'weapon-1h', traits: ['1h', 'slashing'],                        stats: { attack: 4 },    description: 'A reliable iron blade.' },
-  { id: 'eq-shortsword',    name: 'Shortsword',        category: 'weapon-1h', traits: ['1h', 'slashing', 'light'],               stats: { attack: 3 },    description: 'Light and fast.' },
-  { id: 'eq-wand',          name: 'Wand',              category: 'weapon-1h', traits: ['1h', 'light'],                           stats: { specialAttack: 4 }, description: 'Channels magical energy.' },
-  { id: 'eq-greatsword',    name: 'Greatsword',        category: 'weapon-2h', traits: ['2h', 'slashing', 'heavy'],               stats: { attack: 9 },    description: 'Massive two-handed blade. Locks off-hand.' },
-  { id: 'eq-staff',         name: 'Staff',             category: 'weapon-2h', traits: ['2h', 'bludgeoning'],                     stats: { specialAttack: 6 }, description: 'Two-handed magical focus. Locks off-hand.' },
-  { id: 'eq-shield-wood',   name: 'Wooden Shield',     category: 'shield',    traits: ['shield', 'bludgeoning', 'light'],        stats: { defense: 2 },   description: 'Basic wooden protection.' },
-  { id: 'eq-shield-iron',   name: 'Iron Shield',       category: 'shield',    traits: ['shield', 'bludgeoning', 'heavy'],        stats: { defense: 5 },   description: 'Solid iron shield.' },
-  { id: 'eq-leather',       name: 'Leather Armor',     category: 'armor',     traits: ['light'],                                 stats: { defense: 2 },   description: 'Light but sturdy protection.' },
-  { id: 'eq-chainmail',     name: 'Chain Mail',        category: 'armor',     traits: ['heavy'],                                 stats: { defense: 5 },   description: 'Linked iron rings.' },
+  { id: 'eq-handaxe',        name: 'Handaxe',        category: 'tool',      traits: ['tool', 'slashing', 'light'],        stats: {},               description: 'Good for gathering wood.' },
+  { id: 'eq-pickaxe',        name: 'Pickaxe',         category: 'tool',      traits: ['tool', 'piercing'],                 stats: {},               description: 'Essential for mining ore.' },
+  { id: 'eq-skinning-knife', name: 'Skinning Knife',  category: 'tool',      traits: ['tool', 'slashing', 'light'],        stats: { attack: 1 },    description: 'Sharp blade for preparing game.' },
+  { id: 'eq-lockpick',       name: 'Lockpick',        category: 'tool',      traits: ['tool', 'light'],                    stats: {},               description: 'Opens locks without a key.' },
+  { id: 'eq-sword-1h',       name: 'Iron Sword',      category: 'weapon-1h', traits: ['1h', 'slashing'],                   stats: { attack: 4 },    description: 'A reliable iron blade.' },
+  { id: 'eq-shortsword',     name: 'Shortsword',      category: 'weapon-1h', traits: ['1h', 'slashing', 'light'],          stats: { attack: 3 },    description: 'Light and fast.' },
+  { id: 'eq-wand',           name: 'Wand',            category: 'weapon-1h', traits: ['1h', 'light'],                      stats: { specialAttack: 4 }, description: 'Channels magical energy.' },
+  { id: 'eq-greatsword',     name: 'Greatsword',      category: 'weapon-2h', traits: ['2h', 'slashing', 'heavy'],          stats: { attack: 9 },    description: 'Massive two-handed blade. Locks off-hand.' },
+  { id: 'eq-staff',          name: 'Staff',           category: 'weapon-2h', traits: ['2h', 'bludgeoning'],                stats: { specialAttack: 6 }, description: 'Two-handed magical focus. Locks off-hand.' },
+  { id: 'eq-shield-wood',    name: 'Wooden Shield',   category: 'shield',    traits: ['shield', 'bludgeoning', 'light'],   stats: { defense: 2 },   description: 'Basic wooden protection.' },
+  { id: 'eq-shield-iron',    name: 'Iron Shield',     category: 'shield',    traits: ['shield', 'bludgeoning', 'heavy'],   stats: { defense: 5 },   description: 'Solid iron shield.' },
+  { id: 'eq-leather',        name: 'Leather Armor',   category: 'armor',     traits: ['light'],                            stats: { defense: 2 },   description: 'Light but sturdy protection.' },
+  { id: 'eq-chainmail',      name: 'Chain Mail',      category: 'armor',     traits: ['heavy'],                            stats: { defense: 5 },   description: 'Linked iron rings.' },
 ]
 
 const MISC: MiscItem[] = [
@@ -233,14 +284,9 @@ const MISC: MiscItem[] = [
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 interface GameState {
-  units: Unit[]
-  locations: Location[]
-  equipment: EquipmentItem[]
-  miscItems: MiscItem[]
-  activeTab: TabId
-  selectedUnitIds: string[]
-  expandedLocationIds: string[]
-  expandedUnitIds: string[]
+  units: Unit[]; locations: Location[]; equipment: EquipmentItem[]
+  miscItems: MiscItem[]; activeTab: TabId; selectedUnitIds: string[]
+  expandedLocationIds: string[]; expandedUnitIds: string[]
   equipContext: { unitId: string; slot: EquipSlot } | null
 
   setActiveTab: (tab: TabId) => void
@@ -252,26 +298,42 @@ interface GameState {
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
   openEquipFor: (unitId: string, slot: EquipSlot) => void
   closeEquipContext: () => void
+  spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
+  learnSkill: (unitId: string, skillId: string) => void
 }
 
 export const useGameStore = create<GameState>((set) => ({
-  units: UNITS,
-  locations: LOCATIONS,
-  equipment: EQUIPMENT,
-  miscItems: MISC,
-  activeTab: 'map',
-  selectedUnitIds: [],
-  expandedLocationIds: [],
-  expandedUnitIds: [],
-  equipContext: null,
+  units: UNITS, locations: LOCATIONS, equipment: EQUIPMENT, miscItems: MISC,
+  activeTab: 'map', selectedUnitIds: [], expandedLocationIds: [], expandedUnitIds: [], equipContext: null,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   toggleLocation: (id) => set((s) => ({ expandedLocationIds: s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id] })),
   toggleUnit: (id) => set((s) => ({ expandedUnitIds: s.expandedUnitIds.includes(id) ? s.expandedUnitIds.filter((x) => x !== id) : [...s.expandedUnitIds, id] })),
   toggleSelectUnit: (id) => set((s) => ({ selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id] })),
   clearSelection: () => set({ selectedUnitIds: [] }),
-  assignUnits: (unitIds, locationId) => set((s) => ({ units: s.units.map((u) => (unitIds.includes(u.id) ? { ...u, locationId } : u)), selectedUnitIds: [] })),
+  assignUnits: (unitIds, locationId) => set((s) => ({ units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId } : u), selectedUnitIds: [] })),
   equipItem: (unitId, slot, itemId) => set((s) => ({ units: s.units.map((u) => u.id === unitId ? { ...u, equipment: { ...u.equipment, [slot]: itemId } } : u) })),
   openEquipFor: (unitId, slot) => set({ equipContext: { unitId, slot }, activeTab: 'inventory' }),
   closeEquipContext: () => set({ equipContext: null }),
+
+  spendAbilityPoint: (unitId, ability) => set((s) => {
+    const unit = s.units.find((u) => u.id === unitId)
+    if (!unit) return s
+    const current = unit.abilities[ability]
+    if (current >= 99) return s
+    const cost = abilityPointCost(current)
+    if (unit.abilityPoints < cost) return s
+    return { units: s.units.map((u) => u.id === unitId ? { ...u, abilityPoints: u.abilityPoints - cost, abilities: { ...u.abilities, [ability]: current + 1 } } : u) }
+  }),
+
+  learnSkill: (unitId, skillId) => set((s) => {
+    const unit = s.units.find((u) => u.id === unitId)
+    if (!unit || unit.skillPoints < 1) return s
+    const skill = SKILL_REGISTRY[skillId]; if (!skill) return s
+    const current = unit.learnedSkills[skillId] ?? 0
+    if (current >= skill.maxLevel) return s
+    const prereqsMet = skill.requires.every((r) => (unit.learnedSkills[r.skillId] ?? 0) >= r.minLevel)
+    if (!prereqsMet) return s
+    return { units: s.units.map((u) => u.id === unitId ? { ...u, skillPoints: u.skillPoints - 1, learnedSkills: { ...u.learnedSkills, [skillId]: current + 1 } } : u) }
+  }),
 }))

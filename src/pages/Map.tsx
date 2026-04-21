@@ -108,9 +108,8 @@ function LocationSection({ location, units, selectedDragging }: {
         isOver ? 'border-game-primary bg-game-primary/5' : 'border-game-border',
       ].join(' ')}
     >
-      {/* Header — always visible */}
       <button
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
+        className="w-full flex items-center justify-between px-4 py-4 text-left"
         onClick={() => toggleLocation(location.id)}
       >
         <span className="font-semibold text-game-text">{location.name}</span>
@@ -124,23 +123,29 @@ function LocationSection({ location, units, selectedDragging }: {
         </div>
       </button>
 
-      {/* Unit strip — always visible, is the drop zone */}
-      <div className="flex flex-wrap gap-2 min-h-[40px] px-4 pb-3">
-        {units.map((u) => (
-          <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
-        ))}
-        {units.length === 0 && (
-          <span className="text-xs text-game-muted italic self-center">Drop units here</span>
-        )}
-      </div>
+      {units.length > 0 && !isExpanded && (
+        <div className="px-4 pb-3 flex flex-wrap gap-2">
+          {units.map((u) => (
+            <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
+          ))}
+        </div>
+      )}
 
-      {/* Expanded details — description, traits, future content */}
       {isExpanded && (
-        <div className="px-4 pb-4 pt-1 border-t border-game-border space-y-3">
-          <p className="text-game-text-dim text-sm">{location.description}</p>
+        <div className="px-4 pb-4 border-t border-game-border">
+          <p className="text-game-text-dim text-sm mt-3 mb-3">{location.description}</p>
           <TraitRow
             traits={location.traits.map((id) => TRAIT_REGISTRY[id]).filter(Boolean) as any}
+            className="mb-4"
           />
+          <div className="flex flex-wrap gap-2 min-h-[44px]">
+            {units.map((u) => (
+              <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
+            ))}
+            {units.length === 0 && (
+              <span className="text-xs text-game-muted italic">Drop units here</span>
+            )}
+          </div>
         </div>
       )}
     </div>

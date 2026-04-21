@@ -1,4 +1,9 @@
-import { useGameStore, type Unit, type EquipSlot, SLOT_LABELS, getUnitTraits } from '@/stores/useGameStore'
+import { useState } from 'react'
+import {
+  useGameStore, type Unit, type EquipSlot, type Abilities,
+  SLOT_LABELS, SKILL_REGISTRY, getUnitTraits, getDerivedStats,
+  getAvailableSkills, getLearnedSkills, abilityPointCost,
+} from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -19,7 +24,7 @@ function healthDot(hp: number)   { return hp >= 75 ? 'bg-game-green' : hp >= 40 
 // ── Equipment slot button ─────────────────────────────────────────────────────
 
 function EquipSlotBtn({ unit, slot }: { unit: Unit; slot: EquipSlot }) {
-  const equipment  = useGameStore((s) => s.equipment)
+  const equipment    = useGameStore((s) => s.equipment)
   const openEquipFor = useGameStore((s) => s.openEquipFor)
   const item = equipment.find((e) => e.id === unit.equipment[slot])
   const mainHandItem = equipment.find((e) => e.id === unit.equipment.mainHand)
@@ -43,17 +48,210 @@ function EquipSlotBtn({ unit, slot }: { unit: Unit; slot: EquipSlot }) {
   )
 }
 
+// ── Abilities section ─────────────────────────────────────────────────────────
+
+const ABILITY_LABELS: { key: keyof Abilities; label: string; color: string }[] = [
+  { key: 'strength',     label: 'STR', color: 'text-game-gold'  },
+  { key: 'agility',     label: 'AGI', color: 'text-game-green' },
+  { key: 'dexterity',   label: 'DEX', color: 'text-sky-400'    },
+  { key: 'constitution',label: 'CON', color: 'text-violet-400' },
+]
+
+function AbilitiesSection({ unit }: { unit: Unit }) {
+  const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase tracking-widest text-game-text-dim">Abilities</div>
+        {unit.abilityPoints > 0 && (
+          <span className="text-xs bg-game-primary/20 text-game-primary border border-game-primary/40 rounded-full px-2 py-0.5">
+            {unit.abilityPoints} pts
+          </span>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {ABILITY_LABELS.map(({ key, label, color }) => {
+          const val  = unit.abilities[key]
+          const cost = abilityPointCost(val)
+          const canSpend = unit.abilityPoints >= cost && val < 99
+          return (
+            <div key={key} className="flex items-center gap-2 bg-game-bg rounded-lg px-3 py-2">
+              <span className={`text-xs font-bold w-7 ${color}`}>{label}</span>
+              <span className="text-sm font-mono font-semibold text-game-text w-8">{val}</span>
+              <div className="flex-1" />
+              {canSpend && (
+                <span className="text-xs text-game-text-dim mr-1">{cost}pt</span>
+              )}
+              <button
+                disabled={!canSpend}
+                onClick={() => spendAbilityPoint(unit.id, key)}
+                className={[
+                  'w-6 h-6 rounded flex items-center justify-center text-sm font-bold transition-colors',
+                  canSpend
+                    ? 'bg-game-primary text-white hover:bg-game-primary/80 active:scale-95'
+                    : 'bg-game-border text-game-muted cursor-not-allowed opacity-40',
+                ].join(' ')}
+              >
+                +
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Derived stats grid ────────────────────────────────────────────────────────
+
+function DerivedStatsSection({ unit }: { unit: Unit }) {
+  const equipment  = useGameStore((s) => s.equipment)
+  const derived    = getDerivedStats(unit, equipment)
+
+  const stats = [
+    { label: 'ATK',   value: derived.attack,      color: 'text-game-gold'  },
+    { label: 'DEF',   value: derived.defense,     color: 'text-sky-400'    },
+    { label: 'M.ATK', value: derived.magicAttack,  color: 'text-game-accent'},
+    { label: 'M.DEF', value: derived.magicDefense, color: 'text-violet-400' },
+    { label: 'SPD',   value: derived.attackSpeed,  color: 'text-game-green' },
+    { label: 'ACC',   value: derived.accuracy,     color: 'text-orange-400' },
+    { label: 'DOD',   value: derived.dodge,        color: 'text-pink-400'   },
+  ]
+
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Combat</div>
+      <div className="grid grid-cols-4 gap-2">
+        {stats.slice(0, 4).map(({ label, value, color }) => (
+          <div key={label} className="bg-game-bg rounded-lg py-2.5 text-center">
+            <div className={`text-xl font-bold font-mono leading-none ${color}`}>{value}</div>
+            <div className="text-xs text-game-text-dim mt-1">{label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-2">
+        {stats.slice(4).map(({ label, value, color }) => (
+          <div key={label} className="bg-game-bg rounded-lg py-2.5 text-center">
+            <div className={`text-xl font-bold font-mono leading-none ${color}`}>{value}</div>
+            <div className="text-xs text-game-text-dim mt-1">{label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Skills section ────────────────────────────────────────────────────────────
+
+function SkillsSection({ unit }: { unit: Unit }) {
+  const [tab, setTab] = useState<'available' | 'learned'>('available')
+  const learnSkill = useGameStore((s) => s.learnSkill)
+  const available  = getAvailableSkills(unit)
+  const learned    = getLearnedSkills(unit)
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex gap-1">
+          {(['available', 'learned'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={[
+                'text-xs px-2.5 py-1 rounded-full border transition-colors capitalize',
+                tab === t
+                  ? 'border-game-primary bg-game-primary/20 text-game-primary'
+                  : 'border-game-border text-game-text-dim hover:border-game-primary/40',
+              ].join(' ')}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        {unit.skillPoints > 0 && (
+          <span className="text-xs bg-game-secondary/20 text-game-secondary border border-game-secondary/40 rounded-full px-2 py-0.5">
+            {unit.skillPoints} skill pts
+          </span>
+        )}
+      </div>
+
+      {tab === 'available' && (
+        <div className="space-y-2">
+          {available.map(({ skill, current, prereqsMet, maxed }) => {
+            const canLearn = prereqsMet && !maxed && unit.skillPoints >= 1
+            const nextLv = current + 1
+
+            return (
+              <div
+                key={skill.id}
+                className={[
+                  'bg-game-bg rounded-lg px-3 py-2.5 flex items-start gap-2',
+                  !prereqsMet ? 'opacity-50' : '',
+                ].join(' ')}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-sm font-medium text-game-text">{skill.name}</span>
+                    {current > 0 && (
+                      <span className="text-xs text-game-text-dim">Lv.{current}/{skill.maxLevel}</span>
+                    )}
+                    {maxed && (
+                      <span className="text-xs text-game-green">Max</span>
+                    )}
+                  </div>
+                  {prereqsMet ? (
+                    <div className="text-xs text-game-text-dim leading-snug">
+                      {maxed ? skill.description(current) : skill.description(nextLv)}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-game-muted italic leading-snug">
+                      Requires: {skill.requires.map((r) => `${SKILL_REGISTRY[r.skillId]?.name ?? r.skillId} Lv.${r.minLevel}`).join(', ')}
+                    </div>
+                  )}
+                </div>
+                <button
+                  disabled={!canLearn}
+                  onClick={() => learnSkill(unit.id, skill.id)}
+                  className={[
+                    'shrink-0 w-7 h-7 rounded flex items-center justify-center text-sm font-bold transition-colors mt-0.5',
+                    canLearn
+                      ? 'bg-game-secondary text-white hover:bg-game-secondary/80 active:scale-95'
+                      : 'bg-game-border text-game-muted cursor-not-allowed opacity-40',
+                  ].join(' ')}
+                >
+                  +
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {tab === 'learned' && (
+        <div className="space-y-2">
+          {learned.length === 0 && (
+            <p className="text-xs text-game-muted italic px-1">No skills learned yet.</p>
+          )}
+          {learned.map(({ skill, current }) => (
+            <div key={skill.id} className="bg-game-bg rounded-lg px-3 py-2.5">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-sm font-medium text-game-text">{skill.name}</span>
+                <span className="text-xs text-game-text-dim">Lv.{current}/{skill.maxLevel}</span>
+              </div>
+              <div className="text-xs text-game-text-dim leading-snug">{skill.description(current)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Expanded unit detail ──────────────────────────────────────────────────────
 
 function UnitDetail({ unit }: { unit: Unit }) {
   const traits = getUnitTraits(unit)
-
-  const combatStats = [
-    { label: 'ATK',    value: unit.stats.attack,        color: 'text-game-gold'  },
-    { label: 'DEF',    value: unit.stats.defense,       color: 'text-sky-400'    },
-    { label: 'SP.ATK', value: unit.stats.specialAttack, color: 'text-game-accent'},
-    { label: 'SP.DEF', value: unit.stats.specialDefense,color: 'text-violet-400' },
-  ]
 
   return (
     <div className="border-t border-game-border px-4 pb-5 pt-4 space-y-5">
@@ -90,23 +288,19 @@ function UnitDetail({ unit }: { unit: Unit }) {
         </div>
       </div>
 
-      {/* Traits (class + proficiencies) */}
+      {/* Traits */}
       {traits.length > 0 && <TraitRow traits={traits} />}
 
-      {/* Combat stats */}
-      <div>
-        <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Combat</div>
-        <div className="grid grid-cols-4 gap-2">
-          {combatStats.map(({ label, value, color }) => (
-            <div key={label} className="bg-game-bg rounded-lg py-2.5 text-center">
-              <div className={`text-xl font-bold font-mono leading-none ${color}`}>{value}</div>
-              <div className="text-xs text-game-text-dim mt-1">{label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* Abilities + spend buttons */}
+      <AbilitiesSection unit={unit} />
 
-      {/* Equipment — weapons row, then tool full-width, then armor+accessory */}
+      {/* Derived combat stats */}
+      <DerivedStatsSection unit={unit} />
+
+      {/* Skills */}
+      <SkillsSection unit={unit} />
+
+      {/* Equipment */}
       <div>
         <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Equipment</div>
         <div className="space-y-2">
@@ -163,6 +357,9 @@ function UnitRow({ unit }: { unit: Unit }) {
           )}
           {location && (
             <span className="text-xs text-game-accent bg-game-accent/10 px-1.5 py-0.5 rounded truncate max-w-[90px] shrink-0">{location.name}</span>
+          )}
+          {(unit.abilityPoints > 0 || unit.skillPoints > 0) && (
+            <span className="text-xs text-game-gold bg-game-gold/10 px-1.5 py-0.5 rounded shrink-0">!</span>
           )}
           <span className="ml-auto text-game-muted text-sm shrink-0">{isExpanded ? '▲' : '▼'}</span>
         </button>
