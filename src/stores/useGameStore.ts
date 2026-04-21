@@ -88,7 +88,7 @@ export function getItemTraits(item: EquipmentItem): Trait[] {
 export interface SkillBonuses {
   attack?: number; defense?: number; magicAttack?: number; magicDefense?: number
   attackSpeed?: number; accuracy?: number; dodge?: number
-  strength?: number; agility?: number; dexterity?: number; constitution?: number
+  strength?: number; agility?: number; dexterity?: number; constitution?: number; intelligence?: number
 }
 
 export interface SkillDef {
@@ -125,6 +125,18 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [{ skillId: 'keen-eyes', minLevel: 1 }],
     getBonuses: (lv) => ({ agility: lv }),
   },
+  'arcane-knowledge': {
+    id: 'arcane-knowledge', name: 'Arcane Knowledge', maxLevel: 10,
+    description: (lv) => `+${lv} INT`,
+    requires: [],
+    getBonuses: (lv) => ({ intelligence: lv }),
+  },
+  'spellweaving': {
+    id: 'spellweaving', name: 'Spellweaving', maxLevel: 10,
+    description: (lv) => `+${lv * 4} M.ATK`,
+    requires: [{ skillId: 'arcane-knowledge', minLevel: 1 }],
+    getBonuses: (lv) => ({ magicAttack: lv * 4 }),
+  },
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -134,7 +146,7 @@ export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armo
 export type TabId        = 'map' | 'units' | 'inventory'
 
 export interface Abilities {
-  strength: number; agility: number; dexterity: number; constitution: number
+  strength: number; agility: number; dexterity: number; constitution: number; intelligence: number
 }
 
 export interface DerivedStats {
@@ -196,29 +208,30 @@ function skillBonusTotal(unit: Unit): SkillBonuses {
 }
 
 export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): DerivedStats {
-  const sb = skillBonusTotal(unit)
-  const str = unit.abilities.strength    + (sb.strength    ?? 0)
-  const agi = unit.abilities.agility     + (sb.agility     ?? 0)
-  const dex = unit.abilities.dexterity   + (sb.dexterity   ?? 0)
+  const sb  = skillBonusTotal(unit)
+  const str = unit.abilities.strength     + (sb.strength     ?? 0)
+  const agi = unit.abilities.agility      + (sb.agility      ?? 0)
+  const dex = unit.abilities.dexterity    + (sb.dexterity    ?? 0)
   const con = unit.abilities.constitution + (sb.constitution ?? 0)
+  const int = unit.abilities.intelligence + (sb.intelligence ?? 0)
 
   const eq = { atk: 0, def: 0, matk: 0, mdef: 0 }
   for (const id of Object.values(unit.equipment)) {
     const item = allEquipment.find((e) => e.id === id); if (!item) continue
-    eq.atk  += item.stats.attack        ?? 0
-    eq.def  += item.stats.defense       ?? 0
-    eq.matk += item.stats.specialAttack ?? 0
+    eq.atk  += item.stats.attack         ?? 0
+    eq.def  += item.stats.defense        ?? 0
+    eq.matk += item.stats.specialAttack  ?? 0
     eq.mdef += item.stats.specialDefense ?? 0
   }
 
   return {
-    attack:      Math.max(1, Math.floor(str * 2)              + eq.atk  + (sb.attack      ?? 0)),
-    defense:     Math.max(1, Math.floor(con * 1.5)            + eq.def  + (sb.defense     ?? 0)),
-    magicAttack: Math.max(1, Math.floor(dex * 1.5)            + eq.matk + (sb.magicAttack ?? 0)),
-    magicDefense:Math.max(1, Math.floor(con + dex * 0.5)      + eq.mdef + (sb.magicDefense ?? 0)),
-    attackSpeed: Math.max(1, Math.floor(agi * 2)                        + (sb.attackSpeed  ?? 0)),
-    accuracy:    Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)         + (sb.accuracy     ?? 0)),
-    dodge:       Math.max(1, Math.floor(agi * 2   + dex * 0.5)         + (sb.dodge        ?? 0)),
+    attack:      Math.max(1, Math.floor(str * 2)               + eq.atk  + (sb.attack       ?? 0)),
+    defense:     Math.max(1, Math.floor(con * 1.5)             + eq.def  + (sb.defense      ?? 0)),
+    magicAttack: Math.max(1, Math.floor(int * 2 + dex * 0.5)  + eq.matk + (sb.magicAttack  ?? 0)),
+    magicDefense:Math.max(1, Math.floor(int * 0.5 + con)       + eq.mdef + (sb.magicDefense ?? 0)),
+    attackSpeed: Math.max(1, Math.floor(agi * 2)                          + (sb.attackSpeed  ?? 0)),
+    accuracy:    Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)           + (sb.accuracy     ?? 0)),
+    dodge:       Math.max(1, Math.floor(agi * 2   + dex * 0.5)           + (sb.dodge        ?? 0)),
   }
 }
 
@@ -250,12 +263,12 @@ const LOCATIONS: Location[] = [
 ]
 
 const UNITS: Unit[] = [
-  { id: 'u1', name: 'Aldric',  level: 3, exp: 245, expToNext: 312, age: 24, health: 95,  class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,           abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7 }, abilityPoints: 2, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 }, equipment: { mainHand: 'eq-sword-1h', offHand: 'eq-shield-wood', tool: null,         armor: 'eq-leather', accessory: null } },
-  { id: 'u2', name: 'Mira',    level: 2, exp:  80, expToNext: 180, age: 19, health: 100, class: null,       proficiencies: ['Tools'],                  locationId: 'kings-forest', abilities: { strength: 4, agility: 5, dexterity: 6, constitution: 4 }, abilityPoints: 0, skillPoints: 1, learnedSkills: {},                           equipment: { mainHand: null,           offHand: null,             tool: 'eq-handaxe', armor: null,         accessory: null } },
-  { id: 'u3', name: 'Theron',  level: 4, exp: 420, expToNext: 520, age: 31, health: 82,  class: 'Mage',     proficiencies: ['Staves', 'Wands'],        locationId: 'gray-hills',   abilities: { strength: 3, agility: 5, dexterity: 9, constitution: 4 }, abilityPoints: 1, skillPoints: 2, learnedSkills: { 'keen-eyes': 3 },          equipment: { mainHand: 'eq-staff',     offHand: null,             tool: null,         armor: null,         accessory: null } },
-  { id: 'u4', name: 'Sera',    level: 1, exp:  20, expToNext: 100, age: 16, health: 100, class: null,       proficiencies: [],                         locationId: null,           abilities: { strength: 3, agility: 3, dexterity: 3, constitution: 3 }, abilityPoints: 3, skillPoints: 1, learnedSkills: {},                           equipment: { mainHand: null,           offHand: null,             tool: null,         armor: null,         accessory: null } },
-  { id: 'u5', name: 'Davan',   level: 2, exp: 120, expToNext: 180, age: 28, health: 67,  class: null,       proficiencies: ['Tools', 'Mining'],        locationId: null,           abilities: { strength: 6, agility: 4, dexterity: 5, constitution: 6 }, abilityPoints: 0, skillPoints: 1, learnedSkills: {},                           equipment: { mainHand: null,           offHand: null,             tool: 'eq-pickaxe', armor: null,         accessory: null } },
-  { id: 'u6', name: 'Lyra',    level: 5, exp: 750, expToNext: 800, age: 35, health: 90,  class: 'Rogue',    proficiencies: ['Daggers', 'Lockpicks'],   locationId: 'lake-arawok',  abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5 }, abilityPoints: 2, skillPoints: 3, learnedSkills: { 'keen-eyes': 5 },          equipment: { mainHand: 'eq-shortsword',offHand: null,             tool: null,         armor: 'eq-leather', accessory: null } },
+  { id: 'u1', name: 'Aldric',  level: 3, exp: 245, expToNext: 312, age: 24, health: 95,  class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,           abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 }, abilityPoints: 2, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 }, equipment: { mainHand: 'eq-sword-1h', offHand: 'eq-shield-wood', tool: null,         armor: 'eq-leather', accessory: null } },
+  { id: 'u2', name: 'Mira',    level: 2, exp:  80, expToNext: 180, age: 19, health: 100, class: null,       proficiencies: ['Tools'],                  locationId: 'kings-forest', abilities: { strength: 4, agility: 5, dexterity: 6, constitution: 4, intelligence: 4 }, abilityPoints: 0, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: 'eq-handaxe', armor: null,         accessory: null } },
+  { id: 'u3', name: 'Theron',  level: 4, exp: 420, expToNext: 520, age: 31, health: 82,  class: 'Mage',     proficiencies: ['Staves', 'Wands'],        locationId: 'gray-hills',   abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 }, abilityPoints: 1, skillPoints: 2, learnedSkills: { 'arcane-knowledge': 3 },                  equipment: { mainHand: 'eq-staff',     offHand: null,             tool: null,         armor: null,         accessory: null } },
+  { id: 'u4', name: 'Sera',    level: 1, exp:  20, expToNext: 100, age: 16, health: 100, class: null,       proficiencies: [],                         locationId: null,           abilities: { strength: 3, agility: 3, dexterity: 3, constitution: 3, intelligence: 3 }, abilityPoints: 3, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: null,         armor: null,         accessory: null } },
+  { id: 'u5', name: 'Davan',   level: 2, exp: 120, expToNext: 180, age: 28, health: 67,  class: null,       proficiencies: ['Tools', 'Mining'],        locationId: null,           abilities: { strength: 6, agility: 4, dexterity: 5, constitution: 6, intelligence: 3 }, abilityPoints: 0, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: 'eq-pickaxe', armor: null,         accessory: null } },
+  { id: 'u6', name: 'Lyra',    level: 5, exp: 750, expToNext: 800, age: 35, health: 90,  class: 'Rogue',    proficiencies: ['Daggers', 'Lockpicks'],   locationId: 'lake-arawok',  abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5, intelligence: 5 }, abilityPoints: 2, skillPoints: 3, learnedSkills: { 'keen-eyes': 5 },                         equipment: { mainHand: 'eq-shortsword',offHand: null,             tool: null,         armor: 'eq-leather', accessory: null } },
 ]
 
 const EQUIPMENT: EquipmentItem[] = [
