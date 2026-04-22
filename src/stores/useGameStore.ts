@@ -394,8 +394,18 @@ interface GameState {
   ticks: number                                      // total real-second ticks elapsed
   encounterProgress: Record<string, number[]>        // locationId → per-slot progress (0..1)
   monsterDefeated: Record<string, number>            // monsterId → total defeat count
+  lastTickAt: number                                 // Date.now() of the last processed tick
+
+  offlineSummary: {
+    seconds: number
+    goldEarned: number
+    monstersDefeated: number
+    expEarned: number
+  } | null
 
   tick: () => void
+  batchTick: (n: number) => void
+  dismissOfflineSummary: () => void
   setActiveTab: (tab: TabId) => void
   toggleLocation: (id: string) => void
   toggleUnit: (id: string) => void
@@ -426,6 +436,13 @@ export const useGameStore = create<GameState>((set) => ({
     'gray-hills':   [0, 0],
   },
   monsterDefeated: {},
+  lastTickAt: Date.now(),
+  offlineSummary: null,
+
+  // ── Shared encounter calculation ─────────────────────────────────────────────
+  // Returns updated encounterProgress, monsterDefeated, expGained, goldEarned
+  // for n ticks. visualHold: when true, caps progress at 1 (for smooth bars)
+  // instead of immediately resetting (used for single real-time ticks).
 
   tick: () => set((s) => {
     const newTicks   = s.ticks + 1
@@ -482,8 +499,84 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounterProgress, monsterDefeated, miscItems }
+    return { ticks: newTicks, units, encounterProgress, monsterDefeated, miscItems, lastTickAt: Date.now() }
   }),
+
+  batchTick: (n) => set((s) => {
+    if (n <= 0) return s
+
+    const newTicks    = s.ticks + n
+    const oldYear     = Math.floor(s.ticks / TICKS_PER_YEAR)
+    const newYear     = Math.floor(newTicks / TICKS_PER_YEAR)
+    const yearsPassed = newYear - oldYear
+
+    const encounterProgress: Record<string, number[]> = {}
+    const monsterDefeated = { ...s.monsterDefeated }
+    const expGained: Record<string, number> = {}
+    let goldEarned  = 0
+    let totalDefeats = 0
+
+    for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
+      const locationUnits = s.units.filter((u) => u.locationId === locationId)
+      const prevProgress  = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
+
+      if (locationUnits.length === 0) {
+        encounterProgress[locationId] = prevProgress
+        continue
+      }
+
+      const totalDPS = locationUnits.reduce(
+        (sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0,
+      )
+
+      encounterProgress[locationId] = prevProgress.map((prog, i) => {
+        const monster = MONSTER_REGISTRY[monsterSlots[i]]
+        if (!monster) return prog
+
+        const hp          = (monster.stats.attack + monster.stats.defense) * 3
+        const seconds     = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
+        // Treat "held at 1" from the last real-time tick as 0 for batch math
+        const effectiveProg = prog >= 1 ? 0 : prog
+        const combined    = effectiveProg + n / seconds
+        const completions = Math.floor(combined)
+        const remaining   = combined - completions   // 0..1 remainder
+
+        if (completions > 0) {
+          monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + completions
+          expGained[locationId]        = (expGained[locationId] ?? 0) + completions
+          goldEarned   += completions
+          totalDefeats += completions
+        }
+        return remaining
+      })
+    }
+
+    const anyExpGained = Object.keys(expGained).length > 0
+    const totalExpEarned = Object.values(expGained).reduce((a, b) => a + b, 0)
+
+    let units = s.units
+    if (yearsPassed > 0 || anyExpGained) {
+      units = s.units.map((u) => {
+        let next = yearsPassed > 0 ? { ...u, age: u.age + yearsPassed } : u
+        const exp = u.locationId ? (expGained[u.locationId] ?? 0) : 0
+        if (exp > 0) next = { ...next, exp: next.exp + exp }
+        return next
+      })
+    }
+
+    const miscItems = goldEarned > 0
+      ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
+      : s.miscItems
+
+    // Show summary for meaningful catch-ups (≥10s away)
+    const offlineSummary = n >= 10
+      ? { seconds: n, goldEarned, monstersDefeated: totalDefeats, expEarned: totalExpEarned }
+      : s.offlineSummary
+
+    return { ticks: newTicks, units, encounterProgress, monsterDefeated, miscItems, lastTickAt: Date.now(), offlineSummary }
+  }),
+
+  dismissOfflineSummary: () => set({ offlineSummary: null }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   toggleLocation: (id) => set((s) => ({ expandedLocationIds: s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id] })),
