@@ -151,8 +151,8 @@ export const SEASONS_PER_YEAR = 4
 export const TICKS_PER_SEASON = TICKS_PER_DAY * DAYS_PER_SEASON
 export const TICKS_PER_YEAR   = TICKS_PER_SEASON * SEASONS_PER_YEAR
 export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as const
-export const RECOVERY_TICKS   = 30   // ticks of KO countdown before regen starts
-const        REGEN_RATE       = 1    // HP% per tick when not in active combat
+export const RECOVERY_TICKS   = 10   // ticks of KO countdown before regen starts
+const        REGEN_RATE       = 5    // HP% per tick while recovering or idle
 
 export function ticksToCalendar(ticks: number) {
   const tickOfDay   = ticks % TICKS_PER_DAY
@@ -434,13 +434,13 @@ export const useGameStore = create<GameState>((set) => ({
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
   equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
-  locationFamiliarity:    { 'kings-forest': 100, 'duskwood': 0, 'lake-arawok': 50, 'gray-hills': 75 },
-  locationMonstersSeen:   { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': [], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
-  monsterSeen:            { wolf: 15, 'forest-sprite': 3, poacher: 1, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
-  activeEncounters:       { 'kings-forest': ['wolf', 'wolf'], 'gray-hills': ['rock-crab', 'stone-golem'] },
+  locationFamiliarity:    { 'kings-forest': 100, 'duskwood': 75, 'lake-arawok': 50, 'gray-hills': 75 },
+  locationMonstersSeen:   { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': ['shadow-wolf'], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
+  monsterSeen:            { wolf: 15, 'forest-sprite': 3, poacher: 1, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
+  activeEncounters:       { 'kings-forest': ['wolf', 'forest-sprite'], 'duskwood': ['shadow-wolf', 'shadow-wolf'], 'lake-arawok': ['giant-frog', 'giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
 
   ticks: 0,
-  encounterProgress: { 'kings-forest': [0, 0], 'gray-hills': [0, 0] },
+  encounterProgress: { 'kings-forest': [0, 0], 'duskwood': [0, 0], 'lake-arawok': [0, 0], 'gray-hills': [0, 0] },
   encounterTargets:  {},
   monsterDefeated: {},
   lastTickAt: Date.now(),
@@ -502,6 +502,7 @@ export const useGameStore = create<GameState>((set) => ({
       let { health, recoveryTicksLeft } = u
       if (recoveryTicksLeft > 0) {
         recoveryTicksLeft--
+        health = Math.min(100, health + REGEN_RATE)
       } else if (health > 0) {
         const dmg = hpDamage[u.id] ?? 0
         health = Math.floor(health - dmg)
@@ -586,9 +587,8 @@ export const useGameStore = create<GameState>((set) => ({
       let { health, recoveryTicksLeft } = u
 
       if (recoveryTicksLeft > 0) {
-        const regenTicks  = Math.max(0, n - recoveryTicksLeft)
         recoveryTicksLeft = Math.max(0, recoveryTicksLeft - n)
-        health            = Math.min(100, health + regenTicks * REGEN_RATE)
+        health            = Math.min(100, health + n * REGEN_RATE)  // regen the full period (during and after recovery)
       } else if (inCombat.has(u.id)) {
         const rate         = damageRates[u.id] ?? 0
         const ticksToDeath = rate > 0 ? health / rate : Infinity
