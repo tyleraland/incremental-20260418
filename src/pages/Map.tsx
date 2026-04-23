@@ -23,8 +23,8 @@ function hpBarColor(health: number) {
   return 'bg-red-500'
 }
 
-function UnitRect({ unit, overlay = false, attackerNames = [] }: {
-  unit: Unit; overlay?: boolean; attackerNames?: string[]
+function UnitRect({ unit, overlay = false, targetMonsterName = null }: {
+  unit: Unit; overlay?: boolean; targetMonsterName?: string | null
 }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
@@ -60,8 +60,8 @@ function UnitRect({ unit, overlay = false, attackerNames = [] }: {
             )}
           </div>
           {isRecovering && <div className="text-[10px] text-purple-400 mt-0.5">KO</div>}
-          {!isRecovering && attackerNames.length > 0 && (
-            <div className="text-[10px] text-game-text-dim mt-0.5 truncate">← {attackerNames.join(', ')}</div>
+          {!isRecovering && targetMonsterName && (
+            <div className="text-[10px] text-game-text-dim mt-0.5 truncate">→ {targetMonsterName}</div>
           )}
         </>
       )}
@@ -73,11 +73,18 @@ function UnitRect({ unit, overlay = false, attackerNames = [] }: {
 
 function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragging?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: unit.id })
-  const targets  = useGameStore((s) => unit.locationId ? (s.encounterTargets[unit.locationId] ?? []) : [])
+  const allUnits = useGameStore((s) => s.units)
   const slots    = useGameStore((s) => unit.locationId ? (s.activeEncounters[unit.locationId] ?? []) : [])
-  const attackerNames = [...new Set(
-    targets.map((uid, i) => uid === unit.id ? MONSTER_REGISTRY[slots[i]]?.name : null).filter((n): n is string => !!n)
-  )]
+
+  const targetMonsterName = (() => {
+    if (!unit.locationId || slots.length === 0 || unit.health <= 0 || unit.recoveryTicksLeft > 0) return null
+    const alive = allUnits.filter((u) => u.locationId === unit.locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+    const idx   = alive.findIndex((u) => u.id === unit.id)
+    if (idx === -1) return null
+    const monsterId = slots[idx % slots.length]
+    return MONSTER_REGISTRY[monsterId]?.name ?? null
+  })()
+
   const style = {
     touchAction: 'none' as const,
     ...(transform ? { transform: CSS.Translate.toString(transform) } : {}),
@@ -91,7 +98,7 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
       {...attributes}
       className={isDragging || groupDragging ? 'opacity-30' : ''}
     >
-      <UnitRect unit={unit} attackerNames={attackerNames} />
+      <UnitRect unit={unit} targetMonsterName={targetMonsterName} />
     </div>
   )
 }
