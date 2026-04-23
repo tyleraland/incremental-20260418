@@ -144,7 +144,8 @@ function EquipContextView() {
 // ── Equipment section ─────────────────────────────────────────────────────────
 
 function EquipmentSection() {
-  const [expanded, setExpanded] = useState(true)
+  const expanded = useGameStore((s) => s.expandedInventorySections.includes('equipment'))
+  const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const equipment = useGameStore((s) => s.equipment)
 
   const categories: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'tool', 'shield', 'armor', 'accessory']
@@ -156,7 +157,7 @@ function EquipmentSection() {
 
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
-      <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => setExpanded((v) => !v)}>
+      <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => toggleInventorySection('equipment')}>
         <span className="font-semibold">Equipment</span>
         <span className="text-game-muted text-sm">{expanded ? '▲' : '▼'}</span>
       </button>
@@ -186,12 +187,13 @@ function EquipmentSection() {
 // ── Misc section ──────────────────────────────────────────────────────────────
 
 function MiscSection() {
-  const [expanded, setExpanded] = useState(true)
+  const expanded = useGameStore((s) => s.expandedInventorySections.includes('misc'))
+  const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const miscItems = useGameStore((s) => s.miscItems)
 
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
-      <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => setExpanded((v) => !v)}>
+      <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => toggleInventorySection('misc')}>
         <span className="font-semibold">Misc</span>
         <span className="text-game-muted text-sm">{expanded ? '▲' : '▼'}</span>
       </button>
@@ -213,7 +215,8 @@ function MiscSection() {
 // ── Crafting section ──────────────────────────────────────────────────────────
 
 function CraftingSection() {
-  const [expanded, setExpanded]       = useState(true)
+  const expanded = useGameStore((s) => s.expandedInventorySections.includes('crafting'))
+  const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
   const { miscItems, learnedRecipes, craft } = useGameStore((s) => ({
     miscItems: s.miscItems,
@@ -236,7 +239,7 @@ function CraftingSection() {
 
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
-      <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => setExpanded((v) => !v)}>
+      <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => toggleInventorySection('crafting')}>
         <span className="font-semibold">Crafting</span>
         <span className="text-game-muted text-sm">{expanded ? '▲' : '▼'}</span>
       </button>

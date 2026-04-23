@@ -386,7 +386,7 @@ const MISC: MiscItem[] = [
 interface GameState {
   units: Unit[]; locations: Location[]; equipment: EquipmentItem[]
   miscItems: MiscItem[]; activeTab: TabId; selectedUnitIds: string[]
-  expandedLocationIds: string[]; expandedUnitIds: string[]
+  expandedLocationIds: string[]; expandedUnitIds: string[]; expandedInventorySections: string[]
   equipContext: { unitId: string; slot: EquipSlot } | null
   learnedRecipes: string[]
   locationFamiliarity: Record<string, number>        // locationId → current (0..familiarityMax)
@@ -413,6 +413,7 @@ interface GameState {
   setActiveTab: (tab: TabId) => void
   toggleLocation: (id: string) => void
   toggleUnit: (id: string) => void
+  toggleInventorySection: (id: string) => void
   toggleSelectUnit: (id: string) => void
   clearSelection: () => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
@@ -428,8 +429,9 @@ interface GameState {
 export const useGameStore = create<GameState>((set) => ({
   units: UNITS, locations: LOCATIONS, equipment: EQUIPMENT, miscItems: MISC,
   activeTab: 'map', selectedUnitIds: [],
-  expandedLocationIds: (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds') ?? '[]') } catch { return [] } })(),
-  expandedUnitIds:     (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')     ?? '[]') } catch { return [] } })(),
+  expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
+  expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
+  expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
   equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
   locationFamiliarity:    { 'kings-forest': 100, 'duskwood': 0, 'lake-arawok': 50, 'gray-hills': 75 },
@@ -502,7 +504,7 @@ export const useGameStore = create<GameState>((set) => ({
         recoveryTicksLeft--
       } else if (health > 0) {
         const dmg = hpDamage[u.id] ?? 0
-        health -= dmg
+        health = Math.floor(health - dmg)
         if (dmg === 0 && health < 100) health = Math.min(100, health + REGEN_RATE)
         if (health <= 0) { health = 0; recoveryTicksLeft = RECOVERY_TICKS }
       } else {
@@ -591,7 +593,7 @@ export const useGameStore = create<GameState>((set) => ({
         const rate         = damageRates[u.id] ?? 0
         const ticksToDeath = rate > 0 ? health / rate : Infinity
         if (ticksToDeath >= n) {
-          health -= rate * n
+          health = Math.floor(health - rate * n)
         } else {
           const ticksAfterDeath = n - Math.floor(ticksToDeath)
           recoveryTicksLeft     = Math.max(0, RECOVERY_TICKS - ticksAfterDeath)
@@ -638,6 +640,11 @@ export const useGameStore = create<GameState>((set) => ({
     const next = s.expandedUnitIds.includes(id) ? s.expandedUnitIds.filter((x) => x !== id) : [...s.expandedUnitIds, id]
     localStorage.setItem('expandedUnitIds', JSON.stringify(next))
     return { expandedUnitIds: next }
+  }),
+  toggleInventorySection: (id) => set((s) => {
+    const next = s.expandedInventorySections.includes(id) ? s.expandedInventorySections.filter((x) => x !== id) : [...s.expandedInventorySections, id]
+    localStorage.setItem('expandedInventorySections', JSON.stringify(next))
+    return { expandedInventorySections: next }
   }),
   toggleSelectUnit: (id) => set((s) => ({ selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id] })),
   clearSelection: () => set({ selectedUnitIds: [] }),

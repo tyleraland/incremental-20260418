@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type Unit, type Location } from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
@@ -290,11 +290,17 @@ function LocationSection({ location, units, selectedDragging }: {
 
 // ── SelectionBar ──────────────────────────────────────────────────────────────
 
+function hpTextColor(hp: number) { return hp >= 75 ? 'text-game-green' : hp >= 40 ? 'text-game-gold' : 'text-red-400' }
+
 function SelectionBar() {
-  const { selectedUnitIds, expandedUnitIds, locations, assignUnits, clearSelection, setActiveTab, toggleUnit } = useGameStore()
+  const { selectedUnitIds, expandedUnitIds, locations, units, equipment, assignUnits, clearSelection, setActiveTab, toggleUnit } = useGameStore()
   const [open, setOpen] = useState(false)
 
   if (selectedUnitIds.length === 0) return null
+
+  const singleUnit = selectedUnitIds.length === 1 ? units.find((u) => u.id === selectedUnitIds[0]) ?? null : null
+  const derived    = singleUnit ? getDerivedStats(singleUnit, equipment) : null
+  const elements   = singleUnit ? getUnitTraits(singleUnit).filter((t) => t.category === 'element') : []
 
   const handleAssign = (locationId: string | null) => {
     assignUnits(selectedUnitIds, locationId)
@@ -310,52 +316,91 @@ function SelectionBar() {
 
   return (
     <div className="fixed bottom-4 inset-x-0 z-30 px-4 pointer-events-none">
-      <div className="pointer-events-auto bg-game-surface border border-game-primary rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl shadow-game-primary/30">
-        <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} selected</span>
-        {selectedUnitIds.length === 1 && (
-          <button
-            className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors"
-            onClick={handleViewUnit}
-          >
-            View ›
-          </button>
-        )}
-        <div className="relative">
-          <button
-            className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1"
-            onClick={() => setOpen((v) => !v)}
-          >
-            Move to <span className="text-xs opacity-70">▾</span>
-          </button>
-          {open && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-              <div className="absolute bottom-full mb-2 right-0 z-20 bg-game-surface border border-game-border rounded-xl overflow-hidden w-52 shadow-2xl">
-                <button
-                  className="w-full text-left px-4 py-3 text-sm text-game-text-dim hover:bg-white/5 transition-colors"
-                  onClick={() => handleAssign(null)}
-                >
-                  Unassigned
-                </button>
-                {locations.map((loc) => (
-                  <button
-                    key={loc.id}
-                    className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-t border-game-border/50"
-                    onClick={() => handleAssign(loc.id)}
-                  >
-                    {loc.name}
-                  </button>
+      <div className="pointer-events-auto space-y-2">
+
+        {singleUnit && derived && (
+          <div className="bg-game-surface border border-game-border rounded-xl p-3 shadow-2xl">
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div>
+                <span className="font-semibold text-game-text text-sm">{singleUnit.name}</span>
+                {singleUnit.class && (
+                  <span className="ml-2 text-xs text-game-text-dim px-1.5 py-0.5 rounded border border-game-border">{singleUnit.class}</span>
+                )}
+              </div>
+              <span className={`text-sm font-mono font-semibold ${hpTextColor(singleUnit.health)}`}>{singleUnit.health} HP</span>
+            </div>
+            <div className="w-full bg-game-border rounded-full h-1.5 mb-2">
+              <div
+                className={`h-1.5 rounded-full transition-all ${hpBarColor(singleUnit.health)}`}
+                style={{ width: `${singleUnit.health}%` }}
+              />
+            </div>
+            {elements.length > 0 && (
+              <div className="flex gap-1 mb-2">
+                {elements.map((t) => (
+                  <span key={t.id} className={`text-xs px-1.5 py-0.5 rounded border ${t.colorClass}`}>{t.label}</span>
                 ))}
               </div>
-            </>
+            )}
+            <div className="grid grid-cols-4 gap-1 text-xs">
+              {([['ATK', derived.attack], ['DEF', derived.defense], ['SPD', derived.attackSpeed], ['ACC', derived.accuracy]] as const).map(([label, val]) => (
+                <div key={label} className="text-center bg-game-border/30 rounded p-1">
+                  <div className="text-game-text-dim">{label}</div>
+                  <div className="font-semibold text-game-text">{Math.round(val as number)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="bg-game-surface border border-game-primary rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl shadow-game-primary/30">
+          <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} selected</span>
+          {selectedUnitIds.length === 1 && (
+            <button
+              className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors"
+              onClick={handleViewUnit}
+            >
+              View ›
+            </button>
           )}
+          <div className="relative">
+            <button
+              className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1"
+              onClick={() => setOpen((v) => !v)}
+            >
+              Move to <span className="text-xs opacity-70">▾</span>
+            </button>
+            {open && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+                <div className="absolute bottom-full mb-2 right-0 z-20 bg-game-surface border border-game-border rounded-xl overflow-hidden w-52 shadow-2xl">
+                  <button
+                    className="w-full text-left px-4 py-3 text-sm text-game-text-dim hover:bg-white/5 transition-colors"
+                    onClick={() => handleAssign(null)}
+                  >
+                    Unassigned
+                  </button>
+                  {locations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-t border-game-border/50"
+                      onClick={() => handleAssign(loc.id)}
+                    >
+                      {loc.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-game-text-dim hover:text-game-text hover:bg-white/5 transition-colors"
+            onClick={clearSelection}
+          >
+            ✕
+          </button>
         </div>
-        <button
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-game-text-dim hover:text-game-text hover:bg-white/5 transition-colors"
-          onClick={clearSelection}
-        >
-          ✕
-        </button>
+
       </div>
     </div>
   )
