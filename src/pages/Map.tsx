@@ -171,8 +171,8 @@ function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: 
                 <div key={i}>
                   <div className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
                     <div
-                      className="bg-game-green h-1.5 rounded-full"
-                      style={{ width: `${prog * 100}%`, transition: prog === 0 ? 'none' : 'width 0.7s linear' }}
+                      className="bg-red-500 h-1.5 rounded-full"
+                      style={{ width: `${(1 - prog) * 100}%`, transition: prog === 0 ? 'none' : 'width 0.7s linear' }}
                     />
                   </div>
                   {targetName && (
