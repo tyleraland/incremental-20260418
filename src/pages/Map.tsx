@@ -11,31 +11,60 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, type Unit, type Location } from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
 // ── UnitRect ──────────────────────────────────────────────────────────────────
 
-function UnitRect({ unit, overlay = false }: { unit: Unit; overlay?: boolean }) {
-  const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)
+function hpBarColor(health: number) {
+  if (health > 60) return 'bg-game-green'
+  if (health > 30) return 'bg-game-gold'
+  return 'bg-red-500'
+}
+
+function UnitRect({ unit, overlay = false, attackerNames = [] }: {
+  unit: Unit; overlay?: boolean; attackerNames?: string[]
+}) {
+  const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
-  const isSelected = selectedUnitIds.includes(unit.id)
+  const isSelected       = selectedUnitIds.includes(unit.id)
+  const isRecovering     = unit.recoveryTicksLeft > 0
+  const hpPct            = Math.max(0, Math.min(100, unit.health))
+  const recoverPct       = isRecovering ? ((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
 
   return (
     <div
       onClick={(e) => { e.stopPropagation(); toggleSelectUnit(unit.id) }}
       className={[
-        'px-3 py-2 rounded-lg border select-none cursor-pointer min-w-[72px] text-center',
+        'px-3 py-2 rounded-lg border select-none cursor-pointer min-w-[72px]',
         'transition-colors duration-100',
         overlay ? 'shadow-xl rotate-2 scale-105' : '',
+        unit.health <= 0 ? 'opacity-60' : '',
         isSelected
           ? 'border-game-primary bg-game-primary/25 text-white'
           : 'border-game-border bg-game-surface text-game-text hover:border-game-primary/50',
       ].join(' ')}
     >
-      <div className="text-sm font-semibold leading-tight">{unit.name}</div>
-      <div className="text-xs text-game-text-dim">Lv.{unit.level}</div>
+      <div className="flex items-center justify-between gap-1 mb-1.5">
+        <div className="text-sm font-semibold leading-tight">{unit.name}</div>
+        <div className="text-xs text-game-text-dim shrink-0">Lv.{unit.level}</div>
+      </div>
+      {!overlay && (
+        <>
+          <div className="w-full bg-game-border/60 rounded-full h-1.5 overflow-hidden">
+            {isRecovering ? (
+              <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${recoverPct}%`, transition: 'none' }} />
+            ) : (
+              <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'width 0.7s linear' }} />
+            )}
+          </div>
+          {isRecovering && <div className="text-[10px] text-purple-400 mt-0.5">KO</div>}
+          {!isRecovering && attackerNames.length > 0 && (
+            <div className="text-[10px] text-game-text-dim mt-0.5 truncate">← {attackerNames.join(', ')}</div>
+          )}
+        </>
+      )}
     </div>
   )
 }
@@ -44,6 +73,11 @@ function UnitRect({ unit, overlay = false }: { unit: Unit; overlay?: boolean }) 
 
 function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragging?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: unit.id })
+  const targets  = useGameStore((s) => unit.locationId ? (s.encounterTargets[unit.locationId] ?? []) : [])
+  const slots    = useGameStore((s) => unit.locationId ? (s.activeEncounters[unit.locationId] ?? []) : [])
+  const attackerNames = [...new Set(
+    targets.map((uid, i) => uid === unit.id ? MONSTER_REGISTRY[slots[i]]?.name : null).filter((n): n is string => !!n)
+  )]
   const style = {
     touchAction: 'none' as const,
     ...(transform ? { transform: CSS.Translate.toString(transform) } : {}),
@@ -57,7 +91,7 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
       {...attributes}
       className={isDragging || groupDragging ? 'opacity-30' : ''}
     >
-      <UnitRect unit={unit} />
+      <UnitRect unit={unit} attackerNames={attackerNames} />
     </div>
   )
 }
@@ -108,20 +142,20 @@ function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: 
   const seenCount         = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
   const activeSlots       = useGameStore((s) => s.activeEncounters[locationId] ?? [])
   const encounterProgress = useGameStore((s) => s.encounterProgress[locationId] ?? [])
-  const dotCount          = activeSlots.filter((id) => id === monsterId).length
+  const encounterTargets  = useGameStore((s) => s.encounterTargets[locationId] ?? [])
+  const units             = useGameStore((s) => s.units)
   const monster           = MONSTER_REGISTRY[monsterId]
 
-  const slotProgresses = activeSlots
-    .map((id, i) => ({ id, prog: encounterProgress[i] ?? 0 }))
+  const slotData = activeSlots
+    .map((id, i) => ({ id, prog: encounterProgress[i] ?? 0, targetId: encounterTargets[i] ?? null }))
     .filter(({ id }) => id === monsterId)
-    .map(({ prog }) => prog)
 
   if (!monster) return null
 
   return (
     <>
       <div className="flex flex-col items-center gap-1" style={{ minWidth: 72 }}>
-        <EncounterDots count={dotCount} />
+        <EncounterDots count={slotData.length} />
         <button
           onClick={() => setCodexOpen(true)}
           className="w-full px-3 py-2 rounded-lg border border-game-border bg-game-bg text-center hover:border-game-accent/60 hover:bg-game-accent/5 transition-colors"
@@ -129,19 +163,24 @@ function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: 
           <div className="text-sm font-semibold text-game-text">{monster.name}</div>
           <div className="text-xs text-game-accent">Lv.{monster.level}</div>
         </button>
-        {slotProgresses.length > 0 && (
-          <div className="w-full space-y-0.5">
-            {slotProgresses.map((prog, i) => (
-              <div key={i} className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="bg-game-green h-1.5 rounded-full"
-                  style={{
-                    width: `${prog * 100}%`,
-                    transition: prog === 0 ? 'none' : 'width 0.7s linear',
-                  }}
-                />
-              </div>
-            ))}
+        {slotData.length > 0 && (
+          <div className="w-full space-y-1">
+            {slotData.map(({ prog, targetId }, i) => {
+              const targetName = targetId ? units.find((u) => u.id === targetId)?.name : null
+              return (
+                <div key={i}>
+                  <div className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
+                    <div
+                      className="bg-game-green h-1.5 rounded-full"
+                      style={{ width: `${prog * 100}%`, transition: prog === 0 ? 'none' : 'width 0.7s linear' }}
+                    />
+                  </div>
+                  {targetName && (
+                    <div className="text-[10px] text-game-text-dim text-right mt-0.5">→ {targetName}</div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -183,41 +222,6 @@ function MonsterList({ location }: { location: Location }) {
   )
 }
 
-// ── Difficulty indicator ──────────────────────────────────────────────────────
-
-function locationEffectiveness(units: Unit[], location: Location, allEquipment: Parameters<typeof getDerivedStats>[1]): number | null {
-  if (units.length === 0) return null
-  const monsters = location.monsterIds.map((id) => MONSTER_REGISTRY[id]).filter(Boolean)
-  if (monsters.length === 0) return null
-
-  const avgUnitAtk = units.reduce((s, u) => s + getDerivedStats(u, allEquipment).attack, 0) / units.length
-  const avgUnitDef = units.reduce((s, u) => s + getDerivedStats(u, allEquipment).defense, 0) / units.length
-  const avgMonAtk  = monsters.reduce((s, m) => s + m!.stats.attack,  0) / monsters.length
-  const avgMonDef  = monsters.reduce((s, m) => s + m!.stats.defense, 0) / monsters.length
-
-  return Math.round(((avgUnitAtk / avgMonDef + avgUnitDef / avgMonAtk) / 2) * 100)
-}
-
-type DifficultyTier = { label: string; pill: string }
-
-function difficultyTier(pct: number): DifficultyTier {
-  if (pct < 25)  return { label: 'Impossible', pill: 'bg-game-border text-game-muted border-game-border' }
-  if (pct < 50)  return { label: 'V. Hard',    pill: 'bg-red-950 text-red-300 border-red-800/60' }
-  if (pct < 75)  return { label: 'Hard',       pill: 'bg-orange-950 text-orange-300 border-orange-800/60' }
-  if (pct < 100) return { label: 'Tough',      pill: 'bg-yellow-950 text-yellow-300 border-yellow-800/60' }
-  if (pct < 125) return { label: 'Effective',  pill: 'bg-emerald-950 text-emerald-300 border-emerald-800/60' }
-  return               { label: 'Easy',        pill: 'bg-sky-950 text-sky-300 border-sky-800/60' }
-}
-
-function DifficultyPill({ pct }: { pct: number }) {
-  const { label, pill } = difficultyTier(pct)
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${pill}`}>
-      {label}
-    </span>
-  )
-}
-
 // ── LocationSection ───────────────────────────────────────────────────────────
 
 function LocationSection({ location, units, selectedDragging }: {
@@ -226,10 +230,8 @@ function LocationSection({ location, units, selectedDragging }: {
   selectedDragging: string[]
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
-  const isExpanded   = useGameStore((s) => s.expandedLocationIds.includes(location.id))
+  const isExpanded     = useGameStore((s) => s.expandedLocationIds.includes(location.id))
   const toggleLocation = useGameStore((s) => s.toggleLocation)
-  const allEquipment = useGameStore((s) => s.equipment)
-  const effectiveness = locationEffectiveness(units, location, allEquipment)
 
   return (
     <div
@@ -245,7 +247,6 @@ function LocationSection({ location, units, selectedDragging }: {
       >
         <span className="font-semibold text-game-text">{location.name}</span>
         <div className="flex items-center gap-2">
-          {effectiveness !== null && <DifficultyPill pct={effectiveness} />}
           {units.length > 0 && (
             <span className="text-xs text-game-text-dim bg-game-border rounded-full px-2 py-0.5">
               {units.length}

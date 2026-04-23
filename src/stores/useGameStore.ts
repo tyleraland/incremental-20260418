@@ -151,6 +151,8 @@ export const SEASONS_PER_YEAR = 4
 export const TICKS_PER_SEASON = TICKS_PER_DAY * DAYS_PER_SEASON
 export const TICKS_PER_YEAR   = TICKS_PER_SEASON * SEASONS_PER_YEAR
 export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as const
+export const RECOVERY_TICKS   = 30   // ticks of KO countdown before regen starts
+const        REGEN_RATE       = 1    // HP% per tick when not in active combat
 
 export function ticksToCalendar(ticks: number) {
   const tickOfDay   = ticks % TICKS_PER_DAY
@@ -180,6 +182,7 @@ export interface Unit {
   learnedSkills: Record<string, number>
   locationId: string | null
   equipment: Record<EquipSlot, string | null>
+  recoveryTicksLeft: number   // >0: KO countdown; 0: active or regenerating
 }
 
 export interface Location { id: string; name: string; description: string; traits: string[]; monsterIds: string[]; familiarityMax: number }
@@ -346,12 +349,12 @@ const LOCATIONS: Location[] = [
 ]
 
 const UNITS: Unit[] = [
-  { id: 'u1', name: 'Aldric',  level: 3, exp: 245, expToNext: 312, age: 24, health: 95,  class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,           abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 }, abilityPoints: 20, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 }, equipment: { mainHand: 'eq-sword-1h', offHand: 'eq-shield-wood', tool: null,         armor: 'eq-leather', accessory: null } },
-  { id: 'u2', name: 'Mira',    level: 2, exp:  80, expToNext: 180, age: 19, health: 100, class: null,       proficiencies: ['Tools'],                  locationId: 'kings-forest', abilities: { strength: 4, agility: 5, dexterity: 6, constitution: 4, intelligence: 4 }, abilityPoints: 15, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: 'eq-handaxe', armor: null,         accessory: null } },
-  { id: 'u3', name: 'Theron',  level: 4, exp: 420, expToNext: 520, age: 31, health: 82,  class: 'Mage',     proficiencies: ['Staves', 'Wands'],        locationId: 'gray-hills',   abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 }, abilityPoints: 25, skillPoints: 2, learnedSkills: { 'arcane-knowledge': 3 },                  equipment: { mainHand: 'eq-staff',     offHand: null,             tool: null,         armor: null,         accessory: null } },
-  { id: 'u4', name: 'Sera',    level: 1, exp:  20, expToNext: 100, age: 16, health: 100, class: null,       proficiencies: [],                         locationId: null,           abilities: { strength: 3, agility: 3, dexterity: 3, constitution: 3, intelligence: 3 }, abilityPoints: 30, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: null,         armor: null,         accessory: null } },
-  { id: 'u5', name: 'Davan',   level: 2, exp: 120, expToNext: 180, age: 28, health: 67,  class: null,       proficiencies: ['Tools', 'Mining'],        locationId: null,           abilities: { strength: 6, agility: 4, dexterity: 5, constitution: 6, intelligence: 3 }, abilityPoints: 18, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: 'eq-pickaxe', armor: null,         accessory: null } },
-  { id: 'u6', name: 'Lyra',    level: 5, exp: 750, expToNext: 800, age: 35, health: 90,  class: 'Rogue',    proficiencies: ['Daggers', 'Lockpicks'],   locationId: 'lake-arawok',  abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5, intelligence: 5 }, abilityPoints: 22, skillPoints: 3, learnedSkills: { 'keen-eyes': 5 },                         equipment: { mainHand: 'eq-shortsword',offHand: null,             tool: null,         armor: 'eq-leather', accessory: null } },
+  { id: 'u1', name: 'Aldric',  level: 3, exp: 245, expToNext: 312, age: 24, health: 95,  recoveryTicksLeft: 0, class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,           abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 }, abilityPoints: 20, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 }, equipment: { mainHand: 'eq-sword-1h', offHand: 'eq-shield-wood', tool: null,         armor: 'eq-leather', accessory: null } },
+  { id: 'u2', name: 'Mira',    level: 2, exp:  80, expToNext: 180, age: 19, health: 100, recoveryTicksLeft: 0, class: null,       proficiencies: ['Tools'],                  locationId: 'kings-forest', abilities: { strength: 4, agility: 5, dexterity: 6, constitution: 4, intelligence: 4 }, abilityPoints: 15, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: 'eq-handaxe', armor: null,         accessory: null } },
+  { id: 'u3', name: 'Theron',  level: 4, exp: 420, expToNext: 520, age: 31, health: 82,  recoveryTicksLeft: 0, class: 'Mage',     proficiencies: ['Staves', 'Wands'],        locationId: 'gray-hills',   abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 }, abilityPoints: 25, skillPoints: 2, learnedSkills: { 'arcane-knowledge': 3 },                  equipment: { mainHand: 'eq-staff',     offHand: null,             tool: null,         armor: null,         accessory: null } },
+  { id: 'u4', name: 'Sera',    level: 1, exp:  20, expToNext: 100, age: 16, health: 100, recoveryTicksLeft: 0, class: null,       proficiencies: [],                         locationId: null,           abilities: { strength: 3, agility: 3, dexterity: 3, constitution: 3, intelligence: 3 }, abilityPoints: 30, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: null,         armor: null,         accessory: null } },
+  { id: 'u5', name: 'Davan',   level: 2, exp: 120, expToNext: 180, age: 28, health: 67,  recoveryTicksLeft: 0, class: null,       proficiencies: ['Tools', 'Mining'],        locationId: null,           abilities: { strength: 6, agility: 4, dexterity: 5, constitution: 6, intelligence: 3 }, abilityPoints: 18, skillPoints: 1, learnedSkills: {},                                         equipment: { mainHand: null,           offHand: null,             tool: 'eq-pickaxe', armor: null,         accessory: null } },
+  { id: 'u6', name: 'Lyra',    level: 5, exp: 750, expToNext: 800, age: 35, health: 90,  recoveryTicksLeft: 0, class: 'Rogue',    proficiencies: ['Daggers', 'Lockpicks'],   locationId: 'lake-arawok',  abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5, intelligence: 5 }, abilityPoints: 22, skillPoints: 3, learnedSkills: { 'keen-eyes': 5 },                         equipment: { mainHand: 'eq-shortsword',offHand: null,             tool: null,         armor: 'eq-leather', accessory: null } },
 ]
 
 const EQUIPMENT: EquipmentItem[] = [
@@ -393,6 +396,7 @@ interface GameState {
 
   ticks: number                                      // total real-second ticks elapsed
   encounterProgress: Record<string, number[]>        // locationId → per-slot progress (0..1)
+  encounterTargets: Record<string, (string | null)[]> // locationId → per-slot targeted unitId
   monsterDefeated: Record<string, number>            // monsterId → total defeat count
   lastTickAt: number                                 // Date.now() of the last processed tick
 
@@ -431,149 +435,192 @@ export const useGameStore = create<GameState>((set) => ({
   activeEncounters:       { 'kings-forest': ['wolf', 'wolf'], 'gray-hills': ['rock-crab', 'stone-golem'] },
 
   ticks: 0,
-  encounterProgress: {
-    'kings-forest': [0, 0],
-    'gray-hills':   [0, 0],
-  },
+  encounterProgress: { 'kings-forest': [0, 0], 'gray-hills': [0, 0] },
+  encounterTargets:  {},
   monsterDefeated: {},
   lastTickAt: Date.now(),
   offlineSummary: null,
 
-  // ── Shared encounter calculation ─────────────────────────────────────────────
-  // Returns updated encounterProgress, monsterDefeated, expGained, goldEarned
-  // for n ticks. visualHold: when true, caps progress at 1 (for smooth bars)
-  // instead of immediately resetting (used for single real-time ticks).
-
   tick: () => set((s) => {
-    const newTicks   = s.ticks + 1
+    const newTicks    = s.ticks + 1
     const yearChanged = Math.floor(newTicks / TICKS_PER_YEAR) > Math.floor(s.ticks / TICKS_PER_YEAR)
 
-    const encounterProgress: Record<string, number[]> = {}
+    const encounterProgress: Record<string, number[]>           = {}
+    const encounterTargets:  Record<string, (string | null)[]>  = {}
     const monsterDefeated = { ...s.monsterDefeated }
     const expGained: Record<string, number> = {}
     let goldEarned = 0
+    const hpDamage: Record<string, number> = {}   // unitId → total damage this tick
 
     for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
-      const locationUnits = s.units.filter((u) => u.locationId === locationId)
-      const prevProgress  = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
+      const prevProgress = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
+      const aliveUnits   = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
 
-      if (locationUnits.length === 0) {
+      const targets: (string | null)[] = monsterSlots.map((_, i) =>
+        aliveUnits.length > 0 ? aliveUnits[i % aliveUnits.length].id : null,
+      )
+      encounterTargets[locationId] = targets
+
+      if (aliveUnits.length === 0) {
         encounterProgress[locationId] = prevProgress
         continue
       }
 
-      const totalDPS = locationUnits.reduce(
-        (sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0,
-      )
+      const totalDPS = aliveUnits.reduce((sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0)
+
+      for (let i = 0; i < monsterSlots.length; i++) {
+        const monster  = MONSTER_REGISTRY[monsterSlots[i]]
+        const targetId = targets[i]
+        if (!monster || !targetId) continue
+        const target   = s.units.find((u) => u.id === targetId)
+        if (!target) continue
+        const def = getDerivedStats(target, s.equipment).defense
+        hpDamage[targetId] = (hpDamage[targetId] ?? 0) + (monster.stats.attack / Math.max(def, 1))
+      }
 
       encounterProgress[locationId] = prevProgress.map((prog, i) => {
         const monster = MONSTER_REGISTRY[monsterSlots[i]]
         if (!monster) return prog
-        // If bar was at 100% last tick, apply rewards now and reset to 0
         if (prog >= 1) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + 1
           expGained[locationId]       = (expGained[locationId] ?? 0) + 1
           goldEarned++
           return 0
         }
-        // monsterHP drives base duration; clamp between 1s and 300s
         const hp      = (monster.stats.attack + monster.stats.defense) * 3
         const seconds = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
-        const next    = prog + 1 / seconds
-        // Return exactly 1 so the bar visually reaches 100%; reset fires next tick
-        return Math.min(next, 1)
+        return Math.min(prog + 1 / seconds, 1)
       })
     }
 
-    const anyExpGained = Object.keys(expGained).length > 0
-    const units = (yearChanged || anyExpGained)
-      ? s.units.map((u) => {
-          let next = yearChanged ? { ...u, age: u.age + 1 } : u
-          const exp = u.locationId ? (expGained[u.locationId] ?? 0) : 0
-          if (exp > 0) next = { ...next, exp: next.exp + exp }
-          return next
-        })
-      : s.units
+    const units = s.units.map((u) => {
+      let { health, recoveryTicksLeft } = u
+      if (recoveryTicksLeft > 0) {
+        recoveryTicksLeft--
+      } else if (health > 0) {
+        const dmg = hpDamage[u.id] ?? 0
+        health -= dmg
+        if (dmg === 0 && health < 100) health = Math.min(100, health + REGEN_RATE)
+        if (health <= 0) { health = 0; recoveryTicksLeft = RECOVERY_TICKS }
+      } else {
+        health = Math.min(100, health + REGEN_RATE)
+      }
+      const aged = yearChanged ? { age: u.age + 1 } : {}
+      const exp  = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
+      return { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + exp }
+    })
 
     const miscItems = goldEarned > 0
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounterProgress, monsterDefeated, miscItems, lastTickAt: Date.now() }
+    return { ticks: newTicks, units, encounterProgress, encounterTargets, monsterDefeated, miscItems, lastTickAt: Date.now() }
   }),
 
   batchTick: (n) => set((s) => {
     if (n <= 0) return s
 
     const newTicks    = s.ticks + n
-    const oldYear     = Math.floor(s.ticks / TICKS_PER_YEAR)
-    const newYear     = Math.floor(newTicks / TICKS_PER_YEAR)
-    const yearsPassed = newYear - oldYear
+    const yearsPassed = Math.floor(newTicks / TICKS_PER_YEAR) - Math.floor(s.ticks / TICKS_PER_YEAR)
 
     const encounterProgress: Record<string, number[]> = {}
     const monsterDefeated = { ...s.monsterDefeated }
     const expGained: Record<string, number> = {}
-    let goldEarned  = 0
+    let goldEarned   = 0
     let totalDefeats = 0
 
-    for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
-      const locationUnits = s.units.filter((u) => u.locationId === locationId)
-      const prevProgress  = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
+    // Damage rates and targeting based on alive status at batch start
+    const damageRates: Record<string, number> = {}
+    const inCombat    = new Set<string>()
 
-      if (locationUnits.length === 0) {
+    for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
+      const prevProgress = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
+      const aliveUnits   = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+
+      if (aliveUnits.length === 0) {
         encounterProgress[locationId] = prevProgress
         continue
       }
 
-      const totalDPS = locationUnits.reduce(
-        (sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0,
-      )
+      const targets  = monsterSlots.map((_, i) => aliveUnits[i % aliveUnits.length])
+      const totalDPS = aliveUnits.reduce((sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0)
+
+      for (let i = 0; i < monsterSlots.length; i++) {
+        const monster = MONSTER_REGISTRY[monsterSlots[i]]
+        const target  = targets[i]
+        if (!monster || !target) continue
+        const def = getDerivedStats(target, s.equipment).defense
+        damageRates[target.id] = (damageRates[target.id] ?? 0) + (monster.stats.attack / Math.max(def, 1))
+        inCombat.add(target.id)
+      }
 
       encounterProgress[locationId] = prevProgress.map((prog, i) => {
         const monster = MONSTER_REGISTRY[monsterSlots[i]]
         if (!monster) return prog
-
         const hp          = (monster.stats.attack + monster.stats.defense) * 3
         const seconds     = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
-        // Treat "held at 1" from the last real-time tick as 0 for batch math
         const effectiveProg = prog >= 1 ? 0 : prog
         const combined    = effectiveProg + n / seconds
         const completions = Math.floor(combined)
-        const remaining   = combined - completions   // 0..1 remainder
-
         if (completions > 0) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + completions
           expGained[locationId]        = (expGained[locationId] ?? 0) + completions
           goldEarned   += completions
           totalDefeats += completions
         }
-        return remaining
+        return combined - completions
       })
     }
 
-    const anyExpGained = Object.keys(expGained).length > 0
     const totalExpEarned = Object.values(expGained).reduce((a, b) => a + b, 0)
 
-    let units = s.units
-    if (yearsPassed > 0 || anyExpGained) {
-      units = s.units.map((u) => {
-        let next = yearsPassed > 0 ? { ...u, age: u.age + yearsPassed } : u
-        const exp = u.locationId ? (expGained[u.locationId] ?? 0) : 0
-        if (exp > 0) next = { ...next, exp: next.exp + exp }
-        return next
-      })
+    // Compute final encounterTargets based on post-batch alive state (approximate)
+    const encounterTargets: Record<string, (string | null)[]> = {}
+
+    const units = s.units.map((u) => {
+      let { health, recoveryTicksLeft } = u
+
+      if (recoveryTicksLeft > 0) {
+        const regenTicks  = Math.max(0, n - recoveryTicksLeft)
+        recoveryTicksLeft = Math.max(0, recoveryTicksLeft - n)
+        health            = Math.min(100, health + regenTicks * REGEN_RATE)
+      } else if (inCombat.has(u.id)) {
+        const rate         = damageRates[u.id] ?? 0
+        const ticksToDeath = rate > 0 ? health / rate : Infinity
+        if (ticksToDeath >= n) {
+          health -= rate * n
+        } else {
+          const ticksAfterDeath = n - Math.floor(ticksToDeath)
+          recoveryTicksLeft     = Math.max(0, RECOVERY_TICKS - ticksAfterDeath)
+          const regenTicks      = Math.max(0, ticksAfterDeath - RECOVERY_TICKS)
+          health                = Math.min(100, regenTicks * REGEN_RATE)
+        }
+      } else {
+        health = Math.min(100, health + n * REGEN_RATE)
+      }
+
+      health = Math.max(0, health)
+      const aged = yearsPassed > 0 ? { age: u.age + yearsPassed } : {}
+      const exp  = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
+      return { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + exp }
+    })
+
+    for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
+      const finalAlive = units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+      encounterTargets[locationId] = monsterSlots.map((_, i) =>
+        finalAlive.length > 0 ? finalAlive[i % finalAlive.length].id : null,
+      )
     }
 
     const miscItems = goldEarned > 0
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    // Show summary for meaningful catch-ups (≥10s away)
     const offlineSummary = n >= 10
       ? { seconds: n, goldEarned, monstersDefeated: totalDefeats, expEarned: totalExpEarned }
       : s.offlineSummary
 
-    return { ticks: newTicks, units, encounterProgress, monsterDefeated, miscItems, lastTickAt: Date.now(), offlineSummary }
+    return { ticks: newTicks, units, encounterProgress, encounterTargets, monsterDefeated, miscItems, lastTickAt: Date.now(), offlineSummary }
   }),
 
   dismissOfflineSummary: () => set({ offlineSummary: null }),
@@ -606,7 +653,7 @@ export const useGameStore = create<GameState>((set) => ({
     const r = (lo: number, hi: number) => Math.floor(Math.random() * (hi - lo + 1)) + lo
     const unit: Unit = {
       id: `u${Date.now()}`, name, level: 1, exp: 0, expToNext: 100,
-      age: r(16, 30), health: 100, class: null, proficiencies: [],
+      age: r(16, 30), health: 100, recoveryTicksLeft: 0, class: null, proficiencies: [],
       abilities: { strength: r(2,5), agility: r(2,5), dexterity: r(2,5), constitution: r(2,5), intelligence: r(2,5) },
       abilityPoints: 3, skillPoints: 1, learnedSkills: {}, locationId: null,
       equipment: { mainHand: null, offHand: null, tool: null, armor: null, accessory: null },
