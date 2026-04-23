@@ -427,7 +427,10 @@ interface GameState {
 
 export const useGameStore = create<GameState>((set) => ({
   units: UNITS, locations: LOCATIONS, equipment: EQUIPMENT, miscItems: MISC,
-  activeTab: 'map', selectedUnitIds: [], expandedLocationIds: [], expandedUnitIds: [], equipContext: null,
+  activeTab: 'map', selectedUnitIds: [],
+  expandedLocationIds: (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds') ?? '[]') } catch { return [] } })(),
+  expandedUnitIds:     (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')     ?? '[]') } catch { return [] } })(),
+  equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
   locationFamiliarity:    { 'kings-forest': 100, 'duskwood': 0, 'lake-arawok': 50, 'gray-hills': 75 },
   locationMonstersSeen:   { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': [], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
@@ -626,8 +629,16 @@ export const useGameStore = create<GameState>((set) => ({
   dismissOfflineSummary: () => set({ offlineSummary: null }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
-  toggleLocation: (id) => set((s) => ({ expandedLocationIds: s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id] })),
-  toggleUnit: (id) => set((s) => ({ expandedUnitIds: s.expandedUnitIds.includes(id) ? s.expandedUnitIds.filter((x) => x !== id) : [...s.expandedUnitIds, id] })),
+  toggleLocation: (id) => set((s) => {
+    const next = s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id]
+    localStorage.setItem('expandedLocationIds', JSON.stringify(next))
+    return { expandedLocationIds: next }
+  }),
+  toggleUnit: (id) => set((s) => {
+    const next = s.expandedUnitIds.includes(id) ? s.expandedUnitIds.filter((x) => x !== id) : [...s.expandedUnitIds, id]
+    localStorage.setItem('expandedUnitIds', JSON.stringify(next))
+    return { expandedUnitIds: next }
+  }),
   toggleSelectUnit: (id) => set((s) => ({ selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id] })),
   clearSelection: () => set({ selectedUnitIds: [] }),
   assignUnits: (unitIds, locationId) => set((s) => ({ units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId } : u), selectedUnitIds: [] })),

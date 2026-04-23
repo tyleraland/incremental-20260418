@@ -291,7 +291,7 @@ function LocationSection({ location, units, selectedDragging }: {
 // ── SelectionBar ──────────────────────────────────────────────────────────────
 
 function SelectionBar() {
-  const { selectedUnitIds, locations, assignUnits, clearSelection } = useGameStore()
+  const { selectedUnitIds, expandedUnitIds, locations, assignUnits, clearSelection, setActiveTab, toggleUnit } = useGameStore()
   const [open, setOpen] = useState(false)
 
   if (selectedUnitIds.length === 0) return null
@@ -301,10 +301,25 @@ function SelectionBar() {
     setOpen(false)
   }
 
+  const handleViewUnit = () => {
+    const unitId = selectedUnitIds[0]
+    if (!expandedUnitIds.includes(unitId)) toggleUnit(unitId)
+    setActiveTab('units')
+    clearSelection()
+  }
+
   return (
     <div className="fixed bottom-4 inset-x-0 z-30 px-4 pointer-events-none">
       <div className="pointer-events-auto bg-game-surface border border-game-primary rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl shadow-game-primary/30">
         <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} selected</span>
+        {selectedUnitIds.length === 1 && (
+          <button
+            className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors"
+            onClick={handleViewUnit}
+          >
+            View ›
+          </button>
+        )}
         <div className="relative">
           <button
             className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1"
