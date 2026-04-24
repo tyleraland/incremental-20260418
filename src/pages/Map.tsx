@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
@@ -23,8 +23,8 @@ function hpBarColor(health: number) {
   return 'bg-red-500'
 }
 
-function UnitRect({ unit, overlay = false, targetMonsterName = null }: {
-  unit: Unit; overlay?: boolean; targetMonsterName?: string | null
+function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing = false }: {
+  unit: Unit; overlay?: boolean; targetMonsterName?: string | null; isFleeing?: boolean
 }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
@@ -60,7 +60,8 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null }: {
             )}
           </div>
           {isRecovering && <div className="text-[10px] text-purple-400 mt-0.5">KO</div>}
-          {!isRecovering && targetMonsterName && (
+          {!isRecovering && isFleeing && <div className="text-[10px] text-sky-400 mt-0.5">fleeing</div>}
+          {!isRecovering && !isFleeing && targetMonsterName && (
             <div className="text-[10px] text-game-text-dim mt-0.5 truncate">→ {targetMonsterName}</div>
           )}
         </>
@@ -73,11 +74,13 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null }: {
 
 function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragging?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: unit.id })
-  const allUnits = useGameStore((s) => s.units)
-  const slots    = useGameStore((s) => unit.locationId ? (s.activeEncounters[unit.locationId] ?? []) : [])
+  const allUnits     = useGameStore((s) => s.units)
+  const slots        = useGameStore((s) => unit.locationId ? (s.activeEncounters[unit.locationId] ?? []) : [])
+  const fleeingTicks = useGameStore((s) => unit.locationId ? (s.locationFleeing[unit.locationId] ?? 0) : 0)
+  const isFleeing    = fleeingTicks > 0
 
   const targetMonsterName = (() => {
-    if (!unit.locationId || slots.length === 0 || unit.health <= 0 || unit.recoveryTicksLeft > 0) return null
+    if (isFleeing || !unit.locationId || slots.length === 0 || unit.health <= 0 || unit.recoveryTicksLeft > 0) return null
     const alive = allUnits.filter((u) => u.locationId === unit.locationId && u.health > 0 && u.recoveryTicksLeft === 0)
     const idx   = alive.findIndex((u) => u.id === unit.id)
     if (idx === -1) return null
@@ -98,7 +101,7 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
       {...attributes}
       className={isDragging || groupDragging ? 'opacity-30' : ''}
     >
-      <UnitRect unit={unit} targetMonsterName={targetMonsterName} />
+      <UnitRect unit={unit} targetMonsterName={targetMonsterName} isFleeing={isFleeing} />
     </div>
   )
 }
@@ -167,22 +170,62 @@ function SlotBar({ prog, targetName }: { prog: number; targetName: string | null
   )
 }
 
-const BEHAVIOR_OPTS: { b: MonsterBehavior; icon: string; tip: string; cls: string }[] = [
-  { b: 'prioritize', icon: '↑', tip: 'Prioritize',  cls: 'text-amber-400 border-amber-700/60 bg-amber-950/50' },
-  { b: 'ignore',     icon: '–', tip: 'Ignore',      cls: 'text-game-text-dim border-game-border bg-game-border/30' },
-  { b: 'flee',       icon: '↗', tip: 'Flee',        cls: 'text-sky-400 border-sky-700/60 bg-sky-950/50' },
+const BEHAVIOR_OPTIONS: { b: MonsterBehavior; label: string; desc: string; activeClass: string }[] = [
+  { b: 'normal',     label: 'Normal',     desc: 'Fight normally',                          activeClass: 'border-game-primary bg-game-primary/10 text-game-text' },
+  { b: 'prioritize', label: 'Prioritize', desc: 'Focus entire party on this first',        activeClass: 'border-amber-600 bg-amber-950/50 text-amber-300' },
+  { b: 'ignore',     label: 'Ignore',     desc: 'Skip this monster; flee if only it remains', activeClass: 'border-game-border bg-game-border/20 text-game-text-dim' },
+  { b: 'avoid',      label: 'Avoid',      desc: 'Flee the encounter immediately if present',  activeClass: 'border-sky-600 bg-sky-950/50 text-sky-300' },
 ]
 
-function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: string }) {
-  const [codexOpen, setCodexOpen] = useState(false)
-  const seenCount          = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
-  const activeSlots        = useGameStore((s) => s.activeEncounters[locationId] ?? [])
-  const encounterProgress  = useGameStore((s) => s.encounterProgress[locationId] ?? [])
-  const encounterTargets   = useGameStore((s) => s.encounterTargets[locationId] ?? [])
-  const units              = useGameStore((s) => s.units)
-  const behavior           = useGameStore((s) => s.locationStrategy[locationId]?.[monsterId] ?? 'normal')
+function MonsterBehaviorPanel({
+  monster, locationId, onClose, onOpenCodex,
+}: { monster: MonsterDef; locationId: string; onClose: () => void; onOpenCodex: () => void }) {
+  const behavior           = useGameStore((s) => s.locationStrategy[locationId]?.[monster.id] ?? 'normal')
   const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
-  const monster            = MONSTER_REGISTRY[monsterId]
+
+  return (
+    <div className="mt-2 rounded-xl border border-game-border bg-game-bg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-game-text">{monster.name} · Strategy</span>
+        <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
+      </div>
+      <div className="space-y-1">
+        {BEHAVIOR_OPTIONS.map(({ b, label, desc, activeClass }) => {
+          const active = behavior === b
+          return (
+            <button
+              key={b}
+              onClick={() => setMonsterBehavior(locationId, monster.id, b)}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors text-left ${active ? activeClass : 'border-transparent text-game-text-dim hover:bg-white/5 hover:border-game-border/50'}`}
+            >
+              <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${active ? 'border-current bg-current' : 'border-game-text-dim/40'}`} />
+              <div>
+                <div className="text-sm font-medium leading-tight">{label}</div>
+                <div className="text-xs text-game-text-dim leading-tight mt-0.5">{desc}</div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      <button onClick={onOpenCodex} className="w-full text-xs text-game-accent hover:text-game-primary text-left pt-1 border-t border-game-border/50">
+        View in Codex →
+      </button>
+    </div>
+  )
+}
+
+function MonsterRow({ monsterId, locationId, selected, onSelect }: {
+  monsterId: string; locationId: string; selected: boolean; onSelect: () => void
+}) {
+  const [codexOpen, setCodexOpen] = useState(false)
+  const seenCount         = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
+  const activeSlots       = useGameStore((s) => s.activeEncounters[locationId] ?? [])
+  const encounterProgress = useGameStore((s) => s.encounterProgress[locationId] ?? [])
+  const encounterTargets  = useGameStore((s) => s.encounterTargets[locationId] ?? [])
+  const locationFleeing   = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const units             = useGameStore((s) => s.units)
+  const behavior          = useGameStore((s) => s.locationStrategy[locationId]?.[monsterId] ?? 'normal')
+  const monster           = MONSTER_REGISTRY[monsterId]
 
   const slotData = activeSlots
     .map((id, i) => ({ id, prog: encounterProgress[i] ?? 0, targetId: encounterTargets[i] ?? null }))
@@ -190,40 +233,27 @@ function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: 
 
   if (!monster) return null
 
-  const cardBorder =
+  const isFleeing = locationFleeing > 0
+  const borderCls =
+    selected         ? 'border-game-primary bg-game-primary/10' :
     behavior === 'prioritize' ? 'border-amber-700/60' :
-    behavior === 'flee'       ? 'border-sky-700/60'   : 'border-game-border'
+    behavior === 'avoid'      ? 'border-sky-700/60'   : 'border-game-border'
 
   return (
     <>
       <div className="flex flex-col items-center gap-1" style={{ minWidth: 72 }}>
         <EncounterDots count={slotData.length} />
         <button
-          onClick={() => setCodexOpen(true)}
-          className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center hover:border-game-accent/60 hover:bg-game-accent/5 transition-colors ${cardBorder} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
+          onClick={onSelect}
+          className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
         >
           <div className="text-sm font-semibold text-game-text">{monster.name}</div>
           <div className="text-xs text-game-accent">Lv.{monster.level}</div>
         </button>
-        <div className="flex gap-0.5 w-full">
-          {BEHAVIOR_OPTS.map(({ b, icon, tip, cls }) => {
-            const active = behavior === b
-            return (
-              <button
-                key={b}
-                title={tip}
-                onClick={(e) => { e.stopPropagation(); setMonsterBehavior(locationId, monsterId, active ? 'normal' : b) }}
-                className={`flex-1 h-5 text-[11px] rounded border transition-colors ${active ? cls : 'text-game-text-dim/30 border-transparent hover:border-game-border/60 hover:text-game-text-dim'}`}
-              >
-                {icon}
-              </button>
-            )
-          })}
-        </div>
         {slotData.length > 0 && (
           <div className="w-full space-y-1">
             {slotData.map(({ prog, targetId }, i) => {
-              const targetName = targetId ? (units.find((u) => u.id === targetId)?.name ?? null) : null
+              const targetName = !isFleeing && targetId ? (units.find((u) => u.id === targetId)?.name ?? null) : null
               return <SlotBar key={i} prog={prog} targetName={targetName} />
             })}
           </div>
@@ -235,10 +265,15 @@ function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: 
 }
 
 function MonsterList({ location }: { location: Location }) {
-  const familiarity         = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
+  const [selectedMonsterId, setSelectedMonsterId] = useState<string | null>(null)
+  const familiarity          = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen[location.id] ?? [])
-  const famPct              = Math.round((familiarity / location.familiarityMax) * 100)
-  const unknownCount        = location.monsterIds.length - locationMonstersSeen.length
+  const famPct               = Math.round((familiarity / location.familiarityMax) * 100)
+  const unknownCount         = location.monsterIds.length - locationMonstersSeen.length
+  const [codexMonster, setCodexMonster] = useState<string | null>(null)
+  const seenCount = useGameStore((s) => codexMonster ? (s.monsterSeen[codexMonster] ?? 0) : 0)
+
+  const toggleSelect = (id: string) => setSelectedMonsterId(v => v === id ? null : id)
 
   return (
     <div>
@@ -251,17 +286,40 @@ function MonsterList({ location }: { location: Location }) {
           {location.monsterIds.length} monsters inhabit this area. Explore to learn more.
         </p>
       ) : (
-        <div className="flex flex-wrap gap-2 items-end">
-          {locationMonstersSeen.map((id) => (
-            <MonsterRow key={id} monsterId={id} locationId={location.id} />
-          ))}
-          {unknownCount > 0 && (
-            <div className="px-3 py-2 rounded-lg border border-dashed border-game-border bg-game-bg text-center min-w-[72px] opacity-50">
-              <div className="text-sm text-game-muted">+{unknownCount}</div>
-              <div className="text-xs text-game-muted">unknown</div>
-            </div>
+        <>
+          <div className="flex flex-wrap gap-2 items-end">
+            {locationMonstersSeen.map((id) => (
+              <MonsterRow
+                key={id}
+                monsterId={id}
+                locationId={location.id}
+                selected={selectedMonsterId === id}
+                onSelect={() => toggleSelect(id)}
+              />
+            ))}
+            {unknownCount > 0 && (
+              <div className="px-3 py-2 rounded-lg border border-dashed border-game-border bg-game-bg text-center min-w-[72px] opacity-50">
+                <div className="text-sm text-game-muted">+{unknownCount}</div>
+                <div className="text-xs text-game-muted">unknown</div>
+              </div>
+            )}
+          </div>
+          {selectedMonsterId && MONSTER_REGISTRY[selectedMonsterId] && (
+            <MonsterBehaviorPanel
+              monster={MONSTER_REGISTRY[selectedMonsterId]}
+              locationId={location.id}
+              onClose={() => setSelectedMonsterId(null)}
+              onOpenCodex={() => { setCodexMonster(selectedMonsterId); setSelectedMonsterId(null) }}
+            />
           )}
-        </div>
+        </>
+      )}
+      {codexMonster && MONSTER_REGISTRY[codexMonster] && (
+        <MonsterCodex
+          monster={MONSTER_REGISTRY[codexMonster]}
+          seenCount={seenCount}
+          onClose={() => setCodexMonster(null)}
+        />
       )}
     </div>
   )
