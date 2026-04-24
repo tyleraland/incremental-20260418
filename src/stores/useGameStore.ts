@@ -492,8 +492,8 @@ export const useGameStore = create<GameState>((set) => ({
           goldEarned++
           return 0
         }
-        const hp      = (monster.stats.attack + monster.stats.defense) * 3
-        const seconds = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
+        if (!targets[i]) return prog  // no unit targeting this slot — HP frozen
+        const seconds = monster.level * 5
         return Math.min(prog + 1 / seconds, 1)
       })
     }
@@ -504,10 +504,13 @@ export const useGameStore = create<GameState>((set) => ({
         recoveryTicksLeft--
         health = Math.min(100, health + REGEN_RATE)
       } else if (health > 0) {
-        const dmg = hpDamage[u.id] ?? 0
-        health = Math.floor(health - dmg)
-        if (dmg === 0 && health < 100) health = Math.min(100, health + REGEN_RATE)
-        if (health <= 0) { health = 0; recoveryTicksLeft = RECOVERY_TICKS }
+        if (u.locationId) {
+          const dmg = hpDamage[u.id] ?? 0
+          health = Math.floor(health - dmg)
+          if (health <= 0) { health = 0; recoveryTicksLeft = RECOVERY_TICKS }
+        } else {
+          health = Math.min(100, health + REGEN_RATE)
+        }
       } else {
         health = Math.min(100, health + REGEN_RATE)
       }
@@ -563,11 +566,11 @@ export const useGameStore = create<GameState>((set) => ({
       encounterProgress[locationId] = prevProgress.map((prog, i) => {
         const monster = MONSTER_REGISTRY[monsterSlots[i]]
         if (!monster) return prog
-        const hp          = (monster.stats.attack + monster.stats.defense) * 3
-        const seconds     = Math.max(1, Math.min(300, hp / Math.max(totalDPS, 0.001)))
+        if (!targets[i]) return prog  // no unit targeting this slot — HP frozen
+        const seconds       = monster.level * 5
         const effectiveProg = prog >= 1 ? 0 : prog
-        const combined    = effectiveProg + n / seconds
-        const completions = Math.floor(combined)
+        const combined      = effectiveProg + n / seconds
+        const completions   = Math.floor(combined)
         if (completions > 0) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + completions
           expGained[locationId]        = (expGained[locationId] ?? 0) + completions
@@ -600,9 +603,10 @@ export const useGameStore = create<GameState>((set) => ({
           const regenTicks      = Math.max(0, ticksAfterDeath - RECOVERY_TICKS)
           health                = Math.min(100, regenTicks * REGEN_RATE)
         }
-      } else {
+      } else if (!u.locationId) {
         health = Math.min(100, health + n * REGEN_RATE)
       }
+      // units at a location but not in combat stay flat
 
       health = Math.max(0, health)
       const aged = yearsPassed > 0 ? { age: u.age + yearsPassed } : {}

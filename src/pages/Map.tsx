@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useLayoutEffect, useRef } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -144,6 +144,29 @@ function EncounterDots({ count }: { count: number }) {
   )
 }
 
+function SlotBar({ prog, targetName }: { prog: number; targetName: string | null }) {
+  const barRef     = useRef<HTMLDivElement>(null)
+  const prevProg   = useRef(prog)
+
+  useLayoutEffect(() => {
+    const bar = barRef.current
+    if (!bar) return
+    const resetting = prog === 0 && prevProg.current > 0
+    bar.style.transition = resetting ? 'none' : 'width 0.9s linear'
+    bar.style.width      = `${(1 - prog) * 100}%`
+    prevProg.current = prog
+  })
+
+  return (
+    <div>
+      <div className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
+        <div ref={barRef} className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(1 - prog) * 100}%` }} />
+      </div>
+      {targetName && <div className="text-[10px] text-game-text-dim text-right mt-0.5">→ {targetName}</div>}
+    </div>
+  )
+}
+
 function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: string }) {
   const [codexOpen, setCodexOpen] = useState(false)
   const seenCount         = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
@@ -173,20 +196,8 @@ function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: 
         {slotData.length > 0 && (
           <div className="w-full space-y-1">
             {slotData.map(({ prog, targetId }, i) => {
-              const targetName = targetId ? units.find((u) => u.id === targetId)?.name : null
-              return (
-                <div key={i}>
-                  <div className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="bg-red-500 h-1.5 rounded-full"
-                      style={{ width: `${(1 - prog) * 100}%`, transition: prog === 0 ? 'none' : 'width 0.7s linear' }}
-                    />
-                  </div>
-                  {targetName && (
-                    <div className="text-[10px] text-game-text-dim text-right mt-0.5">→ {targetName}</div>
-                  )}
-                </div>
-              )
+              const targetName = targetId ? (units.find((u) => u.id === targetId)?.name ?? null) : null
+              return <SlotBar key={i} prog={prog} targetName={targetName} />
             })}
           </div>
         )}
