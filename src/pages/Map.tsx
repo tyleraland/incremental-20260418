@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
@@ -167,14 +167,22 @@ function SlotBar({ prog, targetName }: { prog: number; targetName: string | null
   )
 }
 
+const BEHAVIOR_OPTS: { b: MonsterBehavior; icon: string; tip: string; cls: string }[] = [
+  { b: 'prioritize', icon: '↑', tip: 'Prioritize',  cls: 'text-amber-400 border-amber-700/60 bg-amber-950/50' },
+  { b: 'ignore',     icon: '–', tip: 'Ignore',      cls: 'text-game-text-dim border-game-border bg-game-border/30' },
+  { b: 'flee',       icon: '↗', tip: 'Flee',        cls: 'text-sky-400 border-sky-700/60 bg-sky-950/50' },
+]
+
 function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: string }) {
   const [codexOpen, setCodexOpen] = useState(false)
-  const seenCount         = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
-  const activeSlots       = useGameStore((s) => s.activeEncounters[locationId] ?? [])
-  const encounterProgress = useGameStore((s) => s.encounterProgress[locationId] ?? [])
-  const encounterTargets  = useGameStore((s) => s.encounterTargets[locationId] ?? [])
-  const units             = useGameStore((s) => s.units)
-  const monster           = MONSTER_REGISTRY[monsterId]
+  const seenCount          = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
+  const activeSlots        = useGameStore((s) => s.activeEncounters[locationId] ?? [])
+  const encounterProgress  = useGameStore((s) => s.encounterProgress[locationId] ?? [])
+  const encounterTargets   = useGameStore((s) => s.encounterTargets[locationId] ?? [])
+  const units              = useGameStore((s) => s.units)
+  const behavior           = useGameStore((s) => s.locationStrategy[locationId]?.[monsterId] ?? 'normal')
+  const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
+  const monster            = MONSTER_REGISTRY[monsterId]
 
   const slotData = activeSlots
     .map((id, i) => ({ id, prog: encounterProgress[i] ?? 0, targetId: encounterTargets[i] ?? null }))
@@ -182,17 +190,36 @@ function MonsterRow({ monsterId, locationId }: { monsterId: string; locationId: 
 
   if (!monster) return null
 
+  const cardBorder =
+    behavior === 'prioritize' ? 'border-amber-700/60' :
+    behavior === 'flee'       ? 'border-sky-700/60'   : 'border-game-border'
+
   return (
     <>
       <div className="flex flex-col items-center gap-1" style={{ minWidth: 72 }}>
         <EncounterDots count={slotData.length} />
         <button
           onClick={() => setCodexOpen(true)}
-          className="w-full px-3 py-2 rounded-lg border border-game-border bg-game-bg text-center hover:border-game-accent/60 hover:bg-game-accent/5 transition-colors"
+          className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center hover:border-game-accent/60 hover:bg-game-accent/5 transition-colors ${cardBorder} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
         >
           <div className="text-sm font-semibold text-game-text">{monster.name}</div>
           <div className="text-xs text-game-accent">Lv.{monster.level}</div>
         </button>
+        <div className="flex gap-0.5 w-full">
+          {BEHAVIOR_OPTS.map(({ b, icon, tip, cls }) => {
+            const active = behavior === b
+            return (
+              <button
+                key={b}
+                title={tip}
+                onClick={(e) => { e.stopPropagation(); setMonsterBehavior(locationId, monsterId, active ? 'normal' : b) }}
+                className={`flex-1 h-5 text-[11px] rounded border transition-colors ${active ? cls : 'text-game-text-dim/30 border-transparent hover:border-game-border/60 hover:text-game-text-dim'}`}
+              >
+                {icon}
+              </button>
+            )
+          })}
+        </div>
         {slotData.length > 0 && (
           <div className="w-full space-y-1">
             {slotData.map(({ prog, targetId }, i) => {
