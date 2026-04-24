@@ -182,34 +182,32 @@ function MonsterBehaviorPanel({
 }: { monster: MonsterDef; locationId: string; onClose: () => void; onOpenCodex: () => void }) {
   const behavior           = useGameStore((s) => s.locationStrategy[locationId]?.[monster.id] ?? 'normal')
   const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
+  const active             = BEHAVIOR_OPTIONS.find((o) => o.b === behavior)!
 
   return (
-    <div className="mt-2 rounded-xl border border-game-border bg-game-bg p-3 space-y-2">
+    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-3 py-2 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-game-text">{monster.name} · Strategy</span>
-        <button onClick={onClose} className="w-6 h-6 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
+        <span className="text-xs text-game-text-dim">{monster.name}</span>
+        <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
       </div>
-      <div className="space-y-1">
-        {BEHAVIOR_OPTIONS.map(({ b, label, desc, activeClass }) => {
-          const active = behavior === b
+      <div className="flex gap-1">
+        {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => {
+          const isActive = behavior === b
           return (
             <button
               key={b}
               onClick={() => setMonsterBehavior(locationId, monster.id, b)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-colors text-left ${active ? activeClass : 'border-transparent text-game-text-dim hover:bg-white/5 hover:border-game-border/50'}`}
+              className={`flex-1 py-1 rounded-md border text-xs font-medium transition-colors ${isActive ? activeClass : 'border-game-border/50 text-game-text-dim hover:border-game-border hover:text-game-text'}`}
             >
-              <div className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${active ? 'border-current bg-current' : 'border-game-text-dim/40'}`} />
-              <div>
-                <div className="text-sm font-medium leading-tight">{label}</div>
-                <div className="text-xs text-game-text-dim leading-tight mt-0.5">{desc}</div>
-              </div>
+              {label}
             </button>
           )
         })}
       </div>
-      <button onClick={onOpenCodex} className="w-full text-xs text-game-accent hover:text-game-primary text-left pt-1 border-t border-game-border/50">
-        View in Codex →
-      </button>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-game-text-dim">{active.desc}</span>
+        <button onClick={onOpenCodex} className="text-xs text-game-accent hover:text-game-primary shrink-0 ml-2">Codex →</button>
+      </div>
     </div>
   )
 }
