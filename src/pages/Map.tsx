@@ -12,6 +12,12 @@ import {
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
+
+const REGIONS = [
+  { id: 'prontera', name: 'Prontera Region' },
+  { id: 'geffen',   name: 'Geffen Region' },
+  { id: 'kanto',    name: 'Kanto' },
+]
 import { MonsterCodex } from '@/components/MonsterCodex'
 
 // ── UnitRect ──────────────────────────────────────────────────────────────────
@@ -332,27 +338,27 @@ function LocationSection({ location, units, selectedDragging }: {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
   const isExpanded     = useGameStore((s) => s.expandedLocationIds.includes(location.id))
   const toggleLocation = useGameStore((s) => s.toggleLocation)
+  const isEmpty        = units.length === 0 && !isExpanded
 
   return (
     <div
       ref={setNodeRef}
       className={[
-        'rounded-xl border transition-colors duration-150 overflow-hidden',
-        isOver ? 'border-game-primary bg-game-primary/5' : 'border-game-border',
+        'rounded-lg border transition-colors duration-150 overflow-hidden',
+        isOver   ? 'border-game-primary bg-game-primary/5' : 'border-game-border',
+        isEmpty  ? 'bg-transparent'                        : '',
       ].join(' ')}
     >
       <button
-        className="w-full flex items-center justify-between px-4 py-4 text-left"
+        className={['w-full flex items-center justify-between text-left', isEmpty ? 'px-3 py-1.5' : 'px-4 py-3'].join(' ')}
         onClick={() => toggleLocation(location.id)}
       >
-        <span className="font-semibold text-game-text">{location.name}</span>
+        <span className={isEmpty ? 'text-sm text-game-text-dim' : 'font-semibold text-game-text'}>{location.name}</span>
         <div className="flex items-center gap-2">
-          {units.length > 0 && (
-            <span className="text-xs text-game-text-dim bg-game-border rounded-full px-2 py-0.5">
-              {units.length}
-            </span>
+          {units.length > 0 && !isExpanded && (
+            <span className="text-xs text-game-text-dim bg-game-border rounded-full px-2 py-0.5">{units.length}</span>
           )}
-          <span className="text-game-muted text-sm">{isExpanded ? '▲' : '▼'}</span>
+          <span className="text-game-muted text-xs">{isExpanded ? '▲' : '▼'}</span>
         </div>
       </button>
 
@@ -379,6 +385,48 @@ function LocationSection({ location, units, selectedDragging }: {
               )}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── RegionSection ─────────────────────────────────────────────────────────────
+
+function RegionSection({ region, locations, units, selectedDragging }: {
+  region: { id: string; name: string }
+  locations: Location[]
+  units: Unit[]
+  selectedDragging: string[]
+}) {
+  const isExpanded   = useGameStore((s) => s.expandedRegionIds.includes(region.id))
+  const toggleRegion = useGameStore((s) => s.toggleRegion)
+  const regionUnitCount = units.filter((u) => locations.some((l) => l.id === u.locationId)).length
+
+  return (
+    <div>
+      <button
+        className="w-full flex items-center justify-between py-2 px-1"
+        onClick={() => toggleRegion(region.id)}
+      >
+        <span className="text-xs font-semibold uppercase tracking-widest text-game-text-dim">{region.name}</span>
+        <div className="flex items-center gap-2">
+          {regionUnitCount > 0 && (
+            <span className="text-xs text-game-text-dim">{regionUnitCount} units</span>
+          )}
+          <span className="text-game-muted text-xs">{isExpanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {isExpanded && (
+        <div className="space-y-1.5">
+          {locations.map((loc) => (
+            <LocationSection
+              key={loc.id}
+              location={loc}
+              units={units.filter((u) => u.locationId === loc.id)}
+              selectedDragging={selectedDragging}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -537,11 +585,12 @@ export function Map() {
           units={units.filter((u) => u.locationId === null)}
           selectedDragging={draggingGroup ? selectedUnitIds : []}
         />
-        {locations.map((loc) => (
-          <LocationSection
-            key={loc.id}
-            location={loc}
-            units={units.filter((u) => u.locationId === loc.id)}
+        {REGIONS.map((region) => (
+          <RegionSection
+            key={region.id}
+            region={region}
+            locations={locations.filter((l) => l.region === region.id)}
+            units={units}
             selectedDragging={draggingGroup ? selectedUnitIds : []}
           />
         ))}

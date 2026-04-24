@@ -189,7 +189,7 @@ export interface Unit {
   recoveryTicksLeft: number   // >0: KO countdown; 0: active or regenerating
 }
 
-export interface Location { id: string; name: string; description: string; traits: string[]; monsterIds: string[]; familiarityMax: number }
+export interface Location { id: string; name: string; region: string; description: string; traits: string[]; monsterIds: string[]; familiarityMax: number }
 
 // Seen-count thresholds: how many sightings unlock each info tier in the codex
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
@@ -345,11 +345,17 @@ export function getLearnedSkills(unit: Unit) {
 
 // ── Initial data ──────────────────────────────────────────────────────────────
 
+const KANTO_BEACH_IDS = Array.from({ length: 10 }, (_, i) => `beach-${i + 1}`)
 const LOCATIONS: Location[] = [
-  { id: 'kings-forest', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'],   monsterIds: ['wolf', 'forest-sprite', 'poacher'],    familiarityMax: 100 },
-  { id: 'duskwood',     name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'], monsterIds: ['harpy', 'shadow-wolf', 'dark-slime'],  familiarityMax: 100 },
-  { id: 'lake-arawok',  name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'],      monsterIds: ['giant-frog', 'river-serpent'],         familiarityMax: 100 },
-  { id: 'gray-hills',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'],      monsterIds: ['rock-crab', 'stone-golem', 'ruins-specter'], familiarityMax: 100 },
+  { id: 'kings-forest', region: 'prontera', name: "King's Forest",   description: 'A dense royal forest rich with timber and game.',        traits: ['forest', 'lumber', 'hunting'],   monsterIds: ['wolf', 'forest-sprite', 'poacher'],    familiarityMax: 100 },
+  { id: 'duskwood',     region: 'prontera', name: 'Duskwood Forest', description: 'A shadowed wood where the trees grow unnaturally tall.', traits: ['forest', 'shadow', 'dangerous'], monsterIds: ['harpy', 'shadow-wolf', 'dark-slime'],  familiarityMax: 100 },
+  { id: 'lake-arawok',  region: 'geffen',   name: 'Lake Arawok',     description: 'A vast freshwater lake, calm on the surface.',           traits: ['water', 'fishing', 'calm'],      monsterIds: ['giant-frog', 'river-serpent'],         familiarityMax: 100 },
+  { id: 'gray-hills',   region: 'geffen',   name: 'Gray Hills',      description: 'Rocky highlands rich with ore and ancient ruins.',       traits: ['rocky', 'mining', 'ruins'],      monsterIds: ['rock-crab', 'stone-golem', 'ruins-specter'], familiarityMax: 100 },
+  ...KANTO_BEACH_IDS.map((id, i) => ({
+    id, region: 'kanto', name: `Beach ${i + 1}`,
+    description: 'A sunny stretch of coastline dotted with rock pools.',
+    traits: ['beach', 'water'], monsterIds: ['rock-crab'], familiarityMax: 100,
+  })),
 ]
 
 const UNITS: Unit[] = [
@@ -390,7 +396,7 @@ const MISC: MiscItem[] = [
 interface GameState {
   units: Unit[]; locations: Location[]; equipment: EquipmentItem[]
   miscItems: MiscItem[]; activeTab: TabId; selectedUnitIds: string[]
-  expandedLocationIds: string[]; expandedUnitIds: string[]; expandedInventorySections: string[]
+  expandedLocationIds: string[]; expandedUnitIds: string[]; expandedInventorySections: string[]; expandedRegionIds: string[]
   equipContext: { unitId: string; slot: EquipSlot } | null
   learnedRecipes: string[]
   locationFamiliarity: Record<string, number>        // locationId → current (0..familiarityMax)
@@ -417,6 +423,7 @@ interface GameState {
   batchTick: (n: number) => void
   dismissOfflineSummary: () => void
   setActiveTab: (tab: TabId) => void
+  toggleRegion: (id: string) => void
   toggleLocation: (id: string) => void
   toggleUnit: (id: string) => void
   toggleInventorySection: (id: string) => void
@@ -439,17 +446,18 @@ export const useGameStore = create<GameState>((set) => ({
   expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
+  expandedRegionIds:         (() => { try { return JSON.parse(localStorage.getItem('expandedRegionIds')         ?? '["prontera","geffen","kanto"]') } catch { return ['prontera', 'geffen', 'kanto'] } })(),
   equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
-  locationFamiliarity:    { 'kings-forest': 100, 'duskwood': 75, 'lake-arawok': 50, 'gray-hills': 75 },
-  locationMonstersSeen:   { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': ['shadow-wolf'], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
+  locationFamiliarity:    { 'kings-forest': 100, 'duskwood': 75, 'lake-arawok': 50, 'gray-hills': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
+  locationMonstersSeen:   { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': ['shadow-wolf'], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
   monsterSeen:            { wolf: 15, 'forest-sprite': 3, poacher: 1, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
-  activeEncounters:       { 'kings-forest': ['wolf', 'forest-sprite'], 'duskwood': ['shadow-wolf', 'shadow-wolf'], 'lake-arawok': ['giant-frog', 'giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
+  activeEncounters:       { 'kings-forest': ['wolf', 'forest-sprite'], 'duskwood': ['shadow-wolf', 'shadow-wolf'], 'lake-arawok': ['giant-frog', 'giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
   locationStrategy:       {},
   locationFleeing:        {},
 
   ticks: 0,
-  encounterProgress: { 'kings-forest': [0, 0], 'duskwood': [0, 0], 'lake-arawok': [0, 0], 'gray-hills': [0, 0] },
+  encounterProgress: { 'kings-forest': [0, 0], 'duskwood': [0, 0], 'lake-arawok': [0, 0], 'gray-hills': [0, 0], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, [0]])) },
   encounterTargets:  {},
   monsterDefeated: {},
   lastTickAt: Date.now(),
@@ -703,6 +711,11 @@ export const useGameStore = create<GameState>((set) => ({
   dismissOfflineSummary: () => set({ offlineSummary: null }),
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+  toggleRegion: (id) => set((s) => {
+    const next = s.expandedRegionIds.includes(id) ? s.expandedRegionIds.filter((x) => x !== id) : [...s.expandedRegionIds, id]
+    localStorage.setItem('expandedRegionIds', JSON.stringify(next))
+    return { expandedRegionIds: next }
+  }),
   toggleLocation: (id) => set((s) => {
     const next = s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id]
     localStorage.setItem('expandedLocationIds', JSON.stringify(next))
