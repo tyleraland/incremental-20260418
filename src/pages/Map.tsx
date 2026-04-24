@@ -206,7 +206,7 @@ function MonsterBehaviorPanel({
       </div>
       <div className="flex items-center justify-between">
         <span className="text-xs text-game-text-dim">{active.desc}</span>
-        <button onClick={onOpenCodex} className="text-xs text-game-accent hover:text-game-primary shrink-0 ml-2">Codex →</button>
+        <button onClick={onOpenCodex} className="text-xs font-medium px-2 py-0.5 rounded border border-game-accent/50 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0 ml-2">Codex →</button>
       </div>
     </div>
   )
