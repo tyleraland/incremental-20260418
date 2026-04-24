@@ -151,7 +151,9 @@ export const SEASONS_PER_YEAR = 4
 export const TICKS_PER_SEASON = TICKS_PER_DAY * DAYS_PER_SEASON
 export const TICKS_PER_YEAR   = TICKS_PER_SEASON * SEASONS_PER_YEAR
 export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as const
-export type MonsterBehavior = 'normal' | 'prioritize' | 'ignore' | 'flee'
+export type MonsterBehavior = 'normal' | 'prioritize' | 'ignore' | 'avoid'
+
+const FLEE_TICKS = 2  // ticks to complete a flee action
 
 export const RECOVERY_TICKS   = 10   // ticks of KO countdown before regen starts
 const        REGEN_RATE       = 5    // HP% per tick while recovering or idle
@@ -396,6 +398,7 @@ interface GameState {
   monsterSeen: Record<string, number>                // monsterId → total global sighting count
   activeEncounters: Record<string, string[]>         // locationId → active monster slots (up to 4, may repeat)
   locationStrategy: Record<string, Record<string, MonsterBehavior>> // locationId → monsterId → behavior
+  locationFleeing:  Record<string, number>           // locationId → ticks remaining in flee (0 = not fleeing)
 
   ticks: number                                      // total real-second ticks elapsed
   encounterProgress: Record<string, number[]>        // locationId → per-slot progress (0..1)
@@ -443,6 +446,7 @@ export const useGameStore = create<GameState>((set) => ({
   monsterSeen:            { wolf: 15, 'forest-sprite': 3, poacher: 1, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
   activeEncounters:       { 'kings-forest': ['wolf', 'forest-sprite'], 'duskwood': ['shadow-wolf', 'shadow-wolf'], 'lake-arawok': ['giant-frog', 'giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'] },
   locationStrategy:       {},
+  locationFleeing:        {},
 
   ticks: 0,
   encounterProgress: { 'kings-forest': [0, 0], 'duskwood': [0, 0], 'lake-arawok': [0, 0], 'gray-hills': [0, 0] },
@@ -457,6 +461,7 @@ export const useGameStore = create<GameState>((set) => ({
 
     const encounterProgress: Record<string, number[]>           = {}
     const encounterTargets:  Record<string, (string | null)[]>  = {}
+    const locationFleeing:   Record<string, number>             = { ...s.locationFleeing }
     const monsterDefeated = { ...s.monsterDefeated }
     const expGained: Record<string, number> = {}
     let goldEarned = 0
@@ -465,26 +470,56 @@ export const useGameStore = create<GameState>((set) => ({
     for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
       const prevProgress = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
       const aliveUnits   = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+      const strategy     = s.locationStrategy[locationId] ?? {}
 
-      const targets: (string | null)[] = monsterSlots.map((_, i) =>
-        aliveUnits.length > 0 ? aliveUnits[i % aliveUnits.length].id : null,
+      // ── Flee state machine ───────────────────────────────────────────────────
+      const fleeLeft = locationFleeing[locationId] ?? 0
+      if (fleeLeft > 0) {
+        locationFleeing[locationId] = fleeLeft - 1
+        encounterProgress[locationId] = fleeLeft === 1 ? monsterSlots.map(() => 0) : prevProgress
+        encounterTargets[locationId]  = monsterSlots.map(() => null)
+        continue
+      }
+      const shouldFlee = aliveUnits.length > 0 && (
+        monsterSlots.some(id  => (strategy[id] ?? 'normal') === 'avoid') ||
+        monsterSlots.every(id => (strategy[id] ?? 'normal') === 'ignore' || (strategy[id] ?? 'normal') === 'avoid')
       )
-      encounterTargets[locationId] = targets
+      if (shouldFlee) {
+        locationFleeing[locationId]  = FLEE_TICKS
+        encounterProgress[locationId] = prevProgress
+        encounterTargets[locationId]  = monsterSlots.map(() => null)
+        continue
+      }
+      // ────────────────────────────────────────────────────────────────────────
 
       if (aliveUnits.length === 0) {
         encounterProgress[locationId] = prevProgress
+        encounterTargets[locationId]  = monsterSlots.map(() => null)
         continue
       }
 
-      const totalDPS = aliveUnits.reduce((sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0)
+      // Monster → unit targeting (round-robin, for damage)
+      const targets: (string | null)[] = monsterSlots.map((_, i) =>
+        aliveUnits[i % aliveUnits.length].id,
+      )
+      encounterTargets[locationId] = targets
 
+      // Unit → monster targeting (respects prioritize: all units focus prioritized slots first)
+      const prioritySlots = monsterSlots.map((id, i) => ({ id, i })).filter(({ id }) => (strategy[id] ?? 'normal') === 'prioritize')
+      const normalSlots   = monsterSlots.map((id, i) => ({ id, i })).filter(({ id }) => (strategy[id] ?? 'normal') === 'normal')
+      const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
+      const attackedSlots = new Set<number>()
+      if (focusSlots.length > 0) {
+        aliveUnits.forEach((_, ui) => attackedSlots.add(focusSlots[ui % focusSlots.length].i))
+      }
+
+      // Damage to units (skip avoid monsters — units evade them)
       for (let i = 0; i < monsterSlots.length; i++) {
         const monster  = MONSTER_REGISTRY[monsterSlots[i]]
         const targetId = targets[i]
         if (!monster || !targetId) continue
-        const behavior = s.locationStrategy[locationId]?.[monster.id] ?? 'normal'
-        if (behavior === 'flee') continue  // unit evades — no damage taken
-        const target   = s.units.find((u) => u.id === targetId)
+        if ((strategy[monster.id] ?? 'normal') === 'avoid') continue
+        const target = s.units.find((u) => u.id === targetId)
         if (!target) continue
         const def = getDerivedStats(target, s.equipment).defense
         hpDamage[targetId] = (hpDamage[targetId] ?? 0) + (monster.stats.attack / Math.max(def, 1))
@@ -499,11 +534,10 @@ export const useGameStore = create<GameState>((set) => ({
           goldEarned++
           return 0
         }
-        const behavior = s.locationStrategy[locationId]?.[monster.id] ?? 'normal'
-        if (behavior === 'ignore' || behavior === 'flee') return prog  // HP frozen
-        if (!targets[i]) return prog  // no unit targeting this slot
-        const seconds = monster.level * 5 / (behavior === 'prioritize' ? 2 : 1)
-        return Math.min(prog + 1 / seconds, 1)
+        const behavior = strategy[monster.id] ?? 'normal'
+        if (behavior === 'ignore' || behavior === 'avoid') return prog
+        if (!attackedSlots.has(i)) return prog
+        return Math.min(prog + 1 / (monster.level * 5), 1)
       })
     }
 
@@ -532,7 +566,7 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounterProgress, encounterTargets, monsterDefeated, miscItems, lastTickAt: Date.now() }
+    return { ticks: newTicks, units, encounterProgress, encounterTargets, locationFleeing, monsterDefeated, miscItems, lastTickAt: Date.now() }
   }),
 
   batchTick: (n) => set((s) => {
@@ -542,6 +576,7 @@ export const useGameStore = create<GameState>((set) => ({
     const yearsPassed = Math.floor(newTicks / TICKS_PER_YEAR) - Math.floor(s.ticks / TICKS_PER_YEAR)
 
     const encounterProgress: Record<string, number[]> = {}
+    const locationFleeing:   Record<string, number>   = { ...s.locationFleeing }
     const monsterDefeated = { ...s.monsterDefeated }
     const expGained: Record<string, number> = {}
     let goldEarned   = 0
@@ -554,21 +589,41 @@ export const useGameStore = create<GameState>((set) => ({
     for (const [locationId, monsterSlots] of Object.entries(s.activeEncounters)) {
       const prevProgress = s.encounterProgress[locationId] ?? monsterSlots.map(() => 0)
       const aliveUnits   = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+      const strategy     = s.locationStrategy[locationId] ?? {}
+
+      // Flee: if location was fleeing or should flee, just reset encounter (offline — complete instantly)
+      const wasFleeing = (locationFleeing[locationId] ?? 0) > 0
+      const shouldFlee = aliveUnits.length > 0 && (
+        monsterSlots.some(id  => (strategy[id] ?? 'normal') === 'avoid') ||
+        monsterSlots.every(id => (strategy[id] ?? 'normal') === 'ignore' || (strategy[id] ?? 'normal') === 'avoid')
+      )
+      if (wasFleeing || shouldFlee) {
+        locationFleeing[locationId]   = 0
+        encounterProgress[locationId] = monsterSlots.map(() => 0)
+        continue
+      }
 
       if (aliveUnits.length === 0) {
         encounterProgress[locationId] = prevProgress
         continue
       }
 
-      const targets  = monsterSlots.map((_, i) => aliveUnits[i % aliveUnits.length])
-      const totalDPS = aliveUnits.reduce((sum, u) => sum + getDerivedStats(u, s.equipment).attack, 0)
+      const targets = monsterSlots.map((_, i) => aliveUnits[i % aliveUnits.length])
+
+      // Priority targeting: focus prioritized slots first
+      const prioritySlots = monsterSlots.map((id, i) => ({ id, i })).filter(({ id }) => (strategy[id] ?? 'normal') === 'prioritize')
+      const normalSlots   = monsterSlots.map((id, i) => ({ id, i })).filter(({ id }) => (strategy[id] ?? 'normal') === 'normal')
+      const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
+      const attackedSlots = new Set<number>()
+      if (focusSlots.length > 0) {
+        aliveUnits.forEach((_, ui) => attackedSlots.add(focusSlots[ui % focusSlots.length].i))
+      }
 
       for (let i = 0; i < monsterSlots.length; i++) {
         const monster = MONSTER_REGISTRY[monsterSlots[i]]
         const target  = targets[i]
         if (!monster || !target) continue
-        const behavior = s.locationStrategy[locationId]?.[monster.id] ?? 'normal'
-        if (behavior === 'flee') continue  // unit evades — no damage taken
+        if ((strategy[monster.id] ?? 'normal') === 'avoid') continue
         const def = getDerivedStats(target, s.equipment).defense
         damageRates[target.id] = (damageRates[target.id] ?? 0) + (monster.stats.attack / Math.max(def, 1))
         inCombat.add(target.id)
@@ -577,10 +632,10 @@ export const useGameStore = create<GameState>((set) => ({
       encounterProgress[locationId] = prevProgress.map((prog, i) => {
         const monster = MONSTER_REGISTRY[monsterSlots[i]]
         if (!monster) return prog
-        const behavior = s.locationStrategy[locationId]?.[monster.id] ?? 'normal'
-        if (behavior === 'ignore' || behavior === 'flee') return prog  // HP frozen
-        if (!targets[i]) return prog  // no unit targeting this slot
-        const seconds       = monster.level * 5 / (behavior === 'prioritize' ? 2 : 1)
+        const behavior = strategy[monster.id] ?? 'normal'
+        if (behavior === 'ignore' || behavior === 'avoid') return prog
+        if (!attackedSlots.has(i)) return prog
+        const seconds       = monster.level * 5
         const effectiveProg = prog >= 1 ? 0 : prog
         const combined      = effectiveProg + n / seconds
         const completions   = Math.floor(combined)
@@ -642,7 +697,7 @@ export const useGameStore = create<GameState>((set) => ({
       ? { seconds: n, goldEarned, monstersDefeated: totalDefeats, expEarned: totalExpEarned }
       : s.offlineSummary
 
-    return { ticks: newTicks, units, encounterProgress, encounterTargets, monsterDefeated, miscItems, lastTickAt: Date.now(), offlineSummary }
+    return { ticks: newTicks, units, encounterProgress, encounterTargets, locationFleeing, monsterDefeated, miscItems, lastTickAt: Date.now(), offlineSummary }
   }),
 
   dismissOfflineSummary: () => set({ offlineSummary: null }),
