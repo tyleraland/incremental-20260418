@@ -11,8 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, TRAIT_REGISTRY, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
-import { TraitRow } from '@/components/TraitBubble'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
 // ── UnitRect ──────────────────────────────────────────────────────────────────
@@ -368,9 +367,6 @@ function LocationSection({ location, units, selectedDragging }: {
       {isExpanded && (
         <div className="px-4 pb-4 border-t border-game-border space-y-4">
           <p className="text-game-text-dim text-sm mt-3">{location.description}</p>
-          <TraitRow
-            traits={location.traits.map((id) => TRAIT_REGISTRY[id]).filter(Boolean) as any}
-          />
           <MonsterList location={location} />
           <div>
             <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Units</div>
