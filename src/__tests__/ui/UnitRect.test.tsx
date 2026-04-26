@@ -7,7 +7,7 @@ import { makeUnit, resetStore } from '../helpers'
 
 beforeEach(() => {
   resetStore()
-  global.ResizeObserver = class {
+  globalThis.ResizeObserver = class {
     observe() {}; unobserve() {}; disconnect() {}
   }
   Element.prototype.setPointerCapture    = () => {}
