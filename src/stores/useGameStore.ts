@@ -156,7 +156,8 @@ export type MonsterBehavior = 'normal' | 'prioritize' | 'ignore' | 'avoid'
 const FLEE_TICKS = 2  // ticks to complete a flee action
 
 export const RECOVERY_TICKS   = 10   // ticks of KO countdown before regen starts
-const        REGEN_RATE       = 5    // HP% per tick while recovering or idle
+export const REGEN_RATE       = 5    // HP% per tick while recovering or idle
+export const FLEE_TICKS_CONST = 2    // ticks to complete a flee action (mirrors FLEE_TICKS)
 
 export function ticksToCalendar(ticks: number) {
   const tickOfDay   = ticks % TICKS_PER_DAY
