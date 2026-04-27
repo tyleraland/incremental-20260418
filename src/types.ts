@@ -74,10 +74,18 @@ export interface Unit {
 
 // ── Location ──────────────────────────────────────────────────────────────────
 
+export interface MonsterPoolEntry {
+  monsterId: string
+  weight: number           // relative sampling weight
+  maxPopulation: number | null  // null = infinite; finite entries tracked in monsterCooldowns
+}
+
 export interface Location {
   id: string; name: string; region: string; description: string
   traits: string[]; monsterIds: string[]; familiarityMax: number
   connections: string[]  // §2: locationIds reachable directly from here
+  monsterPool: MonsterPoolEntry[]
+  encounterSize: [number, number]  // [min, max] slots drawn per encounter
 }
 
 // ── Monster ───────────────────────────────────────────────────────────────────
@@ -130,10 +138,9 @@ export interface CraftingRecipe {
 // and the monsterId-keyed locationStrategy map
 export interface EncounterSlot {
   monsterId: string
-  progress: number            // 0..1; 1 = monster defeated this tick, reset to 0 next
+  progress: number            // 0..1; reaches 1 when defeated; new encounter drawn when all slots at 1
   targetUnitId: string | null // which unit this monster is targeting
   behavior: MonsterBehavior   // per-slot (not per-monsterId), enabling boss differentiation
-  respawnTicksLeft: number    // >0: monster not yet present; 0: active in encounter
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────

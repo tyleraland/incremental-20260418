@@ -27,6 +27,8 @@ async function renderMap() {
 const TEST_LOCATION = {
   id: 'loc1', name: 'Test Forest', region: 'prontera',
   description: '', traits: [], monsterIds: ['wolf'], familiarityMax: 100, connections: [],
+  monsterPool: [{ monsterId: 'wolf', weight: 1, maxPopulation: null }],
+  encounterSize: [1, 2] as [number, number],
 }
 
 describe('UnitRect — KO state', () => {
@@ -46,7 +48,7 @@ describe('UnitRect — fleeing state', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal', respawnTicksLeft: 0 }] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal',  }] },
       locationFleeing: { loc1: 2 },
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
@@ -72,7 +74,7 @@ describe('UnitRect — target display', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal', respawnTicksLeft: 0 }] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal',  }] },
       locationFleeing: {},
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
@@ -85,7 +87,7 @@ describe('UnitRect — target display', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal', respawnTicksLeft: 0 }] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal',  }] },
       locationFleeing: { loc1: 2 },
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],

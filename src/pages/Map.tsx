@@ -86,9 +86,8 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
   const isFleeing    = fleeingTicks > 0
 
   const isHunting = (() => {
-    if (isFleeing || !unit.locationId || slots.length === 0 || unit.health <= 0 || unit.recoveryTicksLeft > 0) return false
-    const fightable = slots.filter((sl) => sl.behavior === 'normal' || sl.behavior === 'prioritize')
-    return fightable.length > 0 && fightable.every((sl) => sl.respawnTicksLeft > 0)
+    if (isFleeing || !unit.locationId || unit.health <= 0 || unit.recoveryTicksLeft > 0) return false
+    return slots.length === 0
   })()
 
   const targetMonsterName = (() => {
@@ -96,8 +95,8 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
     const alive = allUnits.filter((u) => u.locationId === unit.locationId && u.health > 0 && u.recoveryTicksLeft === 0)
     const idx   = alive.findIndex((u) => u.id === unit.id)
     if (idx === -1) return null
-    const prioritySlots = slots.filter((sl) => sl.behavior === 'prioritize' && sl.respawnTicksLeft === 0)
-    const normalSlots   = slots.filter((sl) => sl.behavior === 'normal' && sl.respawnTicksLeft === 0)
+    const prioritySlots = slots.filter((sl) => sl.behavior === 'prioritize' && sl.progress < 1)
+    const normalSlots   = slots.filter((sl) => sl.behavior === 'normal'     && sl.progress < 1)
     const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
     if (focusSlots.length === 0) return null
     return MONSTER_REGISTRY[focusSlots[idx % focusSlots.length]?.monsterId ?? '']?.name ?? null
@@ -162,7 +161,7 @@ function EncounterDots({ count }: { count: number }) {
   )
 }
 
-function SlotBar({ prog, targetName, respawnTicksLeft }: { prog: number; targetName: string | null; respawnTicksLeft: number }) {
+function SlotBar({ prog, targetName }: { prog: number; targetName: string | null }) {
   const barRef   = useRef<HTMLDivElement>(null)
   const prevProg = useRef(prog)
 
@@ -178,16 +177,9 @@ function SlotBar({ prog, targetName, respawnTicksLeft }: { prog: number; targetN
   return (
     <div>
       <div className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
-        {respawnTicksLeft > 0 ? (
-          <div className="bg-game-border/40 h-1.5 rounded-full w-full" />
-        ) : (
-          <div ref={barRef} className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(1 - prog) * 100}%` }} />
-        )}
+        <div ref={barRef} className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(1 - prog) * 100}%` }} />
       </div>
-      {respawnTicksLeft > 0
-        ? <div className="text-[10px] text-game-muted text-right mt-0.5">respawning...</div>
-        : targetName && <div className="text-[10px] text-game-text-dim text-right mt-0.5">→ {targetName}</div>
-      }
+      {targetName && <div className="text-[10px] text-game-text-dim text-right mt-0.5">→ {targetName}</div>}
     </div>
   )
 }
@@ -270,7 +262,7 @@ function MonsterRow({ monsterId, locationId, selected, onSelect }: {
           <div className="w-full space-y-1">
             {slotData.map((sl, i) => {
               const targetName = !isFleeing && sl.targetUnitId ? (units.find((u) => u.id === sl.targetUnitId)?.name ?? null) : null
-              return <SlotBar key={i} prog={sl.progress} targetName={targetName} respawnTicksLeft={sl.respawnTicksLeft} />
+              return <SlotBar key={i} prog={sl.progress} targetName={targetName} />
             })}
           </div>
         )}

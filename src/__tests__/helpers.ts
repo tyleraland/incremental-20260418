@@ -1,4 +1,5 @@
 import { useGameStore, type Unit, type MonsterBehavior, type EncounterSlot } from '@/stores/useGameStore'
+import type { Location, MonsterPoolEntry } from '@/types'
 
 export type { EncounterSlot }
 
@@ -28,7 +29,17 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
 }
 
 export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): EncounterSlot {
-  return { monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior, respawnTicksLeft: 0, ...overrides }
+  return { monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior, ...overrides }
+}
+
+export function makeLocation(overrides: Partial<Location> & { monsterPool?: MonsterPoolEntry[] } = {}): Location {
+  return {
+    id: 'loc1', name: 'Test Location', region: 'test', description: '',
+    traits: [], monsterIds: ['wolf'], familiarityMax: 100, connections: [],
+    monsterPool: [{ monsterId: 'wolf', weight: 1, maxPopulation: null }],
+    encounterSize: [1, 1],
+    ...overrides,
+  }
 }
 
 // Sets a known clean base state for combat/tick tests.
@@ -40,6 +51,7 @@ export function resetStore(overrides: object = {}) {
     encounters: {},
     locationFleeing: {},
     monsterDefeated: {},
+    monsterCooldowns: {},
     miscItems: [],
     eventLog: [],
     itemSockets: {},

@@ -6,12 +6,13 @@ import { inventoryCodec } from './inventoryCodec'
 import { locationsCodec } from './locationsCodec'
 import { codexCodec }     from './codexCodec'
 import { worldCodec }     from './worldCodec'
+import { encounterCodec } from './encounterCodec'
 
-export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec }
+export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, encounterCodec }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ALL_CODECS: SliceCodec<any>[] = [
-  unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec,
+  unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, encounterCodec,
 ]
 
 export function persistSave(): void {
