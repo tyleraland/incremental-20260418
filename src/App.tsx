@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
+import { persistSave, loadPersistedSave } from '@/save'
 import { TabBar } from '@/components/TabBar'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
@@ -84,6 +85,17 @@ function App() {
     const onVisible = () => { if (document.visibilityState === 'visible') catchUp() }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // Load persisted save once on mount.
+  useEffect(() => { loadPersistedSave() }, [])
+
+  // Auto-save every 60 s, foreground only.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') persistSave()
+    }, 60_000)
+    return () => clearInterval(id)
   }, [])
 
   return (

@@ -26,7 +26,7 @@ export * from '@/data/locations'
 
 // ── Store interface ───────────────────────────────────────────────────────────
 
-interface GameState {
+export interface GameState {
   // PERSISTENT — included in save string
   units: Unit[]
   equipment: EquipmentItem[]
