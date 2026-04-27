@@ -46,7 +46,7 @@ describe('UnitRect — fleeing state', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal', respawnTicksLeft: 0 }] },
       locationFleeing: { loc1: 2 },
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
@@ -72,7 +72,7 @@ describe('UnitRect — target display', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal' }] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal', respawnTicksLeft: 0 }] },
       locationFleeing: {},
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
@@ -85,7 +85,7 @@ describe('UnitRect — target display', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal' }] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal', respawnTicksLeft: 0 }] },
       locationFleeing: { loc1: 2 },
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],

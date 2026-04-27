@@ -133,6 +133,7 @@ export interface EncounterSlot {
   progress: number            // 0..1; 1 = monster defeated this tick, reset to 0 next
   targetUnitId: string | null // which unit this monster is targeting
   behavior: MonsterBehavior   // per-slot (not per-monsterId), enabling boss differentiation
+  respawnTicksLeft: number    // >0: monster not yet present; 0: active in encounter
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────
