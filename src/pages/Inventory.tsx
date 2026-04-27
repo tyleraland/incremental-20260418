@@ -52,10 +52,10 @@ function EquipContextView() {
   const unit = units.find((u) => u.id === unitId)
   if (!unit) return null
 
-  const currentId   = unit.equipment[slot]
+  const currentId   = slot === 'mainHand' || slot === 'offHand' ? unit.weaponSets[unit.activeWeaponSet][slot] : unit.equipment[slot]
   const currentItem = equipment.find((e) => e.id === currentId) ?? null
-  const mainHandItem = equipment.find((e) => e.id === unit.equipment.mainHand)
-  const offHandLocked = slot === 'offHand' && mainHandItem?.category === 'weapon-2h'
+  const mainHandId  = unit.weaponSets[unit.activeWeaponSet].mainHand
+  const offHandLocked = slot === 'offHand' && equipment.find((e) => e.id === mainHandId)?.category === 'weapon-2h'
 
   const compatible: ItemCategory[] = SLOT_COMPATIBLE[slot]
   const slotItems = equipment.filter((e) => compatible.includes(e.category))

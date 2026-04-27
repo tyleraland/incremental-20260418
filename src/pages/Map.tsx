@@ -80,7 +80,7 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing =
 function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragging?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: unit.id })
   const allUnits     = useGameStore((s) => s.units)
-  const slots        = useGameStore((s) => unit.locationId ? (s.activeEncounters[unit.locationId] ?? []) : [])
+  const slots        = useGameStore((s) => unit.locationId ? (s.encounters[unit.locationId] ?? []) : [])
   const fleeingTicks = useGameStore((s) => unit.locationId ? (s.locationFleeing[unit.locationId] ?? 0) : 0)
   const isFleeing    = fleeingTicks > 0
 
@@ -89,8 +89,7 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
     const alive = allUnits.filter((u) => u.locationId === unit.locationId && u.health > 0 && u.recoveryTicksLeft === 0)
     const idx   = alive.findIndex((u) => u.id === unit.id)
     if (idx === -1) return null
-    const monsterId = slots[idx % slots.length]
-    return MONSTER_REGISTRY[monsterId]?.name ?? null
+    return MONSTER_REGISTRY[slots[idx % slots.length]?.monsterId ?? '']?.name ?? null
   })()
 
   const style = {
@@ -185,7 +184,7 @@ const BEHAVIOR_OPTIONS: { b: MonsterBehavior; label: string; desc: string; activ
 function MonsterBehaviorPanel({
   monster, locationId, onClose, onOpenCodex,
 }: { monster: MonsterDef; locationId: string; onClose: () => void; onOpenCodex: () => void }) {
-  const behavior           = useGameStore((s) => s.locationStrategy[locationId]?.[monster.id] ?? 'normal')
+  const behavior           = useGameStore((s) => (s.encounters[locationId] ?? []).find((sl) => sl.monsterId === monster.id)?.behavior ?? 'normal')
   const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
   const active             = BEHAVIOR_OPTIONS.find((o) => o.b === behavior)!
 
@@ -221,18 +220,14 @@ function MonsterRow({ monsterId, locationId, selected, onSelect }: {
   monsterId: string; locationId: string; selected: boolean; onSelect: () => void
 }) {
   const [codexOpen, setCodexOpen] = useState(false)
-  const seenCount         = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
-  const activeSlots       = useGameStore((s) => s.activeEncounters[locationId] ?? [])
-  const encounterProgress = useGameStore((s) => s.encounterProgress[locationId] ?? [])
-  const encounterTargets  = useGameStore((s) => s.encounterTargets[locationId] ?? [])
-  const locationFleeing   = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
-  const units             = useGameStore((s) => s.units)
-  const behavior          = useGameStore((s) => s.locationStrategy[locationId]?.[monsterId] ?? 'normal')
-  const monster           = MONSTER_REGISTRY[monsterId]
+  const seenCount       = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
+  const locationSlots   = useGameStore((s) => s.encounters[locationId] ?? [])
+  const locationFleeing = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const units           = useGameStore((s) => s.units)
+  const monster         = MONSTER_REGISTRY[monsterId]
 
-  const slotData = activeSlots
-    .map((id, i) => ({ id, prog: encounterProgress[i] ?? 0, targetId: encounterTargets[i] ?? null }))
-    .filter(({ id }) => id === monsterId)
+  const slotData = locationSlots.filter((sl) => sl.monsterId === monsterId)
+  const behavior = locationSlots.find((sl) => sl.monsterId === monsterId)?.behavior ?? 'normal'
 
   if (!monster) return null
 
@@ -255,9 +250,9 @@ function MonsterRow({ monsterId, locationId, selected, onSelect }: {
         </button>
         {slotData.length > 0 && (
           <div className="w-full space-y-1">
-            {slotData.map(({ prog, targetId }, i) => {
-              const targetName = !isFleeing && targetId ? (units.find((u) => u.id === targetId)?.name ?? null) : null
-              return <SlotBar key={i} prog={prog} targetName={targetName} />
+            {slotData.map((sl, i) => {
+              const targetName = !isFleeing && sl.targetUnitId ? (units.find((u) => u.id === sl.targetUnitId)?.name ?? null) : null
+              return <SlotBar key={i} prog={sl.progress} targetName={targetName} />
             })}
           </div>
         )}

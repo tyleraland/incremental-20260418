@@ -26,7 +26,7 @@ async function renderMap() {
 // All test locations use region 'prontera' (a real REGIONS entry in Map.tsx).
 const TEST_LOCATION = {
   id: 'loc1', name: 'Test Forest', region: 'prontera',
-  description: '', traits: [], monsterIds: ['wolf'], familiarityMax: 100,
+  description: '', traits: [], monsterIds: ['wolf'], familiarityMax: 100, connections: [],
 }
 
 describe('UnitRect — KO state', () => {
@@ -46,10 +46,8 @@ describe('UnitRect — fleeing state', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      activeEncounters: { loc1: ['wolf'] },
-      encounterProgress: { loc1: [0] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
       locationFleeing: { loc1: 2 },
-      locationStrategy: {},
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
     })
@@ -74,10 +72,8 @@ describe('UnitRect — target display', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      activeEncounters: { loc1: ['wolf'] },
-      encounterProgress: { loc1: [0] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal' }] },
       locationFleeing: {},
-      locationStrategy: {},
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
     })
@@ -89,10 +85,8 @@ describe('UnitRect — target display', () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
-      activeEncounters: { loc1: ['wolf'] },
-      encounterProgress: { loc1: [0] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal' }] },
       locationFleeing: { loc1: 2 },
-      locationStrategy: {},
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
     })

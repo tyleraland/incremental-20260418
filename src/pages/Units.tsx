@@ -56,9 +56,9 @@ function DetailTabBar({ active, onChange, unit }: { active: DetailTab; onChange:
 function EquipSlotBtn({ unit, slot }: { unit: Unit; slot: EquipSlot }) {
   const equipment    = useGameStore((s) => s.equipment)
   const openEquipFor = useGameStore((s) => s.openEquipFor)
-  const item = equipment.find((e) => e.id === unit.equipment[slot])
-  const mainHandItem = equipment.find((e) => e.id === unit.equipment.mainHand)
-  const locked = slot === 'offHand' && mainHandItem?.category === 'weapon-2h'
+  const item = equipment.find((e) => e.id === (slot === 'mainHand' || slot === 'offHand' ? unit.weaponSets[unit.activeWeaponSet][slot] : unit.equipment[slot]))
+  const mainHandId = unit.weaponSets[unit.activeWeaponSet].mainHand
+  const locked = slot === 'offHand' && equipment.find((e) => e.id === mainHandId)?.category === 'weapon-2h'
 
   return (
     <button

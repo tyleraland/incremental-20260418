@@ -1,17 +1,6 @@
-import { useGameStore, type Unit, type MonsterBehavior } from '@/stores/useGameStore'
+import { useGameStore, type Unit, type MonsterBehavior, type EncounterSlot } from '@/stores/useGameStore'
 
-// Pre-shapes the per-slot encounter model from refactor-plan §9.
-// When EncounterSlot is exported from the store, replace this local type with that import.
-export interface EncounterSlot {
-  monsterId: string
-  progress: number
-  targetUnitId: string | null
-  behavior: MonsterBehavior
-}
-
-export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): EncounterSlot {
-  return { monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal', ...overrides }
-}
+export type { EncounterSlot }
 
 export function makeUnit(overrides: Partial<Unit> = {}): Unit {
   return {
@@ -26,13 +15,20 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
     class: null,
     proficiencies: [],
     locationId: null,
+    travelPath: null,
     abilities: { strength: 5, agility: 5, dexterity: 5, constitution: 5, intelligence: 5 },
     abilityPoints: 0,
     skillPoints: 0,
     learnedSkills: {},
-    equipment: { mainHand: null, offHand: null, tool: null, armor: null, accessory: null },
+    weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
+    activeWeaponSet: 0,
+    equipment: { armor: null, tool: null, accessory: null },
     ...overrides,
   }
+}
+
+export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): EncounterSlot {
+  return { monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior, ...overrides }
 }
 
 // Sets a known clean base state for combat/tick tests.
@@ -41,13 +37,12 @@ export function resetStore(overrides: object = {}) {
   useGameStore.setState({
     units: [],
     equipment: [],
-    activeEncounters: {},
-    encounterProgress: {},
-    encounterTargets: {},
+    encounters: {},
     locationFleeing: {},
-    locationStrategy: {},
     monsterDefeated: {},
     miscItems: [],
+    eventLog: [],
+    itemSockets: {},
     ticks: 0,
     lastTickAt: Date.now(),
     ...overrides,

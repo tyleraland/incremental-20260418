@@ -61,25 +61,28 @@ describe('getDerivedStats — base formulas from abilities', () => {
 describe('getDerivedStats — equipment bonuses', () => {
   it('adds equipment attack bonus to base attack', () => {
     // Iron Sword: +4 attack → 10 + 4 = 14
-    const unit = makeUnit({ equipment: { mainHand: 'eq-sword-1h', offHand: null, tool: null, armor: null, accessory: null } })
+    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-sword-1h', offHand: null }, { mainHand: null, offHand: null }] })
     expect(getDerivedStats(unit, ALL_FIXTURES).attack).toBe(14)
   })
 
   it('adds equipment defense bonus to base defense', () => {
     // Iron Shield: +5 defense → 7 + 5 = 12
-    const unit = makeUnit({ equipment: { mainHand: null, offHand: 'eq-shield', tool: null, armor: null, accessory: null } })
+    const unit = makeUnit({ weaponSets: [{ mainHand: null, offHand: 'eq-shield' }, { mainHand: null, offHand: null }] })
     expect(getDerivedStats(unit, ALL_FIXTURES).defense).toBe(12)
   })
 
   it('adds equipment specialAttack bonus to magicAttack', () => {
     // Wand: +4 specialAttack → 12 + 4 = 16
-    const unit = makeUnit({ equipment: { mainHand: 'eq-wand', offHand: null, tool: null, armor: null, accessory: null } })
+    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-wand', offHand: null }, { mainHand: null, offHand: null }] })
     expect(getDerivedStats(unit, ALL_FIXTURES).magicAttack).toBe(16)
   })
 
   it('stacks bonuses from multiple equipped items', () => {
     // Iron Sword (+4 atk) + Iron Shield (+5 def) + Chain Mail (+5 def)
-    const unit = makeUnit({ equipment: { mainHand: 'eq-sword-1h', offHand: 'eq-shield', tool: null, armor: 'eq-chainmail', accessory: null } })
+    const unit = makeUnit({
+      weaponSets: [{ mainHand: 'eq-sword-1h', offHand: 'eq-shield' }, { mainHand: null, offHand: null }],
+      equipment:  { armor: 'eq-chainmail', tool: null, accessory: null },
+    })
     const stats = getDerivedStats(unit, ALL_FIXTURES)
     expect(stats.attack).toBe(14)       // 10 + 4
     expect(stats.defense).toBe(17)      // 7 + 5 + 5
@@ -87,13 +90,13 @@ describe('getDerivedStats — equipment bonuses', () => {
 
   it('silently ignores equipment slot ids not found in the allEquipment list', () => {
     // Unit has a nonexistent item id — should compute as if the slot is empty
-    const unit = makeUnit({ equipment: { mainHand: 'eq-legendary-sword-unknown', offHand: null, tool: null, armor: null, accessory: null } })
+    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-legendary-sword-unknown', offHand: null }, { mainHand: null, offHand: null }] })
     const stats = getDerivedStats(unit, ALL_FIXTURES)
     expect(stats.attack).toBe(10)  // no bonus applied
   })
 
   it('produces the same result whether allEquipment is [] or missing equipped item ids', () => {
-    const unit = makeUnit({ equipment: { mainHand: 'eq-sword-1h', offHand: null, tool: null, armor: null, accessory: null } })
+    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-sword-1h', offHand: null }, { mainHand: null, offHand: null }] })
     expect(getDerivedStats(unit, [])).toEqual(getDerivedStats(makeUnit(), []))
   })
 })

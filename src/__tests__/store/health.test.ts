@@ -13,8 +13,7 @@ const WOLF_DMG    = WOLF_ATK / BASE_DEF                    // ≈ 1.143
 beforeEach(() => {
   resetStore({
     units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
-    activeEncounters: { loc1: ['wolf'] },
-    encounterProgress: { loc1: [0] },
+    encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
   })
 })
 
@@ -31,8 +30,7 @@ describe('Health — KO', () => {
   it('KOs a unit and starts recovery when health reaches 0 from damage', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 1, locationId: 'loc1' })],
-      activeEncounters: { loc1: ['wolf'] },
-      encounterProgress: { loc1: [0] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
     })
     // floor(1 - 1.143) = floor(-0.143) = -1 ≤ 0 → KO
     const { units } = tick()
@@ -43,8 +41,7 @@ describe('Health — KO', () => {
   it('does not apply combat damage to KO\'d units (recovery takes priority)', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: 5, locationId: 'loc1' })],
-      activeEncounters: { loc1: ['wolf'] },
-      encounterProgress: { loc1: [0] },
+      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
     })
     // KO'd unit is not in aliveUnits so not targeted; regen fires instead
     const { units } = tick()
@@ -94,8 +91,7 @@ describe('Health — idle regen', () => {
   it('does not idle-regen units assigned to a location', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 50, locationId: 'loc1' })],
-      activeEncounters: { loc1: [] },
-      encounterProgress: { loc1: [] },
+      encounters: { loc1: [] },
     })
     const { units } = tick()
     expect(units[0].health).toBe(50)
