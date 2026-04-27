@@ -1,4 +1,17 @@
-import { useGameStore, type Unit } from '@/stores/useGameStore'
+import { useGameStore, type Unit, type MonsterBehavior } from '@/stores/useGameStore'
+
+// Pre-shapes the per-slot encounter model from refactor-plan §9.
+// When EncounterSlot is exported from the store, replace this local type with that import.
+export interface EncounterSlot {
+  monsterId: string
+  progress: number
+  targetUnitId: string | null
+  behavior: MonsterBehavior
+}
+
+export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): EncounterSlot {
+  return { monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal', ...overrides }
+}
 
 export function makeUnit(overrides: Partial<Unit> = {}): Unit {
   return {
