@@ -1,5 +1,6 @@
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR } from '@/stores/useGameStore'
 
+
 function ProgressBar({ value, className = '' }: { value: number; className?: string }) {
   return (
     <div className="w-full bg-game-border rounded-full h-2">
@@ -12,8 +13,10 @@ function ProgressBar({ value, className = '' }: { value: number; className?: str
 }
 
 export function Time() {
-  const ticks = useGameStore((s) => s.ticks)
-  const units = useGameStore((s) => s.units)
+  const ticks       = useGameStore((s) => s.ticks)
+  const units       = useGameStore((s) => s.units)
+  const paused      = useGameStore((s) => s.paused)
+  const togglePause = useGameStore((s) => s.togglePause)
 
   const { year, seasonName, dayOfSeason, tickOfDay } = ticksToCalendar(ticks)
 
@@ -29,6 +32,25 @@ export function Time() {
 
   return (
     <div className="p-4 pb-24 space-y-4">
+      {/* Time control */}
+      <div className="border border-game-border rounded-xl px-4 py-3 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium text-game-text">{paused ? 'Time paused' : 'Time running'}</div>
+          <div className="text-xs text-game-muted mt-0.5">{paused ? 'Units and combat are frozen' : 'Ticks advance every second'}</div>
+        </div>
+        <button
+          onClick={togglePause}
+          className={[
+            'text-sm font-semibold px-4 py-2 rounded-lg border transition-colors',
+            paused
+              ? 'bg-game-green/10 border-game-green/40 text-game-green hover:bg-game-green/20'
+              : 'bg-game-border/50 border-game-border text-game-text-dim hover:border-game-primary/50 hover:text-game-text',
+          ].join(' ')}
+        >
+          {paused ? '▶ Resume' : '⏸ Pause'}
+        </button>
+      </div>
+
       {/* Calendar */}
       <div className="border border-game-border rounded-xl p-5 space-y-5">
         <div className="text-xs uppercase tracking-widest text-game-text-dim">Calendar</div>

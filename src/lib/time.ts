@@ -11,6 +11,16 @@ export const FLEE_TICKS_CONST = 2   // ticks to complete a flee action
 
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
 
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60), s = seconds % 60
+    return s > 0 ? `${m}m ${s}s` : `${m}m`
+  }
+  const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60)
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
 export function ticksToCalendar(ticks: number) {
   const tickOfDay    = ticks % TICKS_PER_DAY
   const totalDays    = Math.floor(ticks / TICKS_PER_DAY)

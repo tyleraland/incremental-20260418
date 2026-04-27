@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { useGameStore } from '@/stores/useGameStore'
+import { useGameStore, formatDuration } from '@/stores/useGameStore'
 import { persistSave, loadPersistedSave } from '@/save'
+import { ActivityConsole } from '@/components/ActivityConsole'
 import { TabBar } from '@/components/TabBar'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
@@ -12,21 +13,12 @@ import { Codex } from '@/pages/Codex'
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
 function catchUp() {
-  const { lastTickAt, tick, batchTick } = useGameStore.getState()
+  const { lastTickAt, tick, batchTick, paused } = useGameStore.getState()
+  if (paused) return
   const n = Math.floor((Date.now() - lastTickAt) / 1000)
   if (n <= 0) return
   if (n === 1) tick()
   else batchTick(n)
-}
-
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) {
-    const m = Math.floor(seconds / 60), s = seconds % 60
-    return s > 0 ? `${m}m ${s}s` : `${m}m`
-  }
-  const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60)
-  return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
 function OfflineBanner() {
@@ -101,6 +93,7 @@ function App() {
   return (
     <div className="min-h-full flex flex-col">
       <OfflineBanner />
+      <ActivityConsole />
       <main className="flex-1 overflow-y-auto pt-16">
         {activeTab === 'map'       && <Map />}
         {activeTab === 'units'     && <Units />}
