@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push*)",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE '^git push'; then cd /home/user/incremental-20260418 && npm run ci || { echo '{\"decision\":\"block\",\"reason\":\"npm run ci failed — fix type errors and test failures before pushing\"}'; exit 0; }; fi",
+            "timeout": 120,
+            "statusMessage": "Running ci checks before push..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "ci": "tsc --noEmit && vitest run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

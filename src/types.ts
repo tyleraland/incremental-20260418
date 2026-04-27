@@ -82,7 +82,7 @@ export interface Location {
 
 // ── Monster ───────────────────────────────────────────────────────────────────
 
-export type MonsterElement = 'fire' | 'lightning' | 'ice' | 'earth' | 'wind' | 'neutral'
+export type MonsterElement = 'fire' | 'lightning' | 'ice' | 'earth' | 'wind' | 'water' | 'neutral'
 export type MonsterSize    = 'small' | 'medium' | 'large'
 
 export interface MonsterDrop {
