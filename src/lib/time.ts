@@ -8,8 +8,8 @@ export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as cons
 export const RECOVERY_TICKS   = 10  // ticks of KO countdown before regen starts
 export const REGEN_RATE       = 5   // HP per tick while recovering or idle
 export const FLEE_TICKS_CONST = 2   // ticks to complete a flee action
-export const RESPAWN_TICKS_MIN = 3  // min ticks between monster defeat and respawn
-export const RESPAWN_TICKS_MAX = 8  // max ticks between monster defeat and respawn
+export const WAVE_COOLDOWN_MIN = 3  // min ticks between last defeat and next wave
+export const WAVE_COOLDOWN_MAX = 8  // max ticks between last defeat and next wave
 
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
 

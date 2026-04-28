@@ -127,13 +127,13 @@ describe('Encounter progress', () => {
     expect(encounters['loc1'][0].progress).toBeCloseTo(1 / (2 * 5))
   })
 
-  it('resets a slot to 0 on the tick after it reaches full progress (monster defeated)', () => {
+  it('removes a slot from the encounter on the tick after it reaches full progress (monster defeated)', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', progress: 1.0 })] },
     })
     const { encounters } = tick()
-    expect(encounters['loc1'][0].progress).toBe(0)
+    expect(encounters['loc1']).toHaveLength(0)
   })
 
   it('does not reset a slot that has not yet reached full progress', () => {
