@@ -4,7 +4,7 @@ import type {
   MonsterBehavior, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
 } from '@/types'
 import { FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
-import { sampleEncounter, isEncounterComplete, randomRespawnTick } from '@/lib/encounter'
+import { sampleEncounter, isEncounterComplete, randomRespawnTick, ENCOUNTER_START_DISTANCE, PARTY_APPROACH_SPEED, MONSTER_DEFAULT_MOVE_SPEED } from '@/lib/encounter'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { SKILL_REGISTRY } from '@/data/skills'
@@ -44,6 +44,7 @@ export interface GameState {
   locations: Location[]
   encounters: Record<string, EncounterSlot[]>         // §9: locationId → per-slot state
   locationFleeing: Record<string, number>             // locationId → ticks remaining in flee
+  encounterDistance: Record<string, number>           // locationId → feet until contact; 0 = melee
   itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
@@ -125,8 +126,9 @@ export const useGameStore = create<GameState>((set) => ({
   locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, 'lake-arawok': 50, 'gray-hills': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
   locationMonstersSeen: { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': ['shadow-wolf'], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
   monsterSeen:          { wolf: 15, 'forest-sprite': 3, poacher: 1, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
-  encounters:     INITIAL_ENCOUNTERS,
-  locationFleeing: {},
+  encounters:       INITIAL_ENCOUNTERS,
+  locationFleeing:  {},
+  encounterDistance: {},
   ticks: 0,
   monsterDefeated: {},
   monsterCooldowns: {},
@@ -140,10 +142,11 @@ export const useGameStore = create<GameState>((set) => ({
     const newTicks    = s.ticks + 1
     const yearChanged = Math.floor(newTicks / TICKS_PER_YEAR) > Math.floor(s.ticks / TICKS_PER_YEAR)
 
-    const encounters:      Record<string, EncounterSlot[]> = {}
-    const locationFleeing: Record<string, number>          = { ...s.locationFleeing }
-    const monsterDefeated  = { ...s.monsterDefeated }
-    let monsterCooldowns   = { ...s.monsterCooldowns }
+    const encounters:        Record<string, EncounterSlot[]> = {}
+    const locationFleeing:   Record<string, number>          = { ...s.locationFleeing }
+    const encounterDistance: Record<string, number>          = { ...s.encounterDistance }
+    const monsterDefeated    = { ...s.monsterDefeated }
+    let monsterCooldowns     = { ...s.monsterCooldowns }
     const expGained: Record<string, number> = {}
     let goldEarned = 0
     const hpDamage: Record<string, number> = {}
@@ -155,16 +158,21 @@ export const useGameStore = create<GameState>((set) => ({
     for (const locId of aliveUnitLocs) { if (!encountersSrc[locId]) encountersSrc[locId] = [] }
 
     for (const [locationId, slots] of Object.entries(encountersSrc)) {
+      const dist        = encounterDistance[locationId] ?? ENCOUNTER_START_DISTANCE
       const aliveUnits  = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
       const activeSlots = slots.filter((sl) => sl.progress < 1)
 
-      // ── Flee state machine ───────────────────────────────────────────────────
+      // ── Flee state machine (distance frozen during flee; reset on resolution) ─
       const fleeLeft = locationFleeing[locationId] ?? 0
       if (fleeLeft > 0) {
         locationFleeing[locationId] = fleeLeft - 1
-        encounters[locationId] = fleeLeft === 1
-          ? slots.map((sl) => ({ ...sl, progress: 0, targetUnitId: null }))
-          : slots.map((sl) => ({ ...sl, targetUnitId: null }))
+        if (fleeLeft === 1) {
+          encounterDistance[locationId] = ENCOUNTER_START_DISTANCE
+          encounters[locationId] = slots.map((sl) => ({ ...sl, progress: 0, targetUnitId: null }))
+        } else {
+          encounterDistance[locationId] = dist  // freeze
+          encounters[locationId] = slots.map((sl) => ({ ...sl, targetUnitId: null }))
+        }
         continue
       }
       const shouldFlee = aliveUnits.length > 0 && activeSlots.length > 0 && (
@@ -173,6 +181,7 @@ export const useGameStore = create<GameState>((set) => ({
       )
       if (shouldFlee) {
         locationFleeing[locationId] = FLEE_TICKS_CONST
+        encounterDistance[locationId] = dist  // freeze
         encounters[locationId] = slots.map((sl) => ({ ...sl, targetUnitId: null }))
         newLog = appendLog(newLog, 'flee', `Fled from ${locationId}`, newTicks)
         continue
@@ -180,6 +189,7 @@ export const useGameStore = create<GameState>((set) => ({
       // ────────────────────────────────────────────────────────────────────────
 
       if (aliveUnits.length === 0) {
+        encounterDistance[locationId] = dist  // freeze (no party to approach)
         encounters[locationId] = slots.map((sl) => ({ ...sl, targetUnitId: null }))
         continue
       }
@@ -190,28 +200,39 @@ export const useGameStore = create<GameState>((set) => ({
         encounters[locationId] = loc
           ? sampleEncounter(loc.monsterPool, monsterCooldowns[locationId] ?? {}, newTicks, loc.encounterSize)
           : []
+        encounterDistance[locationId] = ENCOUNTER_START_DISTANCE
         continue
       }
 
-      // Monster → unit targeting (round-robin over active slots only)
+      // Advance distance: both sides approach each other
+      const avgMoveSpeed = activeSlots.reduce((sum, sl) => sum + (MONSTER_REGISTRY[sl.monsterId]?.moveSpeed ?? MONSTER_DEFAULT_MOVE_SPEED), 0) / activeSlots.length
+      const newDist = Math.max(0, dist - PARTY_APPROACH_SPEED - avgMoveSpeed)
+      encounterDistance[locationId] = newDist
+
+      // Monster → unit targeting (round-robin)
       const targets = slots.map((_, i) => aliveUnits[i % aliveUnits.length].id)
 
-      // Unit → monster targeting (prioritize active slots first)
+      // Unit → monster targeting (prioritize active slots first); gated by unit range
       const priorityIdxs = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'prioritize' && sl.progress < 1)
       const normalIdxs   = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'normal'     && sl.progress < 1)
       const focusIdxs    = priorityIdxs.length > 0 ? priorityIdxs : normalIdxs
       const attackedSlots = new Set<number>()
       if (focusIdxs.length > 0) {
-        aliveUnits.forEach((_, ui) => attackedSlots.add(focusIdxs[ui % focusIdxs.length].i))
+        aliveUnits.forEach((u, ui) => {
+          if (getDerivedStats(u, s.equipment).range >= newDist) {
+            attackedSlots.add(focusIdxs[ui % focusIdxs.length].i)
+          }
+        })
       }
 
-      // Damage to units (dead and avoid slots don't deal damage)
+      // Damage to units (avoid and out-of-range slots don't deal damage)
       for (let i = 0; i < slots.length; i++) {
         const { monsterId, behavior, progress } = slots[i]
         if (behavior === 'avoid' || progress >= 1) continue
         const monster  = MONSTER_REGISTRY[monsterId]
         const targetId = targets[i]
         if (!monster || !targetId) continue
+        if (monster.stats.range < newDist) continue  // out of range
         const target = s.units.find((u) => u.id === targetId)
         if (!target) continue
         const def = getDerivedStats(target, s.equipment).defense
@@ -249,6 +270,7 @@ export const useGameStore = create<GameState>((set) => ({
         encounters[locationId] = loc
           ? sampleEncounter(loc.monsterPool, monsterCooldowns[locationId] ?? {}, newTicks, loc.encounterSize)
           : []
+        encounterDistance[locationId] = ENCOUNTER_START_DISTANCE
       } else {
         encounters[locationId] = newSlots
       }
@@ -279,7 +301,7 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounters, locationFleeing, monsterDefeated, monsterCooldowns, miscItems, lastTickAt: Date.now(), eventLog: newLog }
+    return { ticks: newTicks, units, encounters, locationFleeing, encounterDistance, monsterDefeated, monsterCooldowns, miscItems, lastTickAt: Date.now(), eventLog: newLog }
   }),
 
   batchTick: (n) => set((s) => {
@@ -288,10 +310,11 @@ export const useGameStore = create<GameState>((set) => ({
     const newTicks    = s.ticks + n
     const yearsPassed = Math.floor(newTicks / TICKS_PER_YEAR) - Math.floor(s.ticks / TICKS_PER_YEAR)
 
-    const encounters:      Record<string, EncounterSlot[]> = {}
-    const locationFleeing: Record<string, number>          = { ...s.locationFleeing }
-    const monsterDefeated  = { ...s.monsterDefeated }
-    let monsterCooldowns   = { ...s.monsterCooldowns }
+    const encounters:        Record<string, EncounterSlot[]> = {}
+    const locationFleeing:   Record<string, number>          = { ...s.locationFleeing }
+    const encounterDistance: Record<string, number>          = { ...s.encounterDistance }
+    const monsterDefeated    = { ...s.monsterDefeated }
+    let monsterCooldowns     = { ...s.monsterCooldowns }
     const expGained: Record<string, number> = {}
     const newDefeats: Record<string, number> = {}
     const locationHadDefeats = new Set<string>()
@@ -307,6 +330,7 @@ export const useGameStore = create<GameState>((set) => ({
     for (const locId of aliveUnitLocs) { if (!encountersSrc[locId]) encountersSrc[locId] = [] }
 
     for (const [locationId, slots] of Object.entries(encountersSrc)) {
+      const dist        = encounterDistance[locationId] ?? ENCOUNTER_START_DISTANCE
       const aliveUnits  = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
       const activeSlots = slots.filter((sl) => sl.progress < 1)
 
@@ -317,11 +341,13 @@ export const useGameStore = create<GameState>((set) => ({
       )
       if (wasFleeing || shouldFlee) {
         locationFleeing[locationId] = 0
+        encounterDistance[locationId] = ENCOUNTER_START_DISTANCE
         encounters[locationId] = slots.map((sl) => ({ ...sl, progress: 0, targetUnitId: null }))
         continue
       }
 
       if (aliveUnits.length === 0) {
+        encounterDistance[locationId] = dist  // freeze
         encounters[locationId] = slots.map((sl) => ({ ...sl, targetUnitId: null }))
         continue
       }
@@ -329,9 +355,14 @@ export const useGameStore = create<GameState>((set) => ({
       // Mark locations with complete encounters for resampling after unit updates
       if (isEncounterComplete(slots)) {
         locationHadDefeats.add(locationId)
+        encounterDistance[locationId] = ENCOUNTER_START_DISTANCE
         encounters[locationId] = []
         continue
       }
+
+      // Simplification: treat full n as combat ticks (approach phase negligible for offline sessions)
+      const avgMoveSpeed = activeSlots.reduce((sum, sl) => sum + (MONSTER_REGISTRY[sl.monsterId]?.moveSpeed ?? MONSTER_DEFAULT_MOVE_SPEED), 0) / activeSlots.length
+      encounterDistance[locationId] = Math.max(0, dist - n * (PARTY_APPROACH_SPEED + avgMoveSpeed))
 
       const targets = slots.map((_, i) => aliveUnits[i % aliveUnits.length])
 
@@ -407,7 +438,7 @@ export const useGameStore = create<GameState>((set) => ({
       return { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + exp }
     })
 
-    // Resample encounters where combat happened; otherwise update targets to post-batch alive state
+    // Resample encounters where combat happened; update distance to ENCOUNTER_START_DISTANCE for those
     for (const [locationId, slots] of Object.entries(encounters)) {
       const finalAlive = units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
       if (locationHadDefeats.has(locationId) && finalAlive.length > 0) {
@@ -415,6 +446,7 @@ export const useGameStore = create<GameState>((set) => ({
         encounters[locationId] = loc
           ? sampleEncounter(loc.monsterPool, monsterCooldowns[locationId] ?? {}, newTicks, loc.encounterSize)
           : []
+        encounterDistance[locationId] = ENCOUNTER_START_DISTANCE
       } else {
         encounters[locationId] = slots.map((sl, i) => ({
           ...sl, targetUnitId: finalAlive.length > 0 ? finalAlive[i % finalAlive.length].id : null,
@@ -439,7 +471,7 @@ export const useGameStore = create<GameState>((set) => ({
       eventLog = appendLog(eventLog, 'offline', msg, newTicks)
     }
 
-    return { ticks: newTicks, units, encounters, locationFleeing, monsterDefeated, monsterCooldowns, miscItems, lastTickAt: Date.now(), offlineSummary, eventLog }
+    return { ticks: newTicks, units, encounters, locationFleeing, encounterDistance, monsterDefeated, monsterCooldowns, miscItems, lastTickAt: Date.now(), offlineSummary, eventLog }
   }),
 
   dismissOfflineSummary: () => set({ offlineSummary: null }),

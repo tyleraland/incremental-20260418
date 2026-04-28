@@ -44,7 +44,13 @@ export function makeLocation(overrides: Partial<Location> & { monsterPool?: Mons
 
 // Sets a known clean base state for combat/tick tests.
 // Merges over the existing store so actions are preserved.
-export function resetStore(overrides: object = {}) {
+// encounterDistance defaults to 0 for every location that has a pre-seeded encounter,
+// so tests get immediate melee combat without needing an explicit approach phase.
+export function resetStore(overrides: Record<string, unknown> = {}) {
+  const encounters = (overrides.encounters ?? {}) as Record<string, unknown>
+  const autoDistance: Record<string, number> = {}
+  for (const locId of Object.keys(encounters)) autoDistance[locId] = 0
+
   useGameStore.setState({
     units: [],
     equipment: [],
@@ -57,6 +63,7 @@ export function resetStore(overrides: object = {}) {
     itemSockets: {},
     ticks: 0,
     lastTickAt: Date.now(),
+    encounterDistance: autoDistance,
     ...overrides,
   })
 }

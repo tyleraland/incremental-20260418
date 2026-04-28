@@ -20,16 +20,17 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
   const con = unit.abilities.constitution + (sb.constitution ?? 0)
   const int = unit.abilities.intelligence + (sb.intelligence ?? 0)
 
-  const eq = { atk: 0, def: 0, matk: 0, mdef: 0 }
+  const eq = { atk: 0, def: 0, matk: 0, mdef: 0, range: 0 }
   const ws = unit.weaponSets[unit.activeWeaponSet]
   const allIds = [ws.mainHand, ws.offHand, unit.equipment.armor, unit.equipment.tool, unit.equipment.accessory]
   for (const id of allIds) {
     if (!id) continue
     const item = allEquipment.find((e) => e.id === id); if (!item) continue
-    eq.atk  += item.stats.attack         ?? 0
-    eq.def  += item.stats.defense        ?? 0
-    eq.matk += item.stats.specialAttack  ?? 0
-    eq.mdef += item.stats.specialDefense ?? 0
+    eq.atk   += item.stats.attack         ?? 0
+    eq.def   += item.stats.defense        ?? 0
+    eq.matk  += item.stats.specialAttack  ?? 0
+    eq.mdef  += item.stats.specialDefense ?? 0
+    if ((item.stats.range ?? 0) > eq.range) eq.range = item.stats.range!
   }
 
   return {
@@ -40,6 +41,7 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
     attackSpeed:  Math.max(1, Math.floor(agi * 2)                          + (sb.attackSpeed  ?? 0)),
     accuracy:     Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)           + (sb.accuracy     ?? 0)),
     dodge:        Math.max(1, Math.floor(agi * 2   + dex * 0.5)           + (sb.dodge        ?? 0)),
+    range:        eq.range,
   }
 }
 

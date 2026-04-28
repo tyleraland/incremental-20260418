@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
+import { ENCOUNTER_START_DISTANCE } from '@/lib/encounter'
 
 const REGIONS = [
   { id: 'prontera', name: 'Prontera Region' },
@@ -28,8 +29,8 @@ function hpBarColor(health: number) {
   return 'bg-red-500'
 }
 
-function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing = false, isHunting = false }: {
-  unit: Unit; overlay?: boolean; targetMonsterName?: string | null; isFleeing?: boolean; isHunting?: boolean
+function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing = false, isHunting = false, isApproaching = false }: {
+  unit: Unit; overlay?: boolean; targetMonsterName?: string | null; isFleeing?: boolean; isHunting?: boolean; isApproaching?: boolean
 }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
@@ -67,7 +68,8 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing =
           {isRecovering && <div className="text-[10px] text-purple-400 mt-0.5">KO</div>}
           {!isRecovering && isFleeing && <div className="text-[10px] text-sky-400 mt-0.5">fleeing</div>}
           {!isRecovering && !isFleeing && isHunting && <div className="text-[10px] text-amber-400 mt-0.5">hunting...</div>}
-          {!isRecovering && !isFleeing && !isHunting && targetMonsterName && (
+          {!isRecovering && !isFleeing && !isHunting && isApproaching && <div className="text-[10px] text-orange-400 mt-0.5">approaching...</div>}
+          {!isRecovering && !isFleeing && !isHunting && !isApproaching && targetMonsterName && (
             <div className="text-[10px] text-game-text-dim mt-0.5 truncate">→ {targetMonsterName}</div>
           )}
         </>
@@ -83,12 +85,15 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
   const allUnits     = useGameStore((s) => s.units)
   const slots        = useGameStore((s) => unit.locationId ? (s.encounters[unit.locationId] ?? []) : [])
   const fleeingTicks = useGameStore((s) => unit.locationId ? (s.locationFleeing[unit.locationId] ?? 0) : 0)
+  const dist         = useGameStore((s) => unit.locationId ? (s.encounterDistance[unit.locationId] ?? ENCOUNTER_START_DISTANCE) : 0)
   const isFleeing    = fleeingTicks > 0
 
   const isHunting = (() => {
     if (isFleeing || !unit.locationId || unit.health <= 0 || unit.recoveryTicksLeft > 0) return false
     return slots.length === 0
   })()
+
+  const isApproaching = !isFleeing && !isHunting && unit.health > 0 && unit.recoveryTicksLeft === 0 && slots.some((sl) => sl.progress < 1) && dist > 0
 
   const targetMonsterName = (() => {
     if (isFleeing || isHunting || !unit.locationId || slots.length === 0 || unit.health <= 0 || unit.recoveryTicksLeft > 0) return null
@@ -115,7 +120,7 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
       {...attributes}
       className={isDragging || groupDragging ? 'opacity-30' : ''}
     >
-      <UnitRect unit={unit} targetMonsterName={targetMonsterName} isFleeing={isFleeing} isHunting={isHunting} />
+      <UnitRect unit={unit} targetMonsterName={targetMonsterName} isFleeing={isFleeing} isHunting={isHunting} isApproaching={isApproaching} />
     </div>
   )
 }
@@ -276,10 +281,14 @@ function MonsterList({ location }: { location: Location }) {
   const [selectedMonsterId, setSelectedMonsterId] = useState<string | null>(null)
   const familiarity          = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen[location.id] ?? [])
+  const activeEncounter      = useGameStore((s) => s.encounters[location.id] ?? [])
+  const encounterDist        = useGameStore((s) => s.encounterDistance[location.id] ?? ENCOUNTER_START_DISTANCE)
   const famPct               = Math.round((familiarity / location.familiarityMax) * 100)
   const unknownCount         = location.monsterIds.length - locationMonstersSeen.length
   const [codexMonster, setCodexMonster] = useState<string | null>(null)
   const seenCount = useGameStore((s) => codexMonster ? (s.monsterSeen[codexMonster] ?? 0) : 0)
+
+  const isApproaching = activeEncounter.some((sl) => sl.progress < 1) && encounterDist > 0
 
   const toggleSelect = (id: string) => setSelectedMonsterId(v => v === id ? null : id)
 
@@ -287,7 +296,10 @@ function MonsterList({ location }: { location: Location }) {
     <div>
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs uppercase tracking-widest text-game-text-dim">Monsters</div>
-        <div className="text-xs text-game-accent">{famPct}% familiarity</div>
+        <div className="flex items-center gap-2">
+          {isApproaching && <div className="text-xs text-orange-400">⟶ {Math.round(encounterDist)} ft</div>}
+          <div className="text-xs text-game-accent">{famPct}% familiarity</div>
+        </div>
       </div>
       {famPct === 0 ? (
         <p className="text-xs text-game-muted italic">

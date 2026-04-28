@@ -53,6 +53,7 @@ export interface Abilities {
 export interface DerivedStats {
   attack: number; defense: number; magicAttack: number; magicDefense: number
   attackSpeed: number; accuracy: number; dodge: number
+  range: number  // attack range in feet; 0 = melee (can only attack at distance 0)
 }
 
 // ── Unit ──────────────────────────────────────────────────────────────────────
@@ -109,13 +110,14 @@ export interface MonsterDef {
   element: MonsterElement  // §3: default 'neutral'
   size: MonsterSize        // §3: default 'medium'
   isBoss?: boolean         // §3: undefined = false
+  moveSpeed?: number       // feet per tick this monster closes distance; default MONSTER_DEFAULT_MOVE_SPEED
 }
 
 // ── Equipment item ────────────────────────────────────────────────────────────
 
 export interface EquipmentItem {
   id: string; name: string; category: ItemCategory; traits: string[]
-  stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number }
+  stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number; range?: number }
   description?: string
   slots?: number  // §6: card sockets (0–4); default 0
 }

@@ -76,6 +76,7 @@ describe('UnitRect — target display', () => {
       locations: [TEST_LOCATION],
       encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: 'u1', behavior: 'normal',  }] },
       locationFleeing: {},
+      encounterDistance: { loc1: 0 },  // at melee range so unit shows target, not "approaching..."
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
     })

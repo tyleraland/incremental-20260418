@@ -1,6 +1,10 @@
 import type { EncounterSlot, MonsterPoolEntry } from '@/types'
 import { RESPAWN_TICKS_MIN, RESPAWN_TICKS_MAX } from '@/lib/time'
 
+export const ENCOUNTER_START_DISTANCE  = 100  // feet; both sides start here and approach
+export const PARTY_APPROACH_SPEED      = 10   // feet/tick the party moves toward the encounter
+export const MONSTER_DEFAULT_MOVE_SPEED = 10  // feet/tick for monsters without an explicit moveSpeed
+
 // EXTENSION POINT: determines when to draw a new encounter from the pool.
 // Currently: end-of-encounter only (all slots fully defeated).
 // Future option: per-tick reinforcement draws — see backlog.md.
