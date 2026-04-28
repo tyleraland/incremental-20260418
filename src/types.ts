@@ -92,11 +92,22 @@ export interface MonsterDrop {
   quantityMax: number
 }
 
+export interface MonsterStats {
+  attack: number
+  defense: [number, number]      // [ability, armor]
+  magicAttack: number
+  magicDefense: [number, number] // [ability, armor]
+  attackSpeed: number
+  accuracy: number
+  dodge: number
+}
+
 export interface MonsterDef {
   id: string
   name: string
   level: number
-  stats: DerivedStats
+  health: number
+  stats: MonsterStats
   drops: MonsterDrop[]
   element: MonsterElement  // §3: default 'neutral'
   size: MonsterSize        // §3: default 'medium'

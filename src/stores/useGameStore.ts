@@ -100,7 +100,7 @@ function spawnWave(locationId: string): EncounterSlot[] {
 }
 
 const INITIAL_ENCOUNTERS: Record<string, EncounterSlot[]> = {
-  'kings-forest': makeSlots(['wolf', 'forest-sprite']),
+  'kings-forest': makeSlots(['slime']),
   'duskwood':     makeSlots(['shadow-wolf', 'shadow-wolf']),
   'lake-arawok':  makeSlots(['giant-frog', 'giant-frog']),
   'gray-hills':   makeSlots(['rock-crab', 'stone-golem']),
@@ -129,8 +129,8 @@ export const useGameStore = create<GameState>((set) => ({
   equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
   locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, 'lake-arawok': 50, 'gray-hills': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
-  locationMonstersSeen: { 'kings-forest': ['wolf', 'forest-sprite', 'poacher'], 'duskwood': ['shadow-wolf'], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
-  monsterSeen:          { wolf: 15, 'forest-sprite': 3, poacher: 1, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
+  locationMonstersSeen: { 'kings-forest': ['slime'], 'duskwood': ['shadow-wolf'], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
+  monsterSeen:          { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
   encounters:        INITIAL_ENCOUNTERS,
   encounterCooldown: {},
   locationFleeing:   {},

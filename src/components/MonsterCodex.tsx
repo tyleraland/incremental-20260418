@@ -11,6 +11,14 @@ const STAT_ROWS = [
   { key: 'dodge'        as const, label: 'DOD',   color: 'text-pink-400'    },
 ]
 
+function fmtStat(key: string, val: number | [number, number]): string {
+  if (key === 'defense' || key === 'magicDefense') {
+    const [a, b] = val as [number, number]
+    return `${a}+${b}`
+  }
+  return String(val)
+}
+
 export function MonsterCodex({ monster, seenCount, onClose }: {
   monster: MonsterDef
   seenCount: number
@@ -50,10 +58,14 @@ export function MonsterCodex({ monster, seenCount, onClose }: {
             <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Combat Stats</div>
             {canSeeStats ? (
               <>
+                <div className="bg-game-bg rounded-lg px-3 py-2.5 flex items-center justify-between mb-2">
+                  <span className="text-xs text-game-text-dim">HP</span>
+                  <span className="text-xl font-bold font-mono leading-none text-red-400">{monster.health}</span>
+                </div>
                 <div className="grid grid-cols-4 gap-2">
                   {STAT_ROWS.slice(0, 4).map(({ key, label, color }) => (
                     <div key={key} className="bg-game-bg rounded-lg py-2.5 text-center">
-                      <div className={`text-xl font-bold font-mono leading-none ${color}`}>{monster.stats[key]}</div>
+                      <div className={`text-xl font-bold font-mono leading-none ${color}`}>{fmtStat(key, monster.stats[key])}</div>
                       <div className="text-xs text-game-text-dim mt-1">{label}</div>
                     </div>
                   ))}
@@ -61,7 +73,7 @@ export function MonsterCodex({ monster, seenCount, onClose }: {
                 <div className="grid grid-cols-3 gap-2 mt-2">
                   {STAT_ROWS.slice(4).map(({ key, label, color }) => (
                     <div key={key} className="bg-game-bg rounded-lg py-2.5 text-center">
-                      <div className={`text-xl font-bold font-mono leading-none ${color}`}>{monster.stats[key]}</div>
+                      <div className={`text-xl font-bold font-mono leading-none ${color}`}>{fmtStat(key, monster.stats[key])}</div>
                       <div className="text-xs text-game-text-dim mt-1">{label}</div>
                     </div>
                   ))}

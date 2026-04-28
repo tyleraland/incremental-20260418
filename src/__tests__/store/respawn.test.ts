@@ -124,7 +124,7 @@ describe('wave cooldown — new wave spawn', () => {
     })
     const s = tick()
     const ids = s.encounters['kings-forest'].map((sl) => sl.monsterId).sort()
-    expect(ids).toEqual(['forest-sprite', 'wolf'])
+    expect(ids).toEqual(['slime'])
   })
 })
 
