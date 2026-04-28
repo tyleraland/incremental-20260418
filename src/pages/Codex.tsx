@@ -44,7 +44,7 @@ function CodexMonsterCard({ monsterId }: { monsterId: string }) {
 function LocationEntry({ location }: { location: Location }) {
   const [expanded, setExpanded]  = useState(false)
   const familiarity              = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
-  const locationMonstersSeen     = useGameStore((s) => s.locationMonstersSeen[location.id] ?? [])
+  const locationMonstersSeen     = useGameStore((s) => (s.locationMonstersSeen[location.id] ?? []).filter(id => location.monsterIds.includes(id)))
   const famPct                   = Math.round((familiarity / location.familiarityMax) * 100)
   const unknownCount             = location.monsterIds.length - locationMonstersSeen.length
 

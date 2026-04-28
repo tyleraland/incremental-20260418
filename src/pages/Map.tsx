@@ -272,7 +272,7 @@ function MonsterRow({ monsterId, locationId, selected, onSelect }: {
 function MonsterList({ location }: { location: Location }) {
   const [selectedMonsterId, setSelectedMonsterId] = useState<string | null>(null)
   const familiarity          = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
-  const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen[location.id] ?? [])
+  const locationMonstersSeen = useGameStore((s) => (s.locationMonstersSeen[location.id] ?? []).filter(id => location.monsterIds.includes(id)))
   const waveCooldown         = useGameStore((s) => s.encounterCooldown[location.id] ?? 0)
   const famPct               = Math.round((familiarity / location.familiarityMax) * 100)
   const unknownCount         = location.monsterIds.length - locationMonstersSeen.length
