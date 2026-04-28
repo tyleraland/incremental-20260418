@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { useGameStore, formatDuration } from '@/stores/useGameStore'
 import { persistSave, loadPersistedSave } from '@/save'
-import { ActivityConsole } from '@/components/ActivityConsole'
 import { TabBar } from '@/components/TabBar'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
@@ -93,7 +92,6 @@ function App() {
   return (
     <div className="min-h-full flex flex-col">
       <OfflineBanner />
-      <ActivityConsole />
       <main className="flex-1 overflow-y-auto pt-16">
         {activeTab === 'map'       && <Map />}
         {activeTab === 'units'     && <Units />}

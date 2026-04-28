@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, getDerivedStats, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, getDerivedStats, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
 
 const REGIONS = [
   { id: 'prontera', name: 'Prontera Region' },
@@ -49,15 +49,6 @@ function ElementBadge({ element }: { element: string }) {
   )
 }
 
-function CombatStatCell({ label, value, dim }: { label: string; value: string | number; dim?: string }) {
-  return (
-    <div className="bg-game-surface/50 rounded-lg px-2.5 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-game-text-dim leading-none">{label}</div>
-      <div className="text-sm font-semibold font-mono text-game-text leading-none mt-1">{value}</div>
-      {dim && <div className="text-[10px] text-game-muted mt-0.5 leading-none">{dim}</div>}
-    </div>
-  )
-}
 
 function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing = false, isHunting = false }: {
   unit: Unit; overlay?: boolean; targetMonsterName?: string | null; isFleeing?: boolean; isHunting?: boolean
@@ -240,18 +231,16 @@ function MonsterDetailPanel({
 
   const hpPct    = slot ? Math.max(0, Math.round((1 - slot.progress) * 100)) : 100
   const phase    = slot?.phase ?? 'standing'
-  const distance = slot?.distance ?? 0
 
-  const dealtHistory = slot?.dealtHistory ?? []
-  const takenHistory = slot?.takenHistory ?? []
-  const rollingDps   = dealtHistory.length >= 60 ? dealtHistory.reduce((a, b) => a + b, 0) / dealtHistory.length : null
-  const rollingDpm   = rollingDps !== null ? rollingDps * 60 : null
-  // takenHistory stores progress fraction per tick; convert to HP/tick by multiplying by monster.health
-  const rollingTps   = takenHistory.length >= 60 ? (takenHistory.reduce((a, b) => a + b, 0) / takenHistory.length) * monster.health : null
-  const rollingTpm   = rollingTps !== null ? rollingTps * 60 : null
+  const targetDerived    = targetUnit ? getDerivedStats(targetUnit, equipment) : null
+  // HP drain: theoretical rate at which unit damages the monster (HP/s)
+  const monsterDrainRate = slot && phase === 'standing' ? monster.health / (monster.level * 5) : null
+  // Dealt: damage monster deals to the target unit per second (after defense)
+  const monsterDealtDps  = slot && phase === 'standing' && targetDerived
+    ? (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(targetDerived.defense, 1)
+    : null
 
   const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
-  const phaseLabel = phase === 'approaching' ? `Approaching (${distance})` : phase === 'retreating' ? `Retreating (${distance})` : 'Standing'
 
   return (
     <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-3 py-2 space-y-2">
@@ -272,31 +261,30 @@ function MonsterDetailPanel({
         <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs shrink-0">✕</button>
       </div>
 
-      {/* HP bar + % + phase inline */}
+      {/* HP bar + % + drain rate */}
       <div className="flex items-center gap-2">
         <div className="flex-1 bg-game-border/60 rounded-full h-1.5 overflow-hidden">
           <div className={`h-1.5 rounded-full transition-none ${hpPct >= 75 ? 'bg-game-green' : hpPct >= 40 ? 'bg-game-gold' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} />
         </div>
         <span className={`text-[10px] font-medium tabular-nums shrink-0 ${hpColor}`}>{hpPct}%</span>
-        <span className="text-[10px] text-game-text-dim shrink-0">{phaseLabel}</span>
+        {monsterDrainRate !== null && (
+          <span className="text-[10px] text-red-400 shrink-0">(-{monsterDrainRate.toFixed(1)}/s)</span>
+        )}
       </div>
 
       {/* Target */}
       <div className="flex items-center gap-1.5 text-xs">
         <span className="text-game-muted">→</span>
-        {targetUnit
-          ? <span className="text-game-text-dim">{targetUnit.name}</span>
-          : <span className="text-game-muted italic">no target</span>}
-      </div>
-
-      {/* Stats 3-col */}
-      <div className="grid grid-cols-3 gap-1">
-        <CombatStatCell label="Dealt/s" value={rollingDps !== null ? rollingDps.toFixed(1) : '—'} />
-        <CombatStatCell label="Taken/s" value={rollingTps !== null ? rollingTps.toFixed(1) : '—'} />
-        <CombatStatCell label="Regen/s" value="—" />
-        <CombatStatCell label="Dealt/m" value={rollingDpm !== null ? Math.round(rollingDpm).toString() : '—'} />
-        <CombatStatCell label="Taken/m" value={rollingTpm !== null ? Math.round(rollingTpm).toString() : '—'} />
-        <CombatStatCell label="Pos." value={phase !== 'standing' ? `${distance}` : '—'} />
+        {targetUnit ? (
+          <>
+            <span className="text-game-text-dim">{targetUnit.name}</span>
+            {monsterDealtDps !== null && (
+              <span className="text-[10px] text-game-muted">({monsterDealtDps.toFixed(1)}/s)</span>
+            )}
+          </>
+        ) : (
+          <span className="text-game-muted italic">no target</span>
+        )}
       </div>
 
       {/* Behaviors + Codex */}
@@ -460,6 +448,11 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className={`text-xs font-mono font-semibold ${hpTextColor(unit.health)}`}>{unit.health} HP</span>
+          {dpsTaken !== null && dpsTaken > 0 ? (
+            <span className="text-[10px] text-red-400">(-{dpsTaken.toFixed(1)}/s)</span>
+          ) : (isRecovering || unit.locationId === null) ? (
+            <span className="text-[10px] text-game-green">(+{REGEN_RATE.toFixed(1)}/s)</span>
+          ) : null}
           <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
         </div>
       </div>
@@ -492,6 +485,9 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
             <span className="text-game-muted">with</span>
             <span className="text-game-text-dim">{weaponName}</span>
             <ElementBadge element={targetMonster.element} />
+            {dpsDealt !== null && (
+              <span className="text-[10px] text-game-muted">({dpsDealt.toFixed(1)}/s)</span>
+            )}
           </>
         ) : slots.length === 0 ? (
           <span className="text-amber-400">Hunting...</span>
@@ -504,16 +500,6 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
           <span className="text-sky-300 font-medium">{destName}</span>
         </div>
       )}
-
-      {/* Stats 3-col */}
-      <div className="grid grid-cols-3 gap-1">
-        <CombatStatCell label="Dealt/s" value={dpsDealt !== null ? dpsDealt.toFixed(1) : '—'} />
-        <CombatStatCell label="Taken/s" value={dpsTaken !== null ? dpsTaken.toFixed(1) : '—'} />
-        <CombatStatCell label="Regen/s" value="—" />
-        <CombatStatCell label="Dealt/m" value={dpsDealt !== null ? Math.round(dpsDealt * 60).toString() : '—'} />
-        <CombatStatCell label="Taken/m" value={dpsTaken !== null ? Math.round(dpsTaken * 60).toString() : '—'} />
-        <CombatStatCell label="Weapon"  value={weaponName} />
-      </div>
     </div>
   )
 }
