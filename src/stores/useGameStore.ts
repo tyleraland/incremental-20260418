@@ -146,16 +146,25 @@ export const useGameStore = create<GameState>((set) => ({
     const newTicks    = s.ticks + 1
     const yearChanged = Math.floor(newTicks / TICKS_PER_YEAR) > Math.floor(s.ticks / TICKS_PER_YEAR)
 
-    const encounters:       Record<string, EncounterSlot[]> = {}
-    const encounterCooldown: Record<string, number>         = {}
-    const locationFleeing:  Record<string, number>          = { ...s.locationFleeing }
-    const monsterDefeated   = { ...s.monsterDefeated }
+    const encounters:           Record<string, EncounterSlot[]> = {}
+    const encounterCooldown:    Record<string, number>          = {}
+    const locationFleeing:      Record<string, number>          = { ...s.locationFleeing }
+    const monsterDefeated       = { ...s.monsterDefeated }
+    const locationMonstersSeen  = { ...s.locationMonstersSeen }
     const expGained: Record<string, number> = {}
     let goldEarned = 0
     const hpDamage: Record<string, number> = {}
     let newLog = s.eventLog
 
     for (const [locationId, slots] of Object.entries(s.encounters)) {
+      // Mark any active slot's monster as seen at this location
+      const seen = locationMonstersSeen[locationId] ?? []
+      let seenUpdated = false
+      for (const slot of slots) {
+        if (!seen.includes(slot.monsterId)) { seen.push(slot.monsterId); seenUpdated = true }
+      }
+      if (seenUpdated) locationMonstersSeen[locationId] = seen
+
       const aliveUnits = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
 
       // ── Flee state machine ───────────────────────────────────────────────────
@@ -271,7 +280,7 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, miscItems, lastTickAt: Date.now(), eventLog: newLog }
+    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, locationMonstersSeen, miscItems, lastTickAt: Date.now(), eventLog: newLog }
   }),
 
   batchTick: (n) => set((s) => {
