@@ -1,5 +1,7 @@
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR } from '@/stores/useGameStore'
 
+declare const __GIT_HASH__: string
+
 
 function ProgressBar({ value, className = '' }: { value: number; className?: string }) {
   return (
@@ -119,6 +121,15 @@ export function Time() {
 
       <div className="text-xs text-game-muted text-center">
         {TICKS_PER_DAY} ticks/day · {DAYS_PER_SEASON} days/season · {SEASONS_PER_YEAR} seasons/year
+      </div>
+
+      {/* Debug */}
+      <div className="border border-game-border rounded-xl px-4 py-3">
+        <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Debug</div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-game-muted">Commit</span>
+          <span className="font-mono text-game-text-dim">{__GIT_HASH__}</span>
+        </div>
       </div>
     </div>
   )
