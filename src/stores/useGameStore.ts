@@ -3,7 +3,7 @@ import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   MonsterBehavior, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
 } from '@/types'
-import { FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
+import { ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { SKILL_REGISTRY } from '@/data/skills'
@@ -215,7 +215,7 @@ export const useGameStore = create<GameState>((set) => ({
         const target = s.units.find((u) => u.id === targetId)
         if (!target) continue
         const def = getDerivedStats(target, s.equipment).defense
-        hpDamage[targetId] = (hpDamage[targetId] ?? 0) + monster.stats.attack / Math.max(def, 1)
+        hpDamage[targetId] = (hpDamage[targetId] ?? 0) + (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(def, 1)
       }
 
       // Process slots: advance progress; drop defeated slots from the encounter
@@ -336,7 +336,7 @@ export const useGameStore = create<GameState>((set) => ({
         const target  = targets[i]
         if (!monster || !target) continue
         const def = getDerivedStats(target, s.equipment).defense
-        damageRates[target.id] = (damageRates[target.id] ?? 0) + monster.stats.attack / Math.max(def, 1)
+        damageRates[target.id] = (damageRates[target.id] ?? 0) + (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(def, 1)
         inCombat.add(target.id)
       }
 

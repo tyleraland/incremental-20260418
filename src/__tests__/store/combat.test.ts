@@ -1,10 +1,16 @@
 // Requirements: Encounters & Combat + Targeting + Monster Behavior sections of CLAUDE.md
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getDerivedStats } from '@/stores/useGameStore'
+import { getDerivedStats, MONSTER_REGISTRY } from '@/stores/useGameStore'
+import { ATTACK_SPEED_BASE } from '@/lib/time'
 import { makeUnit, makeEncounterSlot, resetStore, tick } from '../helpers'
 
 // Base unit constitution=5 → defense = Math.floor(5 * 1.5) = 7
 const BASE_DEF = getDerivedStats(makeUnit(), []).defense
+
+function monsterDmg(monsterId: string): number {
+  const m = MONSTER_REGISTRY[monsterId]
+  return (m.stats.attack * m.stats.attackSpeed / ATTACK_SPEED_BASE) / BASE_DEF
+}
 
 beforeEach(() => resetStore())
 
@@ -94,25 +100,22 @@ describe('Targeting — unit → monster (focusSlots)', () => {
 })
 
 describe('Monster damage to units', () => {
-  it('applies attack / defense damage from each monster to its target', () => {
-    // wolf attack=8, baseDef=7 → floor(100 - 8/7) = 98
+  it('applies (attack * attackSpeed / ATTACK_SPEED_BASE) / defense damage per tick', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
     })
     const { units } = tick()
-    expect(units[0].health).toBe(Math.floor(100 - 8 / BASE_DEF))
+    expect(units[0].health).toBe(Math.floor(100 - monsterDmg('wolf')))
   })
 
   it('ignore monsters still deal damage to units', () => {
-    // wolf (normal) + rock-crab (ignore): crab's ignore only freezes its HP — it still attacks
-    // 2 monsters, 1 unit → both target u1; total dmg = (wolf.atk + crab.atk) / BASE_DEF
     resetStore({
       units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', behavior: 'ignore' })] },
     })
     const { units } = tick()
-    expect(units[0].health).toBe(Math.floor(100 - (8 + 10) / BASE_DEF))
+    expect(units[0].health).toBe(Math.floor(100 - monsterDmg('wolf') - monsterDmg('rock-crab')))
   })
 })
 
