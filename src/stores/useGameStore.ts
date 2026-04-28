@@ -176,7 +176,7 @@ export const useGameStore = create<GameState>((set) => ({
           : slots.map((sl) => ({ ...sl, targetUnitId: null }))
         continue
       }
-      const shouldFlee = aliveUnits.length > 0 && (
+      const shouldFlee = aliveUnits.length > 0 && slots.length > 0 && (
         slots.some((sl)  => sl.behavior === 'avoid') ||
         slots.every((sl) => sl.behavior === 'ignore' || sl.behavior === 'avoid')
       )
@@ -304,7 +304,7 @@ export const useGameStore = create<GameState>((set) => ({
       const aliveUnits = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
 
       const wasFleeing = (locationFleeing[locationId] ?? 0) > 0
-      const shouldFlee = aliveUnits.length > 0 && (
+      const shouldFlee = aliveUnits.length > 0 && slots.length > 0 && (
         slots.some((sl)  => sl.behavior === 'avoid') ||
         slots.every((sl) => sl.behavior === 'ignore' || sl.behavior === 'avoid')
       )
