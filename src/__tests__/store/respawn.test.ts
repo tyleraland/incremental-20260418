@@ -1,96 +1,73 @@
+// Requirements: wave cooldown between encounters (replaced per-slot respawn)
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useGameStore } from '@/stores/useGameStore'
-import { RESPAWN_TICKS_MIN, RESPAWN_TICKS_MAX } from '@/lib/time'
+import { WAVE_COOLDOWN_MIN, WAVE_COOLDOWN_MAX } from '@/lib/time'
 import { makeUnit, makeEncounterSlot, resetStore, tick } from '../helpers'
+import { useGameStore } from '@/stores/useGameStore'
 
-describe('inter-encounter delay', () => {
+describe('wave cooldown', () => {
   beforeEach(() => resetStore())
 
-  it('sets respawnTicksLeft after a monster is defeated', () => {
+  it('starts a wave cooldown when the last slot is defeated', () => {
     resetStore({
       units: [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ progress: 1 })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', progress: 1.0 })] },
     })
     const s = tick()
-    const slot = s.encounters['loc1'][0]
-    expect(slot.progress).toBe(0)
-    expect(slot.respawnTicksLeft).toBeGreaterThanOrEqual(RESPAWN_TICKS_MIN)
-    expect(slot.respawnTicksLeft).toBeLessThanOrEqual(RESPAWN_TICKS_MAX)
+    expect(s.encounters['loc1']).toHaveLength(0)
+    expect(s.encounterCooldown['loc1']).toBeGreaterThanOrEqual(WAVE_COOLDOWN_MIN)
+    expect(s.encounterCooldown['loc1']).toBeLessThanOrEqual(WAVE_COOLDOWN_MAX)
   })
 
-  it('decrements respawnTicksLeft each tick', () => {
+  it('does not start cooldown when slots remain after a defeat', () => {
     resetStore({
       units: [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 5 })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', progress: 1.0 }), makeEncounterSlot({ monsterId: 'wolf' })] },
     })
     const s = tick()
-    expect(s.encounters['loc1'][0].respawnTicksLeft).toBe(4)
+    expect(s.encounterCooldown['loc1']).toBeUndefined()
   })
 
-  it('does not advance progress while respawning', () => {
+  it('decrements the cooldown each tick', () => {
     resetStore({
       units: [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 3 })] },
+      encounters: { loc1: [] },
+      encounterCooldown: { loc1: 5 },
     })
     const s = tick()
-    expect(s.encounters['loc1'][0].progress).toBe(0)
+    expect(s.encounterCooldown['loc1']).toBe(4)
   })
 
-  it('does not deal damage to units while respawning', () => {
-    resetStore({
-      units: [makeUnit({ locationId: 'loc1', health: 100 })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 3 })] },
-    })
-    const s = tick()
-    expect(s.units[0].health).toBe(100)
-  })
-
-  it('resumes combat once respawnTicksLeft reaches 0', () => {
-    resetStore({
-      units: [makeUnit({ locationId: 'loc1', health: 100 })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 1 })] },
-    })
-    tick()       // respawnTicksLeft: 1 → 0
-    const s = tick() // monster now active; progress should advance
-    expect(s.encounters['loc1'][0].progress).toBeGreaterThan(0)
-  })
-
-  it('unit has no target while all fightable slots are respawning', () => {
+  it('spawns a new wave when cooldown reaches 0', () => {
     resetStore({
       units: [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 3 })] },
+      encounters: { loc1: [] },
+      encounterCooldown: { loc1: 1 },
     })
     const s = tick()
-    expect(s.encounters['loc1'][0].targetUnitId).toBeNull()
+    expect(s.encounterCooldown['loc1']).toBeUndefined()
+    // kings-forest uses ['slime'] but loc1 has no template → empty wave
+    expect(s.encounters['loc1']).toHaveLength(0)
   })
 
-  it('batchTick decrements respawnTicksLeft by n', () => {
+  it('batchTick expires cooldown and spawns wave', () => {
     resetStore({
       units: [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 10 })] },
+      encounters: { loc1: [] },
+      encounterCooldown: { loc1: 5 },
     })
-    useGameStore.getState().batchTick(6)
+    useGameStore.getState().batchTick(10)
     const s = useGameStore.getState()
-    expect(s.encounters['loc1'][0].respawnTicksLeft).toBe(4)
+    expect(s.encounterCooldown['loc1']).toBeUndefined()
   })
 
-  it('batchTick clamps respawnTicksLeft at 0', () => {
+  it('spawns the correct wave composition for a known location', () => {
     resetStore({
-      units: [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 3 })] },
-    })
-    useGameStore.getState().batchTick(100)
-    const s = useGameStore.getState()
-    expect(s.encounters['loc1'][0].respawnTicksLeft).toBe(0)
-  })
-
-  it('flee reset clears respawnTicksLeft', () => {
-    resetStore({
-      units: [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ respawnTicksLeft: 5, behavior: 'normal' })] },
-      locationFleeing: { loc1: 1 },
+      units: [makeUnit({ locationId: 'kings-forest' })],
+      encounters: { 'kings-forest': [] },
+      encounterCooldown: { 'kings-forest': 1 },
     })
     const s = tick()
-    expect(s.encounters['loc1'][0].respawnTicksLeft).toBe(0)
+    const ids = s.encounters['kings-forest'].map((sl) => sl.monsterId)
+    expect(ids).toEqual(['slime'])
   })
 })

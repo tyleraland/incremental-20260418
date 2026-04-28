@@ -1,7 +1,7 @@
 // Requirements: Health section of CLAUDE.md
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useGameStore, RECOVERY_TICKS, REGEN_RATE, getDerivedStats } from '@/stores/useGameStore'
-import { makeUnit, resetStore, tick } from '../helpers'
+import { makeUnit, makeEncounterSlot, resetStore, tick } from '../helpers'
 
 // Base unit has constitution=5 → defense = Math.floor(5 * 1.5) = 7
 // Wolf has attack=8. Damage per tick = 8 / 7 ≈ 1.143
@@ -13,7 +13,7 @@ const WOLF_DMG    = WOLF_ATK / BASE_DEF                    // ≈ 1.143
 beforeEach(() => {
   resetStore({
     units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
-    encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
+    encounters: { loc1: [makeEncounterSlot()] },
   })
 })
 
@@ -30,7 +30,7 @@ describe('Health — KO', () => {
   it('KOs a unit and starts recovery when health reaches 0 from damage', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 1, locationId: 'loc1' })],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
+      encounters: { loc1: [makeEncounterSlot()] },
     })
     // floor(1 - 1.143) = floor(-0.143) = -1 ≤ 0 → KO
     const { units } = tick()
@@ -41,7 +41,7 @@ describe('Health — KO', () => {
   it('does not apply combat damage to KO\'d units (recovery takes priority)', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: 5, locationId: 'loc1' })],
-      encounters: { loc1: [{ monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' }] },
+      encounters: { loc1: [makeEncounterSlot()] },
     })
     // KO'd unit is not in aliveUnits so not targeted; regen fires instead
     const { units } = tick()
