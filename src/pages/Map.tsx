@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
 
 const REGIONS = [
   { id: 'prontera', name: 'Prontera Region' },
@@ -26,6 +26,36 @@ function hpBarColor(health: number) {
   if (health > 60) return 'bg-game-green'
   if (health > 30) return 'bg-game-gold'
   return 'bg-red-500'
+}
+
+function hpTextColor(hp: number) { return hp >= 75 ? 'text-game-green' : hp >= 40 ? 'text-game-gold' : 'text-red-400' }
+
+const ELEMENT_COLORS: Record<string, string> = {
+  fire:      'text-orange-400 bg-orange-950/40 border-orange-800/50',
+  lightning: 'text-yellow-300 bg-yellow-950/40 border-yellow-700/50',
+  ice:       'text-sky-300 bg-sky-950/40 border-sky-700/50',
+  earth:     'text-amber-600 bg-amber-950/40 border-amber-700/50',
+  wind:      'text-green-400 bg-green-950/40 border-green-800/50',
+  water:     'text-blue-400 bg-blue-950/40 border-blue-800/50',
+  neutral:   'text-game-text-dim bg-game-border/20 border-game-border/50',
+}
+
+function ElementBadge({ element }: { element: string }) {
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium capitalize ${ELEMENT_COLORS[element] ?? ELEMENT_COLORS.neutral}`}>
+      {element}
+    </span>
+  )
+}
+
+function CombatStatCell({ label, value, dim }: { label: string; value: string | number; dim?: string }) {
+  return (
+    <div className="bg-game-surface/50 rounded-lg px-2.5 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-game-text-dim leading-none">{label}</div>
+      <div className="text-sm font-semibold font-mono text-game-text leading-none mt-1">{value}</div>
+      {dim && <div className="text-[10px] text-game-muted mt-0.5 leading-none">{dim}</div>}
+    </div>
+  )
 }
 
 function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing = false, isHunting = false }: {
@@ -188,36 +218,85 @@ const BEHAVIOR_OPTIONS: { b: MonsterBehavior; label: string; desc: string; activ
   { b: 'avoid',      label: 'Avoid',      desc: 'Flee the encounter immediately if present',  activeClass: 'border-sky-600 bg-sky-950/50 text-sky-300' },
 ]
 
-function MonsterBehaviorPanel({
-  monster, locationId, onClose, onOpenCodex,
-}: { monster: MonsterDef; locationId: string; onClose: () => void; onOpenCodex: () => void }) {
-  const behavior           = useGameStore((s) => (s.encounters[locationId] ?? []).find((sl) => sl.monsterId === monster.id)?.behavior ?? 'normal')
+function MonsterDetailPanel({
+  monsterId, locationId, onClose, onOpenCodex,
+}: { monsterId: string; locationId: string; onClose: () => void; onOpenCodex: () => void }) {
+  const equipment          = useGameStore((s) => s.equipment)
+  const allUnits           = useGameStore((s) => s.units)
+  const slot               = useGameStore((s) => (s.encounters[locationId] ?? []).find((sl) => sl.monsterId === monsterId))
   const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
-  const active             = BEHAVIOR_OPTIONS.find((o) => o.b === behavior)!
+
+  const monster = MONSTER_REGISTRY[monsterId]
+  if (!monster) return null
+
+  const behavior   = slot?.behavior ?? 'normal'
+  const targetUnit = allUnits.find((u) => u.id === slot?.targetUnitId)
+
+  const effectiveAtk = monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE
+  const def          = targetUnit ? getDerivedStats(targetUnit, equipment).defense : 1
+  const dpsDealt     = effectiveAtk / Math.max(def, 1)
+  const dpmDealt     = dpsDealt * 60
+
+  // HP drain rate via encounter progress: health / (level × 5) HP equivalent per second when attacked
+  const dpsTaken = monster.health / (monster.level * 5)
+  const dpmTaken = dpsTaken * 60
 
   return (
-    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-3 py-2 space-y-2">
+    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-4 py-3 space-y-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-game-text-dim">{monster.name}</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-game-text">{monster.name}</span>
+          <span className="text-xs text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{monster.level}</span>
+          <ElementBadge element={monster.element} />
+        </div>
         <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
       </div>
-      <div className="flex gap-1">
-        {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => {
-          const isActive = behavior === b
-          return (
-            <button
-              key={b}
-              onClick={() => setMonsterBehavior(locationId, monster.id, b)}
-              className={`flex-1 py-1 rounded-md border text-xs font-medium transition-colors ${isActive ? activeClass : 'border-game-border/50 text-game-text-dim hover:border-game-border hover:text-game-text'}`}
-            >
-              {label}
-            </button>
-          )
-        })}
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-game-muted">Attacking</span>
+        {targetUnit
+          ? <span className="text-game-text font-medium">{targetUnit.name}</span>
+          : <span className="text-game-muted italic">no target</span>}
       </div>
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-game-text-dim">{active.desc}</span>
-        <button onClick={onOpenCodex} className="text-xs font-medium px-2 py-0.5 rounded border border-game-accent/50 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0 ml-2">Codex →</button>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <CombatStatCell label="Dealt / sec" value={dpsDealt.toFixed(2)} />
+        <CombatStatCell label="Dealt / min" value={Math.round(dpmDealt)} />
+        <CombatStatCell label="Taken / sec" value={dpsTaken.toFixed(2)} />
+        <CombatStatCell label="Taken / min" value={Math.round(dpmTaken)} />
+        <CombatStatCell label="Regen / sec" value="0" dim="TODO" />
+        <CombatStatCell label="Position"    value="—" dim="coming soon" />
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-game-muted">Weapon</span>
+        <span className="text-game-text-dim">Natural</span>
+        <span className="text-game-border">·</span>
+        <ElementBadge element={monster.element} />
+        <span className="ml-auto text-game-text-dim">HP pool: {monster.health}</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1">
+          {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => {
+            const isActive = behavior === b
+            return (
+              <button
+                key={b}
+                onClick={() => setMonsterBehavior(locationId, monsterId, b)}
+                className={`px-2 py-0.5 rounded-md border text-[10px] font-medium transition-colors ${isActive ? activeClass : 'border-game-border/40 text-game-text-dim hover:border-game-border hover:text-game-text'}`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <button
+          onClick={onOpenCodex}
+          className="ml-auto text-xs font-medium px-2 py-0.5 rounded border border-game-accent/50 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0"
+        >
+          Codex →
+        </button>
       </div>
     </div>
   )
@@ -226,8 +305,6 @@ function MonsterBehaviorPanel({
 function MonsterRow({ monsterId, locationId, selected, onSelect }: {
   monsterId: string; locationId: string; selected: boolean; onSelect: () => void
 }) {
-  const [codexOpen, setCodexOpen] = useState(false)
-  const seenCount       = useGameStore((s) => s.monsterSeen[monsterId] ?? 0)
   const locationSlots   = useGameStore((s) => s.encounters[locationId] ?? [])
   const locationFleeing = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
   const units           = useGameStore((s) => s.units)
@@ -240,32 +317,29 @@ function MonsterRow({ monsterId, locationId, selected, onSelect }: {
 
   const isFleeing = locationFleeing > 0
   const borderCls =
-    selected         ? 'border-game-primary bg-game-primary/10' :
+    selected                  ? 'border-game-primary bg-game-primary/10' :
     behavior === 'prioritize' ? 'border-amber-700/60' :
     behavior === 'avoid'      ? 'border-sky-700/60'   : 'border-game-border'
 
   return (
-    <>
-      <div className="flex flex-col items-center gap-1" style={{ minWidth: 72 }}>
-        <EncounterDots count={slotData.length} />
-        <button
-          onClick={onSelect}
-          className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
-        >
-          <div className="text-sm font-semibold text-game-text">{monster.name}</div>
-          <div className="text-xs text-game-accent">Lv.{monster.level}</div>
-        </button>
-        {slotData.length > 0 && (
-          <div className="w-full space-y-1">
-            {slotData.map((sl, i) => {
-              const targetName = !isFleeing && sl.targetUnitId ? (units.find((u) => u.id === sl.targetUnitId)?.name ?? null) : null
-              return <SlotBar key={i} prog={sl.progress} targetName={targetName} />
-            })}
-          </div>
-        )}
-      </div>
-      {codexOpen && <MonsterCodex monster={monster} seenCount={seenCount} onClose={() => setCodexOpen(false)} />}
-    </>
+    <div className="flex flex-col items-center gap-1" style={{ minWidth: 72 }}>
+      <EncounterDots count={slotData.length} />
+      <button
+        onClick={onSelect}
+        className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
+      >
+        <div className="text-sm font-semibold text-game-text">{monster.name}</div>
+        <div className="text-xs text-game-accent">Lv.{monster.level}</div>
+      </button>
+      {slotData.length > 0 && (
+        <div className="w-full space-y-1">
+          {slotData.map((sl, i) => {
+            const targetName = !isFleeing && sl.targetUnitId ? (units.find((u) => u.id === sl.targetUnitId)?.name ?? null) : null
+            return <SlotBar key={i} prog={sl.progress} targetName={targetName} />
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -316,8 +390,8 @@ function MonsterList({ location }: { location: Location }) {
             )}
           </div>
           {selectedMonsterId && MONSTER_REGISTRY[selectedMonsterId] && (
-            <MonsterBehaviorPanel
-              monster={MONSTER_REGISTRY[selectedMonsterId]}
+            <MonsterDetailPanel
+              monsterId={selectedMonsterId}
               locationId={location.id}
               onClose={() => setSelectedMonsterId(null)}
               onOpenCodex={() => { setCodexMonster(selectedMonsterId); setSelectedMonsterId(null) }}
@@ -336,6 +410,117 @@ function MonsterList({ location }: { location: Location }) {
   )
 }
 
+// ── UnitDetailPanel ───────────────────────────────────────────────────────────
+
+function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId: string; onClose: () => void }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const allUnits  = useGameStore((s) => s.units)
+  const slots     = useGameStore((s) => s.encounters[locationId] ?? [])
+  const fleeing   = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const locations = useGameStore((s) => s.locations)
+
+  const derived      = getDerivedStats(unit, equipment)
+  const isRecovering = unit.recoveryTicksLeft > 0
+  const hpPct        = Math.max(0, Math.min(100, unit.health))
+
+  // Target monster
+  const alive         = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+  const idx           = alive.findIndex((u) => u.id === unit.id)
+  const prioritySlots = slots.filter((sl) => sl.behavior === 'prioritize')
+  const normalSlots   = slots.filter((sl) => sl.behavior === 'normal')
+  const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
+  const targetMonster = idx >= 0 && focusSlots.length > 0
+    ? (MONSTER_REGISTRY[focusSlots[idx % focusSlots.length]?.monsterId ?? ''] ?? null)
+    : null
+
+  // Unit → monster DPS (unit attack vs monster total defense)
+  const monsterTotalDef = targetMonster
+    ? targetMonster.stats.defense[0] + targetMonster.stats.defense[1]
+    : null
+  const dpsDealt = monsterTotalDef !== null
+    ? derived.attack / Math.max(monsterTotalDef, 1)
+    : derived.attack / 10
+  const dpmDealt = dpsDealt * 60
+
+  // Monster → unit DPS (sum from all targeting monsters)
+  const dpsTaken = fleeing > 0 ? 0 : slots.reduce((sum, sl) => {
+    if (sl.behavior === 'avoid' || sl.targetUnitId !== unit.id) return sum
+    const m = MONSTER_REGISTRY[sl.monsterId]
+    if (!m) return sum
+    return sum + (m.stats.attack * m.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(derived.defense, 1)
+  }, 0)
+  const dpmTaken = dpsTaken * 60
+
+  // Weapon
+  const mainHandId = unit.weaponSets[unit.activeWeaponSet].mainHand
+  const weaponName = mainHandId ? (equipment.find((e) => e.id === mainHandId)?.name ?? mainHandId) : 'Unarmed'
+
+  // Travel goal: unit is passing through on the way somewhere else
+  const destId   = unit.travelPath?.at(-1) ?? null
+  const destName = destId ? (locations.find((l) => l.id === destId)?.name ?? destId) : null
+
+  return (
+    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-4 py-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-game-text">{unit.name}</span>
+          <span className="text-xs text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{unit.level}</span>
+          {unit.class && <span className="text-xs text-game-text-dim px-1.5 py-0.5 rounded border border-game-border">{unit.class}</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-mono font-semibold ${hpTextColor(unit.health)}`}>{unit.health} HP</span>
+          <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
+        </div>
+      </div>
+
+      <div className="w-full bg-game-border/60 rounded-full h-1.5 overflow-hidden">
+        {isRecovering ? (
+          <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100}%`, transition: 'none' }} />
+        ) : (
+          <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'width 0.7s linear' }} />
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        {isRecovering ? (
+          <span className="text-purple-400">KO — recovering</span>
+        ) : targetMonster ? (
+          <>
+            <span className="text-game-muted">Attacking</span>
+            <span className="text-game-text font-medium">{targetMonster.name}</span>
+            <ElementBadge element={targetMonster.element} />
+          </>
+        ) : slots.length === 0 ? (
+          <span className="text-amber-400">Hunting...</span>
+        ) : null}
+      </div>
+
+      {destName && (
+        <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-sky-950/30 border border-sky-800/40">
+          <span className="text-sky-400">Traveling through</span>
+          <span className="text-sky-300 font-medium">→ {destName}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-1.5">
+        <CombatStatCell label="Dealt / sec" value={dpsDealt.toFixed(2)} />
+        <CombatStatCell label="Dealt / min" value={Math.round(dpmDealt)} />
+        <CombatStatCell label="Taken / sec" value={dpsTaken.toFixed(2)} />
+        <CombatStatCell label="Taken / min" value={Math.round(dpmTaken)} />
+        <CombatStatCell label="Regen / sec" value="0" dim="TODO" />
+        <CombatStatCell label="Position"    value="—" dim="coming soon" />
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-game-muted">Weapon</span>
+        <span className="text-game-text-dim">{weaponName}</span>
+        <span className="text-game-border">·</span>
+        <ElementBadge element="neutral" />
+      </div>
+    </div>
+  )
+}
+
 // ── LocationSection ───────────────────────────────────────────────────────────
 
 function LocationSection({ location, units, selectedDragging }: {
@@ -344,9 +529,12 @@ function LocationSection({ location, units, selectedDragging }: {
   selectedDragging: string[]
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
-  const isExpanded     = useGameStore((s) => s.expandedLocationIds.includes(location.id))
-  const toggleLocation = useGameStore((s) => s.toggleLocation)
-  const isEmpty        = units.length === 0 && !isExpanded
+  const isExpanded       = useGameStore((s) => s.expandedLocationIds.includes(location.id))
+  const toggleLocation   = useGameStore((s) => s.toggleLocation)
+  const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
+  const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
+  const isEmpty          = units.length === 0 && !isExpanded
+  const selectedLocalUnit = units.find((u) => selectedUnitIds.includes(u.id)) ?? null
 
   return (
     <div
@@ -393,6 +581,13 @@ function LocationSection({ location, units, selectedDragging }: {
               )}
             </div>
           </div>
+          {selectedLocalUnit && (
+            <UnitDetailPanel
+              unit={selectedLocalUnit}
+              locationId={location.id}
+              onClose={() => toggleSelectUnit(selectedLocalUnit.id)}
+            />
+          )}
         </div>
       )}
     </div>
@@ -443,23 +638,14 @@ function RegionSection({ region, locations, units, selectedDragging }: {
 
 // ── SelectionBar ──────────────────────────────────────────────────────────────
 
-function hpTextColor(hp: number) { return hp >= 75 ? 'text-game-green' : hp >= 40 ? 'text-game-gold' : 'text-red-400' }
 
 function SelectionBar() {
-  const { selectedUnitIds, expandedUnitIds, locations, units, equipment, assignUnits, clearSelection, setActiveTab, toggleUnit } = useGameStore()
+  const { selectedUnitIds, expandedUnitIds, locations, assignUnits, clearSelection, setActiveTab, toggleUnit } = useGameStore()
   const [open, setOpen] = useState(false)
 
   if (selectedUnitIds.length === 0) return null
 
-  const singleUnit = selectedUnitIds.length === 1 ? units.find((u) => u.id === selectedUnitIds[0]) ?? null : null
-  const derived    = singleUnit ? getDerivedStats(singleUnit, equipment) : null
-  const elements   = singleUnit ? getUnitTraits(singleUnit).filter((t) => t.category === 'element') : []
-
-  const handleAssign = (locationId: string | null) => {
-    assignUnits(selectedUnitIds, locationId)
-    setOpen(false)
-  }
-
+  const handleAssign = (locationId: string | null) => { assignUnits(selectedUnitIds, locationId); setOpen(false) }
   const handleViewUnit = () => {
     const unitId = selectedUnitIds[0]
     if (!expandedUnitIds.includes(unitId)) toggleUnit(unitId)
@@ -469,76 +655,27 @@ function SelectionBar() {
 
   return (
     <div className="fixed bottom-4 inset-x-0 z-30 px-4 pointer-events-none">
-      <div className="pointer-events-auto space-y-2">
-
-        {singleUnit && derived && (
-          <div className="bg-game-surface border border-game-border rounded-xl p-3 shadow-2xl">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div>
-                <span className="font-semibold text-game-text text-sm">{singleUnit.name}</span>
-                {singleUnit.class && (
-                  <span className="ml-2 text-xs text-game-text-dim px-1.5 py-0.5 rounded border border-game-border">{singleUnit.class}</span>
-                )}
-              </div>
-              <span className={`text-sm font-mono font-semibold ${hpTextColor(singleUnit.health)}`}>{singleUnit.health} HP</span>
-            </div>
-            <div className="w-full bg-game-border rounded-full h-1.5 mb-2">
-              <div
-                className={`h-1.5 rounded-full transition-all ${hpBarColor(singleUnit.health)}`}
-                style={{ width: `${singleUnit.health}%` }}
-              />
-            </div>
-            {elements.length > 0 && (
-              <div className="flex gap-1 mb-2">
-                {elements.map((t) => (
-                  <span key={t.id} className={`text-xs px-1.5 py-0.5 rounded border ${t.colorClass}`}>{t.label}</span>
-                ))}
-              </div>
-            )}
-            <div className="grid grid-cols-4 gap-1 text-xs">
-              {([['ATK', derived.attack], ['DEF', derived.defense], ['SPD', derived.attackSpeed], ['ACC', derived.accuracy]] as const).map(([label, val]) => (
-                <div key={label} className="text-center bg-game-border/30 rounded p-1">
-                  <div className="text-game-text-dim">{label}</div>
-                  <div className="font-semibold text-game-text">{Math.round(val as number)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
+      <div className="pointer-events-auto">
         <div className="bg-game-surface border border-game-primary rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl shadow-game-primary/30">
-          <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} selected</span>
+          <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} unit{selectedUnitIds.length !== 1 ? 's' : ''} selected</span>
           {selectedUnitIds.length === 1 && (
-            <button
-              className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors"
-              onClick={handleViewUnit}
-            >
+            <button className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors" onClick={handleViewUnit}>
               View ›
             </button>
           )}
           <div className="relative">
-            <button
-              className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1"
-              onClick={() => setOpen((v) => !v)}
-            >
+            <button className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1" onClick={() => setOpen((v) => !v)}>
               Move to <span className="text-xs opacity-70">▾</span>
             </button>
             {open && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
                 <div className="absolute bottom-full mb-2 right-0 z-20 bg-game-surface border border-game-border rounded-xl overflow-hidden w-52 shadow-2xl">
-                  <button
-                    className="w-full text-left px-4 py-3 text-sm text-game-text-dim hover:bg-white/5 transition-colors"
-                    onClick={() => handleAssign(null)}
-                  >
+                  <button className="w-full text-left px-4 py-3 text-sm text-game-text-dim hover:bg-white/5 transition-colors" onClick={() => handleAssign(null)}>
                     Unassigned
                   </button>
                   {locations.map((loc) => (
-                    <button
-                      key={loc.id}
-                      className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-t border-game-border/50"
-                      onClick={() => handleAssign(loc.id)}
-                    >
+                    <button key={loc.id} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-t border-game-border/50" onClick={() => handleAssign(loc.id)}>
                       {loc.name}
                     </button>
                   ))}
@@ -546,14 +683,10 @@ function SelectionBar() {
               </>
             )}
           </div>
-          <button
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-game-text-dim hover:text-game-text hover:bg-white/5 transition-colors"
-            onClick={clearSelection}
-          >
+          <button className="w-8 h-8 flex items-center justify-center rounded-lg text-game-text-dim hover:text-game-text hover:bg-white/5 transition-colors" onClick={clearSelection}>
             ✕
           </button>
         </div>
-
       </div>
     </div>
   )
