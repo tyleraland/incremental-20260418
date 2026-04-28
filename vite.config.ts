@@ -9,9 +9,7 @@ const gitHash = (() => {
 
 export default defineConfig({
   base: '/incremental-20260418/',
-  define: {
-    __GIT_HASH__: JSON.stringify(gitHash),
-  },
+  define: { __GIT_HASH__: JSON.stringify(gitHash) },
   resolve: {
     alias: {
       '@': '/src',

@@ -3,7 +3,7 @@ import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   MonsterBehavior, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
 } from '@/types'
-import { ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
+import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { SKILL_REGISTRY } from '@/data/skills'
@@ -89,14 +89,20 @@ export interface GameState {
 const KANTO_BEACH_IDS = Array.from({ length: 10 }, (_, i) => `beach-${i + 1}`)
 
 function makeSlots(monsterIds: string[]): EncounterSlot[] {
-  return monsterIds.map((monsterId) => ({ monsterId, progress: 0, targetUnitId: null, behavior: 'normal' }))
+  return monsterIds.map((monsterId) => ({
+    monsterId, progress: 0, targetUnitId: null, behavior: 'normal',
+    phase: 'approaching' as const, distance: APPROACH_DISTANCE, dealtHistory: [], takenHistory: [],
+  }))
 }
 
 // Spawn a fresh wave for a location using the same monster composition as the initial encounter.
 function spawnWave(locationId: string): EncounterSlot[] {
   const template = INITIAL_ENCOUNTERS[locationId]
   if (!template || template.length === 0) return []
-  return template.map((sl) => ({ monsterId: sl.monsterId, progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior }))
+  return template.map((sl) => ({
+    monsterId: sl.monsterId, progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior,
+    phase: 'approaching' as const, distance: APPROACH_DISTANCE, dealtHistory: [], takenHistory: [],
+  }))
 }
 
 const INITIAL_ENCOUNTERS: Record<string, EncounterSlot[]> = {
@@ -171,9 +177,18 @@ export const useGameStore = create<GameState>((set) => ({
       const fleeLeft = locationFleeing[locationId] ?? 0
       if (fleeLeft > 0) {
         locationFleeing[locationId] = fleeLeft - 1
-        encounters[locationId] = fleeLeft === 1
-          ? slots.map((sl) => ({ ...sl, progress: 0, targetUnitId: null }))
-          : slots.map((sl) => ({ ...sl, targetUnitId: null }))
+        if (fleeLeft === 1) {
+          // Flee complete — reset progress and return to approaching
+          encounters[locationId] = slots.map((sl) => ({
+            ...sl, progress: 0, targetUnitId: null,
+            phase: 'approaching' as const, distance: APPROACH_DISTANCE,
+            dealtHistory: [], takenHistory: [],
+          }))
+        } else {
+          encounters[locationId] = slots.map((sl) => ({
+            ...sl, targetUnitId: null, phase: 'retreating' as const,
+          }))
+        }
         continue
       }
       const shouldFlee = aliveUnits.length > 0 && slots.length > 0 && (
@@ -182,7 +197,7 @@ export const useGameStore = create<GameState>((set) => ({
       )
       if (shouldFlee) {
         locationFleeing[locationId] = FLEE_TICKS_CONST
-        encounters[locationId] = slots.map((sl) => ({ ...sl, targetUnitId: null }))
+        encounters[locationId] = slots.map((sl) => ({ ...sl, targetUnitId: null, phase: 'retreating' as const }))
         newLog = appendLog(newLog, 'flee', `Fled from ${locationId}`, newTicks)
         continue
       }
@@ -205,20 +220,22 @@ export const useGameStore = create<GameState>((set) => ({
         aliveUnits.forEach((_, ui) => attackedSlots.add(focusIdxs[ui % focusIdxs.length].i))
       }
 
-      // Damage to units (avoid monsters don't deal damage)
+      // Damage to units — only standing monsters deal damage (not approaching/retreating)
       for (let i = 0; i < slots.length; i++) {
-        const { monsterId, behavior } = slots[i]
-        if (behavior === 'avoid') continue
-        const monster  = MONSTER_REGISTRY[monsterId]
+        const slot = slots[i]
+        if (slot.behavior === 'avoid') continue
+        if ((slot.phase ?? 'standing') !== 'standing') continue
+        const monster  = MONSTER_REGISTRY[slot.monsterId]
         const targetId = targets[i]
         if (!monster || !targetId) continue
         const target = s.units.find((u) => u.id === targetId)
         if (!target) continue
         const def = getDerivedStats(target, s.equipment).defense
-        hpDamage[targetId] = (hpDamage[targetId] ?? 0) + (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(def, 1)
+        const dmg = (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(def, 1)
+        hpDamage[targetId] = (hpDamage[targetId] ?? 0) + dmg
       }
 
-      // Process slots: advance progress; drop defeated slots from the encounter
+      // Process slots: advance progress; handle phase transitions; accumulate history
       const newSlots: EncounterSlot[] = []
       for (let i = 0; i < slots.length; i++) {
         const slot    = slots[i]
@@ -233,9 +250,40 @@ export const useGameStore = create<GameState>((set) => ({
           newLog = appendLog(newLog, 'defeat', `${monster.name} defeated`, newTicks)
           continue
         }
+
+        // Phase transition: approaching → standing
+        if (slot.phase === 'approaching') {
+          const newDist = slot.distance - APPROACH_SPEED
+          if (newDist <= 0) {
+            newSlots.push({ ...slot, phase: 'standing', distance: 0, targetUnitId: targets[i] })
+          } else {
+            newSlots.push({ ...slot, distance: newDist, targetUnitId: targets[i] })
+          }
+          continue
+        }
+
         if (slot.behavior === 'ignore' || slot.behavior === 'avoid') { newSlots.push({ ...slot, targetUnitId: targets[i] }); continue }
         if (!attackedSlots.has(i)) { newSlots.push({ ...slot, targetUnitId: targets[i] }); continue }
-        newSlots.push({ ...slot, progress: Math.min(slot.progress + 1 / (monster.level * 5), 1), targetUnitId: targets[i] })
+
+        // Accumulate dealtHistory (damage this slot dealt to its target)
+        const target = s.units.find((u) => u.id === targets[i])
+        let dealtHistory = slot.dealtHistory ?? []
+        let takenHistory = slot.takenHistory ?? []
+        if (target) {
+          const def = getDerivedStats(target, s.equipment).defense
+          const dealt = (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(def, 1)
+          const taken = 1 / (monster.level * 5) // progress fraction this slot "loses" per tick
+          dealtHistory = [...dealtHistory, dealt].slice(-60)
+          takenHistory = [...takenHistory, taken].slice(-60)
+        }
+
+        newSlots.push({
+          ...slot,
+          progress: Math.min(slot.progress + 1 / (monster.level * 5), 1),
+          targetUnitId: targets[i],
+          dealtHistory,
+          takenHistory,
+        })
       }
       encounters[locationId] = newSlots
 
@@ -310,7 +358,11 @@ export const useGameStore = create<GameState>((set) => ({
       )
       if (wasFleeing || shouldFlee) {
         locationFleeing[locationId] = 0
-        encounters[locationId] = slots.map((sl) => ({ ...sl, progress: 0, targetUnitId: null }))
+        encounters[locationId] = slots.map((sl) => ({
+          ...sl, progress: 0, targetUnitId: null,
+          phase: 'approaching' as const, distance: APPROACH_DISTANCE,
+          dealtHistory: [], takenHistory: [],
+        }))
         continue
       }
 
@@ -342,13 +394,17 @@ export const useGameStore = create<GameState>((set) => ({
 
       encounters[locationId] = slots.map((slot, i) => {
         const monster = MONSTER_REGISTRY[slot.monsterId]
-        if (!monster) return { ...slot, targetUnitId: targets[i]?.id ?? null }
+        // In batch mode, approaching slots immediately become standing
+        const baseSlot = slot.phase === 'approaching'
+          ? { ...slot, phase: 'standing' as const, distance: 0, dealtHistory: [], takenHistory: [] }
+          : slot
+        if (!monster) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
 
-        if (slot.behavior === 'ignore' || slot.behavior === 'avoid') return { ...slot, targetUnitId: targets[i]?.id ?? null }
-        if (!attackedSlots.has(i)) return { ...slot, targetUnitId: targets[i]?.id ?? null }
+        if (baseSlot.behavior === 'ignore' || baseSlot.behavior === 'avoid') return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
+        if (!attackedSlots.has(i)) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
 
         const seconds       = monster.level * 5
-        const effectiveProg = slot.progress >= 1 ? 0 : slot.progress
+        const effectiveProg = baseSlot.progress >= 1 ? 0 : baseSlot.progress
         const combined      = effectiveProg + n / seconds
         const completions   = Math.floor(combined)
         if (completions > 0) {
@@ -358,7 +414,7 @@ export const useGameStore = create<GameState>((set) => ({
           goldEarned   += completions
           totalDefeats += completions
         }
-        return { ...slot, progress: combined - completions, targetUnitId: targets[i]?.id ?? null }
+        return { ...baseSlot, progress: combined - completions, targetUnitId: targets[i]?.id ?? null }
       })
     }
 

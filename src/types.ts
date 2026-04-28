@@ -144,6 +144,10 @@ export interface EncounterSlot {
   progress: number            // 0..1; reaches 1 when monster is defeated, slot then removed
   targetUnitId: string | null // which unit this monster is targeting
   behavior: MonsterBehavior   // per-slot (not per-monsterId), enabling boss differentiation
+  phase: 'approaching' | 'standing' | 'retreating'
+  distance: number            // distance from melee range; 0 = in combat; cosmetic until movement speed is implemented
+  dealtHistory: number[]      // per-tick HP damage dealt, last ≤60 standing ticks (for rolling DPM)
+  takenHistory: number[]      // per-tick HP-equivalent drained, last ≤60 standing ticks
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────

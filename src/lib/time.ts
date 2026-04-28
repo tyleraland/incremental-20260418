@@ -11,6 +11,8 @@ export const FLEE_TICKS_CONST   = 2   // ticks to complete a flee action
 export const WAVE_COOLDOWN_MIN  = 3   // min ticks between last defeat and next wave
 export const WAVE_COOLDOWN_MAX  = 8   // max ticks between last defeat and next wave
 export const ATTACK_SPEED_BASE  = 10  // attackSpeed=10 → 1× multiplier
+export const APPROACH_DISTANCE  = 3   // distance units at wave start (placeholder; TODO: use monster movement speed)
+export const APPROACH_SPEED     = 1   // distance closed per tick (placeholder; TODO: use monster movement speed)
 
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
 

@@ -124,11 +124,10 @@ export function Time() {
       </div>
 
       {/* Debug */}
-      <div className="border border-game-border rounded-xl px-4 py-3">
-        <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Debug</div>
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-game-muted">Commit</span>
-          <span className="font-mono text-game-text-dim">{__GIT_HASH__}</span>
+      <div className="border border-game-border/40 rounded-xl px-4 py-3 space-y-1">
+        <div className="text-xs uppercase tracking-widest text-game-text-dim">Debug</div>
+        <div className="text-xs text-game-muted">
+          Build: <span className="font-mono text-game-text-dim">{__GIT_HASH__}</span>
         </div>
       </div>
     </div>

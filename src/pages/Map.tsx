@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type MonsterDef } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, getDerivedStats, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
 
 const REGIONS = [
   { id: 'prontera', name: 'Prontera Region' },
@@ -19,6 +19,7 @@ const REGIONS = [
   { id: 'kanto',    name: 'Kanto' },
 ]
 import { MonsterCodex } from '@/components/MonsterCodex'
+import { LocationCodex } from '@/components/LocationCodex'
 
 // ── UnitRect ──────────────────────────────────────────────────────────────────
 
@@ -219,82 +220,97 @@ const BEHAVIOR_OPTIONS: { b: MonsterBehavior; label: string; desc: string; activ
 ]
 
 function MonsterDetailPanel({
-  monsterId, locationId, onClose, onOpenCodex,
-}: { monsterId: string; locationId: string; onClose: () => void; onOpenCodex: () => void }) {
+  monsterId, locationId, slotIdx, onSlotIdxChange, onClose, onOpenCodex,
+}: {
+  monsterId: string; locationId: string; slotIdx: number; onSlotIdxChange: (i: number) => void
+  onClose: () => void; onOpenCodex: () => void
+}) {
   const equipment          = useGameStore((s) => s.equipment)
   const allUnits           = useGameStore((s) => s.units)
-  const slot               = useGameStore((s) => (s.encounters[locationId] ?? []).find((sl) => sl.monsterId === monsterId))
+  const allSlots           = useGameStore((s) => (s.encounters[locationId] ?? []).filter((sl) => sl.monsterId === monsterId))
   const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
 
   const monster = MONSTER_REGISTRY[monsterId]
   if (!monster) return null
 
+  const totalSlots = allSlots.length
+  const slot       = allSlots[Math.min(slotIdx, Math.max(0, totalSlots - 1))] ?? null
   const behavior   = slot?.behavior ?? 'normal'
   const targetUnit = allUnits.find((u) => u.id === slot?.targetUnitId)
 
-  const effectiveAtk = monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE
-  const def          = targetUnit ? getDerivedStats(targetUnit, equipment).defense : 1
-  const dpsDealt     = effectiveAtk / Math.max(def, 1)
-  const dpmDealt     = dpsDealt * 60
+  const hpPct    = slot ? Math.max(0, Math.round((1 - slot.progress) * 100)) : 100
+  const phase    = slot?.phase ?? 'standing'
+  const distance = slot?.distance ?? 0
 
-  // HP drain rate via encounter progress: health / (level × 5) HP equivalent per second when attacked
-  const dpsTaken = monster.health / (monster.level * 5)
-  const dpmTaken = dpsTaken * 60
+  const dealtHistory = slot?.dealtHistory ?? []
+  const takenHistory = slot?.takenHistory ?? []
+  const rollingDps   = dealtHistory.length >= 60 ? dealtHistory.reduce((a, b) => a + b, 0) / dealtHistory.length : null
+  const rollingDpm   = rollingDps !== null ? rollingDps * 60 : null
+  // takenHistory stores progress fraction per tick; convert to HP/tick by multiplying by monster.health
+  const rollingTps   = takenHistory.length >= 60 ? (takenHistory.reduce((a, b) => a + b, 0) / takenHistory.length) * monster.health : null
+  const rollingTpm   = rollingTps !== null ? rollingTps * 60 : null
+
+  const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
+  const phaseLabel = phase === 'approaching' ? `Approaching (${distance})` : phase === 'retreating' ? `Retreating (${distance})` : 'Standing'
 
   return (
-    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-4 py-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 flex-wrap">
+    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-3 py-2 space-y-2">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-1">
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <span className="text-sm font-semibold text-game-text">{monster.name}</span>
-          <span className="text-xs text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{monster.level}</span>
+          {totalSlots > 1 && (
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => onSlotIdxChange(Math.max(0, slotIdx - 1))} disabled={slotIdx === 0} className="w-4 h-4 flex items-center justify-center text-[11px] text-game-text-dim disabled:opacity-30 hover:text-game-text">‹</button>
+              <span className="text-[10px] text-game-text-dim tabular-nums">{slotIdx + 1}/{totalSlots}</span>
+              <button onClick={() => onSlotIdxChange(Math.min(totalSlots - 1, slotIdx + 1))} disabled={slotIdx >= totalSlots - 1} className="w-4 h-4 flex items-center justify-center text-[11px] text-game-text-dim disabled:opacity-30 hover:text-game-text">›</button>
+            </div>
+          )}
+          <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{monster.level}</span>
           <ElementBadge element={monster.element} />
         </div>
-        <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
+        <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs shrink-0">✕</button>
       </div>
 
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-game-muted">Attacking</span>
+      {/* HP bar + % + phase inline */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 bg-game-border/60 rounded-full h-1.5 overflow-hidden">
+          <div className={`h-1.5 rounded-full transition-none ${hpPct >= 75 ? 'bg-game-green' : hpPct >= 40 ? 'bg-game-gold' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} />
+        </div>
+        <span className={`text-[10px] font-medium tabular-nums shrink-0 ${hpColor}`}>{hpPct}%</span>
+        <span className="text-[10px] text-game-text-dim shrink-0">{phaseLabel}</span>
+      </div>
+
+      {/* Target */}
+      <div className="flex items-center gap-1.5 text-xs">
+        <span className="text-game-muted">→</span>
         {targetUnit
-          ? <span className="text-game-text font-medium">{targetUnit.name}</span>
+          ? <span className="text-game-text-dim">{targetUnit.name}</span>
           : <span className="text-game-muted italic">no target</span>}
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
-        <CombatStatCell label="Dealt / sec" value={dpsDealt.toFixed(2)} />
-        <CombatStatCell label="Dealt / min" value={Math.round(dpmDealt)} />
-        <CombatStatCell label="Taken / sec" value={dpsTaken.toFixed(2)} />
-        <CombatStatCell label="Taken / min" value={Math.round(dpmTaken)} />
-        <CombatStatCell label="Regen / sec" value="0" dim="TODO" />
-        <CombatStatCell label="Position"    value="—" dim="coming soon" />
+      {/* Stats 3-col */}
+      <div className="grid grid-cols-3 gap-1">
+        <CombatStatCell label="Dealt/s" value={rollingDps !== null ? rollingDps.toFixed(1) : '—'} />
+        <CombatStatCell label="Taken/s" value={rollingTps !== null ? rollingTps.toFixed(1) : '—'} />
+        <CombatStatCell label="Regen/s" value="—" />
+        <CombatStatCell label="Dealt/m" value={rollingDpm !== null ? Math.round(rollingDpm).toString() : '—'} />
+        <CombatStatCell label="Taken/m" value={rollingTpm !== null ? Math.round(rollingTpm).toString() : '—'} />
+        <CombatStatCell label="Pos." value={phase !== 'standing' ? `${distance}` : '—'} />
       </div>
 
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-game-muted">Weapon</span>
-        <span className="text-game-text-dim">Natural</span>
-        <span className="text-game-border">·</span>
-        <ElementBadge element={monster.element} />
-        <span className="ml-auto text-game-text-dim">HP pool: {monster.health}</span>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <div className="flex gap-1">
-          {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => {
-            const isActive = behavior === b
-            return (
-              <button
-                key={b}
-                onClick={() => setMonsterBehavior(locationId, monsterId, b)}
-                className={`px-2 py-0.5 rounded-md border text-[10px] font-medium transition-colors ${isActive ? activeClass : 'border-game-border/40 text-game-text-dim hover:border-game-border hover:text-game-text'}`}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-        <button
-          onClick={onOpenCodex}
-          className="ml-auto text-xs font-medium px-2 py-0.5 rounded border border-game-accent/50 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0"
-        >
+      {/* Behaviors + Codex */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => (
+          <button
+            key={b}
+            onClick={() => setMonsterBehavior(locationId, monsterId, b)}
+            className={`px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${behavior === b ? activeClass : 'border-game-border/40 text-game-text-dim hover:border-game-border hover:text-game-text'}`}
+          >
+            {label}
+          </button>
+        ))}
+        <button onClick={onOpenCodex} className="ml-auto text-xs font-medium px-2 py-0.5 rounded border border-game-accent/50 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0">
           Codex →
         </button>
       </div>
@@ -345,54 +361,35 @@ function MonsterRow({ monsterId, locationId, selected, onSelect }: {
 
 function MonsterList({ location }: { location: Location }) {
   const [selectedMonsterId, setSelectedMonsterId] = useState<string | null>(null)
-  const familiarity          = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
-  const locationMonstersSeen = useGameStore((s) => {
-    const saved    = (s.locationMonstersSeen[location.id] ?? []).filter(id => location.monsterIds.includes(id))
-    const inSlots  = (s.encounters[location.id] ?? []).map(sl => sl.monsterId).filter(id => location.monsterIds.includes(id))
-    const merged   = [...new Set([...saved, ...inSlots])]
-    return merged
-  })
-  const waveCooldown         = useGameStore((s) => s.encounterCooldown[location.id] ?? 0)
-  const famPct               = Math.round((familiarity / location.familiarityMax) * 100)
-  const unknownCount         = location.monsterIds.length - locationMonstersSeen.length
+  const [selectedSlotIdx,   setSelectedSlotIdx]   = useState(0)
+  const locationSlots = useGameStore((s) => s.encounters[location.id] ?? [])
   const [codexMonster, setCodexMonster] = useState<string | null>(null)
   const seenCount = useGameStore((s) => codexMonster ? (s.monsterSeen[codexMonster] ?? 0) : 0)
 
-  const toggleSelect = (id: string) => setSelectedMonsterId(v => v === id ? null : id)
+  const uniqueIds = [...new Set(locationSlots.map((sl) => sl.monsterId))]
+
+  const toggleSelect = (id: string) => {
+    if (selectedMonsterId === id) setSelectedMonsterId(null)
+    else { setSelectedMonsterId(id); setSelectedSlotIdx(0) }
+  }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-xs uppercase tracking-widest text-game-text-dim">Monsters</div>
-        <div className="text-xs text-game-accent">{famPct}% familiarity</div>
-      </div>
-      {famPct === 0 ? (
-        <p className="text-xs text-game-muted italic">
-          {location.monsterIds.length} monsters inhabit this area. Explore to learn more.
-        </p>
+      {uniqueIds.length === 0 ? (
+        <p className="text-xs text-game-muted italic">No active encounter.</p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2 items-end">
-            {locationMonstersSeen.map((id) => (
-              <MonsterRow
-                key={id}
-                monsterId={id}
-                locationId={location.id}
-                selected={selectedMonsterId === id}
-                onSelect={() => toggleSelect(id)}
-              />
+            {uniqueIds.map((id) => (
+              <MonsterRow key={id} monsterId={id} locationId={location.id} selected={selectedMonsterId === id} onSelect={() => toggleSelect(id)} />
             ))}
-            {unknownCount > 0 && (
-              <div className="px-3 py-2 rounded-lg border border-dashed border-game-border bg-game-bg text-center min-w-[72px] opacity-50">
-                <div className="text-sm text-game-muted">+{unknownCount}</div>
-                <div className="text-xs text-game-muted">unknown</div>
-              </div>
-            )}
           </div>
           {selectedMonsterId && MONSTER_REGISTRY[selectedMonsterId] && (
             <MonsterDetailPanel
               monsterId={selectedMonsterId}
               locationId={location.id}
+              slotIdx={selectedSlotIdx}
+              onSlotIdxChange={setSelectedSlotIdx}
               onClose={() => setSelectedMonsterId(null)}
               onOpenCodex={() => { setCodexMonster(selectedMonsterId); setSelectedMonsterId(null) }}
             />
@@ -400,11 +397,7 @@ function MonsterList({ location }: { location: Location }) {
         </>
       )}
       {codexMonster && MONSTER_REGISTRY[codexMonster] && (
-        <MonsterCodex
-          monster={MONSTER_REGISTRY[codexMonster]}
-          seenCount={seenCount}
-          onClose={() => setCodexMonster(null)}
-        />
+        <MonsterCodex monster={MONSTER_REGISTRY[codexMonster]} seenCount={seenCount} onClose={() => setCodexMonster(null)} />
       )}
     </div>
   )
@@ -423,56 +416,55 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
   const isRecovering = unit.recoveryTicksLeft > 0
   const hpPct        = Math.max(0, Math.min(100, unit.health))
 
-  // Target monster
-  const alive         = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
-  const idx           = alive.findIndex((u) => u.id === unit.id)
-  const prioritySlots = slots.filter((sl) => sl.behavior === 'prioritize')
-  const normalSlots   = slots.filter((sl) => sl.behavior === 'normal')
-  const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
-  const targetMonster = idx >= 0 && focusSlots.length > 0
-    ? (MONSTER_REGISTRY[focusSlots[idx % focusSlots.length]?.monsterId ?? ''] ?? null)
-    : null
+  const alive          = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+  const idx            = alive.findIndex((u) => u.id === unit.id)
+  const prioritySlots  = slots.filter((sl) => sl.behavior === 'prioritize')
+  const normalSlots    = slots.filter((sl) => sl.behavior === 'normal')
+  const focusSlots     = prioritySlots.length > 0 ? prioritySlots : normalSlots
+  const targetSlotObj  = idx >= 0 && focusSlots.length > 0 ? focusSlots[idx % focusSlots.length] : null
+  const targetMonster  = targetSlotObj ? (MONSTER_REGISTRY[targetSlotObj.monsterId] ?? null) : null
+  const targetPhase    = targetSlotObj?.phase ?? 'standing'
 
-  // Unit → monster DPS (unit attack vs monster total defense)
-  const monsterTotalDef = targetMonster
-    ? targetMonster.stats.defense[0] + targetMonster.stats.defense[1]
-    : null
-  const dpsDealt = monsterTotalDef !== null
-    ? derived.attack / Math.max(monsterTotalDef, 1)
-    : derived.attack / 10
-  const dpmDealt = dpsDealt * 60
-
-  // Monster → unit DPS (sum from all targeting monsters)
-  const dpsTaken = fleeing > 0 ? 0 : slots.reduce((sum, sl) => {
-    if (sl.behavior === 'avoid' || sl.targetUnitId !== unit.id) return sum
-    const m = MONSTER_REGISTRY[sl.monsterId]
-    if (!m) return sum
-    return sum + (m.stats.attack * m.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(derived.defense, 1)
-  }, 0)
-  const dpmTaken = dpsTaken * 60
-
-  // Weapon
   const mainHandId = unit.weaponSets[unit.activeWeaponSet].mainHand
   const weaponName = mainHandId ? (equipment.find((e) => e.id === mainHandId)?.name ?? mainHandId) : 'Unarmed'
 
-  // Travel goal: unit is passing through on the way somewhere else
   const destId   = unit.travelPath?.at(-1) ?? null
   const destName = destId ? (locations.find((l) => l.id === destId)?.name ?? destId) : null
 
+  // Stats: only valid during active combat (not fleeing, not KO, encounter present)
+  const inCombat = slots.length > 0 && !isRecovering && fleeing === 0
+
+  // Dealt: based on progress rate — monster.health / (level * 5) HP-equivalent per tick
+  const dpsDealt = inCombat && targetMonster && targetPhase === 'standing'
+    ? targetMonster.health / (targetMonster.level * 5)
+    : null
+
+  // Taken: sum of damage from all monsters targeting this unit (only standing ones)
+  const dpsTaken = inCombat
+    ? slots.reduce((sum, sl) => {
+        if (sl.behavior === 'avoid' || sl.targetUnitId !== unit.id || (sl.phase ?? 'standing') !== 'standing') return sum
+        const m = MONSTER_REGISTRY[sl.monsterId]
+        if (!m) return sum
+        return sum + (m.stats.attack * m.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(derived.defense, 1)
+      }, 0)
+    : null
+
   return (
-    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-4 py-3 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 flex-wrap">
+    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-3 py-2 space-y-2">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-1">
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <span className="text-sm font-semibold text-game-text">{unit.name}</span>
-          <span className="text-xs text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{unit.level}</span>
-          {unit.class && <span className="text-xs text-game-text-dim px-1.5 py-0.5 rounded border border-game-border">{unit.class}</span>}
+          <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{unit.level}</span>
+          {unit.class && <span className="text-[10px] text-game-text-dim border border-game-border rounded px-1.5 py-0.5">{unit.class}</span>}
         </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-sm font-mono font-semibold ${hpTextColor(unit.health)}`}>{unit.health} HP</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`text-xs font-mono font-semibold ${hpTextColor(unit.health)}`}>{unit.health} HP</span>
           <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
         </div>
       </div>
 
+      {/* HP bar */}
       <div className="w-full bg-game-border/60 rounded-full h-1.5 overflow-hidden">
         {isRecovering ? (
           <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100}%`, transition: 'none' }} />
@@ -481,13 +473,24 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
         )}
       </div>
 
-      <div className="flex items-center gap-2 text-xs">
+      {/* Status line */}
+      <div className="flex items-center gap-1.5 text-xs flex-wrap">
         {isRecovering ? (
           <span className="text-purple-400">KO — recovering</span>
+        ) : fleeing > 0 ? (
+          <span className="text-sky-400">Fleeing...</span>
+        ) : targetMonster && targetPhase === 'approaching' ? (
+          <>
+            <span className="text-game-muted">Approaching</span>
+            <span className="text-game-text font-medium">{targetMonster.name}</span>
+            <ElementBadge element={targetMonster.element} />
+          </>
         ) : targetMonster ? (
           <>
             <span className="text-game-muted">Attacking</span>
             <span className="text-game-text font-medium">{targetMonster.name}</span>
+            <span className="text-game-muted">with</span>
+            <span className="text-game-text-dim">{weaponName}</span>
             <ElementBadge element={targetMonster.element} />
           </>
         ) : slots.length === 0 ? (
@@ -496,26 +499,20 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
       </div>
 
       {destName && (
-        <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-sky-950/30 border border-sky-800/40">
-          <span className="text-sky-400">Traveling through</span>
-          <span className="text-sky-300 font-medium">→ {destName}</span>
+        <div className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-sky-950/30 border border-sky-800/40">
+          <span className="text-sky-400">Traveling through →</span>
+          <span className="text-sky-300 font-medium">{destName}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-1.5">
-        <CombatStatCell label="Dealt / sec" value={dpsDealt.toFixed(2)} />
-        <CombatStatCell label="Dealt / min" value={Math.round(dpmDealt)} />
-        <CombatStatCell label="Taken / sec" value={dpsTaken.toFixed(2)} />
-        <CombatStatCell label="Taken / min" value={Math.round(dpmTaken)} />
-        <CombatStatCell label="Regen / sec" value="0" dim="TODO" />
-        <CombatStatCell label="Position"    value="—" dim="coming soon" />
-      </div>
-
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-game-muted">Weapon</span>
-        <span className="text-game-text-dim">{weaponName}</span>
-        <span className="text-game-border">·</span>
-        <ElementBadge element="neutral" />
+      {/* Stats 3-col */}
+      <div className="grid grid-cols-3 gap-1">
+        <CombatStatCell label="Dealt/s" value={dpsDealt !== null ? dpsDealt.toFixed(1) : '—'} />
+        <CombatStatCell label="Taken/s" value={dpsTaken !== null ? dpsTaken.toFixed(1) : '—'} />
+        <CombatStatCell label="Regen/s" value="—" />
+        <CombatStatCell label="Dealt/m" value={dpsDealt !== null ? Math.round(dpsDealt * 60).toString() : '—'} />
+        <CombatStatCell label="Taken/m" value={dpsTaken !== null ? Math.round(dpsTaken * 60).toString() : '—'} />
+        <CombatStatCell label="Weapon"  value={weaponName} />
       </div>
     </div>
   )
@@ -535,6 +532,7 @@ function LocationSection({ location, units, selectedDragging }: {
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
   const isEmpty          = units.length === 0 && !isExpanded
   const selectedLocalUnit = units.find((u) => selectedUnitIds.includes(u.id)) ?? null
+  const [codexOpen, setCodexOpen] = useState(false)
 
   return (
     <div
@@ -567,8 +565,16 @@ function LocationSection({ location, units, selectedDragging }: {
       )}
 
       {isExpanded && (
-        <div className="px-4 pb-4 border-t border-game-border space-y-4">
-          <p className="text-game-text-dim text-sm mt-3">{location.description}</p>
+        <div className="px-4 pb-4 border-t border-game-border space-y-3">
+          <div className="flex items-center justify-between mt-2">
+            <div className="text-xs uppercase tracking-widest text-game-text-dim">Encounter</div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setCodexOpen(true) }}
+              className="text-xs font-medium px-2 py-0.5 rounded border border-game-accent/40 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors"
+            >
+              Codex →
+            </button>
+          </div>
           <MonsterList location={location} />
           <div>
             <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Units</div>
@@ -590,6 +596,7 @@ function LocationSection({ location, units, selectedDragging }: {
           )}
         </div>
       )}
+      {codexOpen && <LocationCodex location={location} onClose={() => setCodexOpen(false)} />}
     </div>
   )
 }

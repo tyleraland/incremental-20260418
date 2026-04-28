@@ -28,7 +28,11 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
 }
 
 export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): EncounterSlot {
-  return { monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior, ...overrides }
+  return {
+    monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior,
+    phase: 'standing', distance: 0, dealtHistory: [], takenHistory: [],
+    ...overrides,
+  }
 }
 
 // Sets a known clean base state for combat/tick tests.
