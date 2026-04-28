@@ -21,11 +21,11 @@ describe('encounter pool sampling', () => {
   })
 
   it('adds a cooldown when a monster is defeated', () => {
-    // Wolf level 2: 0.1 progress/tick; 0.95 → 1.05 triggers defeat in this tick
+    // Start at near-complete progress so any dpTick will push it over 1
     const loc = makeLocation({ id: 'loc1', monsterPool: [{ monsterId: 'wolf', weight: 1, maxPopulation: 5 }], encounterSize: [1, 1] })
     resetStore({
       units:     [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ progress: 0.95 })] },
+      encounters: { loc1: [makeEncounterSlot({ progress: 1 - 1e-9 })] },
       locations: [loc],
       ticks: 0,
     })
@@ -37,7 +37,7 @@ describe('encounter pool sampling', () => {
     const loc = makeLocation({ id: 'loc1', monsterPool: [{ monsterId: 'wolf', weight: 1, maxPopulation: 5 }], encounterSize: [1, 1] })
     resetStore({
       units:     [makeUnit({ locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ progress: 0.95 })] },
+      encounters: { loc1: [makeEncounterSlot({ progress: 1 - 1e-9 })] },
       locations: [loc],
       ticks: 10,
     })
@@ -101,9 +101,9 @@ describe('encounter pool sampling', () => {
       encounters: { loc1: [makeEncounterSlot({ progress: 0 })] },
       locations: [loc],
     })
-    useGameStore.getState().batchTick(10)
+    // dpTick ≈ 0.04/tick; need ~26 ticks per kill; 50 ticks guarantees ≥1 defeat
+    useGameStore.getState().batchTick(50)
     const s = useGameStore.getState()
-    // Wolf (level 2, 10 ticks to defeat) should have been defeated at least once
     expect(s.monsterCooldowns['loc1']?.['wolf']?.length).toBeGreaterThanOrEqual(1)
   })
 })

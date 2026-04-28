@@ -1,14 +1,13 @@
 // Requirements: Health section of CLAUDE.md
 import { beforeEach, describe, expect, it } from 'vitest'
-import { useGameStore, RECOVERY_TICKS, REGEN_RATE, getDerivedStats } from '@/stores/useGameStore'
+import { useGameStore, RECOVERY_TICKS, REGEN_RATE } from '@/stores/useGameStore'
 import { makeUnit, resetStore, tick } from '../helpers'
 
-// Base unit has constitution=5 → defense = Math.floor(5 * 1.5) = 7
-// Wolf has attack=8. Damage per tick = 8 / 7 ≈ 1.143
-const BASE_UNIT   = makeUnit()
-const BASE_DEF    = getDerivedStats(BASE_UNIT, []).defense  // 7
-const WOLF_ATK    = 8
-const WOLF_DMG    = WOLF_ATK / BASE_DEF                    // ≈ 1.143
+// makeUnit: armorDefense=0, abilityDefense=CON=5, dodge=AGI=5
+// Wolf: attack=8, aps=1.4, accuracy=10
+// computeDmg(8, 0, 5) = 8 - 5 = 3; hitRate(10, 5) = 0.85
+// dmgPerTick = 1.4 * 3 * 0.85 = 3.57 → floor(100 - 3.57) = 96
+const WOLF_DMG = 1.4 * 3 * 0.85  // 3.57
 
 beforeEach(() => {
   resetStore({

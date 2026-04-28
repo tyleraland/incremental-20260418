@@ -20,28 +20,48 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
   const con = unit.abilities.constitution + (sb.constitution ?? 0)
   const int = unit.abilities.intelligence + (sb.intelligence ?? 0)
 
-  const eq = { atk: 0, def: 0, matk: 0, mdef: 0, range: 0 }
-  const ws = unit.weaponSets[unit.activeWeaponSet]
+  const ws     = unit.weaponSets[unit.activeWeaponSet]
   const allIds = [ws.mainHand, ws.offHand, unit.equipment.armor, unit.equipment.tool, unit.equipment.accessory]
-  for (const id of allIds) {
-    if (!id) continue
-    const item = allEquipment.find((e) => e.id === id); if (!item) continue
-    eq.atk   += item.stats.attack         ?? 0
-    eq.def   += item.stats.defense        ?? 0
-    eq.matk  += item.stats.specialAttack  ?? 0
-    eq.mdef  += item.stats.specialDefense ?? 0
-    if ((item.stats.range ?? 0) > eq.range) eq.range = item.stats.range!
+
+  let weaponAtk = 0, weaponMagicAtk = 0, armorDef = 0, magicArmorDef = 0, range = 0
+  let baseAps: number = 0.8   // unarmed default
+  let primaryDamageType: 'physical' | 'magic' = 'physical'
+
+  if (ws.mainHand) {
+    const mh = allEquipment.find((e) => e.id === ws.mainHand)
+    if (mh) {
+      baseAps = mh.stats.baseAps ?? 1.0
+      if (mh.stats.specialAttack) primaryDamageType = 'magic'
+    }
   }
 
+  for (const id of allIds) {
+    if (!id) continue
+    const item = allEquipment.find((e) => e.id === id)
+    if (!item) continue
+    weaponAtk      += item.stats.attack         ?? 0
+    weaponMagicAtk += item.stats.specialAttack  ?? 0
+    armorDef       += item.stats.defense        ?? 0
+    magicArmorDef  += item.stats.specialDefense ?? 0
+    if ((item.stats.range ?? 0) > range) range = item.stats.range!
+  }
+
+  const abilityAtk      = str + Math.floor(str / 10) ** 2
+  const abilityMagicAtk = int + (Math.floor(int / 7) ** 2 + Math.floor(int / 5) ** 2) / 2
+  const aps = Math.max(0.1, baseAps * (1 + agi / 100) * (1 + dex / 500))
+
   return {
-    attack:       Math.max(1, Math.floor(str * 2)               + eq.atk  + (sb.attack       ?? 0)),
-    defense:      Math.max(1, Math.floor(con * 1.5)             + eq.def  + (sb.defense      ?? 0)),
-    magicAttack:  Math.max(1, Math.floor(int * 2 + dex * 0.5)  + eq.matk + (sb.magicAttack  ?? 0)),
-    magicDefense: Math.max(1, Math.floor(int * 0.5 + con)       + eq.mdef + (sb.magicDefense ?? 0)),
-    attackSpeed:  Math.max(1, Math.floor(agi * 2)                          + (sb.attackSpeed  ?? 0)),
-    accuracy:     Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)           + (sb.accuracy     ?? 0)),
-    dodge:        Math.max(1, Math.floor(agi * 2   + dex * 0.5)           + (sb.dodge        ?? 0)),
-    range:        eq.range,
+    attack:              Math.max(1, weaponAtk      + abilityAtk      + (sb.attack      ?? 0)),
+    magicAttack:         Math.max(1, weaponMagicAtk + abilityMagicAtk + (sb.magicAttack ?? 0)),
+    aps,
+    armorDefense:        Math.max(0, armorDef     + (sb.defense      ?? 0)),
+    abilityDefense:      Math.max(0, con),
+    magicArmorDefense:   Math.max(0, magicArmorDef + (sb.magicDefense ?? 0)),
+    abilityMagicDefense: Math.max(0, int),
+    accuracy:            Math.max(1, dex + unit.level + (sb.accuracy ?? 0)),
+    dodge:               Math.max(0, agi           + (sb.dodge        ?? 0)),
+    primaryDamageType,
+    range,
   }
 }
 

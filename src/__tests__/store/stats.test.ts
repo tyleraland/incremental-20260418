@@ -1,148 +1,120 @@
-// Tests for getDerivedStats — the central formula that weapon sets, skill tags,
-// elemental bonuses, and spell mechanics will all flow through.
+// Tests for getDerivedStats — new stat-driven combat model
 import { describe, expect, it } from 'vitest'
 import { getDerivedStats, type EquipmentItem } from '@/stores/useGameStore'
 import { makeUnit } from '../helpers'
 
-// Shared equipment fixtures used across cases
-const IRON_SWORD:   EquipmentItem = { id: 'eq-sword-1h',  name: 'Iron Sword',   category: 'weapon-1h', traits: [], stats: { attack: 4 } }
-const IRON_SHIELD:  EquipmentItem = { id: 'eq-shield',    name: 'Iron Shield',  category: 'shield',    traits: [], stats: { defense: 5 } }
-const WAND:         EquipmentItem = { id: 'eq-wand',      name: 'Wand',         category: 'weapon-1h', traits: [], stats: { specialAttack: 4 } }
-const CHAINMAIL:    EquipmentItem = { id: 'eq-chainmail', name: 'Chain Mail',   category: 'armor',     traits: [], stats: { defense: 5 } }
-const ALL_FIXTURES  = [IRON_SWORD, IRON_SHIELD, WAND, CHAINMAIL]
+// Shared equipment fixtures
+const IRON_SWORD:  EquipmentItem = { id: 'eq-sword-1h',  name: 'Iron Sword',  category: 'weapon-1h', traits: [], stats: { attack: 4,    baseAps: 1.2 } }
+const IRON_SHIELD: EquipmentItem = { id: 'eq-shield',    name: 'Iron Shield', category: 'shield',    traits: [], stats: { defense: 5 } }
+const WAND:        EquipmentItem = { id: 'eq-wand',      name: 'Wand',        category: 'weapon-1h', traits: [], stats: { specialAttack: 4, baseAps: 1.1, range: 40 } }
+const CHAINMAIL:   EquipmentItem = { id: 'eq-chainmail', name: 'Chain Mail',  category: 'armor',     traits: [], stats: { defense: 5 } }
+const ALL_FIXTURES = [IRON_SWORD, IRON_SHIELD, WAND, CHAINMAIL]
 
 describe('getDerivedStats — base formulas from abilities', () => {
-  // Base unit: all abilities = 5, no equipment, no skills
-  // attack      = max(1, floor(str*2))              = floor(10)   = 10
-  // defense     = max(1, floor(con*1.5))            = floor(7.5)  = 7
-  // magicAttack = max(1, floor(int*2 + dex*0.5))   = floor(12.5) = 12
-  // magicDefense= max(1, floor(int*0.5 + con))      = floor(7.5)  = 7
-  // attackSpeed = max(1, floor(agi*2))              = floor(10)   = 10
-  // accuracy    = max(1, floor(dex*1.5 + agi*0.5)) = floor(10)   = 10
-  // dodge       = max(1, floor(agi*2 + dex*0.5))   = floor(12.5) = 12
-  it('computes all seven stats from abilities with no equipment or skills', () => {
+  // makeUnit: all abilities=5, level=1, no equipment
+  // attack          = STR + floor(STR/10)²          = 5 + 0 = 5
+  // armorDefense    = 0 (no armor)
+  // abilityDefense  = CON = 5
+  // magicAttack     = INT + (floor(INT/7)²+floor(INT/5)²)/2 = 5 + (0+1)/2 = 5.5
+  // aps             = 0.8 * (1+5/100) * (1+5/500)  ≈ 0.8484 (unarmed)
+  // accuracy        = DEX + level                   = 5+1 = 6
+  // dodge           = AGI                           = 5
+  it('computes base stats from abilities with no equipment', () => {
     const stats = getDerivedStats(makeUnit(), [])
-    expect(stats.attack).toBe(10)
-    expect(stats.defense).toBe(7)
-    expect(stats.magicAttack).toBe(12)
-    expect(stats.magicDefense).toBe(7)
-    expect(stats.attackSpeed).toBe(10)
-    expect(stats.accuracy).toBe(10)
-    expect(stats.dodge).toBe(12)
+    expect(stats.attack).toBe(5)
+    expect(stats.armorDefense).toBe(0)
+    expect(stats.abilityDefense).toBe(5)
+    expect(stats.magicAttack).toBeCloseTo(5.5)
+    expect(stats.abilityMagicDefense).toBe(5)
+    expect(stats.aps).toBeCloseTo(0.8484, 3)
+    expect(stats.accuracy).toBe(6)
+    expect(stats.dodge).toBe(5)
+    expect(stats.primaryDamageType).toBe('physical')
+    expect(stats.range).toBe(0)
   })
 
-  it('floors fractional results — never stores a decimal stat', () => {
-    // con=1 → floor(1*1.5) = floor(1.5) = 1, not 1.5
-    const stats = getDerivedStats(makeUnit({ abilities: { strength: 1, agility: 1, dexterity: 1, constitution: 1, intelligence: 1 } }), [])
-    expect(Number.isInteger(stats.attack)).toBe(true)
-    expect(Number.isInteger(stats.defense)).toBe(true)
-    expect(Number.isInteger(stats.magicAttack)).toBe(true)
-    expect(Number.isInteger(stats.magicDefense)).toBe(true)
-    expect(Number.isInteger(stats.attackSpeed)).toBe(true)
-    expect(Number.isInteger(stats.accuracy)).toBe(true)
-    expect(Number.isInteger(stats.dodge)).toBe(true)
+  it('applies STR quadratic scaling above 10', () => {
+    // str=20: floor(20/10)²=4 → attack = 20+4 = 24
+    const stats = getDerivedStats(makeUnit({ abilities: { strength: 20, agility: 5, dexterity: 5, constitution: 5, intelligence: 5 } }), [])
+    expect(stats.attack).toBe(24)
   })
 
-  it('clamps all stats to a minimum of 1 even with zero abilities', () => {
+  it('clamps attack and magicAttack to minimum of 1 with zero abilities', () => {
     const stats = getDerivedStats(
       makeUnit({ abilities: { strength: 0, agility: 0, dexterity: 0, constitution: 0, intelligence: 0 } }),
       []
     )
     expect(stats.attack).toBe(1)
-    expect(stats.defense).toBe(1)
     expect(stats.magicAttack).toBe(1)
-    expect(stats.magicDefense).toBe(1)
-    expect(stats.attackSpeed).toBe(1)
+    // accuracy clamped to min 1 even when DEX=0 (level=1 helps)
     expect(stats.accuracy).toBe(1)
-    expect(stats.dodge).toBe(1)
+    // armorDefense and dodge can be 0
+    expect(stats.armorDefense).toBe(0)
+    expect(stats.dodge).toBe(0)
   })
 })
 
 describe('getDerivedStats — equipment bonuses', () => {
-  it('adds equipment attack bonus to base attack', () => {
-    // Iron Sword: +4 attack → 10 + 4 = 14
+  it('adds weapon attack bonus to base attack', () => {
+    // Iron Sword: +4 attack → 5 + 4 = 9
     const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-sword-1h', offHand: null }, { mainHand: null, offHand: null }] })
-    expect(getDerivedStats(unit, ALL_FIXTURES).attack).toBe(14)
+    expect(getDerivedStats(unit, ALL_FIXTURES).attack).toBe(9)
   })
 
-  it('adds equipment defense bonus to base defense', () => {
-    // Iron Shield: +5 defense → 7 + 5 = 12
-    const unit = makeUnit({ weaponSets: [{ mainHand: null, offHand: 'eq-shield' }, { mainHand: null, offHand: null }] })
-    expect(getDerivedStats(unit, ALL_FIXTURES).defense).toBe(12)
+  it('uses mainHand baseAps to scale APS', () => {
+    // Iron Sword: baseAps=1.2 → aps = 1.2 * (1+5/100) * (1+5/500) ≈ 1.272
+    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-sword-1h', offHand: null }, { mainHand: null, offHand: null }] })
+    const aps = getDerivedStats(unit, ALL_FIXTURES).aps
+    expect(aps).toBeCloseTo(1.2 * 1.05 * 1.01, 4)
   })
 
-  it('adds equipment specialAttack bonus to magicAttack', () => {
-    // Wand: +4 specialAttack → 12 + 4 = 16
+  it('sets primaryDamageType to magic when mainHand has specialAttack', () => {
     const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-wand', offHand: null }, { mainHand: null, offHand: null }] })
-    expect(getDerivedStats(unit, ALL_FIXTURES).magicAttack).toBe(16)
+    const stats = getDerivedStats(unit, ALL_FIXTURES)
+    expect(stats.primaryDamageType).toBe('magic')
+    expect(stats.magicAttack).toBeCloseTo(4 + 5.5, 1)  // weaponMagicAtk + abilityMagicAtk
   })
 
-  it('stacks bonuses from multiple equipped items', () => {
-    // Iron Sword (+4 atk) + Iron Shield (+5 def) + Chain Mail (+5 def)
+  it('sums armor defense from all equipped defense items', () => {
+    // Iron Shield (+5 def) + Chain Mail (+5 def) → armorDefense = 10
     const unit = makeUnit({
-      weaponSets: [{ mainHand: 'eq-sword-1h', offHand: 'eq-shield' }, { mainHand: null, offHand: null }],
+      weaponSets: [{ mainHand: null, offHand: 'eq-shield' }, { mainHand: null, offHand: null }],
       equipment:  { armor: 'eq-chainmail', tool: null, accessory: null },
     })
-    const stats = getDerivedStats(unit, ALL_FIXTURES)
-    expect(stats.attack).toBe(14)       // 10 + 4
-    expect(stats.defense).toBe(17)      // 7 + 5 + 5
+    expect(getDerivedStats(unit, ALL_FIXTURES).armorDefense).toBe(10)
   })
 
-  it('silently ignores equipment slot ids not found in the allEquipment list', () => {
-    // Unit has a nonexistent item id — should compute as if the slot is empty
-    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-legendary-sword-unknown', offHand: null }, { mainHand: null, offHand: null }] })
-    const stats = getDerivedStats(unit, ALL_FIXTURES)
-    expect(stats.attack).toBe(10)  // no bonus applied
+  it('takes the highest range from equipped items', () => {
+    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-wand', offHand: null }, { mainHand: null, offHand: null }] })
+    expect(getDerivedStats(unit, ALL_FIXTURES).range).toBe(40)
   })
 
-  it('produces the same result whether allEquipment is [] or missing equipped item ids', () => {
-    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-sword-1h', offHand: null }, { mainHand: null, offHand: null }] })
-    expect(getDerivedStats(unit, [])).toEqual(getDerivedStats(makeUnit(), []))
+  it('silently ignores unknown equipment ids', () => {
+    const unit = makeUnit({ weaponSets: [{ mainHand: 'eq-unknown', offHand: null }, { mainHand: null, offHand: null }] })
+    const stats = getDerivedStats(unit, ALL_FIXTURES)
+    expect(stats.attack).toBe(5)  // no bonus applied
   })
 })
 
 describe('getDerivedStats — skill bonuses', () => {
-  it('applies a direct stat bonus from a learned skill (sword-mastery-1h lv3 → +9 ATK)', () => {
-    // sword-mastery-1h: getBonuses(lv) = { attack: lv * 3 }
-    // lv3 → +9 attack → 10 + 9 = 19
+  it('applies a direct attack bonus from a skill (sword-mastery-1h lv3 → +9)', () => {
+    // sb.attack=9 → attack = 0 + 5 + 0 + 9 = 14
     const unit = makeUnit({ learnedSkills: { 'sword-mastery-1h': 3 } })
-    expect(getDerivedStats(unit, []).attack).toBe(19)
+    expect(getDerivedStats(unit, []).attack).toBe(14)
   })
 
-  it('applies an ability boost from a skill, which then flows through the stat formula', () => {
-    // arcane-knowledge lv2: getBonuses(2) = { intelligence: 2 }
-    // int becomes 5+2=7 → magicAttack = floor(7*2 + 5*0.5) = floor(16.5) = 16
-    //                   → magicDefense = floor(7*0.5 + 5) = floor(8.5) = 8
-    const unit = makeUnit({ learnedSkills: { 'arcane-knowledge': 2 } })
-    const stats = getDerivedStats(unit, [])
-    expect(stats.magicAttack).toBe(16)
-    expect(stats.magicDefense).toBe(8)
-  })
-
-  it('applies a direct magicAttack bonus from a skill (spellweaving lv2 → +8 M.ATK)', () => {
-    // spellweaving: getBonuses(lv) = { magicAttack: lv * 4 }
-    // lv2 → +8 magicAttack → 12 + 8 = 20
+  it('applies a direct magicAttack bonus from a skill (spellweaving lv2 → +8)', () => {
     const unit = makeUnit({ learnedSkills: { 'spellweaving': 2 } })
-    expect(getDerivedStats(unit, []).magicAttack).toBe(20)
-  })
-
-  it('applies a dexterity boost from keen-eyes through to accuracy and dodge', () => {
-    // keen-eyes lv1: getBonuses(1) = { dexterity: 1 } → dex becomes 6
-    // accuracy = floor(6*1.5 + 5*0.5) = floor(9 + 2.5) = 11
-    // dodge    = floor(5*2   + 6*0.5) = floor(10 + 3)  = 13
-    const unit = makeUnit({ learnedSkills: { 'keen-eyes': 1 } })
-    const stats = getDerivedStats(unit, [])
-    expect(stats.accuracy).toBe(11)
-    expect(stats.dodge).toBe(13)
+    expect(getDerivedStats(unit, []).magicAttack).toBeCloseTo(5.5 + 8, 1)
   })
 
   it('stacks bonuses from multiple skills additively', () => {
-    // sword-mastery-1h lv1 (+3 atk) + sword-mastery-2h lv1 (+5 atk) → +8 total → 10 + 8 = 18
+    // sword-mastery-1h lv1 (+3 atk) + sword-mastery-2h lv1 (+5 atk) → +8 → 5 + 8 = 13
     const unit = makeUnit({ learnedSkills: { 'sword-mastery-1h': 1, 'sword-mastery-2h': 1 } })
-    expect(getDerivedStats(unit, []).attack).toBe(18)
+    expect(getDerivedStats(unit, []).attack).toBe(13)
   })
 
-  it('ignores unknown skill ids in learnedSkills without throwing', () => {
+  it('ignores unknown skill ids without throwing', () => {
     const unit = makeUnit({ learnedSkills: { 'skill-does-not-exist': 5 } })
     expect(() => getDerivedStats(unit, [])).not.toThrow()
     expect(getDerivedStats(unit, [])).toEqual(getDerivedStats(makeUnit(), []))

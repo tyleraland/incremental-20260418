@@ -2,13 +2,13 @@ import { createPortal } from 'react-dom'
 import { type MonsterDef, DROP_ITEMS, FAMILIARITY_THRESHOLDS } from '@/stores/useGameStore'
 
 const STAT_ROWS = [
-  { key: 'attack'       as const, label: 'ATK',   color: 'text-game-gold'   },
-  { key: 'defense'      as const, label: 'DEF',   color: 'text-sky-400'     },
-  { key: 'magicAttack'  as const, label: 'M.ATK', color: 'text-game-accent' },
-  { key: 'magicDefense' as const, label: 'M.DEF', color: 'text-violet-400'  },
-  { key: 'attackSpeed'  as const, label: 'SPD',   color: 'text-game-green'  },
-  { key: 'accuracy'     as const, label: 'ACC',   color: 'text-orange-400'  },
-  { key: 'dodge'        as const, label: 'DOD',   color: 'text-pink-400'    },
+  { key: 'attack'           as const, label: 'ATK',   color: 'text-game-gold'   },
+  { key: 'armorDefense'     as const, label: 'ARM',   color: 'text-sky-400'     },
+  { key: 'magicAttack'      as const, label: 'M.ATK', color: 'text-game-accent' },
+  { key: 'magicArmorDefense'as const, label: 'M.ARM', color: 'text-violet-400'  },
+  { key: 'aps'              as const, label: 'APS',   color: 'text-game-green'  },
+  { key: 'accuracy'         as const, label: 'ACC',   color: 'text-orange-400'  },
+  { key: 'dodge'            as const, label: 'DOD',   color: 'text-pink-400'    },
 ]
 
 export function MonsterCodex({ monster, seenCount, onClose }: {

@@ -505,7 +505,7 @@ function SelectionBar() {
               </div>
             )}
             <div className="grid grid-cols-4 gap-1 text-xs">
-              {([['ATK', derived.attack], ['DEF', derived.defense], ['SPD', derived.attackSpeed], ['ACC', derived.accuracy]] as const).map(([label, val]) => (
+              {([['ATK', derived.attack], ['ARM', derived.armorDefense], ['APS', derived.aps], ['ACC', derived.accuracy]] as const).map(([label, val]) => (
                 <div key={label} className="text-center bg-game-border/30 rounded p-1">
                   <div className="text-game-text-dim">{label}</div>
                   <div className="font-semibold text-game-text">{Math.round(val as number)}</div>

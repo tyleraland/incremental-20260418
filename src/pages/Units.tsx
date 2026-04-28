@@ -95,13 +95,13 @@ function StatsTab({ unit }: { unit: Unit }) {
   const derived          = getDerivedStats(unit, equipment)
 
   const derivedStats = [
-    { label: 'ATK',   value: derived.attack,       color: 'text-game-gold'    },
-    { label: 'DEF',   value: derived.defense,      color: 'text-sky-400'      },
-    { label: 'M.ATK', value: derived.magicAttack,  color: 'text-game-accent'  },
-    { label: 'M.DEF', value: derived.magicDefense, color: 'text-violet-400'   },
-    { label: 'SPD',   value: derived.attackSpeed,  color: 'text-game-green'   },
-    { label: 'ACC',   value: derived.accuracy,     color: 'text-orange-400'   },
-    { label: 'DOD',   value: derived.dodge,        color: 'text-pink-400'     },
+    { label: 'ATK',   value: derived.attack,            color: 'text-game-gold'    },
+    { label: 'ARM',   value: derived.armorDefense,      color: 'text-sky-400'      },
+    { label: 'M.ATK', value: derived.magicAttack,       color: 'text-game-accent'  },
+    { label: 'M.ARM', value: derived.magicArmorDefense, color: 'text-violet-400'   },
+    { label: 'APS',   value: +derived.aps.toFixed(2),   color: 'text-game-green'   },
+    { label: 'ACC',   value: derived.accuracy,          color: 'text-orange-400'   },
+    { label: 'DOD',   value: derived.dodge,             color: 'text-pink-400'     },
   ]
 
   return (

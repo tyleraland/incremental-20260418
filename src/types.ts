@@ -51,9 +51,17 @@ export interface Abilities {
 }
 
 export interface DerivedStats {
-  attack: number; defense: number; magicAttack: number; magicDefense: number
-  attackSpeed: number; accuracy: number; dodge: number
-  range: number  // attack range in feet; 0 = melee (can only attack at distance 0)
+  attack: number              // physical dmg/hit = weaponAtk + STR + floor(STR/10)²
+  magicAttack: number         // magic dmg/hit = weaponMagicAtk + INT formula
+  aps: number                 // attacks per second; replaces attackSpeed
+  armorDefense: number        // % mitigation: incoming × 100/(100+x); replaces defense
+  abilityDefense: number      // flat reduction after armor (CON for units; hardcoded for monsters)
+  magicArmorDefense: number   // % mitigation for magic; replaces magicDefense
+  abilityMagicDefense: number // flat reduction after magic armor (INT for units)
+  accuracy: number            // HIT = DEX + level
+  dodge: number               // = AGI + bonuses (1 per AGI)
+  primaryDamageType: 'physical' | 'magic'  // from mainHand weapon; drives which atk/def pair to use
+  range: number               // attack range in feet; 0 = melee
 }
 
 // ── Unit ──────────────────────────────────────────────────────────────────────
@@ -105,6 +113,7 @@ export interface MonsterDef {
   id: string
   name: string
   level: number
+  maxHp: number            // monster health; progress = cumulativeDmg / maxHp
   stats: DerivedStats
   drops: MonsterDrop[]
   element: MonsterElement  // §3: default 'neutral'
@@ -117,7 +126,7 @@ export interface MonsterDef {
 
 export interface EquipmentItem {
   id: string; name: string; category: ItemCategory; traits: string[]
-  stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number; range?: number }
+  stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number; range?: number; baseAps?: number }
   description?: string
   slots?: number  // §6: card sockets (0–4); default 0
 }

@@ -102,6 +102,15 @@ const INITIAL_ENCOUNTERS: Record<string, EncounterSlot[]> = {
   ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, makeSlots(['rock-crab'])])),
 }
 
+// ── Combat helpers ────────────────────────────────────────────────────────────
+
+function computeDmg(attack: number, armorDef: number, abilityDef: number): number {
+  return Math.max(1, attack * (100 / (100 + armorDef)) - abilityDef)
+}
+function hitRate(accuracy: number, dodge: number): number {
+  return Math.max(0.05, Math.min(0.95, (accuracy - dodge + 80) / 100))
+}
+
 // ── Event log helper ──────────────────────────────────────────────────────────
 
 function appendLog(log: LogEntry[], category: LogCategory, message: string, tick: number): LogEntry[] {
@@ -217,11 +226,20 @@ export const useGameStore = create<GameState>((set) => ({
       const normalIdxs   = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'normal'     && sl.progress < 1)
       const focusIdxs    = priorityIdxs.length > 0 ? priorityIdxs : normalIdxs
       const attackedSlots = new Set<number>()
+      const slotDPS: Record<number, number> = {}
       if (focusIdxs.length > 0) {
         aliveUnits.forEach((u, ui) => {
-          if (getDerivedStats(u, s.equipment).range >= newDist) {
-            attackedSlots.add(focusIdxs[ui % focusIdxs.length].i)
-          }
+          const uStats = getDerivedStats(u, s.equipment)
+          if (uStats.range < newDist) return
+          const slotIdx = focusIdxs[ui % focusIdxs.length].i
+          attackedSlots.add(slotIdx)
+          const m = MONSTER_REGISTRY[slots[slotIdx].monsterId]
+          if (!m) return
+          const isPhys = uStats.primaryDamageType === 'physical'
+          const rawAtk = isPhys ? uStats.attack : uStats.magicAttack
+          const mArmor = isPhys ? m.stats.armorDefense : m.stats.magicArmorDefense
+          const mFlat  = isPhys ? m.stats.abilityDefense : m.stats.abilityMagicDefense
+          slotDPS[slotIdx] = (slotDPS[slotIdx] ?? 0) + uStats.aps * computeDmg(rawAtk, mArmor, mFlat) * hitRate(uStats.accuracy, m.stats.dodge)
         })
       }
 
@@ -235,8 +253,9 @@ export const useGameStore = create<GameState>((set) => ({
         if (monster.stats.range < newDist) continue  // out of range
         const target = s.units.find((u) => u.id === targetId)
         if (!target) continue
-        const def = getDerivedStats(target, s.equipment).defense
-        hpDamage[targetId] = (hpDamage[targetId] ?? 0) + monster.stats.attack / Math.max(def, 1)
+        const tStats = getDerivedStats(target, s.equipment)
+        const dmgPerHit = computeDmg(monster.stats.attack, tStats.armorDefense, tStats.abilityDefense)
+        hpDamage[targetId] = (hpDamage[targetId] ?? 0) + monster.stats.aps * dmgPerHit * hitRate(monster.stats.accuracy, tStats.dodge)
       }
 
       const defeatedThisTick: string[] = []
@@ -246,7 +265,7 @@ export const useGameStore = create<GameState>((set) => ({
         if (slot.progress >= 1) return { ...slot, targetUnitId: null }
         if (slot.behavior === 'ignore' || slot.behavior === 'avoid') return { ...slot, targetUnitId: targets[i] }
         if (!attackedSlots.has(i)) return { ...slot, targetUnitId: targets[i] }
-        const newProg = Math.min(slot.progress + 1 / (monster.level * 5), 1)
+        const newProg = Math.min(slot.progress + (slotDPS[i] ?? 0) / monster.maxHp, 1)
         if (newProg >= 1) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + 1
           expGained[locationId]        = (expGained[locationId] ?? 0) + 1
@@ -370,8 +389,20 @@ export const useGameStore = create<GameState>((set) => ({
       const normalIdxs   = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'normal'     && sl.progress < 1)
       const focusIdxs    = priorityIdxs.length > 0 ? priorityIdxs : normalIdxs
       const attackedSlots = new Set<number>()
+      const slotDPS: Record<number, number> = {}
       if (focusIdxs.length > 0) {
-        aliveUnits.forEach((_, ui) => attackedSlots.add(focusIdxs[ui % focusIdxs.length].i))
+        aliveUnits.forEach((u, ui) => {
+          const slotIdx = focusIdxs[ui % focusIdxs.length].i
+          attackedSlots.add(slotIdx)
+          const m = MONSTER_REGISTRY[slots[slotIdx].monsterId]
+          if (!m) return
+          const uStats = getDerivedStats(u, s.equipment)
+          const isPhys = uStats.primaryDamageType === 'physical'
+          const rawAtk = isPhys ? uStats.attack : uStats.magicAttack
+          const mArmor = isPhys ? m.stats.armorDefense : m.stats.magicArmorDefense
+          const mFlat  = isPhys ? m.stats.abilityDefense : m.stats.abilityMagicDefense
+          slotDPS[slotIdx] = (slotDPS[slotIdx] ?? 0) + uStats.aps * computeDmg(rawAtk, mArmor, mFlat) * hitRate(uStats.accuracy, m.stats.dodge)
+        })
       }
 
       for (let i = 0; i < slots.length; i++) {
@@ -380,8 +411,9 @@ export const useGameStore = create<GameState>((set) => ({
         const monster = MONSTER_REGISTRY[monsterId]
         const target  = targets[i]
         if (!monster || !target) continue
-        const def = getDerivedStats(target, s.equipment).defense
-        damageRates[target.id] = (damageRates[target.id] ?? 0) + monster.stats.attack / Math.max(def, 1)
+        const tStats = getDerivedStats(target, s.equipment)
+        const dmgPerHit = computeDmg(monster.stats.attack, tStats.armorDefense, tStats.abilityDefense)
+        damageRates[target.id] = (damageRates[target.id] ?? 0) + monster.stats.aps * dmgPerHit * hitRate(monster.stats.accuracy, tStats.dodge)
         inCombat.add(target.id)
       }
 
@@ -392,7 +424,7 @@ export const useGameStore = create<GameState>((set) => ({
         if (slot.behavior === 'ignore' || slot.behavior === 'avoid') return { ...slot, targetUnitId: targets[i]?.id ?? null }
         if (!attackedSlots.has(i)) return { ...slot, targetUnitId: targets[i]?.id ?? null }
 
-        const combined    = slot.progress + n / (monster.level * 5)
+        const combined = slot.progress + n * (slotDPS[i] ?? 0) / monster.maxHp
         const completions = Math.floor(combined)
         if (completions > 0) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + completions
