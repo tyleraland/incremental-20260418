@@ -168,9 +168,9 @@ function SlotBar({ prog, targetName, respawnTicksLeft }: { prog: number; targetN
 
   useLayoutEffect(() => {
     const bar = barRef.current
-    if (!bar) return
+    if (!bar || prog === prevProg.current) return
     const resetting = prog === 0 && prevProg.current > 0
-    bar.style.transition = resetting ? 'none' : 'width 0.9s linear'
+    bar.style.transition = resetting ? 'none' : 'width 1s linear'
     bar.style.width      = `${(1 - prog) * 100}%`
     prevProg.current = prog
   })
