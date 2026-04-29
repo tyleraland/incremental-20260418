@@ -279,6 +279,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
   const behavior   = slot.behavior ?? 'normal'
   const targetUnit = allUnits.find((u) => u.id === slot.targetUnitId)
   const hpPct      = Math.max(0, Math.round((1 - slot.progress) * 100))
+  const currentHp  = Math.round((1 - slot.progress) * monster.health)
   const phase      = slot.phase ?? 'standing'
 
   const targetDerived    = targetUnit ? getDerivedStats(targetUnit, equipment) : null
@@ -304,7 +305,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
         <div className="flex-1 bg-game-border/60 rounded-full h-1.5 overflow-hidden">
           <div className="bg-red-500 h-1.5 rounded-full transition-none" style={{ width: `${hpPct}%` }} />
         </div>
-        <span className={`text-[10px] font-medium tabular-nums shrink-0 ${hpColor}`}>{hpPct}%</span>
+        <span className={`text-[10px] font-medium tabular-nums shrink-0 ${hpColor}`}>{currentHp} / {monster.health}</span>
         {monsterDrainRate !== null && (
           <span className="text-[10px] text-red-400 shrink-0">(-{monsterDrainRate.toFixed(1)}/s)</span>
         )}
