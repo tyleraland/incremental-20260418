@@ -217,11 +217,11 @@ function CompactUnitChip({ unit, locationId }: { unit: Unit; locationId: string 
   const hasTarget = !isKO && !isFleeing && idx >= 0 && focus.length > 0
 
   let label: string, color: string
-  if (isKO)           { label = 'KO';   color = 'text-purple-400' }
-  else if (isFleeing) { label = 'Flee'; color = 'text-sky-400'    }
-  else if (hasTarget) { label = 'Atk';  color = 'text-game-green' }
-  else if (slots.length === 0) { label = 'Hunt'; color = 'text-amber-400' }
-  else                { label = '—';    color = 'text-game-muted'  }
+  if (isKO)           { label = 'KO';        color = 'text-purple-400' }
+  else if (isFleeing) { label = 'Fleeing';   color = 'text-sky-400'    }
+  else if (hasTarget) { label = 'Attacking'; color = 'text-game-green' }
+  else if (slots.length === 0) { label = 'Hunting'; color = 'text-amber-400' }
+  else                { label = '—';         color = 'text-game-muted'  }
 
   return (
     <button
