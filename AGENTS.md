@@ -23,6 +23,11 @@ We're iterating fast on UI. No tests yet. Don't over-engineer toward future feat
 - Tests and refactoring come later
 - No persistence layer, no error boundaries, no abstractions the current features don't need
 
+## Branching & Merging
+
+- Develop on a feature branch, but **merge to `main` when the feature is complete** — main is what gets tested in the browser. Do not wait to be asked.
+- Fast-forward merge when possible: `git merge --ff-only <branch> && git push origin main`.
+
 ---
 
 ## Feature Specifications
