@@ -152,3 +152,64 @@ describe('Encounter progress', () => {
     expect(encounters['loc1'][0].progress).toBeCloseTo(0.6)
   })
 })
+
+describe('Miss system', () => {
+  // mockReturnValue(1) makes Math.random() ≥ any hit chance (max 0.95) → always miss
+  beforeEach(() => { vi.mocked(Math.random).mockReturnValue(1) })
+
+  it('monster attack deals no damage when it misses', () => {
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { units } = tick()
+    expect(units[0].health).toBe(100)
+  })
+
+  it('sets lastAttackMissed=true on the slot when monster misses', () => {
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].lastAttackMissed).toBe(true)
+  })
+
+  it('sets lastAttackMissed=false when monster hits (random=0)', () => {
+    vi.mocked(Math.random).mockReturnValue(0)
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].lastAttackMissed).toBe(false)
+  })
+
+  it('unit progress does not advance when unit attack misses', () => {
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].progress).toBe(0)
+  })
+
+  it('sets lastProgressMissed=true when unit attack misses', () => {
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].lastProgressMissed).toBe(true)
+  })
+
+  it('sets lastProgressMissed=false when unit attack hits (random=0)', () => {
+    vi.mocked(Math.random).mockReturnValue(0)
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].lastProgressMissed).toBe(false)
+  })
+})

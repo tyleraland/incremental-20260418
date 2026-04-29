@@ -155,6 +155,38 @@ describe('unitsCodec', () => {
   it('empty() returns the initial unit list', () => {
     expect(unitsCodec.empty().length).toBeGreaterThan(0)
   })
+
+  describe('v1 → v2 migration (isResting)', () => {
+    function withoutIsResting(u: ReturnType<typeof makeUnit>) {
+      const copy = { ...u } as Record<string, unknown>
+      delete copy['isResting']
+      return copy
+    }
+
+    it('sets isResting=true for a unit with health=0 and recoveryTicksLeft=0 (was stuck)', () => {
+      const old = withoutIsResting(makeUnit({ health: 0, recoveryTicksLeft: 0 }))
+      const migrated = unitsCodec.migrate!([old], 1)
+      expect(migrated[0].isResting).toBe(true)
+    })
+
+    it('sets isResting=false for a healthy unit missing the field', () => {
+      const old = withoutIsResting(makeUnit({ health: 80, recoveryTicksLeft: 0 }))
+      const migrated = unitsCodec.migrate!([old], 1)
+      expect(migrated[0].isResting).toBe(false)
+    })
+
+    it('sets isResting=false for a KO\'d unit still in countdown (recoveryTicksLeft > 0)', () => {
+      const old = withoutIsResting(makeUnit({ health: 0, recoveryTicksLeft: 10 }))
+      const migrated = unitsCodec.migrate!([old], 1)
+      expect(migrated[0].isResting).toBe(false)
+    })
+
+    it('preserves an explicit isResting value when already present in saved data', () => {
+      const withResting = makeUnit({ health: 20, isResting: true })
+      const migrated = unitsCodec.migrate!([withResting], 1)
+      expect(migrated[0].isResting).toBe(true)
+    })
+  })
 })
 
 describe('inventoryCodec', () => {

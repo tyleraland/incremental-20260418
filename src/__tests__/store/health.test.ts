@@ -141,3 +141,71 @@ describe('Health — idle regen', () => {
     expect(units[0].health).toBe(50)
   })
 })
+
+describe('Health — batchTick KO recovery', () => {
+  it('regens at RESTING_REGEN_RATE × remaining ticks after KO phase ends mid-batch', () => {
+    // KO phase is RECOVERY_TICKS; batch covers KO phase + 10 extra ticks of resting
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: RECOVERY_TICKS, locationId: null })],
+    })
+    useGameStore.getState().batchTick(RECOVERY_TICKS + 10)
+    const { units } = useGameStore.getState()
+    expect(units[0].recoveryTicksLeft).toBe(0)
+    expect(units[0].health).toBe(10 * RESTING_REGEN_RATE)
+    expect(units[0].isResting).toBe(true)
+  })
+
+  it('stays in KO phase if batch ends before countdown reaches 0', () => {
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: RECOVERY_TICKS, locationId: null })],
+    })
+    useGameStore.getState().batchTick(RECOVERY_TICKS - 3)
+    const { units } = useGameStore.getState()
+    expect(units[0].recoveryTicksLeft).toBe(3)
+    expect(units[0].health).toBe(0)
+    expect(units[0].isResting).toBe(false)
+  })
+
+  it('resting unit regens health at RESTING_REGEN_RATE × n ticks in batchTick', () => {
+    const maxHp = getDerivedStats(makeUnit(), []).maxHp
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 0, isResting: true, recoveryTicksLeft: 0, locationId: null })],
+    })
+    useGameStore.getState().batchTick(20)
+    const { units } = useGameStore.getState()
+    expect(units[0].health).toBe(Math.min(maxHp, 20 * RESTING_REGEN_RATE))
+    expect(units[0].isResting).toBe(true)
+  })
+
+  it('clears isResting in batchTick when regen reaches maxHp', () => {
+    const maxHp = getDerivedStats(makeUnit(), []).maxHp
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: maxHp - 5, isResting: true, recoveryTicksLeft: 0, locationId: null })],
+    })
+    useGameStore.getState().batchTick(10)
+    const { units } = useGameStore.getState()
+    expect(units[0].health).toBe(maxHp)
+    expect(units[0].isResting).toBe(false)
+  })
+})
+
+describe('Health — isResting save-migration guard (tick + batchTick)', () => {
+  it('tick(): unit with undefined isResting at health=0 enters resting, not stuck', () => {
+    const unit = { ...makeUnit({ health: 0, recoveryTicksLeft: 0, locationId: null }), isResting: undefined as unknown as boolean }
+    resetStore({ units: [unit] })
+    const { units } = tick()
+    // Must take the resting path: health increments and isResting=true
+    expect(units[0].health).toBe(RESTING_REGEN_RATE)
+    expect(units[0].isResting).toBe(true)
+  })
+
+  it('batchTick(): unit with undefined isResting at health=0 gets resting regen, not idle regen', () => {
+    const unit = { ...makeUnit({ health: 0, recoveryTicksLeft: 0, locationId: null }), isResting: undefined as unknown as boolean }
+    resetStore({ units: [unit] })
+    useGameStore.getState().batchTick(10)
+    const { units } = useGameStore.getState()
+    // RESTING_REGEN_RATE=1, REGEN_RATE=1 so health is same; key assertion is isResting stays true
+    expect(units[0].health).toBe(10 * RESTING_REGEN_RATE)
+    expect(units[0].isResting).toBe(true)
+  })
+})

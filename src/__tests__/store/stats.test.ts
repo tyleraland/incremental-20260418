@@ -101,6 +101,38 @@ describe('getDerivedStats — equipment bonuses', () => {
   })
 })
 
+describe('getDerivedStats — defenseEquip', () => {
+  it('is 0 with no equipment', () => {
+    expect(getDerivedStats(makeUnit(), []).defenseEquip).toBe(0)
+  })
+
+  it('equals the armor defense bonus, separate from the CON-derived stat', () => {
+    // Chain Mail: +5 defense → defenseEquip=5, stat part=7, total=12
+    const unit = makeUnit({ equipment: { armor: 'eq-chainmail', tool: null, accessory: null } })
+    const stats = getDerivedStats(unit, ALL_FIXTURES)
+    expect(stats.defenseEquip).toBe(5)
+    expect(stats.defense).toBe(7 + 5)
+  })
+
+  it('stacks defense from offHand shield and armor', () => {
+    // Shield (+5) + Chain Mail (+5) = defenseEquip=10, total=17
+    const unit = makeUnit({
+      weaponSets: [{ mainHand: null, offHand: 'eq-shield' }, { mainHand: null, offHand: null }],
+      equipment:  { armor: 'eq-chainmail', tool: null, accessory: null },
+    })
+    const stats = getDerivedStats(unit, ALL_FIXTURES)
+    expect(stats.defenseEquip).toBe(10)
+    expect(stats.defense).toBe(7 + 10)
+  })
+
+  it('defense - defenseEquip always equals the CON-only component', () => {
+    const unit = makeUnit({ equipment: { armor: 'eq-chainmail', tool: null, accessory: null } })
+    const stats = getDerivedStats(unit, ALL_FIXTURES)
+    const statPart = Math.floor(5 * 1.5)  // CON=5
+    expect(stats.defense - stats.defenseEquip).toBe(statPart)
+  })
+})
+
 describe('getDerivedStats — skill bonuses', () => {
   it('applies a direct stat bonus from a learned skill (sword-mastery-1h lv3 → +9 ATK)', () => {
     // sword-mastery-1h: getBonuses(lv) = { attack: lv * 3 }
