@@ -466,7 +466,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
       </div>
 
       {/* Status line */}
-      <div className="flex items-center gap-1.5 text-xs flex-wrap">
+      <div className="flex items-center gap-1.5 text-xs overflow-hidden h-5">
         {isRecovering ? (
           <span className="text-purple-400">KO — recovering</span>
         ) : fleeing > 0 ? (
