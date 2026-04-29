@@ -387,8 +387,9 @@ export const useGameStore = create<GameState>((set) => ({
     }
 
     const units = s.units.map((u) => {
-      let { health, recoveryTicksLeft } = u
-      let isResting = u.isResting ?? (health === 0 && recoveryTicksLeft === 0)
+      let health = u.health
+      let recoveryTicksLeft = Math.max(0, Math.round(u.recoveryTicksLeft ?? 0))
+      let isResting = u.isResting || (health === 0 && recoveryTicksLeft === 0)
       const maxHp = getDerivedStats(u, s.equipment).maxHp
       if (recoveryTicksLeft > 0) {
         // KO phase: count down, no regen; transition to resting when done
@@ -527,8 +528,9 @@ export const useGameStore = create<GameState>((set) => ({
     const totalExpEarned = Object.values(expGained).reduce((a, b) => a + b, 0)
 
     const unitsPreLevel = s.units.map((u) => {
-      let { health, recoveryTicksLeft } = u
-      let isResting = u.isResting ?? (health === 0 && recoveryTicksLeft === 0)
+      let health = u.health
+      let recoveryTicksLeft = Math.max(0, Math.round(u.recoveryTicksLeft ?? 0))
+      let isResting = u.isResting || (health === 0 && recoveryTicksLeft === 0)
       const maxHp = getDerivedStats(u, s.equipment).maxHp
 
       if (isResting) {
@@ -552,14 +554,18 @@ export const useGameStore = create<GameState>((set) => ({
         const rate         = damageRates[u.id] ?? 0
         const ticksToDeath = rate > 0 ? health / rate : Infinity
         if (ticksToDeath >= n) {
-          health = Math.floor(health - rate * n)
+          health = Math.max(0, Math.floor(health - rate * n))
+          // Floor can push health to 0 even when ticksToDeath >= n — trigger KO
+          if (health === 0) { recoveryTicksLeft = RECOVERY_TICKS; isResting = false }
         } else {
           const ticksAfterDeath = n - Math.floor(ticksToDeath)
-          if (ticksAfterDeath <= RECOVERY_TICKS) {
+          if (ticksAfterDeath < RECOVERY_TICKS) {
+            // Still inside KO countdown at end of batch
             recoveryTicksLeft = RECOVERY_TICKS - ticksAfterDeath
             health = 0
             isResting = false
           } else {
+            // KO phase complete; ticksAfterDeath === RECOVERY_TICKS means 0 resting ticks
             recoveryTicksLeft = 0
             const ticksResting = ticksAfterDeath - RECOVERY_TICKS
             health    = Math.min(maxHp, ticksResting * RESTING_REGEN_RATE)
