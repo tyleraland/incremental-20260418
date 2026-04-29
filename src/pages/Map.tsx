@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, getDerivedStats, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, RESTING_REGEN_RATE, getDerivedStats, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
 
 
 const REGIONS = [
@@ -59,6 +59,7 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing =
   const equipment        = useGameStore((s) => s.equipment)
   const isSelected       = selectedUnitIds.includes(unit.id)
   const isRecovering     = unit.recoveryTicksLeft > 0
+  const isResting        = unit.isResting
   const maxHp            = getDerivedStats(unit, equipment).maxHp
   const hpPct            = Math.max(0, Math.min(100, (unit.health / maxHp) * 100))
   const recoverPct       = isRecovering ? ((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
@@ -85,12 +86,16 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing =
           <div className="w-full bg-game-border/60 rounded-full h-1.5 overflow-hidden">
             {isRecovering ? (
               <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${recoverPct}%`, transition: 'none' }} />
+            ) : isResting ? (
+              <div className="bg-sky-500 h-1.5 rounded-full" style={{ width: `${hpPct}%`, transition: 'none' }} />
             ) : (
               <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'none' }} />
             )}
           </div>
           {isRecovering ? (
             <div className="text-[10px] text-purple-400 mt-0.5">KO</div>
+          ) : isResting ? (
+            <div className="text-[10px] text-sky-400 mt-0.5">Resting</div>
           ) : isFleeing ? (
             <div className="text-[10px] text-sky-400 mt-0.5">Fleeing</div>
           ) : isHunting ? (
@@ -459,8 +464,10 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
           <span className={`text-xs font-mono font-semibold ${hpTextColor(hpPct)}`}>{unit.health} / {derived.maxHp}</span>
           {dpsTaken !== null && dpsTaken > 0 ? (
             <span className="text-[10px] text-red-400">(-{dpsTaken.toFixed(1)}/s)</span>
-          ) : (isRecovering || unit.locationId === null) ? (
-            <span className="text-[10px] text-game-green">(+{REGEN_RATE.toFixed(1)}/s)</span>
+          ) : unit.isResting ? (
+            <span className="text-[10px] text-sky-400">(+{RESTING_REGEN_RATE}/s)</span>
+          ) : unit.locationId === null ? (
+            <span className="text-[10px] text-game-green">(+{REGEN_RATE}/s)</span>
           ) : null}
           <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
         </div>
@@ -470,6 +477,8 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
       <div className="w-full bg-game-border/60 rounded-full h-1.5 overflow-hidden">
         {isRecovering ? (
           <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100}%`, transition: 'none' }} />
+        ) : unit.isResting ? (
+          <div className="bg-sky-500 h-1.5 rounded-full" style={{ width: `${hpPct}%`, transition: 'none' }} />
         ) : (
           <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'none' }} />
         )}
@@ -482,7 +491,9 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
       {/* Status line */}
       <div className="flex items-center gap-1.5 text-xs overflow-hidden h-5">
         {isRecovering ? (
-          <span className="text-purple-400">KO — recovering</span>
+          <span className="text-purple-400">KO</span>
+        ) : unit.isResting ? (
+          <span className="text-sky-400">Resting...</span>
         ) : fleeing > 0 ? (
           <span className="text-sky-400">Fleeing...</span>
         ) : targetMonster && targetPhase === 'approaching' ? (

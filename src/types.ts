@@ -69,7 +69,8 @@ export interface Unit {
   equipment: { armor: string | null; tool: string | null; accessory: string | null }
   weaponSets: [WeaponRecord, WeaponRecord] // §5: set A and set B
   activeWeaponSet: 0 | 1                  // §5: which weapon set is active
-  recoveryTicksLeft: number               // >0: KO countdown; 0: active or regenerating
+  recoveryTicksLeft: number               // >0: KO countdown; 0: active, resting, or idle
+  isResting: boolean                      // true after KO countdown ends, until health reaches maxHp
 }
 
 // ── Location ──────────────────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import type { Unit } from '@/types'
 
 export const INITIAL_UNITS: Unit[] = [
   {
-    id: 'u1', name: 'Aldric', level: 3, exp: 245, expToNext: 312, age: 24, health: 95, recoveryTicksLeft: 0,
+    id: 'u1', name: 'Aldric', level: 3, exp: 245, expToNext: 312, age: 24, health: 95, recoveryTicksLeft: 0, isResting: false,
     class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
     abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 },
     abilityPoints: 20, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 },
@@ -12,7 +12,7 @@ export const INITIAL_UNITS: Unit[] = [
     equipment: { armor: 'eq-leather', tool: null, accessory: null },
   },
   {
-    id: 'u2', name: 'Mira', level: 2, exp: 80, expToNext: 180, age: 19, health: 90, recoveryTicksLeft: 0,
+    id: 'u2', name: 'Mira', level: 2, exp: 80, expToNext: 180, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
     class: null, proficiencies: ['Tools'], locationId: 'kings-forest',
     abilities: { strength: 4, agility: 5, dexterity: 6, constitution: 4, intelligence: 4 },
     abilityPoints: 15, skillPoints: 1, learnedSkills: {},
@@ -22,7 +22,7 @@ export const INITIAL_UNITS: Unit[] = [
     equipment: { armor: null, tool: 'eq-handaxe', accessory: null },
   },
   {
-    id: 'u3', name: 'Theron', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0,
+    id: 'u3', name: 'Theron', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
     class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'gray-hills',
     abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 },
     abilityPoints: 25, skillPoints: 2, learnedSkills: { 'arcane-knowledge': 3 },
@@ -32,7 +32,7 @@ export const INITIAL_UNITS: Unit[] = [
     equipment: { armor: null, tool: null, accessory: null },
   },
   {
-    id: 'u4', name: 'Sera', level: 1, exp: 20, expToNext: 100, age: 16, health: 80, recoveryTicksLeft: 0,
+    id: 'u4', name: 'Sera', level: 1, exp: 20, expToNext: 100, age: 16, health: 80, recoveryTicksLeft: 0, isResting: false,
     class: null, proficiencies: [], locationId: null,
     abilities: { strength: 3, agility: 3, dexterity: 3, constitution: 3, intelligence: 3 },
     abilityPoints: 30, skillPoints: 1, learnedSkills: {},
@@ -42,7 +42,7 @@ export const INITIAL_UNITS: Unit[] = [
     equipment: { armor: null, tool: null, accessory: null },
   },
   {
-    id: 'u5', name: 'Davan', level: 2, exp: 120, expToNext: 180, age: 28, health: 67, recoveryTicksLeft: 0,
+    id: 'u5', name: 'Davan', level: 2, exp: 120, expToNext: 180, age: 28, health: 67, recoveryTicksLeft: 0, isResting: false,
     class: null, proficiencies: ['Tools', 'Mining'], locationId: null,
     abilities: { strength: 6, agility: 4, dexterity: 5, constitution: 6, intelligence: 3 },
     abilityPoints: 18, skillPoints: 1, learnedSkills: {},
@@ -52,7 +52,7 @@ export const INITIAL_UNITS: Unit[] = [
     equipment: { armor: null, tool: 'eq-pickaxe', accessory: null },
   },
   {
-    id: 'u6', name: 'Lyra', level: 5, exp: 750, expToNext: 800, age: 35, health: 90, recoveryTicksLeft: 0,
+    id: 'u6', name: 'Lyra', level: 5, exp: 750, expToNext: 800, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
     class: 'Rogue', proficiencies: ['Daggers', 'Lockpicks'], locationId: 'lake-arawok',
     abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5, intelligence: 5 },
     abilityPoints: 22, skillPoints: 3, learnedSkills: { 'keen-eyes': 5 },

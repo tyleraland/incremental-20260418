@@ -7,8 +7,9 @@ export const TICKS_PER_SEASON = TICKS_PER_DAY * DAYS_PER_SEASON
 export const TICKS_PER_YEAR   = TICKS_PER_SEASON * SEASONS_PER_YEAR
 export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as const
 
-export const RECOVERY_TICKS     = 50   // ticks of KO countdown (~10 real-sec at 5 ticks/sec)
-export const REGEN_RATE         = 1    // HP per tick (= 5 HP/sec at 5 ticks/sec)
+export const RECOVERY_TICKS     = 15   // ticks of KO phase, no regen (~3 real-sec)
+export const RESTING_REGEN_RATE = 1    // HP per tick while resting after KO (~5 HP/sec)
+export const REGEN_RATE         = 1    // HP per tick for idle regen (locationId=null)
 export const FLEE_TICKS_CONST   = 10   // ticks to complete a flee action (~2 real-sec)
 export const WAVE_COOLDOWN_MIN  = 15   // min ticks between last defeat and next wave (~3 real-sec)
 export const WAVE_COOLDOWN_MAX  = 40   // max ticks between last defeat and next wave (~8 real-sec)

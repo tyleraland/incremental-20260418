@@ -12,6 +12,7 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
     age: 20,
     health: 100,
     recoveryTicksLeft: 0,
+    isResting: false,
     class: null,
     proficiencies: [],
     locationId: null,

@@ -3,7 +3,7 @@ import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   MonsterBehavior, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
 } from '@/types'
-import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
+import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { SKILL_REGISTRY } from '@/data/skills'
@@ -220,7 +220,7 @@ export const useGameStore = create<GameState>((set) => ({
       }
       if (seenUpdated) locationMonstersSeen[locationId] = seen
 
-      const aliveUnits = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+      const aliveUnits = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting)
 
       // ── Flee state machine ───────────────────────────────────────────────────
       const fleeLeft = locationFleeing[locationId] ?? 0
@@ -384,11 +384,16 @@ export const useGameStore = create<GameState>((set) => ({
     }
 
     const units = s.units.map((u) => {
-      let { health, recoveryTicksLeft } = u
+      let { health, recoveryTicksLeft, isResting } = u
       const maxHp = getDerivedStats(u, s.equipment).maxHp
       if (recoveryTicksLeft > 0) {
+        // KO phase: count down, no regen; transition to resting when done
         recoveryTicksLeft--
-        health = Math.min(maxHp, health + REGEN_RATE)
+        if (recoveryTicksLeft === 0) isResting = true
+      } else if (isResting) {
+        // Resting: regen until full, excluded from combat
+        health = Math.min(maxHp, health + RESTING_REGEN_RATE)
+        if (health >= maxHp) isResting = false
       } else if (health > 0) {
         if (u.locationId) {
           const dmg = hpDamage[u.id] ?? 0
@@ -397,12 +402,10 @@ export const useGameStore = create<GameState>((set) => ({
         } else {
           health = Math.min(maxHp, health + REGEN_RATE)
         }
-      } else {
-        health = Math.min(maxHp, health + REGEN_RATE)
       }
       const aged   = yearChanged ? { age: u.age + 1 } : {}
-      const expAdd = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
-      const withExp = { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + expAdd }
+      const expAdd = (u.locationId && health > 0 && recoveryTicksLeft === 0 && !isResting) ? (expGained[u.locationId] ?? 0) : 0
+      const withExp = { ...u, health, recoveryTicksLeft, isResting, ...aged, exp: u.exp + expAdd }
       const { unit: leveled, log: nextLog } = applyLevelUps(withExp, newTicks, newLog)
       newLog = nextLog
       return leveled
@@ -433,7 +436,7 @@ export const useGameStore = create<GameState>((set) => ({
     const inCombat = new Set<string>()
 
     for (const [locationId, slots] of Object.entries(s.encounters)) {
-      const aliveUnits = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+      const aliveUnits = s.units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting)
 
       const wasFleeing = (locationFleeing[locationId] ?? 0) > 0
       const shouldFlee = aliveUnits.length > 0 && slots.length > 0 && (
@@ -517,12 +520,26 @@ export const useGameStore = create<GameState>((set) => ({
     const totalExpEarned = Object.values(expGained).reduce((a, b) => a + b, 0)
 
     const unitsPreLevel = s.units.map((u) => {
-      let { health, recoveryTicksLeft } = u
+      let { health, recoveryTicksLeft, isResting } = u
       const maxHp = getDerivedStats(u, s.equipment).maxHp
 
-      if (recoveryTicksLeft > 0) {
-        recoveryTicksLeft = Math.max(0, recoveryTicksLeft - n)
-        health            = Math.min(maxHp, health + n * REGEN_RATE)
+      if (u.isResting) {
+        // Already resting at start of batch
+        health    = Math.min(maxHp, health + n * RESTING_REGEN_RATE)
+        isResting = health < maxHp
+      } else if (recoveryTicksLeft > 0) {
+        const remaining = recoveryTicksLeft - n
+        if (remaining > 0) {
+          // Still in KO phase at end of batch
+          recoveryTicksLeft = remaining
+          health = 0
+        } else {
+          // KO phase ends mid-batch; spend rest of time resting
+          recoveryTicksLeft = 0
+          const ticksResting = -remaining  // ticks after KO phase ended
+          health    = Math.min(maxHp, ticksResting * RESTING_REGEN_RATE)
+          isResting = health < maxHp
+        }
       } else if (inCombat.has(u.id)) {
         const rate         = damageRates[u.id] ?? 0
         const ticksToDeath = rate > 0 ? health / rate : Infinity
@@ -530,9 +547,16 @@ export const useGameStore = create<GameState>((set) => ({
           health = Math.floor(health - rate * n)
         } else {
           const ticksAfterDeath = n - Math.floor(ticksToDeath)
-          recoveryTicksLeft     = Math.max(0, RECOVERY_TICKS - ticksAfterDeath)
-          const regenTicks      = Math.max(0, ticksAfterDeath - RECOVERY_TICKS)
-          health                = Math.min(maxHp, regenTicks * REGEN_RATE)
+          if (ticksAfterDeath <= RECOVERY_TICKS) {
+            recoveryTicksLeft = RECOVERY_TICKS - ticksAfterDeath
+            health = 0
+            isResting = false
+          } else {
+            recoveryTicksLeft = 0
+            const ticksResting = ticksAfterDeath - RECOVERY_TICKS
+            health    = Math.min(maxHp, ticksResting * RESTING_REGEN_RATE)
+            isResting = health < maxHp
+          }
         }
       } else if (!u.locationId) {
         health = Math.min(maxHp, health + n * REGEN_RATE)
@@ -540,8 +564,8 @@ export const useGameStore = create<GameState>((set) => ({
 
       health = Math.max(0, health)
       const aged   = yearsPassed > 0 ? { age: u.age + yearsPassed } : {}
-      const expAdd = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
-      return { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + expAdd }
+      const expAdd = (u.locationId && health > 0 && recoveryTicksLeft === 0 && !isResting) ? (expGained[u.locationId] ?? 0) : 0
+      return { ...u, health, recoveryTicksLeft, isResting, ...aged, exp: u.exp + expAdd }
     })
 
     let eventLog = s.eventLog
@@ -553,7 +577,7 @@ export const useGameStore = create<GameState>((set) => ({
 
     // Update encounter targets based on post-batch alive state
     for (const [locationId, slots] of Object.entries(encounters)) {
-      const finalAlive = units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+      const finalAlive = units.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting)
       encounters[locationId] = slots.map((sl, i) => ({
         ...sl, targetUnitId: finalAlive.length > 0 ? finalAlive[i % finalAlive.length].id : null,
       }))
@@ -668,7 +692,7 @@ export const useGameStore = create<GameState>((set) => ({
     const r = (lo: number, hi: number) => Math.floor(Math.random() * (hi - lo + 1)) + lo
     const unit: Unit = {
       id: `u${Date.now()}`, name, level: 1, exp: 0, expToNext: expForLevel(1),
-      age: r(16, 30), health: 100, recoveryTicksLeft: 0, class: null, proficiencies: [],
+      age: r(16, 30), health: 100, recoveryTicksLeft: 0, isResting: false, class: null, proficiencies: [],
       abilities: { strength: r(2,5), agility: r(2,5), dexterity: r(2,5), constitution: r(2,5), intelligence: r(2,5) },
       abilityPoints: 3, skillPoints: 1, learnedSkills: {}, locationId: null, travelPath: null,
       weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
