@@ -369,8 +369,7 @@ function MonsterCard({ slotIndex, locationId }: { slotIndex: number; locationId:
 
   return (
     <button onClick={toggle}
-      className={`px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
-      style={{ minWidth: 72 }}
+      className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
     >
       <div className="text-sm font-semibold text-game-text">{monster.name}</div>
       <div className="text-xs text-game-accent">Lv.{monster.level}</div>
@@ -388,7 +387,7 @@ function MonsterList({ location }: { location: Location }) {
   if (locationSlots.length === 0) return <p className="text-xs text-game-muted italic">No active encounter.</p>
 
   return (
-    <div className="flex flex-wrap gap-2 items-start">
+    <div className="flex flex-col gap-2">
       {locationSlots.map((_, i) => (
         <MonsterCard key={i} slotIndex={i} locationId={location.id} />
       ))}
@@ -578,8 +577,8 @@ function LocationSection({ location, units, selectedDragging }: {
                 )}
               </div>
             </div>
-            {/* Monsters — right column, shrink-to-fit */}
-            <div className="flex-none">
+            {/* Monsters — right column, equal width */}
+            <div className="flex-1 min-w-0">
               <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Encounter</div>
               <MonsterList location={location} />
             </div>
