@@ -360,7 +360,7 @@ function MonsterCard({ slotIndex, locationId }: { slotIndex: number; locationId:
 
   return (
     <button onClick={toggle}
-      className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
+      className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-right transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
     >
       <div className="text-sm font-semibold text-game-text">{monster.name}</div>
       <div className="text-xs text-game-accent">Lv.{monster.level}</div>
@@ -555,7 +555,7 @@ function LocationSection({ location, units, selectedDragging }: {
           >
             Location Codex →
           </button>
-          <div className="flex gap-3">
+          <div className="flex gap-5">
             {/* Units — left column */}
             <div className="flex-1 min-w-0">
               <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1">Units</div>
@@ -570,7 +570,7 @@ function LocationSection({ location, units, selectedDragging }: {
             </div>
             {/* Monsters — right column, equal width */}
             <div className="flex-1 min-w-0">
-              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1">Encounter</div>
+              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1 text-right">Encounter</div>
               <MonsterList location={location} />
             </div>
           </div>
