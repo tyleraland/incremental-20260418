@@ -345,8 +345,9 @@ export const useGameStore = create<GameState>((set) => ({
               const ud  = getDerivedStats(au, s.equipment)
               const uc  = calcAttackCooldown(ud.attackSpeed)
               if (aidx === 0) resetCd = uc
-              const hit   = Math.random() < calcHitChance(ud.accuracy, monster.stats.dodge)
-              const chunk = uc / (monster.level * 5 * TICKS_PER_SECOND)
+              const hit     = Math.random() < calcHitChance(ud.accuracy, monster.stats.dodge)
+              const rawChunk = uc / (monster.level * 5 * TICKS_PER_SECOND)
+              const chunk   = Math.round(rawChunk * monster.health) / monster.health
               if (hit) { totalChunk += chunk; allMissed = false }
             }
             if (totalChunk > 0) newProgress = Math.min(slot.progress + totalChunk, 1)
