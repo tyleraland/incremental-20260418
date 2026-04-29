@@ -42,20 +42,20 @@ describe('UnitRect — KO state', () => {
 })
 
 describe('UnitRect — fleeing state', () => {
-  it('shows "fleeing" when the unit\'s location has an active flee countdown', async () => {
+  it('shows "Fleeing" on unit card when unit\'s location has active flee countdown (expanded)', async () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
       encounters: { loc1: [makeEncounterSlot()] },
       locationFleeing: { loc1: 2 },
       expandedRegionIds: ['prontera'],
-      expandedLocationIds: [],
+      expandedLocationIds: ['loc1'],
     })
     await renderMap()
-    expect(screen.getByText('fleeing')).toBeInTheDocument()
+    expect(screen.getByText('Fleeing')).toBeInTheDocument()
   })
 
-  it('does not show "fleeing" when locationFleeing is 0', async () => {
+  it('does not show "Fleeing" when locationFleeing is 0', async () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: null })],
       locations: [],
@@ -63,19 +63,19 @@ describe('UnitRect — fleeing state', () => {
       expandedRegionIds: [],
     })
     await renderMap()
-    expect(screen.queryByText('fleeing')).not.toBeInTheDocument()
+    expect(screen.queryByText('Fleeing')).not.toBeInTheDocument()
   })
 })
 
 describe('UnitRect — target display', () => {
-  it('shows "→ Wolf" on unit card when wolf is the encounter monster', async () => {
+  it('shows "→ Wolf" on unit card when wolf is the encounter monster (expanded)', async () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
       locations: [TEST_LOCATION],
       encounters: { loc1: [makeEncounterSlot({ targetUnitId: 'u1' })] },
       locationFleeing: {},
       expandedRegionIds: ['prontera'],
-      expandedLocationIds: [],
+      expandedLocationIds: ['loc1'],
     })
     await renderMap()
     expect(screen.getByText('→ Wolf')).toBeInTheDocument()

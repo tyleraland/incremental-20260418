@@ -82,6 +82,8 @@ export interface GameState {
   recruitUnit: () => void
   craft: (recipeId: string) => void
   setMonsterBehavior: (locationId: string, monsterId: string, behavior: MonsterBehavior) => void
+  selectedMonsterSlot: { locationId: string; slotIndex: number } | null
+  setSelectedMonsterSlot: (slot: { locationId: string; slotIndex: number } | null) => void
 }
 
 // ── Initial encounter state ───────────────────────────────────────────────────
@@ -147,6 +149,7 @@ export const useGameStore = create<GameState>((set) => ({
   paused: false,
   eventLog: [],
   itemSockets: {},
+  selectedMonsterSlot: null,
 
   tick: () => set((s) => {
     const newTicks    = s.ticks + 1
@@ -584,6 +587,8 @@ export const useGameStore = create<GameState>((set) => ({
     }
     return { miscItems: items }
   }),
+
+  setSelectedMonsterSlot: (slot) => set({ selectedMonsterSlot: slot }),
 
   setMonsterBehavior: (locationId, monsterId, behavior) => set((s) => ({
     encounters: {

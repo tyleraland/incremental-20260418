@@ -13,6 +13,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, getDerivedStats, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
 
+
 const REGIONS = [
   { id: 'prontera', name: 'Prontera Region' },
   { id: 'geffen',   name: 'Geffen Region' },
@@ -88,12 +89,18 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing =
               <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'width 0.7s linear' }} />
             )}
           </div>
-          {isRecovering && <div className="text-[10px] text-purple-400 mt-0.5">KO</div>}
-          {!isRecovering && isFleeing && <div className="text-[10px] text-sky-400 mt-0.5">fleeing</div>}
-          {!isRecovering && !isFleeing && isHunting && <div className="text-[10px] text-amber-400 mt-0.5">hunting...</div>}
-          {!isRecovering && !isFleeing && !isHunting && targetMonsterName && (
-            <div className="text-[10px] text-game-text-dim mt-0.5 truncate">→ {targetMonsterName}</div>
-          )}
+          {isRecovering ? (
+            <div className="text-[10px] text-purple-400 mt-0.5">KO</div>
+          ) : isFleeing ? (
+            <div className="text-[10px] text-sky-400 mt-0.5">Fleeing</div>
+          ) : isHunting ? (
+            <div className="text-[10px] text-amber-400 mt-0.5">Hunting</div>
+          ) : targetMonsterName ? (
+            <>
+              <div className="text-[10px] text-game-green mt-0.5">Attacking</div>
+              <div className="text-[10px] text-game-text-dim truncate">→ {targetMonsterName}</div>
+            </>
+          ) : null}
         </>
       )}
     </div>
@@ -169,41 +176,46 @@ function UnassignedPool({ units, selectedDragging }: { units: Unit[]; selectedDr
   )
 }
 
+// ── CompactUnitChip ───────────────────────────────────────────────────────────
+
+function CompactUnitChip({ unit, locationId }: { unit: Unit; locationId: string }) {
+  const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
+  const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
+  const slots            = useGameStore((s) => s.encounters[locationId] ?? [])
+  const isFleeing        = useGameStore((s) => (s.locationFleeing[locationId] ?? 0) > 0)
+  const allUnits         = useGameStore((s) => s.units)
+  const isSelected       = selectedUnitIds.includes(unit.id)
+
+  const isKO      = unit.health <= 0 || unit.recoveryTicksLeft > 0
+  const alive     = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+  const idx       = alive.findIndex((u) => u.id === unit.id)
+  const pSlots    = slots.filter((sl) => sl.behavior === 'prioritize')
+  const nSlots    = slots.filter((sl) => sl.behavior === 'normal')
+  const focus     = pSlots.length > 0 ? pSlots : nSlots
+  const hasTarget = !isKO && !isFleeing && idx >= 0 && focus.length > 0
+
+  let label: string, color: string
+  if (isKO)           { label = 'KO';   color = 'text-purple-400' }
+  else if (isFleeing) { label = 'Flee'; color = 'text-sky-400'    }
+  else if (hasTarget) { label = 'Atk';  color = 'text-game-green' }
+  else if (slots.length === 0) { label = 'Hunt'; color = 'text-amber-400' }
+  else                { label = '—';    color = 'text-game-muted'  }
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); toggleSelectUnit(unit.id) }}
+      className={[
+        'flex flex-col items-center py-1 px-0.5 rounded-lg border text-center min-w-0 transition-colors',
+        isSelected ? 'border-game-primary bg-game-primary/20' : 'border-game-border/60 bg-game-surface/50',
+      ].join(' ')}
+    >
+      <span className={`text-[9px] font-medium leading-tight ${color}`}>{label}</span>
+      <span className="text-[9px] text-game-text-dim truncate w-full leading-tight">{unit.name.slice(0, 5)}</span>
+    </button>
+  )
+}
+
 // ── MonsterList ───────────────────────────────────────────────────────────────
-
-function EncounterDots({ count }: { count: number }) {
-  if (count === 0) return null
-  return (
-    <div className="flex justify-center gap-0.5 mb-1">
-      {Array.from({ length: count }).map((_, i) => (
-        <span key={i} className="block w-2 h-2 rounded-full bg-game-green animate-pulse" />
-      ))}
-    </div>
-  )
-}
-
-function SlotBar({ prog, targetName }: { prog: number; targetName: string | null }) {
-  const barRef   = useRef<HTMLDivElement>(null)
-  const prevProg = useRef(prog)
-
-  useLayoutEffect(() => {
-    const bar = barRef.current
-    if (!bar || prog === prevProg.current) return
-    const resetting = prog === 0 && prevProg.current > 0
-    bar.style.transition = resetting ? 'none' : 'width 1s linear'
-    bar.style.width      = `${(1 - prog) * 100}%`
-    prevProg.current = prog
-  })
-
-  return (
-    <div>
-      <div className="w-full bg-game-border rounded-full h-1.5 overflow-hidden">
-        <div ref={barRef} className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(1 - prog) * 100}%` }} />
-      </div>
-      {targetName && <div className="text-[10px] text-game-text-dim text-right mt-0.5">→ {targetName}</div>}
-    </div>
-  )
-}
 
 const BEHAVIOR_OPTIONS: { b: MonsterBehavior; label: string; desc: string; activeClass: string }[] = [
   { b: 'normal',     label: 'Normal',     desc: 'Fight normally',                          activeClass: 'border-game-primary bg-game-primary/10 text-game-text' },
@@ -212,58 +224,43 @@ const BEHAVIOR_OPTIONS: { b: MonsterBehavior; label: string; desc: string; activ
   { b: 'avoid',      label: 'Avoid',      desc: 'Flee the encounter immediately if present',  activeClass: 'border-sky-600 bg-sky-950/50 text-sky-300' },
 ]
 
-function MonsterDetailPanel({
-  monsterId, locationId, slotIdx, onSlotIdxChange, onClose, onOpenCodex,
-}: {
-  monsterId: string; locationId: string; slotIdx: number; onSlotIdxChange: (i: number) => void
-  onClose: () => void; onOpenCodex: () => void
+// MonsterDetailPanel — simplified; reads one slot by index from store
+function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
+  locationId: string; slotIndex: number; onClose: () => void
 }) {
   const equipment          = useGameStore((s) => s.equipment)
   const allUnits           = useGameStore((s) => s.units)
-  const allSlots           = useGameStore((s) => (s.encounters[locationId] ?? []).filter((sl) => sl.monsterId === monsterId))
+  const slot               = useGameStore((s) => (s.encounters[locationId] ?? [])[slotIndex] ?? null)
   const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
 
-  const monster = MONSTER_REGISTRY[monsterId]
+  if (!slot) return null
+  const monster = MONSTER_REGISTRY[slot.monsterId]
   if (!monster) return null
 
-  const totalSlots = allSlots.length
-  const slot       = allSlots[Math.min(slotIdx, Math.max(0, totalSlots - 1))] ?? null
-  const behavior   = slot?.behavior ?? 'normal'
-  const targetUnit = allUnits.find((u) => u.id === slot?.targetUnitId)
-
-  const hpPct    = slot ? Math.max(0, Math.round((1 - slot.progress) * 100)) : 100
-  const phase    = slot?.phase ?? 'standing'
+  const behavior   = slot.behavior ?? 'normal'
+  const targetUnit = allUnits.find((u) => u.id === slot.targetUnitId)
+  const hpPct      = Math.max(0, Math.round((1 - slot.progress) * 100))
+  const phase      = slot.phase ?? 'standing'
 
   const targetDerived    = targetUnit ? getDerivedStats(targetUnit, equipment) : null
-  // HP drain: theoretical rate at which unit damages the monster (HP/s)
-  const monsterDrainRate = slot && phase === 'standing' ? monster.health / (monster.level * 5) : null
-  // Dealt: damage monster deals to the target unit per second (after defense)
-  const monsterDealtDps  = slot && phase === 'standing' && targetDerived
+  const monsterDrainRate = phase === 'standing' ? monster.health / (monster.level * 5) : null
+  const monsterDealtDps  = phase === 'standing' && targetDerived
     ? (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(targetDerived.defense, 1)
     : null
-
   const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
 
   return (
-    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-3 py-2 space-y-2">
+    <div className="rounded-xl border border-game-border bg-game-surface px-3 py-2 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <span className="text-sm font-semibold text-game-text">{monster.name}</span>
-          {totalSlots > 1 && (
-            <div className="flex items-center gap-0.5">
-              <button onClick={() => onSlotIdxChange(Math.max(0, slotIdx - 1))} disabled={slotIdx === 0} className="w-4 h-4 flex items-center justify-center text-[11px] text-game-text-dim disabled:opacity-30 hover:text-game-text">‹</button>
-              <span className="text-[10px] text-game-text-dim tabular-nums">{slotIdx + 1}/{totalSlots}</span>
-              <button onClick={() => onSlotIdxChange(Math.min(totalSlots - 1, slotIdx + 1))} disabled={slotIdx >= totalSlots - 1} className="w-4 h-4 flex items-center justify-center text-[11px] text-game-text-dim disabled:opacity-30 hover:text-game-text">›</button>
-            </div>
-          )}
           <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{monster.level}</span>
           <ElementBadge element={monster.element} />
         </div>
         <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs shrink-0">✕</button>
       </div>
-
-      {/* HP bar + % + drain rate */}
+      {/* HP bar */}
       <div className="flex items-center gap-2">
         <div className="flex-1 bg-game-border/60 rounded-full h-1.5 overflow-hidden">
           <div className={`h-1.5 rounded-full transition-none ${hpPct >= 75 ? 'bg-game-green' : hpPct >= 40 ? 'bg-game-gold' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} />
@@ -273,122 +270,91 @@ function MonsterDetailPanel({
           <span className="text-[10px] text-red-400 shrink-0">(-{monsterDrainRate.toFixed(1)}/s)</span>
         )}
       </div>
-
       {/* Target */}
       <div className="flex items-center gap-1.5 text-xs">
         <span className="text-game-muted">→</span>
         {targetUnit ? (
           <>
             <span className="text-game-text-dim">{targetUnit.name}</span>
-            {monsterDealtDps !== null && (
-              <span className="text-[10px] text-game-muted">({monsterDealtDps.toFixed(1)}/s)</span>
-            )}
+            {monsterDealtDps !== null && <span className="text-[10px] text-game-muted">({monsterDealtDps.toFixed(1)}/s)</span>}
           </>
-        ) : (
-          <span className="text-game-muted italic">no target</span>
-        )}
+        ) : <span className="text-game-muted italic">no target</span>}
       </div>
-
-      {/* Behaviors + Codex */}
+      {/* Behaviors */}
       <div className="flex items-center gap-1 flex-wrap">
         {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => (
-          <button
-            key={b}
-            onClick={() => setMonsterBehavior(locationId, monsterId, b)}
-            className={`px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${behavior === b ? activeClass : 'border-game-border/40 text-game-text-dim hover:border-game-border hover:text-game-text'}`}
-          >
+          <button key={b} onClick={() => setMonsterBehavior(locationId, slot.monsterId, b)}
+            className={`px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${behavior === b ? activeClass : 'border-game-border/40 text-game-text-dim hover:border-game-border hover:text-game-text'}`}>
             {label}
           </button>
         ))}
-        <button onClick={onOpenCodex} className="ml-auto text-xs font-medium px-2 py-0.5 rounded border border-game-accent/50 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0">
-          Codex →
-        </button>
       </div>
     </div>
   )
 }
 
-function MonsterRow({ monsterId, locationId, selected, onSelect }: {
-  monsterId: string; locationId: string; selected: boolean; onSelect: () => void
-}) {
-  const locationSlots   = useGameStore((s) => s.encounters[locationId] ?? [])
-  const locationFleeing = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
-  const units           = useGameStore((s) => s.units)
-  const monster         = MONSTER_REGISTRY[monsterId]
+// MonsterCard — one card per encounter slot
+function MonsterCard({ slotIndex, locationId }: { slotIndex: number; locationId: string }) {
+  const slot                  = useGameStore((s) => (s.encounters[locationId] ?? [])[slotIndex] ?? null)
+  const selectedMonsterSlot   = useGameStore((s) => s.selectedMonsterSlot)
+  const setSelectedMonsterSlot = useGameStore((s) => s.setSelectedMonsterSlot)
+  const locationFleeing       = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const units                 = useGameStore((s) => s.units)
+  const barRef                = useRef<HTMLDivElement>(null)
+  const prevProg              = useRef(slot?.progress ?? 0)
 
-  const slotData = locationSlots.filter((sl) => sl.monsterId === monsterId)
-  const behavior = locationSlots.find((sl) => sl.monsterId === monsterId)?.behavior ?? 'normal'
+  useLayoutEffect(() => {
+    if (!slot || !barRef.current) return
+    const prog = slot.progress
+    const resetting = prog === 0 && prevProg.current > 0
+    barRef.current.style.transition = resetting ? 'none' : 'width 1s linear'
+    barRef.current.style.width      = `${(1 - prog) * 100}%`
+    prevProg.current = prog
+  })
 
+  if (!slot) return null
+  const monster = MONSTER_REGISTRY[slot.monsterId]
   if (!monster) return null
 
-  const isFleeing = locationFleeing > 0
-  const borderCls =
-    selected                  ? 'border-game-primary bg-game-primary/10' :
-    behavior === 'prioritize' ? 'border-amber-700/60' :
-    behavior === 'avoid'      ? 'border-sky-700/60'   : 'border-game-border'
+  const isSelected = selectedMonsterSlot?.locationId === locationId && selectedMonsterSlot?.slotIndex === slotIndex
+  const isFleeing  = locationFleeing > 0
+  const behavior   = slot.behavior ?? 'normal'
+  const targetName = !isFleeing && slot.targetUnitId ? (units.find((u) => u.id === slot.targetUnitId)?.name ?? null) : null
+
+  const borderCls = isSelected          ? 'border-game-primary bg-game-primary/10' :
+    behavior === 'prioritize'           ? 'border-amber-700/60' :
+    behavior === 'avoid'                ? 'border-sky-700/60'   : 'border-game-border'
+
+  function toggle() {
+    if (isSelected) setSelectedMonsterSlot(null)
+    else setSelectedMonsterSlot({ locationId, slotIndex })
+  }
 
   return (
-    <div className="flex flex-col items-center gap-1" style={{ minWidth: 72 }}>
-      <EncounterDots count={slotData.length} />
-      <button
-        onClick={onSelect}
-        className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
-      >
-        <div className="text-sm font-semibold text-game-text">{monster.name}</div>
-        <div className="text-xs text-game-accent">Lv.{monster.level}</div>
-      </button>
-      {slotData.length > 0 && (
-        <div className="w-full space-y-1">
-          {slotData.map((sl, i) => {
-            const targetName = !isFleeing && sl.targetUnitId ? (units.find((u) => u.id === sl.targetUnitId)?.name ?? null) : null
-            return <SlotBar key={i} prog={sl.progress} targetName={targetName} />
-          })}
-        </div>
-      )}
-    </div>
+    <button onClick={toggle}
+      className={`px-3 py-2 rounded-lg border bg-game-bg text-center transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
+      style={{ minWidth: 72 }}
+    >
+      <div className="text-sm font-semibold text-game-text">{monster.name}</div>
+      <div className="text-xs text-game-accent">Lv.{monster.level}</div>
+      <div className="mt-1 w-full bg-game-border rounded-full h-1.5 overflow-hidden">
+        <div ref={barRef} className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(1 - (slot.progress)) * 100}%` }} />
+      </div>
+      {targetName && <div className="text-[10px] text-game-text-dim mt-0.5 truncate">→ {targetName}</div>}
+    </button>
   )
 }
 
 function MonsterList({ location }: { location: Location }) {
-  const [selectedMonsterId, setSelectedMonsterId] = useState<string | null>(null)
-  const [selectedSlotIdx,   setSelectedSlotIdx]   = useState(0)
   const locationSlots = useGameStore((s) => s.encounters[location.id] ?? [])
-  const [codexMonster, setCodexMonster] = useState<string | null>(null)
-  const seenCount = useGameStore((s) => codexMonster ? (s.monsterSeen[codexMonster] ?? 0) : 0)
 
-  const uniqueIds = [...new Set(locationSlots.map((sl) => sl.monsterId))]
-
-  const toggleSelect = (id: string) => {
-    if (selectedMonsterId === id) setSelectedMonsterId(null)
-    else { setSelectedMonsterId(id); setSelectedSlotIdx(0) }
-  }
+  if (locationSlots.length === 0) return <p className="text-xs text-game-muted italic">No active encounter.</p>
 
   return (
-    <div>
-      {uniqueIds.length === 0 ? (
-        <p className="text-xs text-game-muted italic">No active encounter.</p>
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-2 items-end">
-            {uniqueIds.map((id) => (
-              <MonsterRow key={id} monsterId={id} locationId={location.id} selected={selectedMonsterId === id} onSelect={() => toggleSelect(id)} />
-            ))}
-          </div>
-          {selectedMonsterId && MONSTER_REGISTRY[selectedMonsterId] && (
-            <MonsterDetailPanel
-              monsterId={selectedMonsterId}
-              locationId={location.id}
-              slotIdx={selectedSlotIdx}
-              onSlotIdxChange={setSelectedSlotIdx}
-              onClose={() => setSelectedMonsterId(null)}
-              onOpenCodex={() => { setCodexMonster(selectedMonsterId); setSelectedMonsterId(null) }}
-            />
-          )}
-        </>
-      )}
-      {codexMonster && MONSTER_REGISTRY[codexMonster] && (
-        <MonsterCodex monster={MONSTER_REGISTRY[codexMonster]} seenCount={seenCount} onClose={() => setCodexMonster(null)} />
-      )}
+    <div className="flex flex-wrap gap-2 items-start">
+      {locationSlots.map((_, i) => (
+        <MonsterCard key={i} slotIndex={i} locationId={location.id} />
+      ))}
     </div>
   )
 }
@@ -467,6 +433,10 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
           <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'width 0.7s linear' }} />
         )}
       </div>
+      {/* EXP bar */}
+      <div className="w-full bg-game-border/60 rounded-full h-1 overflow-hidden">
+        <div className="bg-game-primary h-1 rounded-full transition-all duration-700" style={{ width: `${Math.min(100, (unit.exp / unit.expToNext) * 100)}%` }} />
+      </div>
 
       {/* Status line */}
       <div className="flex items-center gap-1.5 text-xs flex-wrap">
@@ -514,12 +484,9 @@ function LocationSection({ location, units, selectedDragging }: {
   selectedDragging: string[]
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
-  const isExpanded       = useGameStore((s) => s.expandedLocationIds.includes(location.id))
-  const toggleLocation   = useGameStore((s) => s.toggleLocation)
-  const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
-  const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
-  const isEmpty          = units.length === 0 && !isExpanded
-  const selectedLocalUnit = units.find((u) => selectedUnitIds.includes(u.id)) ?? null
+  const isExpanded     = useGameStore((s) => s.expandedLocationIds.includes(location.id))
+  const toggleLocation = useGameStore((s) => s.toggleLocation)
+  const isEmpty        = units.length === 0 && !isExpanded
   const [codexOpen, setCodexOpen] = useState(false)
 
   return (
@@ -527,8 +494,8 @@ function LocationSection({ location, units, selectedDragging }: {
       ref={setNodeRef}
       className={[
         'rounded-lg border transition-colors duration-150 overflow-hidden',
-        isOver   ? 'border-game-primary bg-game-primary/5' : 'border-game-border',
-        isEmpty  ? 'bg-transparent'                        : '',
+        isOver  ? 'border-game-primary bg-game-primary/5' : 'border-game-border',
+        isEmpty ? 'bg-transparent'                        : '',
       ].join(' ')}
     >
       <button
@@ -544,10 +511,11 @@ function LocationSection({ location, units, selectedDragging }: {
         </div>
       </button>
 
+      {/* Collapsed: compact 5-per-row status chips */}
       {units.length > 0 && !isExpanded && (
-        <div className="px-4 pb-3 flex flex-wrap gap-2">
+        <div className="px-3 pb-2 grid grid-cols-5 gap-1">
           {units.map((u) => (
-            <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
+            <CompactUnitChip key={u.id} unit={u} locationId={location.id} />
           ))}
         </div>
       )}
@@ -575,13 +543,6 @@ function LocationSection({ location, units, selectedDragging }: {
               )}
             </div>
           </div>
-          {selectedLocalUnit && (
-            <UnitDetailPanel
-              unit={selectedLocalUnit}
-              locationId={location.id}
-              onClose={() => toggleSelectUnit(selectedLocalUnit.id)}
-            />
-          )}
         </div>
       )}
       {codexOpen && <LocationCodex location={location} onClose={() => setCodexOpen(false)} />}
@@ -633,13 +594,26 @@ function RegionSection({ region, locations, units, selectedDragging }: {
 
 // ── SelectionBar ──────────────────────────────────────────────────────────────
 
-
-function SelectionBar() {
-  const { selectedUnitIds, expandedUnitIds, locations, assignUnits, clearSelection, setActiveTab, toggleUnit } = useGameStore()
+function SelectionBar({ onOpenCodex }: { onOpenCodex: (monsterId: string) => void }) {
+  const { selectedUnitIds, expandedUnitIds, locations, assignUnits, clearSelection, setActiveTab, toggleUnit, units } = useGameStore()
+  const selectedMonsterSlot    = useGameStore((s) => s.selectedMonsterSlot)
+  const setSelectedMonsterSlot = useGameStore((s) => s.setSelectedMonsterSlot)
   const [open, setOpen] = useState(false)
 
-  if (selectedUnitIds.length === 0) return null
+  const hasUnits   = selectedUnitIds.length > 0
+  const hasMonster = selectedMonsterSlot !== null
+  if (!hasUnits && !hasMonster) return null
 
+  const selectedUnit = selectedUnitIds.length === 1 ? (units.find((u) => u.id === selectedUnitIds[0]) ?? null) : null
+
+  const monsterSlotMonsterId = useGameStore((s) =>
+    selectedMonsterSlot
+      ? (s.encounters[selectedMonsterSlot.locationId]?.[selectedMonsterSlot.slotIndex]?.monsterId ?? null)
+      : null
+  )
+  const monsterForCodex = monsterSlotMonsterId ? (MONSTER_REGISTRY[monsterSlotMonsterId] ?? null) : null
+
+  function handleClearAll() { clearSelection(); setSelectedMonsterSlot(null); setOpen(false) }
   const handleAssign = (locationId: string | null) => { assignUnits(selectedUnitIds, locationId); setOpen(false) }
   const handleViewUnit = () => {
     const unitId = selectedUnitIds[0]
@@ -650,35 +624,67 @@ function SelectionBar() {
 
   return (
     <div className="fixed bottom-4 inset-x-0 z-30 px-4 pointer-events-none">
-      <div className="pointer-events-auto">
+      <div className="pointer-events-auto flex flex-col gap-2">
+        {/* Monster detail panel */}
+        {hasMonster && (
+          <MonsterDetailPanel
+            locationId={selectedMonsterSlot!.locationId}
+            slotIndex={selectedMonsterSlot!.slotIndex}
+            onClose={() => setSelectedMonsterSlot(null)}
+          />
+        )}
+        {/* Unit detail panel (only when exactly 1 unit selected) */}
+        {selectedUnit && (
+          <UnitDetailPanel
+            unit={selectedUnit}
+            locationId={selectedUnit.locationId ?? ''}
+            onClose={clearSelection}
+          />
+        )}
+        {/* Action bar */}
         <div className="bg-game-surface border border-game-primary rounded-2xl px-4 py-3 flex items-center gap-3 shadow-2xl shadow-game-primary/30">
-          <span className="flex-1 text-sm font-medium">{selectedUnitIds.length} unit{selectedUnitIds.length !== 1 ? 's' : ''} selected</span>
-          {selectedUnitIds.length === 1 && (
-            <button className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors" onClick={handleViewUnit}>
+          <span className="flex-1 text-sm font-medium min-w-0 truncate">
+            {hasUnits
+              ? `${selectedUnitIds.length} unit${selectedUnitIds.length !== 1 ? 's' : ''} selected`
+              : (monsterForCodex?.name ?? 'Monster') + ' selected'}
+          </span>
+          {/* View › — only for single unit, no monster */}
+          {selectedUnit && !hasMonster && (
+            <button className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0" onClick={handleViewUnit}>
               View ›
             </button>
           )}
-          <div className="relative">
-            <button className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1" onClick={() => setOpen((v) => !v)}>
-              Move to <span className="text-xs opacity-70">▾</span>
+          {/* Codex → — only when monster selected alone */}
+          {hasMonster && !hasUnits && monsterForCodex && (
+            <button className="text-sm py-1.5 px-3 rounded-lg border border-game-accent/50 text-game-accent hover:bg-game-accent/10 transition-colors shrink-0"
+              onClick={() => onOpenCodex(monsterForCodex.id)}>
+              Codex →
             </button>
-            {open && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-                <div className="absolute bottom-full mb-2 right-0 z-20 bg-game-surface border border-game-border rounded-xl overflow-hidden w-52 shadow-2xl">
-                  <button className="w-full text-left px-4 py-3 text-sm text-game-text-dim hover:bg-white/5 transition-colors" onClick={() => handleAssign(null)}>
-                    Unassigned
-                  </button>
-                  {locations.map((loc) => (
-                    <button key={loc.id} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-t border-game-border/50" onClick={() => handleAssign(loc.id)}>
-                      {loc.name}
+          )}
+          {/* Move to — only for units */}
+          {hasUnits && (
+            <div className="relative shrink-0">
+              <button className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1" onClick={() => setOpen((v) => !v)}>
+                Move to <span className="text-xs opacity-70">▾</span>
+              </button>
+              {open && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+                  <div className="absolute bottom-full mb-2 right-0 z-20 bg-game-surface border border-game-border rounded-xl overflow-hidden w-52 shadow-2xl">
+                    <button className="w-full text-left px-4 py-3 text-sm text-game-text-dim hover:bg-white/5 transition-colors" onClick={() => handleAssign(null)}>
+                      Unassigned
                     </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          <button className="w-8 h-8 flex items-center justify-center rounded-lg text-game-text-dim hover:text-game-text hover:bg-white/5 transition-colors" onClick={clearSelection}>
+                    {locations.map((loc) => (
+                      <button key={loc.id} className="w-full text-left px-4 py-3 text-sm hover:bg-white/5 transition-colors border-t border-game-border/50" onClick={() => handleAssign(loc.id)}>
+                        {loc.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <button className="w-8 h-8 flex items-center justify-center rounded-lg text-game-text-dim hover:text-game-text hover:bg-white/5 transition-colors shrink-0" onClick={handleClearAll}>
             ✕
           </button>
         </div>
@@ -692,6 +698,8 @@ function SelectionBar() {
 export function Map() {
   const { units, locations, selectedUnitIds, assignUnits } = useGameStore()
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [codexMonsterId, setCodexMonsterId] = useState<string | null>(null)
+  const codexSeenCount = useGameStore((s) => codexMonsterId ? (s.monsterSeen[codexMonsterId] ?? 0) : 0)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -732,7 +740,15 @@ export function Map() {
         ))}
       </div>
 
-      <SelectionBar />
+      <SelectionBar onOpenCodex={(id) => { setCodexMonsterId(id) }} />
+
+      {codexMonsterId && MONSTER_REGISTRY[codexMonsterId] && (
+        <MonsterCodex
+          monster={MONSTER_REGISTRY[codexMonsterId]}
+          seenCount={codexSeenCount}
+          onClose={() => setCodexMonsterId(null)}
+        />
+      )}
 
       <DragOverlay dropAnimation={null}>
         {activeUnit && (
