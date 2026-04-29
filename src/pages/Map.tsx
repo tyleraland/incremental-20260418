@@ -200,39 +200,30 @@ function UnassignedPool({ units, selectedDragging }: { units: Unit[]; selectedDr
 
 // ── CompactUnitChip ───────────────────────────────────────────────────────────
 
-function CompactUnitChip({ unit, locationId }: { unit: Unit; locationId: string }) {
+function CompactUnitChip({ unit, locationId: _locationId }: { unit: Unit; locationId: string }) {
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
-  const slots            = useGameStore((s) => s.encounters[locationId] ?? [])
-  const isFleeing        = useGameStore((s) => (s.locationFleeing[locationId] ?? 0) > 0)
-  const allUnits         = useGameStore((s) => s.units)
+  const equipment        = useGameStore((s) => s.equipment)
   const isSelected       = selectedUnitIds.includes(unit.id)
 
-  const isKO      = unit.health <= 0 || unit.recoveryTicksLeft > 0
-  const alive     = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
-  const idx       = alive.findIndex((u) => u.id === unit.id)
-  const pSlots    = slots.filter((sl) => sl.behavior === 'prioritize')
-  const nSlots    = slots.filter((sl) => sl.behavior === 'normal')
-  const focus     = pSlots.length > 0 ? pSlots : nSlots
-  const hasTarget = !isKO && !isFleeing && idx >= 0 && focus.length > 0
-
-  let label: string, color: string
-  if (isKO)           { label = 'KO';        color = 'text-purple-400' }
-  else if (isFleeing) { label = 'Fleeing';   color = 'text-sky-400'    }
-  else if (hasTarget) { label = 'Attacking'; color = 'text-game-green' }
-  else if (slots.length === 0) { label = 'Hunting'; color = 'text-amber-400' }
-  else                { label = '—';         color = 'text-game-muted'  }
+  const isRecovering = unit.recoveryTicksLeft > 0
+  const maxHp  = getDerivedStats(unit, equipment).maxHp
+  const hpPct  = Math.max(0, Math.min(100, (unit.health / maxHp) * 100))
+  const recPct = isRecovering ? ((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
+  const barColor = isRecovering ? 'bg-purple-500' : hpPct > 60 ? 'bg-game-green' : hpPct > 30 ? 'bg-game-gold' : 'bg-red-500'
 
   return (
     <button
       onClick={(e) => { e.stopPropagation(); toggleSelectUnit(unit.id) }}
       className={[
-        'flex flex-col items-center py-2 px-3 rounded-lg border text-center min-w-[52px] transition-colors',
+        'flex flex-col items-start py-2 px-3 rounded-lg border min-w-[52px] transition-colors',
         isSelected ? 'border-game-primary bg-game-primary/20' : 'border-game-border/60 bg-game-surface/50',
       ].join(' ')}
     >
-      <span className={`text-xs font-semibold leading-tight ${color}`}>{label}</span>
-      <span className="text-xs text-game-text-dim truncate w-full leading-tight mt-0.5">{unit.name.slice(0, 6)}</span>
+      <span className="text-xs text-game-text truncate w-full leading-tight">{unit.name}</span>
+      <div className="w-full bg-game-border/60 rounded-full h-1 overflow-hidden mt-1.5">
+        <div className={`${barColor} h-1 rounded-full`} style={{ width: `${isRecovering ? recPct : hpPct}%`, transition: 'none' }} />
+      </div>
     </button>
   )
 }
