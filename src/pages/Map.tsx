@@ -558,7 +558,7 @@ function LocationSection({ location, units, selectedDragging }: {
           <div className="flex gap-3">
             {/* Units — left column */}
             <div className="flex-1 min-w-0">
-              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Units</div>
+              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1">Units</div>
               <div className="flex flex-col gap-2 min-h-[44px]">
                 {units.map((u) => (
                   <LocationUnitCard key={u.id} unit={u} locationId={location.id} />
@@ -570,7 +570,7 @@ function LocationSection({ location, units, selectedDragging }: {
             </div>
             {/* Monsters — right column, equal width */}
             <div className="flex-1 min-w-0">
-              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Encounter</div>
+              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1">Encounter</div>
               <MonsterList location={location} />
             </div>
           </div>
@@ -596,7 +596,7 @@ function RegionSection({ region, locations, units, selectedDragging }: {
   return (
     <div>
       <button
-        className="w-full flex items-center justify-between py-2 px-1"
+        className="w-full flex items-center justify-between pt-2 pb-1 px-1"
         onClick={() => toggleRegion(region.id)}
       >
         <span className="text-xs font-semibold uppercase tracking-widest text-game-text-dim">{region.name}</span>
