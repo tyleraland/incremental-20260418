@@ -227,12 +227,12 @@ function CompactUnitChip({ unit, locationId }: { unit: Unit; locationId: string 
     <button
       onClick={(e) => { e.stopPropagation(); toggleSelectUnit(unit.id) }}
       className={[
-        'flex flex-col items-center py-1 px-0.5 rounded-lg border text-center min-w-0 transition-colors',
+        'flex flex-col items-center py-2 px-3 rounded-lg border text-center min-w-[52px] transition-colors',
         isSelected ? 'border-game-primary bg-game-primary/20' : 'border-game-border/60 bg-game-surface/50',
       ].join(' ')}
     >
-      <span className={`text-[9px] font-medium leading-tight ${color}`}>{label}</span>
-      <span className="text-[9px] text-game-text-dim truncate w-full leading-tight">{unit.name.slice(0, 5)}</span>
+      <span className={`text-xs font-semibold leading-tight ${color}`}>{label}</span>
+      <span className="text-xs text-game-text-dim truncate w-full leading-tight mt-0.5">{unit.name.slice(0, 6)}</span>
     </button>
   )
 }
@@ -547,9 +547,9 @@ function LocationSection({ location, units, selectedDragging }: {
         </div>
       </button>
 
-      {/* Collapsed: compact 5-per-row draggable status chips */}
+      {/* Collapsed: draggable status chips */}
       {units.length > 0 && !isExpanded && (
-        <div className="px-3 pb-2 grid grid-cols-5 gap-1">
+        <div className="px-3 pb-3 flex flex-wrap gap-1.5">
           {units.map((u) => (
             <DraggableCompactUnit key={u.id} unit={u} locationId={location.id} groupDragging={selectedDragging.includes(u.id)} />
           ))}
