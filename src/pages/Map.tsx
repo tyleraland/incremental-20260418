@@ -11,7 +11,8 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, RESTING_REGEN_RATE, getDerivedStats, type MonsterBehavior, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, getDerivedStats, type MonsterBehavior, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
+import type { MonsterDef } from '@/types'
 
 
 const REGIONS = [
@@ -19,6 +20,11 @@ const REGIONS = [
   { id: 'geffen',   name: 'Geffen Region' },
   { id: 'kanto',    name: 'Kanto' },
 ]
+
+function calcDps(m: MonsterDef, defense: number): number {
+  const cooldown = Math.max(1, Math.round(TICKS_PER_SECOND * ATTACK_SPEED_BASE / m.stats.attackSpeed))
+  return (m.stats.attack / Math.max(defense, 1)) * (TICKS_PER_SECOND / cooldown)
+}
 
 function slotDisplayName(allSlots: EncounterSlot[], slotIndex: number): string {
   const slot = allSlots[slotIndex]
@@ -303,7 +309,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
   const targetDerived    = targetUnit ? getDerivedStats(targetUnit, equipment) : null
   const monsterDrainRate = phase === 'standing' ? monster.health / (monster.level * 5) : null
   const monsterDealtDps  = phase === 'standing' && targetDerived
-    ? (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(targetDerived.defense, 1)
+    ? calcDps(monster, targetDerived.defense)
     : null
   const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
 
@@ -463,13 +469,15 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
     ? targetMonster.health / (targetMonster.level * 5)
     : null
 
-  // Taken: sum of damage from all monsters targeting this unit (only standing ones)
+  // Taken: sum of DPS from all standing, non-avoid monsters targeting this unit
   const dpsTaken = inCombat
     ? slots.reduce((sum, sl) => {
-        if (sl.behavior === 'avoid' || sl.targetUnitId !== unit.id || (sl.phase ?? 'standing') !== 'standing') return sum
+        if (sl.behavior === 'avoid') return sum
+        if (sl.targetUnitId !== unit.id) return sum
+        if (sl.phase !== 'standing') return sum
         const m = MONSTER_REGISTRY[sl.monsterId]
         if (!m) return sum
-        return sum + (m.stats.attack * m.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(derived.defense, 1)
+        return sum + calcDps(m, derived.defense)
       }, 0)
     : null
 
