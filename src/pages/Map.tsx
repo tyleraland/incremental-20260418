@@ -86,7 +86,7 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing =
             {isRecovering ? (
               <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${recoverPct}%`, transition: 'none' }} />
             ) : (
-              <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'width 0.7s linear' }} />
+              <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'none' }} />
             )}
           </div>
           {isRecovering ? (
@@ -278,7 +278,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
   const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
 
   return (
-    <div className="rounded-xl border border-game-primary/60 bg-game-surface px-3 py-2 space-y-2">
+    <div className="rounded-xl border border-game-primary/60 bg-indigo-950/80 px-3 py-2 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -433,7 +433,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
     : null
 
   return (
-    <div className="mt-2 rounded-xl border border-game-primary/60 bg-game-surface px-3 py-2 space-y-2">
+    <div className="mt-2 rounded-xl border border-game-primary/60 bg-indigo-950/80 px-3 py-2 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -457,7 +457,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
         {isRecovering ? (
           <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100}%`, transition: 'none' }} />
         ) : (
-          <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'width 0.7s linear' }} />
+          <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'none' }} />
         )}
       </div>
       {/* EXP bar */}
