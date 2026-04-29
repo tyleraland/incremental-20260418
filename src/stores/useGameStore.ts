@@ -384,7 +384,8 @@ export const useGameStore = create<GameState>((set) => ({
     }
 
     const units = s.units.map((u) => {
-      let { health, recoveryTicksLeft, isResting } = u
+      let { health, recoveryTicksLeft } = u
+      let isResting = u.isResting ?? (health === 0 && recoveryTicksLeft === 0)
       const maxHp = getDerivedStats(u, s.equipment).maxHp
       if (recoveryTicksLeft > 0) {
         // KO phase: count down, no regen; transition to resting when done
@@ -520,10 +521,11 @@ export const useGameStore = create<GameState>((set) => ({
     const totalExpEarned = Object.values(expGained).reduce((a, b) => a + b, 0)
 
     const unitsPreLevel = s.units.map((u) => {
-      let { health, recoveryTicksLeft, isResting } = u
+      let { health, recoveryTicksLeft } = u
+      let isResting = u.isResting ?? (health === 0 && recoveryTicksLeft === 0)
       const maxHp = getDerivedStats(u, s.equipment).maxHp
 
-      if (u.isResting) {
+      if (isResting) {
         // Already resting at start of batch
         health    = Math.min(maxHp, health + n * RESTING_REGEN_RATE)
         isResting = health < maxHp
