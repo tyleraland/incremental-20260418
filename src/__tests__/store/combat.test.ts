@@ -1,7 +1,7 @@
 // Requirements: Encounters & Combat + Targeting + Monster Behavior sections of CLAUDE.md
 import { vi, beforeEach, afterEach, describe, expect, it } from 'vitest'
-import { getDerivedStats, MONSTER_REGISTRY } from '@/stores/useGameStore'
-import { makeUnit, makeEncounterSlot, resetStore, tick } from '../helpers'
+import { getDerivedStats, MONSTER_REGISTRY, useGameStore } from '@/stores/useGameStore'
+import { makeUnit, makeEncounterSlot, resetStore, tick, batchTick } from '../helpers'
 
 // All attacks hit — tests assert exact damage and progress values, not miss rates.
 beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0) })
@@ -298,5 +298,39 @@ describe('takenHistory — hit/miss symmetry with dpsDealt/monsterDrainRate', ()
     })
     const { encounters: enc2 } = tick()
     expect(enc2['loc1'][0].progress).toBeCloseTo(singleProgress * 2)
+  })
+})
+
+describe('batchTick → tick handoff (no double-damage)', () => {
+  // Regression: batchTick was setting attackCooldown=0 on every slot, so the
+  // very next tick() fired an extra attack on top of what batchTick already
+  // included in its smooth DPS calculation.
+
+  it('first tick() after batchTick does not deal extra monster damage', () => {
+    // slime: attack=1, attackSpeed=10 → cooldown=5, DPS = 1/7/5 ≈ 0.029/tick
+    // batchTick(5) smooth damage: Math.floor(100 - 5*(1/7/5)) = 99
+    // If attackCooldown reset to 0, next tick() fires again: Math.floor(99 - 1/7) = 98
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'slime' })] },
+    })
+    batchTick(5)
+    const { units } = tick()
+    expect(units[0].health).toBe(99)
+  })
+
+  it('first tick() after batchTick does not advance progress extra', () => {
+    // Same regression path for progressCooldown: after batchTick, the unit
+    // should not get a free extra hit on top of the batch progress.
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'slime' })] },
+    })
+    batchTick(5)
+    // With Math.random()=0, progressCooldown resets to 1 after batchTick → tick() decrements
+    // to 0 but does not fire. Progress should stay exactly at the batchTick value.
+    const afterBatch = useGameStore.getState().encounters['loc1'][0].progress
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].progress).toBe(afterBatch)
   })
 })

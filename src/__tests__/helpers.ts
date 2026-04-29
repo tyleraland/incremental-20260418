@@ -62,3 +62,8 @@ export function tick() {
   useGameStore.getState().tick()
   return useGameStore.getState()
 }
+
+export function batchTick(n: number) {
+  useGameStore.getState().batchTick(n)
+  return useGameStore.getState()
+}
