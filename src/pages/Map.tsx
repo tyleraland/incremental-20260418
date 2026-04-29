@@ -372,7 +372,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
             <ElementBadge element="neutral" />
             {monsterDealtDps !== null && <span className="text-xs font-medium text-red-400">{monsterDealtDps.toFixed(1)}/s</span>}
             {slot.lastAttackMissed
-              ? <span className="text-xs font-semibold text-game-muted">MISS</span>
+              ? <span className="text-[10px] font-semibold text-game-muted">(MISS)</span>
               : lastHitDmg !== null && lastHitDmg > 0
               ? <span className="text-[10px] font-semibold text-red-300">({Math.round(lastHitDmg)})</span>
               : null}
@@ -584,7 +584,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
             <ElementBadge element={targetMonster.element} />
             {dpsDealt !== null && <span className="text-xs font-medium text-amber-400">{dpsDealt.toFixed(1)}/s</span>}
             {targetSlotObj?.lastProgressMissed
-              ? <span className="text-xs font-semibold text-game-muted">MISS</span>
+              ? <span className="text-[10px] font-semibold text-game-muted">(MISS)</span>
               : lastDmgDealt !== null && lastDmgDealt > 0
               ? <span className="text-[10px] font-semibold text-amber-300">({lastDmgDealt})</span>
               : null}
