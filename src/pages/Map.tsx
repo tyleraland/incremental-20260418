@@ -313,7 +313,8 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
             <span className="text-game-muted">with</span>
             <span className="text-game-text-dim">{monster.attackName}</span>
             <ElementBadge element="neutral" />
-            {monsterDealtDps !== null && <span className="text-[10px] text-game-muted">({monsterDealtDps.toFixed(1)}/s)</span>}
+            {monsterDealtDps !== null && <span className="text-xs font-medium text-red-400">{monsterDealtDps.toFixed(1)}/s</span>}
+            {slot.lastAttackMissed && <span className="text-xs font-semibold text-game-muted">MISS</span>}
           </>
         ) : phase === 'approaching' ? (
           <span className="text-game-muted italic">Approaching...</span>
@@ -497,9 +498,8 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
             <span className="text-game-muted">with</span>
             <span className="text-game-text-dim">{weaponName}</span>
             <ElementBadge element={targetMonster.element} />
-            {dpsDealt !== null && (
-              <span className="text-[10px] text-game-muted">({dpsDealt.toFixed(1)}/s)</span>
-            )}
+            {dpsDealt !== null && <span className="text-xs font-medium text-amber-400">{dpsDealt.toFixed(1)}/s</span>}
+            {targetSlotObj?.lastProgressMissed && <span className="text-xs font-semibold text-game-muted">MISS</span>}
           </>
         ) : slots.length === 0 ? (
           <span className="text-amber-400">Hunting...</span>

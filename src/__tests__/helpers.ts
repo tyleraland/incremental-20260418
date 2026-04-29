@@ -32,6 +32,7 @@ export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): Encou
     monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior,
     phase: 'standing', distance: 0, dealtHistory: [], takenHistory: [],
     attackCooldown: 0, progressCooldown: 0,
+    lastAttackMissed: false, lastProgressMissed: false,
     ...overrides,
   }
 }

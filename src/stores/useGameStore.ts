@@ -93,6 +93,11 @@ function calcAttackCooldown(speed: number): number {
   return Math.max(1, Math.round(TICKS_PER_SECOND * ATTACK_SPEED_BASE / speed))
 }
 
+// Probability that an attack lands: accuracy / (accuracy + dodge), clamped to [5%, 95%].
+function calcHitChance(accuracy: number, dodge: number): number {
+  return Math.min(0.95, Math.max(0.05, accuracy / (accuracy + dodge)))
+}
+
 const KANTO_BEACH_IDS = Array.from({ length: 10 }, (_, i) => `beach-${i + 1}`)
 
 function makeSlots(monsterIds: string[]): EncounterSlot[] {
@@ -104,6 +109,7 @@ function makeSlots(monsterIds: string[]): EncounterSlot[] {
       phase: 'approaching' as const, distance: APPROACH_DISTANCE, dealtHistory: [], takenHistory: [],
       attackCooldown:   Math.floor(Math.random() * atkCd) + 1,
       progressCooldown: Math.floor(Math.random() * TICKS_PER_SECOND) + 1,
+      lastAttackMissed: false, lastProgressMissed: false,
     }
   })
 }
@@ -120,6 +126,7 @@ function spawnWave(locationId: string): EncounterSlot[] {
       phase: 'approaching' as const, distance: APPROACH_DISTANCE, dealtHistory: [], takenHistory: [],
       attackCooldown:   Math.floor(Math.random() * atkCd) + 1,
       progressCooldown: Math.floor(Math.random() * TICKS_PER_SECOND) + 1,
+      lastAttackMissed: false, lastProgressMissed: false,
     }
   })
 }
@@ -299,8 +306,10 @@ export const useGameStore = create<GameState>((set) => ({
         let newAtkCd    = slot.attackCooldown
         let newProgCd   = slot.progressCooldown
         let newProgress = slot.progress
-        let dealtHistory = slot.dealtHistory ?? []
-        let takenHistory = slot.takenHistory ?? []
+        let dealtHistory        = slot.dealtHistory ?? []
+        let takenHistory        = slot.takenHistory ?? []
+        let lastAttackMissed    = slot.lastAttackMissed
+        let lastProgressMissed  = slot.lastProgressMissed
 
         // Monster attack fires on cooldown expiry (non-avoid slots only)
         if (slot.behavior !== 'avoid') {
@@ -308,10 +317,14 @@ export const useGameStore = create<GameState>((set) => ({
             const targetId = targets[i]
             const target   = targetId ? s.units.find((u) => u.id === targetId) : null
             if (target) {
-              const def = getDerivedStats(target, s.equipment).defense
-              const dmg = monster.stats.attack / Math.max(def, 1)
-              hpDamage[targetId!] = (hpDamage[targetId!] ?? 0) + dmg
-              dealtHistory = [...dealtHistory, dmg].slice(-60)
+              const derived = getDerivedStats(target, s.equipment)
+              const hit     = Math.random() < calcHitChance(monster.stats.accuracy, derived.dodge)
+              if (hit) {
+                const dmg = monster.stats.attack / Math.max(derived.defense, 1)
+                hpDamage[targetId!] = (hpDamage[targetId!] ?? 0) + dmg
+                dealtHistory = [...dealtHistory, dmg].slice(-60)
+              }
+              lastAttackMissed = !hit
             }
             newAtkCd = calcAttackCooldown(monster.stats.attackSpeed)
           } else {
@@ -323,12 +336,18 @@ export const useGameStore = create<GameState>((set) => ({
         if (attackedSlots.has(i)) {
           if (slot.progressCooldown <= 0) {
             const attackingUnit = aliveUnits.length > 0 ? aliveUnits[0] : null
-            const unitSpeed     = attackingUnit ? getDerivedStats(attackingUnit, s.equipment).attackSpeed : ATTACK_SPEED_BASE
-            const unitCooldown  = calcAttackCooldown(unitSpeed)
-            const chunk         = unitCooldown / (monster.level * 5 * TICKS_PER_SECOND)
-            newProgress  = Math.min(slot.progress + chunk, 1)
-            takenHistory = [...takenHistory, chunk].slice(-60)
-            newProgCd    = unitCooldown
+            if (attackingUnit) {
+              const unitDerived  = getDerivedStats(attackingUnit, s.equipment)
+              const unitCooldown = calcAttackCooldown(unitDerived.attackSpeed)
+              const hit          = Math.random() < calcHitChance(unitDerived.accuracy, monster.stats.dodge)
+              if (hit) {
+                const chunk  = unitCooldown / (monster.level * 5 * TICKS_PER_SECOND)
+                newProgress  = Math.min(slot.progress + chunk, 1)
+                takenHistory = [...takenHistory, chunk].slice(-60)
+              }
+              lastProgressMissed = !hit
+              newProgCd = unitCooldown
+            }
           } else {
             newProgCd = slot.progressCooldown - 1
           }
@@ -342,6 +361,8 @@ export const useGameStore = create<GameState>((set) => ({
           progressCooldown: newProgCd,
           dealtHistory,
           takenHistory,
+          lastAttackMissed,
+          lastProgressMissed,
         })
       }
       encounters[locationId] = newSlots

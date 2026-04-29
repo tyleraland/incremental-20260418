@@ -1,7 +1,11 @@
 // Requirements: Encounters & Combat + Targeting + Monster Behavior sections of CLAUDE.md
-import { beforeEach, describe, expect, it } from 'vitest'
+import { vi, beforeEach, afterEach, describe, expect, it } from 'vitest'
 import { getDerivedStats, MONSTER_REGISTRY } from '@/stores/useGameStore'
 import { makeUnit, makeEncounterSlot, resetStore, tick } from '../helpers'
+
+// All attacks hit — tests assert exact damage and progress values, not miss rates.
+beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0) })
+afterEach(() => { vi.restoreAllMocks() })
 
 // Base unit constitution=5 → defense = Math.floor(5 * 1.5) = 7
 const BASE_DEF = getDerivedStats(makeUnit(), []).defense

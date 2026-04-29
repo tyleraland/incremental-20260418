@@ -1,7 +1,11 @@
 // Requirements: Health section of CLAUDE.md
-import { beforeEach, describe, expect, it } from 'vitest'
+import { vi, beforeEach, afterEach, describe, expect, it } from 'vitest'
 import { useGameStore, RECOVERY_TICKS, REGEN_RATE, getDerivedStats } from '@/stores/useGameStore'
 import { makeUnit, makeEncounterSlot, resetStore, tick } from '../helpers'
+
+// All attacks hit — tests assert exact health values, not miss rates.
+beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0) })
+afterEach(() => { vi.restoreAllMocks() })
 
 // Base unit has constitution=5 → defense = Math.floor(5 * 1.5) = 7
 // Wolf has attack=8. Damage per tick = 8 / 7 ≈ 1.143

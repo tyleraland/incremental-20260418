@@ -151,6 +151,8 @@ export interface EncounterSlot {
   takenHistory: number[]      // progress chunks taken on hit events (for rolling DPS)
   attackCooldown: number      // ticks until this monster's next attack on a unit (0 = fires this tick)
   progressCooldown: number    // ticks until next unit hit lands on this slot (0 = fires this tick)
+  lastAttackMissed: boolean   // true if monster's most recent attack was a miss
+  lastProgressMissed: boolean // true if unit's most recent attack on this slot was a miss
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────
