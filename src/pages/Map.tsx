@@ -55,9 +55,11 @@ function UnitRect({ unit, overlay = false, targetMonsterName = null, isFleeing =
 }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
+  const equipment        = useGameStore((s) => s.equipment)
   const isSelected       = selectedUnitIds.includes(unit.id)
   const isRecovering     = unit.recoveryTicksLeft > 0
-  const hpPct            = Math.max(0, Math.min(100, unit.health))
+  const maxHp            = getDerivedStats(unit, equipment).maxHp
+  const hpPct            = Math.max(0, Math.min(100, (unit.health / maxHp) * 100))
   const recoverPct       = isRecovering ? ((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
 
   return (
@@ -402,7 +404,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
 
   const derived      = getDerivedStats(unit, equipment)
   const isRecovering = unit.recoveryTicksLeft > 0
-  const hpPct        = Math.max(0, Math.min(100, unit.health))
+  const hpPct        = Math.max(0, Math.min(100, (unit.health / derived.maxHp) * 100))
 
   const alive          = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
   const idx            = alive.findIndex((u) => u.id === unit.id)
@@ -447,7 +449,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
           {unit.class && <span className="text-[10px] text-game-text-dim border border-game-border rounded px-1.5 py-0.5">{unit.class}</span>}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className={`text-xs font-mono font-semibold ${hpTextColor(unit.health)}`}>{unit.health} HP</span>
+          <span className={`text-xs font-mono font-semibold ${hpTextColor(hpPct)}`}>{unit.health} / {derived.maxHp}</span>
           {dpsTaken !== null && dpsTaken > 0 ? (
             <span className="text-[10px] text-red-400">(-{dpsTaken.toFixed(1)}/s)</span>
           ) : (isRecovering || unit.locationId === null) ? (

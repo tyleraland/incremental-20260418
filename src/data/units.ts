@@ -12,7 +12,7 @@ export const INITIAL_UNITS: Unit[] = [
     equipment: { armor: 'eq-leather', tool: null, accessory: null },
   },
   {
-    id: 'u2', name: 'Mira', level: 2, exp: 80, expToNext: 180, age: 19, health: 100, recoveryTicksLeft: 0,
+    id: 'u2', name: 'Mira', level: 2, exp: 80, expToNext: 180, age: 19, health: 90, recoveryTicksLeft: 0,
     class: null, proficiencies: ['Tools'], locationId: 'kings-forest',
     abilities: { strength: 4, agility: 5, dexterity: 6, constitution: 4, intelligence: 4 },
     abilityPoints: 15, skillPoints: 1, learnedSkills: {},
@@ -32,7 +32,7 @@ export const INITIAL_UNITS: Unit[] = [
     equipment: { armor: null, tool: null, accessory: null },
   },
   {
-    id: 'u4', name: 'Sera', level: 1, exp: 20, expToNext: 100, age: 16, health: 100, recoveryTicksLeft: 0,
+    id: 'u4', name: 'Sera', level: 1, exp: 20, expToNext: 100, age: 16, health: 80, recoveryTicksLeft: 0,
     class: null, proficiencies: [], locationId: null,
     abilities: { strength: 3, agility: 3, dexterity: 3, constitution: 3, intelligence: 3 },
     abilityPoints: 30, skillPoints: 1, learnedSkills: {},

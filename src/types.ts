@@ -52,7 +52,7 @@ export interface Abilities {
 
 export interface DerivedStats {
   attack: number; defense: number; magicAttack: number; magicDefense: number
-  attackSpeed: number; accuracy: number; dodge: number
+  attackSpeed: number; accuracy: number; dodge: number; maxHp: number
 }
 
 // ── Unit ──────────────────────────────────────────────────────────────────────

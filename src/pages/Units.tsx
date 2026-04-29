@@ -125,9 +125,9 @@ function StatsTab({ unit }: { unit: Unit }) {
         <div>
           <div className="flex justify-between text-xs mb-1">
             <span className="text-game-text-dim">Health</span>
-            <span className={healthColor(unit.health)}>{unit.health}%</span>
+            <span className={healthColor(Math.round((unit.health / derived.maxHp) * 100))}>{unit.health} / {derived.maxHp}</span>
           </div>
-          <ProgressBar value={unit.health} max={100} colorClass={healthBar(unit.health)} />
+          <ProgressBar value={unit.health} max={derived.maxHp} colorClass={healthBar(Math.round((unit.health / derived.maxHp) * 100))} />
         </div>
         <div>
           <div className="flex justify-between text-xs mb-1">

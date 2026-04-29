@@ -40,6 +40,7 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
     attackSpeed:  Math.max(1, Math.floor(agi * 2)                          + (sb.attackSpeed  ?? 0)),
     accuracy:     Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)           + (sb.accuracy     ?? 0)),
     dodge:        Math.max(1, Math.floor(agi * 2   + dex * 0.5)           + (sb.dodge        ?? 0)),
+    maxHp:        Math.max(1, Math.floor(50 + con * 10)),
   }
 }
 

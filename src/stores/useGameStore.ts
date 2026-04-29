@@ -305,19 +305,20 @@ export const useGameStore = create<GameState>((set) => ({
 
     const units = s.units.map((u) => {
       let { health, recoveryTicksLeft } = u
+      const maxHp = getDerivedStats(u, s.equipment).maxHp
       if (recoveryTicksLeft > 0) {
         recoveryTicksLeft--
-        health = Math.min(100, health + REGEN_RATE)
+        health = Math.min(maxHp, health + REGEN_RATE)
       } else if (health > 0) {
         if (u.locationId) {
           const dmg = hpDamage[u.id] ?? 0
           health = Math.floor(health - dmg)
           if (health <= 0) { health = 0; recoveryTicksLeft = RECOVERY_TICKS; newLog = appendLog(newLog, 'ko', `${u.name} was KO'd`, newTicks) }
         } else {
-          health = Math.min(100, health + REGEN_RATE)
+          health = Math.min(maxHp, health + REGEN_RATE)
         }
       } else {
-        health = Math.min(100, health + REGEN_RATE)
+        health = Math.min(maxHp, health + REGEN_RATE)
       }
       const aged = yearChanged ? { age: u.age + 1 } : {}
       const exp  = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
@@ -433,10 +434,11 @@ export const useGameStore = create<GameState>((set) => ({
 
     const units = s.units.map((u) => {
       let { health, recoveryTicksLeft } = u
+      const maxHp = getDerivedStats(u, s.equipment).maxHp
 
       if (recoveryTicksLeft > 0) {
         recoveryTicksLeft = Math.max(0, recoveryTicksLeft - n)
-        health            = Math.min(100, health + n * REGEN_RATE)
+        health            = Math.min(maxHp, health + n * REGEN_RATE)
       } else if (inCombat.has(u.id)) {
         const rate         = damageRates[u.id] ?? 0
         const ticksToDeath = rate > 0 ? health / rate : Infinity
@@ -446,10 +448,10 @@ export const useGameStore = create<GameState>((set) => ({
           const ticksAfterDeath = n - Math.floor(ticksToDeath)
           recoveryTicksLeft     = Math.max(0, RECOVERY_TICKS - ticksAfterDeath)
           const regenTicks      = Math.max(0, ticksAfterDeath - RECOVERY_TICKS)
-          health                = Math.min(100, regenTicks * REGEN_RATE)
+          health                = Math.min(maxHp, regenTicks * REGEN_RATE)
         }
       } else if (!u.locationId) {
-        health = Math.min(100, health + n * REGEN_RATE)
+        health = Math.min(maxHp, health + n * REGEN_RATE)
       }
 
       health = Math.max(0, health)
@@ -561,7 +563,7 @@ export const useGameStore = create<GameState>((set) => ({
       activeWeaponSet: 0,
       equipment: { armor: null, tool: null, accessory: null },
     }
-    return { units: [...s.units, unit] }
+    return { units: [...s.units, { ...unit, health: getDerivedStats(unit, s.equipment).maxHp }] }
   }),
 
   craft: (recipeId) => set((s) => {
