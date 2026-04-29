@@ -325,7 +325,7 @@ export const useGameStore = create<GameState>((set) => ({
               dealtHistory     = [...dealtHistory, hit ? Math.ceil(dmg) : 0].slice(-10)
               lastAttackMissed = !hit
             }
-            newAtkCd = calcAttackCooldown(monster.stats.attackSpeed)
+            newAtkCd = Math.max(0, calcAttackCooldown(monster.stats.attackSpeed) - 1)
           } else {
             newAtkCd = slot.attackCooldown - 1
           }
@@ -352,7 +352,7 @@ export const useGameStore = create<GameState>((set) => ({
             if (totalChunk > 0) newProgress = Math.min(slot.progress + totalChunk, 1)
             takenHistory       = [...takenHistory, totalChunk].slice(-10)
             lastProgressMissed = allMissed
-            newProgCd          = resetCd
+            newProgCd          = Math.max(0, resetCd - 1)
           } else {
             newProgCd = slot.progressCooldown - 1
           }

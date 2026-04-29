@@ -341,9 +341,9 @@ describe('batchTick → tick handoff (no double-damage)', () => {
 //   agility=5 → attackSpeed=10).  Math.random()=0 so every attack hits.
 //
 // Both sides start with attackCooldown/progressCooldown=0, so both fire on tick 1.
-// After each fire the cooldown resets to C = calcAttackCooldown(10) = 5.
-// Effective period = C + 1 = 6 ticks  (C decrements to 0, then fires).
-// Fire schedule: ticks 1, 7, 13, 19 …   firesInNTicks(n, 5) = 1+⌊(n-1)/6⌋.
+// After each fire the cooldown resets to C - 1 = 4.
+// Effective period = C = 5 ticks  (4 decrements to 0, then fires on tick 6).
+// Fire schedule: ticks 1, 6, 11, 16 …   firesInNTicks(n, 5) = 1+⌊(n-1)/5⌋.
 //
 // Monster → unit: dmg = 1/7 ≈ 0.143; Math.floor(health − dmg) = health − 1 per hit.
 // Unit → monster: chunk = C/(level×5×TPS) = 5/(1×5×5) = 0.2 per hit.
@@ -380,14 +380,14 @@ describe('Damage accounting — fixed ticks, 1-on-1, always hit', () => {
     }
   })
 
-  it('monster does not fire extra on ticks between cooldown (N=6, period=6 → 1 fire)', () => {
-    // tick 1 fires, ticks 2–6 are cooldown countdown — no extra fire
+  it('monster does not fire extra on ticks between cooldown (N=5, period=5 → 1 fire)', () => {
+    // tick 1 fires (resets to 4), ticks 2–5 decrement — no extra fire until tick 6
     resetStore({
       units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'slime' })] },
     })
-    for (let t = 0; t < 6; t++) tick()
-    expect(firesInNTicks(6, SLIME_COOLDOWN)).toBe(1)
+    for (let t = 0; t < 5; t++) tick()
+    expect(firesInNTicks(5, SLIME_COOLDOWN)).toBe(1)
     expect(useGameStore.getState().units[0].health).toBe(99)
   })
 })

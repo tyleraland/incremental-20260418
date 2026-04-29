@@ -4,11 +4,11 @@ export { calcAttackCooldown }
 
 // How many times an attack fires in n ticks when:
 //   - attackCooldown starts at 0 (fires on tick 1)
-//   - resets to `cooldown` after each fire
-// Effective period = cooldown + 1 (cooldown decrements to 0, then fires on the next).
+//   - resets to `cooldown - 1` after each fire
+// Effective period = cooldown (fires every cooldown ticks, matching batchTick's continuous rate).
 export function firesInNTicks(n: number, cooldown: number): number {
   if (n <= 0) return 0
-  return 1 + Math.floor((n - 1) / (cooldown + 1))
+  return 1 + Math.floor((n - 1) / cooldown)
 }
 
 export type { EncounterSlot }
