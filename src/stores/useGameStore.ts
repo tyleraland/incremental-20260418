@@ -89,7 +89,7 @@ export interface GameState {
 // ── Initial encounter state ───────────────────────────────────────────────────
 
 // attackSpeed=10 (baseline) fires every TICKS_PER_SECOND ticks (once per real second).
-function calcAttackCooldown(speed: number): number {
+export function calcAttackCooldown(speed: number): number {
   return Math.max(1, Math.round(TICKS_PER_SECOND * ATTACK_SPEED_BASE / speed))
 }
 

@@ -1,4 +1,15 @@
-import { useGameStore, type Unit, type MonsterBehavior, type EncounterSlot } from '@/stores/useGameStore'
+import { useGameStore, calcAttackCooldown, type Unit, type MonsterBehavior, type EncounterSlot } from '@/stores/useGameStore'
+
+export { calcAttackCooldown }
+
+// How many times an attack fires in n ticks when:
+//   - attackCooldown starts at 0 (fires on tick 1)
+//   - resets to `cooldown` after each fire
+// Effective period = cooldown + 1 (cooldown decrements to 0, then fires on the next).
+export function firesInNTicks(n: number, cooldown: number): number {
+  if (n <= 0) return 0
+  return 1 + Math.floor((n - 1) / (cooldown + 1))
+}
 
 export type { EncounterSlot }
 

@@ -1,7 +1,7 @@
 // Requirements: Encounters & Combat + Targeting + Monster Behavior sections of CLAUDE.md
 import { vi, beforeEach, afterEach, describe, expect, it } from 'vitest'
-import { getDerivedStats, MONSTER_REGISTRY, useGameStore } from '@/stores/useGameStore'
-import { makeUnit, makeEncounterSlot, resetStore, tick, batchTick } from '../helpers'
+import { getDerivedStats, MONSTER_REGISTRY, useGameStore, TICKS_PER_SECOND } from '@/stores/useGameStore'
+import { makeUnit, makeEncounterSlot, resetStore, tick, batchTick, calcAttackCooldown, firesInNTicks } from '../helpers'
 
 // All attacks hit — tests assert exact damage and progress values, not miss rates.
 beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0) })
@@ -332,5 +332,62 @@ describe('batchTick → tick handoff (no double-damage)', () => {
     const afterBatch = useGameStore.getState().encounters['loc1'][0].progress
     const { encounters } = tick()
     expect(encounters['loc1'][0].progress).toBe(afterBatch)
+  })
+})
+
+// ─── Damage accounting ────────────────────────────────────────────────────────
+//
+// Setup: slime (attack=1, attackSpeed=10) vs makeUnit (constitution=5 → defense=7,
+//   agility=5 → attackSpeed=10).  Math.random()=0 so every attack hits.
+//
+// Both sides start with attackCooldown/progressCooldown=0, so both fire on tick 1.
+// After each fire the cooldown resets to C = calcAttackCooldown(10) = 5.
+// Effective period = C + 1 = 6 ticks  (C decrements to 0, then fires).
+// Fire schedule: ticks 1, 7, 13, 19 …   firesInNTicks(n, 5) = 1+⌊(n-1)/6⌋.
+//
+// Monster → unit: dmg = 1/7 ≈ 0.143; Math.floor(health − dmg) = health − 1 per hit.
+// Unit → monster: chunk = C/(level×5×TPS) = 5/(1×5×5) = 0.2 per hit.
+//
+// These tests exist to catch regressions where damage fires more or less than
+// expected — e.g. the batchTick double-fire bug where attackCooldown was reset to 0.
+
+describe('Damage accounting — fixed ticks, 1-on-1, always hit', () => {
+  const SLIME_COOLDOWN = calcAttackCooldown(MONSTER_REGISTRY['slime'].stats.attackSpeed) // 5
+  const UNIT_COOLDOWN  = calcAttackCooldown(getDerivedStats(makeUnit(), []).attackSpeed)  // 5
+  const CHUNK = UNIT_COOLDOWN / (MONSTER_REGISTRY['slime'].level * 5 * TICKS_PER_SECOND) // 0.2
+
+  it('monster deals exactly 1 HP per fire, fires counted by firesInNTicks', () => {
+    for (const N of [1, 7, 13, 19]) {
+      resetStore({
+        units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
+        encounters: { loc1: [makeEncounterSlot({ monsterId: 'slime' })] },
+      })
+      for (let t = 0; t < N; t++) tick()
+      const fires = firesInNTicks(N, SLIME_COOLDOWN)
+      expect(useGameStore.getState().units[0].health).toBe(100 - fires)
+    }
+  })
+
+  it('unit advances monster progress by chunk × fires', () => {
+    for (const N of [1, 7, 13, 19]) {
+      resetStore({
+        units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+        encounters: { loc1: [makeEncounterSlot({ monsterId: 'slime' })] },
+      })
+      for (let t = 0; t < N; t++) tick()
+      const fires = firesInNTicks(N, UNIT_COOLDOWN)
+      expect(useGameStore.getState().encounters['loc1'][0].progress).toBeCloseTo(CHUNK * fires)
+    }
+  })
+
+  it('monster does not fire extra on ticks between cooldown (N=6, period=6 → 1 fire)', () => {
+    // tick 1 fires, ticks 2–6 are cooldown countdown — no extra fire
+    resetStore({
+      units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'slime' })] },
+    })
+    for (let t = 0; t < 6; t++) tick()
+    expect(firesInNTicks(6, SLIME_COOLDOWN)).toBe(1)
+    expect(useGameStore.getState().units[0].health).toBe(99)
   })
 })
