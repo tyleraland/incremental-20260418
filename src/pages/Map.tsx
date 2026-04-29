@@ -278,7 +278,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
   const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
 
   return (
-    <div className="rounded-xl border border-game-border bg-game-surface px-3 py-2 space-y-2">
+    <div className="rounded-xl border border-game-primary/60 bg-game-primary/5 px-3 py-2 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -433,7 +433,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
     : null
 
   return (
-    <div className="mt-2 rounded-xl border border-game-border bg-game-bg px-3 py-2 space-y-2">
+    <div className="mt-2 rounded-xl border border-game-primary/60 bg-game-primary/5 px-3 py-2 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -568,11 +568,13 @@ function LocationSection({ location, units, selectedDragging }: {
                 )}
               </div>
             </div>
-            {/* Monsters — right column, equal width */}
-            <div className="flex-1 min-w-0">
-              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1 text-right">Encounter</div>
-              <MonsterList location={location} />
-            </div>
+            {/* Monsters — right column, only when units are assigned */}
+            {units.length > 0 && (
+              <div className="flex-1 min-w-0">
+                <div className="text-xs uppercase tracking-widest text-game-text-dim mb-1 text-right">Encounter</div>
+                <MonsterList location={location} />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -655,8 +657,8 @@ function SelectionBar({ onOpenCodex }: { onOpenCodex: (monsterId: string) => voi
   return (
     <div className="fixed bottom-4 inset-x-0 z-30 px-4 pointer-events-none">
       <div className="pointer-events-auto flex flex-col gap-2">
-        {/* Monster detail panel */}
-        {hasMonster && (
+        {/* Monster detail panel — hidden when 2+ units selected */}
+        {hasMonster && selectedUnitIds.length <= 1 && (
           <MonsterDetailPanel
             locationId={selectedMonsterSlot!.locationId}
             slotIndex={selectedMonsterSlot!.slotIndex}

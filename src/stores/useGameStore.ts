@@ -520,10 +520,31 @@ export const useGameStore = create<GameState>((set) => ({
   }),
   toggleSelectUnit:  (id) => set((s) => ({ selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id] })),
   clearSelection:    () => set({ selectedUnitIds: [] }),
-  assignUnits: (unitIds, locationId) => set((s) => ({
-    units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u),
-    selectedUnitIds: [],
-  })),
+  assignUnits: (unitIds, locationId) => set((s) => {
+    const newUnits = s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u)
+
+    const encounters = { ...s.encounters }
+    const encounterCooldown = { ...s.encounterCooldown }
+
+    // Source locations that lost all units → clear encounter so monsters return to pool
+    const fromIds = new Set(
+      unitIds.map((id) => s.units.find((u) => u.id === id)?.locationId).filter((id): id is string => !!id)
+    )
+    for (const fromId of fromIds) {
+      if (newUnits.every((u) => u.locationId !== fromId)) {
+        delete encounters[fromId]
+        delete encounterCooldown[fromId]
+      }
+    }
+
+    // Destination: spawn a fresh encounter if none exists yet
+    if (locationId && !encounters[locationId]) {
+      const fresh = spawnWave(locationId)
+      if (fresh.length > 0) encounters[locationId] = fresh
+    }
+
+    return { units: newUnits, selectedUnitIds: [], encounters, encounterCooldown }
+  }),
 
   equipItem: (unitId, slot, itemId) => set((s) => ({
     units: s.units.map((u) => {
