@@ -138,6 +138,28 @@ function appendLog(log: LogEntry[], category: LogCategory, message: string, tick
   return [{ tick, category, message }, ...log].slice(0, 200)
 }
 
+// ── Level-up helpers ──────────────────────────────────────────────────────────
+
+const EXP_A = 10
+const EXP_P = 3
+
+export function expForLevel(level: number): number {
+  return Math.floor(EXP_A * Math.pow(level, EXP_P))
+}
+
+function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit; log: LogEntry[] } {
+  let { level, exp, expToNext, abilityPoints, skillPoints } = unit
+  while (exp >= expToNext) {
+    exp -= expToNext
+    abilityPoints += Math.floor(level / 5) + 3
+    skillPoints   += 1
+    level         += 1
+    expToNext      = expForLevel(level)
+    log = appendLog(log, 'levelup', `${unit.name} reached level ${level}!`, tick)
+  }
+  return { unit: { ...unit, level, exp, expToNext, abilityPoints, skillPoints }, log }
+}
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 export const useGameStore = create<GameState>((set) => ({
@@ -357,9 +379,12 @@ export const useGameStore = create<GameState>((set) => ({
       } else {
         health = Math.min(maxHp, health + REGEN_RATE)
       }
-      const aged = yearChanged ? { age: u.age + 1 } : {}
-      const exp  = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
-      return { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + exp }
+      const aged   = yearChanged ? { age: u.age + 1 } : {}
+      const expAdd = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
+      const withExp = { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + expAdd }
+      const { unit: leveled, log: nextLog } = applyLevelUps(withExp, newTicks, newLog)
+      newLog = nextLog
+      return leveled
     })
 
     const miscItems = goldEarned > 0
@@ -470,7 +495,7 @@ export const useGameStore = create<GameState>((set) => ({
 
     const totalExpEarned = Object.values(expGained).reduce((a, b) => a + b, 0)
 
-    const units = s.units.map((u) => {
+    const unitsPreLevel = s.units.map((u) => {
       let { health, recoveryTicksLeft } = u
       const maxHp = getDerivedStats(u, s.equipment).maxHp
 
@@ -493,9 +518,16 @@ export const useGameStore = create<GameState>((set) => ({
       }
 
       health = Math.max(0, health)
-      const aged = yearsPassed > 0 ? { age: u.age + yearsPassed } : {}
-      const exp  = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
-      return { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + exp }
+      const aged   = yearsPassed > 0 ? { age: u.age + yearsPassed } : {}
+      const expAdd = (u.locationId && health > 0 && recoveryTicksLeft === 0) ? (expGained[u.locationId] ?? 0) : 0
+      return { ...u, health, recoveryTicksLeft, ...aged, exp: u.exp + expAdd }
+    })
+
+    let eventLog = s.eventLog
+    const units = unitsPreLevel.map((u) => {
+      const { unit: leveled, log: nextLog } = applyLevelUps(u, newTicks, eventLog)
+      eventLog = nextLog
+      return leveled
     })
 
     // Update encounter targets based on post-batch alive state
@@ -515,7 +547,6 @@ export const useGameStore = create<GameState>((set) => ({
       ? { seconds: offlineSecs, goldEarned, monstersDefeated: totalDefeats, expEarned: totalExpEarned }
       : s.offlineSummary
 
-    let eventLog = s.eventLog
     if (n >= 50) {
       const defeatParts = Object.entries(newDefeats)
         .map(([id, count]) => `${MONSTER_REGISTRY[id]?.name ?? id} ×${count}`)
@@ -615,7 +646,7 @@ export const useGameStore = create<GameState>((set) => ({
     const name = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : `Recruit ${s.units.length + 1}`
     const r = (lo: number, hi: number) => Math.floor(Math.random() * (hi - lo + 1)) + lo
     const unit: Unit = {
-      id: `u${Date.now()}`, name, level: 1, exp: 0, expToNext: 100,
+      id: `u${Date.now()}`, name, level: 1, exp: 0, expToNext: expForLevel(1),
       age: r(16, 30), health: 100, recoveryTicksLeft: 0, class: null, proficiencies: [],
       abilities: { strength: r(2,5), agility: r(2,5), dexterity: r(2,5), constitution: r(2,5), intelligence: r(2,5) },
       abilityPoints: 3, skillPoints: 1, learnedSkills: {}, locationId: null, travelPath: null,
