@@ -148,6 +148,28 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
   )
 }
 
+// ── LocationUnitCard (non-draggable, for expanded locations) ─────────────────
+
+function LocationUnitCard({ unit, locationId }: { unit: Unit; locationId: string }) {
+  const allUnits     = useGameStore((s) => s.units)
+  const slots        = useGameStore((s) => s.encounters[locationId] ?? [])
+  const fleeingTicks = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const isFleeing    = fleeingTicks > 0
+  const isHunting    = !isFleeing && unit.health > 0 && unit.recoveryTicksLeft === 0 && slots.length === 0
+  const targetMonsterName = (() => {
+    if (isFleeing || isHunting || slots.length === 0 || unit.health <= 0 || unit.recoveryTicksLeft > 0) return null
+    const alive = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
+    const idx   = alive.findIndex((u) => u.id === unit.id)
+    if (idx === -1) return null
+    const prioritySlots = slots.filter((sl) => sl.behavior === 'prioritize')
+    const normalSlots   = slots.filter((sl) => sl.behavior === 'normal')
+    const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
+    if (focusSlots.length === 0) return null
+    return MONSTER_REGISTRY[focusSlots[idx % focusSlots.length]?.monsterId ?? '']?.name ?? null
+  })()
+  return <UnitRect unit={unit} targetMonsterName={targetMonsterName} isFleeing={isFleeing} isHunting={isHunting} />
+}
+
 // ── UnassignedPool ────────────────────────────────────────────────────────────
 
 function UnassignedPool({ units, selectedDragging }: { units: Unit[]; selectedDragging: string[] }) {
@@ -212,6 +234,21 @@ function CompactUnitChip({ unit, locationId }: { unit: Unit; locationId: string 
       <span className={`text-[9px] font-medium leading-tight ${color}`}>{label}</span>
       <span className="text-[9px] text-game-text-dim truncate w-full leading-tight">{unit.name.slice(0, 5)}</span>
     </button>
+  )
+}
+
+// ── DraggableCompactUnit (draggable wrapper for collapsed chips) ──────────────
+
+function DraggableCompactUnit({ unit, locationId, groupDragging = false }: { unit: Unit; locationId: string; groupDragging?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: unit.id })
+  const style = {
+    touchAction: 'none' as const,
+    ...(transform ? { transform: CSS.Translate.toString(transform) } : {}),
+  }
+  return (
+    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={isDragging || groupDragging ? 'opacity-30' : ''}>
+      <CompactUnitChip unit={unit} locationId={locationId} />
+    </div>
   )
 }
 
@@ -511,11 +548,11 @@ function LocationSection({ location, units, selectedDragging }: {
         </div>
       </button>
 
-      {/* Collapsed: compact 5-per-row status chips */}
+      {/* Collapsed: compact 5-per-row draggable status chips */}
       {units.length > 0 && !isExpanded && (
         <div className="px-3 pb-2 grid grid-cols-5 gap-1">
           {units.map((u) => (
-            <CompactUnitChip key={u.id} unit={u} locationId={location.id} />
+            <DraggableCompactUnit key={u.id} unit={u} locationId={location.id} groupDragging={selectedDragging.includes(u.id)} />
           ))}
         </div>
       )}
@@ -534,15 +571,15 @@ function LocationSection({ location, units, selectedDragging }: {
               <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Units</div>
               <div className="flex flex-col gap-2 min-h-[44px]">
                 {units.map((u) => (
-                  <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
+                  <LocationUnitCard key={u.id} unit={u} locationId={location.id} />
                 ))}
                 {units.length === 0 && (
                   <span className="text-xs text-game-muted italic">Drop units here</span>
                 )}
               </div>
             </div>
-            {/* Monsters — right column */}
-            <div className="flex-1 min-w-0">
+            {/* Monsters — right column, shrink-to-fit */}
+            <div className="flex-none">
               <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Encounter</div>
               <MonsterList location={location} />
             </div>
