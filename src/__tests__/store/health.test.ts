@@ -82,7 +82,7 @@ describe('Health — idle regen', () => {
 
   it('caps health at 100 after regen', () => {
     resetStore({
-      units: [makeUnit({ id: 'u1', health: 97, locationId: null })],
+      units: [makeUnit({ id: 'u1', health: 99, locationId: null })],
     })
     const { units } = tick()
     expect(units[0].health).toBe(100)

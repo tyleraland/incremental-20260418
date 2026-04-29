@@ -1,7 +1,6 @@
 // Requirements: Encounters & Combat + Targeting + Monster Behavior sections of CLAUDE.md
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getDerivedStats, MONSTER_REGISTRY } from '@/stores/useGameStore'
-import { ATTACK_SPEED_BASE } from '@/lib/time'
 import { makeUnit, makeEncounterSlot, resetStore, tick } from '../helpers'
 
 // Base unit constitution=5 → defense = Math.floor(5 * 1.5) = 7
@@ -9,7 +8,7 @@ const BASE_DEF = getDerivedStats(makeUnit(), []).defense
 
 function monsterDmg(monsterId: string): number {
   const m = MONSTER_REGISTRY[monsterId]
-  return (m.stats.attack * m.stats.attackSpeed / ATTACK_SPEED_BASE) / BASE_DEF
+  return m.stats.attack / BASE_DEF
 }
 
 beforeEach(() => resetStore())
@@ -100,7 +99,7 @@ describe('Targeting — unit → monster (focusSlots)', () => {
 })
 
 describe('Monster damage to units', () => {
-  it('applies (attack * attackSpeed / ATTACK_SPEED_BASE) / defense damage per tick', () => {
+  it('applies attack / defense damage when monster attack cooldown fires', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },

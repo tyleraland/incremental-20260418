@@ -146,8 +146,10 @@ export interface EncounterSlot {
   behavior: MonsterBehavior   // per-slot (not per-monsterId), enabling boss differentiation
   phase: 'approaching' | 'standing' | 'retreating'
   distance: number            // distance from melee range; 0 = in combat; cosmetic until movement speed is implemented
-  dealtHistory: number[]      // per-tick HP damage dealt, last ≤60 standing ticks (for rolling DPM)
-  takenHistory: number[]      // per-tick HP-equivalent drained, last ≤60 standing ticks
+  dealtHistory: number[]      // HP damage dealt on attack events (for rolling DPS)
+  takenHistory: number[]      // progress chunks taken on hit events (for rolling DPS)
+  attackCooldown: number      // ticks until this monster's next attack on a unit (0 = fires this tick)
+  progressCooldown: number    // ticks until next unit hit lands on this slot (0 = fires this tick)
 }
 
 // ── Event log ─────────────────────────────────────────────────────────────────

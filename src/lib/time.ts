@@ -1,18 +1,20 @@
-export const TICKS_PER_DAY    = 200
+export const TICKS_PER_SECOND = 5    // real-time tick rate
+
+export const TICKS_PER_DAY    = 1000  // = 200 real-seconds per game day
 export const DAYS_PER_SEASON  = 100
 export const SEASONS_PER_YEAR = 4
 export const TICKS_PER_SEASON = TICKS_PER_DAY * DAYS_PER_SEASON
 export const TICKS_PER_YEAR   = TICKS_PER_SEASON * SEASONS_PER_YEAR
 export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as const
 
-export const RECOVERY_TICKS     = 10  // ticks of KO countdown before regen starts
-export const REGEN_RATE         = 5   // HP per tick while recovering or idle
-export const FLEE_TICKS_CONST   = 2   // ticks to complete a flee action
-export const WAVE_COOLDOWN_MIN  = 3   // min ticks between last defeat and next wave
-export const WAVE_COOLDOWN_MAX  = 8   // max ticks between last defeat and next wave
-export const ATTACK_SPEED_BASE  = 10  // attackSpeed=10 → 1× multiplier
-export const APPROACH_DISTANCE  = 3   // distance units at wave start (placeholder; TODO: use monster movement speed)
-export const APPROACH_SPEED     = 1   // distance closed per tick (placeholder; TODO: use monster movement speed)
+export const RECOVERY_TICKS     = 50   // ticks of KO countdown (~10 real-sec at 5 ticks/sec)
+export const REGEN_RATE         = 1    // HP per tick (= 5 HP/sec at 5 ticks/sec)
+export const FLEE_TICKS_CONST   = 10   // ticks to complete a flee action (~2 real-sec)
+export const WAVE_COOLDOWN_MIN  = 15   // min ticks between last defeat and next wave (~3 real-sec)
+export const WAVE_COOLDOWN_MAX  = 40   // max ticks between last defeat and next wave (~8 real-sec)
+export const ATTACK_SPEED_BASE  = 10   // attackSpeed=10 → baseline; cooldown = round(TICKS_PER_SECOND * BASE / speed)
+export const APPROACH_DISTANCE  = 15   // distance at wave start (~3 real-sec at 1 dist/tick)
+export const APPROACH_SPEED     = 1    // distance closed per tick
 
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
 

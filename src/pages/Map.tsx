@@ -335,7 +335,7 @@ function MonsterCard({ slotIndex, locationId }: { slotIndex: number; locationId:
     if (!slot || !barRef.current) return
     const prog = slot.progress
     const resetting = prog === 0 && prevProg.current > 0
-    barRef.current.style.transition = resetting ? 'none' : 'width 1s linear'
+    barRef.current.style.transition = resetting ? 'none' : 'width 0.2s linear'
     barRef.current.style.width      = `${(1 - prog) * 100}%`
     prevProg.current = prog
   })

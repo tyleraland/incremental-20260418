@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useGameStore, formatDuration } from '@/stores/useGameStore'
+import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
 import { TabBar } from '@/components/TabBar'
 import { Map } from '@/pages/Map'
@@ -11,10 +12,12 @@ import { Codex } from '@/pages/Codex'
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
+const TICK_MS = 1000 / TICKS_PER_SECOND  // 200 ms per tick
+
 function catchUp() {
   const { lastTickAt, tick, batchTick, paused } = useGameStore.getState()
   if (paused) return
-  const n = Math.floor((Date.now() - lastTickAt) / 1000)
+  const n = Math.floor((Date.now() - lastTickAt) / TICK_MS)
   if (n <= 0) return
   if (n === 1) tick()
   else batchTick(n)
@@ -67,7 +70,7 @@ function App() {
   // have elapsed and applies them all at once, so throttled background tabs
   // and returning from sleep both catch up correctly.
   useEffect(() => {
-    const id = setInterval(catchUp, 1000)
+    const id = setInterval(catchUp, TICK_MS)
     return () => clearInterval(id)
   }, [])
 
