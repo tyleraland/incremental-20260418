@@ -334,17 +334,25 @@ export const useGameStore = create<GameState>((set) => ({
         // Unit progress fires on cooldown expiry (attacked slots only)
         if (attackedSlots.has(i)) {
           if (slot.progressCooldown <= 0) {
-            const attackingUnit = aliveUnits.length > 0 ? aliveUnits[0] : null
-            if (attackingUnit) {
-              const unitDerived  = getDerivedStats(attackingUnit, s.equipment)
-              const unitCooldown = calcAttackCooldown(unitDerived.attackSpeed)
-              const hit   = Math.random() < calcHitChance(unitDerived.accuracy, monster.stats.dodge)
-              const chunk = unitCooldown / (monster.level * 5 * TICKS_PER_SECOND)
-              if (hit) newProgress = Math.min(slot.progress + chunk, 1)
-              takenHistory       = [...takenHistory, hit ? chunk : 0].slice(-60)
-              lastProgressMissed = !hit
-              newProgCd = unitCooldown
+            // All alive units targeting this slot attack simultaneously
+            const attackersOfSlot = aliveUnits.filter((_, ui) =>
+              focusIdxs.length > 0 && focusIdxs[ui % focusIdxs.length].i === i
+            )
+            let totalChunk = 0
+            let allMissed  = attackersOfSlot.length > 0
+            let resetCd    = TICKS_PER_SECOND
+            for (const [aidx, au] of attackersOfSlot.entries()) {
+              const ud  = getDerivedStats(au, s.equipment)
+              const uc  = calcAttackCooldown(ud.attackSpeed)
+              if (aidx === 0) resetCd = uc
+              const hit   = Math.random() < calcHitChance(ud.accuracy, monster.stats.dodge)
+              const chunk = uc / (monster.level * 5 * TICKS_PER_SECOND)
+              if (hit) { totalChunk += chunk; allMissed = false }
             }
+            if (totalChunk > 0) newProgress = Math.min(slot.progress + totalChunk, 1)
+            takenHistory       = [...takenHistory, totalChunk].slice(-60)
+            lastProgressMissed = allMissed
+            newProgCd          = resetCd
           } else {
             newProgCd = slot.progressCooldown - 1
           }
@@ -493,9 +501,12 @@ export const useGameStore = create<GameState>((set) => ({
         if (baseSlot.behavior === 'ignore' || baseSlot.behavior === 'avoid') return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
         if (!attackedSlots.has(i)) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
 
-        const seconds       = monster.level * 5  // kill time in real seconds
+        const numAttackers  = aliveUnits.filter((_, ui) =>
+          focusIdxs.length > 0 && focusIdxs[ui % focusIdxs.length].i === i
+        ).length
+        const seconds       = monster.level * 5  // kill time per attacker in real seconds
         const effectiveProg = baseSlot.progress >= 1 ? 0 : baseSlot.progress
-        const combined      = effectiveProg + (n / TICKS_PER_SECOND) / seconds
+        const combined      = effectiveProg + numAttackers * (n / TICKS_PER_SECOND) / seconds
         const completions   = Math.floor(combined)
         if (completions > 0) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + completions

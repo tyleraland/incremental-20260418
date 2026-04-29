@@ -316,7 +316,18 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
   const phase      = slot.phase ?? 'standing'
 
   const targetDerived    = targetUnit ? getDerivedStats(targetUnit, equipment) : null
-  const monsterDrainRate = phase === 'standing' ? monster.health / (monster.level * 5) : null
+
+  // Count alive units targeting this slot (for accurate drain rate)
+  const aliveAtLoc    = allUnits.filter(u => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting)
+  const prioritySlots = allSlots.filter(s => s.behavior === 'prioritize')
+  const normalSlots   = allSlots.filter(s => s.behavior === 'normal')
+  const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
+  const numAttackers  = focusSlots.includes(slot)
+    ? aliveAtLoc.filter((_, ui) => focusSlots[ui % focusSlots.length] === slot).length
+    : 0
+  const monsterDrainRate = phase === 'standing' && numAttackers > 0
+    ? numAttackers * monster.health / (monster.level * 5)
+    : null
   const atkCooldown      = calcCooldown(monster.stats.attackSpeed)
   const monsterDealtDps  = phase === 'standing' && targetDerived
     ? (rollingRate(slot.dealtHistory, atkCooldown) ?? calcDps(monster, targetDerived.defense))
@@ -483,12 +494,16 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
 
   const unitCooldown = calcCooldown(derived.attackSpeed)
 
-  // Dealt: rolling progress rate × monster HP; falls back to theoretical if no history
-  const dpsDealt = inCombat && targetMonster && targetSlotObj && targetPhase === 'standing'
-    ? (rollingRate(targetSlotObj.takenHistory, unitCooldown) ?? (1 / (targetMonster.level * 5))) * targetMonster.health
+  // Per-unit DPS dealt to monster = monster.health/(level*5) per second at 100% hit rate.
+  // Scale by hit fraction from combined takenHistory (includes 0s for misses).
+  const hitFraction = targetSlotObj && targetSlotObj.takenHistory.length > 0
+    ? targetSlotObj.takenHistory.filter(c => c > 0).length / targetSlotObj.takenHistory.length
+    : 1
+  const dpsDealt = inCombat && targetMonster && targetPhase === 'standing'
+    ? hitFraction * targetMonster.health / (targetMonster.level * 5)
     : null
 
-  // Last damage dealt to monster (HP-equivalent of last progress chunk)
+  // Last damage dealt to monster (HP-equivalent of combined chunk from last attack event)
   const lastDmgDealt = targetMonster && targetSlotObj && !targetSlotObj.lastProgressMissed
     ? Math.round((targetSlotObj.takenHistory.at(-1) ?? 0) * targetMonster.health)
     : null
