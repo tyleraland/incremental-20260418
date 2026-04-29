@@ -94,14 +94,15 @@ function StatsTab({ unit }: { unit: Unit }) {
   const traits           = getUnitTraits(unit)
   const derived          = getDerivedStats(unit, equipment)
 
+  const defStat = derived.defense - derived.defenseEquip
   const derivedStats = [
-    { label: 'ATK',   value: derived.attack,       color: 'text-game-gold'    },
-    { label: 'DEF',   value: derived.defense,      color: 'text-sky-400'      },
-    { label: 'M.ATK', value: derived.magicAttack,  color: 'text-game-accent'  },
-    { label: 'M.DEF', value: derived.magicDefense, color: 'text-violet-400'   },
-    { label: 'SPD',   value: derived.attackSpeed,  color: 'text-game-green'   },
-    { label: 'ACC',   value: derived.accuracy,     color: 'text-orange-400'   },
-    { label: 'DOD',   value: derived.dodge,        color: 'text-pink-400'     },
+    { label: 'ATK',   value: derived.attack,       color: 'text-game-gold',   sub: null as string | null },
+    { label: 'DEF',   value: derived.defense,      color: 'text-sky-400',     sub: derived.defenseEquip > 0 ? `${defStat}+${derived.defenseEquip}` : null },
+    { label: 'M.ATK', value: derived.magicAttack,  color: 'text-game-accent', sub: null },
+    { label: 'M.DEF', value: derived.magicDefense, color: 'text-violet-400',  sub: null },
+    { label: 'SPD',   value: derived.attackSpeed,  color: 'text-game-green',  sub: null },
+    { label: 'ACC',   value: derived.accuracy,     color: 'text-orange-400',  sub: null },
+    { label: 'DOD',   value: derived.dodge,        color: 'text-pink-400',    sub: null },
   ]
 
   return (
@@ -183,9 +184,10 @@ function StatsTab({ unit }: { unit: Unit }) {
 
           {/* Derived stats — 2-col compact grid */}
           <div className="w-[104px] grid grid-cols-2 gap-1 content-start">
-            {derivedStats.map(({ label, value, color }) => (
+            {derivedStats.map(({ label, value, color, sub }) => (
               <div key={label} className="bg-game-bg rounded-lg py-2 text-center">
                 <div className={`text-sm font-bold font-mono leading-none ${color}`}>{value}</div>
+                {sub && <div className="text-[9px] text-game-muted leading-none mt-0.5">{sub}</div>}
                 <div className="text-[10px] text-game-text-dim mt-0.5">{label}</div>
               </div>
             ))}

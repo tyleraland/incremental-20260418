@@ -205,6 +205,7 @@ export const useGameStore = create<GameState>((set) => ({
     const encounterCooldown:    Record<string, number>          = {}
     const locationFleeing:      Record<string, number>          = { ...s.locationFleeing }
     const monsterDefeated       = { ...s.monsterDefeated }
+    const monsterSeen           = { ...s.monsterSeen }
     const locationMonstersSeen  = { ...s.locationMonstersSeen }
     const expGained: Record<string, number> = {}
     let goldEarned = 0
@@ -377,7 +378,9 @@ export const useGameStore = create<GameState>((set) => ({
     for (const [locationId, cd] of Object.entries(s.encounterCooldown)) {
       const newCd = cd - 1
       if (newCd <= 0) {
-        encounters[locationId] = spawnWave(locationId)
+        const wave = spawnWave(locationId)
+        encounters[locationId] = wave
+        for (const sl of wave) monsterSeen[sl.monsterId] = (monsterSeen[sl.monsterId] ?? 0) + 1
       } else {
         encounterCooldown[locationId] = newCd
       }
@@ -416,7 +419,7 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, locationMonstersSeen, miscItems, lastTickAt: Date.now(), eventLog: newLog }
+    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, locationMonstersSeen, miscItems, lastTickAt: Date.now(), eventLog: newLog }
   }),
 
   batchTick: (n) => set((s) => {
@@ -428,6 +431,7 @@ export const useGameStore = create<GameState>((set) => ({
     const encounters:      Record<string, EncounterSlot[]> = {}
     const locationFleeing: Record<string, number>          = { ...s.locationFleeing }
     const monsterDefeated  = { ...s.monsterDefeated }
+    const monsterSeen      = { ...s.monsterSeen }
     const expGained: Record<string, number> = {}
     const newDefeats: Record<string, number> = {}
     let goldEarned   = 0
@@ -512,7 +516,9 @@ export const useGameStore = create<GameState>((set) => ({
     for (const [locationId, cd] of Object.entries(s.encounterCooldown)) {
       const newCd = cd - n
       if (newCd <= 0) {
-        encounters[locationId] = spawnWave(locationId)
+        const wave = spawnWave(locationId)
+        encounters[locationId] = wave
+        for (const sl of wave) monsterSeen[sl.monsterId] = (monsterSeen[sl.monsterId] ?? 0) + 1
       } else {
         encounterCooldown[locationId] = newCd
       }
@@ -602,7 +608,7 @@ export const useGameStore = create<GameState>((set) => ({
       eventLog = appendLog(eventLog, 'offline', msg, newTicks)
     }
 
-    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, miscItems, lastTickAt: Date.now(), offlineSummary, eventLog }
+    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, miscItems, lastTickAt: Date.now(), offlineSummary, eventLog }
   }),
 
   dismissOfflineSummary: () => set({ offlineSummary: null }),
@@ -652,12 +658,16 @@ export const useGameStore = create<GameState>((set) => ({
     }
 
     // Destination: spawn a fresh encounter if none exists yet
+    const monsterSeen = { ...s.monsterSeen }
     if (locationId && !encounters[locationId]) {
       const fresh = spawnWave(locationId)
-      if (fresh.length > 0) encounters[locationId] = fresh
+      if (fresh.length > 0) {
+        encounters[locationId] = fresh
+        for (const sl of fresh) monsterSeen[sl.monsterId] = (monsterSeen[sl.monsterId] ?? 0) + 1
+      }
     }
 
-    return { units: newUnits, selectedUnitIds: [], encounters, encounterCooldown }
+    return { units: newUnits, selectedUnitIds: [], encounters, encounterCooldown, monsterSeen }
   }),
 
   equipItem: (unitId, slot, itemId) => set((s) => ({

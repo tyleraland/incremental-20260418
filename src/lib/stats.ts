@@ -35,6 +35,7 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
   return {
     attack:       Math.max(1, Math.floor(str * 2)               + eq.atk  + (sb.attack       ?? 0)),
     defense:      Math.max(1, Math.floor(con * 1.5)             + eq.def  + (sb.defense      ?? 0)),
+    defenseEquip: eq.def,
     magicAttack:  Math.max(1, Math.floor(int * 2 + dex * 0.5)  + eq.matk + (sb.magicAttack  ?? 0)),
     magicDefense: Math.max(1, Math.floor(int * 0.5 + con)       + eq.mdef + (sb.magicDefense ?? 0)),
     attackSpeed:  Math.max(1, Math.floor(agi * 2)                          + (sb.attackSpeed  ?? 0)),
