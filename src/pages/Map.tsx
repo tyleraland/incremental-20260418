@@ -11,7 +11,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, RESTING_REGEN_RATE, getDerivedStats, type MonsterBehavior, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, RESTING_REGEN_RATE, getDerivedStats, type MonsterBehavior, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
 
 
 const REGIONS = [
@@ -19,6 +19,19 @@ const REGIONS = [
   { id: 'geffen',   name: 'Geffen Region' },
   { id: 'kanto',    name: 'Kanto' },
 ]
+
+function slotDisplayName(allSlots: EncounterSlot[], slotIndex: number): string {
+  const slot = allSlots[slotIndex]
+  if (!slot) return ''
+  const name = MONSTER_REGISTRY[slot.monsterId]?.name ?? slot.monsterId
+  const hasDupes = allSlots.filter(s => s.monsterId === slot.monsterId).length > 1
+  if (!hasDupes) return name
+  let rank = 0
+  for (let i = 0; i <= slotIndex; i++) {
+    if (allSlots[i].monsterId === slot.monsterId) rank++
+  }
+  return `${name} ${rank}`
+}
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationCodex } from '@/components/LocationCodex'
 
@@ -132,7 +145,9 @@ function DraggableUnit({ unit, groupDragging = false }: { unit: Unit; groupDragg
     const normalSlots   = slots.filter((sl) => sl.behavior === 'normal')
     const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
     if (focusSlots.length === 0) return null
-    return MONSTER_REGISTRY[focusSlots[idx % focusSlots.length]?.monsterId ?? '']?.name ?? null
+    const targetSlot = focusSlots[idx % focusSlots.length]
+    const targetIdx  = slots.indexOf(targetSlot)
+    return slotDisplayName(slots, targetIdx)
   })()
 
   const style = {
@@ -170,7 +185,9 @@ function LocationUnitCard({ unit, locationId }: { unit: Unit; locationId: string
     const normalSlots   = slots.filter((sl) => sl.behavior === 'normal')
     const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
     if (focusSlots.length === 0) return null
-    return MONSTER_REGISTRY[focusSlots[idx % focusSlots.length]?.monsterId ?? '']?.name ?? null
+    const targetSlot = focusSlots[idx % focusSlots.length]
+    const targetIdx  = slots.indexOf(targetSlot)
+    return slotDisplayName(slots, targetIdx)
   })()
   return <UnitRect unit={unit} targetMonsterName={targetMonsterName} isFleeing={isFleeing} isHunting={isHunting} />
 }
@@ -269,7 +286,8 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
 }) {
   const equipment          = useGameStore((s) => s.equipment)
   const allUnits           = useGameStore((s) => s.units)
-  const slot               = useGameStore((s) => (s.encounters[locationId] ?? [])[slotIndex] ?? null)
+  const allSlots           = useGameStore((s) => s.encounters[locationId] ?? [])
+  const slot               = allSlots[slotIndex] ?? null
   const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
 
   if (!slot) return null
@@ -294,7 +312,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-          <span className="text-sm font-semibold text-game-text">{monster.name}</span>
+          <span className="text-sm font-semibold text-game-text">{slotDisplayName(allSlots, slotIndex)}</span>
           <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{monster.level}</span>
           <ElementBadge element={monster.element} />
         </div>
@@ -343,7 +361,8 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
 
 // MonsterCard — one card per encounter slot
 function MonsterCard({ slotIndex, locationId }: { slotIndex: number; locationId: string }) {
-  const slot                  = useGameStore((s) => (s.encounters[locationId] ?? [])[slotIndex] ?? null)
+  const allSlots              = useGameStore((s) => s.encounters[locationId] ?? [])
+  const slot                  = allSlots[slotIndex] ?? null
   const selectedMonsterSlot   = useGameStore((s) => s.selectedMonsterSlot)
   const setSelectedMonsterSlot = useGameStore((s) => s.setSelectedMonsterSlot)
   const locationFleeing       = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
@@ -382,7 +401,7 @@ function MonsterCard({ slotIndex, locationId }: { slotIndex: number; locationId:
     <button onClick={toggle}
       className={`w-full px-3 py-2 rounded-lg border bg-game-bg text-right transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-50' : ''}`}
     >
-      <div className="text-sm font-semibold text-game-text">{monster.name}</div>
+      <div className="text-sm font-semibold text-game-text">{slotDisplayName(allSlots, slotIndex)}</div>
       <div className="text-xs text-game-accent">Lv.{monster.level}</div>
       <div className="mt-1 w-full bg-game-border rounded-full h-1.5 overflow-hidden">
         <div ref={barRef} className="bg-red-500 h-1.5 rounded-full" style={{ width: `${(1 - (slot.progress)) * 100}%` }} />
@@ -424,9 +443,11 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
   const prioritySlots  = slots.filter((sl) => sl.behavior === 'prioritize')
   const normalSlots    = slots.filter((sl) => sl.behavior === 'normal')
   const focusSlots     = prioritySlots.length > 0 ? prioritySlots : normalSlots
-  const targetSlotObj  = idx >= 0 && focusSlots.length > 0 ? focusSlots[idx % focusSlots.length] : null
-  const targetMonster  = targetSlotObj ? (MONSTER_REGISTRY[targetSlotObj.monsterId] ?? null) : null
-  const targetPhase    = targetSlotObj?.phase ?? 'standing'
+  const targetSlotObj     = idx >= 0 && focusSlots.length > 0 ? focusSlots[idx % focusSlots.length] : null
+  const targetSlotIdx     = targetSlotObj ? slots.indexOf(targetSlotObj) : -1
+  const targetMonster     = targetSlotObj ? (MONSTER_REGISTRY[targetSlotObj.monsterId] ?? null) : null
+  const targetMonsterName = targetSlotIdx >= 0 ? slotDisplayName(slots, targetSlotIdx) : (targetMonster?.name ?? null)
+  const targetPhase       = targetSlotObj?.phase ?? 'standing'
 
   const mainHandId = unit.weaponSets[unit.activeWeaponSet].mainHand
   const weaponName = mainHandId ? (equipment.find((e) => e.id === mainHandId)?.name ?? mainHandId) : 'Unarmed'
@@ -500,13 +521,13 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
         ) : targetMonster && targetPhase === 'approaching' ? (
           <>
             <span className="text-game-muted">Approaching</span>
-            <span className="text-game-text font-medium">{targetMonster.name}</span>
+            <span className="text-game-text font-medium">{targetMonsterName}</span>
             <ElementBadge element={targetMonster.element} />
           </>
         ) : targetMonster ? (
           <>
             <span className="text-game-muted">Attacking</span>
-            <span className="text-game-text font-medium">{targetMonster.name}</span>
+            <span className="text-game-text font-medium">{targetMonsterName}</span>
             <span className="text-game-muted">with</span>
             <span className="text-game-text-dim">{weaponName}</span>
             <ElementBadge element={targetMonster.element} />
