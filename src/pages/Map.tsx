@@ -325,8 +325,11 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
   const numAttackers  = focusSlots.includes(slot)
     ? aliveAtLoc.filter((_, ui) => focusSlots[ui % focusSlots.length] === slot).length
     : 0
+  const takenHitFraction = slot.takenHistory.length > 0
+    ? slot.takenHistory.filter(c => c > 0).length / slot.takenHistory.length
+    : 1
   const monsterDrainRate = phase === 'standing' && numAttackers > 0
-    ? numAttackers * monster.health / (monster.level * 5)
+    ? numAttackers * takenHitFraction * monster.health / (monster.level * 5)
     : null
   const atkCooldown      = calcCooldown(monster.stats.attackSpeed)
   const monsterDealtDps  = phase === 'standing' && targetDerived

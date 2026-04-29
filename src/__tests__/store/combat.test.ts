@@ -213,3 +213,90 @@ describe('Miss system', () => {
     expect(encounters['loc1'][0].lastProgressMissed).toBe(false)
   })
 })
+
+describe('takenHistory — hit/miss symmetry with dpsDealt/monsterDrainRate', () => {
+  // takenHistory drives both UnitDetailPanel.dpsDealt and MonsterDetailPanel.monsterDrainRate
+  // via hitFraction; they must use the same data so both displays move together.
+
+  it('records 0 in takenHistory on unit miss', () => {
+    vi.mocked(Math.random).mockReturnValue(1) // always miss
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].takenHistory).toEqual([0])
+    expect(encounters['loc1'][0].lastProgressMissed).toBe(true)
+  })
+
+  it('records positive chunk in takenHistory on unit hit', () => {
+    vi.mocked(Math.random).mockReturnValue(0) // always hit
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters } = tick()
+    expect(encounters['loc1'][0].takenHistory[0]).toBeGreaterThan(0)
+    expect(encounters['loc1'][0].lastProgressMissed).toBe(false)
+  })
+
+  it('hitFraction from takenHistory matches across miss → hit sequence', () => {
+    // Pre-seed a miss in history, then land one hit → [0, chunk], hitFraction = 0.5
+    vi.mocked(Math.random).mockReturnValue(0) // hit
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', takenHistory: [0], progressCooldown: 0 })] },
+    })
+    const { encounters } = tick()
+    const history = encounters['loc1'][0].takenHistory
+    expect(history).toHaveLength(2)
+    expect(history[0]).toBe(0)
+    expect(history[1]).toBeGreaterThan(0)
+    const hitFraction = history.filter(c => c > 0).length / history.length
+    expect(hitFraction).toBe(0.5)
+  })
+
+  it('2-on-1: takenHistory chunk doubles vs 1-on-1 when both hit', () => {
+    vi.mocked(Math.random).mockReturnValue(0) // always hit
+    // 1 unit baseline
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters: enc1 } = tick()
+    const singleChunk = enc1['loc1'][0].takenHistory[0]
+
+    // 2 units same slot
+    resetStore({
+      units: [
+        makeUnit({ id: 'u1', locationId: 'loc1' }),
+        makeUnit({ id: 'u2', locationId: 'loc1' }),
+      ],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters: enc2 } = tick()
+    const doubleChunk = enc2['loc1'][0].takenHistory[0]
+
+    expect(doubleChunk).toBeCloseTo(singleChunk * 2)
+  })
+
+  it('2-on-1: progress advances twice as fast as 1-on-1 when both hit', () => {
+    vi.mocked(Math.random).mockReturnValue(0)
+    resetStore({
+      units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters: enc1 } = tick()
+    const singleProgress = enc1['loc1'][0].progress
+
+    resetStore({
+      units: [
+        makeUnit({ id: 'u1', locationId: 'loc1' }),
+        makeUnit({ id: 'u2', locationId: 'loc1' }),
+      ],
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' })] },
+    })
+    const { encounters: enc2 } = tick()
+    expect(enc2['loc1'][0].progress).toBeCloseTo(singleProgress * 2)
+  })
+})
