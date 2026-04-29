@@ -21,9 +21,18 @@ const REGIONS = [
   { id: 'kanto',    name: 'Kanto' },
 ]
 
+function calcCooldown(attackSpeed: number): number {
+  return Math.max(1, Math.round(TICKS_PER_SECOND * ATTACK_SPEED_BASE / attackSpeed))
+}
+
 function calcDps(m: MonsterDef, defense: number): number {
-  const cooldown = Math.max(1, Math.round(TICKS_PER_SECOND * ATTACK_SPEED_BASE / m.stats.attackSpeed))
-  return (m.stats.attack / Math.max(defense, 1)) * (TICKS_PER_SECOND / cooldown)
+  return (m.stats.attack / Math.max(defense, 1)) * (TICKS_PER_SECOND / calcCooldown(m.stats.attackSpeed))
+}
+
+// history includes 0 for misses; returns actual rolling DPS in history units per second
+function rollingRate(history: number[], cooldownTicks: number): number | null {
+  if (history.length === 0) return null
+  return (history.reduce((s, x) => s + x, 0) / history.length) * (TICKS_PER_SECOND / cooldownTicks)
 }
 
 function slotDisplayName(allSlots: EncounterSlot[], slotIndex: number): string {
@@ -308,8 +317,12 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
 
   const targetDerived    = targetUnit ? getDerivedStats(targetUnit, equipment) : null
   const monsterDrainRate = phase === 'standing' ? monster.health / (monster.level * 5) : null
+  const atkCooldown      = calcCooldown(monster.stats.attackSpeed)
   const monsterDealtDps  = phase === 'standing' && targetDerived
-    ? calcDps(monster, targetDerived.defense)
+    ? (rollingRate(slot.dealtHistory, atkCooldown) ?? calcDps(monster, targetDerived.defense))
+    : null
+  const lastHitDmg = phase === 'standing' && !slot.lastAttackMissed
+    ? (slot.dealtHistory.at(-1) ?? 0)
     : null
   const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
 
@@ -344,7 +357,11 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
             <span className="text-game-text-dim">{monster.attackName}</span>
             <ElementBadge element="neutral" />
             {monsterDealtDps !== null && <span className="text-xs font-medium text-red-400">{monsterDealtDps.toFixed(1)}/s</span>}
-            {slot.lastAttackMissed && <span className="text-xs font-semibold text-game-muted">MISS</span>}
+            {slot.lastAttackMissed
+              ? <span className="text-xs font-semibold text-game-muted">MISS</span>
+              : lastHitDmg !== null && lastHitDmg > 0
+              ? <span className="text-[10px] font-semibold text-red-300">({Math.round(lastHitDmg)})</span>
+              : null}
           </>
         ) : phase === 'approaching' ? (
           <span className="text-game-muted italic">Approaching...</span>
@@ -464,12 +481,19 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
   // Stats: only valid during active combat (not fleeing, not KO, encounter present)
   const inCombat = slots.length > 0 && !isRecovering && fleeing === 0
 
-  // Dealt: based on progress rate — monster.health / (level * 5) HP-equivalent per tick
-  const dpsDealt = inCombat && targetMonster && targetPhase === 'standing'
-    ? targetMonster.health / (targetMonster.level * 5)
+  const unitCooldown = calcCooldown(derived.attackSpeed)
+
+  // Dealt: rolling progress rate × monster HP; falls back to theoretical if no history
+  const dpsDealt = inCombat && targetMonster && targetSlotObj && targetPhase === 'standing'
+    ? (rollingRate(targetSlotObj.takenHistory, unitCooldown) ?? (1 / (targetMonster.level * 5))) * targetMonster.health
     : null
 
-  // Taken: sum of DPS from all standing, non-avoid monsters targeting this unit
+  // Last damage dealt to monster (HP-equivalent of last progress chunk)
+  const lastDmgDealt = targetMonster && targetSlotObj && !targetSlotObj.lastProgressMissed
+    ? Math.round((targetSlotObj.takenHistory.at(-1) ?? 0) * targetMonster.health)
+    : null
+
+  // Taken: sum of rolling DPS from all standing, non-avoid monsters targeting this unit
   const dpsTaken = inCombat
     ? slots.reduce((sum, sl) => {
         if (sl.behavior === 'avoid') return sum
@@ -477,7 +501,8 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
         if (sl.phase !== 'standing') return sum
         const m = MONSTER_REGISTRY[sl.monsterId]
         if (!m) return sum
-        return sum + calcDps(m, derived.defense)
+        const cd = calcCooldown(m.stats.attackSpeed)
+        return sum + (rollingRate(sl.dealtHistory, cd) ?? calcDps(m, derived.defense))
       }, 0)
     : null
 
@@ -540,7 +565,11 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
             <span className="text-game-text-dim">{weaponName}</span>
             <ElementBadge element={targetMonster.element} />
             {dpsDealt !== null && <span className="text-xs font-medium text-amber-400">{dpsDealt.toFixed(1)}/s</span>}
-            {targetSlotObj?.lastProgressMissed && <span className="text-xs font-semibold text-game-muted">MISS</span>}
+            {targetSlotObj?.lastProgressMissed
+              ? <span className="text-xs font-semibold text-game-muted">MISS</span>
+              : lastDmgDealt !== null && lastDmgDealt > 0
+              ? <span className="text-[10px] font-semibold text-amber-300">({lastDmgDealt})</span>
+              : null}
           </>
         ) : slots.length === 0 ? (
           <span className="text-amber-400">Hunting...</span>

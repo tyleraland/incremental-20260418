@@ -320,11 +320,9 @@ export const useGameStore = create<GameState>((set) => ({
             if (target) {
               const derived = getDerivedStats(target, s.equipment)
               const hit     = Math.random() < calcHitChance(monster.stats.accuracy, derived.dodge)
-              if (hit) {
-                const dmg = monster.stats.attack / Math.max(derived.defense, 1)
-                hpDamage[targetId!] = (hpDamage[targetId!] ?? 0) + dmg
-                dealtHistory = [...dealtHistory, dmg].slice(-60)
-              }
+              const dmg     = monster.stats.attack / Math.max(derived.defense, 1)
+              if (hit) hpDamage[targetId!] = (hpDamage[targetId!] ?? 0) + dmg
+              dealtHistory     = [...dealtHistory, hit ? dmg : 0].slice(-60)
               lastAttackMissed = !hit
             }
             newAtkCd = calcAttackCooldown(monster.stats.attackSpeed)
@@ -340,12 +338,10 @@ export const useGameStore = create<GameState>((set) => ({
             if (attackingUnit) {
               const unitDerived  = getDerivedStats(attackingUnit, s.equipment)
               const unitCooldown = calcAttackCooldown(unitDerived.attackSpeed)
-              const hit          = Math.random() < calcHitChance(unitDerived.accuracy, monster.stats.dodge)
-              if (hit) {
-                const chunk  = unitCooldown / (monster.level * 5 * TICKS_PER_SECOND)
-                newProgress  = Math.min(slot.progress + chunk, 1)
-                takenHistory = [...takenHistory, chunk].slice(-60)
-              }
+              const hit   = Math.random() < calcHitChance(unitDerived.accuracy, monster.stats.dodge)
+              const chunk = unitCooldown / (monster.level * 5 * TICKS_PER_SECOND)
+              if (hit) newProgress = Math.min(slot.progress + chunk, 1)
+              takenHistory       = [...takenHistory, hit ? chunk : 0].slice(-60)
               lastProgressMissed = !hit
               newProgCd = unitCooldown
             }
