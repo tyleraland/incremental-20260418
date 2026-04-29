@@ -26,7 +26,7 @@ function calcCooldown(attackSpeed: number): number {
 }
 
 function calcDps(m: MonsterDef, defense: number): number {
-  return (m.stats.attack / Math.max(defense, 1)) * (TICKS_PER_SECOND / calcCooldown(m.stats.attackSpeed))
+  return Math.ceil(m.stats.attack / Math.max(defense, 1)) * (TICKS_PER_SECOND / calcCooldown(m.stats.attackSpeed))
 }
 
 // history includes 0 for misses; returns actual rolling DPS in history units per second
@@ -538,9 +538,9 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
           {dpsTaken !== null && dpsTaken > 0 ? (
             <span className="text-[10px] text-red-400">(-{dpsTaken.toFixed(1)}/s)</span>
           ) : unit.isResting ? (
-            <span className="text-[10px] text-sky-400">(+{RESTING_REGEN_RATE}/s)</span>
+            <span className="text-[10px] text-sky-400">(+{RESTING_REGEN_RATE * TICKS_PER_SECOND}/s)</span>
           ) : unit.locationId === null ? (
-            <span className="text-[10px] text-game-green">(+{REGEN_RATE}/s)</span>
+            <span className="text-[10px] text-game-green">(+{REGEN_RATE * TICKS_PER_SECOND}/s)</span>
           ) : null}
           <button onClick={onClose} className="w-5 h-5 flex items-center justify-center rounded text-game-text-dim hover:text-game-text hover:bg-white/5 text-xs">✕</button>
         </div>

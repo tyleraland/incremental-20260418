@@ -322,7 +322,7 @@ export const useGameStore = create<GameState>((set) => ({
               const hit     = Math.random() < calcHitChance(monster.stats.accuracy, derived.dodge)
               const dmg     = monster.stats.attack / Math.max(derived.defense, 1)
               if (hit) hpDamage[targetId!] = (hpDamage[targetId!] ?? 0) + dmg
-              dealtHistory     = [...dealtHistory, hit ? dmg : 0].slice(-60)
+              dealtHistory     = [...dealtHistory, hit ? Math.ceil(dmg) : 0].slice(-10)
               lastAttackMissed = !hit
             }
             newAtkCd = calcAttackCooldown(monster.stats.attackSpeed)
@@ -350,7 +350,7 @@ export const useGameStore = create<GameState>((set) => ({
               if (hit) { totalChunk += chunk; allMissed = false }
             }
             if (totalChunk > 0) newProgress = Math.min(slot.progress + totalChunk, 1)
-            takenHistory       = [...takenHistory, totalChunk].slice(-60)
+            takenHistory       = [...takenHistory, totalChunk].slice(-10)
             lastProgressMissed = allMissed
             newProgCd          = resetCd
           } else {
