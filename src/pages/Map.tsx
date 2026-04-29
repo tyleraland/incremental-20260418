@@ -278,7 +278,7 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
   const hpColor = hpPct >= 75 ? 'text-game-green' : hpPct >= 40 ? 'text-game-gold' : 'text-red-400'
 
   return (
-    <div className="rounded-xl border border-game-primary/60 bg-indigo-950/80 px-3 py-2 space-y-2">
+    <div className="rounded-xl border border-game-primary/60 bg-indigo-950 px-3 py-2 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
@@ -433,7 +433,7 @@ function UnitDetailPanel({ unit, locationId, onClose }: { unit: Unit; locationId
     : null
 
   return (
-    <div className="mt-2 rounded-xl border border-game-primary/60 bg-indigo-950/80 px-3 py-2 space-y-2">
+    <div className="mt-2 rounded-xl border border-game-primary/60 bg-indigo-950 px-3 py-2 space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between gap-1">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
