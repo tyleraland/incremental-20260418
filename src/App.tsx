@@ -19,7 +19,7 @@ function catchUp() {
   if (paused) return
   const n = Math.floor((Date.now() - lastTickAt) / TICK_MS)
   if (n <= 0) return
-  if (n === 1) tick()
+  if (n <= 10) { for (let i = 0; i < n; i++) tick() }
   else batchTick(n)
 }
 
