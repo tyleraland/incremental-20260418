@@ -112,6 +112,7 @@ export interface MonsterDef {
   element: MonsterElement  // §3: default 'neutral'
   size: MonsterSize        // §3: default 'medium'
   isBoss?: boolean         // §3: undefined = false
+  attackName: string
 }
 
 // ── Equipment item ────────────────────────────────────────────────────────────

@@ -298,15 +298,22 @@ function MonsterDetailPanel({ locationId, slotIndex, onClose }: {
           <span className="text-[10px] text-red-400 shrink-0">(-{monsterDrainRate.toFixed(1)}/s)</span>
         )}
       </div>
-      {/* Target */}
-      <div className="flex items-center gap-1.5 text-xs">
-        <span className="text-game-muted">→</span>
-        {targetUnit ? (
+      {/* Status line */}
+      <div className="flex items-center gap-1.5 text-xs overflow-hidden h-5">
+        {targetUnit && phase !== 'retreating' ? (
           <>
-            <span className="text-game-text-dim">{targetUnit.name}</span>
+            <span className="text-game-muted">Attacking</span>
+            <span className="text-game-text font-medium">{targetUnit.name}</span>
+            <span className="text-game-muted">with</span>
+            <span className="text-game-text-dim">{monster.attackName}</span>
+            <ElementBadge element="neutral" />
             {monsterDealtDps !== null && <span className="text-[10px] text-game-muted">({monsterDealtDps.toFixed(1)}/s)</span>}
           </>
-        ) : <span className="text-game-muted italic">no target</span>}
+        ) : phase === 'approaching' ? (
+          <span className="text-game-muted italic">Approaching...</span>
+        ) : (
+          <span className="text-game-muted italic">no target</span>
+        )}
       </div>
       {/* Behaviors */}
       <div className="flex items-center gap-1 flex-wrap">
