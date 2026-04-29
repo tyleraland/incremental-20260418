@@ -598,20 +598,19 @@ function SelectionBar({ onOpenCodex }: { onOpenCodex: (monsterId: string) => voi
   const { selectedUnitIds, expandedUnitIds, locations, assignUnits, clearSelection, setActiveTab, toggleUnit, units } = useGameStore()
   const selectedMonsterSlot    = useGameStore((s) => s.selectedMonsterSlot)
   const setSelectedMonsterSlot = useGameStore((s) => s.setSelectedMonsterSlot)
-  const [open, setOpen] = useState(false)
-
-  const hasUnits   = selectedUnitIds.length > 0
-  const hasMonster = selectedMonsterSlot !== null
-  if (!hasUnits && !hasMonster) return null
-
-  const selectedUnit = selectedUnitIds.length === 1 ? (units.find((u) => u.id === selectedUnitIds[0]) ?? null) : null
-
-  const monsterSlotMonsterId = useGameStore((s) =>
-    selectedMonsterSlot
-      ? (s.encounters[selectedMonsterSlot.locationId]?.[selectedMonsterSlot.slotIndex]?.monsterId ?? null)
+  const monsterSlotMonsterId   = useGameStore((s) =>
+    s.selectedMonsterSlot
+      ? (s.encounters[s.selectedMonsterSlot.locationId]?.[s.selectedMonsterSlot.slotIndex]?.monsterId ?? null)
       : null
   )
+  const [open, setOpen] = useState(false)
+
+  const hasUnits        = selectedUnitIds.length > 0
+  const hasMonster      = selectedMonsterSlot !== null
+  const selectedUnit    = selectedUnitIds.length === 1 ? (units.find((u) => u.id === selectedUnitIds[0]) ?? null) : null
   const monsterForCodex = monsterSlotMonsterId ? (MONSTER_REGISTRY[monsterSlotMonsterId] ?? null) : null
+
+  if (!hasUnits && !hasMonster) return null
 
   function handleClearAll() { clearSelection(); setSelectedMonsterSlot(null); setOpen(false) }
   const handleAssign = (locationId: string | null) => { assignUnits(selectedUnitIds, locationId); setOpen(false) }
