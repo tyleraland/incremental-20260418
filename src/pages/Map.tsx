@@ -521,26 +521,32 @@ function LocationSection({ location, units, selectedDragging }: {
       )}
 
       {isExpanded && (
-        <div className="px-4 pb-4 border-t border-game-border space-y-3">
-          <div className="flex items-center justify-between mt-2">
-            <div className="text-xs uppercase tracking-widest text-game-text-dim">Encounter</div>
-            <button
-              onClick={(e) => { e.stopPropagation(); setCodexOpen(true) }}
-              className="text-xs font-medium px-2 py-0.5 rounded border border-game-accent/40 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors"
-            >
-              Codex →
-            </button>
-          </div>
-          <MonsterList location={location} />
-          <div>
-            <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Units</div>
-            <div className="flex flex-wrap gap-2 min-h-[44px]">
-              {units.map((u) => (
-                <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
-              ))}
-              {units.length === 0 && (
-                <span className="text-xs text-game-muted italic self-center">Drop units here</span>
-              )}
+        <div className="px-4 pb-4 border-t border-game-border pt-3">
+          <div className="flex gap-3">
+            {/* Units — left column */}
+            <div className="flex-1 min-w-0">
+              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Units</div>
+              <div className="flex flex-col gap-2 min-h-[44px]">
+                {units.map((u) => (
+                  <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
+                ))}
+                {units.length === 0 && (
+                  <span className="text-xs text-game-muted italic">Drop units here</span>
+                )}
+              </div>
+            </div>
+            {/* Monsters — right column */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs uppercase tracking-widest text-game-text-dim">Encounter</div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setCodexOpen(true) }}
+                  className="text-xs font-medium px-2 py-0.5 rounded border border-game-accent/40 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors"
+                >
+                  Codex →
+                </button>
+              </div>
+              <MonsterList location={location} />
             </div>
           </div>
         </div>
