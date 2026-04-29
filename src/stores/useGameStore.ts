@@ -515,7 +515,11 @@ export const useGameStore = create<GameState>((set) => ({
           goldEarned   += completions
           totalDefeats += completions
         }
-        return { ...baseSlot, progress: combined - completions, targetUnitId: targets[i]?.id ?? null, attackCooldown: 0, progressCooldown: 0 }
+        const atkCd = calcAttackCooldown(monster.stats.attackSpeed)
+        return { ...baseSlot, progress: combined - completions, targetUnitId: targets[i]?.id ?? null,
+          attackCooldown:   Math.floor(Math.random() * atkCd) + 1,
+          progressCooldown: Math.floor(Math.random() * TICKS_PER_SECOND) + 1,
+        }
       })
     }
 
