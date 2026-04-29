@@ -175,25 +175,31 @@ function LocationUnitCard({ unit, locationId }: { unit: Unit; locationId: string
 function UnassignedPool({ units, selectedDragging }: { units: Unit[]; selectedDragging: string[] }) {
   const { isOver, setNodeRef } = useDroppable({ id: 'unassigned' })
 
+  const isEmpty = units.length === 0
+
   return (
     <div
       ref={setNodeRef}
       className={[
-        'rounded-xl border-2 border-dashed p-4 transition-colors duration-150',
+        'rounded-xl border-2 border-dashed transition-colors duration-150',
+        isEmpty ? 'p-2' : 'p-4',
         isOver ? 'border-game-accent bg-game-accent/5' : 'border-game-border',
       ].join(' ')}
     >
-      <div className="text-xs uppercase tracking-widest text-game-text-dim mb-3">
-        Unassigned · {units.length}
-      </div>
-      <div className="flex flex-wrap gap-2 min-h-[44px]">
-        {units.map((u) => (
-          <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
-        ))}
-        {units.length === 0 && (
-          <span className="text-xs text-game-muted italic self-center">All units assigned</span>
-        )}
-      </div>
+      {isEmpty ? (
+        <div className="text-xs text-game-muted italic text-center">All units assigned</div>
+      ) : (
+        <>
+          <div className="text-xs uppercase tracking-widest text-game-text-dim mb-3">
+            Unassigned · {units.length}
+          </div>
+          <div className="flex flex-wrap gap-2 min-h-[44px]">
+            {units.map((u) => (
+              <DraggableUnit key={u.id} unit={u} groupDragging={selectedDragging.includes(u.id)} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useGameStore, formatDuration } from '@/stores/useGameStore'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
@@ -26,10 +26,19 @@ function catchUp() {
 function OfflineBanner() {
   const summary = useGameStore((s) => s.offlineSummary)
   const dismiss = useGameStore((s) => s.dismissOfflineSummary)
+  const [fading, setFading] = useState(false)
+
+  useEffect(() => {
+    if (!summary) { setFading(false); return }
+    const fadeTimer   = setTimeout(() => setFading(true),  3000)
+    const dismissTimer = setTimeout(() => dismiss(),        3300)
+    return () => { clearTimeout(fadeTimer); clearTimeout(dismissTimer) }
+  }, [summary, dismiss])
+
   if (!summary) return null
 
   return (
-    <div className="fixed top-0 inset-x-0 z-50 p-3 pointer-events-none">
+    <div className={`fixed top-0 inset-x-0 z-50 p-3 pointer-events-none transition-opacity duration-300 ${fading ? 'opacity-0' : 'opacity-100'}`}>
       <div className="pointer-events-auto bg-game-surface border border-game-primary/60 rounded-xl p-4 shadow-2xl shadow-game-primary/20 max-w-sm mx-auto">
         <div className="flex items-start gap-3">
           <div className="flex-1 min-w-0">
