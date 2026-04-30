@@ -21,17 +21,24 @@ const REGIONS = [
   { id: 'kanto',    name: 'Kanto' },
 ]
 
-// ── Overworld grid layout (5 rows × 7 cols) ──────────────────────────────────
+// ── Overworld grid layout (15 rows × 15 cols) ─────────────────────────────────
 // null = locked / unexplored cell
-const GRID_LAYOUT: (string | null)[][] = [
-  ['kings-forest', 'duskwood',   null,      null,      null, null, null],
-  ['lake-arawok',  'gray-hills', null,      null,      null, null, null],
-  ['beach-1',      'beach-2',    'beach-3', 'beach-4', 'beach-5', 'beach-6', 'beach-7'],
-  ['beach-8',      'beach-9',    'beach-10', null,     null, null, null],
-  [null,           null,         null,      null,      null, null, null],
-]
+const GRID_ROWS = 15
+const GRID_COLS = 15
+const CELL_W    = 64   // px
+const CELL_H    = 56   // px
+const CELL_GAP  = 2    // px
 
-const GRID_ROW_LABELS = ['Prontera', 'Geffen', 'Kanto', 'Kanto', '—']
+const GRID_PLACEMENTS: [number, number, string][] = [
+  [1, 1, 'kings-forest'], [1, 3, 'duskwood'],
+  [5, 2, 'lake-arawok'],  [5, 5, 'gray-hills'],
+  [10, 1, 'beach-1'],  [10, 2, 'beach-2'],  [10, 3, 'beach-3'],
+  [10, 4, 'beach-4'],  [10, 5, 'beach-5'],  [10, 6, 'beach-6'],
+  [10, 7, 'beach-7'],
+  [11, 1, 'beach-8'],  [11, 2, 'beach-9'],  [11, 3, 'beach-10'],
+]
+const GRID_LAYOUT: (string | null)[][] = Array.from({ length: GRID_ROWS }, () => Array(GRID_COLS).fill(null))
+for (const [r, c, id] of GRID_PLACEMENTS) GRID_LAYOUT[r][c] = id
 
 // Ordered: first match wins
 const TERRAIN_PRIORITY = ['shadow', 'ruins', 'forest', 'rocky', 'water', 'beach'] as const
@@ -79,11 +86,16 @@ function GridCell({ locationId, location, unitCount, selected, onClick }: {
   onClick: () => void
 }) {
   const tk = location ? terrainKey(location.traits) : null
+  const w  = `${CELL_W}px`
+  const h  = `${CELL_H}px`
 
   if (!locationId || !location) {
     return (
-      <div className="w-[72px] h-[60px] rounded border border-game-border/30 bg-black/20 flex items-center justify-center shrink-0">
-        <span className="text-game-muted/30 text-xs">·</span>
+      <div
+        style={{ width: w, height: h, flexShrink: 0 }}
+        className="rounded border border-game-border/20 bg-black/20 flex items-center justify-center"
+      >
+        <span className="text-game-muted/20 text-xs">·</span>
       </div>
     )
   }
@@ -93,17 +105,13 @@ function GridCell({ locationId, location, unitCount, selected, onClick }: {
     ? 'border-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.3)]'
     : tk ? TERRAIN_BORDER[tk] : 'border-game-border'
   const glyph  = tk ? TERRAIN_GLYPH[tk] : '?'
-
-  // short display name: first word or first 8 chars
-  const shortName = location.name.length <= 8 ? location.name : location.name.split(' ')[0]
+  const shortName = location.name.split(' ')[0]
 
   return (
     <button
       onClick={onClick}
-      className={[
-        'w-[72px] h-[60px] rounded border shrink-0 flex flex-col items-start justify-between p-1.5 text-left transition-all duration-100 active:scale-95',
-        bg, border,
-      ].join(' ')}
+      style={{ width: w, height: h, flexShrink: 0 }}
+      className={['rounded border flex flex-col items-start justify-between p-1.5 text-left', bg, border].join(' ')}
     >
       <div className="flex items-center justify-between w-full">
         <span className="text-[11px] text-white/50 leading-none">{glyph}</span>
@@ -114,12 +122,16 @@ function GridCell({ locationId, location, unitCount, selected, onClick }: {
           </span>
         )}
       </div>
-      <span className="text-[10px] text-white/80 font-medium leading-tight line-clamp-2">{shortName}</span>
+      <span className="text-[10px] text-white/80 font-medium leading-tight">{shortName}</span>
     </button>
   )
 }
 
 // ── OverworldGrid ─────────────────────────────────────────────────────────────
+
+const GRID_W = GRID_COLS * CELL_W + (GRID_COLS - 1) * CELL_GAP
+const GRID_H = GRID_ROWS * CELL_H + (GRID_ROWS - 1) * CELL_GAP
+const CONTAINER_H = 264  // px — shows ~4.5 rows
 
 function OverworldGrid({ units, locations, selectedId, onSelect }: {
   units: { locationId: string | null }[]
@@ -127,37 +139,82 @@ function OverworldGrid({ units, locations, selectedId, onSelect }: {
   selectedId: string | null
   onSelect: (id: string | null) => void
 }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [grabbing, setGrabbing] = useState(false)
+  const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null)
+
   const locMap = Object.fromEntries(locations.map((l) => [l.id, l]))
   const unitCounts: Record<string, number> = {}
   for (const u of units) if (u.locationId) unitCounts[u.locationId] = (unitCounts[u.locationId] ?? 0) + 1
 
+  function clamp(x: number, y: number) {
+    const cw = containerRef.current?.clientWidth  ?? CONTAINER_H
+    const ch = containerRef.current?.clientHeight ?? CONTAINER_H
+    return {
+      x: Math.min(0, Math.max(x, cw - GRID_W)),
+      y: Math.min(0, Math.max(y, ch - GRID_H)),
+    }
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y, moved: false }
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return
+    const dx = e.clientX - dragRef.current.startX
+    const dy = e.clientY - dragRef.current.startY
+    if (!dragRef.current.moved && Math.abs(dx) < 6 && Math.abs(dy) < 6) return
+    dragRef.current.moved = true
+    setGrabbing(true)
+    setPan(clamp(dragRef.current.panX + dx, dragRef.current.panY + dy))
+  }
+
+  function onPointerUp() {
+    setGrabbing(false)
+    dragRef.current = null
+  }
+
+  function handleCellClick(locId: string) {
+    if (dragRef.current?.moved) return
+    onSelect(locId === selectedId ? null : locId)
+  }
+
   return (
-    <div className="rounded-xl border border-game-border overflow-hidden bg-black/30">
-      <div className="overflow-x-auto">
-        <div className="flex flex-col gap-px p-1" style={{ width: 'max-content' }}>
-          {GRID_LAYOUT.map((row, ri) => (
-            <div key={ri} className="flex items-center gap-px">
-              {/* Row label */}
-              <div className="w-[44px] shrink-0 flex items-center justify-end pr-1.5">
-                <span className="text-[9px] uppercase tracking-widest text-game-muted/60 font-semibold">{GRID_ROW_LABELS[ri]}</span>
-              </div>
-              {/* Cells */}
-              {row.map((locId, ci) => (
-                <GridCell
-                  key={ci}
-                  locationId={locId}
-                  location={locId ? (locMap[locId] ?? null) : null}
-                  unitCount={locId ? (unitCounts[locId] ?? 0) : 0}
-                  selected={locId !== null && locId === selectedId}
-                  onClick={() => {
-                    if (!locId) return
-                    onSelect(locId === selectedId ? null : locId)
-                  }}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
+    <div
+      ref={containerRef}
+      className="rounded-xl border border-game-border bg-black/40 overflow-hidden select-none"
+      style={{ height: CONTAINER_H, cursor: grabbing ? 'grabbing' : 'grab', touchAction: 'none' }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      <div
+        className="absolute flex flex-col"
+        style={{
+          transform: `translate(${pan.x}px, ${pan.y}px)`,
+          gap: CELL_GAP,
+          padding: CELL_GAP,
+          width: GRID_W + CELL_GAP * 2,
+        }}
+      >
+        {GRID_LAYOUT.map((row, ri) => (
+          <div key={ri} className="flex" style={{ gap: CELL_GAP }}>
+            {row.map((locId, ci) => (
+              <GridCell
+                key={ci}
+                locationId={locId}
+                location={locId ? (locMap[locId] ?? null) : null}
+                unitCount={locId ? (unitCounts[locId] ?? 0) : 0}
+                selected={locId !== null && locId === selectedId}
+                onClick={() => locId && handleCellClick(locId)}
+              />
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   )
