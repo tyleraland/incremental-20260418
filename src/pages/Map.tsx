@@ -21,15 +21,17 @@ const REGIONS = [
   { id: 'kanto',    name: 'Kanto' },
 ]
 
-// ── Overworld grid layout (3 rows × 10 cols) ──────────────────────────────────
+// ── Overworld grid layout (5 rows × 7 cols) ──────────────────────────────────
 // null = locked / unexplored cell
 const GRID_LAYOUT: (string | null)[][] = [
-  ['kings-forest', 'duskwood', null, null, null, null, null, null, null, null],
-  ['lake-arawok',  'gray-hills', null, null, null, null, null, null, null, null],
-  ['beach-1', 'beach-2', 'beach-3', 'beach-4', 'beach-5', 'beach-6', 'beach-7', 'beach-8', 'beach-9', 'beach-10'],
+  ['kings-forest', 'duskwood',   null,      null,      null, null, null],
+  ['lake-arawok',  'gray-hills', null,      null,      null, null, null],
+  ['beach-1',      'beach-2',    'beach-3', 'beach-4', 'beach-5', 'beach-6', 'beach-7'],
+  ['beach-8',      'beach-9',    'beach-10', null,     null, null, null],
+  [null,           null,         null,      null,      null, null, null],
 ]
 
-const GRID_ROW_LABELS = ['Prontera', 'Geffen', 'Kanto']
+const GRID_ROW_LABELS = ['Prontera', 'Geffen', 'Kanto', 'Kanto', '—']
 
 // Ordered: first match wins
 const TERRAIN_PRIORITY = ['shadow', 'ruins', 'forest', 'rocky', 'water', 'beach'] as const
