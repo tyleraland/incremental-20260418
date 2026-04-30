@@ -54,6 +54,7 @@ export interface GameState {
   expandedUnitIds: string[]
   expandedInventorySections: string[]
   expandedRegionIds: string[]
+  mapSelectedLocationId: string | null
   equipContext: { unitId: string; slot: EquipSlot } | null
 
   offlineSummary: {
@@ -69,6 +70,7 @@ export interface GameState {
   setActiveTab: (tab: TabId) => void
   toggleRegion: (id: string) => void
   toggleLocation: (id: string) => void
+  setMapSelectedLocation: (id: string | null) => void
   toggleUnit: (id: string) => void
   toggleInventorySection: (id: string) => void
   toggleSelectUnit: (id: string) => void
@@ -180,6 +182,7 @@ export const useGameStore = create<GameState>((set) => ({
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
   expandedRegionIds:         (() => { try { return JSON.parse(localStorage.getItem('expandedRegionIds')         ?? '["prontera","geffen","kanto"]') } catch { return ['prontera', 'geffen', 'kanto'] } })(),
+  mapSelectedLocationId: null,
   equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
   locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, 'lake-arawok': 50, 'gray-hills': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
@@ -648,6 +651,7 @@ export const useGameStore = create<GameState>((set) => ({
     localStorage.setItem('expandedLocationIds', JSON.stringify(next))
     return { expandedLocationIds: next }
   }),
+  setMapSelectedLocation: (id) => set({ mapSelectedLocationId: id }),
   toggleUnit: (id) => set((s) => {
     const next = s.expandedUnitIds.includes(id) ? s.expandedUnitIds.filter((x) => x !== id) : [...s.expandedUnitIds, id]
     localStorage.setItem('expandedUnitIds', JSON.stringify(next))

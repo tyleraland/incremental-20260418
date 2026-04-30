@@ -21,6 +21,146 @@ const REGIONS = [
   { id: 'kanto',    name: 'Kanto' },
 ]
 
+// ── Overworld grid layout (3 rows × 10 cols) ──────────────────────────────────
+// null = locked / unexplored cell
+const GRID_LAYOUT: (string | null)[][] = [
+  ['kings-forest', 'duskwood', null, null, null, null, null, null, null, null],
+  ['lake-arawok',  'gray-hills', null, null, null, null, null, null, null, null],
+  ['beach-1', 'beach-2', 'beach-3', 'beach-4', 'beach-5', 'beach-6', 'beach-7', 'beach-8', 'beach-9', 'beach-10'],
+]
+
+const GRID_ROW_LABELS = ['Prontera', 'Geffen', 'Kanto']
+
+// Ordered: first match wins
+const TERRAIN_PRIORITY = ['shadow', 'ruins', 'forest', 'rocky', 'water', 'beach'] as const
+
+type TerrainKey = typeof TERRAIN_PRIORITY[number]
+
+const TERRAIN_BG: Record<TerrainKey, string> = {
+  shadow: 'bg-purple-950',
+  ruins:  'bg-zinc-800',
+  forest: 'bg-emerald-950',
+  rocky:  'bg-stone-700',
+  water:  'bg-blue-950',
+  beach:  'bg-amber-900',
+}
+
+const TERRAIN_BORDER: Record<TerrainKey, string> = {
+  shadow: 'border-purple-700',
+  ruins:  'border-zinc-500',
+  forest: 'border-emerald-700',
+  rocky:  'border-stone-500',
+  water:  'border-blue-700',
+  beach:  'border-amber-600',
+}
+
+const TERRAIN_GLYPH: Record<TerrainKey, string> = {
+  shadow: '◉',
+  ruins:  '⊞',
+  forest: '⊛',
+  rocky:  '◆',
+  water:  '≋',
+  beach:  '〰',
+}
+
+function terrainKey(traits: string[]): TerrainKey | null {
+  return TERRAIN_PRIORITY.find((t) => traits.includes(t)) ?? null
+}
+
+// ── GridCell ──────────────────────────────────────────────────────────────────
+
+function GridCell({ locationId, location, unitCount, selected, onClick }: {
+  locationId: string | null
+  location: { name: string; traits: string[] } | null
+  unitCount: number
+  selected: boolean
+  onClick: () => void
+}) {
+  const tk = location ? terrainKey(location.traits) : null
+
+  if (!locationId || !location) {
+    return (
+      <div className="w-[72px] h-[60px] rounded border border-game-border/30 bg-black/20 flex items-center justify-center shrink-0">
+        <span className="text-game-muted/30 text-xs">·</span>
+      </div>
+    )
+  }
+
+  const bg     = tk ? TERRAIN_BG[tk]     : 'bg-game-surface'
+  const border = selected
+    ? 'border-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.3)]'
+    : tk ? TERRAIN_BORDER[tk] : 'border-game-border'
+  const glyph  = tk ? TERRAIN_GLYPH[tk] : '?'
+
+  // short display name: first word or first 8 chars
+  const shortName = location.name.length <= 8 ? location.name : location.name.split(' ')[0]
+
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        'w-[72px] h-[60px] rounded border shrink-0 flex flex-col items-start justify-between p-1.5 text-left transition-all duration-100 active:scale-95',
+        bg, border,
+      ].join(' ')}
+    >
+      <div className="flex items-center justify-between w-full">
+        <span className="text-[11px] text-white/50 leading-none">{glyph}</span>
+        {unitCount > 0 && (
+          <span className="flex items-center gap-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shadow-[0_0_4px_rgba(74,222,128,0.8)]" />
+            {unitCount > 1 && <span className="text-[9px] text-green-400 font-bold leading-none">{unitCount}</span>}
+          </span>
+        )}
+      </div>
+      <span className="text-[10px] text-white/80 font-medium leading-tight line-clamp-2">{shortName}</span>
+    </button>
+  )
+}
+
+// ── OverworldGrid ─────────────────────────────────────────────────────────────
+
+function OverworldGrid({ units, locations, selectedId, onSelect }: {
+  units: { locationId: string | null }[]
+  locations: { id: string; name: string; traits: string[] }[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+}) {
+  const locMap = Object.fromEntries(locations.map((l) => [l.id, l]))
+  const unitCounts: Record<string, number> = {}
+  for (const u of units) if (u.locationId) unitCounts[u.locationId] = (unitCounts[u.locationId] ?? 0) + 1
+
+  return (
+    <div className="rounded-xl border border-game-border overflow-hidden bg-black/30">
+      <div className="overflow-x-auto">
+        <div className="flex flex-col gap-px p-1" style={{ width: 'max-content' }}>
+          {GRID_LAYOUT.map((row, ri) => (
+            <div key={ri} className="flex items-center gap-px">
+              {/* Row label */}
+              <div className="w-[44px] shrink-0 flex items-center justify-end pr-1.5">
+                <span className="text-[9px] uppercase tracking-widest text-game-muted/60 font-semibold">{GRID_ROW_LABELS[ri]}</span>
+              </div>
+              {/* Cells */}
+              {row.map((locId, ci) => (
+                <GridCell
+                  key={ci}
+                  locationId={locId}
+                  location={locId ? (locMap[locId] ?? null) : null}
+                  unitCount={locId ? (unitCounts[locId] ?? 0) : 0}
+                  selected={locId !== null && locId === selectedId}
+                  onClick={() => {
+                    if (!locId) return
+                    onSelect(locId === selectedId ? null : locId)
+                  }}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function calcCooldown(attackSpeed: number): number {
   return Math.max(1, Math.round(TICKS_PER_SECOND * ATTACK_SPEED_BASE / attackSpeed))
 }
@@ -612,7 +752,7 @@ function LocationSection({ location, units, selectedDragging }: {
   selectedDragging: string[]
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: location.id })
-  const isExpanded     = useGameStore((s) => s.expandedLocationIds.includes(location.id))
+  const isExpanded     = useGameStore((s) => s.expandedLocationIds.includes(location.id) || s.mapSelectedLocationId === location.id)
   const toggleLocation = useGameStore((s) => s.toggleLocation)
   const isEmpty        = units.length === 0 && !isExpanded
   const [codexOpen, setCodexOpen] = useState(false)
@@ -829,7 +969,8 @@ function SelectionBar({ onOpenCodex }: { onOpenCodex: (monsterId: string) => voi
 // ── Map ───────────────────────────────────────────────────────────────────────
 
 export function Map() {
-  const { units, locations, selectedUnitIds, assignUnits } = useGameStore()
+  const { units, locations, selectedUnitIds, assignUnits, setMapSelectedLocation } = useGameStore()
+  const gridSelectedId = useGameStore((s) => s.mapSelectedLocationId)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [codexMonsterId, setCodexMonsterId] = useState<string | null>(null)
   const codexSeenCount = useGameStore((s) => codexMonsterId ? (s.monsterSeen[codexMonsterId] ?? 0) : 0)
@@ -862,15 +1003,23 @@ export function Map() {
           units={units.filter((u) => u.locationId === null)}
           selectedDragging={draggingGroup ? selectedUnitIds : []}
         />
-        {REGIONS.map((region) => (
-          <RegionSection
-            key={region.id}
-            region={region}
-            locations={locations.filter((l) => l.region === region.id)}
-            units={units}
-            selectedDragging={draggingGroup ? selectedUnitIds : []}
-          />
-        ))}
+        <OverworldGrid
+          units={units}
+          locations={locations}
+          selectedId={gridSelectedId}
+          onSelect={setMapSelectedLocation}
+        />
+        {gridSelectedId && (() => {
+          const loc = locations.find((l) => l.id === gridSelectedId)
+          return loc ? (
+            <LocationSection
+              key={loc.id}
+              location={loc}
+              units={units.filter((u) => u.locationId === loc.id)}
+              selectedDragging={draggingGroup ? selectedUnitIds : []}
+            />
+          ) : null
+        })()}
       </div>
 
       <SelectionBar onOpenCodex={(id) => { setCodexMonsterId(id) }} />

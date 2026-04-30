@@ -48,8 +48,7 @@ describe('UnitRect — fleeing state', () => {
       locations: [TEST_LOCATION],
       encounters: { loc1: [makeEncounterSlot()] },
       locationFleeing: { loc1: 2 },
-      expandedRegionIds: ['prontera'],
-      expandedLocationIds: ['loc1'],
+      mapSelectedLocationId: 'loc1',
     })
     await renderMap()
     expect(screen.getByText('Fleeing')).toBeInTheDocument()
@@ -74,8 +73,7 @@ describe('UnitRect — target display', () => {
       locations: [TEST_LOCATION],
       encounters: { loc1: [makeEncounterSlot({ targetUnitId: 'u1' })] },
       locationFleeing: {},
-      expandedRegionIds: ['prontera'],
-      expandedLocationIds: ['loc1'],
+      mapSelectedLocationId: 'loc1',
     })
     await renderMap()
     expect(screen.getByText('→ Wolf')).toBeInTheDocument()
@@ -101,7 +99,7 @@ describe('LocationSection — compact empty row', () => {
       units: [],
       locations: [{ ...TEST_LOCATION, name: 'Empty Spot' }],
       expandedLocationIds: [],
-      expandedRegionIds: ['prontera'],
+      mapSelectedLocationId: 'loc1',
     })
     await renderMap()
     expect(screen.getByText('Empty Spot')).toBeInTheDocument()
