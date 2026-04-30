@@ -131,7 +131,8 @@ function GridCell({ locationId, location, unitCount, selected, onClick }: {
 
 const GRID_W = GRID_COLS * CELL_W + (GRID_COLS - 1) * CELL_GAP
 const GRID_H = GRID_ROWS * CELL_H + (GRID_ROWS - 1) * CELL_GAP
-const CONTAINER_H = 264  // px — shows ~4.5 rows
+const CONTAINER_H = 264  // px — shows ~4.5 rows at zoom 1
+const ZOOM_LEVELS = [0.35, 0.6, 1.0] as const
 
 function OverworldGrid({ units, locations, selectedId, onSelect }: {
   units: { locationId: string | null }[]
@@ -141,6 +142,7 @@ function OverworldGrid({ units, locations, selectedId, onSelect }: {
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState<number>(1.0)
   const [grabbing, setGrabbing] = useState(false)
   const dragRef = useRef<{ startX: number; startY: number; panX: number; panY: number; moved: boolean } | null>(null)
 
@@ -148,13 +150,20 @@ function OverworldGrid({ units, locations, selectedId, onSelect }: {
   const unitCounts: Record<string, number> = {}
   for (const u of units) if (u.locationId) unitCounts[u.locationId] = (unitCounts[u.locationId] ?? 0) + 1
 
-  function clamp(x: number, y: number) {
-    const cw = containerRef.current?.clientWidth  ?? CONTAINER_H
+  function clampPan(x: number, y: number, z = zoom) {
+    const cw = containerRef.current?.clientWidth  ?? 300
     const ch = containerRef.current?.clientHeight ?? CONTAINER_H
+    const sw = GRID_W * z
+    const sh = GRID_H * z
     return {
-      x: Math.min(0, Math.max(x, cw - GRID_W)),
-      y: Math.min(0, Math.max(y, ch - GRID_H)),
+      x: sw <= cw ? 0 : Math.min(0, Math.max(x, cw - sw)),
+      y: sh <= ch ? 0 : Math.min(0, Math.max(y, ch - sh)),
     }
+  }
+
+  function changeZoom(next: number) {
+    setZoom(next)
+    setPan((p) => clampPan(p.x, p.y, next))
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -169,7 +178,7 @@ function OverworldGrid({ units, locations, selectedId, onSelect }: {
     if (!dragRef.current.moved && Math.abs(dx) < 6 && Math.abs(dy) < 6) return
     dragRef.current.moved = true
     setGrabbing(true)
-    setPan(clamp(dragRef.current.panX + dx, dragRef.current.panY + dy))
+    setPan(clampPan(dragRef.current.panX + dx, dragRef.current.panY + dy))
   }
 
   function onPointerUp() {
@@ -182,20 +191,26 @@ function OverworldGrid({ units, locations, selectedId, onSelect }: {
     onSelect(locId === selectedId ? null : locId)
   }
 
+  const zoomIdx = ZOOM_LEVELS.indexOf(zoom as typeof ZOOM_LEVELS[number])
+
   return (
     <div
       ref={containerRef}
-      className="rounded-xl border border-game-border bg-black/40 overflow-hidden select-none"
+      className="relative rounded-xl border border-game-border bg-black/40 overflow-hidden select-none"
       style={{ height: CONTAINER_H, cursor: grabbing ? 'grabbing' : 'grab', touchAction: 'none' }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
+      {/* Pannable grid */}
       <div
-        className="absolute flex flex-col"
         style={{
-          transform: `translate(${pan.x}px, ${pan.y}px)`,
+          position: 'absolute',
+          transformOrigin: '0 0',
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          display: 'flex',
+          flexDirection: 'column',
           gap: CELL_GAP,
           padding: CELL_GAP,
           width: GRID_W + CELL_GAP * 2,
@@ -215,6 +230,23 @@ function OverworldGrid({ units, locations, selectedId, onSelect }: {
             ))}
           </div>
         ))}
+      </div>
+
+      {/* Zoom controls — stop propagation so they don't start a pan */}
+      <div
+        className="absolute bottom-2 right-2 z-10 flex flex-col gap-1"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={(e) => { e.stopPropagation(); if (zoomIdx < ZOOM_LEVELS.length - 1) changeZoom(ZOOM_LEVELS[zoomIdx + 1]) }}
+          disabled={zoomIdx >= ZOOM_LEVELS.length - 1}
+          className="w-6 h-6 rounded bg-black/70 border border-game-border/60 text-sm text-game-text flex items-center justify-center disabled:opacity-25 active:bg-white/10"
+        >+</button>
+        <button
+          onClick={(e) => { e.stopPropagation(); if (zoomIdx > 0) changeZoom(ZOOM_LEVELS[zoomIdx - 1]) }}
+          disabled={zoomIdx <= 0}
+          className="w-6 h-6 rounded bg-black/70 border border-game-border/60 text-sm text-game-text flex items-center justify-center disabled:opacity-25 active:bg-white/10"
+        >−</button>
       </div>
     </div>
   )
