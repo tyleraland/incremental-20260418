@@ -16,14 +16,19 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
-// The Map page renders DraggableUnit → UnitRect with store-derived props.
-// We import it once and drive it entirely via store state.
+// Combat-status displays on unit cards live on the Combat tab.
+// Map handles assignment/drag-drop only.
 async function renderMap() {
   const { Map } = await import('@/pages/Map')
   return render(React.createElement(Map))
 }
 
-// All test locations use region 'prontera' (a real REGIONS entry in Map.tsx).
+async function renderCombat() {
+  const { Combat } = await import('@/pages/Combat')
+  return render(React.createElement(Combat))
+}
+
+// All test locations use region 'prontera' (a real REGIONS entry).
 const TEST_LOCATION = {
   id: 'loc1', name: 'Test Forest', region: 'prontera',
   description: '', traits: [], monsterIds: ['wolf'], familiarityMax: 100, connections: [],
@@ -41,7 +46,7 @@ describe('UnitRect — KO state', () => {
   })
 })
 
-describe('UnitRect — fleeing state', () => {
+describe('UnitRect — fleeing state (Combat tab)', () => {
   it('shows "Fleeing" on unit card when unit\'s location has active flee countdown (expanded)', async () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
@@ -51,7 +56,7 @@ describe('UnitRect — fleeing state', () => {
       expandedRegionIds: ['prontera'],
       expandedLocationIds: ['loc1'],
     })
-    await renderMap()
+    await renderCombat()
     expect(screen.getByText('Fleeing')).toBeInTheDocument()
   })
 
@@ -62,12 +67,12 @@ describe('UnitRect — fleeing state', () => {
       locationFleeing: {},
       expandedRegionIds: [],
     })
-    await renderMap()
+    await renderCombat()
     expect(screen.queryByText('Fleeing')).not.toBeInTheDocument()
   })
 })
 
-describe('UnitRect — target display', () => {
+describe('UnitRect — target display (Combat tab)', () => {
   it('shows "→ Wolf" on unit card when wolf is the encounter monster (expanded)', async () => {
     useGameStore.setState({
       units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
@@ -77,7 +82,7 @@ describe('UnitRect — target display', () => {
       expandedRegionIds: ['prontera'],
       expandedLocationIds: ['loc1'],
     })
-    await renderMap()
+    await renderCombat()
     expect(screen.getByText('→ Wolf')).toBeInTheDocument()
   })
 
@@ -90,12 +95,12 @@ describe('UnitRect — target display', () => {
       expandedRegionIds: ['prontera'],
       expandedLocationIds: [],
     })
-    await renderMap()
+    await renderCombat()
     expect(screen.queryByText('→ Wolf')).not.toBeInTheDocument()
   })
 })
 
-describe('LocationSection — compact empty row', () => {
+describe('LocationSection — compact empty row (Map tab)', () => {
   it('renders the location name for an empty collapsed location', async () => {
     useGameStore.setState({
       units: [],
