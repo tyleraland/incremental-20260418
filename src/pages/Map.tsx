@@ -78,7 +78,8 @@ function RosterCarousel({ units }: { units: Unit[] }) {
 
 // ── LocationRow ───────────────────────────────────────────────────────────────
 
-function LocationRow({ location, unitCount }: { location: Location; unitCount: number }) {
+function LocationCell({ location, units }: { location: Location; units: Unit[] }) {
+  const equipment           = useGameStore((s) => s.equipment)
   const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const isSelected          = selectedLocationId === location.id
@@ -87,14 +88,25 @@ function LocationRow({ location, unitCount }: { location: Location; unitCount: n
     <button
       onClick={() => setSelectedLocation(isSelected ? null : location.id)}
       className={[
-        'w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors',
+        'flex flex-col items-start gap-1.5 px-3 py-2.5 rounded-lg border text-left transition-colors min-h-[68px]',
         isSelected ? 'border-game-primary bg-game-primary/10' : 'border-game-border hover:border-game-primary/40',
       ].join(' ')}
     >
-      <span className="font-semibold text-game-text">{location.name}</span>
-      {unitCount > 0 && (
-        <span className="text-xs text-game-text-dim bg-game-border rounded-full px-2 py-0.5">{unitCount}</span>
-      )}
+      <span className="text-xs font-semibold text-game-text leading-tight">{location.name}</span>
+      <div className="flex flex-wrap gap-1 mt-auto min-h-[8px]">
+        {units.map((u) => {
+          const isRec  = u.recoveryTicksLeft > 0
+          const maxHp  = getDerivedStats(u, equipment).maxHp
+          const hpPct  = (u.health / maxHp) * 100
+          const color  = isRec
+            ? 'bg-purple-500'
+            : u.isResting ? 'bg-sky-500'
+            : hpPct > 60   ? 'bg-game-green'
+            : hpPct > 30   ? 'bg-game-gold'
+            : 'bg-red-500'
+          return <span key={u.id} className={`w-2 h-2 rounded-full ${color}`} />
+        })}
+      </div>
     </button>
   )
 }
@@ -125,12 +137,12 @@ function RegionSection({ region, locations, units }: {
         </div>
       </button>
       {isExpanded && (
-        <div className="space-y-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {locations.map((loc) => (
-            <LocationRow
+            <LocationCell
               key={loc.id}
               location={loc}
-              unitCount={units.filter((u) => u.locationId === loc.id).length}
+              units={units.filter((u) => u.locationId === loc.id)}
             />
           ))}
         </div>
