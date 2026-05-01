@@ -27,6 +27,7 @@ We're iterating fast on UI. No tests yet. Don't over-engineer toward future feat
 
 - Develop on a feature branch, but **merge to `main` when the feature is complete** — main is what gets tested in the browser. Do not wait to be asked.
 - Fast-forward merge when possible: `git merge --ff-only <branch> && git push origin main`.
+- **After pushing to `main`, include the commit hash in the chat reply** (e.g. "Shipped to `main` (commit `abc1234`)") so I can match it to what I'm seeing in the debug UI.
 
 ---
 
