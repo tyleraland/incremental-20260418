@@ -350,7 +350,7 @@ export function Combat() {
   const locations         = useGameStore((s) => s.locations)
   const combatLocationId  = useGameStore((s) => s.combatLocationId)
   const setCombatLocation = useGameStore((s) => s.setCombatLocation)
-  const monsterSlots      = useGameStore((s) => combatLocationId ? (s.encounters[combatLocationId] ?? []) : [])
+  const allEncounters     = useGameStore((s) => s.encounters)
 
   const [codexMonsterId, setCodexMonsterId] = useState<string | null>(null)
   const [locationCodexOpen, setLocationCodexOpen] = useState(false)
@@ -364,6 +364,7 @@ export function Combat() {
 
   const focusedLocation = focusId ? (locations.find((l) => l.id === focusId) ?? null) : null
   const focusedUnits    = focusId ? units.filter((u) => u.locationId === focusId) : []
+  const monsterSlots    = focusId ? (allEncounters[focusId] ?? []) : []
 
   return (
     <>
