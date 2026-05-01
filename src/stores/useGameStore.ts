@@ -50,6 +50,7 @@ export interface GameState {
   // EPHEMERAL_UI — stored in localStorage; not in save string
   activeTab: TabId
   selectedUnitIds: string[]
+  selectedLocationId: string | null
   expandedLocationIds: string[]
   expandedUnitIds: string[]
   expandedInventorySections: string[]
@@ -73,6 +74,7 @@ export interface GameState {
   toggleInventorySection: (id: string) => void
   toggleSelectUnit: (id: string) => void
   clearSelection: () => void
+  setSelectedLocation: (id: string | null) => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
   openEquipFor: (unitId: string, slot: EquipSlot) => void
@@ -176,6 +178,7 @@ export const useGameStore = create<GameState>((set) => ({
   miscItems: INITIAL_MISC,
   activeTab: 'map',
   selectedUnitIds: [],
+  selectedLocationId: null,
   expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
@@ -660,6 +663,7 @@ export const useGameStore = create<GameState>((set) => ({
   }),
   toggleSelectUnit:  (id) => set((s) => ({ selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id] })),
   clearSelection:    () => set({ selectedUnitIds: [] }),
+  setSelectedLocation: (id) => set({ selectedLocationId: id }),
   assignUnits: (unitIds, locationId) => set((s) => {
     const newUnits = s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u)
 
