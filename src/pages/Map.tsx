@@ -1,50 +1,45 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useGameStore, RECOVERY_TICKS, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { LocationCodex } from '@/components/LocationCodex'
 
-// ── World grid layout ─────────────────────────────────────────────────────────
+// ── World pages (one per region) ──────────────────────────────────────────────
 
-const GRID_W   = 11
-const GRID_H   = 9
-const CELL_PX  = 56
-const GAP_PX   = 2
+const GRID_W   = 5
+const GRID_H   = 5
+const CELL_PX  = 60
+const GAP_PX   = 4
 
-// Locations pinned at fixed (col, row) positions on the world grid.
-// Unknown ids fall back to CSS Grid auto-flow so test fixtures still render.
-const LOCATION_COORDS: Record<string, [number, number]> = {
-  'kings-forest': [1, 1],
-  'duskwood':     [3, 2],
-  'lake-arawok':  [6, 1],
-  'gray-hills':   [8, 2],
-  'beach-1':  [1, 5],
-  'beach-2':  [3, 5],
-  'beach-3':  [5, 5],
-  'beach-4':  [7, 5],
-  'beach-5':  [9, 5],
-  'beach-6':  [2, 7],
-  'beach-7':  [4, 7],
-  'beach-8':  [6, 7],
-  'beach-9':  [8, 7],
-  'beach-10': [10, 7],
-}
+interface PageNeighbors { left?: string; right?: string; up?: string; down?: string }
+interface PageDef extends PageNeighbors { id: string; name: string }
 
-interface Biome {
-  id: string; name: string
-  minX: number; maxX: number; minY: number; maxY: number
-  bg: string; ring: string; text: string; pill: string
-}
-
-const BIOMES: Biome[] = [
-  { id: 'prontera', name: 'Prontera', minX: 1, maxX: 4,  minY: 1, maxY: 3,
-    bg: 'bg-emerald-900/15', ring: 'border-emerald-700/30', text: 'text-emerald-300/70',
-    pill: 'border-emerald-700/50 text-emerald-300 hover:bg-emerald-900/30' },
-  { id: 'geffen',   name: 'Geffen',   minX: 6, maxX: 9,  minY: 1, maxY: 3,
-    bg: 'bg-amber-900/15',   ring: 'border-amber-700/30',   text: 'text-amber-300/70',
-    pill: 'border-amber-700/50 text-amber-300 hover:bg-amber-900/30' },
-  { id: 'kanto',    name: 'Kanto',    minX: 1, maxX: 10, minY: 5, maxY: 7,
-    bg: 'bg-sky-900/15',     ring: 'border-sky-700/30',     text: 'text-sky-300/70',
-    pill: 'border-sky-700/50 text-sky-300 hover:bg-sky-900/30' },
+const PAGES: PageDef[] = [
+  { id: 'prontera', name: 'Prontera Region', right: 'geffen',   down: 'kanto' },
+  { id: 'geffen',   name: 'Geffen Region',   left:  'prontera', down: 'kanto' },
+  { id: 'kanto',    name: 'Kanto',           up:    'prontera' },
 ]
+
+const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
+
+// Per-region (col, row) on the 5×5 grid (0-indexed). Unknown ids fall back to auto-flow.
+const LOCATION_COORDS: Record<string, [number, number]> = {
+  // Prontera
+  'kings-forest': [1, 1],
+  'duskwood':     [2, 3],
+  // Geffen
+  'lake-arawok':  [1, 1],
+  'gray-hills':   [3, 3],
+  // Kanto
+  'beach-1':  [0, 1],
+  'beach-2':  [1, 1],
+  'beach-3':  [2, 1],
+  'beach-4':  [3, 1],
+  'beach-5':  [4, 1],
+  'beach-6':  [0, 3],
+  'beach-7':  [1, 3],
+  'beach-8':  [2, 3],
+  'beach-9':  [3, 3],
+  'beach-10': [4, 3],
+}
 
 function hpBarColor(hp: number) {
   if (hp > 60) return 'bg-game-green'
@@ -119,11 +114,10 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
   const isSelected          = selectedLocationId === location.id
 
   const coords = LOCATION_COORDS[location.id]
-  const style  = coords ? { gridColumn: coords[0], gridRow: coords[1] } : undefined
+  const style  = coords ? { gridColumn: coords[0] + 1, gridRow: coords[1] + 1 } : undefined
 
   return (
     <button
-      data-location-id={location.id}
       onClick={() => setSelectedLocation(isSelected ? null : location.id)}
       style={style}
       className={[
@@ -157,108 +151,113 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
   )
 }
 
+// ── PageArrow ─────────────────────────────────────────────────────────────────
+
+function PageArrow({ direction, target, onClick }: {
+  direction: 'left' | 'right' | 'up' | 'down'
+  target: PageDef | null
+  onClick: () => void
+}) {
+  const sym = direction === 'left' ? '◀' : direction === 'right' ? '▶' : direction === 'up' ? '▲' : '▼'
+  const label = target?.name ?? ''
+  const visible = !!target
+  const horizontal = direction === 'left' || direction === 'right'
+
+  return (
+    <button
+      onClick={visible ? onClick : undefined}
+      disabled={!visible}
+      className={[
+        horizontal
+          ? 'w-7 self-stretch flex flex-col items-center justify-center'
+          : 'h-7 self-center flex items-center justify-center px-2 py-0.5 gap-1.5',
+        'rounded-md border text-[10px] font-semibold uppercase tracking-wider transition-colors',
+        visible
+          ? 'border-game-border text-game-text-dim hover:border-game-primary/60 hover:text-game-text'
+          : 'border-transparent text-transparent pointer-events-none',
+      ].join(' ')}
+    >
+      {horizontal ? (
+        <span className="text-sm leading-none">{sym}</span>
+      ) : (
+        <>
+          <span className="leading-none">{sym}</span>
+          <span className="leading-none">{label}</span>
+        </>
+      )}
+    </button>
+  )
+}
+
 // ── WorldMap ──────────────────────────────────────────────────────────────────
 
 function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }) {
-  const selectedLocationId = useGameStore((s) => s.selectedLocationId)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
+  const [pageId, setPageId] = useState<string>('prontera')
+  const page = PAGE_BY_ID[pageId] ?? PAGES[0]
 
-  function scrollToBiome(b: Biome) {
-    const el = containerRef.current
-    if (!el) return
-    const cx = ((b.minX + b.maxX) / 2 - 0.5) * CELL_PX
-    const cy = ((b.minY + b.maxY) / 2 - 0.5) * CELL_PX
-    el.scrollTo({ left: cx - el.clientWidth / 2, top: cy - el.clientHeight / 2, behavior: 'smooth' })
+  const left  = page.left  ? PAGE_BY_ID[page.left]  : null
+  const right = page.right ? PAGE_BY_ID[page.right] : null
+  const up    = page.up    ? PAGE_BY_ID[page.up]    : null
+  const down  = page.down  ? PAGE_BY_ID[page.down]  : null
+
+  const goto = (target: PageDef | null) => {
+    if (!target) return
+    setPageId(target.id)
+    setSelectedLocation(null)
   }
 
-  // Scroll the selected location into view if it's offscreen.
-  useEffect(() => {
-    if (!selectedLocationId) return
-    const coords = LOCATION_COORDS[selectedLocationId]
-    if (!coords) return
-    const el = containerRef.current
-    if (!el) return
-    const [x, y] = coords
-    const cellLeft = (x - 1) * CELL_PX
-    const cellTop  = (y - 1) * CELL_PX
-    const inView =
-      cellLeft >= el.scrollLeft && cellLeft + CELL_PX <= el.scrollLeft + el.clientWidth &&
-      cellTop  >= el.scrollTop  && cellTop  + CELL_PX <= el.scrollTop  + el.clientHeight
-    if (!inView) {
-      el.scrollTo({
-        left: cellLeft - el.clientWidth / 2 + CELL_PX / 2,
-        top:  cellTop  - el.clientHeight / 2 + CELL_PX / 2,
-        behavior: 'smooth',
-      })
-    }
-  }, [selectedLocationId])
-
-  const unitCountByRegion = (regionId: string) =>
-    units.filter((u) => locations.find((l) => l.id === u.locationId)?.region === regionId).length
+  const pageLocations = locations.filter((l) => l.region === page.id)
 
   return (
-    <div className="rounded-lg border border-game-border overflow-hidden bg-game-surface">
-      {/* Quick-jump region pills */}
-      <div className="flex gap-1.5 px-2 py-1.5 border-b border-game-border bg-game-bg/60">
-        {BIOMES.map((b) => {
-          const here = unitCountByRegion(b.id)
-          return (
-            <button
-              key={b.id}
-              onClick={() => scrollToBiome(b)}
-              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wider border transition-colors ${b.pill}`}
-            >
-              {b.name}
-              {here > 0 && <span className="ml-1 text-game-text-dim font-normal">· {here}</span>}
-            </button>
-          )
-        })}
+    <div className="rounded-lg border border-game-border bg-game-surface overflow-hidden">
+      {/* Title */}
+      <div className="px-3 py-2 border-b border-game-border bg-game-bg/60">
+        <h2 className="text-center text-sm font-semibold uppercase tracking-[0.2em] text-game-text">
+          {page.name}
+        </h2>
       </div>
 
-      {/* Pannable world */}
-      <div
-        ref={containerRef}
-        className="overflow-auto bg-game-bg p-2"
-        style={{
-          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.5px)',
-          backgroundSize: `${CELL_PX + GAP_PX}px ${CELL_PX + GAP_PX}px`,
-          backgroundPosition: `${(CELL_PX + GAP_PX) / 2 + 8 - 0.5}px ${(CELL_PX + GAP_PX) / 2 + 8 - 0.5}px`,
-          maxHeight: '52vh',
-        }}
-      >
-        <div
-          className="relative"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(${GRID_W}, ${CELL_PX}px)`,
-            gridTemplateRows:    `repeat(${GRID_H}, ${CELL_PX}px)`,
-            gap: `${GAP_PX}px`,
-          }}
-        >
-          {/* Biome backdrops with embedded region label */}
-          {BIOMES.map((b) => (
-            <div
-              key={b.id}
-              style={{
-                gridColumn: `${b.minX} / ${b.maxX + 1}`,
-                gridRow:    `${b.minY} / ${b.maxY + 1}`,
-              }}
-              className={`pointer-events-none rounded-xl border ${b.ring} ${b.bg}`}
-            >
-              <div className={`px-1.5 pt-0.5 text-[9px] uppercase tracking-widest font-semibold ${b.text}`}>
-                {b.name}
-              </div>
-            </div>
-          ))}
+      <div className="px-2 py-2 space-y-1">
+        {/* Up arrow row */}
+        <div className="flex justify-center min-h-[28px]">
+          <PageArrow direction="up" target={up} onClick={() => goto(up)} />
+        </div>
 
-          {/* Locations */}
-          {locations.map((loc) => (
-            <LocationCell
-              key={loc.id}
-              location={loc}
-              units={units.filter((u) => u.locationId === loc.id)}
-            />
-          ))}
+        {/* Middle row: left arrow, grid, right arrow */}
+        <div className="flex items-center justify-center gap-1">
+          <PageArrow direction="left" target={left} onClick={() => goto(left)} />
+          <div
+            className="bg-game-bg rounded-md p-1.5"
+            style={{
+              backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.5px)',
+              backgroundSize: `${CELL_PX + GAP_PX}px ${CELL_PX + GAP_PX}px`,
+              backgroundPosition: `${(CELL_PX + GAP_PX) / 2 + 6 - 0.5}px ${(CELL_PX + GAP_PX) / 2 + 6 - 0.5}px`,
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${GRID_W}, ${CELL_PX}px)`,
+                gridTemplateRows:    `repeat(${GRID_H}, ${CELL_PX}px)`,
+                gap: `${GAP_PX}px`,
+              }}
+            >
+              {pageLocations.map((loc) => (
+                <LocationCell
+                  key={loc.id}
+                  location={loc}
+                  units={units.filter((u) => u.locationId === loc.id)}
+                />
+              ))}
+            </div>
+          </div>
+          <PageArrow direction="right" target={right} onClick={() => goto(right)} />
+        </div>
+
+        {/* Down arrow row */}
+        <div className="flex justify-center min-h-[28px]">
+          <PageArrow direction="down" target={down} onClick={() => goto(down)} />
         </div>
       </div>
     </div>
@@ -320,7 +319,6 @@ function LocationDetailPanel() {
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-30 bg-game-surface border-t border-game-border shadow-2xl shadow-black/30">
-      {/* Summary section — fixed min-height for predictable layout */}
       <div className="px-4 py-3 border-b border-game-border min-h-[64px] flex flex-col justify-center">
         {location ? (
           <>
@@ -336,11 +334,10 @@ function LocationDetailPanel() {
             <p className="text-xs text-game-text-dim leading-snug">{location.description}</p>
           </>
         ) : (
-          <span className="text-xs text-game-text-dim italic">Tap a location on the world map to see details</span>
+          <span className="text-xs text-game-text-dim italic">Tap a location to see details</span>
         )}
       </div>
 
-      {/* Actions section — fixed min-height */}
       <div className="px-4 py-3 flex items-center gap-2 flex-wrap min-h-[60px]">
         {hasUnits ? (
           <>
