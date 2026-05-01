@@ -4,26 +4,28 @@ import { LocationCodex } from '@/components/LocationCodex'
 
 // ── World grid layout ─────────────────────────────────────────────────────────
 
-const GRID_SIZE = 15
-const CELL_PX   = 72
+const GRID_W   = 11
+const GRID_H   = 9
+const CELL_PX  = 56
+const GAP_PX   = 2
 
-// Locations placed at fixed (col, row) positions on the 15×15 world grid.
+// Locations pinned at fixed (col, row) positions on the world grid.
 // Unknown ids fall back to CSS Grid auto-flow so test fixtures still render.
 const LOCATION_COORDS: Record<string, [number, number]> = {
-  'kings-forest': [3, 3],
-  'duskwood':     [5, 5],
-  'lake-arawok':  [11, 3],
-  'gray-hills':   [13, 5],
-  'beach-1':  [2, 10],
-  'beach-2':  [4, 10],
-  'beach-3':  [6, 10],
-  'beach-4':  [8, 10],
-  'beach-5':  [10, 10],
-  'beach-6':  [12, 10],
-  'beach-7':  [3, 12],
-  'beach-8':  [5, 12],
-  'beach-9':  [7, 12],
-  'beach-10': [9, 12],
+  'kings-forest': [1, 1],
+  'duskwood':     [3, 2],
+  'lake-arawok':  [6, 1],
+  'gray-hills':   [8, 2],
+  'beach-1':  [1, 5],
+  'beach-2':  [3, 5],
+  'beach-3':  [5, 5],
+  'beach-4':  [7, 5],
+  'beach-5':  [9, 5],
+  'beach-6':  [2, 7],
+  'beach-7':  [4, 7],
+  'beach-8':  [6, 7],
+  'beach-9':  [8, 7],
+  'beach-10': [10, 7],
 }
 
 interface Biome {
@@ -33,13 +35,13 @@ interface Biome {
 }
 
 const BIOMES: Biome[] = [
-  { id: 'prontera', name: 'Prontera', minX: 2,  maxX: 7,  minY: 2, maxY: 7,
+  { id: 'prontera', name: 'Prontera', minX: 1, maxX: 4,  minY: 1, maxY: 3,
     bg: 'bg-emerald-900/15', ring: 'border-emerald-700/30', text: 'text-emerald-300/70',
     pill: 'border-emerald-700/50 text-emerald-300 hover:bg-emerald-900/30' },
-  { id: 'geffen',   name: 'Geffen',   minX: 9,  maxX: 14, minY: 2, maxY: 7,
+  { id: 'geffen',   name: 'Geffen',   minX: 6, maxX: 9,  minY: 1, maxY: 3,
     bg: 'bg-amber-900/15',   ring: 'border-amber-700/30',   text: 'text-amber-300/70',
     pill: 'border-amber-700/50 text-amber-300 hover:bg-amber-900/30' },
-  { id: 'kanto',    name: 'Kanto',    minX: 1,  maxX: 14, minY: 9, maxY: 14,
+  { id: 'kanto',    name: 'Kanto',    minX: 1, maxX: 10, minY: 5, maxY: 7,
     bg: 'bg-sky-900/15',     ring: 'border-sky-700/30',     text: 'text-sky-300/70',
     pill: 'border-sky-700/50 text-sky-300 hover:bg-sky-900/30' },
 ]
@@ -125,7 +127,7 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
       onClick={() => setSelectedLocation(isSelected ? null : location.id)}
       style={style}
       className={[
-        'relative z-10 m-1 flex flex-col items-start gap-1 px-1.5 py-1.5 rounded-md border text-left transition-all',
+        'relative z-10 flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-md border text-left transition-all overflow-hidden',
         isSelected
           ? 'border-game-primary bg-game-primary/30 ring-2 ring-game-primary/50 shadow-lg shadow-game-primary/30 scale-[1.04]'
           : 'border-game-border bg-game-surface hover:border-game-primary/60',
@@ -216,20 +218,21 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
       {/* Pannable world */}
       <div
         ref={containerRef}
-        className="overflow-auto bg-game-bg"
+        className="overflow-auto bg-game-bg p-2"
         style={{
           backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.5px)',
-          backgroundSize: `${CELL_PX}px ${CELL_PX}px`,
-          backgroundPosition: `${CELL_PX / 2 - 0.5}px ${CELL_PX / 2 - 0.5}px`,
-          maxHeight: '55vh',
+          backgroundSize: `${CELL_PX + GAP_PX}px ${CELL_PX + GAP_PX}px`,
+          backgroundPosition: `${(CELL_PX + GAP_PX) / 2 + 8 - 0.5}px ${(CELL_PX + GAP_PX) / 2 + 8 - 0.5}px`,
+          maxHeight: '52vh',
         }}
       >
         <div
           className="relative"
           style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${GRID_SIZE}, ${CELL_PX}px)`,
-            gridTemplateRows:    `repeat(${GRID_SIZE}, ${CELL_PX}px)`,
+            gridTemplateColumns: `repeat(${GRID_W}, ${CELL_PX}px)`,
+            gridTemplateRows:    `repeat(${GRID_H}, ${CELL_PX}px)`,
+            gap: `${GAP_PX}px`,
           }}
         >
           {/* Biome backdrops with embedded region label */}
@@ -240,9 +243,9 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
                 gridColumn: `${b.minX} / ${b.maxX + 1}`,
                 gridRow:    `${b.minY} / ${b.maxY + 1}`,
               }}
-              className={`pointer-events-none m-1 rounded-2xl border ${b.ring} ${b.bg}`}
+              className={`pointer-events-none rounded-xl border ${b.ring} ${b.bg}`}
             >
-              <div className={`px-2 pt-1.5 text-[10px] uppercase tracking-widest font-semibold ${b.text}`}>
+              <div className={`px-1.5 pt-0.5 text-[9px] uppercase tracking-widest font-semibold ${b.text}`}>
                 {b.name}
               </div>
             </div>
