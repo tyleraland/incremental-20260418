@@ -148,10 +148,9 @@ function LocationDetailPanel() {
   const clearSelection      = useGameStore((s) => s.clearSelection)
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
+  const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
   const toggleUnit          = useGameStore((s) => s.toggleUnit)
-  const toggleLocation      = useGameStore((s) => s.toggleLocation)
   const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
-  const expandedLocationIds = useGameStore((s) => s.expandedLocationIds)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
 
@@ -184,7 +183,7 @@ function LocationDetailPanel() {
   }
 
   function handleGoCombat() {
-    if (sharedLocId && !expandedLocationIds.includes(sharedLocId)) toggleLocation(sharedLocId)
+    if (sharedLocId) setCombatLocation(sharedLocId)
     setActiveTab('combat')
     clearSelection()
     setSelectedLocation(null)
