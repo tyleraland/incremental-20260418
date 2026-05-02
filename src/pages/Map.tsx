@@ -47,6 +47,16 @@ function hpBarColor(hp: number) {
   return 'bg-red-500'
 }
 
+const ELEMENT_COLORS: Record<string, string> = {
+  fire:      'text-orange-400 bg-orange-950/40 border-orange-800/50',
+  lightning: 'text-yellow-300 bg-yellow-950/40 border-yellow-700/50',
+  ice:       'text-sky-300 bg-sky-950/40 border-sky-700/50',
+  earth:     'text-amber-600 bg-amber-950/40 border-amber-700/50',
+  wind:      'text-green-400 bg-green-950/40 border-green-800/50',
+  water:     'text-blue-400 bg-blue-950/40 border-blue-800/50',
+  neutral:   'text-game-text-dim bg-game-border/20 border-game-border/50',
+}
+
 // ── RosterUnitCard ────────────────────────────────────────────────────────────
 
 function RosterUnitCard({ unit }: { unit: Unit }) {
@@ -291,6 +301,9 @@ function LocationDetailPanel() {
   const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
+  const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
+  const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
+  const encounters          = useGameStore((s) => s.encounters)
 
   const [codexOpen, setCodexOpen] = useState(false)
 
@@ -373,40 +386,70 @@ function LocationDetailPanel() {
         )}
       </div>
 
-      {/* Middle: traits + encounters preview, fills remaining vertical space */}
-      <div className="flex-1 px-4 py-3 space-y-3 overflow-y-auto">
-        {location ? (
-          <>
-            {location.traits.length > 0 && (
+      {/* Middle: familiarity + traits + encounters, fills remaining vertical space */}
+      <div className="flex-1 px-4 py-3 space-y-4 overflow-y-auto">
+        {location ? (() => {
+          const famPct  = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
+          const seenIds = (() => {
+            const saved   = (locationMonstersSeen[location.id] ?? []).filter((id) => location.monsterIds.includes(id))
+            const inSlots = (encounters[location.id] ?? []).map((sl) => sl.monsterId).filter((id) => location.monsterIds.includes(id))
+            return [...new Set([...saved, ...inSlots])]
+          })()
+          const unknownCount = location.monsterIds.length - seenIds.length
+          return (
+            <>
               <div>
-                <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1">Traits</div>
-                <div className="flex flex-wrap gap-1">
-                  {location.traits.map((t) => (
-                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60 capitalize">
-                      {t}
-                    </span>
-                  ))}
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="uppercase tracking-widest text-game-text-dim">Familiarity</span>
+                  <span className="text-game-accent">{famPct}%</span>
+                </div>
+                <div className="w-full bg-game-border rounded-full h-1.5">
+                  <div className="bg-game-accent h-1.5 rounded-full transition-all" style={{ width: `${famPct}%` }} />
                 </div>
               </div>
-            )}
-            {location.monsterIds.length > 0 && (
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1">Encounters</div>
-                <div className="flex flex-wrap gap-1">
-                  {location.monsterIds.map((id) => {
-                    const m = MONSTER_REGISTRY[id]
-                    return (
-                      <span key={id} className="text-[10px] px-1.5 py-0.5 rounded bg-game-border/30 text-game-text-dim border border-game-border/50">
-                        {m?.name ?? id}
-                        {m && <span className="ml-1 text-game-muted">Lv.{m.level}</span>}
+
+              {(seenIds.length > 0 || unknownCount > 0) && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Encounters</div>
+                  <div className="space-y-1">
+                    {seenIds.map((id) => {
+                      const m = MONSTER_REGISTRY[id]
+                      if (!m) return null
+                      return (
+                        <div key={id} className="flex items-center gap-2 bg-game-bg rounded-md px-2.5 py-1.5">
+                          <span className="text-xs text-game-text flex-1 truncate">{m.name}</span>
+                          <span className="text-[10px] text-game-text-dim">Lv.{m.level}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium capitalize ${ELEMENT_COLORS[m.element] ?? ELEMENT_COLORS.neutral}`}>
+                            {m.element}
+                          </span>
+                        </div>
+                      )
+                    })}
+                    {unknownCount > 0 && (
+                      <div className="flex items-center gap-2 bg-game-bg rounded-md px-2.5 py-1.5 opacity-50">
+                        <span className="text-xs text-game-muted flex-1">+{unknownCount} unknown</span>
+                        <span className="text-[10px] text-game-muted italic">explore to discover</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {location.traits.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Traits</div>
+                  <div className="flex flex-wrap gap-1">
+                    {location.traits.map((t) => (
+                      <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60 capitalize">
+                        {t}
                       </span>
-                    )
-                  })}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-          </>
-        ) : null}
+              )}
+            </>
+          )
+        })() : null}
       </div>
 
       <div className="px-4 py-3 flex items-center gap-2 flex-wrap min-h-[60px]">
