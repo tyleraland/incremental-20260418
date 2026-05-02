@@ -97,7 +97,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 
 function RosterCarousel({ units }: { units: Unit[] }) {
   return (
-    <div className="-mx-4 -mt-4 overflow-x-auto">
+    <div className="-mx-4 -mt-7 overflow-x-auto">
       <div className="flex gap-px pb-1">
         {units.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
       </div>
