@@ -103,7 +103,7 @@ function App() {
   }, [])
 
   return (
-    <div className="min-h-full flex flex-col">
+    <div className="h-full flex flex-col">
       <OfflineBanner />
       <main className="flex-1 overflow-y-auto pt-16">
         {activeTab === 'map'       && <Map />}
