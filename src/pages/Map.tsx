@@ -244,6 +244,24 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
                 gap: `${GAP_PX}px`,
               }}
             >
+              {/* Placeholder cells fill every (col, row) so empty slots are visible
+                  but non-interactive. Locations render on top via explicit gridColumn/Row. */}
+              {Array.from({ length: GRID_W * GRID_H }).map((_, i) => {
+                const x = i % GRID_W
+                const y = Math.floor(i / GRID_W)
+                const occupied = pageLocations.some((l) => {
+                  const c = LOCATION_COORDS[l.id]
+                  return c && c[0] === x && c[1] === y
+                })
+                if (occupied) return null
+                return (
+                  <div
+                    key={`ph-${x}-${y}`}
+                    style={{ gridColumn: x + 1, gridRow: y + 1 }}
+                    className="rounded-md border border-game-border/30 bg-game-surface/20 pointer-events-none"
+                  />
+                )
+              })}
               {pageLocations.map((loc) => (
                 <LocationCell
                   key={loc.id}
