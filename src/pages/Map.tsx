@@ -98,7 +98,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 function RosterCarousel({ units }: { units: Unit[] }) {
   return (
     <div className="-mx-4 -mt-7 overflow-x-auto">
-      <div className="flex gap-px pb-1">
+      <div className="flex gap-px">
         {units.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
       </div>
     </div>
@@ -429,7 +429,7 @@ export function Map() {
 
   return (
     <>
-      <div className="p-4 space-y-3 pb-64">
+      <div className="p-4 pb-64">
         <RosterCarousel units={units} />
         <WorldMap locations={locations} units={units} />
       </div>
