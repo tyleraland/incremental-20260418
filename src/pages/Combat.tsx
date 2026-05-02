@@ -331,10 +331,10 @@ function RosterChunk({ location, units, isFocused, onPick }: {
     <button
       onClick={onPick}
       className={[
-        'shrink-0 px-3 py-2 rounded-lg border text-left transition-colors min-w-[140px]',
+        'shrink-0 px-3 py-2 border-b text-left transition-colors min-w-[140px]',
         isFocused
           ? 'border-game-primary bg-game-primary/15'
-          : 'border-game-border bg-game-surface hover:border-game-primary/50',
+          : 'border-game-border bg-game-surface hover:bg-white/5',
       ].join(' ')}
     >
       <div className="text-xs font-semibold text-game-text truncate mb-1">{location.name}</div>
@@ -664,11 +664,11 @@ export function Combat() {
 
   return (
     <>
-      <div className={`p-4 space-y-3 ${hasDetail ? 'pb-96' : 'pb-8'}`}>
+      <div className={`p-4 ${hasDetail ? 'pb-96' : 'pb-8'}`}>
         {/* Roster groups */}
         {occupiedLocations.length > 0 ? (
-          <div className="-mx-4 px-4 overflow-x-auto">
-            <div className="flex gap-2 pb-1">
+          <div className="-mx-4 -mt-7 overflow-x-auto">
+            <div className="flex gap-px">
               {occupiedLocations.map((loc) => (
                 <RosterChunk
                   key={loc.id}
@@ -688,8 +688,8 @@ export function Combat() {
 
         {/* Single focused location encounter */}
         {focusedLocation && (
-          <>
-            <div className="flex items-center justify-between gap-2 pt-1">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-game-text-dim uppercase tracking-widest">{focusedLocation.name}</h2>
               <button
                 onClick={() => setLocationCodexOpen(true)}
@@ -736,7 +736,7 @@ export function Combat() {
                 )}
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
