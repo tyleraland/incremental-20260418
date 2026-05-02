@@ -52,6 +52,7 @@ export interface GameState {
   selectedUnitIds: string[]
   selectedLocationId: string | null
   combatLocationId: string | null
+  mapPageId: string
   expandedLocationIds: string[]
   expandedUnitIds: string[]
   expandedInventorySections: string[]
@@ -77,6 +78,7 @@ export interface GameState {
   clearSelection: () => void
   setSelectedLocation: (id: string | null) => void
   setCombatLocation: (id: string | null) => void
+  setMapPage: (id: string) => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
   openEquipFor: (unitId: string, slot: EquipSlot) => void
@@ -182,6 +184,7 @@ export const useGameStore = create<GameState>((set) => ({
   selectedUnitIds: [],
   selectedLocationId: null,
   combatLocationId: null,
+  mapPageId: 'prontera',
   expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
@@ -668,6 +671,7 @@ export const useGameStore = create<GameState>((set) => ({
   clearSelection:    () => set({ selectedUnitIds: [] }),
   setSelectedLocation: (id) => set({ selectedLocationId: id }),
   setCombatLocation: (id) => set({ combatLocationId: id }),
+  setMapPage: (id) => set({ mapPageId: id }),
   assignUnits: (unitIds, locationId) => set((s) => {
     const newUnits = s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u)
 

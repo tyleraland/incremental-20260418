@@ -98,7 +98,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 function RosterCarousel({ units }: { units: Unit[] }) {
   return (
     <div className="-mx-4 px-4 overflow-x-auto">
-      <div className="flex gap-2 pb-1">
+      <div className="flex gap-px pb-1">
         {units.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
       </div>
     </div>
@@ -193,7 +193,8 @@ function PageArrow({ direction, target, onClick }: {
 
 function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }) {
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
-  const [pageId, setPageId] = useState<string>('prontera')
+  const pageId              = useGameStore((s) => s.mapPageId)
+  const setMapPage          = useGameStore((s) => s.setMapPage)
   const page = PAGE_BY_ID[pageId] ?? PAGES[0]
 
   const left  = page.left  ? PAGE_BY_ID[page.left]  : null
@@ -203,7 +204,7 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
 
   const goto = (target: PageDef | null) => {
     if (!target) return
-    setPageId(target.id)
+    setMapPage(target.id)
     setSelectedLocation(null)
   }
 
@@ -274,6 +275,7 @@ function LocationDetailPanel() {
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
   const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
+  const setMapPage          = useGameStore((s) => s.setMapPage)
   const toggleUnit          = useGameStore((s) => s.toggleUnit)
   const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
   const locations           = useGameStore((s) => s.locations)
@@ -291,6 +293,20 @@ function LocationDetailPanel() {
     : null
   const allAlreadyHere = hasLoc && selectedUnits.length > 0 && selectedUnits.every((u) => u.locationId === selectedLocationId)
 
+  // Go-to-Combat target:
+  //   - location-only        → that location
+  //   - unit(s)-only         → their shared location (if any)
+  //   - both, units already there → that location
+  //   - both, units elsewhere     → hidden
+  const combatTargetLocId =
+    hasLoc && hasUnits  ? (allAlreadyHere ? selectedLocationId : null)
+    : hasLoc            ? selectedLocationId
+    : hasUnits          ? sharedLocId
+    :                     null
+
+  // Find-on-Map: only when selected units share a real location.
+  const findTargetLocId = hasUnits ? sharedLocId : null
+
   function handleDeploy() {
     if (!selectedLocationId || allAlreadyHere) return
     assignUnits(selectedUnitIds, selectedLocationId)
@@ -306,10 +322,18 @@ function LocationDetailPanel() {
   }
 
   function handleGoCombat() {
-    if (sharedLocId) setCombatLocation(sharedLocId)
+    if (combatTargetLocId) setCombatLocation(combatTargetLocId)
     setActiveTab('combat')
     clearSelection()
     setSelectedLocation(null)
+  }
+
+  function handleFindOnMap() {
+    if (!findTargetLocId) return
+    const loc = locations.find((l) => l.id === findTargetLocId)
+    if (!loc) return
+    setMapPage(loc.region)
+    setSelectedLocation(findTargetLocId)
   }
 
   function handleClear() {
@@ -361,7 +385,12 @@ function LocationDetailPanel() {
                 View ›
               </button>
             )}
-            {sharedLocId && (
+            {findTargetLocId && (
+              <button onClick={handleFindOnMap} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+                Find on Map
+              </button>
+            )}
+            {combatTargetLocId && (
               <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
                 Go to Combat ›
               </button>
@@ -373,7 +402,11 @@ function LocationDetailPanel() {
         ) : hasLoc ? (
           <>
             <span className="text-xs text-game-text-dim mr-auto italic">Location actions</span>
-            <span className="text-xs text-game-muted italic">More actions coming soon…</span>
+            {combatTargetLocId && (
+              <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+                Go to Combat ›
+              </button>
+            )}
             <button onClick={handleClear} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
               Cancel
             </button>
