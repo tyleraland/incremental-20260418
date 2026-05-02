@@ -166,3 +166,17 @@ export interface LogEntry {
   category: LogCategory
   message: string
 }
+
+// ── Per-location combat stats ─────────────────────────────────────────────────
+
+// Cumulative combat outcomes accumulated at a location, used to render the
+// post-hoc Combat Report. Designed so we can later compute reports over
+// arbitrary windows (since-anyone-arrived, since-X-arrived) by diffing two
+// snapshots of this aggregate, rather than journaling every event.
+export interface LocationCombatStats {
+  startTick: number                       // tick the aggregate started counting
+  monstersDefeated: Record<string, number> // monsterId → count
+  itemsDropped:     Record<string, number> // itemId → count (loot system stub)
+  expDistributed: number                  // exp per unit (1 per kill at this location)
+  goldEarned: number
+}

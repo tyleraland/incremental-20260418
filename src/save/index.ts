@@ -1,17 +1,18 @@
 import { saveGame, loadGame, SAVE_KEY } from '@/lib/save'
 import type { SliceCodec } from '@/lib/save'
 import { useGameStore } from '@/stores/useGameStore'
-import { unitsCodec }     from './unitsCodec'
-import { inventoryCodec } from './inventoryCodec'
-import { locationsCodec } from './locationsCodec'
-import { codexCodec }     from './codexCodec'
-import { worldCodec }     from './worldCodec'
+import { unitsCodec }       from './unitsCodec'
+import { inventoryCodec }   from './inventoryCodec'
+import { locationsCodec }   from './locationsCodec'
+import { codexCodec }       from './codexCodec'
+import { worldCodec }       from './worldCodec'
+import { combatStatsCodec } from './combatStatsCodec'
 
-export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec }
+export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ALL_CODECS: SliceCodec<any>[] = [
-  unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec,
+  unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec,
 ]
 
 export function persistSave(): void {

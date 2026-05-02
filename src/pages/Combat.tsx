@@ -3,6 +3,7 @@ import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGE
 import type { MonsterDef } from '@/types'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationCodex } from '@/components/LocationCodex'
+import { CombatReport } from '@/components/CombatReport'
 
 function calcCooldown(attackSpeed: number): number {
   return Math.max(1, Math.round(TICKS_PER_SECOND * ATTACK_SPEED_BASE / attackSpeed))
@@ -636,6 +637,7 @@ export function Combat() {
 
   const [codexMonsterId, setCodexMonsterId] = useState<string | null>(null)
   const [locationCodexOpen, setLocationCodexOpen] = useState(false)
+  const [combatReportOpen, setCombatReportOpen] = useState(false)
   const codexSeenCount = useGameStore((s) => codexMonsterId ? (s.monsterSeen[codexMonsterId] ?? 0) : 0)
 
   const occupiedLocations = locations.filter((l) => units.some((u) => u.locationId === l.id))
@@ -691,12 +693,20 @@ export function Combat() {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-game-text-dim uppercase tracking-widest">{focusedLocation.name}</h2>
-              <button
-                onClick={() => setLocationCodexOpen(true)}
-                className="text-[10px] px-1.5 py-0.5 rounded border border-game-accent/40 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors"
-              >
-                Location Codex →
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => setCombatReportOpen(true)}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-game-gold/40 text-game-gold hover:bg-game-gold/10 hover:border-game-gold transition-colors"
+                >
+                  Report ↗
+                </button>
+                <button
+                  onClick={() => setLocationCodexOpen(true)}
+                  className="text-[10px] px-1.5 py-0.5 rounded border border-game-accent/40 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors"
+                >
+                  Location Codex →
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2 min-w-0">
@@ -772,6 +782,13 @@ export function Combat() {
       )}
       {locationCodexOpen && focusedLocation && (
         <LocationCodex location={focusedLocation} onClose={() => setLocationCodexOpen(false)} />
+      )}
+      {combatReportOpen && focusedLocation && (
+        <CombatReport
+          locationId={focusedLocation.id}
+          locationName={focusedLocation.name}
+          onClose={() => setCombatReportOpen(false)}
+        />
       )}
     </>
   )

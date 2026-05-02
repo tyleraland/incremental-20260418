@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   MonsterBehavior, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
+  LocationCombatStats,
 } from '@/types'
 import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
@@ -17,6 +18,7 @@ import { INITIAL_UNITS } from '@/data/units'
 export * from '@/types'
 export * from '@/lib/time'
 export * from '@/lib/stats'
+export * from '@/lib/combatReport'
 export * from '@/data/traits'
 export * from '@/data/skills'
 export * from '@/data/monsters'
@@ -36,6 +38,7 @@ export interface GameState {
   locationMonstersSeen:   Record<string, string[]>    // locationId → monsterIds seen
   monsterSeen:            Record<string, number>      // monsterId → total global sighting count
   monsterDefeated:        Record<string, number>      // monsterId → total defeat count
+  locationStats:          Record<string, LocationCombatStats>  // locationId → cumulative combat stats
   ticks: number
 
   // RUNTIME — regenerated on load; not saved
@@ -59,15 +62,11 @@ export interface GameState {
   expandedRegionIds: string[]
   equipContext: { unitId: string; slot: EquipSlot } | null
 
-  offlineSummary: {
-    seconds: number; goldEarned: number; monstersDefeated: number; expEarned: number
-  } | null
   paused: boolean
 
   // Actions
   tick: () => void
   batchTick: (n: number) => void
-  dismissOfflineSummary: () => void
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
   toggleRegion: (id: string) => void
@@ -199,8 +198,8 @@ export const useGameStore = create<GameState>((set) => ({
   locationFleeing:   {},
   ticks: 0,
   monsterDefeated: {},
+  locationStats: {},
   lastTickAt: Date.now(),
-  offlineSummary: null,
   paused: false,
   eventLog: [],
   itemSockets: {},
@@ -216,6 +215,7 @@ export const useGameStore = create<GameState>((set) => ({
     const monsterDefeated       = { ...s.monsterDefeated }
     const monsterSeen           = { ...s.monsterSeen }
     const locationMonstersSeen  = { ...s.locationMonstersSeen }
+    const locationStats         = { ...s.locationStats }
     const expGained: Record<string, number> = {}
     let goldEarned = 0
     const hpDamage: Record<string, number> = {}
@@ -297,6 +297,13 @@ export const useGameStore = create<GameState>((set) => ({
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + 1
           expGained[locationId]       = (expGained[locationId] ?? 0) + 1
           goldEarned++
+          const prev = locationStats[locationId] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+          locationStats[locationId] = {
+            ...prev,
+            monstersDefeated: { ...prev.monstersDefeated, [monster.id]: (prev.monstersDefeated[monster.id] ?? 0) + 1 },
+            expDistributed: prev.expDistributed + 1,
+            goldEarned:     prev.goldEarned + 1,
+          }
           newLog = appendLog(newLog, 'defeat', `${monster.name} defeated`, newTicks)
           continue
         }
@@ -434,7 +441,7 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, locationMonstersSeen, miscItems, lastTickAt: Date.now(), eventLog: newLog }
+    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, miscItems, lastTickAt: Date.now(), eventLog: newLog }
   }),
 
   batchTick: (n) => set((s) => {
@@ -447,10 +454,10 @@ export const useGameStore = create<GameState>((set) => ({
     const locationFleeing: Record<string, number>          = { ...s.locationFleeing }
     const monsterDefeated  = { ...s.monsterDefeated }
     const monsterSeen      = { ...s.monsterSeen }
+    const locationStats    = { ...s.locationStats }
     const expGained: Record<string, number> = {}
     const newDefeats: Record<string, number> = {}
     let goldEarned   = 0
-    let totalDefeats = 0
 
     const damageRates: Record<string, number> = {}
     const inCombat = new Set<string>()
@@ -523,7 +530,13 @@ export const useGameStore = create<GameState>((set) => ({
           newDefeats[monster.id]      = (newDefeats[monster.id]      ?? 0) + completions
           expGained[locationId]        = (expGained[locationId] ?? 0) + completions
           goldEarned   += completions
-          totalDefeats += completions
+          const prev = locationStats[locationId] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+          locationStats[locationId] = {
+            ...prev,
+            monstersDefeated: { ...prev.monstersDefeated, [monster.id]: (prev.monstersDefeated[monster.id] ?? 0) + completions },
+            expDistributed: prev.expDistributed + completions,
+            goldEarned:     prev.goldEarned + completions,
+          }
         }
         const atkCd = calcAttackCooldown(monster.stats.attackSpeed)
         return { ...baseSlot, progress: combined - completions, targetUnitId: targets[i]?.id ?? null,
@@ -547,8 +560,6 @@ export const useGameStore = create<GameState>((set) => ({
         encounterCooldown[locationId] = newCd
       }
     }
-
-    const totalExpEarned = Object.values(expGained).reduce((a, b) => a + b, 0)
 
     const unitsPreLevel = s.units.map((u) => {
       let health = u.health
@@ -624,12 +635,8 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    const offlineSecs    = Math.round(n / TICKS_PER_SECOND)
-    const offlineSummary = n >= 50
-      ? { seconds: offlineSecs, goldEarned, monstersDefeated: totalDefeats, expEarned: totalExpEarned }
-      : s.offlineSummary
-
     if (n >= 50) {
+      const offlineSecs = Math.round(n / TICKS_PER_SECOND)
       const defeatParts = Object.entries(newDefeats)
         .map(([id, count]) => `${MONSTER_REGISTRY[id]?.name ?? id} ×${count}`)
         .join(', ')
@@ -637,10 +644,9 @@ export const useGameStore = create<GameState>((set) => ({
       eventLog = appendLog(eventLog, 'offline', msg, newTicks)
     }
 
-    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, miscItems, lastTickAt: Date.now(), offlineSummary, eventLog }
+    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, locationStats, miscItems, lastTickAt: Date.now(), eventLog }
   }),
 
-  dismissOfflineSummary: () => set({ offlineSummary: null }),
   togglePause: () => set((s) => s.paused
     ? { paused: false, lastTickAt: Date.now() }  // reset clock so no catch-up on unpause
     : { paused: true }
