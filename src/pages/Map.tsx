@@ -66,11 +66,11 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
     <button
       onClick={() => toggleSelectUnit(unit.id)}
       className={[
-        'shrink-0 w-28 px-3 py-2 rounded-lg border text-left select-none transition-colors duration-100',
+        'shrink-0 w-28 px-3 py-2 border-b text-left select-none transition-colors duration-100',
         unit.health <= 0 ? 'opacity-60' : '',
         isSelected
           ? 'border-game-primary bg-game-primary/25 text-white'
-          : 'border-game-border bg-game-surface text-game-text hover:border-game-primary/50',
+          : 'border-game-border bg-game-surface text-game-text hover:bg-white/5',
       ].join(' ')}
     >
       <div className="flex items-center justify-between gap-1 mb-1">
@@ -97,7 +97,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 
 function RosterCarousel({ units }: { units: Unit[] }) {
   return (
-    <div className="-mx-4 px-4 overflow-x-auto">
+    <div className="-mx-4 -mt-4 overflow-x-auto">
       <div className="flex gap-px pb-1">
         {units.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
       </div>
