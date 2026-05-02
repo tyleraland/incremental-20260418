@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useGameStore, RECOVERY_TICKS, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { LocationCodex } from '@/components/LocationCodex'
 
 // ── World pages (one per region) ──────────────────────────────────────────────
@@ -371,6 +371,42 @@ function LocationDetailPanel() {
         ) : (
           <span className="text-xs text-game-text-dim italic">Tap a location to see details</span>
         )}
+      </div>
+
+      {/* Middle: traits + encounters preview, fills remaining vertical space */}
+      <div className="flex-1 px-4 py-3 space-y-3 overflow-y-auto">
+        {location ? (
+          <>
+            {location.traits.length > 0 && (
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1">Traits</div>
+                <div className="flex flex-wrap gap-1">
+                  {location.traits.map((t) => (
+                    <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60 capitalize">
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {location.monsterIds.length > 0 && (
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1">Encounters</div>
+                <div className="flex flex-wrap gap-1">
+                  {location.monsterIds.map((id) => {
+                    const m = MONSTER_REGISTRY[id]
+                    return (
+                      <span key={id} className="text-[10px] px-1.5 py-0.5 rounded bg-game-border/30 text-game-text-dim border border-game-border/50">
+                        {m?.name ?? id}
+                        {m && <span className="ml-1 text-game-muted">Lv.{m.level}</span>}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        ) : null}
       </div>
 
       <div className="px-4 py-3 flex items-center gap-2 flex-wrap min-h-[60px]">
