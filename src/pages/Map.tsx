@@ -366,8 +366,8 @@ function LocationDetailPanel() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-game-surface border-t border-game-border">
-      <div className="px-4 py-3 border-b border-game-border min-h-[64px] flex flex-col justify-center">
+    <div className="flex-1 flex flex-col bg-game-surface border-t border-game-border min-h-0">
+      <div className="px-4 py-3 border-b border-game-border min-h-[64px] flex flex-col justify-center shrink-0">
         {location ? (
           <>
             <div className="flex items-center justify-between gap-2 mb-1">
@@ -387,7 +387,7 @@ function LocationDetailPanel() {
       </div>
 
       {/* Middle: familiarity + traits + encounters, fills remaining vertical space */}
-      <div className="flex-1 px-4 py-3 space-y-4 overflow-y-auto">
+      <div className="flex-1 min-h-0 px-4 py-3 space-y-4 overflow-y-auto">
         {location ? (() => {
           const famPct  = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
           const seenIds = (() => {
@@ -452,7 +452,7 @@ function LocationDetailPanel() {
         })() : null}
       </div>
 
-      <div className="px-4 py-3 flex items-center gap-2 flex-wrap min-h-[60px]">
+      <div className="px-4 py-3 flex items-center gap-2 flex-wrap min-h-[60px] shrink-0 border-t border-game-border/50">
         {hasUnits ? (
           <>
             <span className="text-xs text-game-text-dim mr-auto">
