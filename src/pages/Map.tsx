@@ -366,7 +366,7 @@ function LocationDetailPanel() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-game-surface border-t border-game-border min-h-0">
+    <div className="flex flex-col bg-game-surface border-t border-game-border min-h-0 overflow-hidden">
       <div className="px-4 py-3 border-b border-game-border min-h-[64px] flex flex-col justify-center shrink-0">
         {location ? (
           <>
@@ -518,7 +518,7 @@ export function Map() {
   const locations = useGameStore((s) => s.locations)
 
   return (
-    <div className="h-full flex flex-col pt-4">
+    <div className="h-full grid grid-rows-[auto_auto_minmax(0,1fr)] pt-4">
       <RosterCarousel units={units} />
       <WorldMap locations={locations} units={units} />
       <LocationDetailPanel />
