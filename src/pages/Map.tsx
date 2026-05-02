@@ -97,7 +97,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 
 function RosterCarousel({ units }: { units: Unit[] }) {
   return (
-    <div className="-mx-4 -mt-7 overflow-x-auto">
+    <div className="-mt-7 overflow-x-auto">
       <div className="flex gap-px">
         {units.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
       </div>
@@ -211,7 +211,7 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
   const pageLocations = locations.filter((l) => l.region === page.id)
 
   return (
-    <div className="rounded-lg border border-game-border bg-game-surface overflow-hidden">
+    <div className="bg-game-surface overflow-hidden">
       {/* Title */}
       <div className="px-3 py-2 border-b border-game-border bg-game-bg/60">
         <h2 className="text-center text-sm font-semibold uppercase tracking-[0.2em] text-game-text">
@@ -447,7 +447,7 @@ export function Map() {
 
   return (
     <>
-      <div className="p-4 pb-64">
+      <div className="pt-4 pb-64">
         <RosterCarousel units={units} />
         <WorldMap locations={locations} units={units} />
       </div>
