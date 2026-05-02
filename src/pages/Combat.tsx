@@ -205,7 +205,6 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap, onOpenCodex 
   const allUnits           = useGameStore((s) => s.units)
   const allSlots           = useGameStore((s) => s.encounters[locationId] ?? [])
   const slot               = allSlots[slotIndex] ?? null
-  const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
   const locationFleeing    = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
 
   const barRef   = useRef<HTMLDivElement>(null)
@@ -308,15 +307,6 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap, onOpenCodex 
         ) : (
           <span className="text-game-muted italic">no target</span>
         )}
-      </div>
-
-      <div className="flex items-center gap-1 flex-wrap">
-        {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => (
-          <button key={b} onClick={(e) => { e.stopPropagation(); setMonsterBehavior(locationId, slot.monsterId, b) }}
-            className={`px-1.5 py-0.5 rounded border text-[10px] font-medium transition-colors ${behavior === b ? activeClass : 'border-game-border/40 text-game-text-dim hover:border-game-border hover:text-game-text'}`}>
-            {label}
-          </button>
-        ))}
       </div>
     </div>
   )
