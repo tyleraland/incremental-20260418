@@ -88,16 +88,17 @@ describe('monster sightings (monsterSeen)', () => {
     expect(s.monsterSeen['slime']).toBe(1)
   })
 
-  it('increments by the number of slots in the wave (multi-slot waves count each monster)', () => {
-    // duskwood spawns 2 shadow-wolves
+  it('increments monsterSeen by 1 per slot when a wave spawns', () => {
+    // All current placeholder locations spawn a single slime; multi-slot
+    // waves will return when real encounters are configured.
     resetStore({
       units: [makeUnit({ locationId: 'duskwood' })],
       encounters: { duskwood: [] },
       encounterCooldown: { duskwood: 1 },
-      monsterSeen: { 'shadow-wolf': 3 },
+      monsterSeen: { slime: 3 },
     })
     const s = tick()
-    expect(s.monsterSeen['shadow-wolf']).toBe(5)  // 3 + 2
+    expect(s.monsterSeen['slime']).toBe(4)  // 3 + 1
   })
 
   it('increments monsterSeen when batchTick expires a cooldown', () => {

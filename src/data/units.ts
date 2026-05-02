@@ -23,7 +23,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   {
     id: 'u3', name: 'Theron', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
-    class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'gray-hills',
+    class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'mount-mjolnir',
     abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 },
     abilityPoints: 25, skillPoints: 2, learnedSkills: { 'arcane-knowledge': 3 },
     travelPath: null,
@@ -53,7 +53,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   {
     id: 'u6', name: 'Lyra', level: 5, exp: 750, expToNext: 800, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
-    class: 'Rogue', proficiencies: ['Daggers', 'Lockpicks'], locationId: 'lake-arawok',
+    class: 'Rogue', proficiencies: ['Daggers', 'Lockpicks'], locationId: 'geffen-field-1',
     abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5, intelligence: 5 },
     abilityPoints: 22, skillPoints: 3, learnedSkills: { 'keen-eyes': 5 },
     travelPath: null,

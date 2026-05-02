@@ -136,11 +136,21 @@ function spawnWave(locationId: string): EncounterSlot[] {
   })
 }
 
+// All Prontera + Geffen locations currently use a slime placeholder. We'll
+// override individual templates as locations are customized. Listed by id so
+// spawnWave / wave-cooldown logic can find a template for each.
+const PRONTERA_FIELD_IDS = Array.from({ length: 13 }, (_, i) => `prontera-field-${i + 1}`)
+const GEFFEN_FIELD_IDS   = Array.from({ length: 14 }, (_, i) => `geffen-field-${i + 1}`)
+
+const PLACEHOLDER_LOCATION_IDS = [
+  ...PRONTERA_FIELD_IDS,
+  'prontera-city', 'kings-forest', 'duskwood',
+  ...GEFFEN_FIELD_IDS,
+  'geffen-city', 'mount-mjolnir',
+]
+
 const INITIAL_ENCOUNTERS: Record<string, EncounterSlot[]> = {
-  'kings-forest': makeSlots(['slime']),
-  'duskwood':     makeSlots(['shadow-wolf', 'shadow-wolf']),
-  'lake-arawok':  makeSlots(['giant-frog', 'giant-frog']),
-  'gray-hills':   makeSlots(['rock-crab', 'stone-golem']),
+  ...Object.fromEntries(PLACEHOLDER_LOCATION_IDS.map((id) => [id, makeSlots(['slime'])])),
   ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, makeSlots(['rock-crab'])])),
 }
 
@@ -190,8 +200,8 @@ export const useGameStore = create<GameState>((set) => ({
   expandedRegionIds:         (() => { try { return JSON.parse(localStorage.getItem('expandedRegionIds')         ?? '["prontera","geffen","kanto"]') } catch { return ['prontera', 'geffen', 'kanto'] } })(),
   equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
-  locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, 'lake-arawok': 50, 'gray-hills': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
-  locationMonstersSeen: { 'kings-forest': ['slime'], 'duskwood': ['shadow-wolf'], 'lake-arawok': ['giant-frog'], 'gray-hills': ['rock-crab', 'stone-golem'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
+  locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
+  locationMonstersSeen: { 'kings-forest': ['slime'], 'duskwood': ['slime'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
   monsterSeen:          { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
   encounters:        INITIAL_ENCOUNTERS,
   encounterCooldown: {},
