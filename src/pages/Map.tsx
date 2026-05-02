@@ -170,7 +170,7 @@ function PageArrow({ direction, target, onClick }: {
       className={[
         horizontal
           ? 'w-7 self-stretch flex flex-col items-center justify-center'
-          : 'h-7 self-center flex items-center justify-center px-2 py-0.5 gap-1.5',
+          : 'h-5 self-center flex items-center justify-center px-2 gap-1.5',
         'rounded-md border text-[10px] font-semibold uppercase tracking-wider transition-colors',
         visible
           ? 'border-game-border text-game-text-dim hover:border-game-primary/60 hover:text-game-text'
@@ -212,16 +212,9 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
 
   return (
     <div className="bg-game-surface overflow-hidden">
-      {/* Title */}
-      <div className="px-3 py-2 border-b border-game-border bg-game-bg/60">
-        <h2 className="text-center text-sm font-semibold uppercase tracking-[0.2em] text-game-text">
-          {page.name}
-        </h2>
-      </div>
-
-      <div className="px-2 py-2 space-y-1">
+      <div className="px-2 py-1 space-y-1">
         {/* Up arrow row */}
-        <div className="flex justify-center min-h-[28px]">
+        <div className="flex justify-center min-h-[20px]">
           <PageArrow direction="up" target={up} onClick={() => goto(up)} />
         </div>
 
@@ -275,7 +268,7 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
         </div>
 
         {/* Down arrow row */}
-        <div className="flex justify-center min-h-[28px]">
+        <div className="flex justify-center min-h-[20px]">
           <PageArrow direction="down" target={down} onClick={() => goto(down)} />
         </div>
       </div>
