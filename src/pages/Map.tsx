@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
-import { LocationCodex } from '@/components/LocationCodex'
+import { MonsterCodex } from '@/components/MonsterCodex'
 
 // ── World pages (one per region) ──────────────────────────────────────────────
 
@@ -305,7 +305,8 @@ function LocationDetailPanel() {
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
   const encounters          = useGameStore((s) => s.encounters)
 
-  const [codexOpen, setCodexOpen] = useState(false)
+  const [codexMonsterId, setCodexMonsterId] = useState<string | null>(null)
+  const codexSeenCount = useGameStore((s) => codexMonsterId ? (s.monsterSeen[codexMonsterId] ?? 0) : 0)
 
   const location = selectedLocationId ? (locations.find((l) => l.id === selectedLocationId) ?? null) : null
   const hasUnits = selectedUnitIds.length > 0
@@ -370,15 +371,7 @@ function LocationDetailPanel() {
       <div className="px-4 py-3 border-b border-game-border min-h-[64px] flex flex-col justify-center shrink-0">
         {location ? (
           <>
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="font-semibold text-game-text">{location.name}</span>
-              <button
-                onClick={() => setCodexOpen(true)}
-                className="text-xs px-2 py-0.5 rounded border border-game-accent/40 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0"
-              >
-                Codex →
-              </button>
-            </div>
+            <div className="font-semibold text-game-text mb-1">{location.name}</div>
             <p className="text-xs text-game-text-dim leading-snug">{location.description}</p>
           </>
         ) : (
@@ -416,13 +409,17 @@ function LocationDetailPanel() {
                       const m = MONSTER_REGISTRY[id]
                       if (!m) return null
                       return (
-                        <div key={id} className="flex items-center gap-2 bg-game-bg rounded-md px-2.5 py-1.5">
+                        <button
+                          key={id}
+                          onClick={() => setCodexMonsterId(id)}
+                          className="w-full flex items-center gap-2 bg-game-bg rounded-md px-2.5 py-1.5 border border-transparent hover:border-game-primary/50 transition-colors text-left"
+                        >
                           <span className="text-xs text-game-text flex-1 truncate">{m.name}</span>
                           <span className="text-[10px] text-game-text-dim">Lv.{m.level}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium capitalize ${ELEMENT_COLORS[m.element] ?? ELEMENT_COLORS.neutral}`}>
                             {m.element}
                           </span>
-                        </div>
+                        </button>
                       )
                     })}
                     {unknownCount > 0 && (
@@ -506,7 +503,13 @@ function LocationDetailPanel() {
         )}
       </div>
 
-      {codexOpen && location && <LocationCodex location={location} onClose={() => setCodexOpen(false)} />}
+      {codexMonsterId && MONSTER_REGISTRY[codexMonsterId] && (
+        <MonsterCodex
+          monster={MONSTER_REGISTRY[codexMonsterId]}
+          seenCount={codexSeenCount}
+          onClose={() => setCodexMonsterId(null)}
+        />
+      )}
     </div>
   )
 }

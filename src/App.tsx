@@ -9,7 +9,6 @@ import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
 import { Guild } from '@/pages/Guild'
 import { Time } from '@/pages/Time'
-import { Codex } from '@/pages/Codex'
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
@@ -111,7 +110,6 @@ function App() {
         {activeTab === 'units'     && <Units />}
         {activeTab === 'inventory' && <Inventory />}
         {activeTab === 'guild'     && <Guild />}
-        {activeTab === 'codex'     && <Codex />}
         {activeTab === 'time'      && <Time />}
       </main>
       <TabBar />

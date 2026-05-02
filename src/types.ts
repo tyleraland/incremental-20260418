@@ -38,7 +38,7 @@ export interface SkillDef {
 
 export type EquipSlot    = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory'
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
-export type TabId        = 'map' | 'combat' | 'units' | 'inventory' | 'guild' | 'time' | 'codex'
+export type TabId        = 'map' | 'combat' | 'units' | 'inventory' | 'guild' | 'time'
 export type MonsterBehavior = 'normal' | 'prioritize' | 'ignore' | 'avoid'
 
 // §5: weapon sets — hand slots are switchable; armor/tool/accessory are shared
