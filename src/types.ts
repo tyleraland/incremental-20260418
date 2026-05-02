@@ -79,6 +79,7 @@ export interface Location {
   id: string; name: string; region: string; description: string
   traits: string[]; monsterIds: string[]; familiarityMax: number
   connections: string[]  // §2: locationIds reachable directly from here
+  dungeonEntryRegion?: string  // §10: if set, location's detail panel exposes "Enter <Region>" → switches map to that region
 }
 
 // ── Monster ───────────────────────────────────────────────────────────────────

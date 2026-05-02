@@ -10,12 +10,21 @@ const CELL_PX  = 60
 const GAP_PX   = 4
 
 interface PageNeighbors { left?: string; right?: string; up?: string; down?: string }
-interface PageDef extends PageNeighbors { id: string; name: string }
+interface PageDef extends PageNeighbors {
+  id: string
+  name: string
+  // For dungeon pages: the world location used as entry. The up-arrow exits
+  // to that location's region with the entry location selected. Dungeons
+  // never have left/right/down neighbors.
+  isDungeon?: boolean
+  entryLocationId?: string
+}
 
 const PAGES: PageDef[] = [
-  { id: 'prontera', name: 'Prontera Region', right: 'geffen',   down: 'kanto' },
-  { id: 'geffen',   name: 'Geffen Region',   left:  'prontera', down: 'kanto' },
-  { id: 'kanto',    name: 'Kanto',           up:    'prontera' },
+  { id: 'prontera',       name: 'Prontera Region', right: 'geffen',   down: 'kanto' },
+  { id: 'geffen',         name: 'Geffen Region',   left:  'prontera', down: 'kanto' },
+  { id: 'kanto',          name: 'Kanto',           up:    'prontera' },
+  { id: 'geffen-dungeon', name: 'Geffen Dungeon',  isDungeon: true,   entryLocationId: 'geffen-town' },
 ]
 
 const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
@@ -27,7 +36,14 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'duskwood':     [2, 3],
   // Geffen
   'lake-arawok':  [1, 1],
+  'geffen-town':  [3, 1],
   'gray-hills':   [3, 3],
+  // Geffen Dungeon — vertical chain in the middle column, deeper = lower
+  'geffen-dungeon-1': [2, 0],
+  'geffen-dungeon-2': [2, 1],
+  'geffen-dungeon-3': [2, 2],
+  'geffen-dungeon-4': [2, 3],
+  'geffen-dungeon-5': [2, 4],
   // Kanto
   'beach-1':  [0, 1],
   'beach-2':  [1, 1],
@@ -207,15 +223,30 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const page = PAGE_BY_ID[pageId] ?? PAGES[0]
 
-  const left  = page.left  ? PAGE_BY_ID[page.left]  : null
-  const right = page.right ? PAGE_BY_ID[page.right] : null
-  const up    = page.up    ? PAGE_BY_ID[page.up]    : null
-  const down  = page.down  ? PAGE_BY_ID[page.down]  : null
+  // Dungeon pages: only an up arrow, which exits to the entry location's
+  // region and selects the entry so the player has context. World pages use
+  // their declared neighbors and clear selection on navigation.
+  const dungeonExit = page.isDungeon && page.entryLocationId
+    ? locations.find((l) => l.id === page.entryLocationId) ?? null
+    : null
+
+  const left  = page.isDungeon ? null : (page.left  ? PAGE_BY_ID[page.left]  : null)
+  const right = page.isDungeon ? null : (page.right ? PAGE_BY_ID[page.right] : null)
+  const down  = page.isDungeon ? null : (page.down  ? PAGE_BY_ID[page.down]  : null)
+  const up: PageDef | null = page.isDungeon
+    ? (dungeonExit ? { id: dungeonExit.region, name: dungeonExit.name } : null)
+    : (page.up ? PAGE_BY_ID[page.up] : null)
 
   const goto = (target: PageDef | null) => {
     if (!target) return
     setMapPage(target.id)
-    setSelectedLocation(null)
+    if (page.isDungeon && dungeonExit) {
+      // Returning to the entry location — keep it selected so deploy/codex
+      // are one tap away.
+      setSelectedLocation(dungeonExit.id)
+    } else {
+      setSelectedLocation(null)
+    }
   }
 
   const pageLocations = locations.filter((l) => l.region === page.id)
@@ -318,6 +349,10 @@ function LocationDetailPanel() {
     : null
   const allAlreadyHere = hasLoc && selectedUnits.length > 0 && selectedUnits.every((u) => u.locationId === selectedLocationId)
 
+  const dungeonEntry = location?.dungeonEntryRegion
+    ? { regionId: location.dungeonEntryRegion, regionName: PAGE_BY_ID[location.dungeonEntryRegion]?.name ?? location.dungeonEntryRegion }
+    : null
+
   // Go-to-Combat target:
   //   - location-only        → that location
   //   - unit(s)-only         → their shared location (if any)
@@ -364,6 +399,12 @@ function LocationDetailPanel() {
   function handleClear() {
     clearSelection()
     setSelectedLocation(null)
+  }
+
+  function handleEnterDungeon() {
+    if (!dungeonEntry) return
+    setMapPage(dungeonEntry.regionId)
+    setSelectedLocation(null)  // entry location lives on a different page; keep unit selection so deploy is one tap
   }
 
   return (
@@ -482,6 +523,11 @@ function LocationDetailPanel() {
                 Go to Combat ›
               </button>
             )}
+            {dungeonEntry && (
+              <button onClick={handleEnterDungeon} className="text-sm py-1.5 px-3 rounded-lg border border-red-500/60 bg-red-600/20 text-red-200 hover:bg-red-600/30 hover:border-red-500 transition-colors">
+                Enter {dungeonEntry.regionName}
+              </button>
+            )}
             <button onClick={handleClear} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
               Cancel
             </button>
@@ -492,6 +538,11 @@ function LocationDetailPanel() {
             {combatTargetLocId && (
               <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
                 Go to Combat ›
+              </button>
+            )}
+            {dungeonEntry && (
+              <button onClick={handleEnterDungeon} className="text-sm py-1.5 px-3 rounded-lg border border-red-500/60 bg-red-600/20 text-red-200 hover:bg-red-600/30 hover:border-red-500 transition-colors">
+                Enter {dungeonEntry.regionName}
               </button>
             )}
             <button onClick={handleClear} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
