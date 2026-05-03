@@ -335,10 +335,10 @@ function UnitActionBar() {
   const hasUnits = selectedUnitIds.length > 0
 
   // Always-rendered fixed-height shell so toggling content doesn't shift the
-  // world map down. Single-line + horizontal scroll keeps the layout stable
-  // even when several action buttons are present on narrow viewports.
+  // world map. Two rows of buttons are reserved (no horizontal scroll); items
+  // wrap onto the second row as needed.
   if (!hasUnits) {
-    return <div className="h-14 border-b border-game-border/40" />
+    return <div className="h-[88px] border-b border-game-border/40" />
   }
 
   const selectedUnits = units.filter((u) => selectedUnitIds.includes(u.id))
@@ -377,7 +377,7 @@ function UnitActionBar() {
   }
 
   return (
-    <div className="h-14 px-4 flex items-center gap-2 overflow-x-auto border-b border-game-border bg-game-surface/40">
+    <div className="h-[88px] px-4 py-2 flex items-center content-center flex-wrap gap-2 border-b border-game-border bg-game-surface/40">
       <span className="text-xs text-game-text-dim shrink-0 mr-auto">
         {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''} selected
       </span>
