@@ -103,7 +103,7 @@ function calcHitChance(accuracy: number, dodge: number): number {
   return Math.min(0.95, Math.max(0.05, accuracy / (accuracy + dodge)))
 }
 
-const KANTO_BEACH_IDS = Array.from({ length: 10 }, (_, i) => `beach-${i + 1}`)
+const KANTO_BEACH_IDS = Array.from({ length: 9 }, (_, i) => `beach-${i + 1}`)
 
 function makeSlots(monsterIds: string[]): EncounterSlot[] {
   return monsterIds.map((monsterId) => {
@@ -111,23 +111,6 @@ function makeSlots(monsterIds: string[]): EncounterSlot[] {
     const atkCd   = monster ? calcAttackCooldown(monster.stats.attackSpeed) : TICKS_PER_SECOND
     return {
       monsterId, progress: 0, targetUnitId: null, behavior: 'normal',
-      phase: 'approaching' as const, distance: APPROACH_DISTANCE, dealtHistory: [], takenHistory: [],
-      attackCooldown:   Math.floor(Math.random() * atkCd) + 1,
-      progressCooldown: Math.floor(Math.random() * TICKS_PER_SECOND) + 1,
-      lastAttackMissed: false, lastProgressMissed: false,
-    }
-  })
-}
-
-// Spawn a fresh wave for a location using the same monster composition as the initial encounter.
-function spawnWave(locationId: string): EncounterSlot[] {
-  const template = INITIAL_ENCOUNTERS[locationId]
-  if (!template || template.length === 0) return []
-  return template.map((sl) => {
-    const monster = MONSTER_REGISTRY[sl.monsterId]
-    const atkCd   = monster ? calcAttackCooldown(monster.stats.attackSpeed) : TICKS_PER_SECOND
-    return {
-      monsterId: sl.monsterId, progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior,
       phase: 'approaching' as const, distance: APPROACH_DISTANCE, dealtHistory: [], takenHistory: [],
       attackCooldown:   Math.floor(Math.random() * atkCd) + 1,
       progressCooldown: Math.floor(Math.random() * TICKS_PER_SECOND) + 1,
@@ -151,11 +134,26 @@ const PLACEHOLDER_LOCATION_IDS = [
 
 const GEFFEN_DUNGEON_IDS = Array.from({ length: 5 }, (_, i) => `geffen-dungeon-${i + 1}`)
 
-const INITIAL_ENCOUNTERS: Record<string, EncounterSlot[]> = {
-  ...Object.fromEntries(PLACEHOLDER_LOCATION_IDS.map((id) => [id, makeSlots(['slime'])])),
-  ...Object.fromEntries(GEFFEN_DUNGEON_IDS.map((id) => [id, makeSlots(['bat'])])),
-  ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, makeSlots(['rock-crab'])])),
+// Per-location wave generator. Called both at module load (to seed
+// INITIAL_ENCOUNTERS) and on every respawn. Returning a plain string[] keeps
+// the door open for randomized wave compositions per spawn.
+const WAVE_TEMPLATES: Record<string, () => string[]> = {
+  ...Object.fromEntries(PLACEHOLDER_LOCATION_IDS.map((id) => [id, () => ['slime']])),
+  // Geffen Dungeon: 1 or 2 bats per wave.
+  ...Object.fromEntries(GEFFEN_DUNGEON_IDS.map((id) => [id, () => Math.random() < 0.5 ? ['bat'] : ['bat', 'bat']])),
+  ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, () => ['rock-crab']])),
 }
+
+// Spawn a fresh wave for a location using its WAVE_TEMPLATES generator.
+function spawnWave(locationId: string): EncounterSlot[] {
+  const fn = WAVE_TEMPLATES[locationId]
+  if (!fn) return []
+  return makeSlots(fn())
+}
+
+const INITIAL_ENCOUNTERS: Record<string, EncounterSlot[]> = Object.fromEntries(
+  Object.entries(WAVE_TEMPLATES).map(([id, fn]) => [id, makeSlots(fn())]),
+)
 
 // ── Event log helper ──────────────────────────────────────────────────────────
 
