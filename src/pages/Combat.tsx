@@ -198,8 +198,8 @@ function BigUnitCard({ unit, locationId, isSelected, onTap }: {
 
 // ── BigMonsterCard ────────────────────────────────────────────────────────────
 
-function BigMonsterCard({ slotIndex, locationId, isSelected, onTap, onOpenCodex }: {
-  slotIndex: number; locationId: string; isSelected: boolean; onTap: () => void; onOpenCodex: (monsterId: string) => void
+function BigMonsterCard({ slotIndex, locationId, isSelected, onTap }: {
+  slotIndex: number; locationId: string; isSelected: boolean; onTap: () => void
 }) {
   const equipment          = useGameStore((s) => s.equipment)
   const allUnits           = useGameStore((s) => s.units)
@@ -264,18 +264,10 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap, onOpenCodex 
       onClick={onTap}
       className={`cursor-pointer rounded-lg border bg-game-bg px-2.5 py-2 space-y-1.5 transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-60' : ''}`}
     >
-      <div className="flex items-center justify-between gap-1">
-        <div className="flex items-center gap-1 flex-wrap min-w-0">
-          <span className="text-sm font-semibold text-game-text truncate">{slotDisplayName(allSlots, slotIndex)}</span>
-          <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{monster.level}</span>
-          <ElementBadge element={monster.element} />
-        </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onOpenCodex(monster.id) }}
-          className="text-[10px] px-1.5 py-0.5 rounded border border-game-accent/40 text-game-accent hover:bg-game-accent/10 hover:border-game-accent transition-colors shrink-0"
-        >
-          Codex
-        </button>
+      <div className="flex items-center gap-1 flex-wrap min-w-0">
+        <span className="text-sm font-semibold text-game-text truncate">{slotDisplayName(allSlots, slotIndex)}</span>
+        <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{monster.level}</span>
+        <ElementBadge element={monster.element} />
       </div>
 
       <div className="flex items-center gap-1.5">
@@ -727,7 +719,6 @@ export function Combat() {
                         locationId={focusedLocation.id}
                         isSelected={isSel}
                         onTap={() => setSelectedMonsterSlot(isSel ? null : { locationId: focusedLocation.id, slotIndex: i })}
-                        onOpenCodex={(id) => setCodexMonsterId(id)}
                       />
                     )
                   })
