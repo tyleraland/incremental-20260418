@@ -313,21 +313,16 @@ function RosterChunk({ location, units, isFocused, onPick }: {
     <button
       onClick={onPick}
       className={[
-        'shrink-0 px-3 py-2 border-b text-left transition-colors min-w-[140px]',
+        'shrink-0 px-3 py-2 border-b text-left transition-colors flex items-center gap-2',
         isFocused
           ? 'border-game-primary bg-game-primary/15'
           : 'border-game-border bg-game-surface hover:bg-white/5',
       ].join(' ')}
     >
-      <div className="text-xs font-semibold text-game-text truncate mb-1">{location.name}</div>
-      <div className="flex flex-wrap gap-1">
-        {units.map((u) => (
-          <div key={u.id} className="flex items-center gap-1 py-1 px-1.5 rounded bg-game-border/30 border border-game-border/40">
-            <span className="text-[10px] text-game-text leading-none truncate">{u.name}</span>
-            <span className="text-[9px] text-game-text-dim leading-none">Lv.{u.level}</span>
-          </div>
-        ))}
-      </div>
+      <span className="text-sm font-semibold text-game-text truncate">{location.name}</span>
+      <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">
+        {units.length}
+      </span>
     </button>
   )
 }
