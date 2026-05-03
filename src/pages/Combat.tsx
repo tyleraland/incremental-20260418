@@ -309,7 +309,6 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap }: {
 function RosterChunk({ location, units, isFocused, onPick }: {
   location: Location; units: Unit[]; isFocused: boolean; onPick: () => void
 }) {
-  const equipment = useGameStore((s) => s.equipment)
   return (
     <button
       onClick={onPick}
@@ -322,21 +321,12 @@ function RosterChunk({ location, units, isFocused, onPick }: {
     >
       <div className="text-xs font-semibold text-game-text truncate mb-1">{location.name}</div>
       <div className="flex flex-wrap gap-1">
-        {units.map((u) => {
-          const maxHp  = getDerivedStats(u, equipment).maxHp
-          const hpPct  = Math.max(0, Math.min(100, (u.health / maxHp) * 100))
-          const isRec  = u.recoveryTicksLeft > 0
-          const recPct = isRec ? ((RECOVERY_TICKS - u.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
-          const color  = isRec ? 'bg-purple-500' : u.isResting ? 'bg-sky-500' : hpBarColor(hpPct)
-          return (
-            <div key={u.id} className="flex flex-col items-start py-1 px-1.5 rounded bg-game-border/30 border border-game-border/40 min-w-[44px]">
-              <span className="text-[10px] text-game-text leading-tight truncate w-full">{u.name}</span>
-              <div className="w-full bg-game-border/60 rounded-full h-0.5 overflow-hidden mt-0.5">
-                <div className={`${color} h-0.5 rounded-full`} style={{ width: `${isRec ? recPct : hpPct}%`, transition: 'none' }} />
-              </div>
-            </div>
-          )
-        })}
+        {units.map((u) => (
+          <div key={u.id} className="flex items-center gap-1 py-1 px-1.5 rounded bg-game-border/30 border border-game-border/40">
+            <span className="text-[10px] text-game-text leading-none truncate">{u.name}</span>
+            <span className="text-[9px] text-game-text-dim leading-none">Lv.{u.level}</span>
+          </div>
+        ))}
       </div>
     </button>
   )
