@@ -6,7 +6,8 @@ import { MonsterCodex } from '@/components/MonsterCodex'
 
 const GRID_W   = 3
 const GRID_H   = 3
-const CELL_PX  = 88
+const CELL_W   = 88
+const CELL_H   = 60
 const GAP_PX   = 4
 
 interface PageNeighbors { left?: string; right?: string; up?: string; down?: string }
@@ -264,15 +265,15 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
             className="bg-game-bg rounded-md p-1.5"
             style={{
               backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.5px)',
-              backgroundSize: `${CELL_PX + GAP_PX}px ${CELL_PX + GAP_PX}px`,
-              backgroundPosition: `${(CELL_PX + GAP_PX) / 2 + 6 - 0.5}px ${(CELL_PX + GAP_PX) / 2 + 6 - 0.5}px`,
+              backgroundSize: `${CELL_W + GAP_PX}px ${CELL_H + GAP_PX}px`,
+              backgroundPosition: `${(CELL_W + GAP_PX) / 2 + 6 - 0.5}px ${(CELL_H + GAP_PX) / 2 + 6 - 0.5}px`,
             }}
           >
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: `repeat(${GRID_W}, ${CELL_PX}px)`,
-                gridTemplateRows:    `repeat(${GRID_H}, ${CELL_PX}px)`,
+                gridTemplateColumns: `repeat(${GRID_W}, ${CELL_W}px)`,
+                gridTemplateRows:    `repeat(${GRID_H}, ${CELL_H}px)`,
                 gap: `${GAP_PX}px`,
               }}
             >
