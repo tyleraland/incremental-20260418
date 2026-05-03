@@ -331,7 +331,14 @@ function UnitActionBar() {
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
 
-  if (selectedUnitIds.length === 0) return null
+  const hasUnits = selectedUnitIds.length > 0
+
+  // Always-rendered fixed-height shell so toggling content doesn't shift the
+  // world map down. Single-line + horizontal scroll keeps the layout stable
+  // even when several action buttons are present on narrow viewports.
+  if (!hasUnits) {
+    return <div className="h-14 border-b border-game-border/40" />
+  }
 
   const selectedUnits = units.filter((u) => selectedUnitIds.includes(u.id))
   const location = selectedLocationId ? (locations.find((l) => l.id === selectedLocationId) ?? null) : null
@@ -369,36 +376,36 @@ function UnitActionBar() {
   }
 
   return (
-    <div className="px-4 py-2 flex items-center gap-2 flex-wrap min-h-[52px] border-b border-game-border bg-game-surface/40">
-      <span className="text-xs text-game-text-dim mr-auto">
+    <div className="h-14 px-4 flex items-center gap-2 overflow-x-auto border-b border-game-border bg-game-surface/40">
+      <span className="text-xs text-game-text-dim shrink-0 mr-auto">
         {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''} selected
       </span>
       <button
         onClick={handleDeploy}
         disabled={!hasLoc || allAlreadyHere}
         className={[
-          'btn-primary text-sm py-1.5 px-3',
+          'btn-primary text-sm py-1.5 px-3 shrink-0',
           (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
         ].join(' ')}
       >
         {hasLoc ? (allAlreadyHere ? 'Already here' : 'Deploy here') : 'Deploy (pick a location)'}
       </button>
       {selectedUnits.length === 1 && (
-        <button onClick={handleViewUnit} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+        <button onClick={handleViewUnit} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
           View ›
         </button>
       )}
       {sharedLocId && (
-        <button onClick={handleFindOnMap} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+        <button onClick={handleFindOnMap} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
           Find on Map
         </button>
       )}
       {combatTargetLocId && (
-        <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+        <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
           Go to Combat ›
         </button>
       )}
-      <button onClick={() => clearSelection()} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
+      <button onClick={() => clearSelection()} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors shrink-0">
         Cancel
       </button>
     </div>
