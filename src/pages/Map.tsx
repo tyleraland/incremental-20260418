@@ -315,20 +315,108 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
   )
 }
 
+// ── UnitActionBar ─────────────────────────────────────────────────────────────
+
+function UnitActionBar() {
+  const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
+  const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
+  const clearSelection      = useGameStore((s) => s.clearSelection)
+  const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
+  const setMapPage          = useGameStore((s) => s.setMapPage)
+  const assignUnits         = useGameStore((s) => s.assignUnits)
+  const setActiveTab        = useGameStore((s) => s.setActiveTab)
+  const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
+  const toggleUnit          = useGameStore((s) => s.toggleUnit)
+  const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
+  const locations           = useGameStore((s) => s.locations)
+  const units               = useGameStore((s) => s.units)
+
+  if (selectedUnitIds.length === 0) return null
+
+  const selectedUnits = units.filter((u) => selectedUnitIds.includes(u.id))
+  const location = selectedLocationId ? (locations.find((l) => l.id === selectedLocationId) ?? null) : null
+  const hasLoc = location !== null
+  const sharedLocId = selectedUnits.every((u) => u.locationId === selectedUnits[0].locationId)
+    ? selectedUnits[0].locationId
+    : null
+  const allAlreadyHere = hasLoc && selectedUnits.every((u) => u.locationId === selectedLocationId)
+  const combatTargetLocId = hasLoc ? (allAlreadyHere ? selectedLocationId : null) : sharedLocId
+
+  function handleDeploy() {
+    if (!selectedLocationId || allAlreadyHere) return
+    assignUnits(selectedUnitIds, selectedLocationId)
+  }
+  function handleViewUnit() {
+    const unitId = selectedUnits[0]?.id
+    if (!unitId) return
+    if (!expandedUnitIds.includes(unitId)) toggleUnit(unitId)
+    setActiveTab('units')
+    clearSelection()
+    setSelectedLocation(null)
+  }
+  function handleFindOnMap() {
+    if (!sharedLocId) return
+    const loc = locations.find((l) => l.id === sharedLocId)
+    if (!loc) return
+    setMapPage(loc.region)
+    setSelectedLocation(sharedLocId)
+  }
+  function handleGoCombat() {
+    if (combatTargetLocId) setCombatLocation(combatTargetLocId)
+    setActiveTab('combat')
+    clearSelection()
+    setSelectedLocation(null)
+  }
+
+  return (
+    <div className="px-4 py-2 flex items-center gap-2 flex-wrap min-h-[52px] border-b border-game-border bg-game-surface/40">
+      <span className="text-xs text-game-text-dim mr-auto">
+        {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''} selected
+      </span>
+      <button
+        onClick={handleDeploy}
+        disabled={!hasLoc || allAlreadyHere}
+        className={[
+          'btn-primary text-sm py-1.5 px-3',
+          (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
+        ].join(' ')}
+      >
+        {hasLoc ? (allAlreadyHere ? 'Already here' : 'Deploy here') : 'Deploy (pick a location)'}
+      </button>
+      {selectedUnits.length === 1 && (
+        <button onClick={handleViewUnit} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+          View ›
+        </button>
+      )}
+      {sharedLocId && (
+        <button onClick={handleFindOnMap} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+          Find on Map
+        </button>
+      )}
+      {combatTargetLocId && (
+        <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+          Go to Combat ›
+        </button>
+      )}
+      <button onClick={() => clearSelection()} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
+        Cancel
+      </button>
+    </div>
+  )
+}
+
 // ── LocationDetailPanel ───────────────────────────────────────────────────────
 
+// LocationDetailPanel — bottom panel; strictly location-only actions now
+// (unit actions live in the top UnitActionBar between roster and map).
 function LocationDetailPanel() {
   const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit    = useGameStore((s) => s.toggleSelectUnit)
-  const clearSelection      = useGameStore((s) => s.clearSelection)
-  const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
   const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
   const setMapPage          = useGameStore((s) => s.setMapPage)
-  const toggleUnit          = useGameStore((s) => s.toggleUnit)
-  const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
@@ -339,71 +427,27 @@ function LocationDetailPanel() {
   const codexSeenCount = useGameStore((s) => codexMonsterId ? (s.monsterSeen[codexMonsterId] ?? 0) : 0)
 
   const location = selectedLocationId ? (locations.find((l) => l.id === selectedLocationId) ?? null) : null
-  const hasUnits = selectedUnitIds.length > 0
   const hasLoc   = location !== null
-
-  const selectedUnits = units.filter((u) => selectedUnitIds.includes(u.id))
-  const sharedLocId   = selectedUnits.length > 0 && selectedUnits.every((u) => u.locationId === selectedUnits[0].locationId)
-    ? selectedUnits[0].locationId
-    : null
-  const allAlreadyHere = hasLoc && selectedUnits.length > 0 && selectedUnits.every((u) => u.locationId === selectedLocationId)
 
   const dungeonEntry = location?.dungeonEntryRegion
     ? { regionId: location.dungeonEntryRegion, regionName: PAGE_BY_ID[location.dungeonEntryRegion]?.name ?? location.dungeonEntryRegion }
     : null
 
-  // Go-to-Combat target:
-  //   - location-only        → that location
-  //   - unit(s)-only         → their shared location (if any)
-  //   - both, units already there → that location
-  //   - both, units elsewhere     → hidden
-  const combatTargetLocId =
-    hasLoc && hasUnits  ? (allAlreadyHere ? selectedLocationId : null)
-    : hasLoc            ? selectedLocationId
-    : hasUnits          ? sharedLocId
-    :                     null
-
-  // Find-on-Map: only when selected units share a real location.
-  const findTargetLocId = hasUnits ? sharedLocId : null
-
-  function handleDeploy() {
-    if (!selectedLocationId || allAlreadyHere) return
-    assignUnits(selectedUnitIds, selectedLocationId)
-  }
-
-  function handleViewUnit() {
-    const unitId = selectedUnits[0]?.id
-    if (!unitId) return
-    if (!expandedUnitIds.includes(unitId)) toggleUnit(unitId)
-    setActiveTab('units')
-    clearSelection()
-    setSelectedLocation(null)
-  }
+  // Go-to-Combat from the location panel only fires when no units are selected
+  // (otherwise the unit action bar at the top owns the Go to Combat).
+  const locationOnlyCombatTargetId = hasLoc && selectedUnitIds.length === 0 ? selectedLocationId : null
 
   function handleGoCombat() {
-    if (combatTargetLocId) setCombatLocation(combatTargetLocId)
+    if (!locationOnlyCombatTargetId) return
+    setCombatLocation(locationOnlyCombatTargetId)
     setActiveTab('combat')
-    clearSelection()
-    setSelectedLocation(null)
-  }
-
-  function handleFindOnMap() {
-    if (!findTargetLocId) return
-    const loc = locations.find((l) => l.id === findTargetLocId)
-    if (!loc) return
-    setMapPage(loc.region)
-    setSelectedLocation(findTargetLocId)
-  }
-
-  function handleClear() {
-    clearSelection()
     setSelectedLocation(null)
   }
 
   function handleEnterDungeon() {
     if (!dungeonEntry) return
     setMapPage(dungeonEntry.regionId)
-    setSelectedLocation(null)  // entry location lives on a different page; keep unit selection so deploy is one tap
+    setSelectedLocation(null)  // entry lives on a different page; keep unit selection so deploy stays one tap
   }
 
   return (
@@ -522,51 +566,10 @@ function LocationDetailPanel() {
       </div>
 
       <div className="px-4 py-3 flex items-center gap-2 flex-wrap min-h-[60px] shrink-0 border-t border-game-border/50">
-        {hasUnits ? (
-          <>
-            <span className="text-xs text-game-text-dim mr-auto">
-              {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''} selected
-            </span>
-            <button
-              onClick={handleDeploy}
-              disabled={!hasLoc || allAlreadyHere}
-              className={[
-                'btn-primary text-sm py-1.5 px-3',
-                (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
-              ].join(' ')}
-            >
-              {hasLoc
-                ? (allAlreadyHere ? 'Already here' : `Deploy here`)
-                : 'Deploy (pick a location)'}
-            </button>
-            {selectedUnits.length === 1 && (
-              <button onClick={handleViewUnit} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
-                View ›
-              </button>
-            )}
-            {findTargetLocId && (
-              <button onClick={handleFindOnMap} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
-                Find on Map
-              </button>
-            )}
-            {combatTargetLocId && (
-              <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
-                Go to Combat ›
-              </button>
-            )}
-            {dungeonEntry && (
-              <button onClick={handleEnterDungeon} className="text-sm py-1.5 px-3 rounded-lg border border-red-500/60 bg-red-600/20 text-red-200 hover:bg-red-600/30 hover:border-red-500 transition-colors">
-                Enter {dungeonEntry.regionName}
-              </button>
-            )}
-            <button onClick={handleClear} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
-              Cancel
-            </button>
-          </>
-        ) : hasLoc ? (
+        {hasLoc ? (
           <>
             <span className="text-xs text-game-text-dim mr-auto italic">Location actions</span>
-            {combatTargetLocId && (
+            {locationOnlyCombatTargetId && (
               <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
                 Go to Combat ›
               </button>
@@ -576,12 +579,12 @@ function LocationDetailPanel() {
                 Enter {dungeonEntry.regionName}
               </button>
             )}
-            <button onClick={handleClear} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
+            <button onClick={() => setSelectedLocation(null)} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">
               Cancel
             </button>
           </>
         ) : (
-          <span className="text-xs text-game-muted italic">Select a unit from the roster, or tap a location.</span>
+          <span className="text-xs text-game-muted italic">Tap a location on the map to see actions.</span>
         )}
       </div>
 
@@ -603,8 +606,9 @@ export function Map() {
   const locations = useGameStore((s) => s.locations)
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_minmax(0,1fr)] pt-4">
+    <div className="h-full grid grid-rows-[auto_auto_auto_minmax(0,1fr)] pt-4">
       <RosterCarousel units={units} />
+      <UnitActionBar />
       <WorldMap locations={locations} units={units} />
       <LocationDetailPanel />
     </div>
