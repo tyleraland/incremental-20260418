@@ -385,28 +385,28 @@ function UnitActionBar() {
         onClick={handleDeploy}
         disabled={!hasLoc || allAlreadyHere}
         className={[
-          'btn-primary text-sm py-1.5 px-3 shrink-0',
+          'btn-primary text-xs py-1 px-2.5 shrink-0',
           (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
         ].join(' ')}
       >
         {hasLoc ? (allAlreadyHere ? 'Already here' : 'Deploy here') : 'Deploy (pick a location)'}
       </button>
       {selectedUnits.length === 1 && (
-        <button onClick={handleViewUnit} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+        <button onClick={handleViewUnit} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
           View ›
         </button>
       )}
       {sharedLocId && (
-        <button onClick={handleFindOnMap} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+        <button onClick={handleFindOnMap} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
           Find on Map
         </button>
       )}
       {combatTargetLocId && (
-        <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+        <button onClick={handleGoCombat} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
           Go to Combat ›
         </button>
       )}
-      <button onClick={() => clearSelection()} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors shrink-0">
+      <button onClick={() => clearSelection()} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors shrink-0">
         Cancel
       </button>
     </div>
