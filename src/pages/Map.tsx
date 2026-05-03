@@ -323,6 +323,7 @@ function LocationDetailPanel() {
   const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
+  const toggleSelectUnit    = useGameStore((s) => s.toggleSelectUnit)
   const clearSelection      = useGameStore((s) => s.clearSelection)
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
@@ -330,6 +331,7 @@ function LocationDetailPanel() {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const toggleUnit          = useGameStore((s) => s.toggleUnit)
   const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
+  const equipment           = useGameStore((s) => s.equipment)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
@@ -430,8 +432,50 @@ function LocationDetailPanel() {
             return [...new Set([...saved, ...inSlots])]
           })()
           const unknownCount = location.monsterIds.length - seenIds.length
+          const unitsHere = units.filter((u) => u.locationId === location.id)
           return (
             <>
+              {unitsHere.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Units here</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {unitsHere.map((u) => {
+                      const isSelected = selectedUnitIds.includes(u.id)
+                      const isRec = u.recoveryTicksLeft > 0
+                      const maxHp = getDerivedStats(u, equipment).maxHp
+                      const hpPct = Math.max(0, Math.min(100, (u.health / maxHp) * 100))
+                      const recPct = isRec ? ((RECOVERY_TICKS - u.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
+                      const barColor = isRec
+                        ? 'bg-purple-500'
+                        : u.isResting ? 'bg-sky-500'
+                        : hpPct > 60   ? 'bg-game-green'
+                        : hpPct > 30   ? 'bg-game-gold'
+                        : 'bg-red-500'
+                      return (
+                        <button
+                          key={u.id}
+                          onClick={() => toggleSelectUnit(u.id)}
+                          className={[
+                            'shrink-0 w-24 px-2 py-1 rounded border text-left transition-colors',
+                            isSelected
+                              ? 'border-game-primary bg-game-primary/20'
+                              : 'border-game-border bg-game-bg hover:border-game-primary/50',
+                          ].join(' ')}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[11px] font-semibold text-game-text truncate">{u.name}</span>
+                            <span className="text-[9px] text-game-text-dim shrink-0">Lv.{u.level}</span>
+                          </div>
+                          <div className="w-full bg-game-border/60 rounded-full h-1 overflow-hidden mt-1">
+                            <div className={`${barColor} h-1 rounded-full`} style={{ width: `${isRec ? recPct : hpPct}%`, transition: 'none' }} />
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <div className="flex justify-between text-[10px] mb-1">
                   <span className="uppercase tracking-widest text-game-text-dim">Familiarity</span>
