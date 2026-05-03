@@ -331,7 +331,6 @@ function LocationDetailPanel() {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const toggleUnit          = useGameStore((s) => s.toggleUnit)
   const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
-  const equipment           = useGameStore((s) => s.equipment)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
@@ -441,33 +440,23 @@ function LocationDetailPanel() {
                   <div className="flex flex-wrap gap-1.5">
                     {unitsHere.map((u) => {
                       const isSelected = selectedUnitIds.includes(u.id)
-                      const isRec = u.recoveryTicksLeft > 0
-                      const maxHp = getDerivedStats(u, equipment).maxHp
-                      const hpPct = Math.max(0, Math.min(100, (u.health / maxHp) * 100))
-                      const recPct = isRec ? ((RECOVERY_TICKS - u.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
-                      const barColor = isRec
-                        ? 'bg-purple-500'
-                        : u.isResting ? 'bg-sky-500'
-                        : hpPct > 60   ? 'bg-game-green'
-                        : hpPct > 30   ? 'bg-game-gold'
-                        : 'bg-red-500'
                       return (
                         <button
                           key={u.id}
                           onClick={() => toggleSelectUnit(u.id)}
                           className={[
-                            'shrink-0 w-24 px-2 py-1 rounded border text-left transition-colors',
+                            'shrink-0 px-2 py-1 rounded border text-left transition-colors',
                             isSelected
                               ? 'border-game-primary bg-game-primary/20'
                               : 'border-game-border bg-game-bg hover:border-game-primary/50',
                           ].join(' ')}
                         >
-                          <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1.5">
                             <span className="text-[11px] font-semibold text-game-text truncate">{u.name}</span>
                             <span className="text-[9px] text-game-text-dim shrink-0">Lv.{u.level}</span>
                           </div>
-                          <div className="w-full bg-game-border/60 rounded-full h-1 overflow-hidden mt-1">
-                            <div className={`${barColor} h-1 rounded-full`} style={{ width: `${isRec ? recPct : hpPct}%`, transition: 'none' }} />
+                          <div className="text-[9px] text-game-text-dim leading-none mt-0.5">
+                            {u.class ?? <span className="italic text-game-muted">unclassed</span>}
                           </div>
                         </button>
                       )
