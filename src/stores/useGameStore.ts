@@ -139,8 +139,8 @@ function spawnWave(locationId: string): EncounterSlot[] {
 // All Prontera + Geffen locations currently use a slime placeholder. We'll
 // override individual templates as locations are customized. Listed by id so
 // spawnWave / wave-cooldown logic can find a template for each.
-const PRONTERA_FIELD_IDS = Array.from({ length: 13 }, (_, i) => `prontera-field-${i + 1}`)
-const GEFFEN_FIELD_IDS   = Array.from({ length: 14 }, (_, i) => `geffen-field-${i + 1}`)
+const PRONTERA_FIELD_IDS = Array.from({ length: 6 }, (_, i) => `prontera-field-${i + 1}`)
+const GEFFEN_FIELD_IDS   = Array.from({ length: 7 }, (_, i) => `geffen-field-${i + 1}`)
 
 const PLACEHOLDER_LOCATION_IDS = [
   ...PRONTERA_FIELD_IDS,
@@ -149,8 +149,11 @@ const PLACEHOLDER_LOCATION_IDS = [
   'geffen-city', 'mount-mjolnir',
 ]
 
+const GEFFEN_DUNGEON_IDS = Array.from({ length: 5 }, (_, i) => `geffen-dungeon-${i + 1}`)
+
 const INITIAL_ENCOUNTERS: Record<string, EncounterSlot[]> = {
   ...Object.fromEntries(PLACEHOLDER_LOCATION_IDS.map((id) => [id, makeSlots(['slime'])])),
+  ...Object.fromEntries(GEFFEN_DUNGEON_IDS.map((id) => [id, makeSlots(['bat'])])),
   ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, makeSlots(['rock-crab'])])),
 }
 

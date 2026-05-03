@@ -4,9 +4,9 @@ import { MonsterCodex } from '@/components/MonsterCodex'
 
 // ── World pages (one per region) ──────────────────────────────────────────────
 
-const GRID_W   = 4
-const GRID_H   = 4
-const CELL_PX  = 70
+const GRID_W   = 3
+const GRID_H   = 3
+const CELL_PX  = 88
 const GAP_PX   = 4
 
 interface PageNeighbors { left?: string; right?: string; up?: string; down?: string }
@@ -30,31 +30,29 @@ const PAGES: PageDef[] = [
 
 const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
 
-// Per-region (col, row) on the 4×4 grid (0-indexed). Unknown ids fall back to auto-flow.
+// Per-region (col, row) on the 3×3 grid (0-indexed). Unknown ids fall back to auto-flow.
 const LOCATION_COORDS: Record<string, [number, number]> = {
   // Prontera region
-  'prontera-field-1':  [0, 0], 'prontera-field-2':  [1, 0], 'prontera-field-3':  [2, 0], 'prontera-field-4':  [3, 0],
-  'prontera-field-5':  [0, 1], 'prontera-field-6':  [1, 1], 'prontera-field-7':  [2, 1], 'prontera-field-8':  [3, 1],
-  'kings-forest':      [0, 2], 'prontera-field-9':  [1, 2], 'prontera-city':     [2, 2], 'prontera-field-10': [3, 2],
-  'duskwood':          [0, 3], 'prontera-field-11': [1, 3], 'prontera-field-12': [2, 3], 'prontera-field-13': [3, 3],
+  'prontera-field-1': [0, 0], 'prontera-field-2': [1, 0], 'prontera-field-3': [2, 0],
+  'kings-forest':     [0, 1], 'prontera-city':    [1, 1], 'prontera-field-4': [2, 1],
+  'duskwood':         [0, 2], 'prontera-field-5': [1, 2], 'prontera-field-6': [2, 2],
 
   // Geffen region
-  'geffen-field-1':  [0, 0], 'geffen-field-2':  [1, 0], 'geffen-field-3':  [2, 0], 'mount-mjolnir':   [3, 0],
-  'geffen-field-4':  [0, 1], 'geffen-city':     [1, 1], 'geffen-field-5':  [2, 1], 'geffen-field-6':  [3, 1],
-  'geffen-field-7':  [0, 2], 'geffen-field-8':  [1, 2], 'geffen-field-9':  [2, 2], 'geffen-field-10': [3, 2],
-  'geffen-field-11': [0, 3], 'geffen-field-12': [1, 3], 'geffen-field-13': [2, 3], 'geffen-field-14': [3, 3],
+  'geffen-field-1': [0, 0], 'geffen-field-2': [1, 0], 'mount-mjolnir':  [2, 0],
+  'geffen-field-3': [0, 1], 'geffen-city':    [1, 1], 'geffen-field-4': [2, 1],
+  'geffen-field-5': [0, 2], 'geffen-field-6': [1, 2], 'geffen-field-7': [2, 2],
 
-  // Geffen Dungeon — winding path through the 4×4
-  'geffen-dungeon-1': [1, 0],
-  'geffen-dungeon-2': [1, 1],
-  'geffen-dungeon-3': [1, 2],
-  'geffen-dungeon-4': [2, 2],
-  'geffen-dungeon-5': [2, 3],
+  // Geffen Dungeon — top row + right column (Floor 1 top-left → Floor 5 bottom-right)
+  'geffen-dungeon-1': [0, 0],
+  'geffen-dungeon-2': [1, 0],
+  'geffen-dungeon-3': [2, 0],
+  'geffen-dungeon-4': [2, 1],
+  'geffen-dungeon-5': [2, 2],
 
-  // Kanto — beaches centered in the 4×4
-  'beach-1': [0, 1], 'beach-2': [1, 1], 'beach-3': [2, 1], 'beach-4': [3, 1],
-  'beach-5': [0, 2], 'beach-6': [1, 2], 'beach-7': [2, 2], 'beach-8': [3, 2],
-  'beach-9': [1, 3], 'beach-10': [2, 3],
+  // Kanto — 9 beaches fill the 3×3
+  'beach-1': [0, 0], 'beach-2': [1, 0], 'beach-3': [2, 0],
+  'beach-4': [0, 1], 'beach-5': [1, 1], 'beach-6': [2, 1],
+  'beach-7': [0, 2], 'beach-8': [1, 2], 'beach-9': [2, 2],
 }
 
 function hpBarColor(hp: number) {

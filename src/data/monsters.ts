@@ -11,6 +11,7 @@ export const DROP_ITEMS: Record<string, string> = {
   'drop-crab-shell':    'Crab Shell',    'drop-crab-claw':     'Crab Claw',
   'drop-stone-shard':   'Stone Shard',   'drop-golem-core':    'Golem Core',
   'drop-ectoplasm':     'Ectoplasm',     'drop-ancient-coin':  'Ancient Coin',
+  'drop-bat-wing':      'Bat Wing',      'drop-bat-fang':      'Bat Fang',
 }
 
 export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
@@ -26,4 +27,5 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   'rock-crab':     { id: 'rock-crab',    name: 'Rock Crab',     level: 3, health:  55, element: 'earth',   size: 'small',  attackName: 'Claws',  stats: { attack: 10, defense: [7,7],   magicAttack: 1,  magicDefense: [3,3],  attackSpeed: 6,  accuracy: 10, dodge: 4  }, drops: [{ itemId: 'drop-crab-shell',     dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-crab-claw',     dropRate: 0.45, quantityMin: 1, quantityMax: 2 }] },
   'stone-golem':   { id: 'stone-golem',  name: 'Stone Golem',   level: 7, health: 120, element: 'earth',   size: 'large',  attackName: 'Fist',   stats: { attack: 22, defense: [12,12], magicAttack: 3,  magicDefense: [5,5],  attackSpeed: 6,  accuracy: 12, dodge: 3  }, drops: [{ itemId: 'drop-stone-shard',    dropRate: 0.85, quantityMin: 1, quantityMax: 4 }, { itemId: 'drop-golem-core',    dropRate: 0.10, quantityMin: 1, quantityMax: 1 }] },
   'ruins-specter': { id: 'ruins-specter',name: 'Ruins Specter', level: 6, health:  90, element: 'neutral', size: 'medium', attackName: 'Claws',  stats: { attack: 8,  defense: [2,2],   magicAttack: 20, magicDefense: [9,9],  attackSpeed: 10, accuracy: 16, dodge: 12 }, drops: [{ itemId: 'drop-ectoplasm',      dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ancient-coin',  dropRate: 0.20, quantityMin: 1, quantityMax: 3 }] },
+  'bat':           { id: 'bat',          name: 'Bat',           level: 2, health:  25, element: 'wind',    size: 'small',  attackName: 'Bite',   stats: { attack: 2,  defense: [1,1],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 22, accuracy: 22, dodge: 14 }, drops: [{ itemId: 'drop-bat-wing',       dropRate: 0.65, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-bat-fang',      dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
 }

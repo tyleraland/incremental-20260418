@@ -1,6 +1,6 @@
 import type { Location } from '@/types'
 
-const KANTO_BEACH_IDS = Array.from({ length: 10 }, (_, i) => `beach-${i + 1}`)
+const KANTO_BEACH_IDS = Array.from({ length: 9 }, (_, i) => `beach-${i + 1}`)
 
 // All newly-introduced placeholder locations share a single slime encounter.
 // We'll customize these later — the names + ids are committed shape, but the
@@ -28,8 +28,8 @@ function gefField(n: number): Location {
 }
 
 export const INITIAL_LOCATIONS: Location[] = [
-  // ── Prontera region (4×4) ─────────────────────────────────────────────────
-  ...Array.from({ length: 13 }, (_, i) => pronField(i + 1)),
+  // ── Prontera region (3×3) ─────────────────────────────────────────────────
+  ...Array.from({ length: 6 }, (_, i) => pronField(i + 1)),
   { id: 'prontera-city', region: 'prontera', name: 'Prontera City',
     description: 'Capital of the Prontera kingdom.',
     traits: ['city'], monsterIds: PLACEHOLDER_MONSTERS, familiarityMax: 100, connections: [] },
@@ -40,8 +40,8 @@ export const INITIAL_LOCATIONS: Location[] = [
     description: 'A shadowed wood where the trees grow unnaturally tall.',
     traits: ['forest', 'shadow', 'dangerous'], monsterIds: PLACEHOLDER_MONSTERS, familiarityMax: 100, connections: [] },
 
-  // ── Geffen region (4×4) ───────────────────────────────────────────────────
-  ...Array.from({ length: 14 }, (_, i) => gefField(i + 1)),
+  // ── Geffen region (3×3) ───────────────────────────────────────────────────
+  ...Array.from({ length: 7 }, (_, i) => gefField(i + 1)),
   { id: 'geffen-city',   region: 'geffen', name: 'Geffen City',
     description: 'A bustling mage city built atop ancient catacombs.',
     traits: ['city', 'arcane'], monsterIds: PLACEHOLDER_MONSTERS, familiarityMax: 100, connections: [],
@@ -50,12 +50,12 @@ export const INITIAL_LOCATIONS: Location[] = [
     description: 'An ancient mountain rumored to hold great power.',
     traits: ['mountain', 'arcane'], monsterIds: PLACEHOLDER_MONSTERS, familiarityMax: 100, connections: [] },
 
-  // ── Geffen Dungeon (private 4×4 grid) ─────────────────────────────────────
+  // ── Geffen Dungeon (private 3×3 grid) ─────────────────────────────────────
   ...Array.from({ length: 5 }, (_, i) => ({
     id: `geffen-dungeon-${i + 1}`, region: 'geffen-dungeon',
     name: `Geffen Dungeon Floor ${i + 1}`,
     description: `Floor ${i + 1} of the catacombs beneath Geffen.`,
-    traits: ['dungeon', 'underground'], monsterIds: [] as string[],
+    traits: ['dungeon', 'underground'], monsterIds: ['bat'] as string[],
     familiarityMax: 100, connections: [] as string[],
   })),
 
