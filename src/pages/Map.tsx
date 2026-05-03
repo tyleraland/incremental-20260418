@@ -379,7 +379,7 @@ function UnitActionBar() {
   return (
     <div className="h-[88px] px-4 py-2 flex items-center content-center flex-wrap gap-2 border-b border-game-border bg-game-surface/40">
       <span className="text-xs text-game-text-dim shrink-0 mr-auto">
-        {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''} selected
+        {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''}
       </span>
       <button
         onClick={handleDeploy}
@@ -389,7 +389,7 @@ function UnitActionBar() {
           (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
         ].join(' ')}
       >
-        {hasLoc ? (allAlreadyHere ? 'Already here' : 'Deploy here') : 'Deploy (pick a location)'}
+        {hasLoc ? (allAlreadyHere ? 'Already here' : 'Deploy here') : 'Deploy'}
       </button>
       {selectedUnits.length === 1 && (
         <button onClick={handleViewUnit} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
@@ -398,12 +398,12 @@ function UnitActionBar() {
       )}
       {sharedLocId && (
         <button onClick={handleFindOnMap} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
-          Find on Map
+          Find ›
         </button>
       )}
       {combatTargetLocId && (
         <button onClick={handleGoCombat} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
-          Go to Combat ›
+          Combat ›
         </button>
       )}
       <button onClick={() => clearSelection()} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors shrink-0">
