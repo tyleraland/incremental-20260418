@@ -398,7 +398,7 @@ function UnitActionBar() {
       )}
       {sharedLocId && (
         <button onClick={handleFindOnMap} className="text-xs py-1 px-2.5 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
-          Find ›
+          Map
         </button>
       )}
       {combatTargetLocId && (

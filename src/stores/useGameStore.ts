@@ -663,7 +663,27 @@ export const useGameStore = create<GameState>((set) => ({
     : { paused: true }
   ),
 
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => set((s) => {
+    const update: Partial<GameState> = { activeTab: tab }
+    if (tab === 'combat') {
+      // Map → Combat: if only a location is selected (no units), surface it
+      // as the combat focus so we land on its encounter view.
+      if (s.selectedLocationId && s.selectedUnitIds.length === 0) {
+        update.combatLocationId = s.selectedLocationId
+      }
+    } else if (tab === 'map') {
+      // Combat → Map: bring the combat-focused location onto the map by
+      // paging to its region and selecting it.
+      if (s.combatLocationId) {
+        const loc = s.locations.find((l) => l.id === s.combatLocationId)
+        if (loc) {
+          update.mapPageId = loc.region
+          update.selectedLocationId = s.combatLocationId
+        }
+      }
+    }
+    return update
+  }),
   toggleRegion: (id) => set((s) => {
     const next = s.expandedRegionIds.includes(id) ? s.expandedRegionIds.filter((x) => x !== id) : [...s.expandedRegionIds, id]
     localStorage.setItem('expandedRegionIds', JSON.stringify(next))

@@ -1,4 +1,4 @@
-import { useState, useLayoutEffect, useRef } from 'react'
+import { useState, useLayoutEffect, useRef, useEffect } from 'react'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
 import type { MonsterDef } from '@/types'
 import { MonsterCodex } from '@/components/MonsterCodex'
@@ -616,6 +616,12 @@ export function Combat() {
   const focusedLocation = focusId ? (locations.find((l) => l.id === focusId) ?? null) : null
   const focusedUnits    = focusId ? units.filter((u) => u.locationId === focusId) : []
   const monsterSlots    = focusId ? (allEncounters[focusId] ?? []) : []
+
+  // Keep combatLocationId aligned with what's actually shown so back-to-map
+  // navigation surfaces the same location. Skips when focusId === stored id.
+  useEffect(() => {
+    if (focusId && focusId !== combatLocationId) setCombatLocation(focusId)
+  }, [focusId, combatLocationId, setCombatLocation])
 
   // Only surface the detail panel for selections that belong to the focused location.
   const detailUnit = focusedUnits.find((u) => selectedUnitIds.includes(u.id)) ?? null
