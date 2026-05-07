@@ -338,7 +338,7 @@ function UnitActionBar() {
   // world map. Two rows of buttons are reserved (no horizontal scroll); items
   // wrap onto the second row as needed.
   if (!hasUnits) {
-    return <div className="h-[88px] border-b border-game-border/40" />
+    return <div className="h-12 border-b border-game-border/40" />
   }
 
   const selectedUnits = units.filter((u) => selectedUnitIds.includes(u.id))
@@ -377,7 +377,7 @@ function UnitActionBar() {
   }
 
   return (
-    <div className="h-[88px] px-3 py-2 flex items-center content-center flex-wrap gap-1.5 border-b border-game-border bg-game-surface/40">
+    <div className="h-12 px-3 flex items-center gap-1.5 border-b border-game-border bg-game-surface/40 overflow-hidden">
       <span className="text-xs text-game-text-dim shrink-0 mr-auto">
         {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''}
       </span>
