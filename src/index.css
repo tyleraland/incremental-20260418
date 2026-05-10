@@ -24,3 +24,28 @@
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
 }
+
+/* RangeTrack hunting state — scrolls a faint dash pattern right→left to suggest
+   the world moving past the stationary party. */
+@keyframes hunt-scroll {
+  from { background-position-x: 0; }
+  to   { background-position-x: -16px; }
+}
+.hunt-scroll-bg {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255,255,255,0.05) 0 1px,
+    transparent 1px 16px
+  );
+  animation: hunt-scroll 0.8s linear infinite;
+}
+
+/* Monster chip "appearing from off-screen" pop when a wave spawns. */
+@keyframes chip-spawn {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.animate-chip-spawn {
+  animation: chip-spawn 0.35s ease-out;
+}

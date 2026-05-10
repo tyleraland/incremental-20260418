@@ -608,6 +608,8 @@ function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonster
   const fleeing      = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
 
   const pct = (d: number) => Math.max(0, Math.min(100, (d / APPROACH_DISTANCE) * 100))
+  const aliveCount = units.filter((u) => u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting).length
+  const isHunting  = slots.length === 0 && aliveCount > 0 && fleeing === 0
 
   // Stack chips that share an initial+side to avoid overlap; rank dupes
   const monsterRanks: Record<string, number> = {}
@@ -623,21 +625,24 @@ function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonster
     return { i, label, name, pos: sl.distance, range, speed, behavior: sl.behavior, hpPct: 1 - sl.progress }
   })
 
-  const unitChips = units.map((u) => {
+  // Spread units that share a formation position via small vertical jitter so
+  // overlapping chips don't pile up.
+  const unitChips = units.map((u, idx) => {
     const d = getDerivedStats(u, equipment)
     const pos = unitDistance[u.id] ?? 0
     const ko = u.recoveryTicksLeft > 0 || u.isResting || u.health <= 0
-    return { id: u.id, label: initialOf(u.name), name: u.name, pos, range: d.attackRange, speed: d.moveSpeed, ko }
+    const yShift = (idx % 3 - 1) * 6  // -6, 0, +6 px
+    return { id: u.id, label: initialOf(u.name), name: u.name, pos, range: d.attackRange, speed: d.moveSpeed, ko, yShift }
   })
 
   return (
     <div className="rounded-lg border border-game-border bg-game-surface px-2 py-2 mb-2">
       <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">
-        <span>Front line</span>
+        <span>{isHunting ? 'Marching' : 'Front line'}</span>
         <span>Range</span>
-        <span>Spawn</span>
+        <span>{isHunting ? 'Horizon' : 'Spawn'}</span>
       </div>
-      <div className="relative h-9 bg-game-bg rounded border border-game-border/40 overflow-visible">
+      <div className={`relative h-9 bg-game-bg rounded border border-game-border/40 overflow-visible ${isHunting ? 'hunt-scroll-bg' : ''}`}>
         {/* dashed midline */}
         <div className="absolute top-0 bottom-0 left-1/2 w-px border-l border-dashed border-game-border/50" />
 
@@ -673,21 +678,22 @@ function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonster
               key={`u-${c.id}`}
               onClick={(e) => { e.stopPropagation(); onTapUnit(c.id) }}
               title={`${c.name} • range ${c.range} • spd ${c.speed.toFixed(1)}`}
-              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center border transition-[left] duration-200 ease-linear ${
+              className={`absolute top-1/2 -translate-x-1/2 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center border transition-[left] duration-200 ease-linear ${
                 c.ko
                   ? 'bg-purple-900 text-purple-300 border-purple-700'
                   : isSel
                   ? 'bg-game-primary text-white border-game-primary shadow-md shadow-game-primary/40'
                   : 'bg-sky-700 text-sky-100 border-sky-500'
               }`}
-              style={{ left: `${pct(c.pos)}%`, zIndex: isSel ? 5 : 2 }}
+              style={{ left: `${pct(c.pos)}%`, transform: `translate(-50%, calc(-50% + ${c.yShift}px))`, zIndex: isSel ? 5 : 2 }}
             >
               {c.label}
             </button>
           )
         })}
 
-        {/* monster chips */}
+        {/* monster chips — animate-chip-spawn fires once on mount, so each new
+            wave's chips pop in from off-screen */}
         {monsterChips.map((c) => {
           const isSel = selectedMonsterSlotIdx === c.i
           const dim   = c.behavior === 'ignore' ? 'opacity-60' : ''
@@ -699,7 +705,7 @@ function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonster
               key={`m-${c.i}`}
               onClick={(e) => { e.stopPropagation(); onTapMonster(c.i) }}
               title={`${c.name} • range ${c.range} • spd ${c.speed.toFixed(1)}`}
-              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center border transition-[left] duration-200 ease-linear ${
+              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center border transition-[left] duration-200 ease-linear animate-chip-spawn ${
                 isSel ? 'ring-2 ring-game-primary z-10' : ''
               } ${tone} ${dim}`}
               style={{ left: `${pct(c.pos)}%`, zIndex: isSel ? 5 : 3 }}
@@ -712,6 +718,11 @@ function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonster
         {fleeing > 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-[10px] text-sky-300 italic">
             fleeing…
+          </div>
+        )}
+        {isHunting && (
+          <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-[10px] text-game-text-dim italic">
+            hunting…
           </div>
         )}
       </div>

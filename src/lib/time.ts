@@ -14,7 +14,7 @@ export const FLEE_TICKS_CONST   = 10   // ticks to complete a flee action (~2 re
 export const WAVE_COOLDOWN_MIN  = 15   // min ticks between last defeat and next wave (~3 real-sec)
 export const WAVE_COOLDOWN_MAX  = 40   // max ticks between last defeat and next wave (~8 real-sec)
 export const ATTACK_SPEED_BASE  = 10   // attackSpeed=10 → baseline; cooldown = round(TICKS_PER_SECOND * BASE / speed)
-export const APPROACH_DISTANCE  = 30   // 1D combat axis length; monsters spawn here, units start at 0
+export const APPROACH_DISTANCE  = 20   // 1D combat axis length; monsters spawn here, units hold formation near 0
 export const APPROACH_SPEED     = 1    // legacy; per-actor moveSpeed is read from monster/unit stats now
 
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
