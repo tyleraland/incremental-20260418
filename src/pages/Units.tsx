@@ -112,7 +112,7 @@ function StatsTab({ unit }: { unit: Unit }) {
         {[
           { label: 'Level', value: unit.level },
           { label: 'Age',   value: `${unit.age}y` },
-          { label: 'Class', value: unit.class ?? '—' },
+          { label: 'Class', value: unit.class ?? 'Novice' },
         ].map(({ label, value }) => (
           <div key={label} className="bg-game-bg rounded-lg px-3 py-2">
             <div className="text-xs text-game-text-dim mb-0.5">{label}</div>
@@ -360,9 +360,7 @@ function UnitRow({ unit }: { unit: Unit }) {
         <button className="flex-1 flex items-center gap-2 text-left min-w-0" onClick={() => toggleUnit(unit.id)}>
           <span className="font-semibold text-game-text">{unit.name}</span>
           <span className="text-xs text-game-text-dim shrink-0">Lv.{unit.level}</span>
-          {unit.class && (
-            <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded shrink-0">{unit.class}</span>
-          )}
+          <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded shrink-0">{unit.class ?? 'Novice'}</span>
           {location && (
             <span className="text-xs text-game-accent bg-game-accent/10 px-1.5 py-0.5 rounded truncate max-w-[90px] shrink-0">{location.name}</span>
           )}

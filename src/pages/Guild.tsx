@@ -40,9 +40,7 @@ export function Guild() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-game-text">{unit.name}</span>
-                  {unit.class && (
-                    <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded">{unit.class}</span>
-                  )}
+                  <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded">{unit.class ?? 'Novice'}</span>
                 </div>
                 <div className="text-xs text-game-text-dim mt-0.5">
                   Lv.{unit.level} · Age {unit.age}

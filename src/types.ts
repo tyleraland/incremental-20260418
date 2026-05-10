@@ -128,7 +128,9 @@ export interface EquipmentItem {
   id: string; name: string; category: ItemCategory; traits: string[]
   stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number; range?: number }
   description?: string
-  slots?: number  // §6: card sockets (0–4); default 0
+  slots?: number          // §6: card sockets (0–4); default 0
+  requiredLevel?: number  // minimum unit level to equip
+  requiredClasses?: string[] // class whitelist; null/Novice counts as 'Novice'
 }
 
 // ── Misc & crafting ───────────────────────────────────────────────────────────
