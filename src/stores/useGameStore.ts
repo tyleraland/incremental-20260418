@@ -333,8 +333,13 @@ export const useGameStore = create<GameState>((set) => ({
         }
       }
 
-      // Units always drift to their formation offset — they hold the line and
-      // let monsters close. Ranged units stay back, melee step forward.
+      // Each unit either:
+      //  - has a focus monster → advance toward `monsterPos - attackRange` so
+      //    both sides close the gap and a fast actor engages sooner; the
+      //    formation offset acts as a floor so back-rank units don't get
+      //    pushed past their rank when a monster overruns the line.
+      //  - has no focus (no slots, or no monsters in their assigned wave) →
+      //    drift back toward formation offset.
       const unitToSlot: Record<string, number> = {}
       for (let ui = 0; ui < aliveUnits.length; ui++) {
         if (focusIdxs.length === 0) continue
@@ -343,10 +348,14 @@ export const useGameStore = create<GameState>((set) => ({
       for (const u of aliveUnits) {
         const ud = getDerivedStats(u, s.equipment)
         const formation = getFormationOffset(u, s.equipment)
+        const slotIdx = unitToSlot[u.id]
         const cur = oldUnitPos[u.id]
-        if (cur < formation)      unitDistance[u.id] = Math.min(cur + ud.moveSpeed, formation)
-        else if (cur > formation) unitDistance[u.id] = Math.max(cur - ud.moveSpeed, formation)
-        else                      unitDistance[u.id] = cur
+        const desired = slotIdx !== undefined
+          ? Math.max(formation, newSlotPos[slotIdx] - ud.attackRange)
+          : formation
+        if (cur < desired)      unitDistance[u.id] = Math.min(cur + ud.moveSpeed, desired)
+        else if (cur > desired) unitDistance[u.id] = Math.max(cur - ud.moveSpeed, desired)
+        else                    unitDistance[u.id] = cur
       }
 
       // ── Process slots: engagement gated by gap vs attackRange ───────────────
