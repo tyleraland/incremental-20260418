@@ -43,7 +43,14 @@ export interface SkillDef {
 export type EquipSlot    = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory'
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
 export type TabId        = 'map' | 'combat' | 'units' | 'inventory' | 'guild' | 'time'
-export type MonsterBehavior = 'normal' | 'prioritize' | 'ignore' | 'avoid'
+// Monster slot priority (per-location, per-monsterId-via-slot):
+//   ≥ 1: focusable; higher = attacked first. 1 = normal, 2/3/… = bumped.
+//   0  : ignore — party doesn't attack but the monster still engages.
+//   -1 : avoid — party flees the location.
+export type Priority = number
+export const PRIORITY_NORMAL = 1
+export const PRIORITY_IGNORE = 0
+export const PRIORITY_AVOID  = -1
 
 // §5: weapon sets — hand slots are switchable; armor/tool/accessory are shared
 export type WeaponRecord = { mainHand: string | null; offHand: string | null }
@@ -161,7 +168,8 @@ export interface EncounterSlot {
   monsterId: string
   progress: number            // 0..1; reaches 1 when monster is defeated, slot then removed
   targetUnitId: string | null // which unit this monster is targeting
-  behavior: MonsterBehavior   // per-slot (not per-monsterId), enabling boss differentiation
+  priority: Priority          // -1=avoid, 0=ignore, ≥1=focusable (higher first)
+  threat:   Record<string, number>  // unitId → accumulated HP-equivalent damage dealt; resets per spawn
   phase: 'approaching' | 'standing' | 'retreating'  // derived from gap vs attackRange; stored for UI ease
   distance: number            // monster's position on the 1D combat axis (0 = unit base line); gap = distance - unitPos
   dealtHistory: number[]      // HP damage dealt on attack events (for rolling DPS)

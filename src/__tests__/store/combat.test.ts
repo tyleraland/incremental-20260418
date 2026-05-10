@@ -83,7 +83,7 @@ describe('Targeting — unit → monster (focusSlots)', () => {
         makeUnit({ id: 'u1', locationId: 'loc1' }),
         makeUnit({ id: 'u2', locationId: 'loc1' }),
       ],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', behavior: 'prioritize' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', priority: 2 })] },
     })
     const { encounters } = tick()
     expect(encounters['loc1'][0].progress).toBe(0)            // wolf untouched
@@ -94,7 +94,7 @@ describe('Targeting — unit → monster (focusSlots)', () => {
     // slot 0=wolf (normal), slot 1=rock-crab (ignore). Only wolf is in focusSlots.
     resetStore({
       units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', behavior: 'ignore' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', priority: 0 })] },
     })
     const { encounters } = tick()
     expect(encounters['loc1'][0].progress).toBeGreaterThan(0) // wolf attacked
@@ -115,7 +115,7 @@ describe('Monster damage to units', () => {
   it('ignore monsters still deal damage to units', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', behavior: 'ignore' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', priority: 0 })] },
     })
     const { units } = tick()
     expect(units[0].health).toBe(Math.floor(100 - monsterDmg('wolf') - monsterDmg('rock-crab')))
