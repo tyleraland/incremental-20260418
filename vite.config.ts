@@ -6,10 +6,16 @@ import { execSync } from 'child_process'
 const gitHash = (() => {
   try { return execSync('git rev-parse --short HEAD').toString().trim() } catch { return 'unknown' }
 })()
+const gitMessage = (() => {
+  try { return execSync('git log -1 --pretty=%s').toString().trim() } catch { return '' }
+})()
 
 export default defineConfig({
   base: '/incremental-20260418/',
-  define: { __GIT_HASH__: JSON.stringify(gitHash) },
+  define: {
+    __GIT_HASH__:    JSON.stringify(gitHash),
+    __GIT_MESSAGE__: JSON.stringify(gitMessage),
+  },
   resolve: {
     alias: {
       '@': '/src',

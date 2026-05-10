@@ -36,6 +36,7 @@ function ResetSaveButton() {
 }
 
 declare const __GIT_HASH__: string
+declare const __GIT_MESSAGE__: string
 
 const LOG_META: Record<LogCategory, { label: string; chip: string }> = {
   defeat:  { label: 'Defeat',  chip: 'bg-game-primary/20 text-game-primary border-game-primary/30' },
@@ -232,8 +233,11 @@ export function Time() {
       {/* Debug */}
       <div className="border border-game-border/40 rounded-xl px-4 py-3 space-y-3">
         <div className="text-xs uppercase tracking-widest text-game-text-dim">Debug</div>
-        <div className="text-xs text-game-muted">
-          Build: <span className="font-mono text-game-text-dim">{__GIT_HASH__}</span>
+        <div className="text-xs text-game-muted space-y-0.5">
+          <div>Build: <span className="font-mono text-game-text-dim">{__GIT_HASH__}</span></div>
+          {__GIT_MESSAGE__ && (
+            <div className="text-game-text-dim leading-snug">{__GIT_MESSAGE__}</div>
+          )}
         </div>
         <ResetSaveButton />
       </div>
