@@ -1,6 +1,40 @@
 import { useState } from 'react'
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR, type LogCategory } from '@/stores/useGameStore'
 
+function ResetSaveButton() {
+  const resetSave = useGameStore((s) => s.resetSave)
+  const [confirm, setConfirm] = useState(false)
+
+  if (confirm) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-game-text-dim">Are you sure? This cannot be undone.</span>
+        <button
+          onClick={() => { resetSave(); setConfirm(false) }}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-500/60 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+        >
+          Yes, reset
+        </button>
+        <button
+          onClick={() => setConfirm(false)}
+          className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={() => setConfirm(true)}
+      className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-red-500/50 hover:text-red-400 transition-colors"
+    >
+      Reset Save
+    </button>
+  )
+}
+
 declare const __GIT_HASH__: string
 
 const LOG_META: Record<LogCategory, { label: string; chip: string }> = {
@@ -196,11 +230,12 @@ export function Time() {
       <ActivityLog />
 
       {/* Debug */}
-      <div className="border border-game-border/40 rounded-xl px-4 py-3 space-y-1">
+      <div className="border border-game-border/40 rounded-xl px-4 py-3 space-y-3">
         <div className="text-xs uppercase tracking-widest text-game-text-dim">Debug</div>
         <div className="text-xs text-game-muted">
           Build: <span className="font-mono text-game-text-dim">{__GIT_HASH__}</span>
         </div>
+        <ResetSaveButton />
       </div>
     </div>
   )

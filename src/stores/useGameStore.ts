@@ -90,6 +90,7 @@ export interface GameState {
   setMonsterBehavior: (locationId: string, monsterId: string, behavior: MonsterBehavior) => void
   selectedMonsterSlot: { locationId: string; slotIndex: number } | null
   setSelectedMonsterSlot: (slot: { locationId: string; slotIndex: number } | null) => void
+  resetSave: () => void
 }
 
 // ── Initial encounter state ───────────────────────────────────────────────────
@@ -909,4 +910,39 @@ export const useGameStore = create<GameState>((set) => ({
     if (!prereqsMet) return s
     return { units: s.units.map((u) => u.id === unitId ? { ...u, skillPoints: u.skillPoints - 1, learnedSkills: { ...u.learnedSkills, [skillId]: current + 1 } } : u) }
   }),
+
+  resetSave: () => {
+    ;['expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds'].forEach((k) => localStorage.removeItem(k))
+    set({
+      units:    INITIAL_UNITS,
+      equipment: INITIAL_EQUIPMENT,
+      miscItems: INITIAL_MISC,
+      learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
+      locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
+      locationMonstersSeen: { 'kings-forest': ['slime'], 'duskwood': ['slime'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
+      monsterSeen:     { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
+      monsterDefeated: {},
+      locationStats:   {},
+      encounters:        Object.fromEntries(Object.entries(WAVE_TEMPLATES).map(([id, fn]) => [id, makeSlots(fn())])),
+      encounterCooldown: {},
+      locationFleeing:   {},
+      unitDistance:      {},
+      ticks:         0,
+      lastTickAt:    Date.now(),
+      paused:        false,
+      eventLog:      [],
+      itemSockets:   {},
+      activeTab:     'map',
+      selectedUnitIds: [],
+      selectedLocationId: null,
+      combatLocationId: null,
+      mapPageId: 'prontera',
+      expandedLocationIds: [],
+      expandedUnitIds: [],
+      expandedInventorySections: ['equipment', 'misc', 'crafting'],
+      expandedRegionIds: ['prontera', 'geffen', 'kanto'],
+      equipContext: null,
+      selectedMonsterSlot: null,
+    })
+  },
 }))
