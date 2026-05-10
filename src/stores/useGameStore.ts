@@ -382,15 +382,29 @@ export const useGameStore = create<GameState>((set) => ({
           continue
         }
 
-        const monsterRange  = monster.stats.attackRange ?? 5
-        const monsterPos    = newSlotPos[i]
-        const targetId      = targets[i]
-        const targetPos     = targetId ? (unitDistance[targetId] ?? 0) : 0
+        const monsterRange   = monster.stats.attackRange ?? 5
+        const monsterPos     = newSlotPos[i]
+        const targetId       = targets[i]
+        const targetPos      = targetId ? (unitDistance[targetId] ?? 0) : 0
         const monsterInRange = (monsterPos - targetPos) <= monsterRange
-        const phase: 'approaching' | 'standing' = monsterInRange ? 'standing' : 'approaching'
 
-        // If not in range, no cooldowns tick — preserves "approach" semantics
-        if (!monsterInRange) {
+        // Units in this slot whose own attackRange covers the monster's current position.
+        // Computed here (before the engagement gate) so ranged units can fire before the
+        // monster closes to its own melee range.
+        const attackersOfSlot = attackedSlots.has(i)
+          ? aliveUnits
+              .filter((_, ui) => focusIdxs.length > 0 && focusIdxs[ui % focusIdxs.length].i === i)
+              .filter((au) => {
+                const ud = getDerivedStats(au, s.equipment)
+                return (monsterPos - (unitDistance[au.id] ?? 0)) <= ud.attackRange
+              })
+          : []
+
+        // Engage when the monster OR at least one unit is within their own attack range.
+        const combatEngaged = monsterInRange || attackersOfSlot.length > 0
+        const phase: 'approaching' | 'standing' = combatEngaged ? 'standing' : 'approaching'
+
+        if (!combatEngaged) {
           newSlots.push({ ...slot, distance: monsterPos, targetUnitId: targets[i], phase })
           continue
         }
@@ -403,8 +417,9 @@ export const useGameStore = create<GameState>((set) => ({
         let lastAttackMissed    = slot.lastAttackMissed
         let lastProgressMissed  = slot.lastProgressMissed
 
-        // Monster attack fires on cooldown expiry (non-avoid slots in monster range)
-        if (slot.behavior !== 'avoid') {
+        // Monster attack fires on cooldown expiry — only when the monster has closed
+        // to its own attack range (it can't attack from across the field).
+        if (slot.behavior !== 'avoid' && monsterInRange) {
           if (slot.attackCooldown <= 0) {
             const target = targetId ? s.units.find((u) => u.id === targetId) : null
             if (target) {
@@ -421,36 +436,26 @@ export const useGameStore = create<GameState>((set) => ({
           }
         }
 
-        // Unit progress fires on cooldown expiry (attacked slots; only attackers in unit range count)
-        if (attackedSlots.has(i)) {
-          // Filter attackers to those whose own unit attack range covers this slot
-          const attackersOfSlot = aliveUnits.filter((_, ui) =>
-            focusIdxs.length > 0 && focusIdxs[ui % focusIdxs.length].i === i
-          ).filter((au) => {
-            const ud = getDerivedStats(au, s.equipment)
-            return (monsterPos - (unitDistance[au.id] ?? 0)) <= ud.attackRange
-          })
-
-          if (attackersOfSlot.length > 0 && slot.progressCooldown <= 0) {
-            let totalChunk = 0
-            let allMissed  = true
-            let resetCd    = TICKS_PER_SECOND
-            for (const [aidx, au] of attackersOfSlot.entries()) {
-              const ud  = getDerivedStats(au, s.equipment)
-              const uc  = calcAttackCooldown(ud.attackSpeed)
-              if (aidx === 0) resetCd = uc
-              const hit     = Math.random() < calcHitChance(ud.accuracy, monster.stats.dodge)
-              const rawChunk = uc / (monster.level * 5 * TICKS_PER_SECOND)
-              const chunk   = Math.round(rawChunk * monster.health) / monster.health
-              if (hit) { totalChunk += chunk; allMissed = false }
-            }
-            if (totalChunk > 0) newProgress = Math.min(slot.progress + totalChunk, 1)
-            takenHistory       = [...takenHistory, totalChunk].slice(-10)
-            lastProgressMissed = allMissed
-            newProgCd          = Math.max(0, resetCd - 1)
-          } else if (attackersOfSlot.length > 0) {
-            newProgCd = slot.progressCooldown - 1
+        // Unit progress fires on cooldown expiry using the pre-computed attackersOfSlot.
+        if (attackersOfSlot.length > 0 && slot.progressCooldown <= 0) {
+          let totalChunk = 0
+          let allMissed  = true
+          let resetCd    = TICKS_PER_SECOND
+          for (const [aidx, au] of attackersOfSlot.entries()) {
+            const ud  = getDerivedStats(au, s.equipment)
+            const uc  = calcAttackCooldown(ud.attackSpeed)
+            if (aidx === 0) resetCd = uc
+            const hit      = Math.random() < calcHitChance(ud.accuracy, monster.stats.dodge)
+            const rawChunk = uc / (monster.level * 5 * TICKS_PER_SECOND)
+            const chunk    = Math.round(rawChunk * monster.health) / monster.health
+            if (hit) { totalChunk += chunk; allMissed = false }
           }
+          if (totalChunk > 0) newProgress = Math.min(slot.progress + totalChunk, 1)
+          takenHistory       = [...takenHistory, totalChunk].slice(-10)
+          lastProgressMissed = allMissed
+          newProgCd          = Math.max(0, resetCd - 1)
+        } else if (attackersOfSlot.length > 0) {
+          newProgCd = slot.progressCooldown - 1
         }
 
         newSlots.push({
