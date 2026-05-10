@@ -10,7 +10,7 @@ const gitHash = (() => {
 // Debug panel to show a short timeline of recent changes.
 const gitLog = (() => {
   try {
-    const raw = execSync('git log -5 --pretty=%h%x1f%s').toString().trim()
+    const raw = execSync('git log --no-merges -5 --pretty=%h%x1f%s').toString().trim()
     return raw.split('\n').map((line) => {
       const [hash, message] = line.split('\x1f')
       return { hash, message }
