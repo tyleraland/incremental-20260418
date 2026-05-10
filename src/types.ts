@@ -4,6 +4,9 @@ export type TraitCategory =
   | 'damage-type' | 'element' | 'stat' | 'item-type'
   | 'environment' | 'class' | 'proficiency' | 'general'
 
+import type { Element } from '@/lib/elements'
+export type { Element } from '@/lib/elements'
+
 export interface Trait {
   id: string
   label: string
@@ -56,6 +59,8 @@ export interface DerivedStats {
   attackSpeed: number; accuracy: number; dodge: number; maxHp: number
   moveSpeed: number   // ft/s; divide by TICKS_PER_SECOND for ft/tick in the movement loop
   attackRange: number // feet; gap ≤ this → attacks land (melee=5, bow=35)
+  attackElement: Element // 'neutral' unless a weapon imbues otherwise
+  armorElement:  Element // 'neutral' unless armor imbues otherwise
 }
 
 // ── Unit ──────────────────────────────────────────────────────────────────────
@@ -87,7 +92,6 @@ export interface Location {
 
 // ── Monster ───────────────────────────────────────────────────────────────────
 
-export type MonsterElement = 'fire' | 'lightning' | 'ice' | 'earth' | 'wind' | 'water' | 'neutral'
 export type MonsterSize    = 'small' | 'medium' | 'large'
 
 export interface MonsterDrop {
@@ -116,7 +120,7 @@ export interface MonsterDef {
   health: number
   stats: MonsterStats
   drops: MonsterDrop[]
-  element: MonsterElement  // §3: default 'neutral'
+  element: Element  // §3: defensive armor element; monster attacks are always neutral (default 'neutral')
   size: MonsterSize        // §3: default 'medium'
   isBoss?: boolean         // §3: undefined = false
   attackName: string
@@ -131,6 +135,10 @@ export interface EquipmentItem {
   slots?: number          // §6: card sockets (0–4); default 0
   requiredLevel?: number  // minimum unit level to equip
   requiredClasses?: string[] // class whitelist; null/Novice counts as 'Novice'
+  // Weapons set the unit's attackElement; armor sets armorElement.
+  // Multiple sources resolve LIFO once temporary skill imbues exist; for now
+  // mainHand wins over offHand and the armor slot drives armorElement.
+  element?: Element
 }
 
 // ── Misc & crafting ───────────────────────────────────────────────────────────

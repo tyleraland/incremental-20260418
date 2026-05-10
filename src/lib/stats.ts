@@ -1,4 +1,4 @@
-import type { Unit, EquipmentItem, DerivedStats, SkillBonuses, EquipSlot } from '@/types'
+import type { Unit, EquipmentItem, DerivedStats, SkillBonuses, EquipSlot, Element } from '@/types'
 import { SKILL_REGISTRY } from '@/data/skills'
 
 function skillBonusTotal(unit: Unit): SkillBonuses {
@@ -23,11 +23,18 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
   const eq = { atk: 0, def: 0, matk: 0, mdef: 0, range: 0 }
   const ws = unit.weaponSets[unit.activeWeaponSet]
   const weaponIds = [ws.mainHand, ws.offHand]
+  // mainHand wins for both range and attack element (LIFO with offHand at the
+  // bottom of the stack); later, temporary skill imbues will push on top.
+  let attackElement: Element = 'neutral'
+  let armorElement:  Element = 'neutral'
   for (const id of weaponIds) {
     if (!id) continue
     const item = allEquipment.find((e) => e.id === id); if (!item) continue
     eq.range = Math.max(eq.range, item.stats.range ?? 0)
+    if (item.element) attackElement = item.element
   }
+  const armorItem = unit.equipment.armor ? allEquipment.find((e) => e.id === unit.equipment.armor) : null
+  if (armorItem?.element) armorElement = armorItem.element
   const allIds = [...weaponIds, unit.equipment.armor, unit.equipment.tool, unit.equipment.accessory]
   for (const id of allIds) {
     if (!id) continue
@@ -50,6 +57,8 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
     maxHp:        Math.max(1, Math.floor(50 + con * 10)),
     moveSpeed:    Math.max(2, 10 + agi * 0.025 + (sb.moveSpeed ?? 0)), // ft/s; divide by TICKS_PER_SECOND in tick loop
     attackRange:  Math.max(5, (eq.range || 5) + (sb.attackRange ?? 0)), // feet; melee=5, bow=35
+    attackElement,
+    armorElement,
   }
 }
 

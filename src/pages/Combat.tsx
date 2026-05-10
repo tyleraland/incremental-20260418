@@ -40,13 +40,18 @@ function hpBarColor(hp: number) {
 function hpTextColor(hp: number) { return hp >= 75 ? 'text-game-green' : hp >= 40 ? 'text-game-gold' : 'text-red-400' }
 
 const ELEMENT_COLORS: Record<string, string> = {
-  fire:      'text-orange-400 bg-orange-950/40 border-orange-800/50',
-  lightning: 'text-yellow-300 bg-yellow-950/40 border-yellow-700/50',
-  ice:       'text-sky-300 bg-sky-950/40 border-sky-700/50',
-  earth:     'text-amber-600 bg-amber-950/40 border-amber-700/50',
-  wind:      'text-green-400 bg-green-950/40 border-green-800/50',
-  water:     'text-blue-400 bg-blue-950/40 border-blue-800/50',
-  neutral:   'text-game-text-dim bg-game-border/20 border-game-border/50',
+  neutral:  'text-game-text-dim bg-game-border/20 border-game-border/50',
+  water:    'text-blue-400 bg-blue-950/40 border-blue-800/50',
+  ice:      'text-sky-300 bg-sky-950/40 border-sky-700/50',
+  electric: 'text-yellow-300 bg-yellow-950/40 border-yellow-700/50',
+  plant:    'text-emerald-300 bg-emerald-950/40 border-emerald-700/50',
+  earth:    'text-amber-600 bg-amber-950/40 border-amber-700/50',
+  fire:     'text-orange-400 bg-orange-950/40 border-orange-800/50',
+  poison:   'text-purple-300 bg-purple-950/40 border-purple-700/50',
+  radiant:  'text-amber-300 bg-amber-950/40 border-amber-700/50',
+  shadow:   'text-violet-300 bg-violet-950/40 border-violet-700/50',
+  ghost:    'text-indigo-300 bg-indigo-950/40 border-indigo-700/50',
+  undead:   'text-stone-400 bg-stone-950/40 border-stone-700/50',
 }
 
 function ElementBadge({ element }: { element: string }) {

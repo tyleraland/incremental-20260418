@@ -7,6 +7,7 @@ import type {
 import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats, getFormationOffset } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
+import { elementMultiplier } from '@/lib/elements'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
@@ -19,6 +20,7 @@ export * from '@/types'
 export * from '@/lib/time'
 export * from '@/lib/stats'
 export * from '@/lib/combatReport'
+export * from '@/lib/elements'
 export * from '@/data/traits'
 export * from '@/data/skills'
 export * from '@/data/monsters'
@@ -433,7 +435,9 @@ export const useGameStore = create<GameState>((set) => ({
             if (target) {
               const derived = getDerivedStats(target, s.equipment)
               const hit     = Math.random() < calcHitChance(monster.stats.accuracy, derived.dodge)
-              const dmg     = monster.stats.attack / Math.max(derived.defense, 1)
+              // Monster attacks default to neutral; armor element shifts the multiplier.
+              const mult    = elementMultiplier('neutral', derived.armorElement)
+              const dmg     = (monster.stats.attack / Math.max(derived.defense, 1)) * mult
               if (hit) hpDamage[targetId!] = (hpDamage[targetId!] ?? 0) + dmg
               dealtHistory     = [...dealtHistory, hit ? Math.ceil(dmg) : 0].slice(-10)
               lastAttackMissed = !hit
@@ -454,7 +458,9 @@ export const useGameStore = create<GameState>((set) => ({
             const uc  = calcAttackCooldown(ud.attackSpeed)
             if (aidx === 0) resetCd = uc
             const hit      = Math.random() < calcHitChance(ud.accuracy, monster.stats.dodge)
-            const rawChunk = uc / (monster.level * 5 * TICKS_PER_SECOND)
+            // Scale progress contribution by attacker element vs monster element.
+            const mult     = elementMultiplier(ud.attackElement, monster.element)
+            const rawChunk = (uc / (monster.level * 5 * TICKS_PER_SECOND)) * mult
             const chunk    = Math.round(rawChunk * monster.health) / monster.health
             if (hit) { totalChunk += chunk; allMissed = false }
           }
@@ -595,9 +601,10 @@ export const useGameStore = create<GameState>((set) => ({
         const monster = MONSTER_REGISTRY[monsterId]
         const target  = targets[i]
         if (!monster || !target) continue
-        const def = getDerivedStats(target, s.equipment).defense
+        const derived = getDerivedStats(target, s.equipment)
+        const mult    = elementMultiplier('neutral', derived.armorElement)
         // Divide by TICKS_PER_SECOND to convert from HP/sec to HP/tick at 5/sec
-        damageRates[target.id] = (damageRates[target.id] ?? 0) + (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(def, 1) / TICKS_PER_SECOND
+        damageRates[target.id] = (damageRates[target.id] ?? 0) + (monster.stats.attack * monster.stats.attackSpeed / ATTACK_SPEED_BASE) / Math.max(derived.defense, 1) / TICKS_PER_SECOND * mult
         inCombat.add(target.id)
       }
 
@@ -612,12 +619,15 @@ export const useGameStore = create<GameState>((set) => ({
         if (baseSlot.behavior === 'ignore' || baseSlot.behavior === 'avoid') return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
         if (!attackedSlots.has(i)) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
 
-        const numAttackers  = aliveUnits.filter((_, ui) =>
-          focusIdxs.length > 0 && focusIdxs[ui % focusIdxs.length].i === i
-        ).length
+        // Sum each attacker's element multiplier (vs this monster's armor element).
+        const attackerMultSum = aliveUnits.reduce((sum, au, ui) => {
+          if (focusIdxs.length === 0 || focusIdxs[ui % focusIdxs.length].i !== i) return sum
+          const ud = getDerivedStats(au, s.equipment)
+          return sum + elementMultiplier(ud.attackElement, monster.element)
+        }, 0)
         const seconds       = monster.level * 5  // kill time per attacker in real seconds
         const effectiveProg = baseSlot.progress >= 1 ? 0 : baseSlot.progress
-        const combined      = effectiveProg + numAttackers * (n / TICKS_PER_SECOND) / seconds
+        const combined      = effectiveProg + attackerMultSum * (n / TICKS_PER_SECOND) / seconds
         const completions   = Math.floor(combined)
         if (completions > 0) {
           monsterDefeated[monster.id] = (monsterDefeated[monster.id] ?? 0) + completions
