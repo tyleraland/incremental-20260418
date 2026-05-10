@@ -72,6 +72,24 @@ const ELEMENT_COLORS: Record<string, string> = {
   neutral:   'text-game-text-dim bg-game-border/20 border-game-border/50',
 }
 
+// Kind symbols for the map cells & matching trait chips.
+// Priority is "biggest landmark wins" — dungeon overrides city, etc.
+const LOCATION_KIND: Record<string, { symbol: string; label: string; cls: string; iconCls: string }> = {
+  city:     { symbol: '⌂', label: 'City',     cls: 'text-amber-300 border-amber-700/60 bg-amber-950/40',  iconCls: 'text-amber-400/80'  },
+  forest:   { symbol: '♣', label: 'Forest',   cls: 'text-green-300 border-green-800/60 bg-green-950/40',  iconCls: 'text-green-400/80'  },
+  mountain: { symbol: '▲', label: 'Mountain', cls: 'text-stone-300 border-stone-700/60 bg-stone-900/50', iconCls: 'text-stone-300/80'  },
+  beach:    { symbol: '≈', label: 'Beach',    cls: 'text-sky-300   border-sky-800/60   bg-sky-950/40',   iconCls: 'text-sky-300/80'    },
+  dungeon:  { symbol: '◆', label: 'Dungeon',  cls: 'text-rose-300  border-rose-800/60  bg-rose-950/40',  iconCls: 'text-rose-300/80'   },
+  plains:   { symbol: '·', label: 'Plains',   cls: 'text-emerald-300 border-emerald-800/50 bg-emerald-950/30', iconCls: 'text-emerald-400/60' },
+}
+
+const KIND_PRIORITY = ['dungeon', 'city', 'mountain', 'forest', 'beach', 'plains'] as const
+
+function getLocationKind(traits: string[]) {
+  for (const k of KIND_PRIORITY) if (traits.includes(k)) return { key: k, ...LOCATION_KIND[k] }
+  return null
+}
+
 // ── RosterUnitCard ────────────────────────────────────────────────────────────
 
 function RosterUnitCard({ unit }: { unit: Unit }) {
@@ -140,6 +158,7 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
 
   const coords = LOCATION_COORDS[location.id]
   const style  = coords ? { gridColumn: coords[0] + 1, gridRow: coords[1] + 1 } : undefined
+  const kind   = getLocationKind(location.traits)
 
   return (
     <button
@@ -152,7 +171,15 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
           : 'border-game-border bg-game-surface hover:border-game-primary/60',
       ].join(' ')}
     >
-      <span className="text-[10px] font-semibold text-game-text leading-tight line-clamp-2">
+      {kind && (
+        <span
+          aria-hidden
+          className={`absolute top-0.5 right-1 text-[11px] leading-none pointer-events-none ${kind.iconCls}`}
+        >
+          {kind.symbol}
+        </span>
+      )}
+      <span className="text-[10px] font-semibold text-game-text leading-tight line-clamp-2 pr-3">
         {location.name}
       </span>
       <div className="flex flex-wrap gap-0.5 mt-auto min-h-[6px]">
@@ -560,11 +587,21 @@ function LocationDetailPanel() {
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Traits</div>
                   <div className="flex flex-wrap gap-1">
-                    {location.traits.map((t) => (
-                      <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60 capitalize">
-                        {t}
-                      </span>
-                    ))}
+                    {location.traits.map((t) => {
+                      const k = LOCATION_KIND[t]
+                      if (k) {
+                        return (
+                          <span key={t} className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${k.cls}`}>
+                            <span aria-hidden className="mr-1">{k.symbol}</span>{k.label}
+                          </span>
+                        )
+                      }
+                      return (
+                        <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60 capitalize">
+                          {t}
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
               )}
