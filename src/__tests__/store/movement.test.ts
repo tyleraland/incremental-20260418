@@ -35,11 +35,10 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks() })
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('Monster approach — melee monster pins at unit attackRange when unit is ranged', () => {
-  it('wolf stops at bow range (35 ft) from bow unit, never reaches melee range', () => {
-    // Wolf approaches bow unit at 0. stopRange = max(wolf.5, bow.35) = 35.
-    // Wolf starts at 60, closes until it reaches unit(0)+35=35, then stops.
-    // After many ticks, wolf is at 35 and cannot attack (gap 35 > wolfRange 5).
+describe('Ranged unit holds formation — monster advances and is shot during approach', () => {
+  it('bow unit stays at 0 while wolf closes from 60 ft; bow fires once wolf enters 35 ft', () => {
+    // Bow unit holds formation (0). Wolf closes at 1.5 ft/tick.
+    // Gap 60→35 takes (60-35)/1.5 ≈ 17 ticks. No fire before that, fire after.
     const bowUnit = makeUnit({
       id: 'u1', locationId: 'loc1',
       weaponSets: [{ mainHand: 'eq-bow-test', offHand: null }, { mainHand: null, offHand: null }],
@@ -50,13 +49,11 @@ describe('Monster approach — melee monster pins at unit attackRange when unit 
       unitDistance: { u1: 0 },
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: APPROACH_DISTANCE, phase: 'approaching' })] },
     })
-    // Run enough ticks for the system to stabilize (both unit and wolf approach
-    // each other at combined rate 2.025+1.5=3.525 ft/tick; gap 60→35 ≈ 7 ticks)
-    for (let i = 0; i < 25; i++) tick()
-    const wolfPos = slotDist()
-    const unitP   = unitPos()
-    expect(wolfPos - unitP).toBeCloseTo(35, 1)   // gap pinned at bow range
-    expect(useGameStore.getState().units[0].health).toBe(100)  // wolf can't attack at 35 ft gap
+    // After 20 ticks wolf is at 60-20*1.5=30 ft; bow has been firing for ~3 ticks
+    for (let i = 0; i < 20; i++) tick()
+    expect(unitPos()).toBeCloseTo(0, 2)                                    // bow unit never moved
+    expect(slotDist()).toBeCloseTo(30, 1)                                  // wolf at 30 ft
+    expect(useGameStore.getState().encounters['loc1'][0].progress).toBeGreaterThan(0) // damage dealt
   })
 })
 
@@ -226,8 +223,8 @@ describe('Ranged attacks — bow unit (attackRange = 35 ft)', () => {
     expect(unitPos()).toBeCloseTo(0, 3)
   })
 
-  it('bow unit advances toward monster when gap > 35 ft', () => {
-    // Monster at APPROACH_DISTANCE (60 ft) → gap=60 > 35 → bow must close
+  it('bow unit holds formation at 0 even when monster is beyond 35 ft', () => {
+    // Monster at APPROACH_DISTANCE (60 ft); bow unit stays at 0 (monster comes to it).
     resetStore({
       units: [bowUnit()],
       equipment: [BOW],
@@ -235,23 +232,21 @@ describe('Ranged attacks — bow unit (attackRange = 35 ft)', () => {
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'stone-golem', distance: APPROACH_DISTANCE, phase: 'approaching' })] },
     })
     tick()
-    expect(unitPos()).toBeGreaterThan(0)
+    expect(unitPos()).toBeCloseTo(0, 3)
     expect(useGameStore.getState().encounters['loc1'][0].progress).toBe(0) // not yet in range
   })
 
-  it('bow unit stops advancing and begins firing once gap ≤ 35 ft', () => {
-    // Pre-position: bow at 20, wolf at 55 → gap=35 exactly
-    // After tick: wolf moves slightly closer; bow desired = max(0, newWolfPos-35) < 20 → bow retreats slightly
-    // Either way, progress fires (gap ≤ 35) and unit does NOT advance past position 20
+  it('bow fires once wolf enters 35 ft and unit remains at formation (0)', () => {
+    // Bow at 0, wolf at 35 → gap=35=bow range → bow fires on this tick.
+    // Wolf moves to max(35-1.5, 5)=33.5. Bow stays at 0 (formation floor).
     resetStore({
       units: [bowUnit()],
       equipment: [BOW],
-      unitDistance: { u1: 20 },
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: 55, phase: 'approaching' })] },
+      unitDistance: { u1: 0 },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: 35, phase: 'approaching' })] },
     })
-    const before = unitPos()
     tick()
-    expect(unitPos()).toBeLessThanOrEqual(before + 0.001) // does not advance
+    expect(unitPos()).toBeCloseTo(0, 3)
     expect(useGameStore.getState().encounters['loc1'][0].progress).toBeGreaterThan(0)
   })
 })

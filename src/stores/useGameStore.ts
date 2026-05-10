@@ -327,27 +327,19 @@ export const useGameStore = create<GameState>((set) => ({
         const tId = targets[i]; if (!tId) continue
         const tPos = oldUnitPos[tId] ?? 0
         const monsterRange = monster.stats.attackRange ?? 5
-        // Monster stops at the outer of its own range vs the target unit's range.
-        // A ranged unit (e.g. bow, 35 ft) keeps melee monsters pinned at bow range
-        // so melee monsters cannot reach the ranged unit; a ranged monster vs melee
-        // unit still stops at the monster's own (larger) range.
-        const targetUnit  = s.units.find((u) => u.id === tId)
-        const targetRange = targetUnit ? getDerivedStats(targetUnit, s.equipment).attackRange : monsterRange
-        const stopRange   = Math.max(monsterRange, targetRange)
         const speed = (monster.stats.moveSpeed ?? 5) / TICKS_PER_SECOND
-        const desiredPos = tPos + stopRange
+        const desiredPos = tPos + monsterRange
         if (sl.distance > desiredPos) {
           newSlotPos[i] = Math.max(sl.distance - speed, desiredPos)
         }
       }
 
       // Each unit either:
-      //  - has a focus monster → advance toward `monsterPos - attackRange` so
-      //    both sides close the gap and a fast actor engages sooner; the
-      //    formation offset acts as a floor so back-rank units don't get
-      //    pushed past their rank when a monster overruns the line.
-      //  - has no focus (no slots, or no monsters in their assigned wave) →
-      //    drift back toward formation offset.
+      //  - is melee → advance toward `monsterPos - attackRange` so both sides
+      //    close the gap; formation offset is a floor.
+      //  - is ranged → hold at formation offset; the monster comes to them and
+      //    is shot during the approach.
+      //  - has no focus → drift back toward formation offset.
       const unitToSlot: Record<string, number> = {}
       for (let ui = 0; ui < aliveUnits.length; ui++) {
         if (focusIdxs.length === 0) continue
@@ -358,7 +350,8 @@ export const useGameStore = create<GameState>((set) => ({
         const formation = getFormationOffset(u, s.equipment)
         const slotIdx = unitToSlot[u.id]
         const cur = oldUnitPos[u.id]
-        const desired = slotIdx !== undefined
+        const isRanged = ud.attackRange > 5
+        const desired = slotIdx !== undefined && !isRanged
           ? Math.max(formation, newSlotPos[slotIdx] - ud.attackRange)
           : formation
         const step = ud.moveSpeed / TICKS_PER_SECOND
