@@ -171,18 +171,21 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
           : 'border-game-border bg-game-surface hover:border-game-primary/60',
       ].join(' ')}
     >
+      {/* kind symbol — bottom right */}
       {kind && (
         <span
           aria-hidden
-          className={`absolute top-0.5 right-1 text-[15px] leading-none pointer-events-none ${kind.iconCls}`}
+          className={`absolute bottom-0.5 right-1 text-[15px] leading-none pointer-events-none ${kind.iconCls}`}
         >
           {kind.symbol}
         </span>
       )}
-      <span className="text-[10px] font-semibold text-game-text leading-tight line-clamp-2 pr-3">
+      {/* label — top */}
+      <span className="text-[10px] font-semibold text-game-text leading-tight line-clamp-2">
         {location.name}
       </span>
-      <div className="flex flex-wrap gap-0.5 mt-auto min-h-[6px]">
+      {/* unit dots — bottom left, compact 3-column grid */}
+      <div className="absolute bottom-1 left-1 grid grid-cols-3 gap-0.5">
         {units.slice(0, 6).map((u) => {
           const isRec = u.recoveryTicksLeft > 0
           const maxHp = getDerivedStats(u, equipment).maxHp
@@ -196,7 +199,7 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
           return <span key={u.id} className={`w-1.5 h-1.5 rounded-full ${color}`} />
         })}
         {units.length > 6 && (
-          <span className="text-[8px] text-game-text-dim leading-none self-center">+{units.length - 6}</span>
+          <span className="text-[8px] text-game-text-dim leading-none self-center col-span-3">+{units.length - 6}</span>
         )}
       </div>
     </button>
