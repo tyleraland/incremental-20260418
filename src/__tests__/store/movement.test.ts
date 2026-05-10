@@ -35,6 +35,31 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks() })
 
 // ─────────────────────────────────────────────────────────────────────────────
+describe('Monster approach — melee monster pins at unit attackRange when unit is ranged', () => {
+  it('wolf stops at bow range (35 ft) from bow unit, never reaches melee range', () => {
+    // Wolf approaches bow unit at 0. stopRange = max(wolf.5, bow.35) = 35.
+    // Wolf starts at 60, closes until it reaches unit(0)+35=35, then stops.
+    // After many ticks, wolf is at 35 and cannot attack (gap 35 > wolfRange 5).
+    const bowUnit = makeUnit({
+      id: 'u1', locationId: 'loc1',
+      weaponSets: [{ mainHand: 'eq-bow-test', offHand: null }, { mainHand: null, offHand: null }],
+    })
+    resetStore({
+      units: [bowUnit],
+      equipment: [BOW],
+      unitDistance: { u1: 0 },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: APPROACH_DISTANCE, phase: 'approaching' })] },
+    })
+    // Run enough ticks for the system to stabilize (both unit and wolf approach
+    // each other at combined rate 2.025+1.5=3.525 ft/tick; gap 60→35 ≈ 7 ticks)
+    for (let i = 0; i < 25; i++) tick()
+    const wolfPos = slotDist()
+    const unitP   = unitPos()
+    expect(wolfPos - unitP).toBeCloseTo(35, 1)   // gap pinned at bow range
+    expect(useGameStore.getState().units[0].health).toBe(100)  // wolf can't attack at 35 ft gap
+  })
+})
+
 describe('Monster approach — distance closes each tick', () => {
   it('monster distance decreases by moveSpeed/TICKS_PER_SECOND per tick', () => {
     // wolf: moveSpeed=7.5 ft/s → 1.5 ft/tick
