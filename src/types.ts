@@ -54,8 +54,8 @@ export interface Abilities {
 export interface DerivedStats {
   attack: number; defense: number; defenseEquip: number; magicAttack: number; magicDefense: number
   attackSpeed: number; accuracy: number; dodge: number; maxHp: number
-  moveSpeed: number   // 1D distance closed per tick when out of range
-  attackRange: number // max gap at which this unit's attacks land
+  moveSpeed: number   // ft/s; divide by TICKS_PER_SECOND for ft/tick in the movement loop
+  attackRange: number // feet; gap ≤ this → attacks land (melee=5, bow=35)
 }
 
 // ── Unit ──────────────────────────────────────────────────────────────────────

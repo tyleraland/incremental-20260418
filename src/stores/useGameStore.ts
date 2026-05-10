@@ -270,11 +270,11 @@ export const useGameStore = create<GameState>((set) => ({
             if (u.locationId !== locationId) continue
             const ud = getDerivedStats(u, s.equipment)
             const cur = unitDistance[u.id] ?? 0
-            unitDistance[u.id] = Math.max(0, cur - Math.max(0.5, ud.moveSpeed))
+            unitDistance[u.id] = Math.max(0, cur - Math.max(0.1, ud.moveSpeed / TICKS_PER_SECOND))
           }
           encounters[locationId] = slots.map((sl) => {
             const m = MONSTER_REGISTRY[sl.monsterId]
-            const speed = Math.max(0.5, m?.stats.moveSpeed ?? 1)
+            const speed = Math.max(0.1, (m?.stats.moveSpeed ?? 5) / TICKS_PER_SECOND)
             return {
               ...sl, targetUnitId: null, phase: 'retreating' as const,
               distance: Math.min(APPROACH_DISTANCE, sl.distance + speed),
@@ -325,8 +325,8 @@ export const useGameStore = create<GameState>((set) => ({
         const monster = MONSTER_REGISTRY[sl.monsterId]; if (!monster) continue
         const tId = targets[i]; if (!tId) continue
         const tPos = oldUnitPos[tId] ?? 0
-        const range = monster.stats.attackRange ?? 1
-        const speed = monster.stats.moveSpeed   ?? 1
+        const range = monster.stats.attackRange ?? 5
+        const speed = (monster.stats.moveSpeed ?? 5) / TICKS_PER_SECOND
         const desiredPos = tPos + range
         if (sl.distance > desiredPos) {
           newSlotPos[i] = Math.max(sl.distance - speed, desiredPos)
@@ -353,8 +353,9 @@ export const useGameStore = create<GameState>((set) => ({
         const desired = slotIdx !== undefined
           ? Math.max(formation, newSlotPos[slotIdx] - ud.attackRange)
           : formation
-        if (cur < desired)      unitDistance[u.id] = Math.min(cur + ud.moveSpeed, desired)
-        else if (cur > desired) unitDistance[u.id] = Math.max(cur - ud.moveSpeed, desired)
+        const step = ud.moveSpeed / TICKS_PER_SECOND
+        if (cur < desired)      unitDistance[u.id] = Math.min(cur + step, desired)
+        else if (cur > desired) unitDistance[u.id] = Math.max(cur - step, desired)
         else                    unitDistance[u.id] = cur
       }
 
@@ -381,7 +382,7 @@ export const useGameStore = create<GameState>((set) => ({
           continue
         }
 
-        const monsterRange  = monster.stats.attackRange ?? 1
+        const monsterRange  = monster.stats.attackRange ?? 5
         const monsterPos    = newSlotPos[i]
         const targetId      = targets[i]
         const targetPos     = targetId ? (unitDistance[targetId] ?? 0) : 0
