@@ -325,9 +325,16 @@ export const useGameStore = create<GameState>((set) => ({
         const monster = MONSTER_REGISTRY[sl.monsterId]; if (!monster) continue
         const tId = targets[i]; if (!tId) continue
         const tPos = oldUnitPos[tId] ?? 0
-        const range = monster.stats.attackRange ?? 5
+        const monsterRange = monster.stats.attackRange ?? 5
+        // Monster stops at the outer of its own range vs the target unit's range.
+        // A ranged unit (e.g. bow, 35 ft) keeps melee monsters pinned at bow range
+        // so melee monsters cannot reach the ranged unit; a ranged monster vs melee
+        // unit still stops at the monster's own (larger) range.
+        const targetUnit  = s.units.find((u) => u.id === tId)
+        const targetRange = targetUnit ? getDerivedStats(targetUnit, s.equipment).attackRange : monsterRange
+        const stopRange   = Math.max(monsterRange, targetRange)
         const speed = (monster.stats.moveSpeed ?? 5) / TICKS_PER_SECOND
-        const desiredPos = tPos + range
+        const desiredPos = tPos + stopRange
         if (sl.distance > desiredPos) {
           newSlotPos[i] = Math.max(sl.distance - speed, desiredPos)
         }
