@@ -32,7 +32,7 @@ export const TRAIT_REGISTRY: Record<string, Trait> = {
   rocky:       { id: 'rocky',       label: 'Rocky',       category: 'environment', description: 'Rugged terrain with exposed rock faces and ore veins.' },
   calm:        { id: 'calm',        label: 'Calm',        category: 'environment', description: 'Peaceful area with low threat level.' },
   novice:      { id: 'novice',      label: 'Novice',      category: 'class', description: 'An unspecialized adventurer. Can equip most basic weapons.' },
-  fighter:     { id: 'fighter',     label: 'Fighter',     category: 'class', description: 'A combat-trained warrior. Proficient with swords, shields, and heavy armor.' },
+  fighter:     { id: 'fighter',     label: 'Fighter',     category: 'class', description: 'A combat-trained melee specialist. Proficient with swords, shields, and heavy armor.' },
   mage:        { id: 'mage',        label: 'Mage',        category: 'class', description: 'A student of arcane arts. Specializes in magical weaponry and high M.ATK.' },
   cleric:      { id: 'cleric',      label: 'Cleric',      category: 'class', description: 'A divine spellcaster. Wields rods and blesses allies.' },
   rogue:       { id: 'rogue',       label: 'Rogue',       category: 'class', description: 'A nimble operative. Favors light weapons, tools, and stealth.' },
