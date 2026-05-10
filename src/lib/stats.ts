@@ -48,8 +48,8 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
     accuracy:     Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)           + (sb.accuracy     ?? 0)),
     dodge:        Math.max(1, Math.floor(agi * 2   + dex * 0.5)           + (sb.dodge        ?? 0)),
     maxHp:        Math.max(1, Math.floor(50 + con * 10)),
-    moveSpeed:    Math.max(0.25, agi / 5 + (sb.moveSpeed ?? 0)),
-    attackRange:  Math.max(1, (eq.range || 1) + (sb.attackRange ?? 0)),
+    moveSpeed:    Math.max(2, 10 + agi * 0.025 + (sb.moveSpeed ?? 0)), // ft/s; divide by TICKS_PER_SECOND in tick loop
+    attackRange:  Math.max(5, (eq.range || 5) + (sb.attackRange ?? 0)), // feet; melee=5, bow=35
   }
 }
 
@@ -63,11 +63,10 @@ export function getEquippedId(unit: Unit, slot: EquipSlot): string | null {
   return unit.equipment[slot]
 }
 
-// 1D combat axis position the unit holds in formation when not engaged.
-// Melee (range 1) → forward; longer ranges → further back. Plain function of
-// attackRange so a player retuning their loadout immediately sees the unit
-// shuffle into a different rank.
+// Resting position on the 1D axis (feet from unit base) while not in combat.
+// Melee (5 ft range) → 20 ft; bow (35 ft range) → 0 ft; linear in between.
+// Also acts as a floor during combat so back-rank units hold their rank.
 export function getFormationOffset(unit: Unit, equipment: EquipmentItem[]): number {
   const r = getDerivedStats(unit, equipment).attackRange
-  return Math.max(0, Math.min(5, 4 - (r - 1)))
+  return Math.max(0, Math.round(20 * (35 - r) / 30))
 }
