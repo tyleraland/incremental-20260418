@@ -17,6 +17,7 @@ export interface Trait {
 export interface SkillBonuses {
   attack?: number; defense?: number; magicAttack?: number; magicDefense?: number
   attackSpeed?: number; accuracy?: number; dodge?: number
+  moveSpeed?: number; attackRange?: number
   strength?: number; agility?: number; dexterity?: number; constitution?: number; intelligence?: number
 }
 
@@ -53,6 +54,8 @@ export interface Abilities {
 export interface DerivedStats {
   attack: number; defense: number; defenseEquip: number; magicAttack: number; magicDefense: number
   attackSpeed: number; accuracy: number; dodge: number; maxHp: number
+  moveSpeed: number   // 1D distance closed per tick when out of range
+  attackRange: number // max gap at which this unit's attacks land
 }
 
 // ── Unit ──────────────────────────────────────────────────────────────────────
@@ -102,6 +105,8 @@ export interface MonsterStats {
   attackSpeed: number
   accuracy: number
   dodge: number
+  moveSpeed?: number             // 1D distance closed per tick (default 1)
+  attackRange?: number           // max gap at which attacks land (default 1)
 }
 
 export interface MonsterDef {
@@ -121,7 +126,7 @@ export interface MonsterDef {
 
 export interface EquipmentItem {
   id: string; name: string; category: ItemCategory; traits: string[]
-  stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number }
+  stats: { attack?: number; defense?: number; specialAttack?: number; specialDefense?: number; range?: number }
   description?: string
   slots?: number  // §6: card sockets (0–4); default 0
 }
@@ -147,8 +152,8 @@ export interface EncounterSlot {
   progress: number            // 0..1; reaches 1 when monster is defeated, slot then removed
   targetUnitId: string | null // which unit this monster is targeting
   behavior: MonsterBehavior   // per-slot (not per-monsterId), enabling boss differentiation
-  phase: 'approaching' | 'standing' | 'retreating'
-  distance: number            // distance from melee range; 0 = in combat; cosmetic until movement speed is implemented
+  phase: 'approaching' | 'standing' | 'retreating'  // derived from gap vs attackRange; stored for UI ease
+  distance: number            // monster's position on the 1D combat axis (0 = unit base line); gap = distance - unitPos
   dealtHistory: number[]      // HP damage dealt on attack events (for rolling DPS)
   takenHistory: number[]      // progress chunks taken on hit events (for rolling DPS)
   attackCooldown: number      // ticks until this monster's next attack on a unit (0 = fires this tick)

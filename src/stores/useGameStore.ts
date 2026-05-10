@@ -46,6 +46,7 @@ export interface GameState {
   encounters: Record<string, EncounterSlot[]>         // §9: locationId → active slots only
   encounterCooldown: Record<string, number>           // locationId → ticks until next wave spawns
   locationFleeing: Record<string, number>             // locationId → ticks remaining in flee
+  unitDistance: Record<string, number>                // unitId → 1D position in current encounter (0 = home base)
   itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
@@ -207,6 +208,7 @@ export const useGameStore = create<GameState>((set) => ({
   encounters:        INITIAL_ENCOUNTERS,
   encounterCooldown: {},
   locationFleeing:   {},
+  unitDistance:      {},
   ticks: 0,
   monsterDefeated: {},
   locationStats: {},
@@ -230,6 +232,7 @@ export const useGameStore = create<GameState>((set) => ({
     const expGained: Record<string, number> = {}
     let goldEarned = 0
     const hpDamage: Record<string, number> = {}
+    const unitDistance: Record<string, number> = { ...s.unitDistance }
     let newLog = s.eventLog
 
     for (const [locationId, slots] of Object.entries(s.encounters)) {
@@ -248,7 +251,8 @@ export const useGameStore = create<GameState>((set) => ({
       if (fleeLeft > 0) {
         locationFleeing[locationId] = fleeLeft - 1
         if (fleeLeft === 1) {
-          // Flee complete — reset progress and return to approaching
+          // Flee complete — reset progress and return to approaching; reset unit positions
+          for (const u of s.units) if (u.locationId === locationId) unitDistance[u.id] = 0
           encounters[locationId] = slots.map((sl) => {
             const m    = MONSTER_REGISTRY[sl.monsterId]
             const atkCd = m ? calcAttackCooldown(m.stats.attackSpeed) : TICKS_PER_SECOND
@@ -261,9 +265,21 @@ export const useGameStore = create<GameState>((set) => ({
             }
           })
         } else {
-          encounters[locationId] = slots.map((sl) => ({
-            ...sl, targetUnitId: null, phase: 'retreating' as const,
-          }))
+          // During flee: monsters drift back toward APPROACH_DISTANCE; units drift back toward 0
+          for (const u of s.units) {
+            if (u.locationId !== locationId) continue
+            const ud = getDerivedStats(u, s.equipment)
+            const cur = unitDistance[u.id] ?? 0
+            unitDistance[u.id] = Math.max(0, cur - Math.max(0.5, ud.moveSpeed))
+          }
+          encounters[locationId] = slots.map((sl) => {
+            const m = MONSTER_REGISTRY[sl.monsterId]
+            const speed = Math.max(0.5, m?.stats.moveSpeed ?? 1)
+            return {
+              ...sl, targetUnitId: null, phase: 'retreating' as const,
+              distance: Math.min(APPROACH_DISTANCE, sl.distance + speed),
+            }
+          })
         }
         continue
       }
@@ -296,7 +312,48 @@ export const useGameStore = create<GameState>((set) => ({
         aliveUnits.forEach((_, ui) => attackedSlots.add(focusIdxs[ui % focusIdxs.length].i))
       }
 
-      // Process slots: manage attack/progress cooldowns; handle phase transitions
+      // ── Movement on the 1D combat axis ──────────────────────────────────────
+      // Old monster positions, old unit positions
+      const oldUnitPos: Record<string, number> = {}
+      for (const u of aliveUnits) oldUnitPos[u.id] = unitDistance[u.id] ?? 0
+
+      // Step monsters first using old unit positions
+      const newSlotPos: number[] = slots.map((sl) => sl.distance)
+      for (let i = 0; i < slots.length; i++) {
+        const sl = slots[i]
+        if (sl.behavior === 'avoid') continue              // avoid mode = monster doesn't close
+        const monster = MONSTER_REGISTRY[sl.monsterId]; if (!monster) continue
+        const tId = targets[i]; if (!tId) continue
+        const tPos = oldUnitPos[tId] ?? 0
+        const range = monster.stats.attackRange ?? 1
+        const speed = monster.stats.moveSpeed   ?? 1
+        const desiredPos = tPos + range
+        if (sl.distance > desiredPos) {
+          newSlotPos[i] = Math.max(sl.distance - speed, desiredPos)
+        }
+      }
+
+      // Step units using new monster positions
+      const unitToSlot: Record<string, number> = {}
+      for (let ui = 0; ui < aliveUnits.length; ui++) {
+        if (focusIdxs.length === 0) continue
+        unitToSlot[aliveUnits[ui].id] = focusIdxs[ui % focusIdxs.length].i
+      }
+      for (const u of aliveUnits) {
+        const slotIdx = unitToSlot[u.id]
+        if (slotIdx === undefined) continue
+        const ud = getDerivedStats(u, s.equipment)
+        const tPos = newSlotPos[slotIdx]
+        const desiredPos = Math.max(0, tPos - ud.attackRange)
+        const cur = oldUnitPos[u.id]
+        if (cur < desiredPos) {
+          unitDistance[u.id] = Math.min(cur + ud.moveSpeed, desiredPos)
+        } else {
+          unitDistance[u.id] = cur
+        }
+      }
+
+      // ── Process slots: engagement gated by gap vs attackRange ───────────────
       const newSlots: EncounterSlot[] = []
       for (let i = 0; i < slots.length; i++) {
         const slot    = slots[i]
@@ -319,18 +376,19 @@ export const useGameStore = create<GameState>((set) => ({
           continue
         }
 
-        // Phase transition: approaching → standing (cooldowns don't tick during approach)
-        if (slot.phase === 'approaching') {
-          const newDist = slot.distance - APPROACH_SPEED
-          if (newDist <= 0) {
-            newSlots.push({ ...slot, phase: 'standing', distance: 0, targetUnitId: targets[i] })
-          } else {
-            newSlots.push({ ...slot, distance: newDist, targetUnitId: targets[i] })
-          }
+        const monsterRange  = monster.stats.attackRange ?? 1
+        const monsterPos    = newSlotPos[i]
+        const targetId      = targets[i]
+        const targetPos     = targetId ? (unitDistance[targetId] ?? 0) : 0
+        const monsterInRange = (monsterPos - targetPos) <= monsterRange
+        const phase: 'approaching' | 'standing' = monsterInRange ? 'standing' : 'approaching'
+
+        // If not in range, no cooldowns tick — preserves "approach" semantics
+        if (!monsterInRange) {
+          newSlots.push({ ...slot, distance: monsterPos, targetUnitId: targets[i], phase })
           continue
         }
 
-        // Standing: manage cooldowns
         let newAtkCd    = slot.attackCooldown
         let newProgCd   = slot.progressCooldown
         let newProgress = slot.progress
@@ -339,11 +397,10 @@ export const useGameStore = create<GameState>((set) => ({
         let lastAttackMissed    = slot.lastAttackMissed
         let lastProgressMissed  = slot.lastProgressMissed
 
-        // Monster attack fires on cooldown expiry (non-avoid slots only)
+        // Monster attack fires on cooldown expiry (non-avoid slots in monster range)
         if (slot.behavior !== 'avoid') {
           if (slot.attackCooldown <= 0) {
-            const targetId = targets[i]
-            const target   = targetId ? s.units.find((u) => u.id === targetId) : null
+            const target = targetId ? s.units.find((u) => u.id === targetId) : null
             if (target) {
               const derived = getDerivedStats(target, s.equipment)
               const hit     = Math.random() < calcHitChance(monster.stats.accuracy, derived.dodge)
@@ -358,15 +415,19 @@ export const useGameStore = create<GameState>((set) => ({
           }
         }
 
-        // Unit progress fires on cooldown expiry (attacked slots only)
+        // Unit progress fires on cooldown expiry (attacked slots; only attackers in unit range count)
         if (attackedSlots.has(i)) {
-          if (slot.progressCooldown <= 0) {
-            // All alive units targeting this slot attack simultaneously
-            const attackersOfSlot = aliveUnits.filter((_, ui) =>
-              focusIdxs.length > 0 && focusIdxs[ui % focusIdxs.length].i === i
-            )
+          // Filter attackers to those whose own unit attack range covers this slot
+          const attackersOfSlot = aliveUnits.filter((_, ui) =>
+            focusIdxs.length > 0 && focusIdxs[ui % focusIdxs.length].i === i
+          ).filter((au) => {
+            const ud = getDerivedStats(au, s.equipment)
+            return (monsterPos - (unitDistance[au.id] ?? 0)) <= ud.attackRange
+          })
+
+          if (attackersOfSlot.length > 0 && slot.progressCooldown <= 0) {
             let totalChunk = 0
-            let allMissed  = attackersOfSlot.length > 0
+            let allMissed  = true
             let resetCd    = TICKS_PER_SECOND
             for (const [aidx, au] of attackersOfSlot.entries()) {
               const ud  = getDerivedStats(au, s.equipment)
@@ -381,7 +442,7 @@ export const useGameStore = create<GameState>((set) => ({
             takenHistory       = [...takenHistory, totalChunk].slice(-10)
             lastProgressMissed = allMissed
             newProgCd          = Math.max(0, resetCd - 1)
-          } else {
+          } else if (attackersOfSlot.length > 0) {
             newProgCd = slot.progressCooldown - 1
           }
         }
@@ -389,6 +450,8 @@ export const useGameStore = create<GameState>((set) => ({
         newSlots.push({
           ...slot,
           progress: newProgress,
+          distance: monsterPos,
+          phase,
           targetUnitId: targets[i],
           attackCooldown: newAtkCd,
           progressCooldown: newProgCd,
@@ -400,9 +463,11 @@ export const useGameStore = create<GameState>((set) => ({
       }
       encounters[locationId] = newSlots
 
-      // When the last monster leaves, start the cooldown before the next wave
+      // When the last monster leaves, start the cooldown before the next wave;
+      // also reset positions of units at this location so the next wave starts fresh
       if (slots.length > 0 && newSlots.length === 0) {
         encounterCooldown[locationId] = WAVE_COOLDOWN_MIN + Math.floor(Math.random() * (WAVE_COOLDOWN_MAX - WAVE_COOLDOWN_MIN + 1))
+        for (const u of s.units) if (u.locationId === locationId) unitDistance[u.id] = 0
       }
     }
 
@@ -413,6 +478,7 @@ export const useGameStore = create<GameState>((set) => ({
         const wave = spawnWave(locationId)
         encounters[locationId] = wave
         for (const sl of wave) monsterSeen[sl.monsterId] = (monsterSeen[sl.monsterId] ?? 0) + 1
+        for (const u of s.units) if (u.locationId === locationId) unitDistance[u.id] = 0
       } else {
         encounterCooldown[locationId] = newCd
       }
@@ -452,7 +518,7 @@ export const useGameStore = create<GameState>((set) => ({
       ? s.miscItems.map((i) => i.id === 'm-gold' ? { ...i, quantity: i.quantity + goldEarned } : i)
       : s.miscItems
 
-    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, miscItems, lastTickAt: Date.now(), eventLog: newLog }
+    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, unitDistance, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, miscItems, lastTickAt: Date.now(), eventLog: newLog }
   }),
 
   batchTick: (n) => set((s) => {
@@ -520,8 +586,8 @@ export const useGameStore = create<GameState>((set) => ({
 
       encounters[locationId] = slots.map((slot, i) => {
         const monster = MONSTER_REGISTRY[slot.monsterId]
-        // In batch mode, approaching slots immediately become standing
-        const baseSlot = slot.phase === 'approaching'
+        // In batch mode, approaching slots immediately become standing at melee
+        const baseSlot = slot.phase === 'approaching' || slot.distance > 0
           ? { ...slot, phase: 'standing' as const, distance: 0, dealtHistory: [], takenHistory: [] }
           : slot
         if (!monster) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
@@ -655,7 +721,8 @@ export const useGameStore = create<GameState>((set) => ({
       eventLog = appendLog(eventLog, 'offline', msg, newTicks)
     }
 
-    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, monsterDefeated, monsterSeen, locationStats, miscItems, lastTickAt: Date.now(), eventLog }
+    // Batch mode collapses approach; no per-tick positions matter — clear them
+    return { ticks: newTicks, units, encounters, encounterCooldown, locationFleeing, unitDistance: {}, monsterDefeated, monsterSeen, locationStats, miscItems, lastTickAt: Date.now(), eventLog }
   }),
 
   togglePause: () => set((s) => s.paused
@@ -714,6 +781,9 @@ export const useGameStore = create<GameState>((set) => ({
 
     const encounters = { ...s.encounters }
     const encounterCooldown = { ...s.encounterCooldown }
+    const unitDistance = { ...s.unitDistance }
+    // Reassigned units always start at the home line (0) of their new location
+    for (const id of unitIds) unitDistance[id] = 0
 
     // Source locations that lost all units → clear encounter so monsters return to pool
     const fromIds = new Set(
@@ -736,7 +806,7 @@ export const useGameStore = create<GameState>((set) => ({
       }
     }
 
-    return { units: newUnits, selectedUnitIds: [], encounters, encounterCooldown, monsterSeen }
+    return { units: newUnits, selectedUnitIds: [], encounters, encounterCooldown, monsterSeen, unitDistance }
   }),
 
   equipItem: (unitId, slot, itemId) => set((s) => ({

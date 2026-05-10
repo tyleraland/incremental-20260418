@@ -1,5 +1,5 @@
 import { useState, useLayoutEffect, useRef, useEffect } from 'react'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, APPROACH_DISTANCE, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
 import type { MonsterDef } from '@/types'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationCodex } from '@/components/LocationCodex'
@@ -585,6 +585,140 @@ function FullMonsterDetailPanel({ locationId, slotIndex, onClose, onOpenCodex }:
   )
 }
 
+// ── RangeTrack ────────────────────────────────────────────────────────────────
+// 1D combat axis: units at left (pos 0), monsters at right (pos APPROACH_DISTANCE).
+// Each chip is a circle with a single-letter initial; a horizontal whisker shows
+// attack range. Tap a chip to select that unit / monster slot.
+
+function initialOf(name: string): string {
+  return (name.trim()[0] ?? '?').toUpperCase()
+}
+
+function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonsterSlotIdx, onTapUnit, onTapMonster }: {
+  locationId: string
+  units: Unit[]
+  slots: EncounterSlot[]
+  selectedUnitIds: string[]
+  selectedMonsterSlotIdx: number
+  onTapUnit: (unitId: string) => void
+  onTapMonster: (slotIndex: number) => void
+}) {
+  const equipment    = useGameStore((s) => s.equipment)
+  const unitDistance = useGameStore((s) => s.unitDistance)
+  const fleeing      = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+
+  const pct = (d: number) => Math.max(0, Math.min(100, (d / APPROACH_DISTANCE) * 100))
+
+  // Stack chips that share an initial+side to avoid overlap; rank dupes
+  const monsterRanks: Record<string, number> = {}
+  const monsterChips = slots.map((sl, i) => {
+    const monster = MONSTER_REGISTRY[sl.monsterId]
+    const name = monster?.name ?? sl.monsterId
+    const init = initialOf(name)
+    monsterRanks[name] = (monsterRanks[name] ?? 0) + 1
+    const dupes = slots.filter((s2) => MONSTER_REGISTRY[s2.monsterId]?.name === name).length
+    const label = dupes > 1 ? `${init}${monsterRanks[name]}` : init
+    const range = monster?.stats.attackRange ?? 1
+    const speed = monster?.stats.moveSpeed   ?? 1
+    return { i, label, name, pos: sl.distance, range, speed, behavior: sl.behavior, hpPct: 1 - sl.progress }
+  })
+
+  const unitChips = units.map((u) => {
+    const d = getDerivedStats(u, equipment)
+    const pos = unitDistance[u.id] ?? 0
+    const ko = u.recoveryTicksLeft > 0 || u.isResting || u.health <= 0
+    return { id: u.id, label: initialOf(u.name), name: u.name, pos, range: d.attackRange, speed: d.moveSpeed, ko }
+  })
+
+  return (
+    <div className="rounded-lg border border-game-border bg-game-surface px-2 py-2 mb-2">
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">
+        <span>Front line</span>
+        <span>Range</span>
+        <span>Spawn</span>
+      </div>
+      <div className="relative h-9 bg-game-bg rounded border border-game-border/40 overflow-visible">
+        {/* dashed midline */}
+        <div className="absolute top-0 bottom-0 left-1/2 w-px border-l border-dashed border-game-border/50" />
+
+        {/* unit range whiskers */}
+        {unitChips.map((c) => (
+          <div
+            key={`uw-${c.id}`}
+            className="absolute top-1/2 h-px bg-sky-500/50"
+            style={{
+              left:  `${pct(c.pos)}%`,
+              width: `${pct(c.range)}%`,
+            }}
+          />
+        ))}
+
+        {/* monster range whiskers (extend leftward from chip) */}
+        {monsterChips.map((c) => (
+          <div
+            key={`mw-${c.i}`}
+            className="absolute top-1/2 h-px bg-red-400/50"
+            style={{
+              left:  `${Math.max(0, pct(c.pos - c.range))}%`,
+              width: `${pct(Math.min(c.range, c.pos))}%`,
+            }}
+          />
+        ))}
+
+        {/* unit chips */}
+        {unitChips.map((c) => {
+          const isSel = selectedUnitIds.includes(c.id)
+          return (
+            <button
+              key={`u-${c.id}`}
+              onClick={(e) => { e.stopPropagation(); onTapUnit(c.id) }}
+              title={`${c.name} • range ${c.range} • spd ${c.speed.toFixed(1)}`}
+              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center border transition-[left] duration-200 ease-linear ${
+                c.ko
+                  ? 'bg-purple-900 text-purple-300 border-purple-700'
+                  : isSel
+                  ? 'bg-game-primary text-white border-game-primary shadow-md shadow-game-primary/40'
+                  : 'bg-sky-700 text-sky-100 border-sky-500'
+              }`}
+              style={{ left: `${pct(c.pos)}%`, zIndex: isSel ? 5 : 2 }}
+            >
+              {c.label}
+            </button>
+          )
+        })}
+
+        {/* monster chips */}
+        {monsterChips.map((c) => {
+          const isSel = selectedMonsterSlotIdx === c.i
+          const dim   = c.behavior === 'ignore' ? 'opacity-60' : ''
+          const tone  = c.behavior === 'avoid'      ? 'bg-sky-800 border-sky-500 text-sky-100' :
+                        c.behavior === 'prioritize' ? 'bg-amber-700 border-amber-400 text-amber-50' :
+                                                      'bg-red-800 border-red-500 text-red-50'
+          return (
+            <button
+              key={`m-${c.i}`}
+              onClick={(e) => { e.stopPropagation(); onTapMonster(c.i) }}
+              title={`${c.name} • range ${c.range} • spd ${c.speed.toFixed(1)}`}
+              className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center border transition-[left] duration-200 ease-linear ${
+                isSel ? 'ring-2 ring-game-primary z-10' : ''
+              } ${tone} ${dim}`}
+              style={{ left: `${pct(c.pos)}%`, zIndex: isSel ? 5 : 3 }}
+            >
+              {c.label}
+            </button>
+          )
+        })}
+
+        {fleeing > 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none text-[10px] text-sky-300 italic">
+            fleeing…
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Combat ────────────────────────────────────────────────────────────────────
 
 export function Combat() {
@@ -681,6 +815,18 @@ export function Combat() {
                 </button>
               </div>
             </div>
+            <RangeTrack
+              locationId={focusedLocation.id}
+              units={focusedUnits}
+              slots={monsterSlots}
+              selectedUnitIds={selectedUnitIds}
+              selectedMonsterSlotIdx={detailMonsterSlotIndex}
+              onTapUnit={toggleSelectUnit}
+              onTapMonster={(i) => {
+                const isSel = selectedMonsterSlot?.locationId === focusedLocation.id && selectedMonsterSlot?.slotIndex === i
+                setSelectedMonsterSlot(isSel ? null : { locationId: focusedLocation.id, slotIndex: i })
+              }}
+            />
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2 min-w-0">
                 <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Units</div>
