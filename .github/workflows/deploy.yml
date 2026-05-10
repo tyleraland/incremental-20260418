@@ -19,6 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need enough history for `git log -5` in vite.config.ts to fill the
+          # Debug timeline. 0 = full history.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
