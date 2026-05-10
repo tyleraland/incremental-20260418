@@ -174,7 +174,7 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
       {kind && (
         <span
           aria-hidden
-          className={`absolute top-0.5 right-1 text-[11px] leading-none pointer-events-none ${kind.iconCls}`}
+          className={`absolute top-0.5 right-1 text-[13px] leading-none pointer-events-none ${kind.iconCls}`}
         >
           {kind.symbol}
         </span>
