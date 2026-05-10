@@ -5,7 +5,7 @@ import type {
   LocationCombatStats,
 } from '@/types'
 import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
-import { getDerivedStats } from '@/lib/stats'
+import { getDerivedStats, getFormationOffset } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { RECIPE_REGISTRY } from '@/data/recipes'
@@ -333,24 +333,20 @@ export const useGameStore = create<GameState>((set) => ({
         }
       }
 
-      // Step units using new monster positions
+      // Units always drift to their formation offset — they hold the line and
+      // let monsters close. Ranged units stay back, melee step forward.
       const unitToSlot: Record<string, number> = {}
       for (let ui = 0; ui < aliveUnits.length; ui++) {
         if (focusIdxs.length === 0) continue
         unitToSlot[aliveUnits[ui].id] = focusIdxs[ui % focusIdxs.length].i
       }
       for (const u of aliveUnits) {
-        const slotIdx = unitToSlot[u.id]
-        if (slotIdx === undefined) continue
         const ud = getDerivedStats(u, s.equipment)
-        const tPos = newSlotPos[slotIdx]
-        const desiredPos = Math.max(0, tPos - ud.attackRange)
+        const formation = getFormationOffset(u, s.equipment)
         const cur = oldUnitPos[u.id]
-        if (cur < desiredPos) {
-          unitDistance[u.id] = Math.min(cur + ud.moveSpeed, desiredPos)
-        } else {
-          unitDistance[u.id] = cur
-        }
+        if (cur < formation)      unitDistance[u.id] = Math.min(cur + ud.moveSpeed, formation)
+        else if (cur > formation) unitDistance[u.id] = Math.max(cur - ud.moveSpeed, formation)
+        else                      unitDistance[u.id] = cur
       }
 
       // ── Process slots: engagement gated by gap vs attackRange ───────────────
@@ -463,11 +459,10 @@ export const useGameStore = create<GameState>((set) => ({
       }
       encounters[locationId] = newSlots
 
-      // When the last monster leaves, start the cooldown before the next wave;
-      // also reset positions of units at this location so the next wave starts fresh
+      // When the last monster leaves, start the cooldown before the next wave.
+      // Units stay where they are — formation drift will pull them back during hunting.
       if (slots.length > 0 && newSlots.length === 0) {
         encounterCooldown[locationId] = WAVE_COOLDOWN_MIN + Math.floor(Math.random() * (WAVE_COOLDOWN_MAX - WAVE_COOLDOWN_MIN + 1))
-        for (const u of s.units) if (u.locationId === locationId) unitDistance[u.id] = 0
       }
     }
 
@@ -478,7 +473,6 @@ export const useGameStore = create<GameState>((set) => ({
         const wave = spawnWave(locationId)
         encounters[locationId] = wave
         for (const sl of wave) monsterSeen[sl.monsterId] = (monsterSeen[sl.monsterId] ?? 0) + 1
-        for (const u of s.units) if (u.locationId === locationId) unitDistance[u.id] = 0
       } else {
         encounterCooldown[locationId] = newCd
       }

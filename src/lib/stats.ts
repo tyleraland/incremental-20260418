@@ -62,3 +62,12 @@ export function getEquippedId(unit: Unit, slot: EquipSlot): string | null {
   if (slot === 'mainHand' || slot === 'offHand') return unit.weaponSets[unit.activeWeaponSet][slot]
   return unit.equipment[slot]
 }
+
+// 1D combat axis position the unit holds in formation when not engaged.
+// Melee (range 1) → forward; longer ranges → further back. Plain function of
+// attackRange so a player retuning their loadout immediately sees the unit
+// shuffle into a different rank.
+export function getFormationOffset(unit: Unit, equipment: EquipmentItem[]): number {
+  const r = getDerivedStats(unit, equipment).attackRange
+  return Math.max(0, Math.min(5, 4 - (r - 1)))
+}
