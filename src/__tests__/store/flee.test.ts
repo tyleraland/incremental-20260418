@@ -11,7 +11,7 @@ describe('Flee — trigger conditions', () => {
   it('triggers flee when any monster is set to avoid', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', behavior: 'avoid' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', priority: -1 })] },
     })
     const { locationFleeing } = tick()
     expect(locationFleeing['loc1']).toBe(FLEE_TICKS)
@@ -20,7 +20,7 @@ describe('Flee — trigger conditions', () => {
   it('triggers flee when ALL monsters are set to ignore', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', behavior: 'ignore' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', priority: 0 })] },
     })
     const { locationFleeing } = tick()
     expect(locationFleeing['loc1']).toBe(FLEE_TICKS)
@@ -29,7 +29,7 @@ describe('Flee — trigger conditions', () => {
   it('triggers flee when all monsters are ignore or avoid (mixed)', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', behavior: 'ignore' }), makeEncounterSlot({ monsterId: 'rock-crab', behavior: 'avoid' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', priority: 0 }), makeEncounterSlot({ monsterId: 'rock-crab', priority: -1 })] },
     })
     const { locationFleeing } = tick()
     expect(locationFleeing['loc1']).toBe(FLEE_TICKS)
@@ -39,7 +39,7 @@ describe('Flee — trigger conditions', () => {
     // wolf=normal, rock-crab=ignore → not all ignore/avoid → no flee
     resetStore({
       units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', behavior: 'ignore' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf' }), makeEncounterSlot({ monsterId: 'rock-crab', priority: 0 })] },
     })
     const { locationFleeing } = tick()
     expect(locationFleeing['loc1'] ?? 0).toBe(0)
@@ -49,7 +49,7 @@ describe('Flee — trigger conditions', () => {
     // flee check requires aliveUnits.length > 0
     resetStore({
       units: [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: 5, locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', behavior: 'avoid' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', priority: -1 })] },
     })
     const { locationFleeing } = tick()
     expect(locationFleeing['loc1'] ?? 0).toBe(0)
@@ -117,7 +117,7 @@ describe('Flee — combat suppression', () => {
   it('units take no damage on the tick that triggers flee', () => {
     resetStore({
       units: [makeUnit({ id: 'u1', health: 100, locationId: 'loc1' })],
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', behavior: 'avoid' })] },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', priority: -1 })] },
     })
     // Flee triggers this tick — damage loop is skipped
     const { units } = tick()

@@ -1,5 +1,5 @@
 import { useState, useLayoutEffect, useRef, useEffect } from 'react'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, APPROACH_DISTANCE, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, getDerivedStats, getUnitTraits, type MonsterBehavior, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, APPROACH_DISTANCE, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, getDerivedStats, getUnitTraits, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
 import type { MonsterDef } from '@/types'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationCodex } from '@/components/LocationCodex'
@@ -62,12 +62,22 @@ function ElementBadge({ element }: { element: string }) {
   )
 }
 
-const BEHAVIOR_OPTIONS: { b: MonsterBehavior; label: string; activeClass: string }[] = [
-  { b: 'normal',     label: 'Normal',     activeClass: 'border-game-primary bg-game-primary/10 text-game-text' },
-  { b: 'prioritize', label: 'Prioritize', activeClass: 'border-amber-600 bg-amber-950/50 text-amber-300' },
-  { b: 'ignore',     label: 'Ignore',     activeClass: 'border-game-border bg-game-border/20 text-game-text-dim' },
-  { b: 'avoid',      label: 'Avoid',      activeClass: 'border-sky-600 bg-sky-950/50 text-sky-300' },
-]
+// Map a numeric priority to a human label / accent. Anything ≥ 2 is "bumped"
+// focus; 1 is the default focusable; 0 stops party attacks; -1 makes the
+// party flee on contact.
+function priorityLabel(p: number): { label: string; chip: string } {
+  if (p < 0)  return { label: 'Avoid',  chip: 'border-sky-600 bg-sky-950/50 text-sky-300' }
+  if (p === 0) return { label: 'Ignore', chip: 'border-game-border bg-game-border/20 text-game-text-dim' }
+  if (p === 1) return { label: 'Normal', chip: 'border-game-primary bg-game-primary/10 text-game-text' }
+  return { label: `Priority +${p - 1}`, chip: 'border-amber-600 bg-amber-950/50 text-amber-300' }
+}
+
+// Top-priority focusable slots (matches the tick loop's focusIdxs logic).
+function pickFocusSlots(slots: EncounterSlot[]): EncounterSlot[] {
+  const positives = slots.filter((sl) => sl.priority >= 1)
+  const max       = positives.reduce((m, sl) => Math.max(m, sl.priority), 0)
+  return positives.filter((sl) => sl.priority === max)
+}
 
 // ── BigUnitCard ───────────────────────────────────────────────────────────────
 
@@ -86,9 +96,7 @@ function BigUnitCard({ unit, locationId, isSelected, onTap }: {
 
   const alive          = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
   const idx            = alive.findIndex((u) => u.id === unit.id)
-  const prioritySlots  = slots.filter((sl) => sl.behavior === 'prioritize')
-  const normalSlots    = slots.filter((sl) => sl.behavior === 'normal')
-  const focusSlots     = prioritySlots.length > 0 ? prioritySlots : normalSlots
+  const focusSlots     = pickFocusSlots(slots)
   const targetSlotObj  = idx >= 0 && focusSlots.length > 0 ? focusSlots[idx % focusSlots.length] : null
   const targetSlotIdx  = targetSlotObj ? slots.indexOf(targetSlotObj) : -1
   const targetMonster  = targetSlotObj ? (MONSTER_REGISTRY[targetSlotObj.monsterId] ?? null) : null
@@ -116,7 +124,7 @@ function BigUnitCard({ unit, locationId, isSelected, onTap }: {
 
   const dpsTaken = inCombat
     ? slots.reduce((sum, sl) => {
-        if (sl.behavior === 'avoid') return sum
+        if (sl.priority < 0) return sum
         if (sl.targetUnitId !== unit.id) return sum
         if (sl.phase !== 'standing') return sum
         const m = MONSTER_REGISTRY[sl.monsterId]
@@ -228,7 +236,7 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap }: {
   const monster = MONSTER_REGISTRY[slot.monsterId]
   if (!monster) return null
 
-  const behavior   = slot.behavior ?? 'normal'
+  const priority   = slot.priority ?? 1
   const isFleeing  = locationFleeing > 0
   const targetUnit = !isFleeing ? allUnits.find((u) => u.id === slot.targetUnitId) : null
   const hpPct      = Math.max(0, Math.round((1 - slot.progress) * 100))
@@ -238,9 +246,7 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap }: {
 
   const targetDerived = targetUnit ? getDerivedStats(targetUnit, equipment) : null
   const aliveAtLoc    = allUnits.filter(u => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting)
-  const prioritySlots = allSlots.filter(s => s.behavior === 'prioritize')
-  const normalSlots   = allSlots.filter(s => s.behavior === 'normal')
-  const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
+  const focusSlots    = pickFocusSlots(allSlots)
   const numAttackers  = focusSlots.includes(slot)
     ? aliveAtLoc.filter((_, ui) => focusSlots[ui % focusSlots.length] === slot).length
     : 0
@@ -258,16 +264,16 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap }: {
     ? (slot.dealtHistory.at(-1) ?? 0)
     : null
 
-  const borderCls = isSelected            ? 'border-game-primary bg-game-primary/10' :
-                    behavior === 'prioritize' ? 'border-amber-700/60' :
-                    behavior === 'avoid'      ? 'border-sky-700/60'   : 'border-game-border'
+  const borderCls = isSelected     ? 'border-game-primary bg-game-primary/10' :
+                    priority > 1   ? 'border-amber-700/60' :
+                    priority < 0   ? 'border-sky-700/60'   : 'border-game-border'
 
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onTap}
-      className={`cursor-pointer rounded-lg border bg-game-bg px-2.5 py-2 space-y-1.5 transition-colors ${borderCls} ${behavior === 'ignore' ? 'opacity-60' : ''}`}
+      className={`cursor-pointer rounded-lg border bg-game-bg px-2.5 py-2 space-y-1.5 transition-colors ${borderCls} ${priority === 0 ? 'opacity-60' : ''}`}
     >
       <div className="flex items-center gap-1 flex-wrap min-w-0">
         <span className="text-sm font-semibold text-game-text truncate">{slotDisplayName(allSlots, slotIndex)}</span>
@@ -358,9 +364,7 @@ function FullUnitDetailPanel({ unit, locationId, onClose, onView }: {
 
   const alive          = allUnits.filter((u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0)
   const idx            = alive.findIndex((u) => u.id === unit.id)
-  const prioritySlots  = slots.filter((sl) => sl.behavior === 'prioritize')
-  const normalSlots    = slots.filter((sl) => sl.behavior === 'normal')
-  const focusSlots     = prioritySlots.length > 0 ? prioritySlots : normalSlots
+  const focusSlots     = pickFocusSlots(slots)
   const targetSlotObj  = idx >= 0 && focusSlots.length > 0 ? focusSlots[idx % focusSlots.length] : null
   const targetSlotIdx  = targetSlotObj ? slots.indexOf(targetSlotObj) : -1
   const targetMonster  = targetSlotObj ? (MONSTER_REGISTRY[targetSlotObj.monsterId] ?? null) : null
@@ -382,7 +386,7 @@ function FullUnitDetailPanel({ unit, locationId, onClose, onView }: {
     : null
   const dpsTaken = inCombat
     ? slots.reduce((sum, sl) => {
-        if (sl.behavior === 'avoid') return sum
+        if (sl.priority < 0) return sum
         if (sl.targetUnitId !== unit.id) return sum
         if (sl.phase !== 'standing') return sum
         const m = MONSTER_REGISTRY[sl.monsterId]
@@ -488,14 +492,14 @@ function FullMonsterDetailPanel({ locationId, slotIndex, onClose, onOpenCodex }:
   const allUnits           = useGameStore((s) => s.units)
   const allSlots           = useGameStore((s) => s.encounters[locationId] ?? [])
   const slot               = allSlots[slotIndex] ?? null
-  const setMonsterBehavior = useGameStore((s) => s.setMonsterBehavior)
+  const setMonsterPriority = useGameStore((s) => s.setMonsterPriority)
   const locationFleeing    = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
 
   if (!slot) return null
   const monster = MONSTER_REGISTRY[slot.monsterId]
   if (!monster) return null
 
-  const behavior   = slot.behavior ?? 'normal'
+  const priority   = slot.priority ?? 1
   const isFleeing  = locationFleeing > 0
   const targetUnit = !isFleeing ? allUnits.find((u) => u.id === slot.targetUnitId) : null
   const hpPct      = Math.max(0, Math.round((1 - slot.progress) * 100))
@@ -505,9 +509,7 @@ function FullMonsterDetailPanel({ locationId, slotIndex, onClose, onOpenCodex }:
 
   const targetDerived = targetUnit ? getDerivedStats(targetUnit, equipment) : null
   const aliveAtLoc    = allUnits.filter(u => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting)
-  const prioritySlots = allSlots.filter(s => s.behavior === 'prioritize')
-  const normalSlots   = allSlots.filter(s => s.behavior === 'normal')
-  const focusSlots    = prioritySlots.length > 0 ? prioritySlots : normalSlots
+  const focusSlots    = pickFocusSlots(allSlots)
   const numAttackers  = focusSlots.includes(slot)
     ? aliveAtLoc.filter((_, ui) => focusSlots[ui % focusSlots.length] === slot).length
     : 0
@@ -578,13 +580,19 @@ function FullMonsterDetailPanel({ locationId, slotIndex, onClose, onOpenCodex }:
         )}
       </div>
 
-      <div className="flex items-center gap-1 flex-wrap">
-        {BEHAVIOR_OPTIONS.map(({ b, label, activeClass }) => (
-          <button key={b} onClick={() => setMonsterBehavior(locationId, slot.monsterId, b)}
-            className={`px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${behavior === b ? activeClass : 'border-game-border/40 text-game-text-dim hover:border-game-border hover:text-game-text'}`}>
-            {label}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setMonsterPriority(locationId, slot.monsterId, priority - 1)}
+          disabled={priority <= -1}
+          className="w-7 h-7 rounded border border-game-border/60 text-game-text-dim hover:border-game-primary/50 hover:text-game-text disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-sm font-semibold"
+        >−</button>
+        <span className={`px-2 py-1 rounded border text-[10px] font-medium ${priorityLabel(priority).chip}`}>
+          {priorityLabel(priority).label}
+        </span>
+        <button
+          onClick={() => setMonsterPriority(locationId, slot.monsterId, priority + 1)}
+          className="w-7 h-7 rounded border border-game-border/60 text-game-text-dim hover:border-game-primary/50 hover:text-game-text transition-colors text-sm font-semibold"
+        >+</button>
       </div>
     </div>
   )
@@ -627,7 +635,7 @@ function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonster
     const label = dupes > 1 ? `${init}${monsterRanks[name]}` : init
     const range = monster?.stats.attackRange ?? 1
     const speed = monster?.stats.moveSpeed   ?? 1
-    return { i, label, name, pos: sl.distance, range, speed, behavior: sl.behavior, hpPct: 1 - sl.progress }
+    return { i, label, name, pos: sl.distance, range, speed, priority: sl.priority, hpPct: 1 - sl.progress }
   })
 
   // Spread units that share a formation position via small vertical jitter so
@@ -701,10 +709,10 @@ function RangeTrack({ locationId, units, slots, selectedUnitIds, selectedMonster
             wave's chips pop in from off-screen */}
         {monsterChips.map((c) => {
           const isSel = selectedMonsterSlotIdx === c.i
-          const dim   = c.behavior === 'ignore' ? 'opacity-60' : ''
-          const tone  = c.behavior === 'avoid'      ? 'bg-sky-800 border-sky-500 text-sky-100' :
-                        c.behavior === 'prioritize' ? 'bg-amber-700 border-amber-400 text-amber-50' :
-                                                      'bg-red-800 border-red-500 text-red-50'
+          const dim   = c.priority === 0 ? 'opacity-60' : ''
+          const tone  = c.priority < 0   ? 'bg-sky-800 border-sky-500 text-sky-100' :
+                        c.priority > 1   ? 'bg-amber-700 border-amber-400 text-amber-50' :
+                                           'bg-red-800 border-red-500 text-red-50'
           return (
             <button
               key={`m-${c.i}`}

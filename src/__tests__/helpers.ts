@@ -1,4 +1,4 @@
-import { useGameStore, calcAttackCooldown, type Unit, type MonsterBehavior, type EncounterSlot } from '@/stores/useGameStore'
+import { useGameStore, calcAttackCooldown, PRIORITY_NORMAL, type Unit, type EncounterSlot } from '@/stores/useGameStore'
 
 export { calcAttackCooldown }
 
@@ -41,7 +41,7 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
 
 export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): EncounterSlot {
   return {
-    monsterId: 'wolf', progress: 0, targetUnitId: null, behavior: 'normal' as MonsterBehavior,
+    monsterId: 'wolf', progress: 0, targetUnitId: null, priority: PRIORITY_NORMAL, threat: {},
     phase: 'standing', distance: 0, dealtHistory: [], takenHistory: [],
     attackCooldown: 0, progressCooldown: 0,
     lastAttackMissed: false, lastProgressMissed: false,

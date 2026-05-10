@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
-  MonsterBehavior, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
+  Priority, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
   LocationCombatStats,
 } from '@/types'
+import { PRIORITY_NORMAL, PRIORITY_IGNORE, PRIORITY_AVOID } from '@/types'
 import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats, getFormationOffset } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
@@ -89,7 +90,7 @@ export interface GameState {
   learnSkill: (unitId: string, skillId: string) => void
   recruitUnit: () => void
   craft: (recipeId: string) => void
-  setMonsterBehavior: (locationId: string, monsterId: string, behavior: MonsterBehavior) => void
+  setMonsterPriority: (locationId: string, monsterId: string, priority: Priority) => void
   selectedMonsterSlot: { locationId: string; slotIndex: number } | null
   setSelectedMonsterSlot: (slot: { locationId: string; slotIndex: number } | null) => void
   resetSave: () => void
@@ -114,7 +115,7 @@ function makeSlots(monsterIds: string[]): EncounterSlot[] {
     const monster = MONSTER_REGISTRY[monsterId]
     const atkCd   = monster ? calcAttackCooldown(monster.stats.attackSpeed) : TICKS_PER_SECOND
     return {
-      monsterId, progress: 0, targetUnitId: null, behavior: 'normal',
+      monsterId, progress: 0, targetUnitId: null, priority: PRIORITY_NORMAL, threat: {},
       phase: 'approaching' as const, distance: APPROACH_DISTANCE, dealtHistory: [], takenHistory: [],
       attackCooldown:   Math.floor(Math.random() * atkCd) + 1,
       progressCooldown: Math.floor(Math.random() * TICKS_PER_SECOND) + 1,
@@ -145,6 +146,8 @@ const WAVE_TEMPLATES: Record<string, () => string[]> = {
   ...Object.fromEntries(PLACEHOLDER_LOCATION_IDS.map((id) => [id, () => ['slime']])),
   // Geffen Dungeon: 1 or 2 bats per wave.
   ...Object.fromEntries(GEFFEN_DUNGEON_IDS.map((id) => [id, () => Math.random() < 0.5 ? ['bat'] : ['bat', 'bat']])),
+  // Floor 1 also includes a tough slime alongside the bats (test target).
+  'geffen-dungeon-1': () => Math.random() < 0.5 ? ['bat', 'tough-slime'] : ['bat', 'bat', 'tough-slime'],
   ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, () => ['rock-crab']])),
 }
 
@@ -260,7 +263,7 @@ export const useGameStore = create<GameState>((set) => ({
             const m    = MONSTER_REGISTRY[sl.monsterId]
             const atkCd = m ? calcAttackCooldown(m.stats.attackSpeed) : TICKS_PER_SECOND
             return {
-              ...sl, progress: 0, targetUnitId: null,
+              ...sl, progress: 0, targetUnitId: null, threat: {},
               phase: 'approaching' as const, distance: APPROACH_DISTANCE,
               dealtHistory: [], takenHistory: [],
               attackCooldown:   Math.floor(Math.random() * atkCd) + 1,
@@ -287,8 +290,8 @@ export const useGameStore = create<GameState>((set) => ({
         continue
       }
       const shouldFlee = aliveUnits.length > 0 && slots.length > 0 && (
-        slots.some((sl)  => sl.behavior === 'avoid') ||
-        slots.every((sl) => sl.behavior === 'ignore' || sl.behavior === 'avoid')
+        slots.some((sl)  => sl.priority < 0) ||
+        slots.every((sl) => sl.priority <= 0)
       )
       if (shouldFlee) {
         locationFleeing[locationId] = FLEE_TICKS_CONST
@@ -303,13 +306,25 @@ export const useGameStore = create<GameState>((set) => ({
         continue
       }
 
-      // Monster → unit targeting (round-robin, for damage)
-      const targets = slots.map((_, i) => aliveUnits[i % aliveUnits.length].id)
+      // Monster → unit targeting: each slot picks its highest-threat unit
+      // (sticky aggro). Falls back to round-robin when no threat has built up
+      // yet so the opening seconds of combat still spread aggro evenly.
+      const targets = slots.map((sl, i) => {
+        const threatened = aliveUnits
+          .map((u) => ({ id: u.id, t: sl.threat[u.id] ?? 0 }))
+          .filter(({ t }) => t > 0)
+        if (threatened.length > 0) {
+          threatened.sort((a, b) => b.t - a.t)
+          return threatened[0].id
+        }
+        return aliveUnits[i % aliveUnits.length].id
+      })
 
-      // Unit → monster targeting (prioritize slots first)
-      const priorityIdxs  = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'prioritize')
-      const normalIdxs    = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'normal')
-      const focusIdxs     = priorityIdxs.length > 0 ? priorityIdxs : normalIdxs
+      // Unit → monster: focus on the highest-priority focusable slots
+      // (priority ≥ 1). Multiple slots can share the top rank.
+      const focusable    = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.priority >= 1)
+      const maxPriority  = focusable.reduce((m, x) => Math.max(m, x.sl.priority), 0)
+      const focusIdxs    = focusable.filter(({ sl }) => sl.priority === maxPriority)
       const attackedSlots = new Set<number>()
       if (focusIdxs.length > 0) {
         aliveUnits.forEach((_, ui) => attackedSlots.add(focusIdxs[ui % focusIdxs.length].i))
@@ -324,7 +339,7 @@ export const useGameStore = create<GameState>((set) => ({
       const newSlotPos: number[] = slots.map((sl) => sl.distance)
       for (let i = 0; i < slots.length; i++) {
         const sl = slots[i]
-        if (sl.behavior === 'avoid') continue              // avoid mode = monster doesn't close
+        if (sl.priority < 0) continue                      // avoid: monster doesn't close (party flees instead)
         const monster = MONSTER_REGISTRY[sl.monsterId]; if (!monster) continue
         const tId = targets[i]; if (!tId) continue
         const tPos = oldUnitPos[tId] ?? 0
@@ -429,7 +444,7 @@ export const useGameStore = create<GameState>((set) => ({
 
         // Monster attack fires on cooldown expiry — only when the monster has closed
         // to its own attack range (it can't attack from across the field).
-        if (slot.behavior !== 'avoid' && monsterInRange) {
+        if (slot.priority >= 0 && monsterInRange) {
           if (slot.attackCooldown <= 0) {
             const target = targetId ? s.units.find((u) => u.id === targetId) : null
             if (target) {
@@ -449,10 +464,14 @@ export const useGameStore = create<GameState>((set) => ({
         }
 
         // Unit progress fires on cooldown expiry using the pre-computed attackersOfSlot.
+        // Per-attacker threat: each hit adds its HP-equivalent damage to slot.threat[unitId]
+        // so this monster preferentially targets the unit who has hurt it most.
+        let newThreat = slot.threat
         if (attackersOfSlot.length > 0 && slot.progressCooldown <= 0) {
           let totalChunk = 0
           let allMissed  = true
           let resetCd    = TICKS_PER_SECOND
+          newThreat = { ...slot.threat }
           for (const [aidx, au] of attackersOfSlot.entries()) {
             const ud  = getDerivedStats(au, s.equipment)
             const uc  = calcAttackCooldown(ud.attackSpeed)
@@ -462,7 +481,11 @@ export const useGameStore = create<GameState>((set) => ({
             const mult     = elementMultiplier(ud.attackElement, monster.element)
             const rawChunk = (uc / (monster.level * 5 * TICKS_PER_SECOND)) * mult
             const chunk    = Math.round(rawChunk * monster.health) / monster.health
-            if (hit) { totalChunk += chunk; allMissed = false }
+            if (hit) {
+              totalChunk += chunk
+              allMissed   = false
+              newThreat[au.id] = (newThreat[au.id] ?? 0) + chunk * monster.health
+            }
           }
           if (totalChunk > 0) newProgress = Math.min(slot.progress + totalChunk, 1)
           takenHistory       = [...takenHistory, totalChunk].slice(-10)
@@ -484,6 +507,7 @@ export const useGameStore = create<GameState>((set) => ({
           takenHistory,
           lastAttackMissed,
           lastProgressMissed,
+          threat: newThreat,
         })
       }
       encounters[locationId] = newSlots
@@ -567,8 +591,8 @@ export const useGameStore = create<GameState>((set) => ({
 
       const wasFleeing = (locationFleeing[locationId] ?? 0) > 0
       const shouldFlee = aliveUnits.length > 0 && slots.length > 0 && (
-        slots.some((sl)  => sl.behavior === 'avoid') ||
-        slots.every((sl) => sl.behavior === 'ignore' || sl.behavior === 'avoid')
+        slots.some((sl)  => sl.priority < 0) ||
+        slots.every((sl) => sl.priority <= 0)
       )
       if (wasFleeing || shouldFlee) {
         locationFleeing[locationId] = 0
@@ -587,17 +611,17 @@ export const useGameStore = create<GameState>((set) => ({
 
       const targets = slots.map((_, i) => aliveUnits[i % aliveUnits.length])
 
-      const priorityIdxs  = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'prioritize')
-      const normalIdxs    = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.behavior === 'normal')
-      const focusIdxs     = priorityIdxs.length > 0 ? priorityIdxs : normalIdxs
+      const focusable    = slots.map((sl, i) => ({ sl, i })).filter(({ sl }) => sl.priority >= 1)
+      const maxPriority  = focusable.reduce((m, x) => Math.max(m, x.sl.priority), 0)
+      const focusIdxs    = focusable.filter(({ sl }) => sl.priority === maxPriority)
       const attackedSlots = new Set<number>()
       if (focusIdxs.length > 0) {
         aliveUnits.forEach((_, ui) => attackedSlots.add(focusIdxs[ui % focusIdxs.length].i))
       }
 
       for (let i = 0; i < slots.length; i++) {
-        const { monsterId, behavior } = slots[i]
-        if (behavior === 'avoid') continue
+        const { monsterId, priority } = slots[i]
+        if (priority < 0) continue
         const monster = MONSTER_REGISTRY[monsterId]
         const target  = targets[i]
         if (!monster || !target) continue
@@ -616,7 +640,7 @@ export const useGameStore = create<GameState>((set) => ({
           : slot
         if (!monster) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
 
-        if (baseSlot.behavior === 'ignore' || baseSlot.behavior === 'avoid') return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
+        if (baseSlot.priority <= 0) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
         if (!attackedSlots.has(i)) return { ...baseSlot, targetUnitId: targets[i]?.id ?? null }
 
         // Sum each attacker's element multiplier (vs this monster's armor element).
@@ -901,11 +925,11 @@ export const useGameStore = create<GameState>((set) => ({
 
   setSelectedMonsterSlot: (slot) => set({ selectedMonsterSlot: slot }),
 
-  setMonsterBehavior: (locationId, monsterId, behavior) => set((s) => ({
+  setMonsterPriority: (locationId, monsterId, priority) => set((s) => ({
     encounters: {
       ...s.encounters,
       [locationId]: (s.encounters[locationId] ?? []).map((sl) =>
-        sl.monsterId === monsterId ? { ...sl, behavior } : sl
+        sl.monsterId === monsterId ? { ...sl, priority } : sl
       ),
     },
   })),
