@@ -3,7 +3,7 @@ import type { Unit } from '@/types'
 export const INITIAL_UNITS: Unit[] = [
   {
     id: 'u1', name: 'Aldric', level: 3, exp: 245, expToNext: 312, age: 24, health: 95, recoveryTicksLeft: 0, isResting: false,
-    class: 'Warrior', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
+    class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
     abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 },
     abilityPoints: 20, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 },
     travelPath: null,

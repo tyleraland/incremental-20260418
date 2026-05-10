@@ -393,7 +393,7 @@ function FullUnitDetailPanel({ unit, locationId, onClose, onView }: {
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <span className="text-base font-semibold text-game-text">{unit.name}</span>
           <span className="text-[10px] text-game-text-dim bg-game-border/60 rounded-full px-1.5 py-0.5">Lv.{unit.level}</span>
-          {unit.class && <span className="text-[10px] text-game-text-dim border border-game-border rounded px-1.5 py-0.5">{unit.class}</span>}
+          <span className="text-[10px] text-game-text-dim border border-game-border rounded px-1.5 py-0.5">{unit.class ?? 'Novice'}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className={`text-sm font-mono font-semibold ${hpTextColor(hpPct)}`}>{unit.health}/{derived.maxHp}</span>

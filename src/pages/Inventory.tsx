@@ -57,6 +57,14 @@ function EquipContextView() {
   const mainHandId  = unit.weaponSets[unit.activeWeaponSet].mainHand
   const offHandLocked = slot === 'offHand' && equipment.find((e) => e.id === mainHandId)?.category === 'weapon-2h'
 
+  const unitClass = unit.class ?? 'Novice'
+  const unitLevel = unit.level
+  function equipRestriction(item: EquipmentItem): string | null {
+    if (item.requiredLevel && unitLevel < item.requiredLevel) return `Requires Lv ${item.requiredLevel}`
+    if (item.requiredClasses && !item.requiredClasses.includes(unitClass)) return `${item.requiredClasses.join(' / ')} only`
+    return null
+  }
+
   const compatible: ItemCategory[] = SLOT_COMPATIBLE[slot]
   const slotItems = equipment.filter((e) => compatible.includes(e.category))
   const grouped = compatible.reduce<Record<string, EquipmentItem[]>>((acc, cat) => {
@@ -101,28 +109,32 @@ function EquipContextView() {
               </div>
               <div className="space-y-2">
                 {items.map((item) => {
-                  const isEquipped = item.id === currentId
-                  const isUpgrade  = !isEquipped && totalScore(item) > totalScore(currentItem ?? { id: '', name: '', category: 'accessory', traits: [], stats: {} })
-                  const traits     = getItemTraits(item)
+                  const isEquipped   = item.id === currentId
+                  const restriction  = equipRestriction(item)
+                  const isLocked     = !isEquipped && !!restriction
+                  const isUpgrade    = !isEquipped && !isLocked && totalScore(item) > totalScore(currentItem ?? { id: '', name: '', category: 'accessory', traits: [], stats: {} })
+                  const traits       = getItemTraits(item)
 
                   return (
                     <button
                       key={item.id}
-                      disabled={isEquipped}
-                      onClick={() => !isEquipped && handleEquip(item.id)}
+                      disabled={isEquipped || isLocked}
+                      onClick={() => !isEquipped && !isLocked && handleEquip(item.id)}
                       className={[
                         'w-full text-left px-4 py-3 rounded-xl border transition-colors',
                         isEquipped ? 'border-game-primary bg-game-primary/10 cursor-default'
-                                   : 'border-game-border hover:border-game-primary/50 active:bg-white/3',
+                          : isLocked ? 'border-game-border/40 opacity-50 cursor-not-allowed'
+                          : 'border-game-border hover:border-game-primary/50 active:bg-white/3',
                       ].join(' ')}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-sm font-medium text-game-text flex-1">{item.name}</span>
-                        {isEquipped && <span className="text-xs text-game-primary font-semibold shrink-0">Equipped</span>}
-                        {isUpgrade  && <span className="text-xs text-game-green font-semibold shrink-0">↑ Upgrade</span>}
+                        {isEquipped   && <span className="text-xs text-game-primary font-semibold shrink-0">Equipped</span>}
+                        {isUpgrade    && <span className="text-xs text-game-green font-semibold shrink-0">↑ Upgrade</span>}
+                        {isLocked     && <span className="text-xs text-game-muted shrink-0">{restriction}</span>}
                       </div>
                       <TraitRow traits={traits} />
-                      {!isEquipped && <StatDeltas item={item} current={currentItem} />}
+                      {!isEquipped && !isLocked && <StatDeltas item={item} current={currentItem} />}
                     </button>
                   )
                 })}

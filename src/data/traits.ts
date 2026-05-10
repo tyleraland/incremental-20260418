@@ -13,6 +13,10 @@ export const TRAIT_REGISTRY: Record<string, Trait> = {
   '2h':        { id: '2h',          label: '2H',          category: 'item-type', description: 'Two-handed. Off-hand slot is locked while equipped.' },
   'tool':      { id: 'tool',        label: 'Tool',        category: 'item-type', description: 'Utility item for gathering or exploration. Uses the dedicated Tool slot.' },
   'shield':    { id: 'shield',      label: 'Shield',      category: 'item-type', description: 'Off-hand defensive gear. Provides bonus Defense.' },
+  dagger:      { id: 'dagger',      label: 'Dagger',      category: 'item-type', description: 'A short, fast blade. High critical potential.' },
+  sword:       { id: 'sword',       label: 'Sword',       category: 'item-type', description: 'A balanced bladed weapon. Reliable damage.' },
+  staff:       { id: 'staff',       label: 'Staff',       category: 'item-type', description: 'A magical focus. Enhances spell power.' },
+  bow:         { id: 'bow',         label: 'Bow',         category: 'item-type', description: 'A two-handed ranged weapon. Attacks at distance.' },
   light:       { id: 'light',       label: 'Light',       category: 'general',   description: 'Lightweight. Minimal speed penalty.' },
   heavy:       { id: 'heavy',       label: 'Heavy',       category: 'general',   description: 'Heavy. Better protection, possible speed penalty.' },
   versatile:   { id: 'versatile',   label: 'Versatile',   category: 'general',   description: 'Effective in multiple contexts.' },
@@ -27,9 +31,12 @@ export const TRAIT_REGISTRY: Record<string, Trait> = {
   dangerous:   { id: 'dangerous',   label: 'Dangerous',   category: 'environment', description: 'High threat level. Units assigned here face greater risk.' },
   rocky:       { id: 'rocky',       label: 'Rocky',       category: 'environment', description: 'Rugged terrain with exposed rock faces and ore veins.' },
   calm:        { id: 'calm',        label: 'Calm',        category: 'environment', description: 'Peaceful area with low threat level.' },
-  warrior:     { id: 'warrior',     label: 'Warrior',     category: 'class', description: 'A combat-trained fighter. Proficient with swords, shields, and heavy armor.' },
+  novice:      { id: 'novice',      label: 'Novice',      category: 'class', description: 'An unspecialized adventurer. Can equip most basic weapons.' },
+  fighter:     { id: 'fighter',     label: 'Fighter',     category: 'class', description: 'A combat-trained warrior. Proficient with swords, shields, and heavy armor.' },
   mage:        { id: 'mage',        label: 'Mage',        category: 'class', description: 'A student of arcane arts. Specializes in magical weaponry and high M.ATK.' },
+  cleric:      { id: 'cleric',      label: 'Cleric',      category: 'class', description: 'A divine spellcaster. Wields rods and blesses allies.' },
   rogue:       { id: 'rogue',       label: 'Rogue',       category: 'class', description: 'A nimble operative. Favors light weapons, tools, and stealth.' },
+  ranger:      { id: 'ranger',      label: 'Ranger',      category: 'class', description: 'A ranged combatant. Expert with bows and survival skills.' },
   'prof-swords':      { id: 'prof-swords',      label: 'Swords',      category: 'proficiency', description: 'Trained with swords. Improved accuracy and damage.' },
   'prof-heavy-armor': { id: 'prof-heavy-armor', label: 'Heavy Armor', category: 'proficiency', description: 'No movement penalty in chain or plate.' },
   'prof-tools':       { id: 'prof-tools',       label: 'Tools',       category: 'proficiency', description: 'Improved yield from tool-based activities.' },
@@ -49,7 +56,9 @@ const PROF_TO_TRAIT: Record<string, string> = {
 
 export function getUnitTraits(unit: Unit): Trait[] {
   const out: Trait[] = []
-  if (unit.class) { const t = TRAIT_REGISTRY[unit.class.toLowerCase()]; if (t) out.push(t) }
+  const classKey = unit.class ? unit.class.toLowerCase() : 'novice'
+  const classTrait = TRAIT_REGISTRY[classKey]
+  if (classTrait) out.push(classTrait)
   for (const p of unit.proficiencies) { const t = TRAIT_REGISTRY[PROF_TO_TRAIT[p]]; if (t) out.push(t) }
   return out
 }

@@ -18,6 +18,12 @@ export const CATEGORY_LABELS: Record<ItemCategory, string> = {
 }
 
 export const INITIAL_EQUIPMENT: EquipmentItem[] = [
+  // ── Starter weapons ──────────────────────────────────────────────────────────
+  { id: 'eq-knife',     name: 'Knife',  category: 'weapon-1h', traits: ['1h', 'slashing', 'light', 'dagger'], stats: { attack: 17 }, slots: 3, description: 'A short, fast dagger. Widely usable.',           requiredLevel: 1, requiredClasses: ['Novice', 'Fighter', 'Rogue', 'Mage', 'Ranger'] },
+  { id: 'eq-rod',       name: 'Rod',   category: 'weapon-1h', traits: ['1h', 'bludgeoning', 'light', 'staff'], stats: { attack: 15 }, slots: 3, description: 'A one-handed magical focus staff.',             requiredLevel: 1, requiredClasses: ['Novice', 'Cleric', 'Mage'] },
+  { id: 'eq-bow',       name: 'Bow',   category: 'weapon-2h', traits: ['2h', 'piercing', 'bow'],              stats: { attack: 15, range: 2 }, slots: 3, description: 'A two-handed ranged weapon. Locks off-hand.', requiredLevel: 4, requiredClasses: ['Fighter', 'Rogue', 'Ranger'] },
+  { id: 'eq-sword',     name: 'Sword', category: 'weapon-1h', traits: ['1h', 'slashing', 'sword'],            stats: { attack: 25 }, slots: 3, description: 'A balanced blade with solid damage output.',     requiredLevel: 2, requiredClasses: ['Novice', 'Fighter', 'Rogue'] },
+  // ── Tools ────────────────────────────────────────────────────────────────────
   { id: 'eq-handaxe',        name: 'Handaxe',        category: 'tool',      traits: ['tool', 'slashing', 'light'],       stats: {},               slots: 0, description: 'Good for gathering wood.' },
   { id: 'eq-pickaxe',        name: 'Pickaxe',        category: 'tool',      traits: ['tool', 'piercing'],                stats: {},               slots: 0, description: 'Essential for mining ore.' },
   { id: 'eq-skinning-knife', name: 'Skinning Knife', category: 'tool',      traits: ['tool', 'slashing', 'light'],       stats: { attack: 1 },    slots: 0, description: 'Sharp blade for preparing game.' },
