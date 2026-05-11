@@ -105,7 +105,7 @@ describe('Combat numbers regression — display values follow actual damage', ()
     // Slime is water-element; an electric-imbued unit gets 2x. We assert that
     // a single tick's progress ≈ 2 × the neutral baseline, proving the multiplier
     // is consumed in the same place that drives the UI's takenHistory.
-    const ELEC = { id: 'eq-test-elec', name: 'X', category: 'weapon-1h' as const, traits: [], stats: { attack: 0 }, slots: 0, element: 'electric' as const }
+    const ELEC = { id: 'eq-test-elec', name: 'X', category: 'weapon-1h' as const, traits: [], stats: { attack: 0 }, slots: 0, element: 'lightning' as const }
     resetStore({
       units: [makeUnit({ id: 'u1', locationId: 'loc1' })],
       unitDistance: { u1: 0 },
