@@ -909,11 +909,14 @@ export const useGameStore = create<GameState>((set) => ({
   setActionSlot: (unitId, slotIdx, entry) => set((s) => ({
     units: s.units.map((u) => {
       if (u.id !== unitId) return u
-      const prev = u.actionSlots[slotIdx] ?? null
+      // Defensive: if a unit pre-dates the actionSlots field (e.g. older
+      // recruitUnit, hot-reload), treat it as an empty bar of the right size.
+      const cur = u.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
+      const prev = cur[slotIdx] ?? null
 
       // Build the new action-slot array.
-      const newActionSlots: (ActionSlotEntry | null)[] = u.actionSlots.map((cur, i) =>
-        i === slotIdx ? entry : cur
+      const newActionSlots: (ActionSlotEntry | null)[] = cur.map((c, i) =>
+        i === slotIdx ? entry : c
       )
 
       // Sync sideboard for items only. Skills don't touch sideboard.

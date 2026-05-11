@@ -384,13 +384,15 @@ function ActionSlotBar({ unit }: { unit: Unit }) {
   )
 }
 
-// Small square next to an active-skill row that can be dragged onto any
-// action-slot droppable above.
+// Small (slot-sized) square next to an active-skill row that can be dragged
+// onto any action-slot droppable above.
 function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string }) {
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `skill:${unitId}:${skillId}`,
     data: { kind: 'skill' as const, id: skillId },
   })
+  const sk = SKILL_REGISTRY[skillId]
+  const label = sk ? sk.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : '?'
   return (
     <span
       ref={setNodeRef}
@@ -398,8 +400,8 @@ function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string 
       {...attributes}
       style={{ touchAction: 'none' as const, opacity: isDragging ? 0.4 : 1 }}
       title="Drag to an action slot"
-      className="inline-block w-6 h-6 rounded border border-game-border bg-game-surface text-[10px] text-game-text-dim flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:border-game-primary/60"
-    >▦</span>
+      className="inline-flex w-10 h-10 rounded-md border border-game-border bg-game-surface text-[10px] font-medium text-game-text items-center justify-center cursor-grab active:cursor-grabbing select-none hover:border-game-primary/60"
+    >{label}</span>
   )
 }
 
@@ -408,7 +410,11 @@ function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string 
 function UnitDetail({ unit }: { unit: Unit }) {
   const [tab, setTab] = useState<DetailTab>('stats')
   const setActionSlot = useGameStore((s) => s.setActionSlot)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 150, tolerance: 6 } }))
+  // Distance-based activation: the drag fires as soon as the pointer has
+  // moved 5px. A delay-based constraint cancels the drag when the user moves
+  // during the timer window, which is exactly the natural "tap-and-drag"
+  // motion we want to support here.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   function handleDragEnd(e: DragEndEvent) {
     if (!e.over || !e.active) return
