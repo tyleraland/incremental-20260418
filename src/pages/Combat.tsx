@@ -47,14 +47,14 @@ const ELEMENT_COLORS: Record<string, string> = {
   earth:     'text-amber-600 bg-amber-950/40 border-amber-700/50',
   lightning: 'text-yellow-300 bg-yellow-950/40 border-yellow-700/50',
   poison:    'text-purple-300 bg-purple-950/40 border-purple-700/50',
-  holy:      'text-amber-300 bg-amber-950/40 border-amber-700/50',
+  radiant:      'text-amber-300 bg-amber-950/40 border-amber-700/50',
   undead:    'text-stone-400 bg-stone-950/40 border-stone-700/50',
   ghost:     'text-indigo-300 bg-indigo-950/40 border-indigo-700/50',
 }
 
 const ELEMENT_DISPLAY: Record<string, string> = {
   neutral: 'Neutral', fire: 'Fire', water: 'Water/Ice', earth: 'Earth',
-  lightning: 'Lightning', poison: 'Poison', holy: 'Holy', undead: 'Undead', ghost: 'Ghost',
+  lightning: 'Lightning', poison: 'Poison', radiant: 'Radiant', undead: 'Undead', ghost: 'Ghost',
 }
 
 function ElementBadge({ element }: { element: string }) {

@@ -15,13 +15,13 @@ export type Element =
   | 'earth'
   | 'lightning'
   | 'poison'
-  | 'holy'
+  | 'radiant'
   | 'undead'
   | 'ghost'
 
 export const ALL_ELEMENTS: Element[] = [
   'neutral', 'fire', 'water', 'earth', 'lightning',
-  'poison', 'holy', 'undead', 'ghost',
+  'poison', 'radiant', 'undead', 'ghost',
 ]
 
 export const ELEMENT_LABELS: Record<Element, string> = {
@@ -31,7 +31,7 @@ export const ELEMENT_LABELS: Record<Element, string> = {
   earth: 'Earth',
   lightning: 'Lightning',
   poison: 'Poison',
-  holy: 'Holy',
+  radiant: 'Radiant',
   undead: 'Undead',
   ghost: 'Ghost',
 }
@@ -43,10 +43,10 @@ const TABLE: Record<Element, Partial<Record<Element, number>>> = {
   water:     { fire: 2, water: 0.33, lightning: 2 },
   earth:     { water: 2, earth: 0.33, lightning: 2, ghost: 0.33 },
   lightning: { water: 2, earth: 0.33, lightning: 0.33 },
-  poison:    { poison: 0.33, holy: 0.33, undead: 0, ghost: 0 },
-  holy:      { poison: 2, holy: 0.33, undead: 2, ghost: 2 },
-  undead:    { poison: 2, holy: 0, undead: 0.33 },
-  ghost:     { holy: 0.33, undead: 2, ghost: 0.33 },
+  poison:    { poison: 0.33, radiant: 0.33, undead: 0, ghost: 0 },
+  radiant:      { poison: 2, radiant: 0.33, undead: 2, ghost: 2 },
+  undead:    { poison: 2, radiant: 0, undead: 0.33 },
+  ghost:     { radiant: 0.33, undead: 2, ghost: 0.33 },
 }
 
 export function elementMultiplier(attacker: Element, defender: Element): number {
@@ -60,7 +60,7 @@ export const ELEMENT_COLORS: Record<Element, string> = {
   earth:     'bg-lime-950 text-lime-300 border-lime-700/50',
   lightning: 'bg-yellow-950 text-yellow-300 border-yellow-700/50',
   poison:    'bg-purple-950 text-purple-300 border-purple-700/50',
-  holy:      'bg-amber-950 text-amber-300 border-amber-700/50',
+  radiant:      'bg-amber-950 text-amber-300 border-amber-700/50',
   undead:    'bg-stone-950 text-stone-400 border-stone-700/50',
   ghost:     'bg-indigo-950 text-indigo-300 border-indigo-700/50',
 }
