@@ -21,10 +21,10 @@ describe('elementMultiplier — sample relationships', () => {
     expect(elementMultiplier('lightning', 'lightning')).toBe(0.33)
   })
 
-  it('holy is 2x vs poison / undead / ghost', () => {
-    expect(elementMultiplier('holy', 'poison')).toBe(2)
-    expect(elementMultiplier('holy', 'undead')).toBe(2)
-    expect(elementMultiplier('holy', 'ghost')).toBe(2)
+  it('radiant is 2x vs poison / undead / ghost', () => {
+    expect(elementMultiplier('radiant', 'poison')).toBe(2)
+    expect(elementMultiplier('radiant', 'undead')).toBe(2)
+    expect(elementMultiplier('radiant', 'ghost')).toBe(2)
   })
 
   it('poison is immune to undead and ghost (0x)', () => {
@@ -32,9 +32,9 @@ describe('elementMultiplier — sample relationships', () => {
     expect(elementMultiplier('poison', 'ghost')).toBe(0)
   })
 
-  it('undead → holy is 0x; holy → undead is 2x', () => {
-    expect(elementMultiplier('undead', 'holy')).toBe(0)
-    expect(elementMultiplier('holy', 'undead')).toBe(2)
+  it('undead → radiant is 0x; radiant → undead is 2x', () => {
+    expect(elementMultiplier('undead', 'radiant')).toBe(0)
+    expect(elementMultiplier('radiant', 'undead')).toBe(2)
   })
 
   it('missing pairs default to 1x', () => {
