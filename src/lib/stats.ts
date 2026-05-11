@@ -35,7 +35,8 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
   }
   const armorItem = unit.equipment.armor ? allEquipment.find((e) => e.id === unit.equipment.armor) : null
   if (armorItem?.element) armorElement = armorItem.element
-  const allIds = [...weaponIds, unit.equipment.armor, unit.equipment.tool, unit.equipment.accessory]
+  // Sideboard items are reserved but stat-inactive; don't sum them.
+  const allIds = [...weaponIds, unit.equipment.armor, unit.equipment.accessory]
   for (const id of allIds) {
     if (!id) continue
     const item = allEquipment.find((e) => e.id === id); if (!item) continue

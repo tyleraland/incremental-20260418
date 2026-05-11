@@ -40,9 +40,18 @@ export interface SkillDef {
 
 // ── Equipment & slot types ────────────────────────────────────────────────────
 
-export type EquipSlot    = 'mainHand' | 'offHand' | 'tool' | 'armor' | 'accessory'
+export type EquipSlot    = 'mainHand' | 'offHand' | 'sideboard1' | 'sideboard2' | 'armor' | 'accessory'
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
 export type TabId        = 'map' | 'combat' | 'units' | 'inventory' | 'guild' | 'time'
+
+// Each unit has a 6-slot action bar; entries either reference an equipment
+// item id or an active-skill id.
+export interface ActionSlotEntry {
+  kind: 'item' | 'skill'
+  id: string
+}
+export const ACTION_SLOT_COUNT = 6
+export const SIDEBOARD_SLOTS: EquipSlot[] = ['sideboard1', 'sideboard2']
 // Monster slot priority (per-location, per-monsterId-via-slot):
 //   ≥ 1: focusable; higher = attacked first. 1 = normal, 2/3/… = bumped.
 //   0  : ignore — party doesn't attack but the monster still engages.
@@ -81,9 +90,10 @@ export interface Unit {
   learnedSkills: Record<string, number>
   locationId: string | null
   travelPath: string[] | null              // §4: ordered remaining waypoints; null = at destination
-  equipment: { armor: string | null; tool: string | null; accessory: string | null }
+  equipment: { armor: string | null; sideboard1: string | null; sideboard2: string | null; accessory: string | null }
   weaponSets: [WeaponRecord, WeaponRecord] // §5: set A and set B
   activeWeaponSet: 0 | 1                  // §5: which weapon set is active
+  actionSlots: (ActionSlotEntry | null)[] // length ACTION_SLOT_COUNT; tap/drag-to-fill
   recoveryTicksLeft: number               // >0: KO countdown; 0: active, resting, or idle
   isResting: boolean                      // true after KO countdown ends, until health reaches maxHp
 }

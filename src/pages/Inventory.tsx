@@ -66,7 +66,21 @@ function EquipContextView() {
   }
 
   const compatible: ItemCategory[] = SLOT_COMPATIBLE[slot]
-  const slotItems = equipment.filter((e) => compatible.includes(e.category))
+  // Items reserved by another unit (sideboard, mainHand/offHand/armor/accessory)
+  // are hidden from the picker. The current unit's own equipped items remain
+  // visible so they can be swapped freely.
+  const reservedByOthers = new Set<string>()
+  for (const other of units) {
+    if (other.id === unitId) continue
+    const refs = [
+      other.weaponSets[0].mainHand, other.weaponSets[0].offHand,
+      other.weaponSets[1].mainHand, other.weaponSets[1].offHand,
+      other.equipment.armor, other.equipment.accessory,
+      other.equipment.sideboard1, other.equipment.sideboard2,
+    ]
+    for (const id of refs) if (id) reservedByOthers.add(id)
+  }
+  const slotItems = equipment.filter((e) => compatible.includes(e.category) && !reservedByOthers.has(e.id))
   const grouped = compatible.reduce<Record<string, EquipmentItem[]>>((acc, cat) => {
     const items = slotItems.filter((e) => e.category === cat)
     if (items.length) acc[cat] = items

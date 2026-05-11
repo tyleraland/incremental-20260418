@@ -81,7 +81,7 @@ describe('getDerivedStats — equipment bonuses', () => {
     // Iron Sword (+4 atk) + Iron Shield (+5 def) + Chain Mail (+5 def)
     const unit = makeUnit({
       weaponSets: [{ mainHand: 'eq-sword-1h', offHand: 'eq-shield' }, { mainHand: null, offHand: null }],
-      equipment:  { armor: 'eq-chainmail', tool: null, accessory: null },
+      equipment:  { armor: 'eq-chainmail', sideboard1: null, sideboard2: null, accessory: null },
     })
     const stats = getDerivedStats(unit, ALL_FIXTURES)
     expect(stats.attack).toBe(14)       // 10 + 4
@@ -108,7 +108,7 @@ describe('getDerivedStats — defenseEquip', () => {
 
   it('equals the armor defense bonus, separate from the CON-derived stat', () => {
     // Chain Mail: +5 defense → defenseEquip=5, stat part=7, total=12
-    const unit = makeUnit({ equipment: { armor: 'eq-chainmail', tool: null, accessory: null } })
+    const unit = makeUnit({ equipment: { armor: 'eq-chainmail', sideboard1: null, sideboard2: null, accessory: null } })
     const stats = getDerivedStats(unit, ALL_FIXTURES)
     expect(stats.defenseEquip).toBe(5)
     expect(stats.defense).toBe(7 + 5)
@@ -118,7 +118,7 @@ describe('getDerivedStats — defenseEquip', () => {
     // Shield (+5) + Chain Mail (+5) = defenseEquip=10, total=17
     const unit = makeUnit({
       weaponSets: [{ mainHand: null, offHand: 'eq-shield' }, { mainHand: null, offHand: null }],
-      equipment:  { armor: 'eq-chainmail', tool: null, accessory: null },
+      equipment:  { armor: 'eq-chainmail', sideboard1: null, sideboard2: null, accessory: null },
     })
     const stats = getDerivedStats(unit, ALL_FIXTURES)
     expect(stats.defenseEquip).toBe(10)
@@ -126,7 +126,7 @@ describe('getDerivedStats — defenseEquip', () => {
   })
 
   it('defense - defenseEquip always equals the CON-only component', () => {
-    const unit = makeUnit({ equipment: { armor: 'eq-chainmail', tool: null, accessory: null } })
+    const unit = makeUnit({ equipment: { armor: 'eq-chainmail', sideboard1: null, sideboard2: null, accessory: null } })
     const stats = getDerivedStats(unit, ALL_FIXTURES)
     const statPart = Math.floor(5 * 1.5)  // CON=5
     expect(stats.defense - stats.defenseEquip).toBe(statPart)
@@ -291,21 +291,23 @@ describe('getDerivedStats — per-ability formula isolation', () => {
 // Equipment slot coverage
 // ---------------------------------------------------------------------------
 describe('getDerivedStats — equipment slot coverage', () => {
-  it('tool slot bonus is applied', () => {
+  it('sideboard items are reserved but stat-inactive', () => {
+    // Tools (and any other sideboard items) hold inventory but don't contribute
+    // stats — they're staged for a later swap into mainHand/offHand.
     const TOOL: EquipmentItem = { id: 'eq-tool', name: 'Tool', category: 'tool', traits: [], stats: { attack: 3 } }
-    const unit = makeUnit({ equipment: { armor: null, tool: 'eq-tool', accessory: null } })
-    expect(getDerivedStats(unit, [TOOL]).attack).toBe(13)  // 10 + 3
+    const unit = makeUnit({ equipment: { armor: null, sideboard1: 'eq-tool', sideboard2: null, accessory: null } })
+    expect(getDerivedStats(unit, [TOOL]).attack).toBe(10)  // base str*2; no sideboard contribution
   })
 
   it('accessory slot bonus is applied', () => {
     const ACC: EquipmentItem = { id: 'eq-ring', name: 'Ring', category: 'accessory', traits: [], stats: { defense: 2 } }
-    const unit = makeUnit({ equipment: { armor: null, tool: null, accessory: 'eq-ring' } })
+    const unit = makeUnit({ equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: 'eq-ring' } })
     expect(getDerivedStats(unit, [ACC]).defense).toBe(9)  // 7 + 2
   })
 
   it('specialDefense on equipment raises magicDefense', () => {
     const CLOAK: EquipmentItem = { id: 'eq-cloak', name: 'Magic Cloak', category: 'armor', traits: [], stats: { specialDefense: 6 } }
-    const unit = makeUnit({ equipment: { armor: 'eq-cloak', tool: null, accessory: null } })
+    const unit = makeUnit({ equipment: { armor: 'eq-cloak', sideboard1: null, sideboard2: null, accessory: null } })
     expect(getDerivedStats(unit, [CLOAK]).magicDefense).toBe(13)  // 7 + 6
   })
 
@@ -338,10 +340,11 @@ describe('getDerivedStats — equipment slot coverage', () => {
     ]
     const unit = makeUnit({
       weaponSets: [{ mainHand: 'eq-mh', offHand: 'eq-oh' }, { mainHand: null, offHand: null }],
-      equipment: { armor: 'eq-ar', tool: 'eq-tl', accessory: 'eq-ac' },
+      equipment: { armor: 'eq-ar', sideboard1: 'eq-tl', sideboard2: null, accessory: 'eq-ac' },
     })
     const stats = getDerivedStats(unit, ALL)
-    expect(stats.attack).toBe(14)   // 10 + 2 (mainHand) + 2 (tool)
+    // Sideboard 'eq-tl' is reserved but stat-inactive → no +2 from tool.
+    expect(stats.attack).toBe(12)   // 10 + 2 (mainHand)
     expect(stats.defense).toBe(13)  // 7  + 2 (offHand) + 2 (armor) + 2 (accessory)
   })
 
@@ -363,7 +366,7 @@ describe('getDerivedStats — attackSpeed, accuracy, and dodge receive no equipm
     id: 'eq-monster', name: 'Overpowered Ring', category: 'accessory', traits: [],
     stats: { attack: 99, defense: 99, specialAttack: 99, specialDefense: 99 },
   }
-  const unitWithMonsterItem = makeUnit({ equipment: { armor: null, tool: null, accessory: 'eq-monster' } })
+  const unitWithMonsterItem = makeUnit({ equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: 'eq-monster' } })
 
   it('attackSpeed is unaffected by any equipped item stats', () => {
     expect(getDerivedStats(unitWithMonsterItem, [MONSTER_ITEM]).attackSpeed).toBe(10)

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import {
-  useGameStore, type Unit, type EquipSlot, type Abilities,
+  useGameStore, type Unit, type EquipSlot, type Abilities, type ActionSlotEntry,
   SLOT_LABELS, getUnitTraits, getDerivedStats,
   getAvailableSkills, getLearnedSkills, abilityPointCost, SKILL_REGISTRY,
+  ACTION_SLOT_COUNT,
 } from '@/stores/useGameStore'
+import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
 import { TraitRow } from '@/components/TraitBubble'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -243,6 +245,9 @@ function SkillsTab({ unit }: { unit: Unit }) {
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
+                    {skill.type === 'active' && current >= 1 && (
+                      <SkillDragHandle unitId={unit.id} skillId={skill.id} />
+                    )}
                     <span className="text-sm font-medium text-game-text">{skill.name}</span>
                     {current > 0 && <span className="text-xs text-game-text-dim">Lv.{current}/{skill.maxLevel}</span>}
                     {maxed && <span className="text-xs text-game-green">Max</span>}
@@ -283,8 +288,12 @@ function SkillsTab({ unit }: { unit: Unit }) {
           {learned.map(({ skill, current }) => (
             <div key={skill.id} className="bg-game-bg rounded-lg px-3 py-2.5">
               <div className="flex items-center gap-2 mb-0.5">
+                {skill.type === 'active' && (
+                  <SkillDragHandle unitId={unit.id} skillId={skill.id} />
+                )}
                 <span className="text-sm font-medium text-game-text">{skill.name}</span>
                 <span className="text-xs text-game-text-dim">Lv.{current}/{skill.maxLevel}</span>
+                {skill.type === 'active' && <span className="text-[10px] text-game-text-dim border border-game-border rounded px-1 py-0.5">Active</span>}
               </div>
               <div className="text-xs text-game-text-dim leading-snug">{skill.description(current)}</div>
             </div>
@@ -308,8 +317,85 @@ function GearTab({ unit }: { unit: Unit }) {
         <EquipSlotBtn unit={unit} slot="armor" />
         <EquipSlotBtn unit={unit} slot="accessory" />
       </div>
-      <EquipSlotBtn unit={unit} slot="tool" />
+      <div className="grid grid-cols-2 gap-2">
+        <EquipSlotBtn unit={unit} slot="sideboard1" />
+        <EquipSlotBtn unit={unit} slot="sideboard2" />
+      </div>
     </div>
+  )
+}
+
+// ── Action slot bar ───────────────────────────────────────────────────────────
+
+// One droppable square. Renders the slot's current content (skill or item)
+// or a placeholder. Tap to clear.
+function ActionSlotSquare({ unitId, index, entry }: {
+  unitId: string; index: number; entry: ActionSlotEntry | null
+}) {
+  const setActionSlot = useGameStore((s) => s.setActionSlot)
+  const equipment     = useGameStore((s) => s.equipment)
+  const drop          = useDroppable({ id: `slot:${unitId}:${index}` })
+
+  let label = ''
+  let title = `Slot ${index + 1}`
+  if (entry?.kind === 'skill') {
+    const sk = SKILL_REGISTRY[entry.id]
+    label = sk ? sk.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : '?'
+    title = sk?.name ?? entry.id
+  } else if (entry?.kind === 'item') {
+    const it = equipment.find((e) => e.id === entry.id)
+    label = it ? it.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : '?'
+    title = it?.name ?? entry.id
+  }
+
+  return (
+    <button
+      ref={drop.setNodeRef}
+      onClick={() => entry && setActionSlot(unitId, index, null)}
+      title={entry ? `${title} (tap to clear)` : title}
+      className={[
+        'aspect-square rounded-md border text-[10px] font-medium transition-colors',
+        drop.isOver
+          ? 'border-game-primary bg-game-primary/15 text-white'
+          : entry
+            ? 'border-game-border bg-game-surface text-game-text hover:border-game-primary/50'
+            : 'border-dashed border-game-border/60 bg-transparent text-game-text-dim',
+      ].join(' ')}
+    >
+      {entry ? label : index + 1}
+    </button>
+  )
+}
+
+function ActionSlotBar({ unit }: { unit: Unit }) {
+  return (
+    <div className="px-4 py-2 border-t border-game-border bg-game-bg/40">
+      <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Action slots</div>
+      <div className="grid grid-cols-6 gap-1.5">
+        {Array.from({ length: ACTION_SLOT_COUNT }).map((_, i) => (
+          <ActionSlotSquare key={i} unitId={unit.id} index={i} entry={unit.actionSlots[i] ?? null} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Small square next to an active-skill row that can be dragged onto any
+// action-slot droppable above.
+function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string }) {
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
+    id: `skill:${unitId}:${skillId}`,
+    data: { kind: 'skill' as const, id: skillId },
+  })
+  return (
+    <span
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{ touchAction: 'none' as const, opacity: isDragging ? 0.4 : 1 }}
+      title="Drag to an action slot"
+      className="inline-block w-6 h-6 rounded border border-game-border bg-game-surface text-[10px] text-game-text-dim flex items-center justify-center cursor-grab active:cursor-grabbing select-none hover:border-game-primary/60"
+    >▦</span>
   )
 }
 
@@ -317,16 +403,31 @@ function GearTab({ unit }: { unit: Unit }) {
 
 function UnitDetail({ unit }: { unit: Unit }) {
   const [tab, setTab] = useState<DetailTab>('stats')
+  const setActionSlot = useGameStore((s) => s.setActionSlot)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 150, tolerance: 6 } }))
+
+  function handleDragEnd(e: DragEndEvent) {
+    if (!e.over || !e.active) return
+    const overId = String(e.over.id)
+    if (!overId.startsWith(`slot:${unit.id}:`)) return
+    const slotIdx = Number(overId.split(':')[2])
+    const data = e.active.data.current as { kind: 'item' | 'skill'; id: string } | undefined
+    if (!data) return
+    setActionSlot(unit.id, slotIdx, { kind: data.kind, id: data.id })
+  }
 
   return (
-    <div className="border-t border-game-border">
-      <DetailTabBar active={tab} onChange={setTab} unit={unit} />
-      <div className="px-4 pb-5 pt-4">
-        {tab === 'stats'  && <StatsTab  unit={unit} />}
-        {tab === 'skills' && <SkillsTab unit={unit} />}
-        {tab === 'gear'   && <GearTab   unit={unit} />}
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <div className="border-t border-game-border">
+        <ActionSlotBar unit={unit} />
+        <DetailTabBar active={tab} onChange={setTab} unit={unit} />
+        <div className="px-4 pb-5 pt-4">
+          {tab === 'stats'  && <StatsTab  unit={unit} />}
+          {tab === 'skills' && <SkillsTab unit={unit} />}
+          {tab === 'gear'   && <GearTab   unit={unit} />}
+        </div>
       </div>
-    </div>
+    </DndContext>
   )
 }
 

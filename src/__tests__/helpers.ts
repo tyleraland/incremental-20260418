@@ -1,4 +1,4 @@
-import { useGameStore, calcAttackCooldown, PRIORITY_NORMAL, type Unit, type EncounterSlot } from '@/stores/useGameStore'
+import { useGameStore, calcAttackCooldown, PRIORITY_NORMAL, ACTION_SLOT_COUNT, type Unit, type EncounterSlot } from '@/stores/useGameStore'
 
 export { calcAttackCooldown }
 
@@ -34,7 +34,8 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
     learnedSkills: {},
     weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
-    equipment: { armor: null, tool: null, accessory: null },
+    equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: Array(ACTION_SLOT_COUNT).fill(null),
     ...overrides,
   }
 }

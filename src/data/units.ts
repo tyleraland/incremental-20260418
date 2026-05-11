@@ -1,4 +1,7 @@
 import type { Unit } from '@/types'
+import { ACTION_SLOT_COUNT } from '@/types'
+
+const EMPTY_ACTION_SLOTS = Array<null>(ACTION_SLOT_COUNT).fill(null)
 
 export const INITIAL_UNITS: Unit[] = [
   {
@@ -9,7 +12,8 @@ export const INITIAL_UNITS: Unit[] = [
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-sword-1h', offHand: 'eq-shield-wood' }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
-    equipment: { armor: 'eq-leather', tool: null, accessory: null },
+    equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: [...EMPTY_ACTION_SLOTS],
   },
   {
     id: 'u2', name: 'Mira', level: 2, exp: 80, expToNext: 180, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
@@ -19,7 +23,8 @@ export const INITIAL_UNITS: Unit[] = [
     travelPath: null,
     weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
-    equipment: { armor: null, tool: 'eq-handaxe', accessory: null },
+    equipment: { armor: null, sideboard1: 'eq-handaxe', sideboard2: null, accessory: null },
+    actionSlots: [...EMPTY_ACTION_SLOTS],
   },
   {
     id: 'u3', name: 'Theron', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
@@ -29,7 +34,8 @@ export const INITIAL_UNITS: Unit[] = [
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-staff', offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
-    equipment: { armor: null, tool: null, accessory: null },
+    equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: [...EMPTY_ACTION_SLOTS],
   },
   {
     id: 'u4', name: 'Sera', level: 1, exp: 20, expToNext: 100, age: 16, health: 80, recoveryTicksLeft: 0, isResting: false,
@@ -39,7 +45,8 @@ export const INITIAL_UNITS: Unit[] = [
     travelPath: null,
     weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
-    equipment: { armor: null, tool: null, accessory: null },
+    equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: [...EMPTY_ACTION_SLOTS],
   },
   {
     id: 'u5', name: 'Davan', level: 2, exp: 120, expToNext: 180, age: 28, health: 67, recoveryTicksLeft: 0, isResting: false,
@@ -49,7 +56,8 @@ export const INITIAL_UNITS: Unit[] = [
     travelPath: null,
     weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
-    equipment: { armor: null, tool: 'eq-pickaxe', accessory: null },
+    equipment: { armor: null, sideboard1: 'eq-pickaxe', sideboard2: null, accessory: null },
+    actionSlots: [...EMPTY_ACTION_SLOTS],
   },
   {
     id: 'u6', name: 'Lyra', level: 5, exp: 750, expToNext: 800, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
@@ -59,6 +67,7 @@ export const INITIAL_UNITS: Unit[] = [
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-shortsword', offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
-    equipment: { armor: 'eq-leather', tool: null, accessory: null },
+    equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: [...EMPTY_ACTION_SLOTS],
   },
 ]
