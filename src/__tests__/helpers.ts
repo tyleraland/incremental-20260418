@@ -59,6 +59,7 @@ export function resetStore(overrides: object = {}) {
     encounterCooldown: {},
     locationFleeing: {},
     unitDistance: {},
+    locationUnitOrder: {},
     monsterDefeated: {},
     monsterSeen: {},
     miscItems: [],
