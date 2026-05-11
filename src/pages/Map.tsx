@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
@@ -95,6 +95,8 @@ function getLocationKind(traits: string[]) {
 function RosterUnitCard({ unit }: { unit: Unit }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
+  const setMapPage          = useGameStore((s) => s.setMapPage)
+  const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const equipment        = useGameStore((s) => s.equipment)
   const locations        = useGameStore((s) => s.locations)
   const isSelected       = selectedUnitIds.includes(unit.id)
@@ -105,9 +107,26 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
   const recoverPct       = isRecovering ? ((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
   const locationName     = unit.locationId ? (locations.find((l) => l.id === unit.locationId)?.name ?? null) : null
 
+  // Double-tap (≤300ms) jumps the map to this unit's location cell. Single-tap
+  // still toggles selection.
+  const lastTapRef = useRef(0)
+  function handleClick() {
+    const now = Date.now()
+    const isDouble = now - lastTapRef.current <= 300
+    lastTapRef.current = isDouble ? 0 : now
+    toggleSelectUnit(unit.id)
+    if (isDouble && unit.locationId) {
+      const loc = locations.find((l) => l.id === unit.locationId)
+      if (loc) {
+        setMapPage(loc.region)
+        setSelectedLocation(loc.id)
+      }
+    }
+  }
+
   return (
     <button
-      onClick={() => toggleSelectUnit(unit.id)}
+      onClick={handleClick}
       className={[
         'shrink-0 w-28 px-3 py-2 border-b text-left select-none transition-colors duration-100',
         unit.health <= 0 ? 'opacity-60' : '',
