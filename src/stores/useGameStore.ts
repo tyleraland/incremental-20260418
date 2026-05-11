@@ -371,8 +371,14 @@ export const useGameStore = create<GameState>((set) => ({
       //    both sides close the gap and a fast actor engages sooner; the
       //    formation offset acts as a floor so back-rank units don't get
       //    pushed past their rank when a monster overruns the line.
-      //  - has no focus (no slots, or no monsters in their assigned wave) →
-      //    drift back toward formation offset.
+      //  - no monsters at all (marching/hunting) → everyone gathers at the
+      //    melee marching line (MARCHING_FORMATION). Ranged units rejoin the
+      //    column and only fall back to their per-unit formation when an
+      //    encounter actually appears.
+      //  - no focus but other slots exist → drift back to per-unit formation
+      //    (ranged units hold their rank while melee engages elsewhere).
+      const MARCHING_FORMATION = 20
+      const isMarching = slots.length === 0
       const unitToSlot: Record<string, number> = {}
       for (let ui = 0; ui < aliveUnits.length; ui++) {
         if (focusIdxs.length === 0) continue
@@ -385,7 +391,7 @@ export const useGameStore = create<GameState>((set) => ({
         const cur = oldUnitPos[u.id]
         const desired = slotIdx !== undefined
           ? Math.max(formation, newSlotPos[slotIdx] - ud.attackRange)
-          : formation
+          : isMarching ? MARCHING_FORMATION : formation
         const step = ud.moveSpeed / TICKS_PER_SECOND
         if (cur < desired)      unitDistance[u.id] = Math.min(cur + step, desired)
         else if (cur > desired) unitDistance[u.id] = Math.max(cur - step, desired)

@@ -255,3 +255,39 @@ describe('Ranged attacks — bow unit (attackRange = 35 ft)', () => {
     expect(useGameStore.getState().encounters['loc1'][0].progress).toBeGreaterThan(0)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('Marching — ranged units rejoin the column when no monsters are present', () => {
+  it('bow unit drifts forward to the marching line (20 ft) when no encounter slots exist', () => {
+    // No monsters at the location: location is in "hunting" state. The bow
+    // unit shouldn't hang back at its per-unit formation (0 ft) — it should
+    // walk up with the rest of the column.
+    resetStore({
+      units: [makeUnit({
+        id: 'u1', locationId: 'loc1',
+        weaponSets: [{ mainHand: 'eq-bow-test', offHand: null }, { mainHand: null, offHand: null }],
+      })],
+      equipment: [BOW],
+      unitDistance: { u1: 0 },
+      encounters: { loc1: [] }, // no monsters
+    })
+    // Bow steps moveSpeed/tick (~2.025 ft/tick); ~10 ticks gets it past 20.
+    for (let i = 0; i < 15; i++) tick()
+    expect(unitPos()).toBeCloseTo(20, 1)
+  })
+
+  it('bow unit returns to per-unit formation (0 ft) when a monster spawns', () => {
+    resetStore({
+      units: [makeUnit({
+        id: 'u1', locationId: 'loc1',
+        weaponSets: [{ mainHand: 'eq-bow-test', offHand: null }, { mainHand: null, offHand: null }],
+      })],
+      equipment: [BOW],
+      unitDistance: { u1: 20 }, // started at marching line
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: 35, phase: 'approaching' })] },
+    })
+    // Gap 35 = bow range → no need to advance; bow should retreat to 0.
+    for (let i = 0; i < 15; i++) tick()
+    expect(unitPos()).toBeCloseTo(0, 1)
+  })
+})

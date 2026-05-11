@@ -27,7 +27,7 @@ export const ALL_ELEMENTS: Element[] = [
 export const ELEMENT_LABELS: Record<Element, string> = {
   neutral: 'Neutral',
   fire: 'Fire',
-  water: 'Water/Ice',
+  water: 'Water',
   earth: 'Earth',
   lightning: 'Lightning',
   poison: 'Poison',

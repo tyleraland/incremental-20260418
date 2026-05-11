@@ -53,7 +53,7 @@ const ELEMENT_COLORS: Record<string, string> = {
 }
 
 const ELEMENT_DISPLAY: Record<string, string> = {
-  neutral: 'Neutral', fire: 'Fire', water: 'Water/Ice', earth: 'Earth',
+  neutral: 'Neutral', fire: 'Fire', water: 'Water', earth: 'Earth',
   lightning: 'Lightning', poison: 'Poison', radiant: 'Radiant', undead: 'Undead', ghost: 'Ghost',
 }
 
