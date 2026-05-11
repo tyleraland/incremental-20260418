@@ -2,9 +2,9 @@ import { create } from 'zustand'
 import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   Priority, WeaponRecord, EncounterSlot, LogEntry, LogCategory,
-  LocationCombatStats,
+  LocationCombatStats, ActionSlotEntry,
 } from '@/types'
-import { PRIORITY_NORMAL, PRIORITY_IGNORE, PRIORITY_AVOID } from '@/types'
+import { PRIORITY_NORMAL, PRIORITY_IGNORE, PRIORITY_AVOID, ACTION_SLOT_COUNT } from '@/types'
 import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats, getFormationOffset } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
@@ -93,6 +93,11 @@ export interface GameState {
   craft: (recipeId: string) => void
   setMonsterPriority: (locationId: string, monsterId: string, priority: Priority) => void
   setLocationUnitOrder: (locationId: string, unitIds: string[]) => void
+  // Tap-/drag-to-fill an action slot. When entry.kind === 'item', the item is
+  // also added to the unit's sideboard (evicting the oldest sideboard entry if
+  // both sideboards are full). Setting to null clears the slot AND removes the
+  // item from sideboard if no other action slot still references it.
+  setActionSlot: (unitId: string, slotIdx: number, entry: ActionSlotEntry | null) => void
   selectedMonsterSlot: { locationId: string; slotIndex: number } | null
   setSelectedMonsterSlot: (slot: { locationId: string; slotIndex: number } | null) => void
   resetSave: () => void
@@ -901,6 +906,61 @@ export const useGameStore = create<GameState>((set) => ({
     }
   }),
 
+  setActionSlot: (unitId, slotIdx, entry) => set((s) => ({
+    units: s.units.map((u) => {
+      if (u.id !== unitId) return u
+      const prev = u.actionSlots[slotIdx] ?? null
+
+      // Build the new action-slot array.
+      const newActionSlots: (ActionSlotEntry | null)[] = u.actionSlots.map((cur, i) =>
+        i === slotIdx ? entry : cur
+      )
+
+      // Sync sideboard for items only. Skills don't touch sideboard.
+      let { sideboard1, sideboard2 } = u.equipment
+
+      // 1) If we're replacing/removing a previous *item* entry and no other
+      //    action slot still references it, evict from sideboard.
+      if (prev && prev.kind === 'item') {
+        const stillReferenced = newActionSlots.some(
+          (e) => e && e.kind === 'item' && e.id === prev.id
+        )
+        if (!stillReferenced) {
+          if (sideboard1 === prev.id) sideboard1 = null
+          if (sideboard2 === prev.id) sideboard2 = null
+        }
+      }
+
+      // 2) If we're placing a new *item* entry, ensure it's in sideboard.
+      if (entry && entry.kind === 'item') {
+        const already = sideboard1 === entry.id || sideboard2 === entry.id
+        if (!already) {
+          if (sideboard1 === null) {
+            sideboard1 = entry.id
+          } else if (sideboard2 === null) {
+            sideboard2 = entry.id
+          } else {
+            // Both full → evict sideboard1 (and clear any action slots that
+            // referenced the evicted item). Shift sideboard2 up.
+            const evicted = sideboard1
+            sideboard1 = sideboard2
+            sideboard2 = entry.id
+            for (let i = 0; i < newActionSlots.length; i++) {
+              const e = newActionSlots[i]
+              if (e && e.kind === 'item' && e.id === evicted) newActionSlots[i] = null
+            }
+          }
+        }
+      }
+
+      return {
+        ...u,
+        actionSlots: newActionSlots,
+        equipment: { ...u.equipment, sideboard1, sideboard2 },
+      }
+    }),
+  })),
+
   equipItem: (unitId, slot, itemId) => set((s) => ({
     units: s.units.map((u) => {
       if (u.id !== unitId) return u
@@ -940,7 +1000,8 @@ export const useGameStore = create<GameState>((set) => ({
       abilityPoints: 3, skillPoints: 1, learnedSkills: {}, locationId: null, travelPath: null,
       weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
       activeWeaponSet: 0,
-      equipment: { armor: null, tool: null, accessory: null },
+      equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
+      actionSlots: Array(ACTION_SLOT_COUNT).fill(null),
     }
     return { units: [...s.units, { ...unit, health: getDerivedStats(unit, s.equipment).maxHp }] }
   }),

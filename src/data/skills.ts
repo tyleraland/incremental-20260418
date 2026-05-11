@@ -37,6 +37,34 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [{ skillId: 'arcane-knowledge', minLevel: 1 }],
     getBonuses: (lv) => ({ magicAttack: lv * 4 }),
   },
+
+  // ── Active skills (cast/use; do not give passive stat bonuses) ───────────────
+  // Casting / cooldown / mana semantics: not yet implemented. These exist as
+  // action-slot draggables only; combat automation will read them later.
+  'fire-bolt': {
+    id: 'fire-bolt', name: 'Fire Bolt', maxLevel: 10, type: 'active',
+    description: (lv) => `Fire spell. ${lv}× M.ATK. Cast 1.5s fixed + 3.5s variable (DEX-reducible).`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'frost-bolt': {
+    id: 'frost-bolt', name: 'Frost Bolt', maxLevel: 10, type: 'active',
+    description: (lv) => `Water spell. ${lv}× M.ATK. Cast 1.5s fixed + 3.5s variable (DEX-reducible).`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'lightning-bolt': {
+    id: 'lightning-bolt', name: 'Lightning Bolt', maxLevel: 10, type: 'active',
+    description: (lv) => `Lightning spell. ${lv}× M.ATK. Cast 1.5s fixed + 3.5s variable (DEX-reducible).`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'bash': {
+    id: 'bash', name: 'Bash', maxLevel: 10, type: 'active',
+    description: (lv) => `Melee strike at ${100 + 30 * lv}% ATK.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
 }
 
 export function getAvailableSkills(unit: Unit) {

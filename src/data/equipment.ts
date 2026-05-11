@@ -1,15 +1,19 @@
 import type { EquipmentItem, MiscItem, EquipSlot, ItemCategory } from '@/types'
 
+// Sideboards reserve any equippable category — they're stashes for swap-in.
+const ALL_CATEGORIES: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'tool', 'shield', 'armor', 'accessory']
+
 export const SLOT_COMPATIBLE: Record<EquipSlot, ItemCategory[]> = {
-  mainHand:  ['weapon-1h', 'weapon-2h'],
-  offHand:   ['weapon-1h', 'shield', 'accessory'],
-  tool:      ['tool'],
-  armor:     ['armor'],
-  accessory: ['accessory'],
+  mainHand:   ['weapon-1h', 'weapon-2h'],
+  offHand:    ['weapon-1h', 'shield', 'accessory'],
+  sideboard1: ALL_CATEGORIES,
+  sideboard2: ALL_CATEGORIES,
+  armor:      ['armor'],
+  accessory:  ['accessory'],
 }
 
 export const SLOT_LABELS: Record<EquipSlot, string> = {
-  mainHand: 'Main Hand', offHand: 'Off Hand', tool: 'Tool', armor: 'Armor', accessory: 'Accessory',
+  mainHand: 'Main Hand', offHand: 'Off Hand', sideboard1: 'Sideboard 1', sideboard2: 'Sideboard 2', armor: 'Armor', accessory: 'Accessory',
 }
 
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
