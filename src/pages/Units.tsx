@@ -368,12 +368,16 @@ function ActionSlotSquare({ unitId, index, entry }: {
 }
 
 function ActionSlotBar({ unit }: { unit: Unit }) {
+  // Defensive: an older unit object may have been instantiated before
+  // actionSlots existed on the schema. Treat missing as empty so the page
+  // doesn't crash on switch into the Units tab.
+  const slots = unit.actionSlots ?? []
   return (
     <div className="px-4 py-2 border-t border-game-border bg-game-bg/40">
       <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Action slots</div>
       <div className="grid grid-cols-6 gap-1.5">
         {Array.from({ length: ACTION_SLOT_COUNT }).map((_, i) => (
-          <ActionSlotSquare key={i} unitId={unit.id} index={i} entry={unit.actionSlots[i] ?? null} />
+          <ActionSlotSquare key={i} unitId={unit.id} index={i} entry={slots[i] ?? null} />
         ))}
       </div>
     </div>
