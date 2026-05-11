@@ -1,6 +1,7 @@
 import { useState, useLayoutEffect, useRef, useEffect } from 'react'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, ATTACK_SPEED_BASE, APPROACH_DISTANCE, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, getDerivedStats, getUnitTraits, type Unit, type Location, type EncounterSlot } from '@/stores/useGameStore'
 import type { MonsterDef } from '@/types'
+import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationCodex } from '@/components/LocationCodex'
 import { CombatReport } from '@/components/CombatReport'
@@ -77,6 +78,85 @@ function pickFocusSlots(slots: EncounterSlot[]): EncounterSlot[] {
   const positives = slots.filter((sl) => sl.priority >= 1)
   const max       = positives.reduce((m, sl) => Math.max(m, sl.priority), 0)
   return positives.filter((sl) => sl.priority === max)
+}
+
+// Sort a set of units by a manual march order (ids list). Units not in the
+// order list fall through to the tail in their natural order.
+function sortByOrder(units: Unit[], order: string[]): Unit[] {
+  const rank = new Map(order.map((id, i) => [id, i]))
+  return [...units].sort((a, b) => {
+    const ra = rank.has(a.id) ? rank.get(a.id)! : Number.POSITIVE_INFINITY
+    const rb = rank.has(b.id) ? rank.get(b.id)! : Number.POSITIVE_INFINITY
+    return ra - rb
+  })
+}
+
+// Reorderable list of unit cards. Tap = select (current behavior); long-press
+// + drag onto another card = reorder. The new order is persisted to the
+// store, which also re-staggers initial unit positions on the 1D combat axis.
+function UnitMarchList({ locationId, units, selectedUnitIds, onTapUnit }: {
+  locationId: string
+  units: Unit[]
+  selectedUnitIds: string[]
+  onTapUnit: (id: string) => void
+}) {
+  const setLocationUnitOrder = useGameStore((s) => s.setLocationUnitOrder)
+  // 350ms hold before drag activates so single-taps still select cleanly.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { delay: 350, tolerance: 8 } }))
+
+  function handleDragEnd(e: DragEndEvent) {
+    if (!e.over || !e.active || e.active.id === e.over.id) return
+    const order   = units.map((u) => u.id)
+    const fromIdx = order.indexOf(String(e.active.id))
+    const toIdx   = order.indexOf(String(e.over.id))
+    if (fromIdx < 0 || toIdx < 0) return
+    const next = [...order]
+    next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, String(e.active.id))
+    setLocationUnitOrder(locationId, next)
+  }
+
+  return (
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      {units.map((u) => (
+        <ReorderableUnitRow key={u.id} id={u.id}>
+          <BigUnitCard
+            unit={u}
+            locationId={locationId}
+            isSelected={selectedUnitIds.includes(u.id)}
+            onTap={() => onTapUnit(u.id)}
+          />
+        </ReorderableUnitRow>
+      ))}
+    </DndContext>
+  )
+}
+
+// Long-press draggable + drop-target wrapper for a unit card. Tap fires the
+// child's onClick normally (selecting the unit); holding for ~350ms initiates
+// a drag that can be dropped onto another unit row to reorder.
+function ReorderableUnitRow({ id, children }: { id: string; children: React.ReactNode }) {
+  const drag = useDraggable({ id })
+  const drop = useDroppable({ id })
+  const setRef = (el: HTMLDivElement | null) => { drag.setNodeRef(el); drop.setNodeRef(el) }
+  const dy = drag.transform?.y ?? 0
+  return (
+    <div
+      ref={setRef}
+      {...drag.listeners}
+      {...drag.attributes}
+      style={{
+        touchAction: 'none' as const,
+        transform: drag.isDragging ? `translate3d(0, ${dy}px, 0)` : undefined,
+        zIndex:    drag.isDragging ? 20 : undefined,
+        position:  drag.isDragging ? 'relative' : undefined,
+        opacity:   drag.isDragging ? 0.85 : 1,
+      }}
+      className={drop.isOver && !drag.isDragging ? 'ring-2 ring-game-primary/60 rounded-lg' : ''}
+    >
+      {children}
+    </div>
+  )
 }
 
 // ── BigUnitCard ───────────────────────────────────────────────────────────────
@@ -772,7 +852,8 @@ export function Combat() {
     : (occupiedLocations[0]?.id ?? null)
 
   const focusedLocation = focusId ? (locations.find((l) => l.id === focusId) ?? null) : null
-  const focusedUnits    = focusId ? units.filter((u) => u.locationId === focusId) : []
+  const orderAtLocation = useGameStore((s) => focusId ? (s.locationUnitOrder[focusId] ?? []) : [])
+  const focusedUnits    = focusId ? sortByOrder(units.filter((u) => u.locationId === focusId), orderAtLocation) : []
   const monsterSlots    = focusId ? (allEncounters[focusId] ?? []) : []
 
   // Keep combatLocationId aligned with what's actually shown so back-to-map
@@ -855,15 +936,12 @@ export function Combat() {
               <div className="space-y-2 min-w-0">
                 <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Units</div>
                 {focusedUnits.length > 0 ? (
-                  focusedUnits.map((u) => (
-                    <BigUnitCard
-                      key={u.id}
-                      unit={u}
-                      locationId={focusedLocation.id}
-                      isSelected={selectedUnitIds.includes(u.id)}
-                      onTap={() => toggleSelectUnit(u.id)}
-                    />
-                  ))
+                  <UnitMarchList
+                    locationId={focusedLocation.id}
+                    units={focusedUnits}
+                    selectedUnitIds={selectedUnitIds}
+                    onTapUnit={toggleSelectUnit}
+                  />
                 ) : (
                   <div className="text-xs text-game-muted italic">No units here.</div>
                 )}

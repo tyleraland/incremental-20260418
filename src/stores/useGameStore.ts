@@ -50,6 +50,7 @@ export interface GameState {
   encounterCooldown: Record<string, number>           // locationId → ticks until next wave spawns
   locationFleeing: Record<string, number>             // locationId → ticks remaining in flee
   unitDistance: Record<string, number>                // unitId → 1D position in current encounter (0 = home base)
+  locationUnitOrder: Record<string, string[]>         // locationId → ordered unitIds (front-of-march first); affects initial position
   itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
@@ -91,6 +92,7 @@ export interface GameState {
   recruitUnit: () => void
   craft: (recipeId: string) => void
   setMonsterPriority: (locationId: string, monsterId: string, priority: Priority) => void
+  setLocationUnitOrder: (locationId: string, unitIds: string[]) => void
   selectedMonsterSlot: { locationId: string; slotIndex: number } | null
   setSelectedMonsterSlot: (slot: { locationId: string; slotIndex: number } | null) => void
   resetSave: () => void
@@ -215,6 +217,7 @@ export const useGameStore = create<GameState>((set) => ({
   encounterCooldown: {},
   locationFleeing:   {},
   unitDistance:      {},
+  locationUnitOrder: {},
   ticks: 0,
   monsterDefeated: {},
   locationStats: {},
@@ -833,8 +836,28 @@ export const useGameStore = create<GameState>((set) => ({
     const encounters = { ...s.encounters }
     const encounterCooldown = { ...s.encounterCooldown }
     const unitDistance = { ...s.unitDistance }
-    // Reassigned units always start at the home line (0) of their new location
-    for (const id of unitIds) unitDistance[id] = 0
+    const locationUnitOrder: Record<string, string[]> = { ...s.locationUnitOrder }
+
+    // Remove the moved units from every existing location order.
+    for (const loc of Object.keys(locationUnitOrder)) {
+      locationUnitOrder[loc] = locationUnitOrder[loc].filter((id) => !unitIds.includes(id))
+    }
+    // Append to the destination's order (new arrivals march at the back).
+    if (locationId) {
+      const existing = locationUnitOrder[locationId] ?? []
+      locationUnitOrder[locationId] = [...existing, ...unitIds]
+    }
+
+    // Initial position: rank-0 at the home line, each later rank one INITIAL_RANK_OFFSET
+    // behind so the marching column staggers in.
+    const INITIAL_RANK_OFFSET = 5
+    if (locationId) {
+      for (const [rank, id] of (locationUnitOrder[locationId] ?? []).entries()) {
+        if (unitIds.includes(id)) unitDistance[id] = rank === 0 ? 0 : -rank * INITIAL_RANK_OFFSET
+      }
+    } else {
+      for (const id of unitIds) unitDistance[id] = 0
+    }
 
     // Source locations that lost all units → clear encounter so monsters return to pool
     const fromIds = new Set(
@@ -844,6 +867,7 @@ export const useGameStore = create<GameState>((set) => ({
       if (newUnits.every((u) => u.locationId !== fromId)) {
         delete encounters[fromId]
         delete encounterCooldown[fromId]
+        delete locationUnitOrder[fromId]
       }
     }
 
@@ -857,7 +881,24 @@ export const useGameStore = create<GameState>((set) => ({
       }
     }
 
-    return { units: newUnits, selectedUnitIds: [], encounters, encounterCooldown, monsterSeen, unitDistance }
+    return { units: newUnits, selectedUnitIds: [], encounters, encounterCooldown, monsterSeen, unitDistance, locationUnitOrder }
+  }),
+
+  setLocationUnitOrder: (locationId, unitIds) => set((s) => {
+    const unitDistance: Record<string, number> = { ...s.unitDistance }
+    // Re-stagger positions whenever the order changes mid-combat so the
+    // visible marching line matches the new ranks immediately.
+    const INITIAL_RANK_OFFSET = 5
+    unitIds.forEach((id, rank) => {
+      // Only nudge units that are still at or behind the home line; if they've
+      // already advanced into combat, leave their live position alone.
+      const cur = unitDistance[id] ?? 0
+      if (cur <= 0) unitDistance[id] = rank === 0 ? 0 : -rank * INITIAL_RANK_OFFSET
+    })
+    return {
+      locationUnitOrder: { ...s.locationUnitOrder, [locationId]: unitIds },
+      unitDistance,
+    }
   }),
 
   equipItem: (unitId, slot, itemId) => set((s) => ({
@@ -961,6 +1002,7 @@ export const useGameStore = create<GameState>((set) => ({
       encounterCooldown: {},
       locationFleeing:   {},
       unitDistance:      {},
+      locationUnitOrder: {},
       ticks:         0,
       lastTickAt:    Date.now(),
       paused:        false,
