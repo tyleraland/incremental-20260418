@@ -340,11 +340,11 @@ function ActionSlotSquare({ unitId, index, entry }: {
   let title = `Slot ${index + 1}`
   if (entry?.kind === 'skill') {
     const sk = SKILL_REGISTRY[entry.id]
-    label = sk ? sk.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : '?'
+    label = sk?.name ?? entry.id
     title = sk?.name ?? entry.id
   } else if (entry?.kind === 'item') {
     const it = equipment.find((e) => e.id === entry.id)
-    label = it ? it.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : '?'
+    label = it?.name ?? entry.id
     title = it?.name ?? entry.id
   }
 
@@ -354,7 +354,8 @@ function ActionSlotSquare({ unitId, index, entry }: {
       onClick={() => entry && setActionSlot(unitId, index, null)}
       title={entry ? `${title} (tap to clear)` : title}
       className={[
-        'aspect-square rounded-md border text-[10px] font-medium transition-colors',
+        'aspect-square rounded-md border font-medium transition-colors flex items-center justify-center text-center px-0.5 leading-tight overflow-hidden break-words hyphens-auto',
+        entry ? 'text-[9px]' : 'text-[10px]',
         drop.isOver
           ? 'border-game-primary bg-game-primary/15 text-white'
           : entry
@@ -392,15 +393,15 @@ function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string 
     data: { kind: 'skill' as const, id: skillId },
   })
   const sk = SKILL_REGISTRY[skillId]
-  const label = sk ? sk.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('') : '?'
+  const label = sk?.name ?? skillId
   return (
     <span
       ref={setNodeRef}
       {...listeners}
       {...attributes}
       style={{ touchAction: 'none' as const, opacity: isDragging ? 0.4 : 1 }}
-      title="Drag to an action slot"
-      className="inline-flex w-10 h-10 rounded-md border border-game-border bg-game-surface text-[10px] font-medium text-game-text items-center justify-center cursor-grab active:cursor-grabbing select-none hover:border-game-primary/60"
+      title={`Drag ${label} to an action slot`}
+      className="inline-flex w-10 h-10 rounded-md border border-game-border bg-game-surface text-[9px] font-medium text-game-text items-center justify-center text-center px-0.5 leading-tight overflow-hidden break-words cursor-grab active:cursor-grabbing select-none hover:border-game-primary/60"
     >{label}</span>
   )
 }

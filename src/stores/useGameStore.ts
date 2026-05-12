@@ -919,10 +919,14 @@ export const useGameStore = create<GameState>((set) => ({
       const cur = u.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
       const prev = cur[slotIdx] ?? null
 
-      // Build the new action-slot array.
-      const newActionSlots: (ActionSlotEntry | null)[] = cur.map((c, i) =>
-        i === slotIdx ? entry : c
-      )
+      // Build the new action-slot array. Drag-to-move semantics: if the same
+      // skill/item is already in another slot, clear it from there so the
+      // entry doesn't end up duplicated across the bar.
+      const newActionSlots: (ActionSlotEntry | null)[] = cur.map((c, i) => {
+        if (i === slotIdx) return entry
+        if (entry && c && c.kind === entry.kind && c.id === entry.id) return null
+        return c
+      })
 
       // Sync sideboard for items only. Skills don't touch sideboard.
       let { sideboard1, sideboard2 } = u.equipment
