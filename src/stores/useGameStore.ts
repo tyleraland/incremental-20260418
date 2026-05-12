@@ -352,15 +352,14 @@ export const useGameStore = create<GameState>((set) => ({
         const tId = targets[i]; if (!tId) continue
         const tPos = oldUnitPos[tId] ?? 0
         const monsterRange = monster.stats.attackRange ?? 5
-        // Monster stops at the outer of its own range vs the target unit's range.
-        // A ranged unit (e.g. bow, 35 ft) keeps melee monsters pinned at bow range
-        // so melee monsters cannot reach the ranged unit; a ranged monster vs melee
-        // unit still stops at the monster's own (larger) range.
-        const targetUnit  = s.units.find((u) => u.id === tId)
-        const targetRange = targetUnit ? getDerivedStats(targetUnit, s.equipment).attackRange : monsterRange
-        const stopRange   = Math.max(monsterRange, targetRange)
+        // Monster stops at *its own* attack range from the target. Even if the
+        // target is a ranged unit firing from afar, the monster keeps closing
+        // until it's in melee striking distance. (We used to clamp to the
+        // target's attack range so a bow user could "pin" a wolf at bow range
+        // — that turned out to feel wrong: a shot wolf appeared to stop in
+        // its tracks instead of continuing the charge.)
         const speed = (monster.stats.moveSpeed ?? 5) / TICKS_PER_SECOND
-        const desiredPos = tPos + stopRange
+        const desiredPos = tPos + monsterRange
         if (sl.distance > desiredPos) {
           newSlotPos[i] = Math.max(sl.distance - speed, desiredPos)
         }
