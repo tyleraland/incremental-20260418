@@ -57,13 +57,22 @@ describe('setActionSlot — item ↔ sideboard linkage', () => {
     expect(unit.equipment.sideboard1).toBe(null)
   })
 
-  it('items in more than one action slot stay reserved while any slot references them', () => {
+  it('dropping the same skill into a new slot moves it (no duplicates on the bar)', () => {
+    useGameStore.getState().setActionSlot('u1', 0, { kind: 'skill', id: 'fire-bolt' })
+    useGameStore.getState().setActionSlot('u1', 3, { kind: 'skill', id: 'fire-bolt' })
+    const unit = u()
+    expect(unit.actionSlots[0]).toBe(null)
+    expect(unit.actionSlots[3]).toEqual({ kind: 'skill', id: 'fire-bolt' })
+  })
+
+  it('dropping the same item into a new slot moves it, keeping the sideboard reservation', () => {
     useGameStore.getState().setActionSlot('u1', 0, { kind: 'item', id: 'eq-knife-fire' })
     useGameStore.getState().setActionSlot('u1', 3, { kind: 'item', id: 'eq-knife-fire' })
-    useGameStore.getState().setActionSlot('u1', 0, null)
     const unit = u()
-    expect(unit.equipment.sideboard1).toBe('eq-knife-fire')
+    expect(unit.actionSlots[0]).toBe(null)
     expect(unit.actionSlots[3]).toEqual({ kind: 'item', id: 'eq-knife-fire' })
+    expect(unit.equipment.sideboard1).toBe('eq-knife-fire')
+    expect(unit.equipment.sideboard2).toBe(null)
   })
 
   it('skill entries do not touch the sideboard', () => {
