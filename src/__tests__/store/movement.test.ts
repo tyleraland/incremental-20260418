@@ -35,11 +35,11 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks() })
 
 // ─────────────────────────────────────────────────────────────────────────────
-describe('Monster approach — melee monster pins at unit attackRange when unit is ranged', () => {
-  it('wolf stops at bow range (35 ft) from bow unit, never reaches melee range', () => {
-    // Wolf approaches bow unit at 0. stopRange = max(wolf.5, bow.35) = 35.
-    // Wolf starts at 60, closes until it reaches unit(0)+35=35, then stops.
-    // After many ticks, wolf is at 35 and cannot attack (gap 35 > wolfRange 5).
+describe('Monster approach — wolf charges through the bow shots to melee range', () => {
+  it('wolf reaches melee range (gap=5 ft) of a bow unit even while being shot', () => {
+    // Earlier we pinned the wolf at bow range; that made the wolf appear to
+    // stop dead when shot. The current behaviour: wolf keeps closing toward
+    // its OWN attack range (5 ft) regardless of the target's range.
     const bowUnit = makeUnit({
       id: 'u1', locationId: 'loc1',
       weaponSets: [{ mainHand: 'eq-bow-test', offHand: null }, { mainHand: null, offHand: null }],
@@ -50,13 +50,11 @@ describe('Monster approach — melee monster pins at unit attackRange when unit 
       unitDistance: { u1: 0 },
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: APPROACH_DISTANCE, phase: 'approaching' })] },
     })
-    // Run enough ticks for the system to stabilize (both unit and wolf approach
-    // each other at combined rate 2.025+1.5=3.525 ft/tick; gap 60→35 ≈ 7 ticks)
-    for (let i = 0; i < 25; i++) tick()
+    // Wolf closes at 1.5 ft/tick; (60-5)/1.5 ≈ 37 ticks to reach melee.
+    for (let i = 0; i < 45; i++) tick()
     const wolfPos = slotDist()
     const unitP   = unitPos()
-    expect(wolfPos - unitP).toBeCloseTo(35, 1)   // gap pinned at bow range
-    expect(useGameStore.getState().units[0].health).toBe(100)  // wolf can't attack at 35 ft gap
+    expect(wolfPos - unitP).toBeCloseTo(5, 1)   // wolf parked at its melee range
   })
 })
 
