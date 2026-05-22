@@ -390,8 +390,14 @@ export const useGameStore = create<GameState>((set) => ({
         const formation = getFormationOffset(u, s.equipment)
         const slotIdx = unitToSlot[u.id]
         const cur = oldUnitPos[u.id]
+        const isRanged = ud.attackRange > 5
+        // Melee charge toward the monster (advance to monsterPos - reach,
+        // formation as a floor). Ranged units hold at their formation and let
+        // the monster come into bow range — they do NOT chase or retreat to
+        // maintain max range (that produced a lockstep stalemate where the gap
+        // never closed).
         const desired = slotIdx !== undefined
-          ? Math.max(formation, newSlotPos[slotIdx] - ud.attackRange)
+          ? (isRanged ? formation : Math.max(formation, newSlotPos[slotIdx] - ud.attackRange))
           : isMarching ? MARCHING_FORMATION : formation
         const step = ud.moveSpeed / TICKS_PER_SECOND
         if (cur < desired)      unitDistance[u.id] = Math.min(cur + step, desired)
