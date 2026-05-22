@@ -171,6 +171,7 @@ function BigUnitCard({ unit, locationId, isSelected, onTap }: {
   const slots     = useGameStore((s) => s.encounters[locationId] ?? [])
   const fleeing   = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
   const locations = useGameStore((s) => s.locations)
+  const unitPos   = useGameStore((s) => s.unitDistance[unit.id] ?? 0)
 
   const derived      = getDerivedStats(unit, equipment)
   const isRecovering = unit.recoveryTicksLeft > 0
@@ -211,6 +212,11 @@ function BigUnitCard({ unit, locationId, isSelected, onTap }: {
         if (sl.phase !== 'standing') return sum
         const m = MONSTER_REGISTRY[sl.monsterId]
         if (!m) return sum
+        // Only counts when the monster is actually within its own attack range
+        // of this unit. A slot can be 'standing' because a ranged ally is
+        // firing while this monster is still closing and lands nothing.
+        const gap = sl.distance - unitPos
+        if (gap > (m.stats.attackRange ?? 5)) return sum
         const cd = calcCooldown(m.stats.attackSpeed)
         return sum + (rollingRate(sl.dealtHistory, cd) ?? calcDps(m, derived.defense))
       }, 0)
@@ -301,6 +307,7 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap }: {
   const allSlots           = useGameStore((s) => s.encounters[locationId] ?? [])
   const slot               = allSlots[slotIndex] ?? null
   const locationFleeing    = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const unitDistance       = useGameStore((s) => s.unitDistance)
 
   const barRef   = useRef<HTMLDivElement>(null)
   const prevProg = useRef(slot?.progress ?? 0)
@@ -339,7 +346,12 @@ function BigMonsterCard({ slotIndex, locationId, isSelected, onTap }: {
     ? numAttackers * takenHitFraction * monster.health / (monster.level * 5)
     : null
   const atkCooldown      = calcCooldown(monster.stats.attackSpeed)
-  const monsterDealtDps  = phase === 'standing' && targetDerived
+  // Monster only deals damage once it's within its own attack range of its
+  // target — a slot can be 'standing' while a ranged unit fires and the
+  // monster is still closing.
+  const targetGap        = targetUnit ? slot.distance - (unitDistance[targetUnit.id] ?? 0) : Infinity
+  const monsterInRange   = targetGap <= (monster.stats.attackRange ?? 5)
+  const monsterDealtDps  = phase === 'standing' && targetDerived && monsterInRange
     ? (rollingRate(slot.dealtHistory, atkCooldown) ?? calcDps(monster, targetDerived.defense))
     : null
   const lastHitDmg = phase === 'standing' && !slot.lastAttackMissed
@@ -438,6 +450,7 @@ function FullUnitDetailPanel({ unit, locationId, onClose, onView }: {
   const allUnits  = useGameStore((s) => s.units)
   const slots     = useGameStore((s) => s.encounters[locationId] ?? [])
   const fleeing   = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const unitPos   = useGameStore((s) => s.unitDistance[unit.id] ?? 0)
 
   const derived      = getDerivedStats(unit, equipment)
   const traits       = getUnitTraits(unit)
@@ -473,6 +486,11 @@ function FullUnitDetailPanel({ unit, locationId, onClose, onView }: {
         if (sl.phase !== 'standing') return sum
         const m = MONSTER_REGISTRY[sl.monsterId]
         if (!m) return sum
+        // Only counts when the monster is actually within its own attack range
+        // of this unit. A slot can be 'standing' because a ranged ally is
+        // firing while this monster is still closing and lands nothing.
+        const gap = sl.distance - unitPos
+        if (gap > (m.stats.attackRange ?? 5)) return sum
         const cd = calcCooldown(m.stats.attackSpeed)
         return sum + (rollingRate(sl.dealtHistory, cd) ?? calcDps(m, derived.defense))
       }, 0)
@@ -576,6 +594,7 @@ function FullMonsterDetailPanel({ locationId, slotIndex, onClose, onOpenCodex }:
   const slot               = allSlots[slotIndex] ?? null
   const setMonsterPriority = useGameStore((s) => s.setMonsterPriority)
   const locationFleeing    = useGameStore((s) => s.locationFleeing[locationId] ?? 0)
+  const unitDistance       = useGameStore((s) => s.unitDistance)
 
   if (!slot) return null
   const monster = MONSTER_REGISTRY[slot.monsterId]
@@ -602,7 +621,12 @@ function FullMonsterDetailPanel({ locationId, slotIndex, onClose, onOpenCodex }:
     ? numAttackers * takenHitFraction * monster.health / (monster.level * 5)
     : null
   const atkCooldown      = calcCooldown(monster.stats.attackSpeed)
-  const monsterDealtDps  = phase === 'standing' && targetDerived
+  // Monster only deals damage once it's within its own attack range of its
+  // target — a slot can be 'standing' while a ranged unit fires and the
+  // monster is still closing.
+  const targetGap        = targetUnit ? slot.distance - (unitDistance[targetUnit.id] ?? 0) : Infinity
+  const monsterInRange   = targetGap <= (monster.stats.attackRange ?? 5)
+  const monsterDealtDps  = phase === 'standing' && targetDerived && monsterInRange
     ? (rollingRate(slot.dealtHistory, atkCooldown) ?? calcDps(monster, targetDerived.defense))
     : null
   const lastHitDmg = phase === 'standing' && !slot.lastAttackMissed

@@ -224,8 +224,9 @@ describe('Ranged attacks — bow unit (attackRange = 35 ft)', () => {
     expect(unitPos()).toBeCloseTo(0, 3)
   })
 
-  it('bow unit advances toward monster when gap > 35 ft', () => {
-    // Monster at APPROACH_DISTANCE (60 ft) → gap=60 > 35 → bow must close
+  it('bow unit holds at formation (0) when a monster is far — it does not chase', () => {
+    // Monster at APPROACH_DISTANCE (60 ft); ranged units hold at formation and
+    // let the monster come into bow range rather than advancing to meet it.
     resetStore({
       units: [bowUnit()],
       equipment: [BOW],
@@ -233,14 +234,14 @@ describe('Ranged attacks — bow unit (attackRange = 35 ft)', () => {
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'stone-golem', distance: APPROACH_DISTANCE, phase: 'approaching' })] },
     })
     tick()
-    expect(unitPos()).toBeGreaterThan(0)
+    expect(unitPos()).toBeCloseTo(0, 3)
     expect(useGameStore.getState().encounters['loc1'][0].progress).toBe(0) // not yet in range
   })
 
-  it('bow unit stops advancing and begins firing once gap ≤ 35 ft', () => {
-    // Pre-position: bow at 20, wolf at 55 → gap=35 exactly
-    // After tick: wolf moves slightly closer; bow desired = max(0, newWolfPos-35) < 20 → bow retreats slightly
-    // Either way, progress fires (gap ≤ 35) and unit does NOT advance past position 20
+  it('bow unit retreats to its formation (0) in combat — never advances toward the monster', () => {
+    // Bow pre-positioned forward at 20 (e.g. left over from marching). Once an
+    // encounter is present it diverges back to its ranged formation (0) while
+    // melee would charge forward.
     resetStore({
       units: [bowUnit()],
       equipment: [BOW],
@@ -249,8 +250,7 @@ describe('Ranged attacks — bow unit (attackRange = 35 ft)', () => {
     })
     const before = unitPos()
     tick()
-    expect(unitPos()).toBeLessThanOrEqual(before + 0.001) // does not advance
-    expect(useGameStore.getState().encounters['loc1'][0].progress).toBeGreaterThan(0)
+    expect(unitPos()).toBeLessThan(before) // retreats toward formation, doesn't advance
   })
 })
 
