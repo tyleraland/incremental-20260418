@@ -7,6 +7,7 @@ import type {
 import { PRIORITY_NORMAL, PRIORITY_IGNORE, PRIORITY_AVOID, ACTION_SLOT_COUNT } from '@/types'
 import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats, getFormationOffset } from '@/lib/stats'
+import { randomFullName } from '@/lib/names'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { elementMultiplier } from '@/lib/elements'
 import { SKILL_REGISTRY } from '@/data/skills'
@@ -20,6 +21,7 @@ import { INITIAL_UNITS } from '@/data/units'
 export * from '@/types'
 export * from '@/lib/time'
 export * from '@/lib/stats'
+export * from '@/lib/names'
 export * from '@/lib/combatReport'
 export * from '@/lib/elements'
 export * from '@/data/traits'
@@ -1000,10 +1002,7 @@ export const useGameStore = create<GameState>((set) => ({
   }),
 
   recruitUnit: () => set((s) => {
-    const NAMES = ['Brom','Cass','Dara','Fen','Gale','Holt','Issa','Jorn','Kara','Lexa','Mack','Nira','Orin','Pell','Quinn','Roan','Sela','Tarn','Vex','Wren','Zora']
-    const used = new Set(s.units.map((u) => u.name))
-    const pool = NAMES.filter((n) => !used.has(n))
-    const name = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : `Recruit ${s.units.length + 1}`
+    const name = randomFullName(new Set(s.units.map((u) => u.name)))
     const r = (lo: number, hi: number) => Math.floor(Math.random() * (hi - lo + 1)) + lo
     const unit: Unit = {
       id: `u${Date.now()}`, name, level: 1, exp: 0, expToNext: expForLevel(1),

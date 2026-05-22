@@ -1,14 +1,17 @@
 import { useState } from 'react'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getInitials, type Unit, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
 // ── World pages (one per region) ──────────────────────────────────────────────
 
-const GRID_W   = 3
-const GRID_H   = 3
-const CELL_W   = 88
-const CELL_H   = 60
+const GRID_W   = 5
+const GRID_H   = 5
+const CELL_W   = 60
+const CELL_H   = 48
 const GAP_PX   = 4
+
+const INNER_W = GRID_W * CELL_W + (GRID_W - 1) * GAP_PX
+const INNER_H = GRID_H * CELL_H + (GRID_H - 1) * GAP_PX
 
 interface PageNeighbors { left?: string; right?: string; up?: string; down?: string }
 interface PageDef extends PageNeighbors {
@@ -90,6 +93,150 @@ function getLocationKind(traits: string[]) {
   return null
 }
 
+// ── Terrain overlay ─────────────────────────────────────────────────────────
+// Decorative vector layers drawn behind the map cells to give each region some
+// color & texture. Authored in a 0–100 (x) × 0–80 (y) space, stretched to fill
+// the grid (slight distortion is fine — this is a visual concept, not a real
+// map). Cells render on top, translucent, so this shows through.
+
+interface Pt { cx: number; cy: number; s?: number }
+type Feature = ({ kind: 'mountain' | 'woods' | 'city' | 'hills' | 'desert' } & Pt)
+interface RegionTerrain { base: [string, string]; river?: string; features: Feature[] }
+
+const REGION_TERRAIN: Record<string, RegionTerrain> = {
+  prontera: {
+    base: ['#16240f', '#0c1408'],
+    river: 'M -4,46 C 18,40 28,56 48,49 C 68,42 80,56 104,49',
+    features: [
+      { kind: 'city',     cx: 50, cy: 30 },
+      { kind: 'woods',    cx: 15, cy: 60 },
+      { kind: 'woods',    cx: 26, cy: 67, s: 0.8 },
+      { kind: 'hills',    cx: 80, cy: 22 },
+      { kind: 'mountain', cx: 84, cy: 64, s: 0.9 },
+    ],
+  },
+  geffen: {
+    base: ['#1a1f2b', '#0e1119'],
+    river: 'M 34,-4 C 40,16 26,28 38,42 C 48,54 36,64 42,84',
+    features: [
+      { kind: 'city',     cx: 56, cy: 34 },
+      { kind: 'mountain', cx: 80, cy: 24, s: 1.15 },
+      { kind: 'mountain', cx: 66, cy: 20, s: 0.8 },
+      { kind: 'hills',    cx: 16, cy: 30 },
+      { kind: 'woods',    cx: 78, cy: 62 },
+    ],
+  },
+  kanto: {
+    base: ['#241d10', '#140f07'],
+    features: [
+      { kind: 'desert', cx: 24, cy: 30 },
+      { kind: 'desert', cx: 64, cy: 26, s: 1.1 },
+      { kind: 'desert', cx: 46, cy: 58 },
+      { kind: 'hills',  cx: 82, cy: 62 },
+    ],
+  },
+  'geffen-dungeon': {
+    base: ['#1c1418', '#0c090b'],
+    features: [
+      { kind: 'mountain', cx: 18, cy: 30, s: 0.85 },
+      { kind: 'mountain', cx: 82, cy: 30, s: 0.85 },
+      { kind: 'mountain', cx: 50, cy: 60, s: 1.0 },
+    ],
+  },
+}
+
+function Mountain({ cx, cy, s = 1 }: Pt) {
+  return (
+    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
+      <polygon points="-11,9 -2,-10 7,9" fill="rgba(120,113,108,0.5)" />
+      <polygon points="6,9 13,-4 20,9" fill="rgba(87,83,78,0.45)" />
+      <polygon points="-4.6,-1.6 -2,-10 0.6,-1.6 -2,0" fill="rgba(231,229,228,0.7)" />
+    </g>
+  )
+}
+
+function Tree({ x }: { x: number }) {
+  return (
+    <g transform={`translate(${x} 0)`}>
+      <rect x="-0.8" y="2" width="1.6" height="4" fill="rgba(120,80,45,0.6)" />
+      <polygon points="-4,3 0,-7 4,3" fill="rgba(34,120,60,0.6)" />
+      <polygon points="-3.2,0 0,-9 3.2,0" fill="rgba(46,140,72,0.6)" />
+    </g>
+  )
+}
+
+function Woods({ cx, cy, s = 1 }: Pt) {
+  return (
+    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
+      <Tree x={-6} /><Tree x={6} /><Tree x={0} />
+    </g>
+  )
+}
+
+function City({ cx, cy, s = 1 }: Pt) {
+  return (
+    <g transform={`translate(${cx} ${cy}) scale(${s})`} fill="rgba(214,178,90,0.55)">
+      <rect x="-9" y="-2" width="5" height="9" />
+      <rect x="-3" y="-7" width="5" height="14" />
+      <rect x="3"  y="-4" width="5" height="11" />
+      <polygon points="-0.5,-7 4.5,-7 2,-12" fill="rgba(214,178,90,0.7)" />
+    </g>
+  )
+}
+
+function Hills({ cx, cy, s = 1 }: Pt) {
+  return (
+    <g transform={`translate(${cx} ${cy}) scale(${s})`} fill="rgba(70,110,55,0.4)">
+      <path d="M -14,6 Q -7,-5 0,6 Z" />
+      <path d="M -2,6 Q 6,-7 14,6 Z" fill="rgba(86,128,66,0.4)" />
+    </g>
+  )
+}
+
+function Desert({ cx, cy, s = 1 }: Pt) {
+  return (
+    <g transform={`translate(${cx} ${cy}) scale(${s})`} fill="rgba(196,160,92,0.35)">
+      <path d="M -16,4 Q -4,-4 8,4 Q 14,0 18,4 L 18,9 L -16,9 Z" />
+      <path d="M -16,8 Q 0,2 18,8 L 18,11 L -16,11 Z" fill="rgba(168,134,72,0.4)" />
+    </g>
+  )
+}
+
+function renderFeature(f: Feature, i: number) {
+  const props = { cx: f.cx, cy: f.cy, s: f.s }
+  switch (f.kind) {
+    case 'mountain': return <Mountain key={i} {...props} />
+    case 'woods':    return <Woods    key={i} {...props} />
+    case 'city':     return <City     key={i} {...props} />
+    case 'hills':    return <Hills    key={i} {...props} />
+    case 'desert':   return <Desert   key={i} {...props} />
+  }
+}
+
+function TerrainOverlay({ region }: { region: string }) {
+  const t = REGION_TERRAIN[region]
+  if (!t) return null
+  const gid = `terrain-${region}`
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 100 80"
+      preserveAspectRatio="none"
+      className="absolute inset-0 w-full h-full pointer-events-none rounded-md"
+    >
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={t.base[0]} />
+          <stop offset="100%" stopColor={t.base[1]} />
+        </linearGradient>
+      </defs>
+      <rect x="0" y="0" width="100" height="80" fill={`url(#${gid})`} />
+      {t.river && <path d={t.river} fill="none" stroke="rgba(96,150,210,0.45)" strokeWidth="3.5" strokeLinecap="round" />}
+      {t.features.map(renderFeature)}
+    </svg>
+  )
+}
+
 // ── RosterUnitCard ────────────────────────────────────────────────────────────
 
 function RosterUnitCard({ unit }: { unit: Unit }) {
@@ -116,9 +263,19 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
           : 'border-game-border bg-game-surface text-game-text hover:bg-white/5',
       ].join(' ')}
     >
-      <div className="flex items-center justify-between gap-1 mb-1">
-        <div className="text-sm font-semibold leading-tight truncate">{unit.name}</div>
-        <div className="text-xs text-game-text-dim shrink-0">Lv.{unit.level}</div>
+      <div className="flex items-center gap-1.5 mb-1">
+        <span
+          className={[
+            'shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border',
+            isSelected ? 'bg-game-primary/40 border-game-primary/60 text-white' : 'bg-game-primary/15 border-game-border text-game-text',
+          ].join(' ')}
+        >
+          {getInitials(unit.name)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold leading-tight truncate">{unit.name}</div>
+          <div className="text-[10px] text-game-text-dim leading-none mt-0.5">Lv.{unit.level}</div>
+        </div>
       </div>
       <div className="w-full bg-game-border/60 rounded-full h-1.5 overflow-hidden">
         {isRecovering ? (
@@ -164,26 +321,23 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
     <button
       onClick={() => setSelectedLocation(isSelected ? null : location.id)}
       style={style}
+      title={location.name}
       className={[
-        'relative z-10 flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-md border text-left transition-all overflow-hidden',
+        'relative z-10 flex items-center justify-center rounded-md border transition-all overflow-hidden',
         isSelected
           ? 'border-game-primary bg-game-primary/30 ring-2 ring-game-primary/50 shadow-lg shadow-game-primary/30 scale-[1.04]'
-          : 'border-game-border bg-game-surface hover:border-game-primary/60',
+          : 'border-game-border bg-game-surface/55 hover:border-game-primary/70 hover:bg-game-surface/75',
       ].join(' ')}
     >
-      {/* kind symbol — bottom right */}
+      {/* kind symbol — centered glyph (name now lives in the detail panel) */}
       {kind && (
         <span
           aria-hidden
-          className={`absolute bottom-0.5 right-1 text-[15px] leading-none pointer-events-none ${kind.iconCls}`}
+          className={`text-[22px] leading-none pointer-events-none drop-shadow ${kind.iconCls}`}
         >
           {kind.symbol}
         </span>
       )}
-      {/* label — top */}
-      <span className="text-[10px] font-semibold text-game-text leading-tight line-clamp-2">
-        {location.name}
-      </span>
       {/* unit dots — bottom left, compact 3-column grid */}
       <div className="absolute bottom-1 left-1 grid grid-cols-3 gap-0.5">
         {units.slice(0, 6).map((u) => {
@@ -291,47 +445,44 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
         {/* Middle row: left arrow, grid, right arrow */}
         <div className="flex items-center justify-center gap-1">
           <PageArrow direction="left" target={left} onClick={() => goto(left)} />
-          <div
-            className="bg-game-bg rounded-md p-1.5"
-            style={{
-              backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1.5px)',
-              backgroundSize: `${CELL_W + GAP_PX}px ${CELL_H + GAP_PX}px`,
-              backgroundPosition: `${(CELL_W + GAP_PX) / 2 + 6 - 0.5}px ${(CELL_H + GAP_PX) / 2 + 6 - 0.5}px`,
-            }}
-          >
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: `repeat(${GRID_W}, ${CELL_W}px)`,
-                gridTemplateRows:    `repeat(${GRID_H}, ${CELL_H}px)`,
-                gap: `${GAP_PX}px`,
-              }}
-            >
-              {/* Placeholder cells fill every (col, row) so empty slots are visible
-                  but non-interactive. Locations render on top via explicit gridColumn/Row. */}
-              {Array.from({ length: GRID_W * GRID_H }).map((_, i) => {
-                const x = i % GRID_W
-                const y = Math.floor(i / GRID_W)
-                const occupied = pageLocations.some((l) => {
-                  const c = LOCATION_COORDS[l.id]
-                  return c && c[0] === x && c[1] === y
-                })
-                if (occupied) return null
-                return (
-                  <div
-                    key={`ph-${x}-${y}`}
-                    style={{ gridColumn: x + 1, gridRow: y + 1 }}
-                    className="rounded-md border border-game-border/30 bg-game-surface/20 pointer-events-none"
+          <div className="bg-game-bg rounded-md p-1.5">
+            <div className="relative" style={{ width: INNER_W, height: INNER_H }}>
+              <TerrainOverlay region={page.id} />
+              <div
+                className="relative"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${GRID_W}, ${CELL_W}px)`,
+                  gridTemplateRows:    `repeat(${GRID_H}, ${CELL_H}px)`,
+                  gap: `${GAP_PX}px`,
+                }}
+              >
+                {/* Faint placeholders keep the grid lattice readable over the
+                    terrain; locations render on top via explicit gridColumn/Row. */}
+                {Array.from({ length: GRID_W * GRID_H }).map((_, i) => {
+                  const x = i % GRID_W
+                  const y = Math.floor(i / GRID_W)
+                  const occupied = pageLocations.some((l) => {
+                    const c = LOCATION_COORDS[l.id]
+                    return c && c[0] === x && c[1] === y
+                  })
+                  if (occupied) return null
+                  return (
+                    <div
+                      key={`ph-${x}-${y}`}
+                      style={{ gridColumn: x + 1, gridRow: y + 1 }}
+                      className="rounded-md border border-game-border/20 bg-black/10 pointer-events-none"
+                    />
+                  )
+                })}
+                {pageLocations.map((loc) => (
+                  <LocationCell
+                    key={loc.id}
+                    location={loc}
+                    units={units.filter((u) => u.locationId === loc.id)}
                   />
-                )
-              })}
-              {pageLocations.map((loc) => (
-                <LocationCell
-                  key={loc.id}
-                  location={loc}
-                  units={units.filter((u) => u.locationId === loc.id)}
-                />
-              ))}
+                ))}
+              </div>
             </div>
           </div>
           <PageArrow direction="right" target={right} onClick={() => goto(right)} />
