@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactElement } from 'react'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getInitials, type Unit, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 
@@ -94,177 +94,174 @@ function getLocationKind(traits: string[]) {
 }
 
 // ── Terrain overlay ─────────────────────────────────────────────────────────
-// Decorative vector layers drawn behind the map cells to give each region some
-// color & texture. Authored in a 0–100 (x) × 0–80 (y) space, stretched to fill
-// the grid (slight distortion is fine — this is a visual concept, not a real
-// map). Cells render on top, translucent, so this shows through.
+// Every map cell gets a biome. The overlay fills the whole grid with a biome
+// color + dense small motifs so you can "squint" and read forest / grass /
+// water / desert / mountain at a glance. Drawn in a 0–100 × 0–80 viewBox
+// (5×5 cells of 20×16) stretched to fill the grid; the interactive cells render
+// on top, translucent, so this shows through. Biome grids are [row][col].
 
-interface Pt { cx: number; cy: number; s?: number }
-type Feature = ({ kind: 'mountain' | 'woods' | 'city' | 'hills' | 'desert' } & Pt)
-interface RegionTerrain { base: [string, string]; river?: string; features: Feature[] }
+type Biome = 'grass' | 'forest' | 'hills' | 'mountain' | 'sand' | 'water' | 'city' | 'rock'
+interface RegionTerrain { grid: Biome[][]; river?: string }
 
-// Feature positions live in viewBox space for now. Later these can be derived
-// per-cell from a location's grid coords + biome so the texture lines up with
-// individual cells/encounters.
+const CW = 20  // cell width in viewBox units
+const CH = 16  // cell height in viewBox units
+
+// Muted base fills — colorful enough to read a biome, dark enough that the
+// translucent cells, glyphs and unit dots on top stay legible.
+const BIOME_FILL: Record<Biome, string> = {
+  grass:    'rgba(40,64,30,0.92)',
+  forest:   'rgba(26,50,22,0.94)',
+  hills:    'rgba(48,72,34,0.92)',
+  mountain: 'rgba(58,57,52,0.9)',
+  sand:     'rgba(98,80,44,0.9)',
+  water:    'rgba(22,54,86,0.92)',
+  city:     'rgba(48,64,32,0.92)',
+  rock:     'rgba(36,31,38,0.94)',
+}
+
 const REGION_TERRAIN: Record<string, RegionTerrain> = {
   prontera: {
-    base: ['#16240f', '#0c1408'],
-    river: 'M -4,44 C 16,38 28,54 48,47 C 68,40 82,55 104,48',
-    features: [
-      { kind: 'city',     cx: 50, cy: 28, s: 0.85 },
-      { kind: 'woods',    cx: 14, cy: 60, s: 0.95 },
-      { kind: 'woods',    cx: 30, cy: 66, s: 0.8 },
-      { kind: 'woods',    cx: 60, cy: 64, s: 0.85 },
-      { kind: 'hills',    cx: 80, cy: 20, s: 0.9 },
-      { kind: 'hills',    cx: 20, cy: 22, s: 0.7 },
-      { kind: 'mountain', cx: 86, cy: 62, s: 0.7 },
-      { kind: 'mountain', cx: 92, cy: 66, s: 0.55 },
+    grid: [
+      ['grass',  'grass', 'grass', 'grass',  'hills'],
+      ['forest', 'city',  'grass', 'grass',  'hills'],
+      ['forest', 'grass', 'grass', 'grass',  'mountain'],
+      ['grass',  'grass', 'grass', 'forest', 'mountain'],
+      ['grass',  'forest','grass', 'grass',  'grass'],
     ],
+    river: 'M -2,40 C 20,34 30,52 50,44 C 70,36 86,54 102,45',
   },
   geffen: {
-    base: ['#1a1f2b', '#0e1119'],
-    river: 'M 34,-4 C 40,16 26,30 38,44 C 48,56 36,66 42,84',
-    features: [
-      { kind: 'city',     cx: 58, cy: 36, s: 0.85 },
-      { kind: 'mountain', cx: 78, cy: 20, s: 0.85 },
-      { kind: 'mountain', cx: 88, cy: 24, s: 0.6 },
-      { kind: 'mountain', cx: 70, cy: 16, s: 0.55 },
-      { kind: 'hills',    cx: 16, cy: 28, s: 0.85 },
-      { kind: 'hills',    cx: 14, cy: 58, s: 0.7 },
-      { kind: 'woods',    cx: 80, cy: 60, s: 0.9 },
-      { kind: 'woods',    cx: 60, cy: 64, s: 0.7 },
+    grid: [
+      ['grass', 'grass', 'mountain', 'mountain', 'mountain'],
+      ['hills', 'city',  'grass',    'mountain', 'mountain'],
+      ['hills', 'grass', 'grass',    'forest',   'forest'],
+      ['grass', 'grass', 'grass',    'forest',   'grass'],
+      ['grass', 'grass', 'grass',    'grass',    'grass'],
     ],
+    river: 'M 30,-2 C 36,16 24,30 34,44 C 44,56 32,66 38,82',
   },
   kanto: {
-    base: ['#2a2516', '#15110a'],
-    features: [
-      { kind: 'desert', cx: 22, cy: 24, s: 0.9 },
-      { kind: 'desert', cx: 60, cy: 22, s: 1.0 },
-      { kind: 'desert', cx: 40, cy: 48, s: 0.95 },
-      { kind: 'desert', cx: 78, cy: 50, s: 0.85 },
-      { kind: 'hills',  cx: 84, cy: 22, s: 0.6 },
+    grid: [
+      ['sand',  'sand',  'sand',  'water', 'water'],
+      ['sand',  'sand',  'sand',  'water', 'water'],
+      ['sand',  'sand',  'sand',  'water', 'water'],
+      ['sand',  'sand',  'water', 'water', 'water'],
+      ['water', 'water', 'water', 'water', 'water'],
     ],
   },
   'geffen-dungeon': {
-    base: ['#1c1418', '#0c090b'],
-    features: [
-      { kind: 'mountain', cx: 18, cy: 28, s: 0.7 },
-      { kind: 'mountain', cx: 28, cy: 32, s: 0.5 },
-      { kind: 'mountain', cx: 82, cy: 28, s: 0.7 },
-      { kind: 'mountain', cx: 50, cy: 58, s: 0.8 },
-      { kind: 'mountain', cx: 62, cy: 62, s: 0.5 },
+    grid: [
+      ['rock',     'rock', 'rock', 'mountain', 'mountain'],
+      ['rock',     'rock', 'rock', 'rock',     'mountain'],
+      ['mountain', 'rock', 'rock', 'rock',     'rock'],
+      ['mountain', 'rock', 'rock', 'rock',     'rock'],
+      ['rock',     'rock', 'mountain', 'rock', 'rock'],
     ],
   },
 }
 
-// Small, map-style peak: shaded right face + zig-zag snow cap + a lower
-// secondary peak so a cluster reads as a range.
-function Mountain({ cx, cy, s = 1 }: Pt) {
-  return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
-      <polygon points="3,1 8,-6 13,1" fill="rgba(96,92,86,0.5)" />
-      <polygon points="8,-6 13,1 10.5,1" fill="rgba(60,57,53,0.42)" />
-      <polygon points="-7,2 -1,-9 5,2" fill="rgba(124,118,112,0.62)" />
-      <polygon points="-1,-9 5,2 1.6,2" fill="rgba(72,68,64,0.5)" />
-      <polygon points="-3.1,-3.6 -1,-9 1.1,-3.6 -0.2,-4.8 -1.1,-3.9 -2,-4.8" fill="rgba(238,240,243,0.9)" />
-      <path d="M -1,-9 L 1.6,2" stroke="rgba(38,36,34,0.3)" strokeWidth="0.3" fill="none" />
-    </g>
-  )
+// Deterministic 0–1 hash so motif scatter is stable across renders (no flicker).
+function h2(a: number, b: number) {
+  const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453
+  return x - Math.floor(x)
 }
 
-// Little conifer built from stacked triangles.
-function Tree({ x, y, h = 1 }: { x: number; y: number; h?: number }) {
-  return (
-    <g transform={`translate(${x} ${y}) scale(${h})`}>
-      <rect x="-0.35" y="0.2" width="0.7" height="1.4" fill="rgba(96,64,38,0.7)" />
-      <polygon points="-1.8,0.6 0,-2.4 1.8,0.6" fill="rgba(38,104,56,0.72)" />
-      <polygon points="-1.5,-0.8 0,-3.4 1.5,-0.8" fill="rgba(50,128,68,0.72)" />
-      <polygon points="-1.1,-2.0 0,-4.2 1.1,-2.0" fill="rgba(62,148,82,0.72)" />
-    </g>
-  )
-}
+// Dense per-biome motifs filling one cell at grid (col,row).
+function cellMotifs(biome: Biome, col: number, row: number): ReactElement[] {
+  const x0 = col * CW, y0 = row * CH
+  const out: ReactElement[] = []
+  const k = (s: string) => `${col}-${row}-${s}`
+  const sx = (i: number) => x0 + 2.5 + h2(col * 9 + i, row * 5 + i * 2) * (CW - 5)
+  const sy = (i: number) => y0 + 2.5 + h2(col * 4 + i * 3, row * 8 + i) * (CH - 5)
 
-function Woods({ cx, cy, s = 1 }: Pt) {
-  return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
-      <Tree x={-5}   y={2} />
-      <Tree x={-1.5} y={2.6} h={0.85} />
-      <Tree x={2}    y={2} />
-      <Tree x={5}    y={2.4} h={0.9} />
-      <Tree x={-3}   y={0} h={0.9} />
-      <Tree x={0.5}  y={-0.3} />
-      <Tree x={3.6}  y={0.2} h={0.85} />
-    </g>
-  )
-}
-
-function House({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
-  return (
-    <g transform={`translate(${x} ${y}) scale(${s})`}>
-      <rect x="-1.6" y="-1.2" width="3.2" height="3" fill="rgba(196,166,108,0.66)" />
-      <polygon points="-2.1,-1.2 0,-3.4 2.1,-1.2" fill="rgba(168,84,66,0.8)" />
-    </g>
-  )
-}
-
-// Small town — a cluster of pitched-roof houses.
-function City({ cx, cy, s = 1 }: Pt) {
-  return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
-      <House x={-4.5} y={1.6} s={0.85} />
-      <House x={4.3}  y={1.4} s={0.9} />
-      <House x={-0.2} y={0.4} s={1.05} />
-      <House x={2.4}  y={2} s={0.7} />
-      <House x={-2.6} y={2.2} s={0.7} />
-    </g>
-  )
-}
-
-// Rolling hills — overlapping humps with a sunlit crest + contour line to
-// suggest altitude change.
-function Hills({ cx, cy, s = 1 }: Pt) {
-  return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
-      <path d="M -11,4 Q -5,-2.5 1,4 Z" fill="rgba(64,98,52,0.5)" />
-      <path d="M -3,4 Q 4,-4.5 11,4 Z" fill="rgba(86,124,64,0.55)" />
-      <path d="M 1,1.2 Q 4,-2.4 7,0.6" fill="none" stroke="rgba(150,182,116,0.6)" strokeWidth="0.5" strokeLinecap="round" />
-      <path d="M -1.5,2.6 Q 4,-1.4 9.2,2.6" fill="none" stroke="rgba(40,60,34,0.35)" strokeWidth="0.35" />
-      <path d="M -8,2.8 Q -5,-0.2 -2,2.8" fill="none" stroke="rgba(150,182,116,0.45)" strokeWidth="0.4" strokeLinecap="round" />
-    </g>
-  )
-}
-
-// Sandy dunes — layered bands, a crest highlight, and stippled grains.
-function Desert({ cx, cy, s = 1 }: Pt) {
-  return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
-      <path d="M -15,3 Q -7,-1.5 0,1.5 Q 7,4 15,0.5 L 15,7 L -15,7 Z" fill="rgba(214,184,120,0.34)" />
-      <path d="M -15,5 Q -5,1.5 5,4.5 Q 10,6 15,3.8 L 15,8 L -15,8 Z" fill="rgba(190,156,96,0.36)" />
-      <path d="M -13,2.6 Q -7,-0.6 -1,1.8" fill="none" stroke="rgba(236,214,160,0.5)" strokeWidth="0.4" strokeLinecap="round" />
-      <g fill="rgba(150,118,68,0.45)">
-        <circle cx="-9" cy="3.4" r="0.35" /><circle cx="-4" cy="4.2" r="0.3" />
-        <circle cx="1"  cy="3.0" r="0.35" /><circle cx="6"  cy="4.4" r="0.3" />
-        <circle cx="10" cy="3.4" r="0.35" /><circle cx="-1" cy="5.2" r="0.3" />
-      </g>
-    </g>
-  )
-}
-
-function renderFeature(f: Feature, i: number) {
-  const props = { cx: f.cx, cy: f.cy, s: f.s }
-  switch (f.kind) {
-    case 'mountain': return <Mountain key={i} {...props} />
-    case 'woods':    return <Woods    key={i} {...props} />
-    case 'city':     return <City     key={i} {...props} />
-    case 'hills':    return <Hills    key={i} {...props} />
-    case 'desert':   return <Desert   key={i} {...props} />
+  switch (biome) {
+    case 'forest':
+      for (let i = 0; i < 8; i++) {
+        const x = sx(i), y = sy(i)
+        out.push(
+          <g key={k('t' + i)} transform={`translate(${x} ${y})`}>
+            <polygon points="-1.2,0.8 0,-1.6 1.2,0.8" fill="rgba(32,92,48,0.92)" />
+            <polygon points="-0.9,-0.4 0,-2.5 0.9,-0.4" fill="rgba(54,128,72,0.92)" />
+          </g>,
+        )
+      }
+      break
+    case 'grass':
+      for (let i = 0; i < 5; i++) {
+        const x = sx(i), y = sy(i)
+        out.push(
+          <path key={k('g' + i)} d={`M ${x - 0.8},${y} l 0.3,-1.3 M ${x},${y} l 0,-1.6 M ${x + 0.8},${y} l -0.3,-1.3`}
+            stroke="rgba(108,158,76,0.55)" strokeWidth="0.3" fill="none" strokeLinecap="round" />,
+        )
+      }
+      break
+    case 'city':
+      for (let i = 0; i < 3; i++) {
+        const x = sx(i), y = sy(i)
+        out.push(
+          <path key={k('cg' + i)} d={`M ${x},${y} l 0,-1.2`} stroke="rgba(108,158,76,0.4)" strokeWidth="0.3" strokeLinecap="round" />,
+        )
+      }
+      ;[[-3.4, 1.2, 0.8], [3.2, 1, 0.85], [0, -0.4, 1], [1.7, 1.8, 0.62], [-1.8, 1.9, 0.62]].forEach(([dx, dy, s], i) => {
+        const x = x0 + CW / 2 + dx, y = y0 + CH / 2 + dy
+        out.push(
+          <g key={k('h' + i)} transform={`translate(${x} ${y}) scale(${s})`}>
+            <rect x="-1.5" y="-1.1" width="3" height="2.6" fill="rgba(200,170,112,0.95)" />
+            <polygon points="-2,-1.1 0,-3 2,-1.1" fill="rgba(172,88,68,0.96)" />
+          </g>,
+        )
+      })
+      break
+    case 'sand':
+      for (let i = 0; i < 9; i++) {
+        out.push(<circle key={k('s' + i)} cx={sx(i)} cy={sy(i)} r="0.4" fill="rgba(158,124,70,0.6)" />)
+      }
+      out.push(
+        <path key={k('dune')} d={`M ${x0 + 2},${y0 + CH * 0.62} q ${CW * 0.25},-2.2 ${CW * 0.5},0 q ${CW * 0.25},2.2 ${CW * 0.46},0.4`}
+          stroke="rgba(216,186,124,0.45)" strokeWidth="0.5" fill="none" strokeLinecap="round" />,
+      )
+      break
+    case 'water':
+      for (let i = 0; i < 3; i++) {
+        const y = y0 + 3.5 + i * 4 + h2(col, row + i) * 1.4
+        const x = x0 + 3 + h2(col + i, row) * 4
+        out.push(
+          <path key={k('w' + i)} d={`M ${x},${y} q 2,-1.2 4,0 q 2,1.2 4,0`} stroke="rgba(120,172,222,0.4)" strokeWidth="0.4" fill="none" strokeLinecap="round" />,
+        )
+      }
+      break
+    case 'mountain':
+      for (let i = 0; i < 2; i++) {
+        const x = x0 + 5.5 + i * 8 + h2(col, i) * 1.5, y = y0 + CH * 0.66
+        out.push(
+          <g key={k('m' + i)} transform={`translate(${x} ${y})`}>
+            <polygon points="-3.6,1 0,-4.2 3.6,1" fill="rgba(120,114,108,0.88)" />
+            <polygon points="0,-4.2 3.6,1 1.2,1" fill="rgba(74,70,66,0.7)" />
+            <polygon points="-1.1,-1.4 0,-4.2 1.1,-1.4 0,-2.1" fill="rgba(238,240,243,0.92)" />
+          </g>,
+        )
+      }
+      break
+    case 'hills': {
+      const cx = x0 + CW / 2, cy = y0 + CH * 0.6
+      out.push(<path key={k('h1')} d={`M ${cx - 6},${cy + 2.4} Q ${cx - 2},${cy - 3} ${cx + 1.5},${cy + 2.4} Z`} fill="rgba(72,106,56,0.85)" />)
+      out.push(<path key={k('h2')} d={`M ${cx - 1.5},${cy + 2.4} Q ${cx + 2.5},${cy - 4} ${cx + 6.5},${cy + 2.4} Z`} fill="rgba(94,130,68,0.9)" />)
+      out.push(<path key={k('hc')} d={`M ${cx + 0.2},${cy - 0.4} Q ${cx + 2.5},${cy - 3} ${cx + 4.6},${cy - 1}`} stroke="rgba(150,182,116,0.6)" strokeWidth="0.4" fill="none" strokeLinecap="round" />)
+      break
+    }
+    case 'rock':
+      for (let i = 0; i < 5; i++) {
+        const x = sx(i), y = sy(i)
+        out.push(<polygon key={k('r' + i)} points={`${x - 1},${y + 0.7} ${x - 0.3},${y - 0.8} ${x + 0.8},${y - 0.4} ${x + 1.1},${y + 0.7}`} fill="rgba(116,108,122,0.6)" />)
+      }
+      break
   }
+  return out
 }
 
 function TerrainOverlay({ region }: { region: string }) {
   const t = REGION_TERRAIN[region]
   if (!t) return null
-  const gid = `terrain-${region}`
   return (
     <svg
       aria-hidden
@@ -272,15 +269,13 @@ function TerrainOverlay({ region }: { region: string }) {
       preserveAspectRatio="none"
       className="absolute inset-0 w-full h-full pointer-events-none rounded-md"
     >
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={t.base[0]} />
-          <stop offset="100%" stopColor={t.base[1]} />
-        </linearGradient>
-      </defs>
-      <rect x="0" y="0" width="100" height="80" fill={`url(#${gid})`} />
-      {t.river && <path d={t.river} fill="none" stroke="rgba(96,150,210,0.45)" strokeWidth="3.5" strokeLinecap="round" />}
-      {t.features.map(renderFeature)}
+      {t.grid.flatMap((rowArr, row) =>
+        rowArr.map((b, col) => (
+          <rect key={`bg-${col}-${row}`} x={col * CW} y={row * CH} width={CW} height={CH} fill={BIOME_FILL[b]} />
+        )),
+      )}
+      {t.grid.flatMap((rowArr, row) => rowArr.flatMap((b, col) => cellMotifs(b, col, row)))}
+      {t.river && <path d={t.river} fill="none" stroke="rgba(96,150,210,0.5)" strokeWidth="2.6" strokeLinecap="round" />}
     </svg>
   )
 }
@@ -519,7 +514,7 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
                     <div
                       key={`ph-${x}-${y}`}
                       style={{ gridColumn: x + 1, gridRow: y + 1 }}
-                      className="rounded-md border border-game-border/20 bg-black/10 pointer-events-none"
+                      className="rounded-md border border-game-border/15 pointer-events-none"
                     />
                   )
                 })}
