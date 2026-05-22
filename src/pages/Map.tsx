@@ -106,17 +106,17 @@ interface RegionTerrain { grid: Biome[][]; river?: string }
 const CW = 20  // cell width in viewBox units
 const CH = 16  // cell height in viewBox units
 
-// Muted base fills — colorful enough to read a biome, dark enough that the
+// Muted base tones — colorful enough to read a biome, dark enough that the
 // translucent cells, glyphs and unit dots on top stay legible.
-const BIOME_FILL: Record<Biome, string> = {
-  grass:    'rgba(40,64,30,0.92)',
-  forest:   'rgba(26,50,22,0.94)',
-  hills:    'rgba(48,72,34,0.92)',
-  mountain: 'rgba(58,57,52,0.9)',
-  sand:     'rgba(98,80,44,0.9)',
-  water:    'rgba(22,54,86,0.92)',
-  city:     'rgba(48,64,32,0.92)',
-  rock:     'rgba(36,31,38,0.94)',
+const BIOME_RGB: Record<Biome, [number, number, number]> = {
+  grass:    [40, 64, 30],
+  forest:   [26, 50, 22],
+  hills:    [48, 72, 34],
+  mountain: [58, 57, 52],
+  sand:     [98, 80, 44],
+  water:    [22, 54, 86],
+  city:     [48, 64, 32],
+  rock:     [36, 31, 38],
 }
 
 const REGION_TERRAIN: Record<string, RegionTerrain> = {
@@ -166,6 +166,15 @@ function h2(a: number, b: number) {
   return x - Math.floor(x)
 }
 
+// Per-cell base fill with a small brightness jitter so neighboring same-biome
+// cells don't read as flat identical tiles.
+function biomeFill(b: Biome, col: number, row: number) {
+  const [r, g, bl] = BIOME_RGB[b]
+  const m = 0.84 + h2(col * 3 + 1, row * 7 + 2) * 0.3
+  const c = (v: number) => Math.round(Math.min(255, v * m))
+  return `rgba(${c(r)},${c(g)},${c(bl)},0.92)`
+}
+
 // Dense per-biome motifs filling one cell at grid (col,row).
 function cellMotifs(biome: Biome, col: number, row: number): ReactElement[] {
   const x0 = col * CW, y0 = row * CH
@@ -175,31 +184,51 @@ function cellMotifs(biome: Biome, col: number, row: number): ReactElement[] {
   const sy = (i: number) => y0 + 2.5 + h2(col * 4 + i * 3, row * 8 + i) * (CH - 5)
 
   switch (biome) {
-    case 'forest':
-      for (let i = 0; i < 8; i++) {
-        const x = sx(i), y = sy(i)
+    case 'forest': {
+      // Mixed conifers + round-canopy trees, varied size, drawn back-to-front.
+      const n = 7 + Math.floor(h2(col, row) * 3)
+      const trees = Array.from({ length: n }, (_, i) => ({
+        x: sx(i), y: sy(i), i,
+        s: 0.8 + h2(col + i, row * 2 + i) * 0.55,
+        round: h2(col * 2 + i, row + i * 3) > 0.66,
+      })).sort((a, b) => a.y - b.y)
+      for (const t of trees) {
         out.push(
-          <g key={k('t' + i)} transform={`translate(${x} ${y})`}>
-            <polygon points="-1.2,0.8 0,-1.6 1.2,0.8" fill="rgba(32,92,48,0.92)" />
-            <polygon points="-0.9,-0.4 0,-2.5 0.9,-0.4" fill="rgba(54,128,72,0.92)" />
+          <g key={k('t' + t.i)} transform={`translate(${t.x} ${t.y}) scale(${t.s})`}>
+            {t.round ? (
+              <>
+                <circle cx="0" cy="-1" r="1.3" fill="rgba(38,100,54,0.92)" />
+                <circle cx="-0.55" cy="-1.4" r="0.7" fill="rgba(60,136,78,0.85)" />
+              </>
+            ) : (
+              <>
+                <polygon points="-1.1,0.9 0,-1.4 1.1,0.9" fill="rgba(30,90,48,0.92)" />
+                <polygon points="-0.85,-0.3 0,-2.4 0.85,-0.3" fill="rgba(54,128,72,0.92)" />
+              </>
+            )}
           </g>,
         )
       }
       break
+    }
     case 'grass':
-      for (let i = 0; i < 5; i++) {
+      // Soft curved blade tufts + the occasional flower fleck.
+      for (let i = 0; i < 4; i++) {
         const x = sx(i), y = sy(i)
         out.push(
-          <path key={k('g' + i)} d={`M ${x - 0.8},${y} l 0.3,-1.3 M ${x},${y} l 0,-1.6 M ${x + 0.8},${y} l -0.3,-1.3`}
-            stroke="rgba(108,158,76,0.55)" strokeWidth="0.3" fill="none" strokeLinecap="round" />,
+          <path key={k('g' + i)} d={`M ${x - 0.7},${y} q 0.25,-0.9 0.45,-1.4 M ${x},${y} q 0,-1 0.05,-1.6 M ${x + 0.7},${y} q -0.25,-0.9 -0.45,-1.4`}
+            stroke="rgba(112,160,80,0.45)" strokeWidth="0.28" fill="none" strokeLinecap="round" />,
         )
+      }
+      if (h2(col * 5 + 3, row * 3 + 1) > 0.62) {
+        out.push(<circle key={k('fl')} cx={sx(4)} cy={sy(4)} r="0.45" fill="rgba(222,202,122,0.55)" />)
       }
       break
     case 'city':
       for (let i = 0; i < 3; i++) {
         const x = sx(i), y = sy(i)
         out.push(
-          <path key={k('cg' + i)} d={`M ${x},${y} l 0,-1.2`} stroke="rgba(108,158,76,0.4)" strokeWidth="0.3" strokeLinecap="round" />,
+          <path key={k('cg' + i)} d={`M ${x},${y} l 0,-1.1`} stroke="rgba(108,158,76,0.4)" strokeWidth="0.3" strokeLinecap="round" />,
         )
       }
       ;[[-3.4, 1.2, 0.8], [3.2, 1, 0.85], [0, -0.4, 1], [1.7, 1.8, 0.62], [-1.8, 1.9, 0.62]].forEach(([dx, dy, s], i) => {
@@ -213,46 +242,63 @@ function cellMotifs(biome: Biome, col: number, row: number): ReactElement[] {
       })
       break
     case 'sand':
+      // Varied grains + two faint dune ridges.
       for (let i = 0; i < 9; i++) {
-        out.push(<circle key={k('s' + i)} cx={sx(i)} cy={sy(i)} r="0.4" fill="rgba(158,124,70,0.6)" />)
+        out.push(<circle key={k('s' + i)} cx={sx(i)} cy={sy(i)} r={0.28 + h2(col + i, row + i) * 0.26} fill="rgba(160,126,72,0.6)" />)
       }
       out.push(
-        <path key={k('dune')} d={`M ${x0 + 2},${y0 + CH * 0.62} q ${CW * 0.25},-2.2 ${CW * 0.5},0 q ${CW * 0.25},2.2 ${CW * 0.46},0.4`}
-          stroke="rgba(216,186,124,0.45)" strokeWidth="0.5" fill="none" strokeLinecap="round" />,
+        <path key={k('d1')} d={`M ${x0 + 2},${y0 + CH * 0.42} q ${CW * 0.26},-2 ${CW * 0.52},0 q ${CW * 0.24},2 ${CW * 0.44},0.3`}
+          stroke="rgba(216,186,124,0.42)" strokeWidth="0.45" fill="none" strokeLinecap="round" />,
+        <path key={k('d2')} d={`M ${x0 + 2.5},${y0 + CH * 0.74} q ${CW * 0.28},-1.6 ${CW * 0.55},0`}
+          stroke="rgba(196,162,98,0.4)" strokeWidth="0.4" fill="none" strokeLinecap="round" />,
       )
       break
     case 'water':
-      for (let i = 0; i < 3; i++) {
-        const y = y0 + 3.5 + i * 4 + h2(col, row + i) * 1.4
-        const x = x0 + 3 + h2(col + i, row) * 4
+      // Wavelets of varied length & spacing for a less uniform surface.
+      for (let i = 0; i < 4; i++) {
+        const y = y0 + 3 + i * 3.4 + h2(col, row + i) * 1.2
+        const x = x0 + 2.5 + h2(col + i, row) * 5
+        const w = 2.2 + h2(col * 2 + i, row + 1) * 1.8
         out.push(
-          <path key={k('w' + i)} d={`M ${x},${y} q 2,-1.2 4,0 q 2,1.2 4,0`} stroke="rgba(120,172,222,0.4)" strokeWidth="0.4" fill="none" strokeLinecap="round" />,
+          <path key={k('w' + i)} d={`M ${x},${y} q ${w / 2},-1 ${w},0 q ${w / 2},1 ${w},0`}
+            stroke="rgba(124,176,224,0.38)" strokeWidth="0.38" fill="none" strokeLinecap="round" />,
         )
       }
       break
     case 'mountain':
+      // Two peaks of varied height + a small foothill so cells read as a range.
       for (let i = 0; i < 2; i++) {
         const x = x0 + 5.5 + i * 8 + h2(col, i) * 1.5, y = y0 + CH * 0.66
+        const ph = 3.8 + h2(col + i, row + 2) * 1.8
         out.push(
           <g key={k('m' + i)} transform={`translate(${x} ${y})`}>
-            <polygon points="-3.6,1 0,-4.2 3.6,1" fill="rgba(120,114,108,0.88)" />
-            <polygon points="0,-4.2 3.6,1 1.2,1" fill="rgba(74,70,66,0.7)" />
-            <polygon points="-1.1,-1.4 0,-4.2 1.1,-1.4 0,-2.1" fill="rgba(238,240,243,0.92)" />
+            <polygon points={`-3.6,1 0,${-ph} 3.6,1`} fill="rgba(120,114,108,0.88)" />
+            <polygon points={`0,${-ph} 3.6,1 1.2,1`} fill="rgba(74,70,66,0.7)" />
+            <polygon points={`-1,${(-ph * 0.34).toFixed(2)} 0,${-ph} 1,${(-ph * 0.34).toFixed(2)} 0,${(-ph * 0.55).toFixed(2)}`} fill="rgba(238,240,243,0.92)" />
           </g>,
         )
       }
+      out.push(
+        <polygon key={k('mf')} points={`${x0 + CW * 0.5 - 2},${y0 + CH * 0.8} ${x0 + CW * 0.5},${y0 + CH * 0.56} ${x0 + CW * 0.5 + 2},${y0 + CH * 0.8}`}
+          fill="rgba(96,92,86,0.7)" />,
+      )
       break
     case 'hills': {
       const cx = x0 + CW / 2, cy = y0 + CH * 0.6
       out.push(<path key={k('h1')} d={`M ${cx - 6},${cy + 2.4} Q ${cx - 2},${cy - 3} ${cx + 1.5},${cy + 2.4} Z`} fill="rgba(72,106,56,0.85)" />)
       out.push(<path key={k('h2')} d={`M ${cx - 1.5},${cy + 2.4} Q ${cx + 2.5},${cy - 4} ${cx + 6.5},${cy + 2.4} Z`} fill="rgba(94,130,68,0.9)" />)
       out.push(<path key={k('hc')} d={`M ${cx + 0.2},${cy - 0.4} Q ${cx + 2.5},${cy - 3} ${cx + 4.6},${cy - 1}`} stroke="rgba(150,182,116,0.6)" strokeWidth="0.4" fill="none" strokeLinecap="round" />)
+      out.push(<path key={k('hc2')} d={`M ${cx - 5},${cy + 0.6} Q ${cx - 2},${cy - 2} ${cx + 0.2},${cy + 0.4}`} stroke="rgba(150,182,116,0.4)" strokeWidth="0.35" fill="none" strokeLinecap="round" />)
       break
     }
     case 'rock':
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 6; i++) {
         const x = sx(i), y = sy(i)
-        out.push(<polygon key={k('r' + i)} points={`${x - 1},${y + 0.7} ${x - 0.3},${y - 0.8} ${x + 0.8},${y - 0.4} ${x + 1.1},${y + 0.7}`} fill="rgba(116,108,122,0.6)" />)
+        const s = 0.8 + h2(col + i, row + i) * 0.7
+        out.push(
+          <polygon key={k('r' + i)} transform={`translate(${x} ${y}) scale(${s})`}
+            points="-1,0.7 -0.3,-0.8 0.8,-0.4 1.1,0.7" fill="rgba(116,108,122,0.55)" />,
+        )
       }
       break
   }
@@ -271,7 +317,7 @@ function TerrainOverlay({ region }: { region: string }) {
     >
       {t.grid.flatMap((rowArr, row) =>
         rowArr.map((b, col) => (
-          <rect key={`bg-${col}-${row}`} x={col * CW} y={row * CH} width={CW} height={CH} fill={BIOME_FILL[b]} />
+          <rect key={`bg-${col}-${row}`} x={col * CW} y={row * CH} width={CW} height={CH} fill={biomeFill(b, col, row)} />
         )),
       )}
       {t.grid.flatMap((rowArr, row) => rowArr.flatMap((b, col) => cellMotifs(b, col, row)))}
