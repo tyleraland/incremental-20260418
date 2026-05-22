@@ -6,7 +6,7 @@ import type {
 } from '@/types'
 import { PRIORITY_NORMAL, PRIORITY_IGNORE, PRIORITY_AVOID, ACTION_SLOT_COUNT } from '@/types'
 import { APPROACH_DISTANCE, APPROACH_SPEED, ATTACK_SPEED_BASE, FLEE_TICKS_CONST, RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, WAVE_COOLDOWN_MAX, WAVE_COOLDOWN_MIN, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
-import { getDerivedStats, getFormationOffset } from '@/lib/stats'
+import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { elementMultiplier } from '@/lib/elements'
@@ -367,19 +367,15 @@ export const useGameStore = create<GameState>((set) => ({
         }
       }
 
-      // Each unit either:
-      //  - has a focus monster → advance toward `monsterPos - attackRange` so
-      //    both sides close the gap and a fast actor engages sooner; the
-      //    formation offset acts as a floor so back-rank units don't get
-      //    pushed past their rank when a monster overruns the line.
-      //  - no monsters at all (marching/hunting) → everyone gathers at the
-      //    melee marching line (MARCHING_FORMATION). Ranged units rejoin the
-      //    column and only fall back to their per-unit formation when an
-      //    encounter actually appears.
-      //  - no focus but other slots exist → drift back to per-unit formation
-      //    (ranged units hold their rank while melee engages elsewhere).
+      // The whole party rallies on a single line (MARCHING_FORMATION):
+      //  - Marching/idle → everyone sits on the line together.
+      //  - In combat, a melee unit with a focus monster charges forward to
+      //    engage (advance to `monsterPos - reach`, line as a floor).
+      //  - Ranged units always hold the line and fire from distance — they do
+      //    NOT charge, retreat, or kite. (Previously they fell back to a
+      //    rear formation of 0 ft, which made them sprint backwards the moment
+      //    a monster appeared — the gap visibly widened before closing.)
       const MARCHING_FORMATION = 20
-      const isMarching = slots.length === 0
       const unitToSlot: Record<string, number> = {}
       for (let ui = 0; ui < aliveUnits.length; ui++) {
         if (focusIdxs.length === 0) continue
@@ -387,18 +383,12 @@ export const useGameStore = create<GameState>((set) => ({
       }
       for (const u of aliveUnits) {
         const ud = getDerivedStats(u, s.equipment)
-        const formation = getFormationOffset(u, s.equipment)
         const slotIdx = unitToSlot[u.id]
         const cur = oldUnitPos[u.id]
         const isRanged = ud.attackRange > 5
-        // Melee charge toward the monster (advance to monsterPos - reach,
-        // formation as a floor). Ranged units hold at their formation and let
-        // the monster come into bow range — they do NOT chase or retreat to
-        // maintain max range (that produced a lockstep stalemate where the gap
-        // never closed).
-        const desired = slotIdx !== undefined
-          ? (isRanged ? formation : Math.max(formation, newSlotPos[slotIdx] - ud.attackRange))
-          : isMarching ? MARCHING_FORMATION : formation
+        const desired = (!isRanged && slotIdx !== undefined)
+          ? Math.max(MARCHING_FORMATION, newSlotPos[slotIdx] - ud.attackRange)
+          : MARCHING_FORMATION
         const step = ud.moveSpeed / TICKS_PER_SECOND
         if (cur < desired)      unitDistance[u.id] = Math.min(cur + step, desired)
         else if (cur > desired) unitDistance[u.id] = Math.max(cur - step, desired)

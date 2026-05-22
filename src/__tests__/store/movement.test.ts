@@ -212,45 +212,43 @@ describe('Ranged attacks — bow unit (attackRange = 35 ft)', () => {
     expect(useGameStore.getState().units[0].health).toBe(100)
   })
 
-  it('bow unit stays at position 0 (formation floor) while monster is within 35 ft', () => {
-    // Wolf at 35 ft → gap=35 ≤ 35; bow desired = max(0, newWolfPos-35) ≤ 0 → stays at 0
+  it('bow unit holds the line (20) and fires while monster is within 35 ft', () => {
+    // Bow on the line at 20, wolf at 50 → gap=30 ≤ 35 → fires; bow holds at 20.
     resetStore({
       units: [bowUnit()],
       equipment: [BOW],
-      unitDistance: { u1: 0 },
-      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: 35, phase: 'approaching' })] },
+      unitDistance: { u1: 20 },
+      encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: 50, phase: 'approaching' })] },
     })
     tick()
-    expect(unitPos()).toBeCloseTo(0, 3)
+    expect(unitPos()).toBeCloseTo(20, 3)
+    expect(useGameStore.getState().encounters['loc1'][0].progress).toBeGreaterThan(0)
   })
 
-  it('bow unit holds at formation (0) when a monster is far — it does not chase', () => {
-    // Monster at APPROACH_DISTANCE (60 ft); ranged units hold at formation and
-    // let the monster come into bow range rather than advancing to meet it.
+  it('bow unit holds the line (20) when a monster is far — it does not chase', () => {
+    // Monster at APPROACH_DISTANCE (60 ft); ranged units hold the line and let
+    // the monster come into bow range rather than advancing to meet it.
     resetStore({
       units: [bowUnit()],
       equipment: [BOW],
-      unitDistance: { u1: 0 },
+      unitDistance: { u1: 20 },
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'stone-golem', distance: APPROACH_DISTANCE, phase: 'approaching' })] },
     })
     tick()
-    expect(unitPos()).toBeCloseTo(0, 3)
+    expect(unitPos()).toBeCloseTo(20, 3)
     expect(useGameStore.getState().encounters['loc1'][0].progress).toBe(0) // not yet in range
   })
 
-  it('bow unit retreats to its formation (0) in combat — never advances toward the monster', () => {
-    // Bow pre-positioned forward at 20 (e.g. left over from marching). Once an
-    // encounter is present it diverges back to its ranged formation (0) while
-    // melee would charge forward.
+  it('bow unit holds the line (20) in combat — never charges forward like melee', () => {
+    // A monster appearing must not make the bow retreat (the old bug) or charge.
     resetStore({
       units: [bowUnit()],
       equipment: [BOW],
       unitDistance: { u1: 20 },
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: 55, phase: 'approaching' })] },
     })
-    const before = unitPos()
     tick()
-    expect(unitPos()).toBeLessThan(before) // retreats toward formation, doesn't advance
+    expect(unitPos()).toBeCloseTo(20, 3) // holds the line — no retreat, no charge
   })
 })
 
@@ -274,7 +272,7 @@ describe('Marching — ranged units rejoin the column when no monsters are prese
     expect(unitPos()).toBeCloseTo(20, 1)
   })
 
-  it('bow unit returns to per-unit formation (0 ft) when a monster spawns', () => {
+  it('bow unit keeps the line (20) when a monster spawns — no backward retreat', () => {
     resetStore({
       units: [makeUnit({
         id: 'u1', locationId: 'loc1',
@@ -284,8 +282,8 @@ describe('Marching — ranged units rejoin the column when no monsters are prese
       unitDistance: { u1: 20 }, // started at marching line
       encounters: { loc1: [makeEncounterSlot({ monsterId: 'wolf', distance: 35, phase: 'approaching' })] },
     })
-    // Gap 35 = bow range → no need to advance; bow should retreat to 0.
+    // Bow holds the line; the monster closes the distance, not the bow.
     for (let i = 0; i < 15; i++) tick()
-    expect(unitPos()).toBeCloseTo(0, 1)
+    expect(unitPos()).toBeCloseTo(20, 1)
   })
 })
