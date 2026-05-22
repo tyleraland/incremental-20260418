@@ -100,8 +100,10 @@ describe('UnitRect — target display (Combat tab)', () => {
   })
 })
 
-describe('LocationSection — compact empty row (Map tab)', () => {
-  it('renders the location name for an empty collapsed location', async () => {
+describe('LocationCell — empty location (Map tab)', () => {
+  // The map is now a label-less grid of cells; a cell exposes its location
+  // name via the `title` attribute rather than visible text.
+  it('renders a cell for an empty location, identifiable by its name title', async () => {
     useGameStore.setState({
       units: [],
       locations: [{ ...TEST_LOCATION, name: 'Empty Spot' }],
@@ -109,7 +111,7 @@ describe('LocationSection — compact empty row (Map tab)', () => {
       expandedRegionIds: ['prontera'],
     })
     await renderMap()
-    expect(screen.getByText('Empty Spot')).toBeInTheDocument()
+    expect(screen.getByTitle('Empty Spot')).toBeInTheDocument()
   })
 
   it('does not show a unit count badge when the location is empty', async () => {
@@ -120,7 +122,7 @@ describe('LocationSection — compact empty row (Map tab)', () => {
       expandedRegionIds: ['prontera'],
     })
     await renderMap()
-    // No unit count pill should appear — verifying compact (name-only) rendering
+    // No unit count pill should appear for an empty cell.
     const badge = screen.queryByText('0')
     expect(badge).not.toBeInTheDocument()
   })
