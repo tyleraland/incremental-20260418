@@ -103,64 +103,83 @@ interface Pt { cx: number; cy: number; s?: number }
 type Feature = ({ kind: 'mountain' | 'woods' | 'city' | 'hills' | 'desert' } & Pt)
 interface RegionTerrain { base: [string, string]; river?: string; features: Feature[] }
 
+// Feature positions live in viewBox space for now. Later these can be derived
+// per-cell from a location's grid coords + biome so the texture lines up with
+// individual cells/encounters.
 const REGION_TERRAIN: Record<string, RegionTerrain> = {
   prontera: {
     base: ['#16240f', '#0c1408'],
-    river: 'M -4,46 C 18,40 28,56 48,49 C 68,42 80,56 104,49',
+    river: 'M -4,44 C 16,38 28,54 48,47 C 68,40 82,55 104,48',
     features: [
-      { kind: 'city',     cx: 50, cy: 30 },
-      { kind: 'woods',    cx: 15, cy: 60 },
-      { kind: 'woods',    cx: 26, cy: 67, s: 0.8 },
-      { kind: 'hills',    cx: 80, cy: 22 },
-      { kind: 'mountain', cx: 84, cy: 64, s: 0.9 },
+      { kind: 'city',     cx: 50, cy: 28, s: 0.85 },
+      { kind: 'woods',    cx: 14, cy: 60, s: 0.95 },
+      { kind: 'woods',    cx: 30, cy: 66, s: 0.8 },
+      { kind: 'woods',    cx: 60, cy: 64, s: 0.85 },
+      { kind: 'hills',    cx: 80, cy: 20, s: 0.9 },
+      { kind: 'hills',    cx: 20, cy: 22, s: 0.7 },
+      { kind: 'mountain', cx: 86, cy: 62, s: 0.7 },
+      { kind: 'mountain', cx: 92, cy: 66, s: 0.55 },
     ],
   },
   geffen: {
     base: ['#1a1f2b', '#0e1119'],
-    river: 'M 34,-4 C 40,16 26,28 38,42 C 48,54 36,64 42,84',
+    river: 'M 34,-4 C 40,16 26,30 38,44 C 48,56 36,66 42,84',
     features: [
-      { kind: 'city',     cx: 56, cy: 34 },
-      { kind: 'mountain', cx: 80, cy: 24, s: 1.15 },
-      { kind: 'mountain', cx: 66, cy: 20, s: 0.8 },
-      { kind: 'hills',    cx: 16, cy: 30 },
-      { kind: 'woods',    cx: 78, cy: 62 },
+      { kind: 'city',     cx: 58, cy: 36, s: 0.85 },
+      { kind: 'mountain', cx: 78, cy: 20, s: 0.85 },
+      { kind: 'mountain', cx: 88, cy: 24, s: 0.6 },
+      { kind: 'mountain', cx: 70, cy: 16, s: 0.55 },
+      { kind: 'hills',    cx: 16, cy: 28, s: 0.85 },
+      { kind: 'hills',    cx: 14, cy: 58, s: 0.7 },
+      { kind: 'woods',    cx: 80, cy: 60, s: 0.9 },
+      { kind: 'woods',    cx: 60, cy: 64, s: 0.7 },
     ],
   },
   kanto: {
-    base: ['#241d10', '#140f07'],
+    base: ['#2a2516', '#15110a'],
     features: [
-      { kind: 'desert', cx: 24, cy: 30 },
-      { kind: 'desert', cx: 64, cy: 26, s: 1.1 },
-      { kind: 'desert', cx: 46, cy: 58 },
-      { kind: 'hills',  cx: 82, cy: 62 },
+      { kind: 'desert', cx: 22, cy: 24, s: 0.9 },
+      { kind: 'desert', cx: 60, cy: 22, s: 1.0 },
+      { kind: 'desert', cx: 40, cy: 48, s: 0.95 },
+      { kind: 'desert', cx: 78, cy: 50, s: 0.85 },
+      { kind: 'hills',  cx: 84, cy: 22, s: 0.6 },
     ],
   },
   'geffen-dungeon': {
     base: ['#1c1418', '#0c090b'],
     features: [
-      { kind: 'mountain', cx: 18, cy: 30, s: 0.85 },
-      { kind: 'mountain', cx: 82, cy: 30, s: 0.85 },
-      { kind: 'mountain', cx: 50, cy: 60, s: 1.0 },
+      { kind: 'mountain', cx: 18, cy: 28, s: 0.7 },
+      { kind: 'mountain', cx: 28, cy: 32, s: 0.5 },
+      { kind: 'mountain', cx: 82, cy: 28, s: 0.7 },
+      { kind: 'mountain', cx: 50, cy: 58, s: 0.8 },
+      { kind: 'mountain', cx: 62, cy: 62, s: 0.5 },
     ],
   },
 }
 
+// Small, map-style peak: shaded right face + zig-zag snow cap + a lower
+// secondary peak so a cluster reads as a range.
 function Mountain({ cx, cy, s = 1 }: Pt) {
   return (
     <g transform={`translate(${cx} ${cy}) scale(${s})`}>
-      <polygon points="-11,9 -2,-10 7,9" fill="rgba(120,113,108,0.5)" />
-      <polygon points="6,9 13,-4 20,9" fill="rgba(87,83,78,0.45)" />
-      <polygon points="-4.6,-1.6 -2,-10 0.6,-1.6 -2,0" fill="rgba(231,229,228,0.7)" />
+      <polygon points="3,1 8,-6 13,1" fill="rgba(96,92,86,0.5)" />
+      <polygon points="8,-6 13,1 10.5,1" fill="rgba(60,57,53,0.42)" />
+      <polygon points="-7,2 -1,-9 5,2" fill="rgba(124,118,112,0.62)" />
+      <polygon points="-1,-9 5,2 1.6,2" fill="rgba(72,68,64,0.5)" />
+      <polygon points="-3.1,-3.6 -1,-9 1.1,-3.6 -0.2,-4.8 -1.1,-3.9 -2,-4.8" fill="rgba(238,240,243,0.9)" />
+      <path d="M -1,-9 L 1.6,2" stroke="rgba(38,36,34,0.3)" strokeWidth="0.3" fill="none" />
     </g>
   )
 }
 
-function Tree({ x }: { x: number }) {
+// Little conifer built from stacked triangles.
+function Tree({ x, y, h = 1 }: { x: number; y: number; h?: number }) {
   return (
-    <g transform={`translate(${x} 0)`}>
-      <rect x="-0.8" y="2" width="1.6" height="4" fill="rgba(120,80,45,0.6)" />
-      <polygon points="-4,3 0,-7 4,3" fill="rgba(34,120,60,0.6)" />
-      <polygon points="-3.2,0 0,-9 3.2,0" fill="rgba(46,140,72,0.6)" />
+    <g transform={`translate(${x} ${y}) scale(${h})`}>
+      <rect x="-0.35" y="0.2" width="0.7" height="1.4" fill="rgba(96,64,38,0.7)" />
+      <polygon points="-1.8,0.6 0,-2.4 1.8,0.6" fill="rgba(38,104,56,0.72)" />
+      <polygon points="-1.5,-0.8 0,-3.4 1.5,-0.8" fill="rgba(50,128,68,0.72)" />
+      <polygon points="-1.1,-2.0 0,-4.2 1.1,-2.0" fill="rgba(62,148,82,0.72)" />
     </g>
   )
 }
@@ -168,36 +187,65 @@ function Tree({ x }: { x: number }) {
 function Woods({ cx, cy, s = 1 }: Pt) {
   return (
     <g transform={`translate(${cx} ${cy}) scale(${s})`}>
-      <Tree x={-6} /><Tree x={6} /><Tree x={0} />
+      <Tree x={-5}   y={2} />
+      <Tree x={-1.5} y={2.6} h={0.85} />
+      <Tree x={2}    y={2} />
+      <Tree x={5}    y={2.4} h={0.9} />
+      <Tree x={-3}   y={0} h={0.9} />
+      <Tree x={0.5}  y={-0.3} />
+      <Tree x={3.6}  y={0.2} h={0.85} />
     </g>
   )
 }
 
+function House({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${s})`}>
+      <rect x="-1.6" y="-1.2" width="3.2" height="3" fill="rgba(196,166,108,0.66)" />
+      <polygon points="-2.1,-1.2 0,-3.4 2.1,-1.2" fill="rgba(168,84,66,0.8)" />
+    </g>
+  )
+}
+
+// Small town — a cluster of pitched-roof houses.
 function City({ cx, cy, s = 1 }: Pt) {
   return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`} fill="rgba(214,178,90,0.55)">
-      <rect x="-9" y="-2" width="5" height="9" />
-      <rect x="-3" y="-7" width="5" height="14" />
-      <rect x="3"  y="-4" width="5" height="11" />
-      <polygon points="-0.5,-7 4.5,-7 2,-12" fill="rgba(214,178,90,0.7)" />
+    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
+      <House x={-4.5} y={1.6} s={0.85} />
+      <House x={4.3}  y={1.4} s={0.9} />
+      <House x={-0.2} y={0.4} s={1.05} />
+      <House x={2.4}  y={2} s={0.7} />
+      <House x={-2.6} y={2.2} s={0.7} />
     </g>
   )
 }
 
+// Rolling hills — overlapping humps with a sunlit crest + contour line to
+// suggest altitude change.
 function Hills({ cx, cy, s = 1 }: Pt) {
   return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`} fill="rgba(70,110,55,0.4)">
-      <path d="M -14,6 Q -7,-5 0,6 Z" />
-      <path d="M -2,6 Q 6,-7 14,6 Z" fill="rgba(86,128,66,0.4)" />
+    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
+      <path d="M -11,4 Q -5,-2.5 1,4 Z" fill="rgba(64,98,52,0.5)" />
+      <path d="M -3,4 Q 4,-4.5 11,4 Z" fill="rgba(86,124,64,0.55)" />
+      <path d="M 1,1.2 Q 4,-2.4 7,0.6" fill="none" stroke="rgba(150,182,116,0.6)" strokeWidth="0.5" strokeLinecap="round" />
+      <path d="M -1.5,2.6 Q 4,-1.4 9.2,2.6" fill="none" stroke="rgba(40,60,34,0.35)" strokeWidth="0.35" />
+      <path d="M -8,2.8 Q -5,-0.2 -2,2.8" fill="none" stroke="rgba(150,182,116,0.45)" strokeWidth="0.4" strokeLinecap="round" />
     </g>
   )
 }
 
+// Sandy dunes — layered bands, a crest highlight, and stippled grains.
 function Desert({ cx, cy, s = 1 }: Pt) {
   return (
-    <g transform={`translate(${cx} ${cy}) scale(${s})`} fill="rgba(196,160,92,0.35)">
-      <path d="M -16,4 Q -4,-4 8,4 Q 14,0 18,4 L 18,9 L -16,9 Z" />
-      <path d="M -16,8 Q 0,2 18,8 L 18,11 L -16,11 Z" fill="rgba(168,134,72,0.4)" />
+    <g transform={`translate(${cx} ${cy}) scale(${s})`}>
+      <path d="M -15,3 Q -7,-1.5 0,1.5 Q 7,4 15,0.5 L 15,7 L -15,7 Z" fill="rgba(214,184,120,0.34)" />
+      <path d="M -15,5 Q -5,1.5 5,4.5 Q 10,6 15,3.8 L 15,8 L -15,8 Z" fill="rgba(190,156,96,0.36)" />
+      <path d="M -13,2.6 Q -7,-0.6 -1,1.8" fill="none" stroke="rgba(236,214,160,0.5)" strokeWidth="0.4" strokeLinecap="round" />
+      <g fill="rgba(150,118,68,0.45)">
+        <circle cx="-9" cy="3.4" r="0.35" /><circle cx="-4" cy="4.2" r="0.3" />
+        <circle cx="1"  cy="3.0" r="0.35" /><circle cx="6"  cy="4.4" r="0.3" />
+        <circle cx="10" cy="3.4" r="0.35" /><circle cx="-1" cy="5.2" r="0.3" />
+      </g>
     </g>
   )
 }
