@@ -84,6 +84,7 @@ export function createBattle(setup: CombatSetup): BattleState {
 
   return {
     combatants,
+    zones: [],
     round: 0,
     outcome: 'ongoing',
     events: [],
@@ -103,23 +104,76 @@ function addStat(map: Record<string, number>, id: string, n: number): void {
 }
 
 // Apply damage, record stats, and handle death + lock cleanup (§9.1 f).
+// Takes an attacker id (not a Combatant) so DoT/zone ticks can attribute damage
+// to a source that may no longer be alive.
 function applyDamageRaw(
   state: BattleState,
-  attacker: Combatant,
+  attackerId: string,
   target: Combatant,
   amount: number,
 ): void {
   target.hp = Math.max(0, target.hp - amount)
-  addStat(state.stats.totalDamageByUnit, attacker.id, amount)
+  addStat(state.stats.totalDamageByUnit, attackerId, amount)
   if (target.hp <= 0 && target.alive) {
     target.alive = false
-    addStat(state.stats.killsByUnit, attacker.id, 1)
-    emit(state, { round: state.round, type: 'unit_death', sourceId: attacker.id, targetId: target.id })
+    addStat(state.stats.killsByUnit, attackerId, 1)
+    emit(state, { round: state.round, type: 'unit_death', sourceId: attackerId, targetId: target.id })
     // Clear any locks pointing at the now-dead unit.
     for (const c of state.combatants) {
       if (c.lockedTargetId === target.id) c.lockedTargetId = null
     }
   }
+}
+
+// Damage-over-time / zone tick: emits a 'dot' marker then applies the hit.
+function applyTickDamage(state: BattleState, sourceId: string, target: Combatant, amount: number, label: string): void {
+  if (!target.alive || amount <= 0) return
+  const dmg = Math.max(1, Math.floor(amount))
+  emit(state, { round: state.round, type: 'dot', sourceId, targetId: target.id, value: dmg, extra: { label } })
+  applyDamageRaw(state, sourceId, target, dmg)
+}
+
+// Push a target away from the caster (knockback) and disrupt any cast it had.
+function knockbackTarget(state: BattleState, caster: Combatant, target: Combatant, rows: number): void {
+  const dx = target.pos.x - caster.pos.x
+  const dy = target.pos.y - caster.pos.y
+  const d = Math.hypot(dx, dy) || 1
+  const before = { ...target.pos }
+  target.pos = clampToGrid({ x: target.pos.x + (dx / d) * rows, y: target.pos.y + (dy / d) * rows })
+  enforceSeparation(target, state.combatants)
+  if (target.pos.x !== before.x || target.pos.y !== before.y) {
+    emit(state, { round: state.round, type: 'knockback', sourceId: caster.id, targetId: target.id, position: { ...target.pos } })
+  }
+  if (target.channel) {
+    emit(state, { round: state.round, type: 'interrupt', sourceId: caster.id, targetId: target.id, extra: { skillId: target.channel.skillId } })
+    target.channel = null
+  }
+}
+
+// Step the caster back toward its own edge after a cast (Firewall, Ankle Snare).
+function retreatCaster(state: BattleState, self: Combatant, rows: number): void {
+  const dir = self.team === 'player' ? -1 : 1
+  const before = { ...self.pos }
+  self.pos = clampToGrid({ x: self.pos.x, y: self.pos.y + dir * rows })
+  enforceSeparation(self, state.combatants)
+  if (self.pos.x !== before.x || self.pos.y !== before.y) {
+    emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
+  }
+}
+
+// Tick ground hazards (§2): damage affected units inside, then age out.
+function tickZones(state: BattleState): void {
+  if (state.zones.length === 0) return
+  const kept = []
+  for (const z of state.zones) {
+    for (const c of state.combatants) {
+      if (!c.alive || c.team !== z.team) continue
+      if (distance(c.pos, z.pos) <= z.radius + EPS) applyTickDamage(state, z.sourceId, c, z.dotDamage, 'fire')
+    }
+    z.roundsLeft -= 1
+    if (z.roundsLeft > 0) kept.push(z)
+  }
+  state.zones = kept
 }
 
 // A single hit (basic attack or a skill's damage component): applies tactic
@@ -153,7 +207,7 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
   } else {
     emit(state, { round: state.round, type: isMelee ? 'melee_attack' : 'ranged_attack', sourceId: attacker.id, targetId: target.id, value: amount })
   }
-  applyDamageRaw(state, attacker, target, amount)
+  applyDamageRaw(state, attacker.id, target, amount)
   if (target.alive) {
     target.lastHitById = attacker.id
     if (target.channel) {   // §4 a landed hit disrupts a channeled cast
@@ -194,6 +248,20 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
   const primary = findCombatant(state, targetId)
   if (!primary) return
 
+  // Persistent ground hazard (Firewall): drop it on the target's position.
+  if (skill.zone) {
+    state.zones.push({
+      id: `z-${skill.id}-${state.round}-${self.id}`,
+      sourceId: self.id,
+      team: self.team === 'player' ? 'enemy' : 'player',
+      pos: { ...primary.pos },
+      radius: skill.aoeRadius || 1,
+      dotDamage: skill.zone.dotDamage,
+      roundsLeft: skill.zone.duration,
+      skillId: skill.id,
+    })
+  }
+
   const targets = affectedTargets(state, self, skill, primary)
   const allyEffect = isAllyTargeting(skill)
 
@@ -211,8 +279,11 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
     } else {
       if (skill.damageFormula) dealAttack(state, self, t, state.calculateDamage(self, t, skill, state.round), skill)
       if (t.alive) applySkillStatus(state, self, t, skill)
+      if (t.alive && skill.knockback) knockbackTarget(state, self, t, skill.knockback)
     }
   }
+
+  if (skill.retreatAfter) retreatCaster(state, self, skill.retreatAfter)
 }
 
 function applySkillStatus(state: BattleState, self: Combatant, target: Combatant, skill: EngineSkill): void {
@@ -289,6 +360,7 @@ function evalMovement(state: BattleState, self: Combatant): MovementResult | nul
 
 function executeMovement(state: BattleState, self: Combatant, plan: MovementResult | null): void {
   if (plan?.clearLock) self.lockedTargetId = null
+  if (self.statuses.some((s) => s.flags.includes('rooted'))) return   // §2 rooted: can act, can't move
   if (plan?.hold) return
   if (plan?.awayFromNearestEnemy) {
     const dir = self.team === 'player' ? -1 : 1
@@ -427,17 +499,21 @@ export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
   state.round += 1
 
-  // §9.1.1 tick status effects
+  // §9.1.1 tick status effects (apply DoT, then age out)
   for (const c of state.combatants) {
     if (c.statuses.length === 0) continue
     const kept = []
     for (const s of c.statuses) {
+      if (s.dotDamage && c.alive) applyTickDamage(state, s.source, c, s.dotDamage, s.id)
       s.duration -= 1
       if (s.duration > 0) kept.push(s)
       else emit(state, { round: state.round, type: 'status_expire', sourceId: c.id, extra: { statusId: s.id } })
     }
     c.statuses = kept
   }
+
+  // §2 tick ground hazards (Firewall etc.)
+  tickZones(state)
 
   // §9.1.2 tick cooldowns (skills + tactics)
   for (const c of state.combatants) {

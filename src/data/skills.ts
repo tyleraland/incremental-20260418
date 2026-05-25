@@ -89,6 +89,30 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  'poison': {
+    id: 'poison', name: 'Poison', maxLevel: 10, type: 'active',
+    description: () => `Poison a foe — 4 damage per round for a few rounds.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'arrow-shower': {
+    id: 'arrow-shower', name: 'Arrow Shower', maxLevel: 10, type: 'active',
+    description: (lv) => `Volley an area for ${(0.7 + 0.15 * (lv - 1)).toFixed(2)}× ATK and knock foes back.`,
+    requires: [{ skillId: 'keen-eyes', minLevel: 1 }],
+    getBonuses: () => ({}),
+  },
+  'firewall': {
+    id: 'firewall', name: 'Firewall', maxLevel: 10, type: 'active',
+    description: (lv) => `Raise a wall of flame (${3 + lv}/round) and step back.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'ankle-snare': {
+    id: 'ankle-snare', name: 'Ankle Snare', maxLevel: 10, type: 'active',
+    description: () => `Root a foe in place, then retreat.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
 }
 
 export function getAvailableSkills(unit: Unit) {

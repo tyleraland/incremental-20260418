@@ -35,6 +35,9 @@ export interface EngineSkill {
   damageFormula: string  // e.g. "str * 1.5" — evaluated by the engine
   healFormula: string    // e.g. "int * 2.0"
   statusApplied?: string // status effect id, if any
+  knockback?: number     // grid units to push affected enemies away from the caster (§2)
+  retreatAfter?: number  // rows the caster falls back after the cast resolves
+  zone?: { dotDamage: number; duration: number }  // place a persistent ground hazard (aoe_point)
   slot: SkillSlot
 }
 
@@ -54,6 +57,7 @@ export interface StatusEffect {
   duration: number        // rounds remaining
   statModifiers: StatModifiers
   flags: string[]         // "stealthed", "rooted", "channeling", "shielded", "taunted"
+  dotDamage?: number      // damage dealt to the bearer each round (poison etc.)
 }
 
 // ── Tactics (§5) ─────────────────────────────────────────────────────────────--
@@ -191,7 +195,7 @@ export type BattleEventType =
   | 'move' | 'melee_attack' | 'ranged_attack' | 'skill_use'
   | 'heal' | 'unit_death' | 'target_switch' | 'status_expire'
   | 'dodge' | 'retreat' | 'buff_apply'
-  | 'cast_start' | 'interrupt'
+  | 'cast_start' | 'interrupt' | 'dot' | 'knockback'
 
 export interface BattleEvent {
   round: number
@@ -248,10 +252,24 @@ export interface CombatantSnapshot {
   pos: Vec2
 }
 
+// A persistent ground hazard (e.g. Firewall). Units of the affected team inside
+// the radius take `dotDamage` each round until `roundsLeft` runs out (§2 zones).
+export interface BattleZone {
+  id: string
+  sourceId: string        // caster (for kill attribution)
+  team: Team              // which team is affected (units standing in it)
+  pos: Vec2
+  radius: number
+  dotDamage: number
+  roundsLeft: number
+  skillId: string
+}
+
 // Steppable battle state — `advanceRound` mutates this in place. Carries the
 // engine's private copies; the input units are never touched.
 export interface BattleState {
   combatants: Combatant[]
+  zones: BattleZone[]
   round: number
   outcome: Outcome
   events: BattleEvent[]

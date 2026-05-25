@@ -18,6 +18,10 @@ describe('catalog', () => {
     expect(buildEngineSkill('fire-bolt', 3)!.damageFormula).toBe('int * 1.40')
     expect(buildEngineSkill('lightning-bolt', 1)!.channelTime).toBe(1)
     expect(buildEngineSkill('hammer-fall', 1)!.statusApplied).toBe('stunned')
+    expect(buildEngineSkill('arrow-shower', 1)!.knockback).toBeGreaterThan(0)
+    expect(buildEngineSkill('firewall', 1)!.zone?.duration).toBeGreaterThan(0)
+    expect(buildEngineSkill('poison', 1)!.statusApplied).toBe('poisoned')
+    expect(buildEngineSkill('ankle-snare', 1)!.retreatAfter).toBeGreaterThan(0)
     expect(buildEngineSkill('nope', 1)).toBeNull()
   })
 })
@@ -117,6 +121,68 @@ describe('area + control', () => {
     advanceRound(b)
     expect(hasEvent(b, (e) => e.type === 'melee_attack' && e.sourceId === 'hero')).toBe(false)
     expect(find(b, 'hero').statuses.some((s) => s.id === 'stunned')).toBe(false)
+  })
+})
+
+describe('phase 2: spatial', () => {
+  it('poison deals damage over time', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', str: 0 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 100, hp: 100, meleeRange: 1.2 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('poisoned', 'p')!)
+    advanceRound(b)
+    expect(find(b, 'e').hp).toBeLessThan(100)
+    expect(hasEvent(b, (e) => e.type === 'dot' && e.targetId === 'e')).toBe(true)
+  })
+
+  it('Arrow Shower damages and knocks an enemy back', () => {
+    const as = { ...buildEngineSkill('arrow-shower', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', str: 20, skills: [as] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 100, hp: 100 })],
+    })
+    const beforeY = find(b, 'e').pos.y
+    advanceRound(b)
+    expect(find(b, 'e').pos.y).toBeGreaterThan(beforeY)   // shoved toward its own edge
+    expect(find(b, 'e').hp).toBeLessThan(100)
+    expect(hasEvent(b, (e) => e.type === 'knockback' && e.targetId === 'e')).toBe(true)
+  })
+
+  it('Firewall drops a hazard that burns enemies standing in it', () => {
+    const fw = { ...buildEngineSkill('firewall', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', skills: [fw] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 200, hp: 200, meleeRange: 1.2 })],
+    })
+    advanceRound(b)
+    expect(b.zones).toHaveLength(1)
+    const hp = find(b, 'e').hp
+    advanceRound(b)
+    expect(hasEvent(b, (e) => e.type === 'dot' && e.targetId === 'e')).toBe(true)
+    expect(find(b, 'e').hp).toBeLessThan(hp)
+  })
+
+  it('Ankle Snare roots the target and the caster retreats', () => {
+    const snare = { ...buildEngineSkill('ankle-snare', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', skills: [snare] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 100, hp: 100, meleeRange: 1.2 })],
+    })
+    const startY = find(b, 'p').pos.y
+    advanceRound(b)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'rooted')).toBe(true)
+    expect(find(b, 'p').pos.y).toBeLessThan(startY)   // net backward despite advancing first
+  })
+
+  it('a rooted unit cannot move', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', meleeRange: 1.2 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 1.2 })],
+    })
+    find(b, 'p').statuses.push(buildStatus('rooted', 'x')!)
+    advanceRound(b)
+    expect(hasEvent(b, (e) => e.type === 'move' && e.sourceId === 'p')).toBe(false)
   })
 })
 

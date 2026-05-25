@@ -94,6 +94,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
   )
   const heals = roundEvents.filter((e) => e.type === 'heal' && e.value != null)
   const interrupts = roundEvents.filter((e) => e.type === 'interrupt')
+  const dots = roundEvents.filter((e) => e.type === 'dot' && e.value != null)
 
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
@@ -109,6 +110,18 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
 
       <div className="relative w-full max-w-[300px] mx-auto aspect-[1/2] rounded-lg border border-game-border bg-game-surface overflow-hidden">
         <GridBackdrop />
+
+        {/* persistent ground hazards (Firewall, etc.) */}
+        {battle.zones.map((z) => (
+          <div
+            key={z.id}
+            className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
+            style={{
+              left: leftPct(z.pos.x), top: topPct(z.pos.y),
+              width: `${(2 * z.radius / COLS) * 100}%`, height: `${(2 * z.radius / ROWS) * 100}%`,
+            }}
+          />
+        ))}
 
         {/* attack arc lines for this round */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${COLS} ${ROWS}`} preserveAspectRatio="none">
@@ -159,6 +172,21 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
               style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
             >
               +{e.value}
+            </div>
+          )
+        })}
+
+        {/* damage-over-time / zone ticks */}
+        {dots.map((e, i) => {
+          const tgt = byId(e.targetId)
+          if (!tgt) return null
+          return (
+            <div
+              key={`dot-${battle.round}-${i}`}
+              className="absolute text-[12px] font-bold text-fuchsia-300 drop-shadow animate-dmg-float"
+              style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
+            >
+              -{e.value}
             </div>
           )
         })}

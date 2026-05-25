@@ -13,11 +13,14 @@ export interface StatusSpec {
   duration: number               // rounds; 'stunned' is consumed on the skipped turn instead
   statModifiers?: StatModifiers
   flags?: string[]
+  dotDamage?: number             // damage to the bearer each round (poison etc.)
 }
 
 export const STATUS_REGISTRY: Record<string, StatusSpec> = {
-  'stunned': { id: 'stunned', name: 'Stunned', duration: 2, flags: ['stunned'] },
-  'agi-up':  { id: 'agi-up',  name: 'Boosted Agility', duration: 4, statModifiers: { spd: 6 } },
+  'stunned':  { id: 'stunned',  name: 'Stunned', duration: 2, flags: ['stunned'] },
+  'agi-up':   { id: 'agi-up',   name: 'Boosted Agility', duration: 4, statModifiers: { spd: 6 } },
+  'poisoned': { id: 'poisoned', name: 'Poisoned', duration: 3, dotDamage: 4 },
+  'rooted':   { id: 'rooted',   name: 'Rooted', duration: 2, flags: ['rooted'] },
 }
 
 export function buildStatus(specId: string, sourceId: string): StatusEffect | null {
@@ -30,5 +33,6 @@ export function buildStatus(specId: string, sourceId: string): StatusEffect | nu
     duration: spec.duration,
     statModifiers: { ...(spec.statModifiers ?? {}) },
     flags: [...(spec.flags ?? [])],
+    dotDamage: spec.dotDamage,
   }
 }
