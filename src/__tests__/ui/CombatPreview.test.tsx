@@ -4,7 +4,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import React from 'react'
 import { useGameStore } from '@/stores/useGameStore'
-import { createBattle, advanceRound } from '@/engine'
+import { createBattle, advanceRound, buildEngineSkill } from '@/engine'
 import { makeUnit, resetStore } from '../helpers'
 import { eu } from '../engine/helpers'
 
@@ -55,5 +55,16 @@ describe('Combat tab — live battle', () => {
     await renderCombat()
     expect(screen.getByText(/round/i)).toBeInTheDocument()
     expect(screen.getByText('AV')).toBeInTheDocument()  // party chip
+  })
+
+  it('shows a casting indicator while a unit channels a spell', async () => {
+    const battle = createBattle({
+      playerUnits: [eu({ id: 'u1', name: 'Mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
+      enemyUnits: [eu({ id: 'e0', name: 'Slime', team: 'enemy', maxHp: 100, hp: 100, meleeRange: 1.2 })],
+    })
+    advanceRound(battle)   // mage begins channeling Lightning Bolt
+    useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
+    await renderCombat()
+    expect(screen.getByText(/Lightning Bolt/)).toBeInTheDocument()
   })
 })

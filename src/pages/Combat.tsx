@@ -3,8 +3,10 @@ import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { ELEMENT_COLORS } from '@/lib/elements'
 import {
-  COLS, ROWS, startingPosition, type Rank, type BattleState, type Combatant,
+  COLS, ROWS, startingPosition, COMBAT_SKILLS, type Rank, type BattleState, type Combatant,
 } from '@/engine'
+
+const skillName = (id: string) => COMBAT_SKILLS[id]?.(1)?.name ?? 'Casting'
 
 // The 1D ranged combat has been retired. Combat now resolves on a vertical 5×10
 // grid (enemies advance from the top, the party from the bottom) via the Combat
@@ -52,16 +54,24 @@ function GridBackdrop() {
 function BattleChip({ c }: { c: Combatant }) {
   const isPlayer = c.team === 'player'
   const ratio = Math.max(0, c.hp / c.maxHp)
+  const casting = c.alive && !!c.channel
   return (
     <div
       className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5 animate-chip-spawn"
       style={{ left: leftPct(c.pos.x), top: topPct(c.pos.y), transition: 'left 380ms linear, top 380ms linear' }}
     >
+      {casting && (
+        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[8px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
+          ✦ {skillName(c.channel!.skillId)}
+        </div>
+      )}
       <div
-        title={`${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
+        title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         className={[
           'w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-semibold shadow transition-opacity',
-          isPlayer ? 'bg-blue-900 text-blue-100 border-blue-400/70' : 'bg-red-950 text-red-200 border-red-500/70',
+          casting
+            ? 'bg-blue-900 text-amber-100 border-amber-300 ring-2 ring-amber-400/60'
+            : isPlayer ? 'bg-blue-900 text-blue-100 border-blue-400/70' : 'bg-red-950 text-red-200 border-red-500/70',
           c.alive ? '' : 'opacity-25 grayscale',
         ].join(' ')}
       >
@@ -83,6 +93,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
     (e.type === 'melee_attack' || e.type === 'ranged_attack' || (e.type === 'skill_use' && e.value != null)) && e.value != null,
   )
   const heals = roundEvents.filter((e) => e.type === 'heal' && e.value != null)
+  const interrupts = roundEvents.filter((e) => e.type === 'interrupt')
 
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
@@ -148,6 +159,21 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
               style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
             >
               +{e.value}
+            </div>
+          )
+        })}
+
+        {/* interrupted-cast markers */}
+        {interrupts.map((e, i) => {
+          const tgt = byId(e.targetId)
+          if (!tgt) return null
+          return (
+            <div
+              key={`int-${battle.round}-${i}`}
+              className="absolute text-[10px] font-bold text-amber-300 drop-shadow animate-dmg-float whitespace-nowrap"
+              style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
+            >
+              interrupted
             </div>
           )
         })}
