@@ -61,6 +61,22 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       return wounded.length ? pickBy(wounded, hpRatio, 'min')!.id : null
     },
   },
+  'interrupt': {
+    id: 'interrupt', name: 'Interrupt', scope: 'unit', channel: 'targeting',
+    description: 'Hunt the nearest enemy mid-cast to break their spell.',
+    targeting: (self, state) => {
+      const casting = enemiesOf(state, self).filter((e) => e.channel != null)
+      return casting.length ? pickBy(casting, (e) => distance(self.pos, e.pos), 'min')!.id : null
+    },
+  },
+  'focus-casters': {
+    id: 'focus-casters', name: 'Focus Casters', scope: 'unit', channel: 'targeting',
+    description: 'Go after the squishy spellcasters first.',
+    targeting: (self, state) => {
+      const casters = enemiesOf(state, self).filter((e) => effectiveStat(e, 'int') > effectiveStat(e, 'str'))
+      return casters.length ? pickBy(casters, (e) => effectiveStat(e, 'int'), 'max')!.id : null
+    },
+  },
 
   // Movement -------------------------------------------------------------------
   'charger': {

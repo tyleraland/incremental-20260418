@@ -21,7 +21,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('bash', 'hammer-fall'),
-    tactics: [t('tank-buster'), t('armored'), t('charger')],
+    tactics: [t('interrupt'), t('tank-buster'), t('armored'), t('charger')],
   },
   {
     id: 'u2', name: 'Mira Ashdown', level: 2, exp: 80, expToNext: 180, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
@@ -81,6 +81,6 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('cloak', 'back-stab', 'arrow-shower', 'ankle-snare', 'sight'),
-    tactics: [t('opportunist'), t('nimble'), t('retreater')],
+    tactics: [t('focus-casters'), t('opportunist'), t('nimble'), t('retreater')],
   },
 ]

@@ -26,6 +26,26 @@ describe('tactics: targeting', () => {
     expect(TACTIC_REGISTRY['opportunist'].targeting!(self, stateOf([self, full]), 1)).toBeNull()
   })
 
+  it('Interrupt locks the nearest enemy that is mid-cast', () => {
+    const self = combatant({ id: 'p', pos: { x: 2.5, y: 1 } })
+    const idle = combatant({ id: 'e1', team: 'enemy', pos: { x: 2.5, y: 2 } })
+    const far = combatant({ id: 'e2', team: 'enemy', pos: { x: 2.5, y: 9 }, channel: { skillId: 'lightning-bolt', targetId: 'p', roundsLeft: 1 } })
+    const near = combatant({ id: 'e3', team: 'enemy', pos: { x: 2.5, y: 4 }, channel: { skillId: 'fire-bolt', targetId: 'p', roundsLeft: 1 } })
+    const tactic = TACTIC_REGISTRY['interrupt'].targeting!
+    expect(tactic(self, stateOf([self, idle, far, near]), 1)).toBe('e3')   // nearest caster
+    expect(tactic(self, stateOf([self, idle]), 1)).toBeNull()              // nobody casting
+  })
+
+  it('Focus Casters locks the highest-INT spellcaster', () => {
+    const self = combatant({ id: 'p' })
+    const fighter = combatant({ id: 'e1', team: 'enemy', str: 12, int: 2 })
+    const mage = combatant({ id: 'e2', team: 'enemy', str: 3, int: 9 })
+    const archmage = combatant({ id: 'e3', team: 'enemy', str: 3, int: 14 })
+    const tactic = TACTIC_REGISTRY['focus-casters'].targeting!
+    expect(tactic(self, stateOf([self, fighter, mage, archmage]), 1)).toBe('e3')
+    expect(tactic(self, stateOf([self, fighter]), 1)).toBeNull()   // no casters → fall through
+  })
+
   it('Threatening Presence draws enemies to the taunter', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'A' }), eu({ id: 'B', tactics: [{ id: 'threatening-presence', rank: 1 }] })],
