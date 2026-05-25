@@ -71,6 +71,13 @@ export interface DerivedStats {
   armorElement:  Element // 'neutral' unless armor imbues otherwise
 }
 
+// ── Tactics ─────────────────────────────────────────────────────────────────--
+
+// A unit's (or the party's) equipped combat tactic. `id` indexes the engine's
+// TACTIC_REGISTRY; `rank` (1–5) scales its numbers. Structurally matches the
+// engine's TacticRef so it passes straight through the adapter.
+export interface TacticSlot { id: string; rank: number }
+
 // ── Unit ──────────────────────────────────────────────────────────────────────
 
 export interface Unit {
@@ -86,6 +93,7 @@ export interface Unit {
   weaponSets: [WeaponRecord, WeaponRecord] // §5: set A and set B
   activeWeaponSet: 0 | 1                  // §5: which weapon set is active
   actionSlots: (ActionSlotEntry | null)[] // length ACTION_SLOT_COUNT; tap/drag-to-fill
+  tactics: TacticSlot[]                    // combat tactics in priority order (first = highest)
   recoveryTicksLeft: number               // >0: KO countdown; 0: active, resting, or idle
   isResting: boolean                      // true after KO countdown ends, until health reaches maxHp
 }

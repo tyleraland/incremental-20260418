@@ -152,6 +152,18 @@ describe('unitsCodec', () => {
     expect(unitsCodec.roundTrip({ units: [u] }).units![0].learnedSkills['sword-mastery-1h']).toBe(3)
   })
 
+  it('round-trips the tactics loadout', () => {
+    const u = makeUnit({ tactics: [{ id: 'charger', rank: 1 }, { id: 'armored', rank: 2 }] })
+    expect(unitsCodec.roundTrip({ units: [u] }).units![0].tactics).toEqual([{ id: 'charger', rank: 1 }, { id: 'armored', rank: 2 }])
+  })
+
+  it('migration defaults a missing tactics field to an empty loadout', () => {
+    const old = { ...makeUnit({ id: 'old' }) } as Record<string, unknown>
+    delete old['tactics']
+    const migrated = unitsCodec.migrate!([old], 2)
+    expect(migrated[0].tactics).toEqual([])
+  })
+
   it('empty() returns the initial unit list', () => {
     expect(unitsCodec.empty().length).toBeGreaterThan(0)
   })
@@ -233,7 +245,12 @@ describe('worldCodec', () => {
     expect(worldCodec.roundTrip({ ticks: 1234 }).ticks).toBe(1234)
   })
 
-  it('empty() returns ticks: 0', () => {
-    expect(worldCodec.empty()).toEqual({ ticks: 0 })
+  it('round-trips party tactics', () => {
+    const pt = [{ id: 'finish-them', rank: 1 }]
+    expect(worldCodec.roundTrip({ partyTactics: pt }).partyTactics).toEqual(pt)
+  })
+
+  it('empty() seeds ticks 0 and the default party tactic', () => {
+    expect(worldCodec.empty()).toEqual({ ticks: 0, partyTactics: [{ id: 'finish-them', rank: 1 }] })
   })
 })

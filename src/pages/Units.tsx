@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import {
   useGameStore, type Unit, type EquipSlot, type Abilities, type ActionSlotEntry,
+  type TacticDef, type TacticChannel,
   SLOT_LABELS, getUnitTraits, getDerivedStats,
   getAvailableSkills, getLearnedSkills, abilityPointCost, SKILL_REGISTRY,
-  ACTION_SLOT_COUNT,
+  ACTION_SLOT_COUNT, TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS,
 } from '@/stores/useGameStore'
 import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
 import { TraitRow } from '@/components/TraitBubble'
@@ -25,13 +26,14 @@ function healthDot(hp: number)   { return hp >= 75 ? 'bg-game-green' : hp >= 40 
 
 // ── Detail tab bar ────────────────────────────────────────────────────────────
 
-type DetailTab = 'stats' | 'skills' | 'gear'
+type DetailTab = 'stats' | 'skills' | 'gear' | 'tactics'
 
 function DetailTabBar({ active, onChange, unit }: { active: DetailTab; onChange: (t: DetailTab) => void; unit: Unit }) {
   const tabs: { id: DetailTab; label: string; alert?: boolean }[] = [
-    { id: 'stats',  label: 'Stats',  alert: unit.abilityPoints > 0 },
-    { id: 'skills', label: 'Skills', alert: unit.skillPoints > 0   },
-    { id: 'gear',   label: 'Gear'   },
+    { id: 'stats',   label: 'Stats',   alert: unit.abilityPoints > 0 },
+    { id: 'skills',  label: 'Skills',  alert: unit.skillPoints > 0   },
+    { id: 'gear',    label: 'Gear'   },
+    { id: 'tactics', label: 'Tactics' },
   ]
   return (
     <div className="flex border-b border-game-border">
@@ -304,6 +306,190 @@ function SkillsTab({ unit }: { unit: Unit }) {
   )
 }
 
+// ── Tactics tab ───────────────────────────────────────────────────────────────
+
+const CHANNEL_META: Record<TacticChannel, { label: string; cls: string }> = {
+  movement:  { label: 'Move',    cls: 'text-game-green border-game-green/40 bg-game-green/10' },
+  targeting: { label: 'Target',  cls: 'text-sky-400 border-sky-400/40 bg-sky-400/10' },
+  action:    { label: 'Action',  cls: 'text-game-gold border-game-gold/40 bg-game-gold/10' },
+  reaction:  { label: 'React',   cls: 'text-pink-400 border-pink-400/40 bg-pink-400/10' },
+  passive:   { label: 'Passive', cls: 'text-violet-400 border-violet-400/40 bg-violet-400/10' },
+}
+
+function ChannelBadge({ channel }: { channel: TacticChannel }) {
+  const m = CHANNEL_META[channel]
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${m.cls}`}>{m.label}</span>
+}
+
+function TacticsTab({ unit }: { unit: Unit }) {
+  const { equipTactic, unequipTactic, moveTactic } = useGameStore((s) => ({
+    equipTactic: s.equipTactic, unequipTactic: s.unequipTactic, moveTactic: s.moveTactic,
+  }))
+  const equipped  = unit.tactics ?? []
+  const equippedIds = new Set(equipped.map((t) => t.id))
+  const available = listTactics('unit').filter((d) => !equippedIds.has(d.id))
+  const atMax = equipped.length >= MAX_UNIT_TACTICS
+
+  return (
+    <div className="space-y-4">
+      {/* Equipped — priority order */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs uppercase tracking-widest text-game-text-dim">Equipped</div>
+          <span className="text-[10px] text-game-text-dim">{equipped.length}/{MAX_UNIT_TACTICS} · priority order</span>
+        </div>
+        {equipped.length === 0 ? (
+          <p className="text-xs text-game-muted italic px-1">No tactics equipped — this unit uses only the party tactics in combat.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {equipped.map((slot, i) => {
+              const def = TACTIC_REGISTRY[slot.id]
+              if (!def) return null
+              return (
+                <div key={slot.id} className="bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2">
+                  <span className="text-xs font-mono text-game-muted w-4 text-center shrink-0 mt-0.5">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <ChannelBadge channel={def.channel} />
+                      <span className="text-sm font-medium text-game-text truncate">{def.name}</span>
+                    </div>
+                    <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      disabled={i === 0}
+                      onClick={() => moveTactic(unit.id, slot.id, -1)}
+                      className="w-6 h-6 rounded flex items-center justify-center text-xs bg-game-border/60 text-game-text hover:bg-game-border disabled:opacity-30 disabled:cursor-not-allowed"
+                      aria-label="Move up"
+                    >▲</button>
+                    <button
+                      disabled={i === equipped.length - 1}
+                      onClick={() => moveTactic(unit.id, slot.id, 1)}
+                      className="w-6 h-6 rounded flex items-center justify-center text-xs bg-game-border/60 text-game-text hover:bg-game-border disabled:opacity-30 disabled:cursor-not-allowed"
+                      aria-label="Move down"
+                    >▼</button>
+                    <button
+                      onClick={() => unequipTactic(unit.id, slot.id)}
+                      className="w-6 h-6 rounded flex items-center justify-center text-xs bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                      aria-label="Remove"
+                    >✕</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Available catalog */}
+      {available.length > 0 && (
+        <div>
+          <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Available</div>
+          <div className="space-y-1.5">
+            {available.map((def) => (
+              <div key={def.id} className={['bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2', atMax ? 'opacity-50' : ''].join(' ')}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <ChannelBadge channel={def.channel} />
+                    <span className="text-sm font-medium text-game-text truncate">{def.name}</span>
+                  </div>
+                  <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                </div>
+                <button
+                  disabled={atMax}
+                  onClick={() => equipTactic(unit.id, def.id)}
+                  title={atMax ? `Max ${MAX_UNIT_TACTICS} tactics` : `Equip ${def.name}`}
+                  className={[
+                    'shrink-0 px-2 h-7 rounded text-xs font-medium transition-colors mt-0.5',
+                    atMax ? 'bg-game-border text-game-muted cursor-not-allowed' : 'bg-game-primary text-white hover:bg-game-primary/80 active:scale-95',
+                  ].join(' ')}
+                >+ Equip</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Party tactics panel (top of Units page; applies to every deployed unit) ────-
+
+function PartyTacticsPanel() {
+  const { partyTactics, equipPartyTactic, unequipPartyTactic } = useGameStore((s) => ({
+    partyTactics: s.partyTactics, equipPartyTactic: s.equipPartyTactic, unequipPartyTactic: s.unequipPartyTactic,
+  }))
+  const [open, setOpen] = useState(false)
+  const equipped = partyTactics ?? []
+  const equippedIds = new Set(equipped.map((t) => t.id))
+  const available = listTactics('party').filter((d) => !equippedIds.has(d.id))
+  const atMax = equipped.length >= MAX_PARTY_TACTICS
+
+  return (
+    <div className="border border-game-border rounded-xl overflow-hidden">
+      <button className="w-full flex items-center gap-2 px-3 py-2.5 text-left" onClick={() => setOpen((o) => !o)}>
+        <span className="text-sm font-semibold text-game-text">Party Tactics</span>
+        <span className="text-[10px] text-game-text-dim">{equipped.length}/{MAX_PARTY_TACTICS} · all deployed units</span>
+        <div className="flex-1 flex flex-wrap gap-1 justify-end">
+          {equipped.map((t) => {
+            const def = TACTIC_REGISTRY[t.id]
+            return def ? <span key={t.id} className="text-[10px] px-1.5 py-0.5 rounded bg-game-secondary/15 text-game-secondary">{def.name}</span> : null
+          })}
+        </div>
+        <span className="text-game-muted text-sm shrink-0">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-game-border px-3 py-2.5 space-y-1.5">
+          {equipped.map((t) => {
+            const def = TACTIC_REGISTRY[t.id]
+            if (!def) return null
+            return (
+              <div key={t.id} className="bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <ChannelBadge channel={def.channel} />
+                    <span className="text-sm font-medium text-game-text truncate">{def.name}</span>
+                  </div>
+                  <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                </div>
+                <button
+                  onClick={() => unequipPartyTactic(t.id)}
+                  className="shrink-0 w-6 h-6 rounded flex items-center justify-center text-xs bg-red-500/15 text-red-400 hover:bg-red-500/25 mt-0.5"
+                  aria-label="Remove"
+                >✕</button>
+              </div>
+            )
+          })}
+          {available.map((def) => (
+            <div key={def.id} className={['bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2', atMax ? 'opacity-50' : ''].join(' ')}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <ChannelBadge channel={def.channel} />
+                  <span className="text-sm font-medium text-game-text truncate">{def.name}</span>
+                </div>
+                <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+              </div>
+              <button
+                disabled={atMax}
+                onClick={() => equipPartyTactic(def.id)}
+                title={atMax ? `Max ${MAX_PARTY_TACTICS} party tactics` : `Equip ${def.name}`}
+                className={[
+                  'shrink-0 px-2 h-7 rounded text-xs font-medium transition-colors mt-0.5',
+                  atMax ? 'bg-game-border text-game-muted cursor-not-allowed' : 'bg-game-primary text-white hover:bg-game-primary/80 active:scale-95',
+                ].join(' ')}
+              >+ Equip</button>
+            </div>
+          ))}
+          {equipped.length === 0 && available.length === 0 && (
+            <p className="text-xs text-game-muted italic">No party tactics available.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Gear tab ──────────────────────────────────────────────────────────────────
 
 function GearTab({ unit }: { unit: Unit }) {
@@ -433,9 +619,10 @@ function UnitDetail({ unit }: { unit: Unit }) {
         <ActionSlotBar unit={unit} />
         <DetailTabBar active={tab} onChange={setTab} unit={unit} />
         <div className="px-4 pb-5 pt-4">
-          {tab === 'stats'  && <StatsTab  unit={unit} />}
-          {tab === 'skills' && <SkillsTab unit={unit} />}
-          {tab === 'gear'   && <GearTab   unit={unit} />}
+          {tab === 'stats'   && <StatsTab   unit={unit} />}
+          {tab === 'skills'  && <SkillsTab  unit={unit} />}
+          {tab === 'gear'    && <GearTab    unit={unit} />}
+          {tab === 'tactics' && <TacticsTab unit={unit} />}
         </div>
       </div>
     </DndContext>
@@ -499,6 +686,7 @@ export function Units() {
 
   return (
     <div className="p-4 space-y-2 pb-24">
+      <PartyTacticsPanel />
       {selectedUnitIds.length > 0 && (
         <div className="flex items-center gap-2 pb-1">
           <span className="text-xs text-game-text-dim">{selectedUnitIds.length} selected</span>

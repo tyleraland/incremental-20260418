@@ -23,6 +23,7 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: Array(ACTION_SLOT_COUNT).fill(null),
+    tactics: [],
     ...overrides,
   }
 }

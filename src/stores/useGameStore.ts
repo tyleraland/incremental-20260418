@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
-  LocationCombatStats, ActionSlotEntry,
+  LocationCombatStats, ActionSlotEntry, TacticSlot,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
@@ -10,7 +10,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, type BattleState } from '@/engine'
+import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -31,6 +31,19 @@ export * from '@/data/recipes'
 export * from '@/data/equipment'
 export * from '@/data/locations'
 
+// ── Tactics catalog (UI reads this to list equippable tactics) ────────────────-
+
+export { TACTIC_REGISTRY }
+export type { TacticDef, TacticChannel }
+
+export const MAX_UNIT_TACTICS = 4
+export const MAX_PARTY_TACTICS = 2
+
+// Catalog entries of a given scope, in registry (declaration) order.
+export function listTactics(scope: 'unit' | 'party'): TacticDef[] {
+  return Object.values(TACTIC_REGISTRY).filter((t) => t.scope === scope)
+}
+
 // ── Store interface ───────────────────────────────────────────────────────────
 
 export interface GameState {
@@ -44,6 +57,7 @@ export interface GameState {
   monsterSeen:            Record<string, number>      // monsterId → total global sighting count
   monsterDefeated:        Record<string, number>      // monsterId → total defeat count
   locationStats:          Record<string, LocationCombatStats>  // locationId → cumulative combat stats
+  partyTactics:           TacticSlot[]                 // team-wide tactics injected into every unit (§5.5)
   ticks: number
 
   // RUNTIME — regenerated on load; not saved
@@ -88,6 +102,13 @@ export interface GameState {
   closeEquipContext: () => void
   spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
   learnSkill: (unitId: string, skillId: string) => void
+  // Tactics: equip/unequip and reorder priority (first = highest). Validated
+  // against TACTIC_REGISTRY scope and the per-unit / party slot caps.
+  equipTactic: (unitId: string, tacticId: string) => void
+  unequipTactic: (unitId: string, tacticId: string) => void
+  moveTactic: (unitId: string, tacticId: string, dir: -1 | 1) => void
+  equipPartyTactic: (tacticId: string) => void
+  unequipPartyTactic: (tacticId: string) => void
   recruitUnit: () => void
   craft: (recipeId: string) => void
   // Tap-/drag-to-fill an action slot. When entry.kind === 'item', the item is
@@ -155,7 +176,7 @@ export function waveComposition(loc: Location, partySize: number): string[] {
   return Array.from({ length: size }, (_, i) => loc.monsterIds[i % loc.monsterIds.length])
 }
 
-function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[]): BattleState {
+function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): BattleState {
   const roster = party.slice(0, MAX_PARTY)
   const playerUnits = roster.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player'))
   const enemyUnits = []
@@ -164,7 +185,7 @@ function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[
     const def = MONSTER_REGISTRY[wave[i]]
     if (def) enemyUnits.push(monsterToEngineInput(def, `${wave[i]}#${i}`, 'enemy'))
   }
-  return createBattle({ playerUnits, enemyUnits, collectEvents: true })
+  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, collectEvents: true })
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -235,7 +256,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         battleCooldown[locationId] = cd - 1
         continue
       }
-      battle = createBattleFor(loc, eligible, s.equipment)
+      battle = createBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [])
       battles[locationId] = battle
       delete battleCooldown[locationId]
       // Mark the wave's monsters as seen.
@@ -338,6 +359,7 @@ export const useGameStore = create<GameState>((set) => ({
   ticks: 0,
   monsterDefeated: {},
   locationStats: {},
+  partyTactics: [{ id: 'finish-them', rank: 1 }],
   lastTickAt: Date.now(),
   paused: false,
   eventLog: [],
@@ -618,6 +640,7 @@ export const useGameStore = create<GameState>((set) => ({
       activeWeaponSet: 0,
       equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
       actionSlots: Array(ACTION_SLOT_COUNT).fill(null),
+      tactics: [{ id: 'charger', rank: 1 }],
     }
     return { units: [...s.units, { ...unit, health: getDerivedStats(unit, s.equipment).maxHp }] }
   }),
@@ -652,6 +675,43 @@ export const useGameStore = create<GameState>((set) => ({
     return { units: s.units.map((u) => u.id === unitId ? { ...u, skillPoints: u.skillPoints - 1, learnedSkills: { ...u.learnedSkills, [skillId]: current + 1 } } : u) }
   }),
 
+  equipTactic: (unitId, tacticId) => set((s) => {
+    const def = TACTIC_REGISTRY[tacticId]
+    if (!def || def.scope !== 'unit') return s
+    return {
+      units: s.units.map((u) => {
+        if (u.id !== unitId) return u
+        const cur = u.tactics ?? []
+        if (cur.some((t) => t.id === tacticId) || cur.length >= MAX_UNIT_TACTICS) return u
+        return { ...u, tactics: [...cur, { id: tacticId, rank: 1 }] }
+      }),
+    }
+  }),
+  unequipTactic: (unitId, tacticId) => set((s) => ({
+    units: s.units.map((u) => u.id === unitId ? { ...u, tactics: (u.tactics ?? []).filter((t) => t.id !== tacticId) } : u),
+  })),
+  moveTactic: (unitId, tacticId, dir) => set((s) => ({
+    units: s.units.map((u) => {
+      if (u.id !== unitId) return u
+      const cur = [...(u.tactics ?? [])]
+      const i = cur.findIndex((t) => t.id === tacticId)
+      const j = i + dir
+      if (i < 0 || j < 0 || j >= cur.length) return u
+      ;[cur[i], cur[j]] = [cur[j], cur[i]]
+      return { ...u, tactics: cur }
+    }),
+  })),
+  equipPartyTactic: (tacticId) => set((s) => {
+    const def = TACTIC_REGISTRY[tacticId]
+    if (!def || def.scope !== 'party') return s
+    const cur = s.partyTactics ?? []
+    if (cur.some((t) => t.id === tacticId) || cur.length >= MAX_PARTY_TACTICS) return s
+    return { partyTactics: [...cur, { id: tacticId, rank: 1 }] }
+  }),
+  unequipPartyTactic: (tacticId) => set((s) => ({
+    partyTactics: (s.partyTactics ?? []).filter((t) => t.id !== tacticId),
+  })),
+
   resetSave: () => {
     ;['expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds'].forEach((k) => localStorage.removeItem(k))
     set({
@@ -664,6 +724,7 @@ export const useGameStore = create<GameState>((set) => ({
       monsterSeen:     { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
       monsterDefeated: {},
       locationStats:   {},
+      partyTactics:    [{ id: 'finish-them', rank: 1 }],
       battles:           {},
       battleCooldown:    {},
       ticks:         0,

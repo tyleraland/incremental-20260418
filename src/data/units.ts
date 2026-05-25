@@ -2,6 +2,7 @@ import type { Unit } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 
 const EMPTY_ACTION_SLOTS = Array<null>(ACTION_SLOT_COUNT).fill(null)
+const t = (id: string, rank = 1) => ({ id, rank })
 
 export const INITIAL_UNITS: Unit[] = [
   {
@@ -14,6 +15,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: [...EMPTY_ACTION_SLOTS],
+    tactics: [t('tank-buster'), t('armored'), t('charger')],
   },
   {
     id: 'u2', name: 'Mira Ashdown', level: 2, exp: 80, expToNext: 180, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
@@ -25,6 +27,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: 'eq-handaxe', sideboard2: null, accessory: null },
     actionSlots: [...EMPTY_ACTION_SLOTS],
+    tactics: [t('charger')],
   },
   {
     id: 'u3', name: 'Theron Vance', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
@@ -36,6 +39,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: [...EMPTY_ACTION_SLOTS],
+    tactics: [t('opportunist'), t('nimble')],
   },
   {
     id: 'u4', name: 'Sera Holloway', level: 1, exp: 20, expToNext: 100, age: 16, health: 80, recoveryTicksLeft: 0, isResting: false,
@@ -47,6 +51,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: [...EMPTY_ACTION_SLOTS],
+    tactics: [t('last-stand')],
   },
   {
     id: 'u5', name: 'Davan Cobble', level: 2, exp: 120, expToNext: 180, age: 28, health: 67, recoveryTicksLeft: 0, isResting: false,
@@ -58,6 +63,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: 'eq-pickaxe', sideboard2: null, accessory: null },
     actionSlots: [...EMPTY_ACTION_SLOTS],
+    tactics: [t('armored'), t('counterattacker')],
   },
   {
     id: 'u6', name: 'Lyra Briar', level: 5, exp: 750, expToNext: 800, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
@@ -69,5 +75,6 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: [...EMPTY_ACTION_SLOTS],
+    tactics: [t('opportunist'), t('nimble'), t('retreater')],
   },
 ]
