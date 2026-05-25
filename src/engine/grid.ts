@@ -13,7 +13,7 @@ export function distance(a: Vec2, b: Vec2): number {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
-function clampToGrid(p: Vec2): Vec2 {
+export function clampToGrid(p: Vec2): Vec2 {
   return {
     x: Math.min(COLS, Math.max(0, p.x)),
     y: Math.min(ROWS, Math.max(0, p.y)),

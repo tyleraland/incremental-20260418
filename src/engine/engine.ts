@@ -6,14 +6,18 @@
 // to completion for tests and bulk/idle resolution.
 
 import { BASE_MOVE_SPEED, MAX_ROUNDS } from './constants'
-import { startingPosition, moveToward, attackReach, distance } from './grid'
+import { startingPosition, moveToward, attackReach, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies,
 } from './behavior'
+import {
+  resolveTactics, getTactic, chargerBonus, armoredFactor, nimblePeriod,
+} from './tactics'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill,
+  ResolvedTactic, TacticRef, MovementResult, ReactionResult,
 } from './types'
 
 function emptyStats(): BattleStats {
@@ -26,7 +30,7 @@ function emptyStats(): BattleStats {
   }
 }
 
-function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; y: number }): Combatant {
+function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; y: number }, tactics: ResolvedTactic[]): Combatant {
   return {
     id: input.id,
     name: input.name,
@@ -48,20 +52,27 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     statuses: [],
     lockedTargetId: null,
     potionsLeft: input.potions ?? 0,
+    tactics,
+    tacticCooldowns: {},
+    tacticsUsed: [],
+    chargeUsed: false,
+    attacksReceived: 0,
+    lastHitById: null,
   }
 }
 
 export function createBattle(setup: CombatSetup): BattleState {
   const combatants: Combatant[] = []
   let index = 0
-  const place = (units: EngineUnitInput[], team: Team) => {
+  const place = (units: EngineUnitInput[], team: Team, party?: TacticRef[]) => {
     units.forEach((u, i) => {
       const pos = startingPosition(team, u.preferredRank, i)
-      combatants.push(makeCombatant({ ...u, team }, index++, pos))
+      const tactics = resolveTactics(u.tactics, party)
+      combatants.push(makeCombatant({ ...u, team }, index++, pos, tactics))
     })
   }
-  place(setup.playerUnits, 'player')
-  place(setup.enemyUnits, 'enemy')
+  place(setup.playerUnits, 'player', setup.playerPartyTactics)
+  place(setup.enemyUnits, 'enemy', setup.enemyPartyTactics)
 
   return {
     combatants,
@@ -84,7 +95,7 @@ function addStat(map: Record<string, number>, id: string, n: number): void {
 }
 
 // Apply damage, record stats, and handle death + lock cleanup (§9.1 f).
-function applyDamage(
+function applyDamageRaw(
   state: BattleState,
   attacker: Combatant,
   target: Combatant,
@@ -103,37 +114,156 @@ function applyDamage(
   }
 }
 
+// A single attack: applies tactic modifiers (Charger outgoing; Nimble dodge and
+// Armored incoming), emits the hit/dodge event, deals damage, and records the
+// attacker so the target's Counterattacker can react next turn.
+function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, baseAmount: number, skill: EngineSkill | null): void {
+  const isMelee = attacker.rangedRange <= 0
+  let amount = baseAmount
+
+  const cb = chargerBonus(attacker)
+  if (isMelee && cb > 0 && !attacker.chargeUsed) { amount *= 1 + cb; attacker.chargeUsed = true }
+
+  const period = nimblePeriod(target)
+  if (period) {
+    target.attacksReceived += 1
+    if (target.attacksReceived % period === 0) {
+      emit(state, { round: state.round, type: 'dodge', sourceId: attacker.id, targetId: target.id })
+      return
+    }
+  }
+
+  amount *= armoredFactor(target)
+  amount = Math.max(1, Math.floor(amount))
+
+  if (skill) {
+    recordSkillUse(state, attacker, skill)
+    emit(state, { round: state.round, type: 'skill_use', sourceId: attacker.id, targetId: target.id, value: amount, skillId: skill.id })
+  } else {
+    emit(state, { round: state.round, type: isMelee ? 'melee_attack' : 'ranged_attack', sourceId: attacker.id, targetId: target.id, value: amount })
+  }
+  applyDamageRaw(state, attacker, target, amount)
+  if (target.alive) target.lastHitById = attacker.id
+}
+
 function recordSkillUse(state: BattleState, self: Combatant, skill: EngineSkill): void {
   if (!state.stats.skillsUsedByUnit[self.id]) state.stats.skillsUsedByUnit[self.id] = []
   state.stats.skillsUsedByUnit[self.id].push(skill.id)
   self.skillCooldowns[skill.id] = skill.cooldown
 }
 
-function takeTurn(state: BattleState, self: Combatant): void {
-  // §5.3 step 3 — targeting (default: keep lock, else nearest enemy)
-  const prevTarget = selectTarget(state, self)
-  if (prevTarget !== null && self.lockedTargetId) {
-    emit(state, {
-      round: state.round, type: 'target_switch',
-      sourceId: self.id, targetId: self.lockedTargetId,
-      extra: { from: prevTarget },
-    })
+// ── Tactic evaluation (§5.3) ────────────────────────────────────────────────--
+// Order: reaction → targeting → movement → action. Targeting runs before
+// movement (a slight reorder of the spec's numbering) so movement can aim at the
+// freshly resolved lock instead of last round's.
+
+function onCooldown(self: Combatant, t: ResolvedTactic): boolean {
+  return (self.tacticCooldowns[t.def.id] ?? 0) > 0
+}
+function usedUp(self: Combatant, t: ResolvedTactic): boolean {
+  return !!t.def.oncePerCombat && self.tacticsUsed.includes(t.def.id)
+}
+function markFired(self: Combatant, t: ResolvedTactic): void {
+  if (t.def.cooldown) self.tacticCooldowns[t.def.id] = t.def.cooldown
+  if (t.def.oncePerCombat && !self.tacticsUsed.includes(t.def.id)) self.tacticsUsed.push(t.def.id)
+}
+
+function addStatus(c: Combatant, s: import('./types').StatusEffect): void {
+  const i = c.statuses.findIndex((x) => x.id === s.id)
+  if (i >= 0) c.statuses[i] = { ...s }
+  else c.statuses.push({ ...s })
+}
+
+function setLock(state: BattleState, self: Combatant, id: string): void {
+  if (self.lockedTargetId === id) return
+  const from = self.lockedTargetId
+  self.lockedTargetId = id
+  emit(state, { round: state.round, type: 'target_switch', sourceId: self.id, targetId: id, extra: { from } })
+}
+
+function evalTargeting(state: BattleState, self: Combatant): void {
+  for (const t of self.tactics) {
+    if (t.def.channel !== 'targeting' || !t.def.targeting) continue
+    if (onCooldown(self, t) || usedUp(self, t)) continue
+    const id = t.def.targeting(self, state, t.rank)
+    if (id) { setLock(state, self, id); markFired(self, t); return }
   }
+  // default: keep lock if alive, else nearest enemy (with taunt bias)
+  const prev = selectTarget(state, self)
+  if (prev !== null && self.lockedTargetId) {
+    emit(state, { round: state.round, type: 'target_switch', sourceId: self.id, targetId: self.lockedTargetId, extra: { from: prev } })
+  }
+}
 
+function evalMovement(state: BattleState, self: Combatant): MovementResult | null {
+  for (const t of self.tactics) {
+    if (t.def.channel !== 'movement' || !t.def.movement) continue
+    if (onCooldown(self, t) || usedUp(self, t)) continue
+    const plan = t.def.movement(self, state, t.rank)
+    if (plan) { markFired(self, t); return plan }
+  }
+  return null
+}
+
+function executeMovement(state: BattleState, self: Combatant, plan: MovementResult | null): void {
+  if (plan?.clearLock) self.lockedTargetId = null
+  if (plan?.hold) return
+  if (plan?.awayFromNearestEnemy) {
+    const dir = self.team === 'player' ? -1 : 1
+    const before = { ...self.pos }
+    self.pos = clampToGrid({ x: self.pos.x, y: self.pos.y + dir * (plan.rows ?? 1) })
+    enforceSeparation(self, state.combatants)
+    if (self.pos.x !== before.x || self.pos.y !== before.y) {
+      emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
+    }
+    return
+  }
   const target = findCombatant(state, self.lockedTargetId)
-
-  // §5.3 step 2/5 — movement toward the locked target
   if (target && target.alive) {
-    const moved = moveToward(self, target, BASE_MOVE_SPEED, state.combatants)
-    if (moved) {
-      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    const moved = moveToward(self, target, BASE_MOVE_SPEED * (plan?.speedMult ?? 1), state.combatants)
+    if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+  }
+}
+
+function evalActionTactics(state: BattleState, self: Combatant): boolean {
+  for (const t of self.tactics) {
+    if (t.def.channel !== 'action' || !t.def.action) continue
+    if (onCooldown(self, t) || usedUp(self, t)) continue
+    const res = t.def.action(self, state, t.rank)
+    if (res) {
+      markFired(self, t)
+      if (res.applyStatusToSelf) addStatus(self, res.applyStatusToSelf)
+      return true   // an action tactic fired (it owns the turn's action)
     }
   }
+  return false
+}
 
-  // §5.3 step 4/5 — action (default: naive skill logic, else basic attack)
+function evalReactions(state: BattleState, self: Combatant): ReactionResult | null {
+  for (const t of self.tactics) {
+    if (t.def.channel !== 'reaction' || !t.def.reaction) continue
+    if (onCooldown(self, t) || usedUp(self, t)) continue
+    const res = t.def.reaction(self, state, t.rank)
+    if (res) { markFired(self, t); return res }
+  }
+  return null
+}
+
+function applyReaction(state: BattleState, self: Combatant, res: ReactionResult): boolean {
+  if (res.applyStatusToSelf) {
+    addStatus(self, res.applyStatusToSelf)
+    emit(state, { round: state.round, type: 'buff_apply', sourceId: self.id, targetId: self.id, extra: { statusId: res.applyStatusToSelf.id } })
+  }
+  if (res.counterAttack) {
+    const target = findCombatant(state, res.counterAttack)
+    if (target && target.alive) dealAttack(state, self, target, state.calculateDamage(self, target, null, state.round), null)
+  }
+  return !!res.consumesTurn
+}
+
+function executeNaiveAction(state: BattleState, self: Combatant): void {
   const action = chooseAction(state, self)
   if (!action) return
-
   if (action.kind === 'heal') {
     const ally = findCombatant(state, action.targetId)
     if (!ally || !ally.alive) return
@@ -146,21 +276,26 @@ function takeTurn(state: BattleState, self: Combatant): void {
     emit(state, { round: state.round, type: 'heal', sourceId: self.id, targetId: ally.id, value: healed, skillId: action.skill.id })
     return
   }
-
-  const target2 = findCombatant(state, action.targetId)
-  if (!target2 || !target2.alive) return
-
+  const target = findCombatant(state, action.targetId)
+  if (!target || !target.alive) return
   const skill = action.kind === 'skill' ? action.skill : null
-  const dmg = state.calculateDamage(self, target2, skill, state.round)
+  dealAttack(state, self, target, state.calculateDamage(self, target, skill, state.round), skill)
+}
 
-  if (skill) {
-    recordSkillUse(state, self, skill)
-    emit(state, { round: state.round, type: 'skill_use', sourceId: self.id, targetId: target2.id, value: dmg, skillId: skill.id })
-  } else {
-    const type = self.rangedRange > 0 ? 'ranged_attack' : 'melee_attack'
-    emit(state, { round: state.round, type, sourceId: self.id, targetId: target2.id, value: dmg })
-  }
-  applyDamage(state, self, target2, dmg)
+function takeTurn(state: BattleState, self: Combatant): void {
+  // (1) reaction — may consume the turn
+  const reaction = evalReactions(state, self)
+  if (reaction && applyReaction(state, self, reaction)) { self.lastHitById = null; return }
+
+  // (3→2) targeting, then movement aimed at the resolved lock
+  evalTargeting(state, self)
+  executeMovement(state, self, evalMovement(state, self))
+
+  // (4) action — an action tactic (e.g. Shield Wall) owns the action if it fires
+  if (!evalActionTactics(state, self)) executeNaiveAction(state, self)
+
+  // consume "hit since last turn" so Counterattacker only fires on fresh hits
+  self.lastHitById = null
 }
 
 function evalOutcome(state: BattleState): Outcome {
@@ -189,10 +324,13 @@ export function advanceRound(state: BattleState): BattleState {
     c.statuses = kept
   }
 
-  // §9.1.2 tick cooldowns
+  // §9.1.2 tick cooldowns (skills + tactics)
   for (const c of state.combatants) {
     for (const id of Object.keys(c.skillCooldowns)) {
       if (c.skillCooldowns[id] > 0) c.skillCooldowns[id] -= 1
+    }
+    for (const id of Object.keys(c.tacticCooldowns)) {
+      if (c.tacticCooldowns[id] > 0) c.tacticCooldowns[id] -= 1
     }
   }
 

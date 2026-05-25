@@ -4,6 +4,7 @@
 // otherwise attack). Tactics (a later layer) will override these defaults.
 
 import { distance, attackReach } from './grid'
+import { tauntBiasOf } from './tactics'
 import type { BattleState, Combatant, EngineSkill } from './types'
 import { EPS } from './constants'
 
@@ -34,10 +35,13 @@ export function selectTarget(state: BattleState, self: Combatant): string | null
     return prev
   }
 
+  // §6 Threatening Presence biases enemy targeting: a taunter reads as closer
+  // than it really is, without hard-overriding the choice.
+  const effDist = (e: Combatant) => distance(self.pos, e.pos) - tauntBiasOf(e)
   let best = enemies[0]
-  let bestD = distance(self.pos, best.pos)
+  let bestD = effDist(best)
   for (const e of enemies) {
-    const d = distance(self.pos, e.pos)
+    const d = effDist(e)
     if (d < bestD - EPS || (Math.abs(d - bestD) <= EPS && e.id < best.id)) {
       best = e
       bestD = d
@@ -60,6 +64,9 @@ function ready(self: Combatant, skill: EngineSkill): boolean {
 // §4.1 naive skill usage for the skill types the core supports (attack, heal).
 // Other types fall through to a basic attack until tactics/skill layers land.
 export function chooseAction(state: BattleState, self: Combatant): Action | null {
+  // Turtling (Shield Wall): hold attacks while the shield status is active.
+  if (self.statuses.some((s) => s.flags.includes('shielded'))) return null
+
   // heal: most-injured ally below full HP, within range, heal off cooldown
   const healSkill = self.skills.find((s) => s.type === 'heal' && ready(self, s))
   if (healSkill) {

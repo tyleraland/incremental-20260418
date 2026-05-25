@@ -56,7 +56,62 @@ export interface StatusEffect {
   flags: string[]         // "stealthed", "rooted", "channeling", "shielded", "taunted"
 }
 
-// ── Unit interface the RPG provides (§3) ─────────────────────────────────────--
+// ── Tactics (§5) ─────────────────────────────────────────────────────────────--
+
+export type TacticChannel = 'movement' | 'targeting' | 'action' | 'reaction' | 'passive'
+export type TacticScope = 'unit' | 'party'
+
+export interface TacticRef {
+  id: string
+  rank: number   // 1–5; scales numeric parameters (§15)
+}
+
+// What a movement tactic decides for this turn (null fields fall back to default).
+export interface MovementResult {
+  speedMult?: number            // multiply base move speed when advancing on the lock
+  awayFromNearestEnemy?: boolean // retreat toward own edge instead of advancing
+  rows?: number                 // distance to fall back (with awayFromNearestEnemy)
+  hold?: boolean                // do not move this turn
+  skipAction?: boolean          // also skip the attack this turn
+  clearLock?: boolean           // disengage: drop the locked target
+}
+
+export interface ActionResult {
+  skipAttack?: boolean
+  applyStatusToSelf?: StatusEffect
+}
+
+export interface ReactionResult {
+  applyStatusToSelf?: StatusEffect
+  counterAttack?: string        // combatant id to immediately basic-attack
+  consumesTurn?: boolean
+}
+
+// Catalog entry. Behaviour is expressed as channel-specific functions (only the
+// one matching `channel` is consulted). Passives carry no function — their
+// effect is read directly by the damage/targeting code via the helpers in
+// tactics.ts. The engine resolves a unit's TacticRefs into these defs.
+export interface TacticDef {
+  id: string
+  name: string
+  description: string
+  scope: TacticScope
+  channel: TacticChannel
+  cooldown?: number             // rounds between activations (0/undefined = always)
+  oncePerCombat?: boolean
+  override?: boolean            // party tactics: inject at the TOP instead of bottom (§5.5)
+  targeting?: (self: Combatant, state: BattleState, rank: number) => string | null
+  movement?:  (self: Combatant, state: BattleState, rank: number) => MovementResult | null
+  action?:    (self: Combatant, state: BattleState, rank: number) => ActionResult | null
+  reaction?:  (self: Combatant, state: BattleState, rank: number) => ReactionResult | null
+}
+
+export interface ResolvedTactic {
+  def: TacticDef
+  rank: number
+}
+
+
 
 export interface EngineUnitInput {
   id: string
@@ -78,6 +133,7 @@ export interface EngineUnitInput {
 
   skills: EngineSkill[]
   potions?: number        // count of self-heal consumables available this fight
+  tactics?: TacticRef[]   // unit-level tactics, priority order (first = highest)
 }
 
 // ── Internal mutable combat state ────────────────────────────────────────────--
@@ -108,6 +164,14 @@ export interface Combatant {
   statuses: StatusEffect[]
   lockedTargetId: string | null
   potionsLeft: number
+
+  // Tactics (§5)
+  tactics: ResolvedTactic[]              // unit tactics + injected party tactics, priority order
+  tacticCooldowns: Record<string, number>
+  tacticsUsed: string[]                  // once-per-combat tactic ids that have fired
+  chargeUsed: boolean                    // Charger's first-hit damage bonus consumed
+  attacksReceived: number                // for Nimble's deterministic dodge
+  lastHitById: string | null             // attacker since this unit's last turn (Counterattacker)
 }
 
 // ── Events (§12) ─────────────────────────────────────────────────────────────--
@@ -115,6 +179,7 @@ export interface Combatant {
 export type BattleEventType =
   | 'move' | 'melee_attack' | 'ranged_attack' | 'skill_use'
   | 'heal' | 'unit_death' | 'target_switch' | 'status_expire'
+  | 'dodge' | 'retreat' | 'buff_apply'
 
 export interface BattleEvent {
   round: number
@@ -144,6 +209,8 @@ export interface CombatCallbacks {
 export interface CombatSetup {
   playerUnits: EngineUnitInput[]
   enemyUnits: EngineUnitInput[]
+  playerPartyTactics?: TacticRef[]   // team-wide tactics injected into every player unit (§5.5)
+  enemyPartyTactics?: TacticRef[]
   callbacks?: CombatCallbacks
   maxRounds?: number
   collectEvents?: boolean   // default true; set false for fast bulk resolution (§11)

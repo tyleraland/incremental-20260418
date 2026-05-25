@@ -3,13 +3,21 @@
 // owns no stat definitions; this is where the game's stats are projected in.
 
 import type { Unit, DerivedStats, MonsterDef } from '@/types'
-import type { EngineUnitInput, Team } from './types'
+import type { EngineUnitInput, Team, TacticRef } from './types'
 
 // The engine grid is 5×10 abstract units; the game's "feet" don't map 1:1.
 // We collapse to two reach bands: melee stops ~1.5 away, ranged fires from ~4.
 const MELEE_GRID_RANGE = 1.5
 const RANGED_GRID_RANGE = 4
 const RANGED_FEET_THRESHOLD = 5   // game attackRange > this ⇒ ranged
+
+// Placeholder loadout until the equip UI lets players pick tactics: melee units
+// charge in behind their armor; ranged units pick off the wounded and stay slippery.
+function defaultTactics(ranged: boolean): TacticRef[] {
+  return ranged
+    ? [{ id: 'opportunist', rank: 1 }, { id: 'nimble', rank: 1 }]
+    : [{ id: 'charger', rank: 1 }, { id: 'armored', rank: 1 }]
+}
 
 export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team): EngineUnitInput {
   const ranged = derived.attackRange > RANGED_FEET_THRESHOLD
@@ -27,6 +35,7 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     meleeRange: MELEE_GRID_RANGE,
     rangedRange: ranged ? RANGED_GRID_RANGE : 0,
     skills: [],   // active-skill mapping is a later layer; naive basic attacks for now
+    tactics: defaultTactics(ranged),
   }
 }
 

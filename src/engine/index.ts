@@ -18,3 +18,7 @@ export {
 export { selectTarget, chooseAction, livingEnemies, livingAllies, findCombatant } from './behavior'
 export { createBattle, advanceRound, resolve, finalize } from './engine'
 export { unitToEngineInput, monsterToEngineInput } from './adapter'
+export {
+  TACTIC_REGISTRY, resolveTactics, getTactic, hasTactic,
+  chargerBonus, armoredFactor, nimblePeriod, tauntBiasOf,
+} from './tactics'
