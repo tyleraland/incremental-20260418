@@ -2,7 +2,7 @@
 // keep range, guard a squishy ally, regroup when isolated. Helpers are pure;
 // the movement behaviours are checked through a real round.
 import { describe, it, expect } from 'vitest'
-import { createBattle, advanceRound, type BattleState } from '@/engine'
+import { createBattle, advanceRound, buildEngineSkill, type BattleState } from '@/engine'
 import { distance } from '@/engine/grid'
 import { flankPoint, guardPoint, squishiestAlly, centroid } from '@/engine/spatial'
 import { eu, combatant } from './helpers'
@@ -75,6 +75,18 @@ describe('movement behaviours', () => {
     find(b, 'e').pos = { x: 2.5, y: 8 }
     advanceRound(b)
     expect(find(b, 'g').pos.y).toBeGreaterThan(2)   // moved up to interpose
+  })
+
+  it('a Kiter caster holds at spell range and casts instead of closing to melee', () => {
+    const fireBolt = buildEngineSkill('fire-bolt', 1)!   // range 6
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 4, maxHp: 500, hp: 500, skills: [fireBolt], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 10, maxHp: 500, hp: 500 })],
+    })
+    for (let i = 0; i < 8; i++) advanceRound(b)
+    const mage = find(b, 'mage'), e = find(b, 'e')
+    expect(Math.hypot(mage.pos.x - e.pos.x, mage.pos.y - e.pos.y)).toBeGreaterThan(3)   // never dragged into melee
+    expect(b.events.some((ev) => ev.type === 'skill_use' && ev.skillId === 'fire-bolt')).toBe(true)   // it actually cast
   })
 
   it('Regroup pulls an isolated unit back toward its allies', () => {

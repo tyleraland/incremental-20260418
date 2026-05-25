@@ -54,6 +54,14 @@ export function squishiestAlly(self: Combatant, state: BattleState): Combatant |
   return best
 }
 
+// The farthest a unit can act from: the longest range among its skills (falls
+// back to basic-attack reach). Casters use this to stand off at spell range.
+export function maxSkillRange(self: Combatant): number {
+  let r = self.rangedRange
+  for (const s of self.skills) if (s.range > r) r = s.range
+  return r
+}
+
 // A spot just off `target` on the side *away from its allies* — i.e. the target's
 // least-defended flank (the rear for a backliner). `offset` is how far past the
 // target to stand (≈ attack reach so the move lands you in range).

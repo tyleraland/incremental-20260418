@@ -17,6 +17,7 @@ import {
 import { makeSkillTactic } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
+import { nearestEnemyTo } from './spatial'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
@@ -455,18 +456,19 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   }
 }
 
-// Step toward/away from the locked target to maintain `want` gap (with a small
-// dead-band so the unit doesn't jitter when it's already at range).
+// Hold `want` gap from the NEAREST enemy (not the locked target) so a caster
+// never wades through the front line to reach a back-rank mark — it keeps its
+// standoff from whatever threat is closest. Small dead-band to avoid jitter.
 function kiteToward(state: BattleState, self: Combatant, want: number): void {
-  const target = findCombatant(state, self.lockedTargetId)
-  if (!target || !target.alive) return
-  const d = distance(self.pos, target.pos)
+  const threat = nearestEnemyTo(self, state)
+  if (!threat) return
+  const d = distance(self.pos, threat.pos)
   const band = 0.4
   if (Math.abs(d - want) <= band) return   // in the sweet spot: stand and shoot
   const before = { ...self.pos }
   const sign = d < want ? -1 : 1            // closer than want → move away; farther → approach
-  const dirx = ((target.pos.x - self.pos.x) / (d || 1)) * sign
-  const diry = ((target.pos.y - self.pos.y) / (d || 1)) * sign
+  const dirx = ((threat.pos.x - self.pos.x) / (d || 1)) * sign
+  const diry = ((threat.pos.y - self.pos.y) / (d || 1)) * sign
   const step = Math.min(BASE_MOVE_SPEED, Math.abs(d - want))
   self.pos = clampToGrid({ x: self.pos.x + dirx * step, y: self.pos.y + diry * step })
   enforceSeparation(self, state.combatants)
