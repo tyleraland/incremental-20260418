@@ -26,4 +26,9 @@ export const RANK_START_Y = { front: 1.7, mid: 1.1, back: 0.5 } as const
 // the middle column rather than hugging the left edge.
 export const CENTERED_COLS = [2, 1, 3, 0, 4] as const
 
+// When a rank holds more units than there are columns, extra units stack into
+// deeper rows this far apart (≥ SEPARATION so they don't start overlapping).
+// This is what lets an arbitrarily large party deploy on a fixed-width grid.
+export const FORMATION_ROW_STEP = 0.75
+
 export const EPS = 1e-6

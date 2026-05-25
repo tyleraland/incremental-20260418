@@ -3,7 +3,7 @@
 
 import {
   COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
-  PERIMETER_LEFT, PERIMETER_RIGHT, RANK_START_Y, CENTERED_COLS, EPS,
+  PERIMETER_LEFT, PERIMETER_RIGHT, RANK_START_Y, CENTERED_COLS, FORMATION_ROW_STEP, EPS,
 } from './constants'
 import type { Vec2, Rank, Team, Combatant } from './types'
 
@@ -38,12 +38,14 @@ export function isPerimeter(p: Vec2): boolean {
 }
 
 // Starting position: deploy near the team's own edge (players bottom, enemies
-// top), spread around the center column. `teamIndex` is the unit's order within
-// its team; columns fill center-outward so formations stay centered.
-export function startingPosition(team: Team, rank: Rank, teamIndex: number): Vec2 {
-  const rankY = RANK_START_Y[rank]
+// top), spread around the center column. `indexInRank` is the unit's order
+// among same-rank teammates; columns fill center-outward, and once a row is full
+// extra units stack into a deeper row — so any party size fits a fixed-width grid.
+export function startingPosition(team: Team, rank: Rank, indexInRank: number): Vec2 {
+  const depth = Math.floor(indexInRank / COLS)
+  const rankY = RANK_START_Y[rank] + depth * FORMATION_ROW_STEP
   const y = team === 'player' ? rankY : ROWS - rankY
-  const col = CENTERED_COLS[teamIndex % COLS]
+  const col = CENTERED_COLS[indexInRank % COLS]
   return clampToGrid({ x: col + 0.5, y })
 }
 

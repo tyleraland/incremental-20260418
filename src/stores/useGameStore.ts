@@ -155,7 +155,6 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 
 const ROUND_EVERY_TICKS   = 2    // advance one engine round every N ticks (~400ms/round)
 const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
-const MAX_PARTY = 5              // engine is 5v5
 
 // Enemy combatant ids are `${monsterId}#${index}`; players use the unit id.
 function monsterIdOf(combatantId: string): string {
@@ -169,15 +168,17 @@ const ENCOUNTER_OVERRIDES: Record<string, string[]> = {
   'geffen-dungeon-2': ['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'],
 }
 
+// The wave mirrors the (uncapped) deployed party size: every unit you station at
+// a location pulls an extra monster so the fight stays matched.
 export function waveComposition(loc: Location, partySize: number): string[] {
   const override = ENCOUNTER_OVERRIDES[loc.id]
-  if (override) return override.slice(0, MAX_PARTY)
-  const size = Math.min(MAX_PARTY, Math.max(1, partySize))
+  if (override) return override
+  const size = Math.max(1, partySize)
   return Array.from({ length: size }, (_, i) => loc.monsterIds[i % loc.monsterIds.length])
 }
 
 function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): BattleState {
-  const roster = party.slice(0, MAX_PARTY)
+  const roster = party
   const playerUnits = roster.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player'))
   const enemyUnits = []
   const wave = waveComposition(loc, roster.length)

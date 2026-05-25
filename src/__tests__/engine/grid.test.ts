@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, ROWS } from '@/engine'
+import { distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, createBattle, ROWS } from '@/engine'
 import { moveToward, enforceSeparation, attackReach } from '@/engine/grid'
-import { combatant } from './helpers'
+import { combatant, eu } from './helpers'
 
 describe('grid: distance (§2.2)', () => {
   it('is Euclidean', () => {
@@ -48,6 +48,21 @@ describe('grid: starting positions', () => {
 
   it('centers the formation (first unit takes the middle column)', () => {
     expect(startingPosition('player', 'front', 0).x).toBe(2.5)
+  })
+
+  it('stacks same-rank units past the grid width into deeper rows', () => {
+    // 6th same-rank unit (index 5) wraps to a deeper row than the 1st
+    expect(startingPosition('player', 'front', 5).y).toBeGreaterThan(startingPosition('player', 'front', 0).y)
+    expect(startingPosition('enemy', 'front', 5).y).toBeLessThan(startingPosition('enemy', 'front', 0).y)
+  })
+
+  it('deploys an arbitrarily large party with no two units co-located', () => {
+    const players = Array.from({ length: 9 }, (_, i) => eu({ id: `u${i}` }))   // all front rank
+    const b = createBattle({ playerUnits: players, enemyUnits: [eu({ id: 'e', team: 'enemy' })] })
+    const spots = b.combatants
+      .filter((c) => c.team === 'player')
+      .map((c) => `${c.pos.x.toFixed(3)},${c.pos.y.toFixed(3)}`)
+    expect(new Set(spots).size).toBe(9)
   })
 })
 

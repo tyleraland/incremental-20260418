@@ -76,8 +76,11 @@ export function createBattle(setup: CombatSetup): BattleState {
   const combatants: Combatant[] = []
   let index = 0
   const place = (units: EngineUnitInput[], team: Team, party?: TacticRef[]) => {
-    units.forEach((u, i) => {
-      const pos = startingPosition(team, u.preferredRank, i)
+    const perRank: Record<string, number> = {}
+    units.forEach((u) => {
+      const withinRank = perRank[u.preferredRank] ?? 0
+      perRank[u.preferredRank] = withinRank + 1
+      const pos = startingPosition(team, u.preferredRank, withinRank)
       const tactics = resolveTactics(u.tactics, party)
       combatants.push(makeCombatant({ ...u, team }, index++, pos, tactics))
     })

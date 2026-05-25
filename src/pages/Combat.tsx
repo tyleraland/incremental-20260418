@@ -278,33 +278,35 @@ function Preview() {
 
       <div className="relative w-full max-w-[300px] mx-auto aspect-[1/2] rounded-lg border border-game-border bg-game-surface overflow-hidden">
         <GridBackdrop />
-        {foes.map((id, i) => {
+        {(() => { const seen: Record<string, number> = {}; return foes.map((id, i) => {
           const m = MONSTER_REGISTRY[id]
           const ranged = (m?.stats.attackRange ?? 5) > 5
           const rank: Rank = ranged ? 'back' : 'front'
+          const within = seen[rank] ?? 0; seen[rank] = within + 1
           return (
             <PreviewChip
               key={`${id}-${i}`}
-              pos={startingPosition('enemy', rank, i)}
+              pos={startingPosition('enemy', rank, within)}
               label={initials(m?.name ?? id)}
               title={m?.name ?? id}
               className="bg-red-950 text-red-200 border-red-500/70"
             />
           )
-        })}
-        {party.map((u, i) => {
+        }) })()}
+        {(() => { const seen: Record<string, number> = {}; return party.map((u) => {
           const ranged = getDerivedStats(u, equipment).attackRange > 5
           const rank: Rank = ranged ? 'back' : 'front'
+          const within = seen[rank] ?? 0; seen[rank] = within + 1
           return (
             <PreviewChip
               key={u.id}
-              pos={startingPosition('player', rank, i)}
+              pos={startingPosition('player', rank, within)}
               label={initials(u.name)}
               title={`${u.name} — ${ranged ? 'ranged' : 'melee'}`}
               className="bg-blue-900 text-blue-100 border-blue-400/70"
             />
           )
-        })}
+        }) })()}
         {(party.length === 0 && foes.length === 0) && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">
             No combatants to preview.
