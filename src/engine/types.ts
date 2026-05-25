@@ -79,6 +79,8 @@ export interface MovementResult {
 export interface ActionResult {
   skipAttack?: boolean
   applyStatusToSelf?: StatusEffect
+  castSkill?: EngineSkill        // a skill the unit wants to cast this turn
+  skillTarget?: string          // combatant id the skill is aimed at (primary target)
 }
 
 export interface ReactionResult {
@@ -136,6 +138,14 @@ export interface EngineUnitInput {
   tactics?: TacticRef[]   // unit-level tactics, priority order (first = highest)
 }
 
+// An in-progress channeled cast (channelTime ≥ 1). Resolves when roundsLeft hits
+// 0 on the caster's turn; cleared (no cooldown) if the caster is hit meanwhile.
+export interface ChannelState {
+  skillId: string
+  targetId: string
+  roundsLeft: number
+}
+
 // ── Internal mutable combat state ────────────────────────────────────────────--
 
 // The engine clones every input into a Combatant and never mutates the input
@@ -172,6 +182,7 @@ export interface Combatant {
   chargeUsed: boolean                    // Charger's first-hit damage bonus consumed
   attacksReceived: number                // for Nimble's deterministic dodge
   lastHitById: string | null             // attacker since this unit's last turn (Counterattacker)
+  channel: ChannelState | null           // active channeled cast, if any (§4 cast time)
 }
 
 // ── Events (§12) ─────────────────────────────────────────────────────────────--
@@ -180,6 +191,7 @@ export type BattleEventType =
   | 'move' | 'melee_attack' | 'ranged_attack' | 'skill_use'
   | 'heal' | 'unit_death' | 'target_switch' | 'status_expire'
   | 'dodge' | 'retreat' | 'buff_apply'
+  | 'cast_start' | 'interrupt'
 
 export interface BattleEvent {
   round: number

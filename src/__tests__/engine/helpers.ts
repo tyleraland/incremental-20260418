@@ -47,6 +47,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     chargeUsed: false,
     attacksReceived: 0,
     lastHitById: null,
+    channel: null,
     ...overrides,
   }
 }

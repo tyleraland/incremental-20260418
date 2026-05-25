@@ -1,20 +1,26 @@
-import type { Unit } from '@/types'
+import type { Unit, ActionSlotEntry } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 
 const EMPTY_ACTION_SLOTS = Array<null>(ACTION_SLOT_COUNT).fill(null)
 const t = (id: string, rank = 1) => ({ id, rank })
+// Build an action bar from a list of skill ids (pads to ACTION_SLOT_COUNT).
+const bar = (...skillIds: string[]): (ActionSlotEntry | null)[] => {
+  const slots: (ActionSlotEntry | null)[] = skillIds.map((id) => ({ kind: 'skill' as const, id }))
+  while (slots.length < ACTION_SLOT_COUNT) slots.push(null)
+  return slots
+}
 
 export const INITIAL_UNITS: Unit[] = [
   {
     id: 'u1', name: 'Aldric Thorne', level: 3, exp: 245, expToNext: 312, age: 24, health: 95, recoveryTicksLeft: 0, isResting: false,
     class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
     abilities: { strength: 8, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 },
-    abilityPoints: 20, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2 },
+    abilityPoints: 20, skillPoints: 1, learnedSkills: { 'sword-mastery-1h': 2, 'bash': 3, 'hammer-fall': 1 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-sword-1h', offHand: 'eq-shield-wood' }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
-    actionSlots: [...EMPTY_ACTION_SLOTS],
+    actionSlots: bar('bash', 'hammer-fall'),
     tactics: [t('tank-buster'), t('armored'), t('charger')],
   },
   {
@@ -33,12 +39,12 @@ export const INITIAL_UNITS: Unit[] = [
     id: 'u3', name: 'Theron Vance', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
     class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'mount-mjolnir',
     abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 },
-    abilityPoints: 25, skillPoints: 2, learnedSkills: { 'arcane-knowledge': 3 },
+    abilityPoints: 25, skillPoints: 2, learnedSkills: { 'arcane-knowledge': 3, 'fire-bolt': 3, 'lightning-bolt': 2, 'heal': 3, 'boost-agility': 2 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-staff', offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
-    actionSlots: [...EMPTY_ACTION_SLOTS],
+    actionSlots: bar('fire-bolt', 'lightning-bolt', 'heal', 'boost-agility'),
     tactics: [t('opportunist'), t('nimble')],
   },
   {

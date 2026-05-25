@@ -3,7 +3,22 @@
 // owns no stat definitions; this is where the game's stats are projected in.
 
 import type { Unit, DerivedStats, MonsterDef } from '@/types'
-import type { EngineUnitInput, Team } from './types'
+import type { EngineUnitInput, EngineSkill, Team } from './types'
+import { buildEngineSkill } from './skills'
+
+// Active skills the unit has slotted on its action bar (kind === 'skill') and
+// that exist in the combat catalog become usable in combat — equipping is how
+// you "learn to use" them (each brings its own usage tactic, see engine §5).
+function equippedCombatSkills(unit: Unit): EngineSkill[] {
+  const out: EngineSkill[] = []
+  const seen = new Set<string>()
+  for (const slot of unit.actionSlots ?? []) {
+    if (!slot || slot.kind !== 'skill' || seen.has(slot.id)) continue
+    const built = buildEngineSkill(slot.id, unit.learnedSkills?.[slot.id] ?? 1)
+    if (built) { out.push(built); seen.add(slot.id) }
+  }
+  return out
+}
 
 // The engine grid is 5×10 abstract units; the game's "feet" don't map 1:1.
 // We collapse to two reach bands: melee stops ~1.1 away (just shy of contact),
@@ -28,8 +43,8 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
     rangedRange: ranged ? RANGED_GRID_RANGE : 0,
-    skills: [],   // active-skill mapping is a later layer; naive basic attacks for now
-    tactics: unit.tactics ?? [],   // player-equipped tactics drive engine behavior (§5)
+    skills: equippedCombatSkills(unit),   // action-bar skills → casts (each injects its usage tactic)
+    tactics: unit.tactics ?? [],          // player-equipped tactics drive engine behavior (§5)
   }
 }
 

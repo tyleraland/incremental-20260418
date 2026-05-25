@@ -65,6 +65,30 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  'heal': {
+    id: 'heal', name: 'Heal', maxLevel: 10, type: 'active',
+    description: (lv) => `Restore an ally for ${(1.5 + 0.5 * (lv - 1)).toFixed(1)}× INT.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'aoe-heal': {
+    id: 'aoe-heal', name: 'Sanctuary', maxLevel: 10, type: 'active',
+    description: (lv) => `Heal all nearby allies for ${(1.0 + 0.3 * (lv - 1)).toFixed(1)}× INT.`,
+    requires: [{ skillId: 'heal', minLevel: 1 }],
+    getBonuses: () => ({}),
+  },
+  'boost-agility': {
+    id: 'boost-agility', name: 'Boost Agility', maxLevel: 10, type: 'active',
+    description: () => `Buff an ally's attack speed for several rounds.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'hammer-fall': {
+    id: 'hammer-fall', name: 'Hammer Fall', maxLevel: 10, type: 'active',
+    description: (lv) => `Smash an area for ${(0.8 + 0.2 * (lv - 1)).toFixed(1)}× ATK and stun.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
 }
 
 export function getAvailableSkills(unit: Unit) {

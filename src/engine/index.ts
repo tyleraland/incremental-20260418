@@ -22,3 +22,5 @@ export {
   TACTIC_REGISTRY, resolveTactics, getTactic, hasTactic,
   chargerBonus, armoredFactor, nimblePeriod, tauntBiasOf,
 } from './tactics'
+export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget } from './skills'
+export { STATUS_REGISTRY, buildStatus } from './status'

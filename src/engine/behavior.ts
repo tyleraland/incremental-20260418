@@ -87,7 +87,7 @@ export function chooseAction(state: BattleState, self: Combatant): Action | null
   return { kind: 'basic', targetId: target.id }
 }
 
-function mostInjuredAllyInRange(
+export function mostInjuredAllyInRange(
   state: BattleState,
   self: Combatant,
   range: number,
