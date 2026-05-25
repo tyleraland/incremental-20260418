@@ -6,8 +6,10 @@ import type { Unit, DerivedStats, MonsterDef } from '@/types'
 import type { EngineUnitInput, Team } from './types'
 
 // The engine grid is 5×10 abstract units; the game's "feet" don't map 1:1.
-// We collapse to two reach bands: melee stops ~1.5 away, ranged fires from ~4.
-const MELEE_GRID_RANGE = 1.5
+// We collapse to two reach bands: melee stops ~1.1 away (just shy of contact),
+// ranged fires from ~4. Melee reach must stay above SEPARATION (0.7) so an
+// attacker isn't pushed back out of range by the spacing rule.
+const MELEE_GRID_RANGE = 1.1
 const RANGED_GRID_RANGE = 4
 const RANGED_FEET_THRESHOLD = 5   // game attackRange > this ⇒ ranged
 
