@@ -4,7 +4,9 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import React from 'react'
 import { useGameStore } from '@/stores/useGameStore'
+import { createBattle, advanceRound } from '@/engine'
 import { makeUnit, resetStore } from '../helpers'
+import { eu } from '../engine/helpers'
 
 beforeEach(() => resetStore())
 afterEach(cleanup)
@@ -38,5 +40,19 @@ describe('Combat tab — grid preview', () => {
     expect(screen.getByText('Party (1)')).toBeInTheDocument()
     expect(screen.getByText('Enemies (2)')).toBeInTheDocument()
     expect(screen.getByText('AV')).toBeInTheDocument()   // unit initials chip
+  })
+})
+
+describe('Combat tab — live battle', () => {
+  it('renders the running battle (round, combatants, HP) when one is active', async () => {
+    const battle = createBattle({
+      playerUnits: [eu({ id: 'u1', name: 'Ada Vale', str: 100, meleeRange: 10 })],
+      enemyUnits: [eu({ id: 'slime#0', name: 'Slime', team: 'enemy', maxHp: 25, hp: 25, meleeRange: 10 })],
+    })
+    advanceRound(battle)   // produce a round with movement/attacks
+    useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
+    await renderCombat()
+    expect(screen.getByText(/round/i)).toBeInTheDocument()
+    expect(screen.getByText('AV')).toBeInTheDocument()  // party chip
   })
 })

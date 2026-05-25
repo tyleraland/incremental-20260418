@@ -9,6 +9,8 @@ import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS
 import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
+import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
+import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, type BattleState } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -46,6 +48,8 @@ export interface GameState {
 
   // RUNTIME — regenerated on load; not saved
   locations: Location[]
+  battles: Record<string, BattleState>                // locationId → live engine battle (one wave)
+  battleCooldown: Record<string, number>              // locationId → ticks until the next wave spawns
   itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
@@ -126,6 +130,178 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
   return { unit: { ...unit, level, exp, expToNext, abilityPoints, skillPoints }, log }
 }
 
+// ── Combat lifecycle (drives the engine from the tick loop) ────────────────────
+
+const ROUND_EVERY_TICKS   = 2    // advance one engine round every N ticks (~400ms/round)
+const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
+const MAX_PARTY = 5              // engine is 5v5
+
+// Enemy combatant ids are `${monsterId}#${index}`; players use the unit id.
+function monsterIdOf(combatantId: string): string {
+  return combatantId.split('#')[0]
+}
+
+function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[]): BattleState {
+  const roster = party.slice(0, MAX_PARTY)
+  const playerUnits = roster.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player'))
+  // Match the wave to the party size (1–5), cycling the location's monster ids.
+  const waveSize = Math.min(MAX_PARTY, Math.max(1, roster.length))
+  const enemyUnits = []
+  for (let i = 0; i < waveSize; i++) {
+    const mid = loc.monsterIds[i % loc.monsterIds.length]
+    const def = MONSTER_REGISTRY[mid]
+    if (def) enemyUnits.push(monsterToEngineInput(def, `${mid}#${i}`, 'enemy'))
+  }
+  return createBattle({ playerUnits, enemyUnits, collectEvents: true })
+}
+
+function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
+  const out = misc.map((m) => ({ ...m }))
+  for (const [id, qty] of Object.entries(deltas)) {
+    if (!qty) continue
+    const existing = out.find((m) => m.id === id)
+    if (existing) existing.quantity += qty
+    else out.push({ id, name: id === 'm-gold' ? 'Gold' : (DROP_ITEMS[id] ?? id), quantity: qty })
+  }
+  return out
+}
+
+interface CombatStep {
+  battles: Record<string, BattleState>
+  battleCooldown: Record<string, number>
+  hpByUnit: Record<string, number>    // unitId → live HP for units in an active battle
+  koUnitIds: Set<string>              // player units that died this tick
+  expByUnit: Record<string, number>
+  goldEarned: number
+  lootDelta: Record<string, number>   // miscItemId → qty gained
+  monsterDefeated: Record<string, number>
+  monsterSeen: Record<string, number>
+  locationMonstersSeen: Record<string, string[]>
+  locationStats: Record<string, LocationCombatStats>
+  logs: { category: LogCategory; message: string }[]
+}
+
+// Runs/advances one engine battle per eligible location. Pure-ish: it mutates
+// fresh copies of the runtime combat state and returns the deltas the tick
+// reducer folds into units/inventory. `advance` gates the once-per-N-ticks round.
+function advanceBattles(s: GameState, newTicks: number, advance: boolean): CombatStep {
+  const battles        = { ...s.battles }
+  const battleCooldown = { ...s.battleCooldown }
+  const monsterDefeated      = { ...s.monsterDefeated }
+  const monsterSeen          = { ...s.monsterSeen }
+  const locationMonstersSeen = { ...s.locationMonstersSeen }
+  const locationStats        = { ...s.locationStats }
+  const hpByUnit: Record<string, number> = {}
+  const koUnitIds = new Set<string>()
+  const expByUnit: Record<string, number> = {}
+  const lootDelta: Record<string, number> = {}
+  let goldEarned = 0
+  const logs: { category: LogCategory; message: string }[] = []
+
+  for (const loc of s.locations) {
+    const locationId = loc.id
+    const eligible = s.units.filter(
+      (u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting,
+    )
+
+    // No party or no monsters → tear down any stale battle/cooldown for this loc.
+    if (eligible.length === 0 || loc.monsterIds.length === 0) {
+      if (battles[locationId]) delete battles[locationId]
+      if (battleCooldown[locationId]) delete battleCooldown[locationId]
+      continue
+    }
+
+    let battle = battles[locationId]
+
+    // Between waves: count down the respawn timer, then start a fresh battle.
+    if (!battle || battle.outcome !== 'ongoing') {
+      const cd = battleCooldown[locationId] ?? 0
+      if (battle && battle.outcome !== 'ongoing') {
+        // Keep the finished battle visible during cooldown, then replace it.
+        if (cd > 0) { battleCooldown[locationId] = cd - 1; continue }
+      } else if (cd > 0) {
+        battleCooldown[locationId] = cd - 1
+        continue
+      }
+      battle = createBattleFor(loc, eligible, s.equipment)
+      battles[locationId] = battle
+      delete battleCooldown[locationId]
+      // Mark the wave's monsters as seen.
+      const seen = [...(locationMonstersSeen[locationId] ?? [])]
+      let seenChanged = false
+      for (const c of battle.combatants) {
+        if (c.team !== 'enemy') continue
+        const mid = monsterIdOf(c.id)
+        monsterSeen[mid] = (monsterSeen[mid] ?? 0) + 1
+        if (!seen.includes(mid)) { seen.push(mid); seenChanged = true }
+      }
+      if (seenChanged) locationMonstersSeen[locationId] = seen
+    }
+
+    // Advance one round on the cadence and reward kills.
+    if (advance && battle.outcome === 'ongoing') {
+      const enemiesBefore = new Set(
+        battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => c.id),
+      )
+      advanceRound(battle)
+      battles[locationId] = { ...battle }   // new identity so React re-renders
+
+      let killsThisRound = 0
+      for (const c of battle.combatants) {
+        if (c.team !== 'enemy' || c.alive || !enemiesBefore.has(c.id)) continue
+        killsThisRound++
+        const mid = monsterIdOf(c.id)
+        monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + 1
+        goldEarned++
+        const def = MONSTER_REGISTRY[mid]
+        const prev = locationStats[locationId] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+        const itemsDropped = { ...prev.itemsDropped }
+        if (def) {
+          for (const d of def.drops) {
+            if (Math.random() < d.dropRate) {
+              const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
+              lootDelta[d.itemId]    = (lootDelta[d.itemId] ?? 0) + qty
+              itemsDropped[d.itemId] = (itemsDropped[d.itemId] ?? 0) + qty
+            }
+          }
+        }
+        locationStats[locationId] = {
+          ...prev,
+          monstersDefeated: { ...prev.monstersDefeated, [mid]: (prev.monstersDefeated[mid] ?? 0) + 1 },
+          itemsDropped,
+          expDistributed: prev.expDistributed + 1,
+          goldEarned:     prev.goldEarned + 1,
+        }
+      }
+      if (killsThisRound > 0) {
+        for (const c of battle.combatants) {
+          if (c.team === 'player' && c.alive) expByUnit[c.id] = (expByUnit[c.id] ?? 0) + killsThisRound
+        }
+      }
+      // Flag fresh player deaths from this round's events.
+      for (const e of battle.events) {
+        if (e.round !== battle.round || e.type !== 'unit_death' || !e.targetId) continue
+        const dead = battle.combatants.find((c) => c.id === e.targetId)
+        if (dead && dead.team === 'player') koUnitIds.add(dead.id)
+      }
+      if (battle.outcome !== 'ongoing') {
+        battleCooldown[locationId] = BATTLE_RESPAWN_TICKS
+        logs.push({ category: battle.outcome === 'victory' ? 'defeat' : 'flee', message: `${loc.name}: ${battle.outcome}` })
+      }
+    }
+
+    // Sync living player HP back to the game units every tick.
+    for (const c of battle.combatants) {
+      if (c.team === 'player' && c.alive) hpByUnit[c.id] = c.hp
+    }
+  }
+
+  return {
+    battles, battleCooldown, hpByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
+    monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, logs,
+  }
+}
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 export const useGameStore = create<GameState>((set) => ({
@@ -154,40 +330,70 @@ export const useGameStore = create<GameState>((set) => ({
   paused: false,
   eventLog: [],
   itemSockets: {},
+  battles: {},
+  battleCooldown: {},
 
   tick: () => set((s) => {
     const newTicks    = s.ticks + 1
     const yearChanged = Math.floor(newTicks / TICKS_PER_YEAR) > Math.floor(s.ticks / TICKS_PER_YEAR)
     let newLog = s.eventLog
 
-    // The 1D combat simulation has been removed pending the new Combat Tactic
-    // Engine. Until that engine is wired into the tick loop, units only recover
-    // and age here — assigned units take no damage and earn no XP/loot.
+    // Drive the engine: one round per ROUND_EVERY_TICKS ticks, live per location.
+    const combat = advanceBattles(s, newTicks, newTicks % ROUND_EVERY_TICKS === 0)
+    for (const l of combat.logs) newLog = appendLog(newLog, l.category, l.message, newTicks)
+
     const units = s.units.map((u) => {
       let health = u.health
       let recoveryTicksLeft = Math.max(0, Math.round(u.recoveryTicksLeft ?? 0))
       let isResting = u.isResting || (health === 0 && recoveryTicksLeft === 0)
       const maxHp = getDerivedStats(u, s.equipment).maxHp
+
       if (recoveryTicksLeft > 0) {
         // KO phase: count down, no regen; transition to resting when done
         recoveryTicksLeft--
         if (recoveryTicksLeft === 0) isResting = true
+      } else if (combat.koUnitIds.has(u.id)) {
+        // Died in battle this tick
+        health = 0
+        recoveryTicksLeft = RECOVERY_TICKS
+        isResting = false
+        newLog = appendLog(newLog, 'ko', `${u.name} was KO'd`, newTicks)
+      } else if (u.id in combat.hpByUnit) {
+        // Live in an active battle: engine HP is authoritative
+        health = Math.max(0, Math.floor(combat.hpByUnit[u.id]))
       } else if (isResting) {
-        // Resting: regen until full
         health = Math.min(maxHp, health + RESTING_REGEN_RATE)
         if (health >= maxHp) isResting = false
       } else if (health > 0 && !u.locationId) {
         // Idle regen for unassigned units only
         health = Math.min(maxHp, health + REGEN_RATE)
       }
-      const aged = yearChanged ? { age: u.age + 1 } : {}
-      const withAge = { ...u, health, recoveryTicksLeft, isResting, ...aged }
-      const { unit: leveled, log: nextLog } = applyLevelUps(withAge, newTicks, newLog)
+
+      const aged   = yearChanged ? { age: u.age + 1 } : {}
+      const expAdd = combat.expByUnit[u.id] ?? 0
+      const withExp = { ...u, health, recoveryTicksLeft, isResting, ...aged, exp: u.exp + expAdd }
+      const { unit: leveled, log: nextLog } = applyLevelUps(withExp, newTicks, newLog)
       newLog = nextLog
       return leveled
     })
 
-    return { ticks: newTicks, units, lastTickAt: Date.now(), eventLog: newLog }
+    const miscItems = (combat.goldEarned > 0 || Object.keys(combat.lootDelta).length > 0)
+      ? applyMiscDeltas(s.miscItems, { 'm-gold': combat.goldEarned, ...combat.lootDelta })
+      : s.miscItems
+
+    return {
+      ticks: newTicks,
+      units,
+      battles: combat.battles,
+      battleCooldown: combat.battleCooldown,
+      monsterDefeated: combat.monsterDefeated,
+      monsterSeen: combat.monsterSeen,
+      locationMonstersSeen: combat.locationMonstersSeen,
+      locationStats: combat.locationStats,
+      miscItems,
+      lastTickAt: Date.now(),
+      eventLog: newLog,
+    }
   }),
 
   batchTick: (n) => set((s) => {
@@ -446,6 +652,8 @@ export const useGameStore = create<GameState>((set) => ({
       monsterSeen:     { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
       monsterDefeated: {},
       locationStats:   {},
+      battles:           {},
+      battleCooldown:    {},
       ticks:         0,
       lastTickAt:    Date.now(),
       paused:        false,

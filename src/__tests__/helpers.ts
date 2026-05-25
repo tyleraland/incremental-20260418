@@ -33,6 +33,9 @@ export function resetStore(overrides: object = {}) {
   useGameStore.setState({
     units: [],
     equipment: [],
+    locations: [],
+    battles: {},
+    battleCooldown: {},
     monsterDefeated: {},
     monsterSeen: {},
     miscItems: [],

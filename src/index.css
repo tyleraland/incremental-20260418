@@ -25,27 +25,31 @@
   }
 }
 
-/* RangeTrack hunting state — scrolls a faint dash pattern right→left to suggest
-   the world moving past the stationary party. */
-@keyframes hunt-scroll {
-  from { background-position-x: 0; }
-  to   { background-position-x: -16px; }
-}
-.hunt-scroll-bg {
-  background-image: repeating-linear-gradient(
-    90deg,
-    rgba(255,255,255,0.05) 0 1px,
-    transparent 1px 16px
-  );
-  animation: hunt-scroll 0.8s linear infinite;
-}
-
-/* Monster chip "appearing from off-screen" pop when a wave spawns. */
+/* Combatant "appearing" pop when a wave spawns. */
 @keyframes chip-spawn {
   0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
   60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
   100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
-.animate-chip-spawn {
-  animation: chip-spawn 0.35s ease-out;
+.animate-chip-spawn { animation: chip-spawn 0.35s ease-out; }
+
+/* Combat juice: floating damage/heal numbers rise and fade. */
+@keyframes dmg-float {
+  0%   { opacity: 1; transform: translate(-50%, -50%); }
+  100% { opacity: 0; transform: translate(-50%, -190%); }
 }
+.animate-dmg-float { animation: dmg-float 0.6s ease-out forwards; }
+
+/* A hit ring that flashes out from the struck combatant. */
+@keyframes hit-flash {
+  0%   { opacity: 0.85; transform: translate(-50%, -50%) scale(0.5); }
+  100% { opacity: 0;    transform: translate(-50%, -50%) scale(1.7); }
+}
+.animate-hit-flash { animation: hit-flash 0.45s ease-out forwards; }
+
+/* Attack arc line fades shortly after the strike lands. */
+@keyframes line-fade {
+  from { opacity: 0.7; }
+  to   { opacity: 0; }
+}
+.animate-line-fade { animation: line-fade 0.45s ease-out forwards; }

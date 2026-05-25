@@ -17,3 +17,4 @@ export {
 } from './damage'
 export { selectTarget, chooseAction, livingEnemies, livingAllies, findCombatant } from './behavior'
 export { createBattle, advanceRound, resolve, finalize } from './engine'
+export { unitToEngineInput, monsterToEngineInput } from './adapter'
