@@ -72,11 +72,3 @@ export function getEquippedId(unit: Unit, slot: EquipSlot): string | null {
   if (slot === 'mainHand' || slot === 'offHand') return unit.weaponSets[unit.activeWeaponSet][slot]
   return unit.equipment[slot]
 }
-
-// Resting position on the 1D axis (feet from unit base) while not in combat.
-// Melee (5 ft range) → 20 ft; bow (35 ft range) → 0 ft; linear in between.
-// Also acts as a floor during combat so back-rank units hold their rank.
-export function getFormationOffset(unit: Unit, equipment: EquipmentItem[]): number {
-  const r = getDerivedStats(unit, equipment).attackRange
-  return Math.max(0, Math.round(20 * (35 - r) / 30))
-}

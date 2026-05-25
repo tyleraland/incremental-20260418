@@ -3,7 +3,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import React from 'react'
 import { useGameStore } from '@/stores/useGameStore'
-import { makeUnit, makeEncounterSlot, resetStore } from '../helpers'
+import { makeUnit, resetStore } from '../helpers'
 
 beforeEach(() => {
   resetStore()
@@ -23,11 +23,6 @@ async function renderMap() {
   return render(React.createElement(Map))
 }
 
-async function renderCombat() {
-  const { Combat } = await import('@/pages/Combat')
-  return render(React.createElement(Combat))
-}
-
 // All test locations use region 'prontera' (a real REGIONS entry).
 const TEST_LOCATION = {
   id: 'loc1', name: 'Test Forest', region: 'prontera',
@@ -43,60 +38,6 @@ describe('UnitRect — KO state', () => {
     })
     await renderMap()
     expect(screen.getByText('KO')).toBeInTheDocument()
-  })
-})
-
-describe('UnitRect — fleeing state (Combat tab)', () => {
-  it('shows "Fleeing" on unit card when unit\'s location has active flee countdown (expanded)', async () => {
-    useGameStore.setState({
-      units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
-      locations: [TEST_LOCATION],
-      encounters: { loc1: [makeEncounterSlot()] },
-      locationFleeing: { loc1: 2 },
-      expandedRegionIds: ['prontera'],
-      expandedLocationIds: ['loc1'],
-    })
-    await renderCombat()
-    expect(screen.getByText('Fleeing')).toBeInTheDocument()
-  })
-
-  it('does not show "Fleeing" when locationFleeing is 0', async () => {
-    useGameStore.setState({
-      units: [makeUnit({ id: 'u1', health: 80, locationId: null })],
-      locations: [],
-      locationFleeing: {},
-      expandedRegionIds: [],
-    })
-    await renderCombat()
-    expect(screen.queryByText('Fleeing')).not.toBeInTheDocument()
-  })
-})
-
-describe('UnitRect — target display (Combat tab)', () => {
-  it('shows "→ Wolf" on unit card when wolf is the encounter monster (expanded)', async () => {
-    useGameStore.setState({
-      units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
-      locations: [TEST_LOCATION],
-      encounters: { loc1: [makeEncounterSlot({ targetUnitId: 'u1' })] },
-      locationFleeing: {},
-      expandedRegionIds: ['prontera'],
-      expandedLocationIds: ['loc1'],
-    })
-    await renderCombat()
-    expect(screen.getByText('→ Wolf')).toBeInTheDocument()
-  })
-
-  it('does not show a monster target when flee countdown is active', async () => {
-    useGameStore.setState({
-      units: [makeUnit({ id: 'u1', health: 80, locationId: 'loc1' })],
-      locations: [TEST_LOCATION],
-      encounters: { loc1: [makeEncounterSlot({ targetUnitId: 'u1' })] },
-      locationFleeing: { loc1: 2 },
-      expandedRegionIds: ['prontera'],
-      expandedLocationIds: [],
-    })
-    await renderCombat()
-    expect(screen.queryByText('→ Wolf')).not.toBeInTheDocument()
   })
 })
 

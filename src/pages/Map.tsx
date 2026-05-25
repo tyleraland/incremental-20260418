@@ -699,7 +699,6 @@ function LocationDetailPanel() {
   const units               = useGameStore((s) => s.units)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
-  const encounters          = useGameStore((s) => s.encounters)
 
   const [codexMonsterId, setCodexMonsterId] = useState<string | null>(null)
   const codexSeenCount = useGameStore((s) => codexMonsterId ? (s.monsterSeen[codexMonsterId] ?? 0) : 0)
@@ -745,11 +744,7 @@ function LocationDetailPanel() {
       <div className="flex-1 min-h-0 px-4 py-3 space-y-4 overflow-y-auto">
         {location ? (() => {
           const famPct  = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
-          const seenIds = (() => {
-            const saved   = (locationMonstersSeen[location.id] ?? []).filter((id) => location.monsterIds.includes(id))
-            const inSlots = (encounters[location.id] ?? []).map((sl) => sl.monsterId).filter((id) => location.monsterIds.includes(id))
-            return [...new Set([...saved, ...inSlots])]
-          })()
+          const seenIds = (locationMonstersSeen[location.id] ?? []).filter((id) => location.monsterIds.includes(id))
           const unknownCount = location.monsterIds.length - seenIds.length
           const unitsHere = units.filter((u) => u.locationId === location.id)
           return (
