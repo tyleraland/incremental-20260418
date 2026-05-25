@@ -11,7 +11,7 @@
 
 import { distance } from './grid'
 import { EPS } from './constants'
-import { livingEnemies, livingAllies, findCombatant, mostInjuredAllyInRange } from './behavior'
+import { livingEnemies, livingAllies, targetableEnemies, isStealthed, findCombatant, mostInjuredAllyInRange } from './behavior'
 import type { BattleState, Combatant, EngineSkill, TacticDef, SkillTargeting } from './types'
 
 // level-scaled coefficient as a formula literal: base at lv1, +per each level.
@@ -43,6 +43,13 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'arrow-shower':  (lv) => skill({ id: 'arrow-shower', name: 'Arrow Shower', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 1.8, cooldown: 4, damageFormula: `str * ${coef(0.7, 0.15, lv)}`, knockback: 2 }),
   'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 5, aoeRadius: 1.6, cooldown: 6, retreatAfter: 1.5, zone: { dotDamage: 3 + lv, duration: 3 } }),
   'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: 5, statusApplied: 'rooted', retreatAfter: 1.5 }),
+
+  // Phase 3 — behavioural & combos: freeze→amplify, stealth, dispel/reveal.
+  'freeze':        (lv) => skill({ id: 'freeze', name: 'Freeze', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: 5, damageFormula: `int * ${coef(0.5, 0.1, lv)}`, statusApplied: 'frozen' }),
+  'cloak':         () =>   skill({ id: 'cloak', name: 'Cloak', type: 'buff', targeting: 'self', cooldown: 6, statusApplied: 'stealthed' }),
+  'back-stab':     (lv) => skill({ id: 'back-stab', name: 'Back Stab', type: 'attack', targeting: 'single_enemy', range: 1.6, cooldown: 3, damageFormula: `str * ${coef(1.0, 0.2, lv)}`, stealthBonus: 2.5 }),
+  'sight':         () =>   skill({ id: 'sight', name: 'Sight', type: 'debuff', targeting: 'aoe_enemy', range: 6, aoeRadius: 2.5, cooldown: 4, removesStatusId: 'stealthed' }),
+  'dispel':        () =>   skill({ id: 'dispel', name: 'Dispel', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: 4, dispelCategory: 'buff' }),
 }
 
 export function buildEngineSkill(id: string, level: number): EngineSkill | null {
@@ -64,7 +71,11 @@ function nearest(self: Combatant, list: Combatant[]): Combatant {
 
 // Decide the primary target id for a skill, or null if it shouldn't fire now.
 export function selectSkillTarget(self: Combatant, state: BattleState, sk: EngineSkill): string | null {
-  if (sk.targeting === 'self') return self.id
+  if (sk.targeting === 'self') {
+    // don't re-cast a self-buff that's already active (Cloak, etc.)
+    if (sk.statusApplied && self.statuses.some((s) => s.id === sk.statusApplied)) return null
+    return self.id
+  }
 
   if (isAllyTargeting(sk.targeting)) {
     if (sk.type === 'heal') {
@@ -84,11 +95,13 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
     return (cands.find((c) => c.id === self.id) ?? nearest(self, cands)).id
   }
 
-  // enemy targeting: prefer the locked target if it's a valid in-range enemy
+  // enemy targeting: respect stealth, except for reveal skills (Sight) that see through it
+  const canSeeStealth = sk.removesStatusId === 'stealthed'
+  const visible = (e: Combatant) => canSeeStealth || !isStealthed(e)
   const locked = findCombatant(state, self.lockedTargetId)
-  if (locked && locked.alive && locked.team !== self.team && inRange(self, locked, sk.range)) return locked.id
-  const enemies = livingEnemies(state, self).filter((e) => inRange(self, e, sk.range))
-  return enemies.length ? nearest(self, enemies).id : null
+  if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(self, locked, sk.range)) return locked.id
+  const pool = (canSeeStealth ? livingEnemies(state, self) : targetableEnemies(state, self)).filter((e) => inRange(self, e, sk.range))
+  return pool.length ? nearest(self, pool).id : null
 }
 
 // The action-channel tactic that a skill brings with it (the merge). Fires when

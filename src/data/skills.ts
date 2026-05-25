@@ -113,6 +113,36 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  'freeze': {
+    id: 'freeze', name: 'Freeze', maxLevel: 10, type: 'active',
+    description: () => `Freeze a foe: it loses its turn and takes double damage.`,
+    requires: [{ skillId: 'arcane-knowledge', minLevel: 1 }],
+    getBonuses: () => ({}),
+  },
+  'dispel': {
+    id: 'dispel', name: 'Dispel', maxLevel: 10, type: 'active',
+    description: () => `Strip the beneficial buffs off a foe.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'cloak': {
+    id: 'cloak', name: 'Cloak', maxLevel: 10, type: 'active',
+    description: () => `Vanish — enemies can't target you until you strike.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'back-stab': {
+    id: 'back-stab', name: 'Back Stab', maxLevel: 10, type: 'active',
+    description: (lv) => `Strike for ${(1.0 + 0.2 * (lv - 1)).toFixed(1)}× ATK — far more from stealth.`,
+    requires: [{ skillId: 'cloak', minLevel: 1 }],
+    getBonuses: () => ({}),
+  },
+  'sight': {
+    id: 'sight', name: 'Sight', maxLevel: 10, type: 'active',
+    description: () => `Reveal hidden foes in an area.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
 }
 
 export function getAvailableSkills(unit: Unit) {

@@ -200,6 +200,8 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
   }
 
   amount *= armoredFactor(target)
+  amount *= vulnerableFactor(target)            // §3 frozen/vulnerable amplifies incoming damage
+  amount *= stealthMult(attacker, skill)        // §3 Back Stab from stealth hits harder
   amount = Math.max(1, Math.floor(amount))
 
   if (skill) {
@@ -221,6 +223,42 @@ function recordSkillUse(state: BattleState, self: Combatant, skill: EngineSkill)
   if (!state.stats.skillsUsedByUnit[self.id]) state.stats.skillsUsedByUnit[self.id] = []
   state.stats.skillsUsedByUnit[self.id].push(skill.id)
   self.skillCooldowns[skill.id] = skill.cooldown
+}
+
+// ── §3 combo / stealth helpers ──────────────────────────────────────────────--
+
+// Product of every active incoming-damage multiplier on the target (frozen, etc.).
+function vulnerableFactor(target: Combatant): number {
+  return target.statuses.reduce((m, s) => m * (s.damageTakenMult ?? 1), 1)
+}
+
+// Back Stab and friends: bonus only when the attacker is currently hidden.
+function stealthMult(attacker: Combatant, skill: EngineSkill | null): number {
+  if (skill?.stealthBonus && attacker.statuses.some((s) => s.flags.includes('stealthed'))) return skill.stealthBonus
+  return 1
+}
+
+// Dealing damage drops stealth (called once per offensive action, after it lands).
+function breakStealth(state: BattleState, c: Combatant): void {
+  const before = c.statuses.length
+  c.statuses = c.statuses.filter((s) => !s.flags.includes('stealthed'))
+  if (c.statuses.length !== before) {
+    emit(state, { round: state.round, type: 'status_expire', sourceId: c.id, extra: { statusId: 'stealthed' } })
+  }
+}
+
+// Dispel / Sight: strip statuses from a target (by category or by specific id).
+function applyStatusRemoval(state: BattleState, self: Combatant, target: Combatant, skill: EngineSkill): void {
+  const toRemove = (s: { id: string; category?: string }) =>
+    (skill.removesStatusId != null && s.id === skill.removesStatusId) ||
+    (skill.dispelCategory != null && s.category === skill.dispelCategory)
+  if (skill.removesStatusId == null && skill.dispelCategory == null) return
+  const removed = target.statuses.filter(toRemove)
+  if (removed.length === 0) return
+  target.statuses = target.statuses.filter((s) => !toRemove(s))
+  for (const s of removed) {
+    emit(state, { round: state.round, type: 'status_expire', sourceId: self.id, targetId: target.id, extra: { statusId: s.id } })
+  }
 }
 
 // ── Skill casting (§4) ──────────────────────────────────────────────────────--
@@ -276,13 +314,16 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
         }
       }
       applySkillStatus(state, self, t, skill)
+      applyStatusRemoval(state, self, t, skill)
     } else {
       if (skill.damageFormula) dealAttack(state, self, t, state.calculateDamage(self, t, skill, state.round), skill)
       if (t.alive) applySkillStatus(state, self, t, skill)
+      if (t.alive) applyStatusRemoval(state, self, t, skill)   // Dispel / Sight (§3)
       if (t.alive && skill.knockback) knockbackTarget(state, self, t, skill.knockback)
     }
   }
 
+  if (skill.damageFormula) breakStealth(state, self)   // attacking reveals the caster (§3)
   if (skill.retreatAfter) retreatCaster(state, self, skill.retreatAfter)
 }
 
@@ -406,7 +447,10 @@ function applyReaction(state: BattleState, self: Combatant, res: ReactionResult)
   }
   if (res.counterAttack) {
     const target = findCombatant(state, res.counterAttack)
-    if (target && target.alive) dealAttack(state, self, target, state.calculateDamage(self, target, null, state.round), null)
+    if (target && target.alive) {
+      dealAttack(state, self, target, state.calculateDamage(self, target, null, state.round), null)
+      breakStealth(state, self)
+    }
   }
   return !!res.consumesTurn
 }
@@ -431,6 +475,7 @@ function executeNaiveAction(state: BattleState, self: Combatant): void {
   const skill = action.kind === 'skill' ? action.skill : null
   dealAttack(state, self, target, state.calculateDamage(self, target, skill, state.round), skill)
   if (skill) recordSkillUse(state, self, skill)   // dealAttack no longer records skill use
+  breakStealth(state, self)                        // a basic attack also reveals (§3)
 }
 
 // Resolve / continue a channeled cast at the start of the caster's turn. Returns
@@ -452,10 +497,11 @@ function tickChannel(state: BattleState, self: Combatant): boolean {
 }
 
 function takeTurn(state: BattleState, self: Combatant): void {
-  // (0) stun — lose the turn; consume the status so exactly one turn is skipped
-  const stun = self.statuses.find((s) => s.flags.includes('stunned'))
-  if (stun) {
-    self.statuses = self.statuses.filter((s) => s !== stun)
+  // (0) hard control — lose the turn. Stun is consumed on the skipped turn;
+  // Freeze ages out normally (so its damage amplification persists, §3).
+  const control = self.statuses.find((s) => s.flags.includes('stunned') || s.flags.includes('frozen'))
+  if (control) {
+    if (control.flags.includes('stunned')) self.statuses = self.statuses.filter((s) => s !== control)
     self.lastHitById = null
     return
   }

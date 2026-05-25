@@ -22,6 +22,11 @@ describe('catalog', () => {
     expect(buildEngineSkill('firewall', 1)!.zone?.duration).toBeGreaterThan(0)
     expect(buildEngineSkill('poison', 1)!.statusApplied).toBe('poisoned')
     expect(buildEngineSkill('ankle-snare', 1)!.retreatAfter).toBeGreaterThan(0)
+    expect(buildEngineSkill('back-stab', 1)!.stealthBonus).toBeGreaterThan(1)
+    expect(buildEngineSkill('cloak', 1)!.statusApplied).toBe('stealthed')
+    expect(buildEngineSkill('freeze', 1)!.statusApplied).toBe('frozen')
+    expect(buildEngineSkill('sight', 1)!.removesStatusId).toBe('stealthed')
+    expect(buildEngineSkill('dispel', 1)!.dispelCategory).toBe('buff')
     expect(buildEngineSkill('nope', 1)).toBeNull()
   })
 })
@@ -183,6 +188,108 @@ describe('phase 2: spatial', () => {
     find(b, 'p').statuses.push(buildStatus('rooted', 'x')!)
     advanceRound(b)
     expect(hasEvent(b, (e) => e.type === 'move' && e.sourceId === 'p')).toBe(false)
+  })
+})
+
+describe('phase 3: combos & stealth', () => {
+  const fireValue = (frozen: boolean): number => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 500, hp: 500, meleeRange: 1.2 })],
+    })
+    if (frozen) find(b, 'foe').statuses.push(buildStatus('frozen', 'x')!)
+    advanceRound(b)
+    return b.events.find((e) => e.type === 'skill_use' && e.skillId === 'fire-bolt' && e.targetId === 'foe')!.value!
+  }
+
+  it('Freeze amplifies the next hit (freeze → nuke combo)', () => {
+    expect(fireValue(true)).toBeGreaterThan(fireValue(false) * 1.5)
+  })
+
+  it('Freeze applies the frozen status', () => {
+    const fz = { ...buildEngineSkill('freeze', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, skills: [fz] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, maxHp: 500, hp: 500, meleeRange: 1.2 })],
+    })
+    advanceRound(b)
+    expect(find(b, 'foe').statuses.some((s) => s.id === 'frozen')).toBe(true)
+  })
+
+  it('a frozen unit loses its turn but stays (unlike a consumed stun)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', str: 20, meleeRange: 99, maxHp: 500, hp: 500 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 20, meleeRange: 99, maxHp: 500, hp: 500 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('frozen', 'x')!)
+    advanceRound(b)
+    expect(hasEvent(b, (ev) => ev.type === 'melee_attack' && ev.sourceId === 'e')).toBe(false)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'frozen')).toBe(true)
+  })
+
+  it('a stealthed unit cannot be targeted by enemies', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', maxHp: 500, hp: 500 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 20, meleeRange: 99 })],
+    })
+    find(b, 'r').statuses.push(buildStatus('stealthed', 'r')!)
+    advanceRound(b)
+    expect(hasEvent(b, (ev) => ev.targetId === 'r' && (ev.type === 'melee_attack' || ev.type === 'ranged_attack'))).toBe(false)
+    expect(find(b, 'e').lockedTargetId).toBeNull()
+  })
+
+  it('Cloak hides the caster', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', skills: [buildEngineSkill('cloak', 1)!] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0 })],
+    })
+    advanceRound(b)
+    expect(find(b, 'r').statuses.some((s) => s.id === 'stealthed')).toBe(true)
+  })
+
+  const backstabValue = (stealthed: boolean): number => {
+    const bs = { ...buildEngineSkill('back-stab', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', str: 20, skills: [bs] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
+    })
+    if (stealthed) find(b, 'r').statuses.push(buildStatus('stealthed', 'r')!)
+    advanceRound(b)
+    return b.events.find((ev) => ev.type === 'skill_use' && ev.skillId === 'back-stab')!.value!
+  }
+
+  it('Back Stab hits far harder from stealth and reveals the attacker', () => {
+    expect(backstabValue(true)).toBeGreaterThan(backstabValue(false) * 2)
+    const bs = { ...buildEngineSkill('back-stab', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', str: 20, skills: [bs] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
+    })
+    find(b, 'r').statuses.push(buildStatus('stealthed', 'r')!)
+    advanceRound(b)
+    expect(find(b, 'r').statuses.some((s) => s.id === 'stealthed')).toBe(false)
+  })
+
+  it('Sight reveals hidden enemies', () => {
+    const st = { ...buildEngineSkill('sight', 1)!, range: 99, aoeRadius: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', skills: [st] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 500, hp: 500, meleeRange: 1.2 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('stealthed', 'e')!)
+    advanceRound(b)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'stealthed')).toBe(false)
+  })
+
+  it('Dispel strips an enemy buff', () => {
+    const dp = { ...buildEngineSkill('dispel', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', skills: [dp] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 500, hp: 500, meleeRange: 1.2 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('agi-up', 'e')!)
+    advanceRound(b)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'agi-up')).toBe(false)
   })
 })
 

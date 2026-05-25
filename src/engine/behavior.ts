@@ -12,6 +12,15 @@ export function livingEnemies(state: BattleState, self: Combatant): Combatant[] 
   return state.combatants.filter((c) => c.alive && c.team !== self.team)
 }
 
+export function isStealthed(c: Combatant): boolean {
+  return c.statuses.some((s) => s.flags.includes('stealthed'))
+}
+
+// Enemies a unit may lock onto: living, and not currently hidden (§3 stealth).
+export function targetableEnemies(state: BattleState, self: Combatant): Combatant[] {
+  return livingEnemies(state, self).filter((c) => !isStealthed(c))
+}
+
 export function livingAllies(state: BattleState, self: Combatant): Combatant[] {
   return state.combatants.filter((c) => c.alive && c.team === self.team)
 }
@@ -26,9 +35,9 @@ export function findCombatant(state: BattleState, id: string | null): Combatant 
 // target id when it changed, so the caller can emit `target_switch`.
 export function selectTarget(state: BattleState, self: Combatant): string | null {
   const current = findCombatant(state, self.lockedTargetId)
-  if (current && current.alive) return null
+  if (current && current.alive && !isStealthed(current)) return null   // a target that cloaks is lost
 
-  const enemies = livingEnemies(state, self)
+  const enemies = targetableEnemies(state, self)
   if (enemies.length === 0) {
     const prev = self.lockedTargetId
     self.lockedTargetId = null

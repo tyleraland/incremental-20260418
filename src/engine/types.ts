@@ -38,6 +38,9 @@ export interface EngineSkill {
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
   zone?: { dotDamage: number; duration: number }  // place a persistent ground hazard (aoe_point)
+  stealthBonus?: number  // damage multiplier when cast from stealth (Back Stab, §3)
+  dispelCategory?: 'buff' | 'debuff'  // strip statuses of this category from affected targets
+  removesStatusId?: string            // strip a specific status from affected targets (Sight → stealthed)
   slot: SkillSlot
 }
 
@@ -56,8 +59,10 @@ export interface StatusEffect {
   source: string          // unit id
   duration: number        // rounds remaining
   statModifiers: StatModifiers
-  flags: string[]         // "stealthed", "rooted", "channeling", "shielded", "taunted"
+  flags: string[]         // "stealthed", "rooted", "channeling", "shielded", "taunted", "frozen"
   dotDamage?: number      // damage dealt to the bearer each round (poison etc.)
+  damageTakenMult?: number // incoming-damage multiplier while active (vulnerability, §3 combos)
+  category?: 'buff' | 'debuff' | 'control'  // what Dispel/cleanse can strip
 }
 
 // ── Tactics (§5) ─────────────────────────────────────────────────────────────--

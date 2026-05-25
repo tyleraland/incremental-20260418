@@ -19,7 +19,8 @@ import type {
 // ── small local helpers (kept here to avoid import cycles) ──────────────────────
 
 function enemiesOf(state: BattleState, self: Combatant): Combatant[] {
-  return state.combatants.filter((c) => c.alive && c.team !== self.team)
+  // hidden enemies (§3 stealth) can't be picked until revealed or they attack
+  return state.combatants.filter((c) => c.alive && c.team !== self.team && !c.statuses.some((s) => s.flags.includes('stealthed')))
 }
 function defOf(c: Combatant): number { return effectiveStat(c, 'def') }
 function hpRatio(c: Combatant): number { return c.hp / c.maxHp }

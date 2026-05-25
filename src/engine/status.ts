@@ -14,13 +14,18 @@ export interface StatusSpec {
   statModifiers?: StatModifiers
   flags?: string[]
   dotDamage?: number             // damage to the bearer each round (poison etc.)
+  damageTakenMult?: number       // incoming-damage multiplier while active (§3 combos)
+  category?: 'buff' | 'debuff' | 'control'
 }
 
 export const STATUS_REGISTRY: Record<string, StatusSpec> = {
-  'stunned':  { id: 'stunned',  name: 'Stunned', duration: 2, flags: ['stunned'] },
-  'agi-up':   { id: 'agi-up',   name: 'Boosted Agility', duration: 4, statModifiers: { spd: 6 } },
-  'poisoned': { id: 'poisoned', name: 'Poisoned', duration: 3, dotDamage: 4 },
-  'rooted':   { id: 'rooted',   name: 'Rooted', duration: 2, flags: ['rooted'] },
+  'stunned':   { id: 'stunned',   name: 'Stunned', duration: 2, flags: ['stunned'], category: 'control' },
+  'agi-up':    { id: 'agi-up',    name: 'Boosted Agility', duration: 4, statModifiers: { spd: 6 }, category: 'buff' },
+  'poisoned':  { id: 'poisoned',  name: 'Poisoned', duration: 3, dotDamage: 4, category: 'debuff' },
+  'rooted':    { id: 'rooted',    name: 'Rooted', duration: 2, flags: ['rooted'], category: 'control' },
+  // §3 combo: frozen units skip their turn AND take amplified damage (Freeze → Lightning).
+  'frozen':    { id: 'frozen',    name: 'Frozen', duration: 2, flags: ['frozen'], damageTakenMult: 2, category: 'control' },
+  'stealthed': { id: 'stealthed', name: 'Stealthed', duration: 4, flags: ['stealthed'], category: 'buff' },
 }
 
 export function buildStatus(specId: string, sourceId: string): StatusEffect | null {
@@ -34,5 +39,7 @@ export function buildStatus(specId: string, sourceId: string): StatusEffect | nu
     statModifiers: { ...(spec.statModifiers ?? {}) },
     flags: [...(spec.flags ?? [])],
     dotDamage: spec.dotDamage,
+    damageTakenMult: spec.damageTakenMult,
+    category: spec.category,
   }
 }
