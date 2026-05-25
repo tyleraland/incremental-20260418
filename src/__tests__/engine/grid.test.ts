@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { distance, rankOf, rowsFromEdge, isPerimeter, startingPosition } from '@/engine'
+import { distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, ROWS } from '@/engine'
 import { moveToward, enforceSeparation, attackReach } from '@/engine/grid'
 import { combatant } from './helpers'
 
@@ -31,12 +31,23 @@ describe('grid: ranks & zones (§2.3)', () => {
 })
 
 describe('grid: starting positions', () => {
-  it('places players near the bottom edge and enemies near the top', () => {
+  it('deploys players near the bottom edge and enemies near the top', () => {
     const p = startingPosition('player', 'front', 0)
     const e = startingPosition('enemy', 'front', 0)
-    expect(p.y).toBeLessThan(5)
-    expect(e.y).toBeGreaterThan(5)
-    expect(p.x).toBe(0.5)
+    expect(p.y).toBeLessThan(3)         // clustered near the player edge
+    expect(e.y).toBeGreaterThan(ROWS - 3)
+  })
+
+  it('puts ranged/back units behind melee/front units', () => {
+    expect(startingPosition('player', 'back', 0).y)
+      .toBeLessThan(startingPosition('player', 'front', 0).y)
+    // enemies mirror: back is higher up (nearer the top edge)
+    expect(startingPosition('enemy', 'back', 0).y)
+      .toBeGreaterThan(startingPosition('enemy', 'front', 0).y)
+  })
+
+  it('centers the formation (first unit takes the middle column)', () => {
+    expect(startingPosition('player', 'front', 0).x).toBe(2.5)
   })
 })
 

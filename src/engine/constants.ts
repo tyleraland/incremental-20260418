@@ -15,7 +15,15 @@ export const MID_ROWS = 5            // ranks 3–5 = mid; 6+ = back
 export const PERIMETER_LEFT = 0.8    // x < this  → perimeter
 export const PERIMETER_RIGHT = 4.2   // x > this  → perimeter
 
-// Default starting Y (rows from the team's edge) by preferred rank.
-export const RANK_START_Y = { front: 1.5, mid: 4, back: 7 } as const
+// Starting Y as rows from a team's OWN edge. Everyone deploys close to their
+// edge (far bottom for players, far top for enemies) and advances toward the
+// center; melee (front) starts a touch ahead, ranged/support (back) sits at the
+// very rear. NOTE: this is intentionally tighter than the §2.3 zone bands —
+// zones classify a unit's *current* position mid-fight; this is just the deploy.
+export const RANK_START_Y = { front: 2.4, mid: 1.6, back: 0.8 } as const
+
+// Column order from center outward (for COLS=5), so a formation deploys around
+// the middle column rather than hugging the left edge.
+export const CENTERED_COLS = [2, 1, 3, 0, 4] as const
 
 export const EPS = 1e-6

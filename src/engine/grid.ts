@@ -3,7 +3,7 @@
 
 import {
   COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
-  PERIMETER_LEFT, PERIMETER_RIGHT, RANK_START_Y, EPS,
+  PERIMETER_LEFT, PERIMETER_RIGHT, RANK_START_Y, CENTERED_COLS, EPS,
 } from './constants'
 import type { Vec2, Rank, Team, Combatant } from './types'
 
@@ -37,12 +37,14 @@ export function isPerimeter(p: Vec2): boolean {
   return p.x < PERIMETER_LEFT || p.x > PERIMETER_RIGHT
 }
 
-// Starting position: players spread across columns at their rank distance from
-// the bottom edge (y small); enemies mirror from the top edge (y large).
-export function startingPosition(team: Team, rank: Rank, columnIndex: number): Vec2 {
+// Starting position: deploy near the team's own edge (players bottom, enemies
+// top), spread around the center column. `teamIndex` is the unit's order within
+// its team; columns fill center-outward so formations stay centered.
+export function startingPosition(team: Team, rank: Rank, teamIndex: number): Vec2 {
   const rankY = RANK_START_Y[rank]
   const y = team === 'player' ? rankY : ROWS - rankY
-  return clampToGrid({ x: (columnIndex % COLS) + 0.5, y })
+  const col = CENTERED_COLS[teamIndex % COLS]
+  return clampToGrid({ x: col + 0.5, y })
 }
 
 // Reach used for the unit's basic attack and as its melee stop distance.
