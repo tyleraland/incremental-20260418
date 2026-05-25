@@ -10,8 +10,12 @@ export {
   FRONT_ROWS, MID_ROWS, PERIMETER_LEFT, PERIMETER_RIGHT, RANK_START_Y,
 } from './constants'
 export {
-  distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, attackReach,
+  distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, attackReach, moveTowardPoint,
 } from './grid'
+export {
+  alliesOf, visibleEnemiesOf, lockedTarget, centroid, nearestTo,
+  nearestEnemyTo, squishiestAlly, flankPoint, guardPoint,
+} from './spatial'
 export {
   variation, evalFormula, effectiveStat, defaultCalculateDamage, calculateHeal,
 } from './damage'

@@ -83,12 +83,14 @@ export interface TacticRef {
 
 // What a movement tactic decides for this turn (null fields fall back to default).
 export interface MovementResult {
-  speedMult?: number            // multiply base move speed when advancing on the lock
+  speedMult?: number            // multiply base move speed when advancing on the lock / toPoint
   awayFromNearestEnemy?: boolean // retreat toward own edge instead of advancing
   rows?: number                 // distance to fall back (with awayFromNearestEnemy)
   hold?: boolean                // do not move this turn
   skipAction?: boolean          // also skip the attack this turn
   clearLock?: boolean           // disengage: drop the locked target
+  toPoint?: Vec2                // move toward an explicit point (flank / guard / regroup, §spatial)
+  desiredRange?: number         // hold this gap to the locked target (kite): back off if closer, close if farther
 }
 
 export interface ActionResult {

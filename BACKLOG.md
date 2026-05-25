@@ -79,16 +79,21 @@ party→tactics; strategy→tactics is the same mechanism. Examples:
 
 ### 3. Spatial primitives (used by both player tactics and enemy AI)
 
-Movement is currently toward/away the nearest enemy + row-based retreat. Add
-relative, grid-size-agnostic queries and movement intents:
+**DONE** (`src/engine/spatial.ts`, movement tactics in `tactics.ts`): relative,
+grid-size-agnostic queries — `centroid`, `nearestTo`, `nearestEnemyTo`,
+`squishiestAlly`, `flankPoint`, `guardPoint` — and movement tactics built on
+`MovementResult.toPoint` / `desiredRange`: **Flanker** (circle to the target's
+weak side), **Kiter** (hold range, back off when closed), **Guardian**
+(body-block the squishiest ally), **Regroup** (rejoin when isolated). Party size
+is also uncapped now (formations stack into deeper rows).
 
-- Queries: by-rank (backline), by-threat, team centroid, frontline Y, "is in our
-  backline?", nearest enemy to ally X.
-- Movement intents: `approachToRange(target, desired)` (kite), `flankTo(target)`
-  (approach from its back/side), `guard(allyId)` (stay between ally and nearest
-  enemy), `regroup()` (toward ally centroid).
-- Ambush: while `stealthed`, sneak to a flank of `focusTargetId`, hold until in
-  Back Stab range, then burst.
+Still TODO:
+
+- **Ambush** combo: while `stealthed`, route to the flank of `focusTargetId`,
+  hold until in Back Stab range, then burst. (needs the blackboard's
+  `focusTargetId` + a "hold-until-in-range" gate on the Flanker move.)
+- More queries when needed: by-rank (backline) targeting, frontline Y,
+  "is in our backline?" (diving detection).
 
 ### Grid-size independence (invariant)
 

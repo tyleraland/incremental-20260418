@@ -6,7 +6,7 @@
 // to completion for tests and bulk/idle resolution.
 
 import { BASE_MOVE_SPEED, MAX_ROUNDS, EPS } from './constants'
-import { startingPosition, moveToward, attackReach, distance, clampToGrid, enforceSeparation } from './grid'
+import { startingPosition, moveToward, moveTowardPoint, attackReach, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies,
@@ -439,10 +439,39 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
     }
     return
   }
+  // Kite: hold a desired gap to the locked target (back off if too close, close in if too far).
+  if (plan?.desiredRange != null) { kiteToward(state, self, plan.desiredRange); return }
+  // Move to a computed spot (flank / guard / regroup).
+  if (plan?.toPoint) {
+    if (moveTowardPoint(self, plan.toPoint, BASE_MOVE_SPEED * (plan.speedMult ?? 1), state.combatants)) {
+      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    }
+    return
+  }
   const target = findCombatant(state, self.lockedTargetId)
   if (target && target.alive) {
     const moved = moveToward(self, target, BASE_MOVE_SPEED * (plan?.speedMult ?? 1), state.combatants)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+  }
+}
+
+// Step toward/away from the locked target to maintain `want` gap (with a small
+// dead-band so the unit doesn't jitter when it's already at range).
+function kiteToward(state: BattleState, self: Combatant, want: number): void {
+  const target = findCombatant(state, self.lockedTargetId)
+  if (!target || !target.alive) return
+  const d = distance(self.pos, target.pos)
+  const band = 0.4
+  if (Math.abs(d - want) <= band) return   // in the sweet spot: stand and shoot
+  const before = { ...self.pos }
+  const sign = d < want ? -1 : 1            // closer than want → move away; farther → approach
+  const dirx = ((target.pos.x - self.pos.x) / (d || 1)) * sign
+  const diry = ((target.pos.y - self.pos.y) / (d || 1)) * sign
+  const step = Math.min(BASE_MOVE_SPEED, Math.abs(d - want))
+  self.pos = clampToGrid({ x: self.pos.x + dirx * step, y: self.pos.y + diry * step })
+  enforceSeparation(self, state.combatants)
+  if (self.pos.x !== before.x || self.pos.y !== before.y) {
+    emit(state, { round: state.round, type: sign < 0 ? 'retreat' : 'move', sourceId: self.id, position: { ...self.pos } })
   }
 }
 

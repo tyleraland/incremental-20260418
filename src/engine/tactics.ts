@@ -11,7 +11,12 @@
 // with rank (§15).
 
 import { distance } from './grid'
+import { SEPARATION } from './constants'
 import { effectiveStat } from './damage'
+import {
+  alliesOf, nearestTo, lockedTarget, centroid, nearestEnemyTo,
+  squishiestAlly, flankPoint, guardPoint,
+} from './spatial'
 import type {
   BattleState, Combatant, ResolvedTactic, StatusEffect, TacticDef, TacticRef,
 } from './types'
@@ -90,6 +95,47 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     movement: (self, _state, rank) => {
       const threshold = 0.4 - 0.05 * (rank - 1)
       return hpRatio(self) < threshold ? { awayFromNearestEnemy: true, rows: 2, clearLock: true } : null
+    },
+  },
+  'flanker': {
+    id: 'flanker', name: 'Flanker', scope: 'unit', channel: 'movement',
+    description: "Circle to the locked target's least-guarded side before striking.",
+    movement: (self, state) => {
+      const t = lockedTarget(self, state)
+      if (!t) return null
+      return { toPoint: flankPoint(self, t, state, Math.max(self.meleeRange, SEPARATION)) }
+    },
+  },
+  'kiter': {
+    id: 'kiter', name: 'Kiter', scope: 'unit', channel: 'movement',
+    description: 'Ranged: keep distance from the target, back off if it closes in.',
+    movement: (self, state, rank) => {
+      if (self.rangedRange <= 0 || !lockedTarget(self, state)) return null
+      return { desiredRange: self.rangedRange * (0.95 - 0.03 * (rank - 1)) }
+    },
+  },
+  'guardian': {
+    id: 'guardian', name: 'Guardian', scope: 'unit', channel: 'movement',
+    description: 'Body-block: stand between your squishiest ally and the nearest threat.',
+    movement: (self, state) => {
+      const ally = squishiestAlly(self, state)
+      if (!ally) return null
+      const threat = nearestEnemyTo(ally, state)
+      if (!threat) return null
+      return { toPoint: guardPoint(ally, threat, SEPARATION * 1.6) }
+    },
+  },
+  'regroup': {
+    id: 'regroup', name: 'Regroup', scope: 'unit', channel: 'movement',
+    description: 'Fall back to the group when you get isolated from allies.',
+    movement: (self, state, rank) => {
+      const mates = alliesOf(state, self)
+      if (mates.length === 0) return null
+      const near = nearestTo(self.pos, mates)
+      const isolation = 3 + 0.5 * (rank - 1)
+      if (near && distance(self.pos, near.pos) <= isolation) return null
+      const c = centroid(mates)
+      return c ? { toPoint: c } : null
     },
   },
 

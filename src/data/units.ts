@@ -45,7 +45,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('freeze', 'lightning-bolt', 'fire-bolt', 'heal', 'firewall', 'dispel'),
-    tactics: [t('opportunist'), t('nimble')],
+    tactics: [t('opportunist'), t('kiter'), t('nimble')],
   },
   {
     id: 'u4', name: 'Sera Holloway', level: 1, exp: 20, expToNext: 100, age: 16, health: 80, recoveryTicksLeft: 0, isResting: false,
@@ -69,7 +69,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: 'eq-pickaxe', sideboard2: null, accessory: null },
     actionSlots: [...EMPTY_ACTION_SLOTS],
-    tactics: [t('armored'), t('counterattacker')],
+    tactics: [t('guardian'), t('armored'), t('counterattacker')],
   },
   {
     id: 'u6', name: 'Lyra Briar', level: 5, exp: 750, expToNext: 800, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
@@ -81,6 +81,6 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('cloak', 'back-stab', 'arrow-shower', 'ankle-snare', 'sight'),
-    tactics: [t('focus-casters'), t('opportunist'), t('nimble'), t('retreater')],
+    tactics: [t('focus-casters'), t('opportunist'), t('retreater'), t('flanker')],
   },
 ]

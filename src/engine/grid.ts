@@ -76,6 +76,26 @@ export function moveToward(
   return mover.pos.x !== before.x || mover.pos.y !== before.y
 }
 
+// Move `mover` toward an explicit point (no attack-reach stop — used by spatial
+// tactics that aim at a computed spot: flank, guard, regroup). Returns true if
+// the position changed.
+export function moveTowardPoint(
+  mover: Combatant,
+  point: Vec2,
+  speed: number,
+  all: Combatant[],
+): boolean {
+  const d = distance(mover.pos, point)
+  if (d <= EPS) return false
+  const ux = (point.x - mover.pos.x) / d
+  const uy = (point.y - mover.pos.y) / d
+  const step = Math.min(speed, d)
+  const before = mover.pos
+  mover.pos = clampToGrid({ x: mover.pos.x + ux * step, y: mover.pos.y + uy * step })
+  enforceSeparation(mover, all)
+  return mover.pos.x !== before.x || mover.pos.y !== before.y
+}
+
 // §2.4 when a move would put two units closer than SEPARATION, push both apart
 // along the axis between them. Deterministic: `all` is iterated in stable order.
 export function enforceSeparation(mover: Combatant, all: Combatant[]): void {
