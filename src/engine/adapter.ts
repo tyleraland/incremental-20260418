@@ -43,6 +43,8 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
     rangedRange: ranged ? RANGED_GRID_RANGE : 0,
+    attackElement: derived.attackElement,   // §3 weapon-imbued attack element
+    armorElement: derived.armorElement,     // §3 armor-imbued defensive element
     skills: equippedCombatSkills(unit),   // action-bar skills → casts (each injects its usage tactic)
     tactics: unit.tactics ?? [],          // player-equipped tactics drive engine behavior (§5)
   }
@@ -64,6 +66,8 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
     rangedRange: ranged ? RANGED_GRID_RANGE : 0,
+    attackElement: 'neutral',   // §3 monsters attack neutral; def.element is defensive
+    armorElement: def.element,
     skills: [],
   }
 }

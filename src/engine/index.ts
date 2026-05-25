@@ -24,3 +24,4 @@ export {
 } from './tactics'
 export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget } from './skills'
 export { STATUS_REGISTRY, buildStatus } from './status'
+export { ALL_ELEMENTS, elementMultiplier } from './elements'

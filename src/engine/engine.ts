@@ -16,9 +16,10 @@ import {
 } from './tactics'
 import { makeSkillTactic } from './skills'
 import { buildStatus } from './status'
+import { elementMultiplier } from './elements'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
-  EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill,
+  EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult,
 } from './types'
 
@@ -54,6 +55,8 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     preferredRank: input.preferredRank,
     meleeRange: input.meleeRange,
     rangedRange: input.rangedRange,
+    attackElement: input.attackElement ?? 'neutral',
+    armorElement: input.armorElement ?? 'neutral',
     skills,
     skillCooldowns: {},
     statuses: [],
@@ -199,10 +202,13 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
     }
   }
 
+  const atkElement: Element = skill?.element ?? attacker.attackElement
+  const elMult = elementMultiplier(atkElement, effectiveArmor(target))   // §3 element matrix
   amount *= armoredFactor(target)
-  amount *= vulnerableFactor(target)            // §3 frozen/vulnerable amplifies incoming damage
+  amount *= vulnerableFactor(target)            // element-agnostic vulnerability
+  amount *= elMult
   amount *= stealthMult(attacker, skill)        // §3 Back Stab from stealth hits harder
-  amount = Math.max(1, Math.floor(amount))
+  amount = elMult === 0 ? 0 : Math.max(1, Math.floor(amount))   // 0 = elementally immune
 
   if (skill) {
     emit(state, { round: state.round, type: 'skill_use', sourceId: attacker.id, targetId: target.id, value: amount, skillId: skill.id })
@@ -212,6 +218,7 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
   applyDamageRaw(state, attacker.id, target, amount)
   if (target.alive) {
     target.lastHitById = attacker.id
+    clearByElement(state, target, atkElement)   // §3 e.g. fire melts Frozen
     if (target.channel) {   // §4 a landed hit disrupts a channeled cast
       emit(state, { round: state.round, type: 'interrupt', sourceId: attacker.id, targetId: target.id, extra: { skillId: target.channel.skillId } })
       target.channel = null
@@ -227,9 +234,25 @@ function recordSkillUse(state: BattleState, self: Combatant, skill: EngineSkill)
 
 // ── §3 combo / stealth helpers ──────────────────────────────────────────────--
 
-// Product of every active incoming-damage multiplier on the target (frozen, etc.).
+// Product of every active element-agnostic incoming-damage multiplier on the target.
 function vulnerableFactor(target: Combatant): number {
   return target.statuses.reduce((m, s) => m * (s.damageTakenMult ?? 1), 1)
+}
+
+// Effective armor element: a status may override it (Frozen → water), else base.
+function effectiveArmor(target: Combatant): Element {
+  const ov = target.statuses.find((s) => s.armorOverride)
+  return ov?.armorOverride ?? target.armorElement
+}
+
+// Clear statuses that the incoming element dispels (fire melts Frozen, §3).
+function clearByElement(state: BattleState, target: Combatant, element: Element): void {
+  const removed = target.statuses.filter((s) => s.removedByElement?.includes(element))
+  if (removed.length === 0) return
+  target.statuses = target.statuses.filter((s) => !s.removedByElement?.includes(element))
+  for (const s of removed) {
+    emit(state, { round: state.round, type: 'status_expire', sourceId: target.id, extra: { statusId: s.id } })
+  }
 }
 
 // Back Stab and friends: bonus only when the attacker is currently hidden.

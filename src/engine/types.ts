@@ -5,6 +5,9 @@
 // turn order, damage, status effects, and win/loss — nothing about progression,
 // loot, or rendering (§13).
 
+import type { Element } from './elements'
+export type { Element } from './elements'
+
 export type Team = 'player' | 'enemy'
 export type Rank = 'front' | 'mid' | 'back'
 
@@ -34,6 +37,7 @@ export interface EngineSkill {
   channelTime: number    // 0 for instant, 1+ for channeled
   damageFormula: string  // e.g. "str * 1.5" — evaluated by the engine
   healFormula: string    // e.g. "int * 2.0"
+  element?: Element       // attack element for damage (default 'neutral'); drives §3 matrix
   statusApplied?: string // status effect id, if any
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
@@ -61,7 +65,9 @@ export interface StatusEffect {
   statModifiers: StatModifiers
   flags: string[]         // "stealthed", "rooted", "channeling", "shielded", "taunted", "frozen"
   dotDamage?: number      // damage dealt to the bearer each round (poison etc.)
-  damageTakenMult?: number // incoming-damage multiplier while active (vulnerability, §3 combos)
+  damageTakenMult?: number // element-agnostic incoming-damage multiplier while active
+  armorOverride?: Element  // override the bearer's effective armor element (Frozen → water, §3)
+  removedByElement?: Element[]  // taking damage of these elements clears the status (fire melts Frozen)
   category?: 'buff' | 'debuff' | 'control'  // what Dispel/cleanse can strip
 }
 
@@ -141,6 +147,8 @@ export interface EngineUnitInput {
 
   meleeRange: number      // grid units; melee reach
   rangedRange: number     // 0 if melee-only; >0 enables ranged basic attacks
+  attackElement?: Element // default 'neutral'
+  armorElement?: Element  // default 'neutral'
 
   skills: EngineSkill[]
   potions?: number        // count of self-heal consumables available this fight
@@ -177,6 +185,8 @@ export interface Combatant {
   preferredRank: Rank
   meleeRange: number
   rangedRange: number
+  attackElement: Element   // element of this unit's basic attacks (§3)
+  armorElement: Element    // defensive element
 
   skills: EngineSkill[]
   skillCooldowns: Record<string, number>

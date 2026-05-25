@@ -36,6 +36,8 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     preferredRank: 'front' as Rank,
     meleeRange: 1.2,
     rangedRange: 0,
+    attackElement: 'neutral',
+    armorElement: 'neutral',
     skills: [],
     skillCooldowns: {},
     statuses: [],

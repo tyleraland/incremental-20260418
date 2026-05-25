@@ -1,28 +1,14 @@
-// Elemental attack/armor system.
+// Elemental attack/armor system. The matrix + Element type now live in the
+// engine (the source of truth for combat); this module re-exports them and adds
+// the UI-only labels/colors so existing `@/lib/elements` and `@/types` imports
+// keep working.
 //
 // 9 elements: damage from an attacking element vs a defending element resolves
-// via ELEMENT_MULTIPLIER (2x effective, 1x normal/default, 0.33x ineffective,
-// 0x immune). Missing entries default to 1x.
-//
-// Units attack and wear 'neutral' by default; monsters attack 'neutral' but
-// their `element` field is their *defensive* armor element. A lightning sword
-// vs a water slime is 2x; a neutral wolf bite vs a player in neutral armor is 1x.
+// via the engine table (2x effective, 1x neutral, 0.33x ineffective, 0x immune).
 
-export type Element =
-  | 'neutral'
-  | 'fire'
-  | 'water'     // also covers ice
-  | 'earth'
-  | 'lightning'
-  | 'poison'
-  | 'radiant'
-  | 'undead'
-  | 'ghost'
-
-export const ALL_ELEMENTS: Element[] = [
-  'neutral', 'fire', 'water', 'earth', 'lightning',
-  'poison', 'radiant', 'undead', 'ghost',
-]
+import type { Element } from '@/engine/elements'
+export type { Element } from '@/engine/elements'
+export { ALL_ELEMENTS, elementMultiplier } from '@/engine/elements'
 
 export const ELEMENT_LABELS: Record<Element, string> = {
   neutral: 'Neutral',
@@ -34,23 +20,6 @@ export const ELEMENT_LABELS: Record<Element, string> = {
   radiant: 'Radiant',
   undead: 'Undead',
   ghost: 'Ghost',
-}
-
-// Sparse attacker → defender table; missing entries = 1.
-const TABLE: Record<Element, Partial<Record<Element, number>>> = {
-  neutral:   { ghost: 0 },
-  fire:      { fire: 0.33, water: 2, earth: 2, poison: 2, undead: 2 },
-  water:     { fire: 2, water: 0.33, lightning: 2 },
-  earth:     { water: 2, earth: 0.33, lightning: 2, ghost: 0.33 },
-  lightning: { water: 2, earth: 0.33, lightning: 0.33 },
-  poison:    { poison: 0.33, radiant: 0.33, undead: 0, ghost: 0 },
-  radiant:      { poison: 2, radiant: 0.33, undead: 2, ghost: 2 },
-  undead:    { poison: 2, radiant: 0, undead: 0.33 },
-  ghost:     { radiant: 0.33, undead: 2, ghost: 0.33 },
-}
-
-export function elementMultiplier(attacker: Element, defender: Element): number {
-  return TABLE[attacker]?.[defender] ?? 1
 }
 
 export const ELEMENT_COLORS: Record<Element, string> = {
