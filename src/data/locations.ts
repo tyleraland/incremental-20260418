@@ -55,7 +55,9 @@ export const INITIAL_LOCATIONS: Location[] = [
     id: `geffen-dungeon-${i + 1}`, region: 'geffen-dungeon',
     name: `Geffen Dungeon Floor ${i + 1}`,
     description: `Floor ${i + 1} of the catacombs beneath Geffen.`,
-    traits: ['dungeon', 'underground'], monsterIds: ['bat'] as string[],
+    traits: ['dungeon', 'underground'],
+    // Floor 2 is a defensive wall: tough slimes flanked by bats (see ENCOUNTER_OVERRIDES).
+    monsterIds: (i === 1 ? ['tough-slime', 'bat'] : ['bat']) as string[],
     familiarityMax: 100, connections: [] as string[],
   })),
 

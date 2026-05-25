@@ -141,16 +141,28 @@ function monsterIdOf(combatantId: string): string {
   return combatantId.split('#')[0]
 }
 
+// Locations with a fixed, hand-authored wave (always this exact group, ignoring
+// party size). Everything else cycles the location's monsterIds to party size.
+const ENCOUNTER_OVERRIDES: Record<string, string[]> = {
+  // Floor 2 wall: three high-defense tough slimes flanked by two bats.
+  'geffen-dungeon-2': ['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'],
+}
+
+export function waveComposition(loc: Location, partySize: number): string[] {
+  const override = ENCOUNTER_OVERRIDES[loc.id]
+  if (override) return override.slice(0, MAX_PARTY)
+  const size = Math.min(MAX_PARTY, Math.max(1, partySize))
+  return Array.from({ length: size }, (_, i) => loc.monsterIds[i % loc.monsterIds.length])
+}
+
 function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[]): BattleState {
   const roster = party.slice(0, MAX_PARTY)
   const playerUnits = roster.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player'))
-  // Match the wave to the party size (1–5), cycling the location's monster ids.
-  const waveSize = Math.min(MAX_PARTY, Math.max(1, roster.length))
   const enemyUnits = []
-  for (let i = 0; i < waveSize; i++) {
-    const mid = loc.monsterIds[i % loc.monsterIds.length]
-    const def = MONSTER_REGISTRY[mid]
-    if (def) enemyUnits.push(monsterToEngineInput(def, `${mid}#${i}`, 'enemy'))
+  const wave = waveComposition(loc, roster.length)
+  for (let i = 0; i < wave.length; i++) {
+    const def = MONSTER_REGISTRY[wave[i]]
+    if (def) enemyUnits.push(monsterToEngineInput(def, `${wave[i]}#${i}`, 'enemy'))
   }
   return createBattle({ playerUnits, enemyUnits, collectEvents: true })
 }

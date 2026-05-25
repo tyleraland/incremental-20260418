@@ -20,7 +20,7 @@ export const PERIMETER_RIGHT = 4.2   // x > this  → perimeter
 // center; melee (front) starts a touch ahead, ranged/support (back) sits at the
 // very rear. NOTE: this is intentionally tighter than the §2.3 zone bands —
 // zones classify a unit's *current* position mid-fight; this is just the deploy.
-export const RANK_START_Y = { front: 2.4, mid: 1.6, back: 0.8 } as const
+export const RANK_START_Y = { front: 1.7, mid: 1.1, back: 0.5 } as const
 
 // Column order from center outward (for COLS=5), so a formation deploys around
 // the middle column rather than hugging the left edge.

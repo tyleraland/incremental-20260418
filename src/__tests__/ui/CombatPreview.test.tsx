@@ -38,7 +38,8 @@ describe('Combat tab — grid preview', () => {
     await renderCombat()
     expect(screen.getByText('Test Forest')).toBeInTheDocument()
     expect(screen.getByText('Party (1)')).toBeInTheDocument()
-    expect(screen.getByText('Enemies (2)')).toBeInTheDocument()
+    // Preview now mirrors the real wave: party-sized (1 unit → 1 enemy)
+    expect(screen.getByText('Enemies (1)')).toBeInTheDocument()
     expect(screen.getByText('AV')).toBeInTheDocument()   // unit initials chip
   })
 })

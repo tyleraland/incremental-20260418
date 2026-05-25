@@ -1,4 +1,4 @@
-import { useGameStore } from '@/stores/useGameStore'
+import { useGameStore, waveComposition } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { ELEMENT_COLORS } from '@/lib/elements'
@@ -209,7 +209,7 @@ function Preview() {
 
   const location = combatLocationId ? locations.find((l) => l.id === combatLocationId) ?? null : null
   const party    = units.filter((u) => u.locationId === combatLocationId).slice(0, 5)
-  const foes     = (location?.monsterIds ?? []).slice(0, 5)
+  const foes     = location ? waveComposition(location, party.length) : []
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
@@ -226,7 +226,8 @@ function Preview() {
         <GridBackdrop />
         {foes.map((id, i) => {
           const m = MONSTER_REGISTRY[id]
-          const rank: Rank = i < COLS ? 'front' : i < COLS * 2 ? 'mid' : 'back'
+          const ranged = (m?.stats.attackRange ?? 5) > 5
+          const rank: Rank = ranged ? 'back' : 'front'
           return (
             <PreviewChip
               key={`${id}-${i}`}

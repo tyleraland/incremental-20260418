@@ -45,6 +45,19 @@ describe('combat engine — battle lifecycle', () => {
     expect((s.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0)).toBeGreaterThan(0)
   })
 
+  it('spawns the fixed 5-enemy wall at Geffen Dungeon Floor 2', () => {
+    resetStore({
+      locations: [{ ...FIELD(['tough-slime', 'bat']), id: 'geffen-dungeon-2', name: 'GD2' }],
+      units: [makeUnit({ id: 'u1', locationId: 'geffen-dungeon-2', health: 100 })], // single unit, wave still 5
+    })
+    tick()
+    const enemies = useGameStore.getState().battles['geffen-dungeon-2'].combatants.filter((c) => c.team === 'enemy')
+    expect(enemies.length).toBe(5)
+    expect(enemies.filter((c) => c.id.startsWith('tough-slime')).length).toBe(3)
+    expect(enemies.filter((c) => c.id.startsWith('bat')).length).toBe(2)
+    expect(enemies.find((c) => c.id.startsWith('tough-slime'))!.def).toBe(36) // very high defense
+  })
+
   it('KOs a fragile unit that loses a fight, starting recovery', () => {
     resetStore({
       locations: [FIELD(['stone-golem'])],
