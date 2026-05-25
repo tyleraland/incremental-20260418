@@ -13,11 +13,9 @@ const ELEMENT_COLORS: Record<string, string> = {
 
 export function LocationCodex({ location, onClose }: { location: Location; onClose: () => void }) {
   const familiarity = useGameStore((s) => s.locationFamiliarity[location.id] ?? 0)
-  const savedSeen   = useGameStore((s) => {
-    const saved   = (s.locationMonstersSeen[location.id] ?? []).filter((id) => location.monsterIds.includes(id))
-    const inSlots = (s.encounters[location.id] ?? []).map((sl) => sl.monsterId).filter((id) => location.monsterIds.includes(id))
-    return [...new Set([...saved, ...inSlots])]
-  })
+  const savedSeen   = useGameStore((s) =>
+    (s.locationMonstersSeen[location.id] ?? []).filter((id) => location.monsterIds.includes(id))
+  )
 
   const famPct       = Math.round((familiarity / location.familiarityMax) * 100)
   const unknownCount = location.monsterIds.length - savedSeen.length

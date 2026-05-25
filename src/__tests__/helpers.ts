@@ -1,17 +1,4 @@
-import { useGameStore, calcAttackCooldown, PRIORITY_NORMAL, ACTION_SLOT_COUNT, type Unit, type EncounterSlot } from '@/stores/useGameStore'
-
-export { calcAttackCooldown }
-
-// How many times an attack fires in n ticks when:
-//   - attackCooldown starts at 0 (fires on tick 1)
-//   - resets to `cooldown - 1` after each fire
-// Effective period = cooldown (fires every cooldown ticks, matching batchTick's continuous rate).
-export function firesInNTicks(n: number, cooldown: number): number {
-  if (n <= 0) return 0
-  return 1 + Math.floor((n - 1) / cooldown)
-}
-
-export type { EncounterSlot }
+import { useGameStore, ACTION_SLOT_COUNT, type Unit } from '@/stores/useGameStore'
 
 export function makeUnit(overrides: Partial<Unit> = {}): Unit {
   return {
@@ -40,27 +27,12 @@ export function makeUnit(overrides: Partial<Unit> = {}): Unit {
   }
 }
 
-export function makeEncounterSlot(overrides: Partial<EncounterSlot> = {}): EncounterSlot {
-  return {
-    monsterId: 'wolf', progress: 0, targetUnitId: null, priority: PRIORITY_NORMAL, threat: {},
-    phase: 'standing', distance: 0, dealtHistory: [], takenHistory: [],
-    attackCooldown: 0, progressCooldown: 0,
-    lastAttackMissed: false, lastProgressMissed: false,
-    ...overrides,
-  }
-}
-
-// Sets a known clean base state for combat/tick tests.
+// Sets a known clean base state for tick/regen tests.
 // Merges over the existing store so actions are preserved.
 export function resetStore(overrides: object = {}) {
   useGameStore.setState({
     units: [],
     equipment: [],
-    encounters: {},
-    encounterCooldown: {},
-    locationFleeing: {},
-    unitDistance: {},
-    locationUnitOrder: {},
     monsterDefeated: {},
     monsterSeen: {},
     miscItems: [],
