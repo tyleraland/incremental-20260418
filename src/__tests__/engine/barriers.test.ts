@@ -46,13 +46,14 @@ describe('barriers in combat', () => {
     expect(e.pos.y).toBeLessThan(20)      // stopped against the wall, not pushed through it
   })
 
-  it('units navigate around the central cross to engage', () => {
+  it('a unit routes around the central cross to reach its target', () => {
     const r = resolve({
       playerUnits: [eu({ id: 'p', str: 60, maxHp: 500, hp: 500 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 1, maxHp: 20, hp: 20 })],
+      // enemy holds position (huge reach) so this isolates pathing, not a chase
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 1, maxHp: 20, hp: 20, meleeRange: 99 })],
       barriers: arenaBarriers(),
     })
-    expect(r.outcome).toBe('victory')               // routed around the barrier and won
+    expect(r.outcome).toBe('victory')               // rounded the corners and got there
     expect(r.units.find((u) => u.id === 'e')!.alive).toBe(false)
     expect(r.rounds).toBeGreaterThan(1)
   })

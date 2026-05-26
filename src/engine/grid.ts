@@ -5,7 +5,7 @@ import {
   COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
   PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
-import { slideMove, pointBlocked } from './barriers'
+import { slideMove, steerAround } from './barriers'
 import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -80,11 +80,13 @@ export function moveToward(
   const d = distance(mover.pos, target.pos)
   if (d <= reach + EPS) return false   // already in range; hold position
 
-  const ux = (target.pos.x - mover.pos.x) / d
-  const uy = (target.pos.y - mover.pos.y) / d
-  const step = Math.min(speed, d - reach)
+  // Route around terrain toward a corner that keeps line of sight (§spatial).
+  const { point, direct } = steerAround(mover.pos, target.pos, barriers)
+  const dd = distance(mover.pos, point)
+  if (dd <= EPS) return false
+  const step = Math.min(speed, direct ? d - reach : dd)
   const before = mover.pos
-  mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * step, y: mover.pos.y + uy * step }, barriers)
+  mover.pos = slideMove(mover.pos, { x: mover.pos.x + (point.x - mover.pos.x) / dd * step, y: mover.pos.y + (point.y - mover.pos.y) / dd * step }, barriers)
   enforceSeparation(mover, all, barriers)
   return mover.pos.x !== before.x || mover.pos.y !== before.y
 }
@@ -101,11 +103,12 @@ export function moveTowardPoint(
 ): boolean {
   const d = distance(mover.pos, point)
   if (d <= EPS) return false
-  const ux = (point.x - mover.pos.x) / d
-  const uy = (point.y - mover.pos.y) / d
-  const step = Math.min(speed, d)
+  const { point: wp } = steerAround(mover.pos, point, barriers)   // route around terrain
+  const dd = distance(mover.pos, wp)
+  if (dd <= EPS) return false
+  const step = Math.min(speed, dd)
   const before = mover.pos
-  mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * step, y: mover.pos.y + uy * step }, barriers)
+  mover.pos = slideMove(mover.pos, { x: mover.pos.x + (wp.x - mover.pos.x) / dd * step, y: mover.pos.y + (wp.y - mover.pos.y) / dd * step }, barriers)
   enforceSeparation(mover, all, barriers)
   return mover.pos.x !== before.x || mover.pos.y !== before.y
 }
@@ -128,10 +131,9 @@ export function enforceSeparation(mover: Combatant, all: Combatant[], barriers: 
     const overlap = (SEPARATION - d) / 2
     const ux = dx / d
     const uy = dy / d
-    // Don't shove a unit into a wall; only apply a push that lands in open space.
-    const mp = clampToGrid({ x: mover.pos.x + ux * overlap, y: mover.pos.y + uy * overlap })
-    const op = clampToGrid({ x: other.pos.x - ux * overlap, y: other.pos.y - uy * overlap })
-    if (!pointBlocked(barriers, mp)) mover.pos = mp
-    if (!pointBlocked(barriers, op)) other.pos = op
+    // Push apart, but slide the push along any wall so crowded units against
+    // terrain spread out instead of freezing into a blob.
+    mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * overlap, y: mover.pos.y + uy * overlap }, barriers)
+    other.pos = slideMove(other.pos, { x: other.pos.x - ux * overlap, y: other.pos.y - uy * overlap }, barriers)
   }
 }

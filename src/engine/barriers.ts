@@ -62,6 +62,47 @@ export function slideMove(from: Vec2, desired: Vec2, barriers: Barrier[], pad = 
   return best
 }
 
+// True if the straight segment from→to crosses no barrier (line of sight / a
+// clear walk). Samples the segment.
+export function lineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_PAD): boolean {
+  if (barriers.length === 0) return true
+  const d = dist(from, to)
+  if (d < EPS) return true
+  const steps = Math.max(1, Math.ceil(d / 0.2))
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    if (pointBlocked(barriers, { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }, pad)) return false
+  }
+  return true
+}
+
+// Memory-less navigation: a waypoint to head for on the way to `target`. If the
+// straight line is clear, go direct. Otherwise aim at the reachable barrier
+// corner that gives the shortest detour (from→corner→target). Recomputed every
+// round, so a unit rounds the corner, regains line of sight, then beelines —
+// without remembering anything (the §spatial "maintain line of sight" approach).
+export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): { point: Vec2; direct: boolean } {
+  if (lineClear(from, target, barriers, pad)) return { point: target, direct: true }
+  const off = pad + 0.3
+  let best: Vec2 | null = null
+  let bestCost = Infinity
+  for (const b of barriers) {
+    const corners = [
+      { x: b.x - off, y: b.y - off }, { x: b.x + b.w + off, y: b.y - off },
+      { x: b.x - off, y: b.y + b.h + off }, { x: b.x + b.w + off, y: b.y + b.h + off },
+    ]
+    for (const raw of corners) {
+      const c = clamp(raw)
+      if (dist(from, c) < 0.6) continue                 // already at this corner — don't pick "stay put"
+      if (pointBlocked(barriers, c, pad)) continue      // corner sits inside other terrain
+      if (!lineClear(from, c, barriers, pad)) continue   // can't reach it without crossing a wall
+      const cost = dist(from, c) + dist(c, target)
+      if (cost < bestCost - EPS) { bestCost = cost; best = c }
+    }
+  }
+  return best ? { point: best, direct: false } : { point: target, direct: false }
+}
+
 // Default arena terrain: a central cross ('+') that the teams fight around. The
 // bars stop short of the deploy lines and leave wide perimeter corridors, so
 // there's always a way around. Centered on a COLS×ROWS grid.
