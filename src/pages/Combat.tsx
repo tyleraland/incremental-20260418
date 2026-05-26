@@ -2,7 +2,7 @@ import { useGameStore, waveComposition } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import {
-  COLS, ROWS, startingPosition, arenaBarriers, COMBAT_SKILLS,
+  COLS, ROWS, startingPosition, COMBAT_SKILLS,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant,
 } from '@/engine'
 
@@ -288,7 +288,7 @@ function Preview() {
         </p>
       </div>
 
-      <Arena cam={cam} barriers={arenaBarriers()}>
+      <Arena cam={cam} barriers={[]}>
         {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={false} />)}
         {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={true} />)}
         {(party.length === 0 && foes.length === 0) && (
