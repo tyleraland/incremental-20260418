@@ -713,7 +713,7 @@ export function Map() {
   const locations = useGameStore((s) => s.locations)
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_42vh_minmax(0,1fr)] pt-4 min-h-0">
+    <div className="h-full grid grid-rows-[auto_auto_32vh_minmax(0,1fr)] pt-4 min-h-0">
       <RosterCarousel units={units} />
       <UnitActionBar />
       <WorldMap locations={locations} units={units} />
