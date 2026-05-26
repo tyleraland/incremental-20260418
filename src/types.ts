@@ -105,6 +105,7 @@ export interface Location {
   traits: string[]; monsterIds: string[]; familiarityMax: number
   connections: string[]  // §2: locationIds reachable directly from here
   dungeonEntryRegion?: string  // §10: if set, location's detail panel exposes "Enter <Region>" → switches map to that region
+  testScenarioId?: string  // §scenario: pin a SCENARIO_REGISTRY entry — overrides wave + barriers in combat
 }
 
 // ── Monster ───────────────────────────────────────────────────────────────────

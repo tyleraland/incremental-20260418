@@ -1,63 +1,75 @@
-import { useState, type ReactElement } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getInitials, type Unit, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
+import { SCENARIO_REGISTRY } from '@/data/scenarios'
 
-// ── World pages (one per region) ──────────────────────────────────────────────
+// ── Pages ────────────────────────────────────────────────────────────────────
+//
+// Two pages: a single pannable "world" with the Geffen → Prontera → Kanto
+// chain, and the Geffen Dungeon as a separate sub-area. Region-per-page is
+// gone; we navigate within the world by dragging the camera (it's mobile-first
+// so no scroll wheel assumed).
 
-const GRID_W   = 5
-const GRID_H   = 5
-const CELL_W   = 60
-const CELL_H   = 48
-const GAP_PX   = 4
-
-const INNER_W = GRID_W * CELL_W + (GRID_W - 1) * GAP_PX
-const INNER_H = GRID_H * CELL_H + (GRID_H - 1) * GAP_PX
-
-interface PageNeighbors { left?: string; right?: string; up?: string; down?: string }
-interface PageDef extends PageNeighbors {
+interface PageDef {
   id: string
   name: string
-  // For dungeon pages: the world location used as entry. The up-arrow exits
-  // to that location's region with the entry location selected. Dungeons
-  // never have left/right/down neighbors.
   isDungeon?: boolean
+  // Dungeon pages: which world location they were entered from. Up-arrow exits
+  // back to the world page with that location selected.
   entryLocationId?: string
 }
 
 const PAGES: PageDef[] = [
-  // Prontera is east of Geffen.
-  { id: 'geffen',         name: 'Geffen Region',   right: 'prontera', down: 'kanto' },
-  { id: 'prontera',       name: 'Prontera Region', left:  'geffen',   down: 'kanto' },
-  { id: 'kanto',          name: 'Kanto',           up:    'prontera' },
-  { id: 'geffen-dungeon', name: 'Geffen Dungeon',  isDungeon: true,   entryLocationId: 'geffen-city' },
+  { id: 'world',          name: 'World' },
+  { id: 'geffen-dungeon', name: 'Geffen Dungeon', isDungeon: true, entryLocationId: 'geffen-city' },
 ]
 
 const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
 
-// Per-region (col, row) on the 3×3 grid (0-indexed). Unknown ids fall back to auto-flow.
+// World-space cell coords (col, row). Sparse — the world is bigger than a
+// phone screen so the user has to drag the camera to see all of it.
 const LOCATION_COORDS: Record<string, [number, number]> = {
-  // Prontera region
-  'prontera-field-1': [0, 0], 'prontera-field-2': [1, 0], 'prontera-field-3': [2, 0],
-  'kings-forest':     [0, 1], 'prontera-city':    [1, 1], 'prontera-field-4': [2, 1],
-  'duskwood':         [0, 2], 'prontera-field-5': [1, 2], 'prontera-field-6': [2, 2],
+  // World path: Geffen → Prontera → Kanto.
+  'geffen-city':      [0, 0],
+  'geffen-field-1':   [2, 0],
+  'prontera-field-1': [4, 0],
+  'prontera-city':    [6, 0],
+  'prontera-field-2': [6, 2],
+  'beach-1':          [6, 4],
 
-  // Geffen region
-  'geffen-field-1': [0, 0], 'geffen-field-2': [1, 0], 'mount-mjolnir':  [2, 0],
-  'geffen-field-3': [0, 1], 'geffen-city':    [1, 1], 'geffen-field-4': [2, 1],
-  'geffen-field-5': [0, 2], 'geffen-field-6': [1, 2], 'geffen-field-7': [2, 2],
-
-  // Geffen Dungeon — top row + right column (Floor 1 top-left → Floor 5 bottom-right)
+  // Geffen Dungeon — top row + right column (Floor 1 top-left → Floor 5 BR).
   'geffen-dungeon-1': [0, 0],
   'geffen-dungeon-2': [1, 0],
   'geffen-dungeon-3': [2, 0],
   'geffen-dungeon-4': [2, 1],
   'geffen-dungeon-5': [2, 2],
-
-  // Kanto — 9 beaches fill the 3×3
-  'beach-1': [0, 0], 'beach-2': [1, 0], 'beach-3': [2, 0],
-  'beach-4': [0, 1], 'beach-5': [1, 1], 'beach-6': [2, 1],
-  'beach-7': [0, 2], 'beach-8': [1, 2], 'beach-9': [2, 2],
 }
+
+// Path edges (rendered as dashed connectors so the chain reads as a road).
+const PATH_LINKS: Record<string, [string, string][]> = {
+  'world': [
+    ['geffen-city',      'geffen-field-1'],
+    ['geffen-field-1',   'prontera-field-1'],
+    ['prontera-field-1', 'prontera-city'],
+    ['prontera-city',    'prontera-field-2'],
+    ['prontera-field-2', 'beach-1'],
+  ],
+  'geffen-dungeon': [
+    ['geffen-dungeon-1', 'geffen-dungeon-2'],
+    ['geffen-dungeon-2', 'geffen-dungeon-3'],
+    ['geffen-dungeon-3', 'geffen-dungeon-4'],
+    ['geffen-dungeon-4', 'geffen-dungeon-5'],
+  ],
+}
+
+const CELL_W   = 64
+const CELL_H   = 52
+const CELL_GAP = 32   // big visual gaps so path connectors actually read
+
+function cellOriginX(col: number): number { return col * (CELL_W + CELL_GAP) }
+function cellOriginY(row: number): number { return row * (CELL_H + CELL_GAP) }
+function cellCenterX(col: number): number { return cellOriginX(col) + CELL_W / 2 }
+function cellCenterY(row: number): number { return cellOriginY(row) + CELL_H / 2 }
 
 function hpBarColor(hp: number) {
   if (hp > 60) return 'bg-game-green'
@@ -76,7 +88,6 @@ const ELEMENT_COLORS: Record<string, string> = {
 }
 
 // Kind symbols for the map cells & matching trait chips.
-// Priority is "biggest landmark wins" — dungeon overrides city, etc.
 const LOCATION_KIND: Record<string, { symbol: string; label: string; cls: string; iconCls: string }> = {
   city:     { symbol: '⌂', label: 'City',     cls: 'text-amber-300 border-amber-700/60 bg-amber-950/40',  iconCls: 'text-amber-400/80'  },
   forest:   { symbol: '♣', label: 'Forest',   cls: 'text-green-300 border-green-800/60 bg-green-950/40',  iconCls: 'text-green-400/80'  },
@@ -91,239 +102,6 @@ const KIND_PRIORITY = ['dungeon', 'city', 'mountain', 'forest', 'beach', 'plains
 function getLocationKind(traits: string[]) {
   for (const k of KIND_PRIORITY) if (traits.includes(k)) return { key: k, ...LOCATION_KIND[k] }
   return null
-}
-
-// ── Terrain overlay ─────────────────────────────────────────────────────────
-// Every map cell gets a biome. The overlay fills the whole grid with a biome
-// color + dense small motifs so you can "squint" and read forest / grass /
-// water / desert / mountain at a glance. Drawn in a 0–100 × 0–80 viewBox
-// (5×5 cells of 20×16) stretched to fill the grid; the interactive cells render
-// on top, translucent, so this shows through. Biome grids are [row][col].
-
-type Biome = 'grass' | 'forest' | 'hills' | 'mountain' | 'sand' | 'water' | 'city' | 'rock'
-interface RegionTerrain { grid: Biome[][]; river?: string }
-
-const CW = 20  // cell width in viewBox units
-const CH = 16  // cell height in viewBox units
-
-// Muted base tones — colorful enough to read a biome, dark enough that the
-// translucent cells, glyphs and unit dots on top stay legible.
-const BIOME_RGB: Record<Biome, [number, number, number]> = {
-  grass:    [40, 64, 30],
-  forest:   [26, 50, 22],
-  hills:    [48, 72, 34],
-  mountain: [58, 57, 52],
-  sand:     [98, 80, 44],
-  water:    [22, 54, 86],
-  city:     [48, 64, 32],
-  rock:     [36, 31, 38],
-}
-
-const REGION_TERRAIN: Record<string, RegionTerrain> = {
-  prontera: {
-    grid: [
-      ['grass',  'grass', 'grass', 'grass',  'hills'],
-      ['forest', 'city',  'grass', 'grass',  'hills'],
-      ['forest', 'grass', 'grass', 'grass',  'mountain'],
-      ['grass',  'grass', 'grass', 'forest', 'mountain'],
-      ['grass',  'forest','grass', 'grass',  'grass'],
-    ],
-    river: 'M -2,40 C 20,34 30,52 50,44 C 70,36 86,54 102,45',
-  },
-  geffen: {
-    grid: [
-      ['grass', 'grass', 'mountain', 'mountain', 'mountain'],
-      ['hills', 'city',  'grass',    'mountain', 'mountain'],
-      ['hills', 'grass', 'grass',    'forest',   'forest'],
-      ['grass', 'grass', 'grass',    'forest',   'grass'],
-      ['grass', 'grass', 'grass',    'grass',    'grass'],
-    ],
-    river: 'M 30,-2 C 36,16 24,30 34,44 C 44,56 32,66 38,82',
-  },
-  kanto: {
-    grid: [
-      ['sand',  'sand',  'sand',  'water', 'water'],
-      ['sand',  'sand',  'sand',  'water', 'water'],
-      ['sand',  'sand',  'sand',  'water', 'water'],
-      ['sand',  'sand',  'water', 'water', 'water'],
-      ['water', 'water', 'water', 'water', 'water'],
-    ],
-  },
-  'geffen-dungeon': {
-    grid: [
-      ['rock',     'rock', 'rock', 'mountain', 'mountain'],
-      ['rock',     'rock', 'rock', 'rock',     'mountain'],
-      ['mountain', 'rock', 'rock', 'rock',     'rock'],
-      ['mountain', 'rock', 'rock', 'rock',     'rock'],
-      ['rock',     'rock', 'mountain', 'rock', 'rock'],
-    ],
-  },
-}
-
-// Deterministic 0–1 hash so motif scatter is stable across renders (no flicker).
-function h2(a: number, b: number) {
-  const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453
-  return x - Math.floor(x)
-}
-
-// Per-cell base fill with a small brightness jitter so neighboring same-biome
-// cells don't read as flat identical tiles.
-function biomeFill(b: Biome, col: number, row: number) {
-  const [r, g, bl] = BIOME_RGB[b]
-  const m = 0.84 + h2(col * 3 + 1, row * 7 + 2) * 0.3
-  const c = (v: number) => Math.round(Math.min(255, v * m))
-  return `rgba(${c(r)},${c(g)},${c(bl)},0.92)`
-}
-
-// Dense per-biome motifs filling one cell at grid (col,row).
-function cellMotifs(biome: Biome, col: number, row: number): ReactElement[] {
-  const x0 = col * CW, y0 = row * CH
-  const out: ReactElement[] = []
-  const k = (s: string) => `${col}-${row}-${s}`
-  const sx = (i: number) => x0 + 2.5 + h2(col * 9 + i, row * 5 + i * 2) * (CW - 5)
-  const sy = (i: number) => y0 + 2.5 + h2(col * 4 + i * 3, row * 8 + i) * (CH - 5)
-
-  switch (biome) {
-    case 'forest': {
-      // Mixed conifers + round-canopy trees, varied size, drawn back-to-front.
-      const n = 7 + Math.floor(h2(col, row) * 3)
-      const trees = Array.from({ length: n }, (_, i) => ({
-        x: sx(i), y: sy(i), i,
-        s: 0.8 + h2(col + i, row * 2 + i) * 0.55,
-        round: h2(col * 2 + i, row + i * 3) > 0.66,
-      })).sort((a, b) => a.y - b.y)
-      for (const t of trees) {
-        out.push(
-          <g key={k('t' + t.i)} transform={`translate(${t.x} ${t.y}) scale(${t.s})`}>
-            {t.round ? (
-              <>
-                <circle cx="0" cy="-1" r="1.3" fill="rgba(38,100,54,0.92)" />
-                <circle cx="-0.55" cy="-1.4" r="0.7" fill="rgba(60,136,78,0.85)" />
-              </>
-            ) : (
-              <>
-                <polygon points="-1.1,0.9 0,-1.4 1.1,0.9" fill="rgba(30,90,48,0.92)" />
-                <polygon points="-0.85,-0.3 0,-2.4 0.85,-0.3" fill="rgba(54,128,72,0.92)" />
-              </>
-            )}
-          </g>,
-        )
-      }
-      break
-    }
-    case 'grass':
-      // Soft curved blade tufts + the occasional flower fleck.
-      for (let i = 0; i < 4; i++) {
-        const x = sx(i), y = sy(i)
-        out.push(
-          <path key={k('g' + i)} d={`M ${x - 0.7},${y} q 0.25,-0.9 0.45,-1.4 M ${x},${y} q 0,-1 0.05,-1.6 M ${x + 0.7},${y} q -0.25,-0.9 -0.45,-1.4`}
-            stroke="rgba(112,160,80,0.45)" strokeWidth="0.28" fill="none" strokeLinecap="round" />,
-        )
-      }
-      if (h2(col * 5 + 3, row * 3 + 1) > 0.62) {
-        out.push(<circle key={k('fl')} cx={sx(4)} cy={sy(4)} r="0.45" fill="rgba(222,202,122,0.55)" />)
-      }
-      break
-    case 'city':
-      for (let i = 0; i < 3; i++) {
-        const x = sx(i), y = sy(i)
-        out.push(
-          <path key={k('cg' + i)} d={`M ${x},${y} l 0,-1.1`} stroke="rgba(108,158,76,0.4)" strokeWidth="0.3" strokeLinecap="round" />,
-        )
-      }
-      ;[[-3.4, 1.2, 0.8], [3.2, 1, 0.85], [0, -0.4, 1], [1.7, 1.8, 0.62], [-1.8, 1.9, 0.62]].forEach(([dx, dy, s], i) => {
-        const x = x0 + CW / 2 + dx, y = y0 + CH / 2 + dy
-        out.push(
-          <g key={k('h' + i)} transform={`translate(${x} ${y}) scale(${s})`}>
-            <rect x="-1.5" y="-1.1" width="3" height="2.6" fill="rgba(200,170,112,0.95)" />
-            <polygon points="-2,-1.1 0,-3 2,-1.1" fill="rgba(172,88,68,0.96)" />
-          </g>,
-        )
-      })
-      break
-    case 'sand':
-      // Varied grains + two faint dune ridges.
-      for (let i = 0; i < 9; i++) {
-        out.push(<circle key={k('s' + i)} cx={sx(i)} cy={sy(i)} r={0.28 + h2(col + i, row + i) * 0.26} fill="rgba(160,126,72,0.6)" />)
-      }
-      out.push(
-        <path key={k('d1')} d={`M ${x0 + 2},${y0 + CH * 0.42} q ${CW * 0.26},-2 ${CW * 0.52},0 q ${CW * 0.24},2 ${CW * 0.44},0.3`}
-          stroke="rgba(216,186,124,0.42)" strokeWidth="0.45" fill="none" strokeLinecap="round" />,
-        <path key={k('d2')} d={`M ${x0 + 2.5},${y0 + CH * 0.74} q ${CW * 0.28},-1.6 ${CW * 0.55},0`}
-          stroke="rgba(196,162,98,0.4)" strokeWidth="0.4" fill="none" strokeLinecap="round" />,
-      )
-      break
-    case 'water':
-      // Wavelets of varied length & spacing for a less uniform surface.
-      for (let i = 0; i < 4; i++) {
-        const y = y0 + 3 + i * 3.4 + h2(col, row + i) * 1.2
-        const x = x0 + 2.5 + h2(col + i, row) * 5
-        const w = 2.2 + h2(col * 2 + i, row + 1) * 1.8
-        out.push(
-          <path key={k('w' + i)} d={`M ${x},${y} q ${w / 2},-1 ${w},0 q ${w / 2},1 ${w},0`}
-            stroke="rgba(124,176,224,0.38)" strokeWidth="0.38" fill="none" strokeLinecap="round" />,
-        )
-      }
-      break
-    case 'mountain':
-      // Two peaks of varied height + a small foothill so cells read as a range.
-      for (let i = 0; i < 2; i++) {
-        const x = x0 + 5.5 + i * 8 + h2(col, i) * 1.5, y = y0 + CH * 0.66
-        const ph = 3.8 + h2(col + i, row + 2) * 1.8
-        out.push(
-          <g key={k('m' + i)} transform={`translate(${x} ${y})`}>
-            <polygon points={`-3.6,1 0,${-ph} 3.6,1`} fill="rgba(120,114,108,0.88)" />
-            <polygon points={`0,${-ph} 3.6,1 1.2,1`} fill="rgba(74,70,66,0.7)" />
-            <polygon points={`-1,${(-ph * 0.34).toFixed(2)} 0,${-ph} 1,${(-ph * 0.34).toFixed(2)} 0,${(-ph * 0.55).toFixed(2)}`} fill="rgba(238,240,243,0.92)" />
-          </g>,
-        )
-      }
-      out.push(
-        <polygon key={k('mf')} points={`${x0 + CW * 0.5 - 2},${y0 + CH * 0.8} ${x0 + CW * 0.5},${y0 + CH * 0.56} ${x0 + CW * 0.5 + 2},${y0 + CH * 0.8}`}
-          fill="rgba(96,92,86,0.7)" />,
-      )
-      break
-    case 'hills': {
-      const cx = x0 + CW / 2, cy = y0 + CH * 0.6
-      out.push(<path key={k('h1')} d={`M ${cx - 6},${cy + 2.4} Q ${cx - 2},${cy - 3} ${cx + 1.5},${cy + 2.4} Z`} fill="rgba(72,106,56,0.85)" />)
-      out.push(<path key={k('h2')} d={`M ${cx - 1.5},${cy + 2.4} Q ${cx + 2.5},${cy - 4} ${cx + 6.5},${cy + 2.4} Z`} fill="rgba(94,130,68,0.9)" />)
-      out.push(<path key={k('hc')} d={`M ${cx + 0.2},${cy - 0.4} Q ${cx + 2.5},${cy - 3} ${cx + 4.6},${cy - 1}`} stroke="rgba(150,182,116,0.6)" strokeWidth="0.4" fill="none" strokeLinecap="round" />)
-      out.push(<path key={k('hc2')} d={`M ${cx - 5},${cy + 0.6} Q ${cx - 2},${cy - 2} ${cx + 0.2},${cy + 0.4}`} stroke="rgba(150,182,116,0.4)" strokeWidth="0.35" fill="none" strokeLinecap="round" />)
-      break
-    }
-    case 'rock':
-      for (let i = 0; i < 6; i++) {
-        const x = sx(i), y = sy(i)
-        const s = 0.8 + h2(col + i, row + i) * 0.7
-        out.push(
-          <polygon key={k('r' + i)} transform={`translate(${x} ${y}) scale(${s})`}
-            points="-1,0.7 -0.3,-0.8 0.8,-0.4 1.1,0.7" fill="rgba(116,108,122,0.55)" />,
-        )
-      }
-      break
-  }
-  return out
-}
-
-function TerrainOverlay({ region }: { region: string }) {
-  const t = REGION_TERRAIN[region]
-  if (!t) return null
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 100 80"
-      preserveAspectRatio="none"
-      className="absolute inset-0 w-full h-full pointer-events-none rounded-md"
-    >
-      {t.grid.flatMap((rowArr, row) =>
-        rowArr.map((b, col) => (
-          <rect key={`bg-${col}-${row}`} x={col * CW} y={row * CH} width={CW} height={CH} fill={biomeFill(b, col, row)} />
-        )),
-      )}
-      {t.grid.flatMap((rowArr, row) => rowArr.flatMap((b, col) => cellMotifs(b, col, row)))}
-      {t.river && <path d={t.river} fill="none" stroke="rgba(96,150,210,0.5)" strokeWidth="2.6" strokeLinecap="round" />}
-    </svg>
-  )
 }
 
 // ── RosterUnitCard ────────────────────────────────────────────────────────────
@@ -396,15 +174,13 @@ function RosterCarousel({ units }: { units: Unit[] }) {
 
 // ── LocationCell ──────────────────────────────────────────────────────────────
 
-function LocationCell({ location, units }: { location: Location; units: Unit[] }) {
+function LocationCell({ location, units, style }: { location: Location; units: Unit[]; style: React.CSSProperties }) {
   const equipment           = useGameStore((s) => s.equipment)
   const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const isSelected          = selectedLocationId === location.id
-
-  const coords = LOCATION_COORDS[location.id]
-  const style  = coords ? { gridColumn: coords[0] + 1, gridRow: coords[1] + 1 } : undefined
-  const kind   = getLocationKind(location.traits)
+  const kind                = getLocationKind(location.traits)
+  const hasScenario         = !!location.testScenarioId
 
   return (
     <button
@@ -412,13 +188,12 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
       style={style}
       title={location.name}
       className={[
-        'relative z-10 flex items-center justify-center rounded-md border transition-all overflow-hidden',
+        'flex items-center justify-center rounded-md border transition-all overflow-hidden',
         isSelected
           ? 'border-game-primary bg-game-primary/30 ring-2 ring-game-primary/50 shadow-lg shadow-game-primary/30 scale-[1.04]'
-          : 'border-game-border bg-game-surface/55 hover:border-game-primary/70 hover:bg-game-surface/75',
+          : 'border-game-border bg-game-surface/85 hover:border-game-primary/70 hover:bg-game-surface/95',
       ].join(' ')}
     >
-      {/* kind symbol — centered glyph (name now lives in the detail panel) */}
       {kind && (
         <span
           aria-hidden
@@ -427,7 +202,15 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
           {kind.symbol}
         </span>
       )}
-      {/* unit dots — bottom left, compact 3-column grid */}
+      {/* scenario marker — top-right amber dot */}
+      {hasScenario && (
+        <span
+          aria-hidden
+          title="Has a test scenario"
+          className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-400/80 ring-1 ring-amber-300/40"
+        />
+      )}
+      {/* unit dots — bottom left */}
       <div className="absolute bottom-1 left-1 grid grid-cols-3 gap-0.5">
         {units.slice(0, 6).map((u) => {
           const isRec = u.recoveryTicksLeft > 0
@@ -449,45 +232,147 @@ function LocationCell({ location, units }: { location: Location; units: Unit[] }
   )
 }
 
-// ── PageArrow ─────────────────────────────────────────────────────────────────
+// Inline-style nudge: cells use absolute positioning inside the panned world,
+// so they need `position: 'absolute'` on top of the props above.
+function PositionedCell(props: { location: Location; units: Unit[]; style: React.CSSProperties }) {
+  return <LocationCell {...props} style={{ position: 'absolute', ...props.style }} />
+}
 
-function PageArrow({ direction, target, onClick }: {
-  direction: 'left' | 'right' | 'up' | 'down'
-  target: PageDef | null
-  onClick: () => void
-}) {
-  const sym = direction === 'left' ? '◀' : direction === 'right' ? '▶' : direction === 'up' ? '▲' : '▼'
-  const label = target?.name ?? ''
-  const visible = !!target
-  const horizontal = direction === 'left' || direction === 'right'
+// ── PannableWorld ─────────────────────────────────────────────────────────────
+
+function PannableWorld({ pageId, locations, units }: { pageId: string; locations: Location[]; units: Unit[] }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ startX: number; startY: number; basePan: { x: number; y: number }; moved: boolean; pointerId: number; captureTarget: Element } | null>(null)
+  const suppressClickRef = useRef(false)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [centered, setCentered] = useState(false)
+
+  const pageLocations = locations.filter((l) => l.region === pageId)
+  const links = PATH_LINKS[pageId] ?? []
+
+  // World canvas extends one cell past the furthest location so connector lines
+  // don't get clipped by the right/bottom edge.
+  const maxCol = pageLocations.reduce((m, l) => Math.max(m, LOCATION_COORDS[l.id]?.[0] ?? 0), 0)
+  const maxRow = pageLocations.reduce((m, l) => Math.max(m, LOCATION_COORDS[l.id]?.[1] ?? 0), 0)
+  const worldW = cellOriginX(maxCol) + CELL_W + CELL_GAP
+  const worldH = cellOriginY(maxRow) + CELL_H + CELL_GAP
+
+  // Center the camera on the entry location (Geffen City on world, F1 in dungeon)
+  // the first time we get measured dimensions for this page.
+  useEffect(() => { setCentered(false) }, [pageId])
+  useEffect(() => {
+    if (centered || !containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+    const focusId = pageId === 'geffen-dungeon' ? 'geffen-dungeon-1' : 'geffen-city'
+    const c = LOCATION_COORDS[focusId]
+    if (!c) return
+    setPan({
+      x: rect.width  / 2 - cellCenterX(c[0]),
+      y: rect.height / 2 - cellCenterY(c[1]),
+    })
+    setCentered(true)
+  }, [pageId, centered])
+
+  // Pointer capture only kicks in once the pointer has actually moved past the
+  // tap threshold — otherwise a child cell's `click` gets diverted to the
+  // capturing container and never fires, so taps silently fail to select.
+  const onPointerDown = (e: React.PointerEvent) => {
+    // Clear any stale "swallow next click" left over from a drag that ended
+    // off any clickable — otherwise the next legitimate tap is silently dropped.
+    suppressClickRef.current = false
+    dragRef.current = { startX: e.clientX, startY: e.clientY, basePan: pan, moved: false, pointerId: e.pointerId, captureTarget: e.currentTarget }
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current
+    if (!d) return
+    const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
+    if (!d.moved && Math.hypot(dx, dy) > 6) {
+      d.moved = true
+      try { d.captureTarget.setPointerCapture(d.pointerId) } catch { /* test envs no-op */ }
+    }
+    if (d.moved) setPan({ x: d.basePan.x + dx, y: d.basePan.y + dy })
+  }
+  const onPointerUp = () => {
+    if (dragRef.current?.moved) suppressClickRef.current = true
+    dragRef.current = null
+  }
+
+  // Swallow the click that fires immediately after a drag so cells don't
+  // toggle when the user was just panning.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: Event) => {
+      if (suppressClickRef.current) {
+        e.stopPropagation()
+        e.preventDefault()
+        suppressClickRef.current = false
+      }
+    }
+    el.addEventListener('click', handler, true)
+    return () => el.removeEventListener('click', handler, true)
+  }, [])
 
   return (
-    <button
-      onClick={visible ? onClick : undefined}
-      disabled={!visible}
-      className={[
-        horizontal
-          ? 'w-7 self-stretch flex flex-col items-center justify-center'
-          : 'h-5 self-center flex items-center justify-center px-2 gap-1.5',
-        'rounded-md border text-[10px] font-semibold uppercase tracking-wider transition-colors',
-        visible
-          ? 'border-game-border text-game-text-dim hover:border-game-primary/60 hover:text-game-text'
-          : 'border-transparent text-transparent pointer-events-none',
-      ].join(' ')}
+    <div
+      ref={containerRef}
+      className="relative h-full w-full bg-game-bg overflow-hidden select-none"
+      style={{ touchAction: 'none' }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
-      {horizontal ? (
-        <span className="text-sm leading-none">{sym}</span>
-      ) : (
-        <>
-          <span className="leading-none">{sym}</span>
-          <span className="leading-none">{label}</span>
-        </>
-      )}
-    </button>
+      <div
+        className="absolute"
+        style={{ width: worldW, height: worldH, transform: `translate(${pan.x}px, ${pan.y}px)` }}
+      >
+        <svg
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          width={worldW}
+          height={worldH}
+        >
+          {links.map(([fromId, toId], i) => {
+            const fc = LOCATION_COORDS[fromId], tc = LOCATION_COORDS[toId]
+            if (!fc || !tc) return null
+            return (
+              <line
+                key={i}
+                x1={cellCenterX(fc[0])} y1={cellCenterY(fc[1])}
+                x2={cellCenterX(tc[0])} y2={cellCenterY(tc[1])}
+                stroke="rgba(150,170,190,0.45)"
+                strokeWidth={3}
+                strokeDasharray="6 6"
+                strokeLinecap="round"
+              />
+            )
+          })}
+        </svg>
+        {pageLocations.map((loc) => {
+          const c = LOCATION_COORDS[loc.id]
+          if (!c) return null
+          return (
+            <PositionedCell
+              key={loc.id}
+              location={loc}
+              units={units.filter((u) => u.locationId === loc.id)}
+              style={{
+                left: cellOriginX(c[0]),
+                top:  cellOriginY(c[1]),
+                width: CELL_W, height: CELL_H,
+              }}
+            />
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
-// ── WorldMap ──────────────────────────────────────────────────────────────────
+// ── WorldMap (wrapper: page header + dungeon-exit chip) ──────────────────────
 
 function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }) {
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
@@ -495,92 +380,36 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const page = PAGE_BY_ID[pageId] ?? PAGES[0]
 
-  // Dungeon pages: only an up arrow, which exits to the entry location's
-  // region and selects the entry so the player has context. World pages use
-  // their declared neighbors and clear selection on navigation.
+  // Dungeon: an "Exit" chip returns to the world page with the entry selected.
   const dungeonExit = page.isDungeon && page.entryLocationId
     ? locations.find((l) => l.id === page.entryLocationId) ?? null
     : null
-
-  const left  = page.isDungeon ? null : (page.left  ? PAGE_BY_ID[page.left]  : null)
-  const right = page.isDungeon ? null : (page.right ? PAGE_BY_ID[page.right] : null)
-  const down  = page.isDungeon ? null : (page.down  ? PAGE_BY_ID[page.down]  : null)
-  const up: PageDef | null = page.isDungeon
-    ? (dungeonExit ? { id: dungeonExit.region, name: dungeonExit.name } : null)
-    : (page.up ? PAGE_BY_ID[page.up] : null)
-
-  const goto = (target: PageDef | null) => {
-    if (!target) return
-    setMapPage(target.id)
-    if (page.isDungeon && dungeonExit) {
-      // Returning to the entry location — keep it selected so deploy/codex
-      // are one tap away.
-      setSelectedLocation(dungeonExit.id)
-    } else {
-      setSelectedLocation(null)
-    }
+  function exitDungeon() {
+    if (!dungeonExit) return
+    setMapPage('world')
+    setSelectedLocation(dungeonExit.id)
   }
 
-  const pageLocations = locations.filter((l) => l.region === page.id)
-
   return (
-    <div className="bg-game-surface overflow-hidden">
-      <div className="px-2 py-1 space-y-1">
-        {/* Up arrow row */}
-        <div className="flex justify-center min-h-[20px]">
-          <PageArrow direction="up" target={up} onClick={() => goto(up)} />
-        </div>
-
-        {/* Middle row: left arrow, grid, right arrow */}
-        <div className="flex items-center justify-center gap-1">
-          <PageArrow direction="left" target={left} onClick={() => goto(left)} />
-          <div className="bg-game-bg rounded-md p-1.5">
-            <div className="relative" style={{ width: INNER_W, height: INNER_H }}>
-              <TerrainOverlay region={page.id} />
-              <div
-                className="relative"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: `repeat(${GRID_W}, ${CELL_W}px)`,
-                  gridTemplateRows:    `repeat(${GRID_H}, ${CELL_H}px)`,
-                  gap: `${GAP_PX}px`,
-                }}
-              >
-                {/* Faint placeholders keep the grid lattice readable over the
-                    terrain; locations render on top via explicit gridColumn/Row. */}
-                {Array.from({ length: GRID_W * GRID_H }).map((_, i) => {
-                  const x = i % GRID_W
-                  const y = Math.floor(i / GRID_W)
-                  const occupied = pageLocations.some((l) => {
-                    const c = LOCATION_COORDS[l.id]
-                    return c && c[0] === x && c[1] === y
-                  })
-                  if (occupied) return null
-                  return (
-                    <div
-                      key={`ph-${x}-${y}`}
-                      style={{ gridColumn: x + 1, gridRow: y + 1 }}
-                      className="rounded-md border border-game-border/15 pointer-events-none"
-                    />
-                  )
-                })}
-                {pageLocations.map((loc) => (
-                  <LocationCell
-                    key={loc.id}
-                    location={loc}
-                    units={units.filter((u) => u.locationId === loc.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-          <PageArrow direction="right" target={right} onClick={() => goto(right)} />
-        </div>
-
-        {/* Down arrow row */}
-        <div className="flex justify-center min-h-[20px]">
-          <PageArrow direction="down" target={down} onClick={() => goto(down)} />
-        </div>
+    <div className="relative h-full w-full">
+      <PannableWorld pageId={pageId} locations={locations} units={units} />
+      {/* page chip — top-left, sits above the map */}
+      <div className="absolute top-1.5 left-1.5 flex items-center gap-1.5 z-10 pointer-events-none">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim bg-game-bg/80 border border-game-border rounded px-1.5 py-0.5">
+          {page.name}
+        </span>
+        {dungeonExit && (
+          <button
+            onClick={exitDungeon}
+            className="text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text bg-game-bg/80 border border-game-border rounded px-1.5 py-0.5 pointer-events-auto"
+          >
+            ▲ Exit
+          </button>
+        )}
+      </div>
+      {/* hint — pan instruction, bottom-right */}
+      <div className="absolute bottom-1.5 right-1.5 text-[10px] text-game-text-dim italic pointer-events-none">
+        drag to pan
       </div>
     </div>
   )
@@ -604,9 +433,6 @@ function UnitActionBar() {
 
   const hasUnits = selectedUnitIds.length > 0
 
-  // Always-rendered fixed-height shell so toggling content doesn't shift the
-  // world map. Two rows of buttons are reserved (no horizontal scroll); items
-  // wrap onto the second row as needed.
   if (!hasUnits) {
     return <div className="h-12 border-b border-game-border/40" />
   }
@@ -636,7 +462,7 @@ function UnitActionBar() {
     if (!sharedLocId) return
     const loc = locations.find((l) => l.id === sharedLocId)
     if (!loc) return
-    setMapPage(loc.region)
+    setMapPage(loc.region === 'geffen-dungeon' ? 'geffen-dungeon' : 'world')
     setSelectedLocation(sharedLocId)
   }
   function handleGoCombat() {
@@ -685,8 +511,6 @@ function UnitActionBar() {
 
 // ── LocationDetailPanel ───────────────────────────────────────────────────────
 
-// LocationDetailPanel — bottom panel; strictly location-only actions now
-// (unit actions live in the top UnitActionBar between roster and map).
 function LocationDetailPanel() {
   const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
@@ -705,13 +529,12 @@ function LocationDetailPanel() {
 
   const location = selectedLocationId ? (locations.find((l) => l.id === selectedLocationId) ?? null) : null
   const hasLoc   = location !== null
+  const scenario = location?.testScenarioId ? SCENARIO_REGISTRY[location.testScenarioId] ?? null : null
 
   const dungeonEntry = location?.dungeonEntryRegion
     ? { regionId: location.dungeonEntryRegion, regionName: PAGE_BY_ID[location.dungeonEntryRegion]?.name ?? location.dungeonEntryRegion }
     : null
 
-  // Go-to-Combat from the location panel only fires when no units are selected
-  // (otherwise the unit action bar at the top owns the Go to Combat).
   const locationOnlyCombatTargetId = hasLoc && selectedUnitIds.length === 0 ? selectedLocationId : null
 
   function handleGoCombat() {
@@ -720,15 +543,14 @@ function LocationDetailPanel() {
     setActiveTab('combat')
     setSelectedLocation(null)
   }
-
   function handleEnterDungeon() {
     if (!dungeonEntry) return
     setMapPage(dungeonEntry.regionId)
-    setSelectedLocation(null)  // entry lives on a different page; keep unit selection so deploy stays one tap
+    setSelectedLocation(null)
   }
 
   return (
-    <div className="flex flex-col bg-game-surface border-t border-game-border min-h-0 overflow-hidden">
+    <div className="flex flex-col bg-game-surface border-t border-game-border max-h-[42vh] min-h-0 overflow-hidden">
       <div className="px-4 py-3 border-b border-game-border min-h-[64px] flex flex-col justify-center shrink-0">
         {location ? (
           <>
@@ -740,7 +562,6 @@ function LocationDetailPanel() {
         )}
       </div>
 
-      {/* Middle: familiarity + traits + encounters, fills remaining vertical space */}
       <div className="flex-1 min-h-0 px-4 py-3 space-y-4 overflow-y-auto">
         {location ? (() => {
           const famPct  = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
@@ -749,6 +570,17 @@ function LocationDetailPanel() {
           const unitsHere = units.filter((u) => u.locationId === location.id)
           return (
             <>
+              {scenario && (
+                <div className="rounded-md border border-amber-700/40 bg-amber-950/20 px-2.5 py-2">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-amber-300/90 mb-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80" />
+                    Test Scenario
+                    <span className="text-amber-200/80 normal-case tracking-normal font-semibold">{scenario.name}</span>
+                  </div>
+                  <p className="text-[11px] text-amber-100/80 leading-snug">{scenario.description}</p>
+                </div>
+              )}
+
               {unitsHere.length > 0 && (
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Units here</div>
@@ -889,7 +721,7 @@ export function Map() {
   const locations = useGameStore((s) => s.locations)
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_auto_minmax(0,1fr)] pt-4">
+    <div className="h-full grid grid-rows-[auto_auto_minmax(0,1fr)_auto] pt-4 min-h-0">
       <RosterCarousel units={units} />
       <UnitActionBar />
       <WorldMap locations={locations} units={units} />

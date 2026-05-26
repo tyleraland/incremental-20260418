@@ -1,30 +1,37 @@
-// The enemy wave mirrors the deployed party size, with no 5-unit cap (so all
-// units stationed at a location engage and pull a matching number of monsters).
+// The enemy wave mirrors the deployed party size (no 5-unit cap), unless the
+// location pins a fixed wave via `testScenarioId` → SCENARIO_REGISTRY.
 import { describe, it, expect } from 'vitest'
 import { waveComposition, locationBarriers } from '@/stores/useGameStore'
 import type { Location } from '@/types'
 
-const loc = (monsterIds: string[]): Location =>
-  ({ id: 'loc', name: 'L', region: 'r', description: '', traits: [], monsterIds, familiarityMax: 100, connections: [] })
+const loc = (overrides: Partial<Location> = {}): Location =>
+  ({ id: 'loc', name: 'L', region: 'r', description: '', traits: [], monsterIds: ['slime'], familiarityMax: 100, connections: [], ...overrides })
 
 describe('waveComposition', () => {
   it('sizes the wave to the full (uncapped) party', () => {
-    expect(waveComposition(loc(['slime']), 8)).toHaveLength(8)
+    expect(waveComposition(loc({ monsterIds: ['slime'] }), 8)).toHaveLength(8)
   })
 
   it('cycles the location monster list across the party', () => {
-    expect(waveComposition(loc(['slime', 'wolf']), 3)).toEqual(['slime', 'wolf', 'slime'])
+    expect(waveComposition(loc({ monsterIds: ['slime', 'wolf'] }), 3)).toEqual(['slime', 'wolf', 'slime'])
   })
 
   it('always fields at least one monster', () => {
-    expect(waveComposition(loc(['slime']), 0)).toEqual(['slime'])
+    expect(waveComposition(loc({ monsterIds: ['slime'] }), 0)).toEqual(['slime'])
+  })
+
+  it('a scenario with a fixed wave ignores party size', () => {
+    const scenLoc = loc({ testScenarioId: 'geffen-f2-cross' })
+    expect(waveComposition(scenLoc, 1)).toEqual(['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'])
+    expect(waveComposition(scenLoc, 99)).toEqual(['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'])
   })
 })
 
 describe('locationBarriers', () => {
-  it('seeds Geffen Dungeon 2 with terrain; other locations are open-field', () => {
-    expect(locationBarriers('geffen-dungeon-2').length).toBeGreaterThan(0)
-    expect(locationBarriers('kings-forest')).toEqual([])
+  it('returns terrain from the pinned scenario; open field otherwise', () => {
+    expect(locationBarriers(loc({ testScenarioId: 'geffen-f2-cross' })).length).toBeGreaterThan(0)
+    expect(locationBarriers(loc({ testScenarioId: 'los-kiting-perimeter' })).length).toBeGreaterThan(0)
+    expect(locationBarriers(loc())).toEqual([])
     expect(locationBarriers(null)).toEqual([])
   })
 })

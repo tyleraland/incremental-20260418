@@ -47,8 +47,8 @@ describe('combat engine — battle lifecycle', () => {
 
   it('spawns the fixed 5-enemy wall at Geffen Dungeon Floor 2', () => {
     resetStore({
-      locations: [{ ...FIELD(['tough-slime', 'bat']), id: 'geffen-dungeon-2', name: 'GD2' }],
-      units: [makeUnit({ id: 'u1', locationId: 'geffen-dungeon-2', health: 100 })], // single unit, wave still 5
+      locations: [{ ...FIELD(['tough-slime', 'bat']), id: 'geffen-dungeon-2', name: 'GD2', testScenarioId: 'geffen-f2-cross' }],
+      units: [makeUnit({ id: 'u1', locationId: 'geffen-dungeon-2', health: 100 })], // single unit, scenario locks wave at 5
     })
     tick()
     const enemies = useGameStore.getState().battles['geffen-dungeon-2'].combatants.filter((c) => c.team === 'enemy')

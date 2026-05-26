@@ -10,11 +10,12 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, arenaBarriers, TACTIC_REGISTRY, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
 import { INITIAL_UNITS } from '@/data/units'
+import { SCENARIO_REGISTRY } from '@/data/scenarios'
 
 // ── Re-exports (keeps existing import paths working) ──────────────────────────
 
@@ -119,10 +120,6 @@ export interface GameState {
   resetSave: () => void
 }
 
-// ── Initial location-familiarity seeds ────────────────────────────────────────
-
-const KANTO_BEACH_IDS = Array.from({ length: 9 }, (_, i) => `beach-${i + 1}`)
-
 // ── Event log helper ──────────────────────────────────────────────────────────
 
 function appendLog(log: LogEntry[], category: LogCategory, message: string, tick: number): LogEntry[] {
@@ -161,28 +158,21 @@ function monsterIdOf(combatantId: string): string {
   return combatantId.split('#')[0]
 }
 
-// Locations with a fixed, hand-authored wave (always this exact group, ignoring
-// party size). Everything else cycles the location's monsterIds to party size.
-const ENCOUNTER_OVERRIDES: Record<string, string[]> = {
-  // Floor 2 wall: three high-defense tough slimes flanked by two bats.
-  'geffen-dungeon-2': ['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'],
+// Combat setup at a location flows through its `testScenarioId`: if set, the
+// matching SCENARIO_REGISTRY entry overrides terrain and (optionally) the wave.
+// Otherwise the location is open-field and the wave cycles its monsterIds to
+// match party size.
+function scenarioOf(loc: Location | null | undefined) {
+  return loc?.testScenarioId ? SCENARIO_REGISTRY[loc.testScenarioId] ?? null : null
 }
 
-// Locations with terrain. Most fights are open-field; a handful have obstacles
-// units must navigate around (the engine's barrier collision + pathing handles it).
-const LOCATION_TERRAIN: Record<string, () => Barrier[]> = {
-  'geffen-dungeon-2': arenaBarriers,   // central '+' that splits the dungeon
+export function locationBarriers(loc?: Location | null): Barrier[] {
+  return scenarioOf(loc)?.barriers?.() ?? []
 }
 
-export function locationBarriers(id?: string | null): Barrier[] {
-  return id ? (LOCATION_TERRAIN[id]?.() ?? []) : []
-}
-
-// The wave mirrors the (uncapped) deployed party size: every unit you station at
-// a location pulls an extra monster so the fight stays matched.
 export function waveComposition(loc: Location, partySize: number): string[] {
-  const override = ENCOUNTER_OVERRIDES[loc.id]
-  if (override) return override
+  const scen = scenarioOf(loc)
+  if (scen?.wave) return scen.wave
   const size = Math.max(1, partySize)
   return Array.from({ length: size }, (_, i) => loc.monsterIds[i % loc.monsterIds.length])
 }
@@ -196,7 +186,7 @@ function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[
     const def = MONSTER_REGISTRY[wave[i]]
     if (def) enemyUnits.push(monsterToEngineInput(def, `${wave[i]}#${i}`, 'enemy'))
   }
-  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc.id), collectEvents: true })
+  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true })
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -357,15 +347,15 @@ export const useGameStore = create<GameState>((set) => ({
   selectedUnitIds: [],
   selectedLocationId: null,
   combatLocationId: null,
-  mapPageId: 'prontera',
+  mapPageId: 'world',
   expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
-  expandedRegionIds:         (() => { try { return JSON.parse(localStorage.getItem('expandedRegionIds')         ?? '["prontera","geffen","kanto"]') } catch { return ['prontera', 'geffen', 'kanto'] } })(),
+  expandedRegionIds:         (() => { try { return JSON.parse(localStorage.getItem('expandedRegionIds')         ?? '["world","geffen-dungeon"]') } catch { return ['world', 'geffen-dungeon'] } })(),
   equipContext: null,
   learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
-  locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
-  locationMonstersSeen: { 'kings-forest': ['slime'], 'duskwood': ['slime'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
+  locationFamiliarity:  { 'geffen-city': 100, 'prontera-city': 80, 'beach-1': 60 },
+  locationMonstersSeen: { 'geffen-city': ['slime'], 'prontera-city': ['slime'], 'beach-1': ['rock-crab'] },
   monsterSeen:          { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
   ticks: 0,
   monsterDefeated: {},
@@ -730,8 +720,8 @@ export const useGameStore = create<GameState>((set) => ({
       equipment: INITIAL_EQUIPMENT,
       miscItems: INITIAL_MISC,
       learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
-      locationFamiliarity:  { 'kings-forest': 100, 'duskwood': 75, ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, 100])) },
-      locationMonstersSeen: { 'kings-forest': ['slime'], 'duskwood': ['slime'], ...Object.fromEntries(KANTO_BEACH_IDS.map((id) => [id, ['rock-crab']])) },
+      locationFamiliarity:  { 'geffen-city': 100, 'prontera-city': 80, 'beach-1': 60 },
+      locationMonstersSeen: { 'geffen-city': ['slime'], 'prontera-city': ['slime'], 'beach-1': ['rock-crab'] },
       monsterSeen:     { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
       monsterDefeated: {},
       locationStats:   {},
@@ -747,11 +737,11 @@ export const useGameStore = create<GameState>((set) => ({
       selectedUnitIds: [],
       selectedLocationId: null,
       combatLocationId: null,
-      mapPageId: 'prontera',
+      mapPageId: 'world',
       expandedLocationIds: [],
       expandedUnitIds: [],
       expandedInventorySections: ['equipment', 'misc', 'crafting'],
-      expandedRegionIds: ['prontera', 'geffen', 'kanto'],
+      expandedRegionIds: ['world', 'geffen-dungeon'],
       equipContext: null,
     })
   },

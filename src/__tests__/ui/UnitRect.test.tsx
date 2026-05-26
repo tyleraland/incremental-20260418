@@ -23,9 +23,10 @@ async function renderMap() {
   return render(React.createElement(Map))
 }
 
-// All test locations use region 'prontera' (a real REGIONS entry).
+// Test locations use a real id from the world map so the new pannable layout
+// has a coord to place them at.
 const TEST_LOCATION = {
-  id: 'loc1', name: 'Test Forest', region: 'prontera',
+  id: 'geffen-city', name: 'Test Forest', region: 'world',
   description: '', traits: [], monsterIds: ['wolf'], familiarityMax: 100, connections: [],
 }
 
@@ -49,7 +50,7 @@ describe('LocationCell — empty location (Map tab)', () => {
       units: [],
       locations: [{ ...TEST_LOCATION, name: 'Empty Spot' }],
       expandedLocationIds: [],
-      expandedRegionIds: ['prontera'],
+      expandedRegionIds: ['world'],
     })
     await renderMap()
     expect(screen.getByTitle('Empty Spot')).toBeInTheDocument()
@@ -60,7 +61,7 @@ describe('LocationCell — empty location (Map tab)', () => {
       units: [],
       locations: [{ ...TEST_LOCATION, name: 'Vacant Forest' }],
       expandedLocationIds: [],
-      expandedRegionIds: ['prontera'],
+      expandedRegionIds: ['world'],
     })
     await renderMap()
     // No unit count pill should appear for an empty cell.

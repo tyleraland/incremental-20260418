@@ -364,7 +364,7 @@ function Preview() {
         </p>
       </div>
 
-      <Arena cam={cam} barriers={locationBarriers(combatLocationId)}>
+      <Arena cam={cam} barriers={locationBarriers(location)}>
         {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={false} />)}
         {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={true} />)}
         {(party.length === 0 && foes.length === 0) && (
