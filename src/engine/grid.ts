@@ -5,7 +5,8 @@ import {
   COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
   PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
-import type { Vec2, Rank, Team, Combatant } from './types'
+import { slideMove, pointBlocked } from './barriers'
+import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
 
 export function distance(a: Vec2, b: Vec2): number {
   const dx = a.x - b.x
@@ -73,6 +74,7 @@ export function moveToward(
   target: Combatant,
   speed: number,
   all: Combatant[],
+  barriers: Barrier[] = [],
 ): boolean {
   const reach = attackReach(mover)
   const d = distance(mover.pos, target.pos)
@@ -82,8 +84,8 @@ export function moveToward(
   const uy = (target.pos.y - mover.pos.y) / d
   const step = Math.min(speed, d - reach)
   const before = mover.pos
-  mover.pos = clampToGrid({ x: mover.pos.x + ux * step, y: mover.pos.y + uy * step })
-  enforceSeparation(mover, all)
+  mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * step, y: mover.pos.y + uy * step }, barriers)
+  enforceSeparation(mover, all, barriers)
   return mover.pos.x !== before.x || mover.pos.y !== before.y
 }
 
@@ -95,6 +97,7 @@ export function moveTowardPoint(
   point: Vec2,
   speed: number,
   all: Combatant[],
+  barriers: Barrier[] = [],
 ): boolean {
   const d = distance(mover.pos, point)
   if (d <= EPS) return false
@@ -102,14 +105,14 @@ export function moveTowardPoint(
   const uy = (point.y - mover.pos.y) / d
   const step = Math.min(speed, d)
   const before = mover.pos
-  mover.pos = clampToGrid({ x: mover.pos.x + ux * step, y: mover.pos.y + uy * step })
-  enforceSeparation(mover, all)
+  mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * step, y: mover.pos.y + uy * step }, barriers)
+  enforceSeparation(mover, all, barriers)
   return mover.pos.x !== before.x || mover.pos.y !== before.y
 }
 
 // §2.4 when a move would put two units closer than SEPARATION, push both apart
 // along the axis between them. Deterministic: `all` is iterated in stable order.
-export function enforceSeparation(mover: Combatant, all: Combatant[]): void {
+export function enforceSeparation(mover: Combatant, all: Combatant[], barriers: Barrier[] = []): void {
   for (const other of all) {
     if (other === mover || !other.alive) continue
     let dx = mover.pos.x - other.pos.x
@@ -125,7 +128,10 @@ export function enforceSeparation(mover: Combatant, all: Combatant[]): void {
     const overlap = (SEPARATION - d) / 2
     const ux = dx / d
     const uy = dy / d
-    mover.pos = clampToGrid({ x: mover.pos.x + ux * overlap, y: mover.pos.y + uy * overlap })
-    other.pos = clampToGrid({ x: other.pos.x - ux * overlap, y: other.pos.y - uy * overlap })
+    // Don't shove a unit into a wall; only apply a push that lands in open space.
+    const mp = clampToGrid({ x: mover.pos.x + ux * overlap, y: mover.pos.y + uy * overlap })
+    const op = clampToGrid({ x: other.pos.x - ux * overlap, y: other.pos.y - uy * overlap })
+    if (!pointBlocked(barriers, mp)) mover.pos = mp
+    if (!pointBlocked(barriers, op)) other.pos = op
   }
 }

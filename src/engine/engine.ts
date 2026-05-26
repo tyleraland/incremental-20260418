@@ -18,6 +18,7 @@ import { makeSkillTactic } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo } from './spatial'
+import { traceMove, slideMove } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
@@ -92,6 +93,7 @@ export function createBattle(setup: CombatSetup): BattleState {
   return {
     combatants,
     zones: [],
+    barriers: setup.barriers ?? [],
     round: 0,
     outcome: 'ongoing',
     events: [],
@@ -146,8 +148,9 @@ function knockbackTarget(state: BattleState, caster: Combatant, target: Combatan
   const dy = target.pos.y - caster.pos.y
   const d = Math.hypot(dx, dy) || 1
   const before = { ...target.pos }
-  target.pos = clampToGrid({ x: target.pos.x + (dx / d) * rows, y: target.pos.y + (dy / d) * rows })
-  enforceSeparation(target, state.combatants)
+  // §2 a barrier stops the shove: trace to the wall, never through it.
+  target.pos = traceMove(target.pos, { x: target.pos.x + (dx / d) * rows, y: target.pos.y + (dy / d) * rows }, state.barriers)
+  enforceSeparation(target, state.combatants, state.barriers)
   if (target.pos.x !== before.x || target.pos.y !== before.y) {
     emit(state, { round: state.round, type: 'knockback', sourceId: caster.id, targetId: target.id, position: { ...target.pos } })
   }
@@ -161,8 +164,8 @@ function knockbackTarget(state: BattleState, caster: Combatant, target: Combatan
 function retreatCaster(state: BattleState, self: Combatant, rows: number): void {
   const dir = self.team === 'player' ? -1 : 1
   const before = { ...self.pos }
-  self.pos = clampToGrid({ x: self.pos.x, y: self.pos.y + dir * rows })
-  enforceSeparation(self, state.combatants)
+  self.pos = traceMove(self.pos, { x: self.pos.x, y: self.pos.y + dir * rows }, state.barriers)
+  enforceSeparation(self, state.combatants, state.barriers)
   if (self.pos.x !== before.x || self.pos.y !== before.y) {
     emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
   }
@@ -433,8 +436,8 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   if (plan?.awayFromNearestEnemy) {
     const dir = self.team === 'player' ? -1 : 1
     const before = { ...self.pos }
-    self.pos = clampToGrid({ x: self.pos.x, y: self.pos.y + dir * (plan.rows ?? 1) })
-    enforceSeparation(self, state.combatants)
+    self.pos = slideMove(self.pos, { x: self.pos.x, y: self.pos.y + dir * (plan.rows ?? 1) }, state.barriers)
+    enforceSeparation(self, state.combatants, state.barriers)
     if (self.pos.x !== before.x || self.pos.y !== before.y) {
       emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
     }
@@ -444,14 +447,14 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   if (plan?.desiredRange != null) { kiteToward(state, self, plan.desiredRange); return }
   // Move to a computed spot (flank / guard / regroup).
   if (plan?.toPoint) {
-    if (moveTowardPoint(self, plan.toPoint, BASE_MOVE_SPEED * (plan.speedMult ?? 1), state.combatants)) {
+    if (moveTowardPoint(self, plan.toPoint, BASE_MOVE_SPEED * (plan.speedMult ?? 1), state.combatants, state.barriers)) {
       emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
     }
     return
   }
   const target = findCombatant(state, self.lockedTargetId)
   if (target && target.alive) {
-    const moved = moveToward(self, target, BASE_MOVE_SPEED * (plan?.speedMult ?? 1), state.combatants)
+    const moved = moveToward(self, target, BASE_MOVE_SPEED * (plan?.speedMult ?? 1), state.combatants, state.barriers)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
   }
 }
@@ -470,8 +473,8 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const dirx = ((threat.pos.x - self.pos.x) / (d || 1)) * sign
   const diry = ((threat.pos.y - self.pos.y) / (d || 1)) * sign
   const step = Math.min(BASE_MOVE_SPEED, Math.abs(d - want))
-  self.pos = clampToGrid({ x: self.pos.x + dirx * step, y: self.pos.y + diry * step })
-  enforceSeparation(self, state.combatants)
+  self.pos = slideMove(self.pos, { x: self.pos.x + dirx * step, y: self.pos.y + diry * step }, state.barriers)
+  enforceSeparation(self, state.combatants, state.barriers)
   if (self.pos.x !== before.x || self.pos.y !== before.y) {
     emit(state, { round: state.round, type: sign < 0 ? 'retreat' : 'move', sourceId: self.id, position: { ...self.pos } })
   }

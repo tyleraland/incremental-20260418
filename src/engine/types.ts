@@ -239,6 +239,10 @@ export interface CombatCallbacks {
   calculateDamage?: CalculateDamage
 }
 
+// An axis-aligned impassable region of terrain. Units route around it; knockback
+// stops against it (§2 barriers).
+export interface Barrier { x: number; y: number; w: number; h: number }
+
 export interface CombatSetup {
   playerUnits: EngineUnitInput[]
   enemyUnits: EngineUnitInput[]
@@ -247,6 +251,7 @@ export interface CombatSetup {
   callbacks?: CombatCallbacks
   maxRounds?: number
   collectEvents?: boolean   // default true; set false for fast bulk resolution (§11)
+  barriers?: Barrier[]      // impassable terrain (default none)
 }
 
 export type Outcome = 'ongoing' | 'victory' | 'defeat' | 'draw'
@@ -287,6 +292,7 @@ export interface BattleZone {
 export interface BattleState {
   combatants: Combatant[]
   zones: BattleZone[]
+  barriers: Barrier[]
   round: number
   outcome: Outcome
   events: BattleEvent[]

@@ -2,7 +2,8 @@ import { useGameStore, waveComposition } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import {
-  COLS, ROWS, startingPosition, COMBAT_SKILLS, type Rank, type Vec2, type BattleState, type Combatant,
+  COLS, ROWS, startingPosition, arenaBarriers, COMBAT_SKILLS,
+  type Rank, type Vec2, type Barrier, type BattleState, type Combatant,
 } from '@/engine'
 
 const skillName = (id: string) => COMBAT_SKILLS[id]?.(1)?.name ?? 'Casting'
@@ -54,7 +55,7 @@ function computeCamera(pts: Vec2[]): Cam {
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
 
-function Arena({ cam, children }: { cam: Cam; children: React.ReactNode }) {
+function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode }) {
   const cell = `${100 / cam.size}%`
   const centerTop = Math.max(0, Math.min(100, (1 - (CENTER_Y - cam.y) / cam.size) * 100))
   return (
@@ -72,6 +73,14 @@ function Arena({ cam, children }: { cam: Cam; children: React.ReactNode }) {
           backgroundSize: `${cell} ${cell}`,
         }}
       />
+      {/* terrain (impassable barriers) */}
+      {barriers.map((b, i) => (
+        <div
+          key={i}
+          className="absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none"
+          style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%` }}
+        />
+      ))}
       {children}
     </div>
   )
@@ -163,7 +172,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
         <p className="text-xs text-game-text-dim mt-0.5">{name} · round {battle.round}</p>
       </div>
 
-      <Arena cam={cam}>
+      <Arena cam={cam} barriers={battle.barriers}>
         {/* persistent ground hazards (Firewall, etc.) */}
         {battle.zones.map((z) => (
           <div
@@ -279,7 +288,7 @@ function Preview() {
         </p>
       </div>
 
-      <Arena cam={cam}>
+      <Arena cam={cam} barriers={arenaBarriers()}>
         {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={false} />)}
         {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={true} />)}
         {(party.length === 0 && foes.length === 0) && (
