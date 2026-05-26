@@ -11,11 +11,12 @@
 import { COLS, ROWS, EPS, DEPLOY_FRONT } from './constants'
 import type { Vec2, Barrier } from './types'
 
-// Soft tie-break in the path search: corners on the left side of the arena cost
-// a little extra, so two units staring down the same obstacle tend to route to
-// the same side instead of splitting unpredictably. Truly-shorter detours still
-// win — this only herds the borderline cases where left and right are close.
-const HERD_BIAS = 1.0
+// Tie-break in the path search: corners on the left side of the arena cost
+// extra, so units staring down the same obstacle tend to route to the same
+// side instead of splitting unpredictably (each left corner traversed adds
+// this much). Truly-shorter detours still win — this herds the cases where
+// left and right are roughly comparable so they're chosen consistently.
+const HERD_BIAS = 4.0
 
 // Units are treated as small discs so they stop just shy of a wall.
 const UNIT_PAD = 0.4

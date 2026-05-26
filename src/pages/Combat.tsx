@@ -28,15 +28,16 @@ function hpColor(ratio: number): string {
 }
 
 // ── Camera ──────────────────────────────────────────────────────────────────---
-// Fixed full-field view: the whole 30×30 arena is always on screen. We tried a
-// camera that followed the bounding box of all combatants, but pan/zoom-per-round
-// made the scene feel like it was swimming. Action sits comfortably inside the
-// deploy zone, so a static frame reads better.
+// Fixed, zoomed-in window centered on the arena. A following camera made the
+// scene feel like it was swimming as units moved, and showing the whole 30×30
+// made units feel tiny — this static frame crops to the engagement zone.
+
+const CAM_SIZE = 22   // world units (action sits inside y∈[4,26], x∈[4,26])
 
 interface Cam { x: number; y: number; size: number }
 
 function computeCamera(_pts: Vec2[]): Cam {
-  return { x: 0, y: 0, size: Math.max(COLS, ROWS) }
+  return { x: (COLS - CAM_SIZE) / 2, y: (ROWS - CAM_SIZE) / 2, size: CAM_SIZE }
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
