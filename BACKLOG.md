@@ -89,13 +89,60 @@ same way" by penalising left-side detours.
   equipment fields (range on rod/wand/staff) would invalidate any saved
   state if persistence is added later.
 
-## Tests / verification gaps
+## Verification gaps — spot-check until codified
 
-- **No browser verification** — every "shipped" message flags this. Feel
-  features (kiting, herd bias, terrain navigation, the detail card) are
-  best validated by playing the actual UI.
-- Token inset, tap-for-stats card, camera/render — small but UI-shaped, no
-  automated tests.
+Behaviors not covered by automated tests; apt to regress silently. Run
+through after relevant changes (or before any release-worthy commit),
+then promote to a real test once stable.
+
+**Combat view** (after `Combat.tsx` / render changes):
+
+- Unit token at the arena edge stays fully on-screen (no clipping).
+- Tap a chip opens a detail card with: name + team, HP bar + integer,
+  STR/DEF/INT/SPD, per-skill cooldown meters with remaining rounds,
+  statuses with duration, casting line when channeling. Tap the same
+  chip again closes it.
+- Walls render solid stone; cliffs render dashed / translucent.
+- Channeling unit gets an amber "✦ \<spell\>" badge + ring.
+- Floating numbers — red damage / green heal / fuchsia DoT; amber
+  "interrupted" on disrupted casts.
+- Hit flashes and attack arc lines appear and fade per round.
+- Preview chips render before the wave starts; no leftover slice-to-5.
+
+**Combat feel** (after engine / tactic / skill changes — run one Geffen
+Dungeon Floor 2 fight and one open-field fight):
+
+- Party files around the central cross at Geffen 2 without piling up;
+  no permanent outliers taking the long way (the `HERD_BIAS` heuristic
+  still doing its job).
+- Open-field combat is clean: no units stalling, melee converges.
+- Kiter holds at spell range, backs straight off in the open, arcs
+  along walls instead of pinning into a corner.
+- Faster units (high `spd`) visibly outpace slower ones over a few
+  rounds.
+- Casters refuse to fire through walls (Theron behind a cross arm);
+  do fire through cliffs when a location uses them.
+- Knockback stops against barriers AND the arena perimeter; nothing
+  leaves the map.
+- Frozen units skip a turn but stay frozen; stunned units skip and the
+  stun is consumed.
+- Stealthed units can't be targeted by enemies; basic attacks reveal
+  the attacker after the strike.
+
+**Catalog / data** (after `INITIAL_UNITS`, equipment, or skill catalog
+edits):
+
+- All six heroes have a class and a deep, role-built loadout; casters
+  and the archer deploy back-line, melee front-line.
+- Geffen 2 wave (3 tough-slime + 2 bat) still resolves without stalling.
+- New active skills appear in the skill tree and the action-bar drag
+  picker.
+
+**Persistence** (whenever save/load lands):
+
+- New skills, new equipment fields (e.g. `range` on rod / wand / staff),
+  and reshuffled `INITIAL_UNITS` need a migration story or they'll
+  silently corrupt old saves.
 
 ## Grid-size independence (invariant — keep)
 
