@@ -1,105 +1,106 @@
 # Combat / Tactic Engine — Backlog
 
-Living list of deferred work and design direction for the combat engine
-(`src/engine`). Implemented behavior lives in `CLAUDE.md` → Feature
-Specifications; this file is what's *not* built yet.
+Deferred work and known shortcuts for the combat engine (`src/engine`).
+Implemented behavior is in `CLAUDE.md` → Feature Specifications (which is
+itself behind — see *Spec drift* below).
 
-## Deferred combat content
+## Combat content
 
-These were scoped out of the skill/combo phases; each needs a small new
-primitive noted in parentheses.
+- **Pneuma / protective zones** — friendly zone that blocks (or halves) ranged
+  damage to allies inside. Needs `blocksRanged` on `BattleZone`.
+- **Reaction-channel skills** — Counter and Pneuma as equippable skills (we
+  still only have the built-in `counterattacker` tactic). Extend
+  `makeSkillTactic` to emit reaction-channel tactics.
+- **Type-conditional / vs-type skills** — Turn Undead-style instant defeat
+  vs a *type*. The element matrix covers radiant×undead damage already;
+  the type flag is separate (`monsterType` on Combatant + `vsType` on
+  EngineSkill).
+- **Element on DoT / zones** — Poison and Firewall ticks bypass the matrix;
+  a fire-immune enemy still burns in a Firewall.
+- **Weapon-imbue from traits** — `element` trait category exists; not wired
+  through `getUnitTraits` → `getDerivedStats`.
+- **Per-unit elemental resistances** beyond a single armor element.
+- **Combat UI for elements** — `resisted / 2×` indicator on damage numbers;
+  show effective vs current armor element on the card.
+- **Combat log UI** — event stream is rich (every hit, heal, status,
+  interrupt); only floating numbers render. No history of "Aldric hit Slime
+  for 24."
 
-- **Pneuma / protective zones** — a friendly ground zone that blocks (or halves)
-  ranged damage to allies standing in it. (needs a `blocksRanged`/`damageMult`
-  field on `BattleZone` + a check in the ranged branch of `dealAttack`.)
-- **Reaction-channel skills** — Counterattack and Pneuma as *equippable skills*
-  rather than the built-in `counterattacker` tactic. (extend `makeSkillTactic`
-  to emit reaction-channel tactics; `ReactionResult` already supports
-  `counterAttack`/`applyStatusToSelf`.)
-- **Type-conditional skills** — Turn Undead / Magnus Exorcismus: bonus or
-  instant-defeat vs a target *type*. Partly covered now via the `undead`/`ghost`
-  elements + `radiant` attacks (2× / immunity already work); the "undead type"
-  flag for instakill-style effects is separate. (needs a `monsterType` tag on
-  `Combatant` + a `vsType` field on `EngineSkill`.)
-- **Weapon-imbue & trait resistances** — units already forward
-  `attackElement`/`armorElement` from gear; still TODO: element from *traits*
-  (the `element` trait category exists but `getUnitTraits` doesn't return them),
-  and per-unit resistance tables beyond a single armor element.
-- **Elemental DoT / zones** — `poisoned` DoT and Firewall zone ticks are
-  currently element-agnostic (bypass the matrix). Give them an element so e.g. a
-  fire-immune enemy ignores Firewall.
-- **Combat UI for elements** — color/agnostic "resisted / 2×" indicator on damage
-  numbers; show effective vs current armor element on the chip.
+## AI & coordination
 
-## AI & tactics roadmap
+The biggest open chunk. Today every unit picks targets and paths
+independently; `HERD_BIAS = 4` is a one-line hack that approximates "go the
+same way" by penalising left-side detours.
 
-Goal: get from "each unit independently walks at the nearest enemy" to
-*coordinated, spatially-aware* play — and make team AI **injectable** so we can
-author distinct enemy/ally strategies. Two complementary additions:
+- **Team blackboard.** Per-team scratchpad computed once at round start and
+  stashed on `BattleState`:
+  ```
+  state.plans: Record<Team, TeamPlan>
+  TeamPlan = { focusTargetId, disableTargetId, threat: Record<id, number> }
+  ```
+  Tactics *read* the plan instead of recomputing, so "A disables X while B+C
+  focus-fire Y" falls out. Produced by a pluggable **planner** — that's the
+  injection point (a team's AI = planner + tactic loadout). Replaces
+  HERD_BIAS with real coordination; also fixes flanker pulling a rogue the
+  long way around.
+- **Strategies = multi-channel tactic bundles.** A `STRATEGY_REGISTRY` where
+  each entry expands to TacticRefs across channels + an optional planner.
+  Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),
+  *Lock & Focus* (Controller + Focus Fire), *Kite* (existing + maintain LoS).
+- **Ambush combo** — primitives exist (cloak, back-stab, flanker,
+  focus-casters); needs an orchestrator that holds Cloak until in Back Stab
+  range of the focus target.
+- **LoS-aware positioning** — kiter holds *distance* but doesn't relocate to
+  gain a clear shot if a wall is between it and the target. Casters can
+  silently stall behind a cross arm.
+- **1v1 chase circling** — a lone chaser orbits a barrier after a fleeing
+  target forever. Multi-unit fights converge so this rarely bites in
+  practice; would need a "cut the corner" intercept.
 
-### 1. Team blackboard (shared per-round plan)
+## Engine inconsistencies & gaps
 
-Today every targeting tactic recomputes its own pick, so units can't agree on a
-plan. Add a deterministic, per-team scratchpad computed once at the start of
-`advanceRound`, before turns, and stashed on `BattleState`:
+- **Channeled spells don't recheck LoS at resolve time** — a target can step
+  behind a wall mid-channel and still get hit on resolve.
+- **Heal / buff / reveal don't check LoS** — only enemy targeting does.
+  Probably desirable, but inconsistent.
+- **`enforceSeparation` against walls** — corners can briefly produce
+  two-unit pile-ups before things resolve.
+- **Visibility graph rebuilt per nav call** — fine at this scale; cache
+  corner-corner edges per battle if terrain grows.
 
-```
-state.plans: Record<Team, TeamPlan>
-TeamPlan = {
-  focusTargetId:   string | null  // who everyone piles onto (lowest eff-HP / highest threat)
-  disableTargetId: string | null  // who to lock down (enemy's biggest threat / caster)
-  threat:          Record<string, number>  // per-enemy threat score
-}
-```
+## Heuristic shortcuts
 
-Tactics *read* the blackboard instead of recomputing, which is what makes
-"unit A disables X while B+C focus-fire Y" fall out naturally:
+- `HERD_BIAS = 4` — numeric fudge for path side-picking. The team blackboard
+  is the real fix.
+- **Magic focus `range` stat** — rod / wand / staff carry `range` to make
+  casters ranged in the engine. Class (Mage / Cleric) should set this, not
+  weapons.
+- **`MAX_UNIT_TACTICS = 4`** — caused awkward swap-outs (Lyra lost `nimble`
+  for `flanker`). Bumping to 5–6 might be more honest now.
 
-- **Controller** (action/targeting): lock `disableTargetId`, cast a disable
-  (Freeze / Ankle Snare / Stun).
-- **Focus Fire** (party targeting): lock `focusTargetId`.
+## Data / spec drift
 
-The blackboard is produced by a pluggable **planner** — and that is the
-injection point: *a team's AI = (planner, tactic loadout)*. Swap the planner to
-get a different brain (aggressive focus, protect-the-healer, split-push) without
-touching per-unit code.
+- **`CLAUDE.md` Feature Specifications** still documents the pre-engine
+  combat (KO recovery, monster-behavior dropdowns, encounter slots). The
+  tactic engine replaced most of it. The doc lags.
+- **Per-location terrain** is a single hardcoded map (`LOCATION_TERRAIN`)
+  and `arenaBarriers()` returns one fixed cross regardless of location.
+- **No save migrations** — recent INITIAL_UNITS overhaul, new skills, new
+  equipment fields (range on rod/wand/staff) would invalidate any saved
+  state if persistence is added later.
 
-### 2. Strategies = multi-channel tactic bundles
+## Tests / verification gaps
 
-A single behavior like "assassinate the backline" spans channels (sneak →
-flank → burst). Rather than ask players/authors to wire 4 tactics by hand,
-add a `STRATEGY_REGISTRY` where each entry expands to a set of `TacticRef`s
-(across channels) + an optional planner id. We already expand skill→tactic and
-party→tactics; strategy→tactics is the same mechanism. Examples:
+- **No browser verification** — every "shipped" message flags this. Feel
+  features (kiting, herd bias, terrain navigation, the detail card) are
+  best validated by playing the actual UI.
+- Token inset, tap-for-stats card, camera/render — small but UI-shaped, no
+  automated tests.
 
-- **Assassinate** = focus-squishy (targeting) + flank-to-target (movement) +
-  Cloak/Back Stab timing (action) — the LoL-style ambush.
-- **Lock & Focus** = Controller on one unit + Focus Fire on the rest (via the blackboard).
-- **Kite** = maintain-range movement + retreat-when-meleed + nearest targeting.
-
-### 3. Spatial primitives (used by both player tactics and enemy AI)
-
-**DONE** (`src/engine/spatial.ts`, movement tactics in `tactics.ts`): relative,
-grid-size-agnostic queries — `centroid`, `nearestTo`, `nearestEnemyTo`,
-`squishiestAlly`, `flankPoint`, `guardPoint` — and movement tactics built on
-`MovementResult.toPoint` / `desiredRange`: **Flanker** (circle to the target's
-weak side), **Kiter** (hold range, back off when closed), **Guardian**
-(body-block the squishiest ally), **Regroup** (rejoin when isolated). Party size
-is also uncapped now (formations stack into deeper rows).
-
-Still TODO:
-
-- **Ambush** combo: while `stealthed`, route to the flank of `focusTargetId`,
-  hold until in Back Stab range, then burst. (needs the blackboard's
-  `focusTargetId` + a "hold-until-in-range" gate on the Flanker move.)
-- More queries when needed: by-rank (backline) targeting, frontline Y,
-  "is in our backline?" (diving detection).
-
-### Grid-size independence (invariant)
+## Grid-size independence (invariant — keep)
 
 `COLS`/`ROWS` are the only size knobs. **No tactic may hardcode absolute
-coordinates** — everything is expressed relative to enemies/allies/edges (ranks,
-distances, centroids), so enlarging the grid just means longer approaches
-(positioning gets *more* valuable) with zero logic changes. Things to re-tune,
-not re-architect, when the grid grows: `BASE_MOVE_SPEED`, reach bands in the
-adapter, `startingPosition` formations, and `SEPARATION` spacing.
+coordinates** — everything is relative to enemies/allies/edges. Things to
+re-tune (not re-architect) when the grid grows: `BASE_MOVE_SPEED`, reach
+bands in the adapter, `startingPosition` formations, `SEPARATION`,
+`HERD_BIAS`, kiter probe distance, `CAM_SIZE`.
