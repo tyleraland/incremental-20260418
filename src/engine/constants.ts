@@ -19,8 +19,8 @@ export const PERIMETER_RIGHT = 13    // x > this  → perimeter
 // Deploy model: teams form up a fixed distance from the arena center (not at the
 // far edges), leaving open ground behind to maneuver/retreat and room in the
 // middle for terrain. Deeper ranks fall back toward their own edge.
-export const DEPLOY_FRONT = 4                                  // front rank's distance from center
-export const RANK_SETBACK = { front: 0, mid: 1.0, back: 2.0 } as const
+export const DEPLOY_FRONT = 5.5                                // front rank's distance from center
+export const RANK_SETBACK = { front: 0, mid: 0.8, back: 1.6 } as const
 
 // When a rank holds more units than there are columns, extra units stack into
 // deeper rows this far apart (≥ SEPARATION so they don't start overlapping).

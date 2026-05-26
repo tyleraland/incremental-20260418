@@ -29,16 +29,44 @@ function hpColor(ratio: number): string {
 }
 
 // ── Camera ──────────────────────────────────────────────────────────────────---
-// Fixed, zoomed-in window centered on the arena. A following camera made the
-// scene feel like it was swimming as units moved, and showing the whole 30×30
-// made units feel tiny — this static frame crops to the engagement zone.
+// Defaults to a slightly-zoomed-in window centered on the arena (combat starts
+// here). When live units cluster tighter than DEFAULT_CAM_SIZE, the camera
+// zooms in further so cards stay readable; when they spread past it, the
+// camera zooms out (up to the whole arena) so nothing leaves the frame. Most
+// of the time you're in the default, hence the wide hysteresis thresholds.
 
-const CAM_SIZE = 15   // world units (whole 15×15 arena in view)
+const DEFAULT_CAM_SIZE = 13   // world units shown by default
+const FULL_CAM_SIZE    = COLS // whole arena (zoom-out cap)
+const CLOSE_EXTENT     = 4    // bbox extent below this → zoom in on the cluster
+const SPREAD_EXTENT    = 12   // bbox extent above this → zoom out to fit them all
 
 interface Cam { x: number; y: number; size: number }
 
-function computeCamera(_pts: Vec2[]): Cam {
-  return { x: (COLS - CAM_SIZE) / 2, y: (ROWS - CAM_SIZE) / 2, size: CAM_SIZE }
+function defaultCamera(): Cam {
+  return { x: (COLS - DEFAULT_CAM_SIZE) / 2, y: (ROWS - DEFAULT_CAM_SIZE) / 2, size: DEFAULT_CAM_SIZE }
+}
+
+function computeCamera(pts: Vec2[]): Cam {
+  if (pts.length === 0) return defaultCamera()
+  let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+  }
+  const extent = Math.max(maxX - minX, maxY - minY)
+
+  if (extent >= CLOSE_EXTENT && extent <= SPREAD_EXTENT) return defaultCamera()
+
+  // Centered on the bbox midpoint, clamped to stay inside the arena.
+  const size = extent < CLOSE_EXTENT
+    ? Math.max(CLOSE_EXTENT + 2, extent + 3)   // tight cluster: zoom in close
+    : FULL_CAM_SIZE                            // very spread: show everything
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+  return {
+    x: Math.max(0, Math.min(COLS - size, cx - size / 2)),
+    y: Math.max(0, Math.min(ROWS - size, cy - size / 2)),
+    size,
+  }
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
@@ -89,8 +117,17 @@ function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; chi
 
 // ── Live battle ────────────────────────────────────────────────────────────────
 
-// Smaller cards so units don't overlap heavily on the fixed full-field view.
-const CARD = 'w-6'
+// Cards are bigger now (portrait + first name + HP) so the field is more
+// readable. Wider start positions (DEPLOY_FRONT bumped) keep them from
+// stacking up on round 1; expect some overlap once melee converges.
+const CARD = 'w-16'
+
+// First name (or short label) for the chip header. Falls back to initials for
+// single-word monster names where the first word is the whole thing.
+function shortName(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? ''
+  return first.length > 8 ? first.slice(0, 7) + '…' : first
+}
 
 function CooldownMeter({ c }: { c: Combatant }) {
   if (c.skills.length === 0) return null
@@ -121,22 +158,33 @@ function BattleChip({ c, cam, selected, onSelect }: { c: Combatant; cam: Cam; se
       style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
     >
       {casting && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[8px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[9px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
           ✦ {skillName(c.channel!.skillId)}
         </div>
       )}
       <div
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         className={[
-          'rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px transition-opacity',
+          'rounded-md border shadow flex flex-col gap-0.5 px-1 pt-0.5 pb-1 transition-opacity',
           casting ? 'bg-blue-950 border-amber-300 ring-1 ring-amber-400/60'
             : isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70',
           selected ? 'ring-2 ring-emerald-300' : '',
           c.alive ? '' : 'opacity-25 grayscale',
         ].join(' ')}
       >
-        <div className={`text-center text-[8px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>
-          {c.alive ? initials(c.name) : '✕'}
+        <div className="flex items-center gap-1 min-w-0">
+          <span
+            aria-hidden
+            className={[
+              'shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold border',
+              isPlayer ? 'bg-blue-900 border-blue-300/60 text-blue-100' : 'bg-red-900 border-red-300/60 text-red-100',
+            ].join(' ')}
+          >
+            {c.alive ? initials(c.name) : '✕'}
+          </span>
+          <span className={`text-[10px] font-semibold leading-tight truncate ${isPlayer ? 'text-blue-100' : 'text-red-100'}`}>
+            {shortName(c.name)}
+          </span>
         </div>
         <div className="h-1 rounded-sm bg-black/50 overflow-hidden">
           <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
@@ -316,11 +364,24 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
 
 // ── Static preview (no live battle: between waves / not yet started) ─────────────
 
-function PreviewChip({ cam, pos, label, title, isPlayer }: { cam: Cam; pos: Vec2; label: string; title: string; isPlayer: boolean }) {
+function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos: Vec2; label: string; name: string; title: string; isPlayer: boolean }) {
   return (
     <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2`}>
-      <div className={['rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px', isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70'].join(' ')}>
-        <div className={`text-center text-[8px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>{label}</div>
+      <div className={['rounded-md border shadow flex flex-col gap-0.5 px-1 pt-0.5 pb-1', isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70'].join(' ')}>
+        <div className="flex items-center gap-1 min-w-0">
+          <span
+            aria-hidden
+            className={[
+              'shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold border',
+              isPlayer ? 'bg-blue-900 border-blue-300/60 text-blue-100' : 'bg-red-900 border-red-300/60 text-red-100',
+            ].join(' ')}
+          >
+            {label}
+          </span>
+          <span className={`text-[10px] font-semibold leading-tight truncate ${isPlayer ? 'text-blue-100' : 'text-red-100'}`}>
+            {shortName(name)}
+          </span>
+        </div>
         <div className="h-1 rounded-sm bg-emerald-500/80" />
       </div>
     </div>
@@ -342,14 +403,15 @@ function Preview() {
     const m = MONSTER_REGISTRY[id]
     const rank: Rank = (m?.stats.attackRange ?? 5) > 5 ? 'back' : 'front'
     const within = enemyRank[rank] ?? 0; enemyRank[rank] = within + 1
-    return { key: `${id}-${i}`, pos: startingPosition('enemy', rank, within), label: initials(m?.name ?? id), title: m?.name ?? id }
+    const name = m?.name ?? id
+    return { key: `${id}-${i}`, pos: startingPosition('enemy', rank, within), label: initials(name), name, title: name }
   })
   const partyRank: Record<string, number> = {}
   const partyChips = party.map((u) => {
     const ranged = getDerivedStats(u, equipment).attackRange > 5
     const rank: Rank = ranged ? 'back' : 'front'
     const within = partyRank[rank] ?? 0; partyRank[rank] = within + 1
-    return { key: u.id, pos: startingPosition('player', rank, within), label: initials(u.name), title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
+    return { key: u.id, pos: startingPosition('player', rank, within), label: initials(u.name), name: u.name, title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
   })
   const cam = computeCamera([...enemyChips, ...partyChips].map((c) => c.pos))
 
@@ -365,8 +427,8 @@ function Preview() {
       </div>
 
       <Arena cam={cam} barriers={locationBarriers(location)}>
-        {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={false} />)}
-        {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={true} />)}
+        {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} />)}
+        {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} />)}
         {(party.length === 0 && foes.length === 0) && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">No combatants to preview.</div>
         )}
