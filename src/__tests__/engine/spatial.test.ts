@@ -77,6 +77,36 @@ describe('movement behaviours', () => {
     expect(find(b, 'g').pos.y).toBeGreaterThan(2)   // moved up to interpose
   })
 
+  it('a fast Kiter archer runs the perimeter of a hall maze, firing all the way', () => {
+    // 15×15 arena with a central wall block, leaving narrow halls around the
+    // perimeter. A fast ranged unit should circle the outside, peeking line of
+    // sight around the corners and never stalling — landing dozens of shots on
+    // a slow, defensive chaser.
+    const fb = buildEngineSkill('fire-bolt', 1)!
+    const b = createBattle({
+      playerUnits: [eu({
+        id: 'a', spd: 20, int: 20, rangedRange: 4, maxHp: 9999, hp: 9999,
+        skills: [fb], tactics: [{ id: 'kiter', rank: 1 }],
+      })],
+      enemyUnits: [eu({
+        id: 'g', team: 'enemy', spd: 3, str: 5, def: 200, maxHp: 5000, hp: 5000, meleeRange: 1.2,
+      })],
+      barriers: [{ x: 3, y: 3, w: 9, h: 9, kind: 'wall' }],
+      maxRounds: 250,
+    })
+    find(b, 'a').pos = { x: 1.5, y: 1.5 }
+    find(b, 'g').pos = { x: 1.5, y: 2.5 }
+    const startG = find(b, 'g').hp
+    for (let i = 0; i < 200; i++) advanceRound(b)
+    const a = find(b, 'a'), g = find(b, 'g')
+    const shots = b.events.filter((e) => e.type === 'skill_use' && e.skillId === 'fire-bolt').length
+    const minDist = Math.hypot(a.pos.x - g.pos.x, a.pos.y - g.pos.y)
+    expect(a.alive).toBe(true)              // archer survived
+    expect(shots).toBeGreaterThan(40)        // landed many shots through the loop
+    expect(startG - g.hp).toBeGreaterThan(500) // monster ate sustained damage
+    expect(minDist).toBeGreaterThan(1.5)    // never caught (kept its kite gap)
+  })
+
   it('a Kiter pinned at the wall arcs along it instead of pinning into a corner', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'r', rangedRange: 4, maxHp: 999, hp: 999, tactics: [{ id: 'kiter', rank: 1 }] })],
