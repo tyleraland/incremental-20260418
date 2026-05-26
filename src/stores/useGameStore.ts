@@ -10,7 +10,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, arenaBarriers, TACTIC_REGISTRY, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -168,6 +168,16 @@ const ENCOUNTER_OVERRIDES: Record<string, string[]> = {
   'geffen-dungeon-2': ['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'],
 }
 
+// Locations with terrain. Most fights are open-field; a handful have obstacles
+// units must navigate around (the engine's barrier collision + pathing handles it).
+const LOCATION_TERRAIN: Record<string, () => Barrier[]> = {
+  'geffen-dungeon-2': arenaBarriers,   // central '+' that splits the dungeon
+}
+
+export function locationBarriers(id?: string | null): Barrier[] {
+  return id ? (LOCATION_TERRAIN[id]?.() ?? []) : []
+}
+
 // The wave mirrors the (uncapped) deployed party size: every unit you station at
 // a location pulls an extra monster so the fight stays matched.
 export function waveComposition(loc: Location, partySize: number): string[] {
@@ -186,7 +196,7 @@ function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[
     const def = MONSTER_REGISTRY[wave[i]]
     if (def) enemyUnits.push(monsterToEngineInput(def, `${wave[i]}#${i}`, 'enemy'))
   }
-  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, collectEvents: true })
+  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc.id), collectEvents: true })
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {

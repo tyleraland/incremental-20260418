@@ -1,7 +1,7 @@
 // The enemy wave mirrors the deployed party size, with no 5-unit cap (so all
 // units stationed at a location engage and pull a matching number of monsters).
 import { describe, it, expect } from 'vitest'
-import { waveComposition } from '@/stores/useGameStore'
+import { waveComposition, locationBarriers } from '@/stores/useGameStore'
 import type { Location } from '@/types'
 
 const loc = (monsterIds: string[]): Location =>
@@ -18,5 +18,13 @@ describe('waveComposition', () => {
 
   it('always fields at least one monster', () => {
     expect(waveComposition(loc(['slime']), 0)).toEqual(['slime'])
+  })
+})
+
+describe('locationBarriers', () => {
+  it('seeds Geffen Dungeon 2 with terrain; other locations are open-field', () => {
+    expect(locationBarriers('geffen-dungeon-2').length).toBeGreaterThan(0)
+    expect(locationBarriers('kings-forest')).toEqual([])
+    expect(locationBarriers(null)).toEqual([])
   })
 })

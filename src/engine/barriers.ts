@@ -76,31 +76,55 @@ export function lineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_
   return true
 }
 
-// Memory-less navigation: a waypoint to head for on the way to `target`. If the
-// straight line is clear, go direct. Otherwise aim at the reachable barrier
-// corner that gives the shortest detour (from→corner→target). Recomputed every
-// round, so a unit rounds the corner, regains line of sight, then beelines —
-// without remembering anything (the §spatial "maintain line of sight" approach).
+// Proper navigation around terrain: a Dijkstra shortest path on the visibility
+// graph (from + target + barrier corners), so a unit picks the route with the
+// shortest total detour instead of just the locally-cheapest next corner. Pure
+// per-call (memory-less, recomputed each round) — when the line is clear, beeline.
 export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): { point: Vec2; direct: boolean } {
   if (lineClear(from, target, barriers, pad)) return { point: target, direct: true }
   const off = pad + 0.3
-  let best: Vec2 | null = null
-  let bestCost = Infinity
+  // Build node graph: 0 = from, last = target, middle = barrier corners.
+  const nodes: Vec2[] = [from]
   for (const b of barriers) {
-    const corners = [
-      { x: b.x - off, y: b.y - off }, { x: b.x + b.w + off, y: b.y - off },
-      { x: b.x - off, y: b.y + b.h + off }, { x: b.x + b.w + off, y: b.y + b.h + off },
-    ]
-    for (const raw of corners) {
-      const c = clamp(raw)
-      if (dist(from, c) < 0.6) continue                 // already at this corner — don't pick "stay put"
-      if (pointBlocked(barriers, c, pad)) continue      // corner sits inside other terrain
-      if (!lineClear(from, c, barriers, pad)) continue   // can't reach it without crossing a wall
-      const cost = dist(from, c) + dist(c, target)
-      if (cost < bestCost - EPS) { bestCost = cost; best = c }
+    nodes.push(clamp({ x: b.x - off, y: b.y - off }))
+    nodes.push(clamp({ x: b.x + b.w + off, y: b.y - off }))
+    nodes.push(clamp({ x: b.x - off, y: b.y + b.h + off }))
+    nodes.push(clamp({ x: b.x + b.w + off, y: b.y + b.h + off }))
+  }
+  nodes.push(target)
+  const n = nodes.length
+  const T = n - 1
+  // Corners that fall inside another barrier are unusable hops.
+  const usable = new Array(n).fill(true)
+  for (let i = 1; i < T; i++) if (pointBlocked(barriers, nodes[i], pad)) usable[i] = false
+
+  // Dijkstra (small graph: ~4 corners per barrier + from + target).
+  const dArr = new Array(n).fill(Infinity)
+  const prev = new Array(n).fill(-1)
+  const seen = new Array(n).fill(false)
+  dArr[0] = 0
+  for (let step = 0; step < n; step++) {
+    let u = -1, bu = Infinity
+    for (let v = 0; v < n; v++) if (!seen[v] && dArr[v] < bu) { bu = dArr[v]; u = v }
+    if (u < 0 || u === T) break
+    seen[u] = true
+    for (let v = 0; v < n; v++) {
+      if (seen[v] || !usable[v]) continue
+      if (!lineClear(nodes[u], nodes[v], barriers, pad)) continue
+      const nd = dArr[u] + dist(nodes[u], nodes[v])
+      if (nd < dArr[v]) { dArr[v] = nd; prev[v] = u }
     }
   }
-  return best ? { point: best, direct: false } : { point: target, direct: false }
+  if (dArr[T] === Infinity) return { point: target, direct: false }
+
+  // Walk the path forward and take the first hop that isn't right under our feet
+  // (so a unit already standing on a corner advances to the next one).
+  const path: number[] = []
+  for (let cur = T; cur !== -1; cur = prev[cur]) path.push(cur)
+  path.reverse()
+  let hop = 1
+  while (hop < path.length - 1 && dist(nodes[path[hop]], from) < 0.6) hop++
+  return { point: nodes[path[hop]], direct: path[hop] === T }
 }
 
 // Default arena terrain: a central cross ('+') that the teams fight around. The
