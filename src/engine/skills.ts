@@ -12,6 +12,7 @@
 import { distance } from './grid'
 import { EPS } from './constants'
 import { livingEnemies, livingAllies, targetableEnemies, isStealthed, findCombatant, mostInjuredAllyInRange } from './behavior'
+import { sightlineClear } from './barriers'
 import type { BattleState, Combatant, EngineSkill, TacticDef, SkillTargeting } from './types'
 
 // level-scaled coefficient as a formula literal: base at lv1, +per each level.
@@ -95,12 +96,15 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
     return (cands.find((c) => c.id === self.id) ?? nearest(self, cands)).id
   }
 
-  // enemy targeting: respect stealth, except for reveal skills (Sight) that see through it
+  // enemy targeting: respect stealth (except reveal skills) AND walls (no firing
+  // through them — cliffs let line of sight through, walls don't)
   const canSeeStealth = sk.removesStatusId === 'stealthed'
-  const visible = (e: Combatant) => canSeeStealth || !isStealthed(e)
+  const visible = (e: Combatant) =>
+    (canSeeStealth || !isStealthed(e)) && sightlineClear(self.pos, e.pos, state.barriers)
   const locked = findCombatant(state, self.lockedTargetId)
   if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(self, locked, sk.range)) return locked.id
-  const pool = (canSeeStealth ? livingEnemies(state, self) : targetableEnemies(state, self)).filter((e) => inRange(self, e, sk.range))
+  const pool = (canSeeStealth ? livingEnemies(state, self) : targetableEnemies(state, self))
+    .filter((e) => inRange(self, e, sk.range) && sightlineClear(self.pos, e.pos, state.barriers))
   return pool.length ? nearest(self, pool).id : null
 }
 

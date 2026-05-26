@@ -69,8 +69,9 @@ export function slideMove(from: Vec2, desired: Vec2, barriers: Barrier[], pad = 
   return best
 }
 
-// True if the straight segment from→to crosses no barrier (line of sight / a
-// clear walk). Samples the segment.
+// True if the straight segment from→to crosses no barrier of the given kinds.
+// `lineClear` (all barriers) is used for pathing; `sightlineClear` (walls only)
+// is used for ranged targeting — cliffs block movement but not line of sight.
 export function lineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_PAD): boolean {
   if (barriers.length === 0) return true
   const d = dist(from, to)
@@ -81,6 +82,12 @@ export function lineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_
     if (pointBlocked(barriers, { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }, pad)) return false
   }
   return true
+}
+
+export function sightlineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_PAD): boolean {
+  // walls block sight; cliffs don't — let ranged shoot over them.
+  const walls = barriers.filter((b) => (b.kind ?? 'wall') === 'wall')
+  return lineClear(from, to, walls, pad)
 }
 
 // Proper navigation around terrain: a Dijkstra shortest path on the visibility
@@ -146,7 +153,7 @@ export function arenaBarriers(): Barrier[] {
   const arm = DEPLOY_FRONT - 1.5   // reach toward (but stop short of) the deploy lines
   const half = 0.75                // bar half-thickness
   return [
-    { x: cx - half, y: cy - arm, w: half * 2, h: arm * 2 }, // vertical bar
-    { x: cx - arm, y: cy - half, w: arm * 2, h: half * 2 }, // horizontal bar
+    { x: cx - half, y: cy - arm, w: half * 2, h: arm * 2, kind: 'wall' }, // vertical bar
+    { x: cx - arm, y: cy - half, w: arm * 2, h: half * 2, kind: 'wall' }, // horizontal bar
   ]
 }

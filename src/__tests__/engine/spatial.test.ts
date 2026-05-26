@@ -77,6 +77,19 @@ describe('movement behaviours', () => {
     expect(find(b, 'g').pos.y).toBeGreaterThan(2)   // moved up to interpose
   })
 
+  it('a Kiter pinned at the wall arcs along it instead of pinning into a corner', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', rangedRange: 4, maxHp: 999, hp: 999, tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 5, maxHp: 999, hp: 999 })],
+    })
+    find(b, 'r').pos = { x: 0.5, y: 7.5 }   // pressed against the left wall
+    find(b, 'e').pos = { x: 3, y: 7.5 }     // threat to the right, well inside kite range
+    const startY = find(b, 'r').pos.y
+    for (let i = 0; i < 5; i++) advanceRound(b)
+    const r = find(b, 'r')
+    expect(Math.abs(r.pos.y - startY)).toBeGreaterThan(0.5)   // moved tangentially along the wall, didn't freeze
+  })
+
   it('a faster Kiter ranged unit opens distance on a slower attacker', () => {
     // Mira-style: high spd + ranged + kiter. Pursuer is melee and slower.
     const fb = buildEngineSkill('fire-bolt', 1)!

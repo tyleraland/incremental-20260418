@@ -5,6 +5,7 @@ import {
   createBattle, advanceRound, resolve, buildEngineSkill, arenaBarriers,
   pointBlocked, traceMove, slideMove, type BattleState,
 } from '@/engine'
+import { sightlineClear, lineClear } from '@/engine/barriers'
 import { eu } from './helpers'
 
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
@@ -44,6 +45,37 @@ describe('barriers in combat', () => {
     const e = find(b, 'e')
     expect(e.pos.y).toBeGreaterThan(9.5)   // got shoved back
     expect(e.pos.y).toBeLessThan(11)      // stopped against the wall, not pushed through it
+  })
+
+  it('walls block ranged targeting; cliffs do not', () => {
+    const wallTerrain  = [{ x: 6, y: 7, w: 3, h: 1, kind: 'wall'  as const }]
+    const cliffTerrain = [{ x: 6, y: 7, w: 3, h: 1, kind: 'cliff' as const }]
+    const from = { x: 7.5, y: 4 }, to = { x: 7.5, y: 10 }
+    // movement (lineClear) sees both as obstacles
+    expect(lineClear(from, to, wallTerrain)).toBe(false)
+    expect(lineClear(from, to, cliffTerrain)).toBe(false)
+    // line of sight only blocked by walls
+    expect(sightlineClear(from, to, wallTerrain)).toBe(false)
+    expect(sightlineClear(from, to, cliffTerrain)).toBe(true)
+  })
+
+  it('a caster cannot fire through a wall (but can over a cliff)', () => {
+    const fb = buildEngineSkill('fire-bolt', 1)!
+    const mk = (kind: 'wall' | 'cliff') => {
+      const b = createBattle({
+        playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [fb] })],
+        enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, maxHp: 999, hp: 999, meleeRange: 99 })],
+        barriers: [{ x: 6, y: 7, w: 3, h: 1, kind }],
+      })
+      b.combatants.find((c) => c.id === 'mage')!.pos = { x: 7.5, y: 4 }
+      b.combatants.find((c) => c.id === 'foe')!.pos  = { x: 7.5, y: 10 }
+      advanceRound(b)
+      return b
+    }
+    const wall  = mk('wall')
+    const cliff = mk('cliff')
+    expect(wall.events.some((e) => e.type === 'skill_use' && e.skillId === 'fire-bolt')).toBe(false)
+    expect(cliff.events.some((e) => e.type === 'skill_use' && e.skillId === 'fire-bolt')).toBe(true)
   })
 
   it('a unit routes around the central cross to reach its target', () => {

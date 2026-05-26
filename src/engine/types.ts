@@ -240,8 +240,13 @@ export interface CombatCallbacks {
 }
 
 // An axis-aligned impassable region of terrain. Units route around it; knockback
-// stops against it (§2 barriers).
-export interface Barrier { x: number; y: number; w: number; h: number }
+// stops against it (§2 barriers). Walls also block line of sight — ranged attacks
+// and spells can't punch through. Cliffs only block movement; ranged attacks
+// fire over them freely.
+export interface Barrier {
+  x: number; y: number; w: number; h: number
+  kind?: 'wall' | 'cliff'   // default 'wall'
+}
 
 export interface CombatSetup {
   playerUnits: EngineUnitInput[]

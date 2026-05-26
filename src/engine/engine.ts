@@ -5,7 +5,7 @@
 // in place so the host can step combat "one round per N ticks"; `resolve` runs
 // to completion for tests and bulk/idle resolution.
 
-import { MAX_ROUNDS, EPS } from './constants'
+import { COLS, ROWS, MAX_ROUNDS, EPS } from './constants'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
 import {
@@ -459,24 +459,57 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   }
 }
 
-// Hold `want` gap from the NEAREST enemy (not the locked target) so a caster
-// never wades through the front line to reach a back-rank mark — it keeps its
-// standoff from whatever threat is closest. Small dead-band to avoid jitter.
+// Hold `want` gap from the NEAREST enemy. When too close, back off — but along a
+// tangential arc (toward whichever side has more arena to run into), so the unit
+// circles the threat instead of pinning itself in a corner. Small dead-band to
+// avoid jitter.
 function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const threat = nearestEnemyTo(self, state)
   if (!threat) return
   const d = distance(self.pos, threat.pos)
   const band = 0.4
   if (Math.abs(d - want) <= band) return   // in the sweet spot: stand and shoot
+
   const before = { ...self.pos }
-  const sign = d < want ? -1 : 1            // closer than want → move away; farther → approach
-  const dirx = ((threat.pos.x - self.pos.x) / (d || 1)) * sign
-  const diry = ((threat.pos.y - self.pos.y) / (d || 1)) * sign
-  const step = Math.min(moveSpeedOf(self), Math.abs(d - want))
-  self.pos = slideMove(self.pos, { x: self.pos.x + dirx * step, y: self.pos.y + diry * step }, state.barriers)
+  const step = moveSpeedOf(self)
+  let dx: number, dy: number
+  let retreating = false
+
+  if (d > want + band) {
+    // Too far: close in straight along the line to the threat.
+    dx = (threat.pos.x - self.pos.x) / (d || 1)
+    dy = (threat.pos.y - self.pos.y) / (d || 1)
+    const cap = Math.min(step, d - want)
+    self.pos = slideMove(self.pos, { x: self.pos.x + dx * cap, y: self.pos.y + dy * cap }, state.barriers)
+  } else {
+    // Too close: back off. With open arena behind, go straight (so a faster
+    // kiter gains ground on a slower foe). When pinned near a wall, arc along
+    // the perimeter tangentially toward whichever side has more room — so the
+    // kiter circles instead of pinning itself into a corner.
+    retreating = true
+    const ax = (self.pos.x - threat.pos.x) / (d || 1)
+    const ay = (self.pos.y - threat.pos.y) / (d || 1)
+    const probe = step * 2.5
+    const room = (qx: number, qy: number) => Math.min(qx, COLS - qx, qy, ROWS - qy)
+    const awayRoom = room(self.pos.x + ax * probe, self.pos.y + ay * probe)
+    let dx = ax, dy = ay
+    if (awayRoom < 1.5) {
+      const tLx = -ay, tLy = ax
+      const tRx = ay,  tRy = -ax
+      const lRoom = room(self.pos.x + tLx * probe, self.pos.y + tLy * probe)
+      const rRoom = room(self.pos.x + tRx * probe, self.pos.y + tRy * probe)
+      const tx = lRoom >= rRoom ? tLx : tRx
+      const ty = lRoom >= rRoom ? tLy : tRy
+      const bx = ax + tx, by = ay + ty       // 50/50 blend: hard arc when wall is behind
+      const blen = Math.hypot(bx, by) || 1
+      dx = bx / blen; dy = by / blen
+    }
+    self.pos = slideMove(self.pos, { x: self.pos.x + dx * step, y: self.pos.y + dy * step }, state.barriers)
+  }
+
   enforceSeparation(self, state.combatants, state.barriers)
   if (self.pos.x !== before.x || self.pos.y !== before.y) {
-    emit(state, { round: state.round, type: sign < 0 ? 'retreat' : 'move', sourceId: self.id, position: { ...self.pos } })
+    emit(state, { round: state.round, type: retreating ? 'retreat' : 'move', sourceId: self.id, position: { ...self.pos } })
   }
 }
 

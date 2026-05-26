@@ -4,6 +4,7 @@
 // otherwise attack). Tactics (a later layer) will override these defaults.
 
 import { distance, attackReach } from './grid'
+import { sightlineClear } from './barriers'
 import { tauntBiasOf } from './tactics'
 import type { BattleState, Combatant, EngineSkill } from './types'
 import { EPS } from './constants'
@@ -88,6 +89,9 @@ export function chooseAction(state: BattleState, self: Combatant): Action | null
 
   const d = distance(self.pos, target.pos)
   if (d > attackReach(self) + EPS) return null   // moved this turn but not yet in range
+  // Walls block ranged sight; melee adjacency implies line of sight.
+  const isRanged = self.rangedRange > 0
+  if (isRanged && !sightlineClear(self.pos, target.pos, state.barriers)) return null
 
   const atkSkill = self.skills.find(
     (s) => s.type === 'attack' && ready(self, s) && d <= s.range + EPS,

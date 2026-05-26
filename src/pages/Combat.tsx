@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useGameStore, waveComposition, locationBarriers } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
@@ -43,6 +44,12 @@ function computeCamera(_pts: Vec2[]): Cam {
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
 
+// Half a token in world units — clamp the rendered center inward by this much so
+// the card's body never clips the arena edge even when a unit is pinned to it.
+const TOKEN_INSET = 0.5
+const insetX = (cam: Cam, x: number) => Math.max(cam.x + TOKEN_INSET, Math.min(cam.x + cam.size - TOKEN_INSET, x))
+const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(cam.y + cam.size - TOKEN_INSET, y))
+
 function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode }) {
   const cell = `${100 / cam.size}%`
   const centerTop = Math.max(0, Math.min(100, (1 - (CENTER_Y - cam.y) / cam.size) * 100))
@@ -61,14 +68,20 @@ function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; chi
           backgroundSize: `${cell} ${cell}`,
         }}
       />
-      {/* terrain (impassable barriers) */}
-      {barriers.map((b, i) => (
-        <div
-          key={i}
-          className="absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none"
-          style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%` }}
-        />
-      ))}
+      {/* terrain: walls are solid (block movement + sight), cliffs are translucent
+          and dashed (block movement only — ranged attacks fire over them) */}
+      {barriers.map((b, i) => {
+        const isCliff = b.kind === 'cliff'
+        return (
+          <div
+            key={i}
+            className={isCliff
+              ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
+              : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
+            style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%` }}
+          />
+        )
+      })}
       {children}
     </div>
   )
@@ -97,14 +110,15 @@ function CooldownMeter({ c }: { c: Combatant }) {
   )
 }
 
-function BattleChip({ c, cam }: { c: Combatant; cam: Cam }) {
+function BattleChip({ c, cam, selected, onSelect }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void }) {
   const isPlayer = c.team === 'player'
   const ratio = Math.max(0, c.hp / c.maxHp)
   const casting = c.alive && !!c.channel
   return (
     <div
-      className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2 animate-chip-spawn`}
-      style={{ left: px(cam, c.pos.x), top: py(cam, c.pos.y), transition: 'left 380ms linear, top 380ms linear' }}
+      onClick={onSelect}
+      className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer`}
+      style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
     >
       {casting && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[8px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
@@ -117,6 +131,7 @@ function BattleChip({ c, cam }: { c: Combatant; cam: Cam }) {
           'rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px transition-opacity',
           casting ? 'bg-blue-950 border-amber-300 ring-1 ring-amber-400/60'
             : isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70',
+          selected ? 'ring-2 ring-emerald-300' : '',
           c.alive ? '' : 'opacity-25 grayscale',
         ].join(' ')}
       >
@@ -140,8 +155,70 @@ function Float({ cam, pos, className, text, k }: { cam: Cam; pos: Vec2; classNam
   )
 }
 
+function UnitDetailCard({ c }: { c: Combatant }) {
+  const isPlayer = c.team === 'player'
+  const ratio = Math.max(0, c.hp / c.maxHp)
+  return (
+    <div className="max-w-md mx-auto w-full rounded-md border border-game-border bg-game-surface p-3 mt-3 text-xs">
+      <div className="flex items-center justify-between">
+        <div className={`font-semibold text-sm ${isPlayer ? 'text-blue-200' : 'text-red-200'}`}>{c.name}</div>
+        <div className="text-[10px] text-game-text-dim uppercase tracking-wide">{c.team}{c.alive ? '' : ' · KO'}</div>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2">
+        <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden">
+          <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+        </div>
+        <div className="text-game-text-dim tabular-nums">{Math.ceil(c.hp)}/{c.maxHp}</div>
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-1 text-[10px] text-game-text-dim">
+        <div>STR <span className="text-game-text tabular-nums">{c.str}</span></div>
+        <div>DEF <span className="text-game-text tabular-nums">{c.def}</span></div>
+        <div>INT <span className="text-game-text tabular-nums">{c.int}</span></div>
+        <div>SPD <span className="text-game-text tabular-nums">{c.spd}</span></div>
+      </div>
+      {c.skills.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] text-game-text-dim mb-1">Skills</div>
+          <div className="space-y-0.5">
+            {c.skills.map((s) => {
+              const left = c.skillCooldowns[s.id] ?? 0
+              const ready = left <= 0
+              const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
+              return (
+                <div key={s.id} className="flex items-center gap-2 text-[10px]">
+                  <div className="flex-1 truncate">{s.name}</div>
+                  <div className="w-20 h-1 rounded-sm bg-black/50 overflow-hidden">
+                    <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
+                  </div>
+                  <div className="w-6 text-right tabular-nums text-game-text-dim">{ready ? 'rdy' : left}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {c.statuses.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {c.statuses.map((s, i) => (
+            <span key={i} className="px-1.5 py-0.5 rounded bg-game-bg border border-game-border text-[10px]">
+              {s.name} <span className="text-game-text-dim tabular-nums">({s.duration})</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {c.channel && (
+        <div className="mt-2 text-[10px] text-amber-300">
+          ✦ Casting {skillName(c.channel.skillId)} — {c.channel.roundsLeft} round{c.channel.roundsLeft === 1 ? '' : 's'} left
+        </div>
+      )}
+    </div>
+  )
+}
+
 function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
+  const selected = selectedId ? byId(selectedId) : undefined
   const alive = battle.combatants.filter((c) => c.alive)
   const cam = computeCamera((alive.length ? alive : battle.combatants).map((c) => c.pos))
 
@@ -205,7 +282,15 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
           return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[10px] text-amber-300" text="interrupted" /> : null
         })}
 
-        {battle.combatants.map((c) => <BattleChip key={c.id} c={c} cam={cam} />)}
+        {battle.combatants.map((c) => (
+          <BattleChip
+            key={c.id}
+            c={c}
+            cam={cam}
+            selected={c.id === selectedId}
+            onSelect={() => setSelectedId(selectedId === c.id ? null : c.id)}
+          />
+        ))}
 
         {battle.outcome !== 'ongoing' && (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -223,6 +308,8 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
         <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-950 border border-blue-400/70 inline-block" /> Party ({playersAlive})</span>
         <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-950 border border-red-500/70 inline-block" /> Enemies ({enemiesAlive})</span>
       </div>
+
+      {selected && <UnitDetailCard c={selected} />}
     </div>
   )
 }
@@ -231,7 +318,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
 
 function PreviewChip({ cam, pos, label, title, isPlayer }: { cam: Cam; pos: Vec2; label: string; title: string; isPlayer: boolean }) {
   return (
-    <div title={title} style={{ left: px(cam, pos.x), top: py(cam, pos.y) }} className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2`}>
+    <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2`}>
       <div className={['rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px', isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70'].join(' ')}>
         <div className={`text-center text-[8px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>{label}</div>
         <div className="h-1 rounded-sm bg-emerald-500/80" />
