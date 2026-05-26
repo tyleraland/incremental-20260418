@@ -26,45 +26,36 @@ const PAGES: PageDef[] = [
 
 const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
 
-// World-space cell coords (col, row). Sparse — the world is bigger than a
-// phone screen so the user has to drag the camera to see all of it.
+// Per-page grid dimensions. The world is intentionally bigger than a phone
+// screen — the player pans to navigate. Empty slots render as faint
+// placeholders; populated slots (the path) sit on top.
+const PAGE_GRID: Record<string, { cols: number; rows: number }> = {
+  'world':          { cols: 12, rows: 8 },
+  'geffen-dungeon': { cols: 6,  rows: 5 },
+}
+
+// Grid coords for cells that ARE on the path. Adjacent path cells are also
+// adjacent on the grid (no jumps), so the chain reads as a connected route.
 const LOCATION_COORDS: Record<string, [number, number]> = {
-  // World path: Geffen → Prontera → Kanto.
-  'geffen-city':      [0, 0],
-  'geffen-field-1':   [2, 0],
-  'prontera-field-1': [4, 0],
-  'prontera-city':    [6, 0],
-  'prontera-field-2': [6, 2],
-  'beach-1':          [6, 4],
+  // World — path runs east through the middle, then turns south.
+  'geffen-city':      [2, 3],
+  'geffen-field-1':   [3, 3],   // Geffen Outskirts
+  'prontera-field-1': [4, 3],   // Western Approach
+  'prontera-city':    [5, 3],
+  'prontera-field-2': [5, 4],   // Southern Road
+  'beach-1':          [5, 5],   // Kanto Beach
 
-  // Geffen Dungeon — top row + right column (Floor 1 top-left → Floor 5 BR).
-  'geffen-dungeon-1': [0, 0],
-  'geffen-dungeon-2': [1, 0],
-  'geffen-dungeon-3': [2, 0],
-  'geffen-dungeon-4': [2, 1],
-  'geffen-dungeon-5': [2, 2],
+  // Geffen Dungeon — L-shape (top row + right column), Floor 1 → Floor 5.
+  'geffen-dungeon-1': [1, 1],
+  'geffen-dungeon-2': [2, 1],
+  'geffen-dungeon-3': [3, 1],
+  'geffen-dungeon-4': [3, 2],
+  'geffen-dungeon-5': [3, 3],
 }
 
-// Path edges (rendered as dashed connectors so the chain reads as a road).
-const PATH_LINKS: Record<string, [string, string][]> = {
-  'world': [
-    ['geffen-city',      'geffen-field-1'],
-    ['geffen-field-1',   'prontera-field-1'],
-    ['prontera-field-1', 'prontera-city'],
-    ['prontera-city',    'prontera-field-2'],
-    ['prontera-field-2', 'beach-1'],
-  ],
-  'geffen-dungeon': [
-    ['geffen-dungeon-1', 'geffen-dungeon-2'],
-    ['geffen-dungeon-2', 'geffen-dungeon-3'],
-    ['geffen-dungeon-3', 'geffen-dungeon-4'],
-    ['geffen-dungeon-4', 'geffen-dungeon-5'],
-  ],
-}
-
-const CELL_W   = 64
-const CELL_H   = 52
-const CELL_GAP = 32   // big visual gaps so path connectors actually read
+const CELL_W   = 56
+const CELL_H   = 46
+const CELL_GAP = 4   // small grid gutter; adjacent cells visually butt together
 
 function cellOriginX(col: number): number { return col * (CELL_W + CELL_GAP) }
 function cellOriginY(row: number): number { return row * (CELL_H + CELL_GAP) }
@@ -248,14 +239,20 @@ function PannableWorld({ pageId, locations, units }: { pageId: string; locations
   const [centered, setCentered] = useState(false)
 
   const pageLocations = locations.filter((l) => l.region === pageId)
-  const links = PATH_LINKS[pageId] ?? []
+  const grid = PAGE_GRID[pageId] ?? { cols: 1, rows: 1 }
 
-  // World canvas extends one cell past the furthest location so connector lines
-  // don't get clipped by the right/bottom edge.
-  const maxCol = pageLocations.reduce((m, l) => Math.max(m, LOCATION_COORDS[l.id]?.[0] ?? 0), 0)
-  const maxRow = pageLocations.reduce((m, l) => Math.max(m, LOCATION_COORDS[l.id]?.[1] ?? 0), 0)
-  const worldW = cellOriginX(maxCol) + CELL_W + CELL_GAP
-  const worldH = cellOriginY(maxRow) + CELL_H + CELL_GAP
+  // World canvas covers the full grid. Empty slots render as faint placeholders;
+  // populated cells sit on top.
+  const worldW = grid.cols * (CELL_W + CELL_GAP)
+  const worldH = grid.rows * (CELL_H + CELL_GAP)
+
+  // Fast lookup of which grid slots are populated, by "col,row" key.
+  // (Plain object since `Map` shadows the global constructor in this file.)
+  const populated: Record<string, true> = {}
+  for (const l of pageLocations) {
+    const c = LOCATION_COORDS[l.id]
+    if (c) populated[`${c[0]},${c[1]}`] = true
+  }
 
   // Center the camera on the entry location (Geffen City on world, F1 in dungeon)
   // the first time we get measured dimensions for this page.
@@ -329,28 +326,23 @@ function PannableWorld({ pageId, locations, units }: { pageId: string; locations
         className="absolute"
         style={{ width: worldW, height: worldH, transform: `translate(${pan.x}px, ${pan.y}px)` }}
       >
-        <svg
-          aria-hidden
-          className="absolute inset-0 pointer-events-none"
-          width={worldW}
-          height={worldH}
-        >
-          {links.map(([fromId, toId], i) => {
-            const fc = LOCATION_COORDS[fromId], tc = LOCATION_COORDS[toId]
-            if (!fc || !tc) return null
+        {/* Empty grid slots — faint placeholders so the world reads as a
+            scannable grid. Skip slots where a location renders on top. */}
+        {Array.from({ length: grid.rows }).flatMap((_, row) =>
+          Array.from({ length: grid.cols }).map((_, col) => {
+            if (populated[`${col},${row}`]) return null
             return (
-              <line
-                key={i}
-                x1={cellCenterX(fc[0])} y1={cellCenterY(fc[1])}
-                x2={cellCenterX(tc[0])} y2={cellCenterY(tc[1])}
-                stroke="rgba(150,170,190,0.45)"
-                strokeWidth={3}
-                strokeDasharray="6 6"
-                strokeLinecap="round"
+              <div
+                key={`empty-${col}-${row}`}
+                className="absolute rounded-md border border-game-border/15 pointer-events-none"
+                style={{
+                  left: cellOriginX(col), top: cellOriginY(row),
+                  width: CELL_W, height: CELL_H,
+                }}
               />
             )
-          })}
-        </svg>
+          }),
+        )}
         {pageLocations.map((loc) => {
           const c = LOCATION_COORDS[loc.id]
           if (!c) return null
