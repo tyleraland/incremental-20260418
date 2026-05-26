@@ -18,7 +18,7 @@ import { makeSkillTactic } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo } from './spatial'
-import { traceMove, slideMove } from './barriers'
+import { traceMove, slideMove, sightlineClear, steerAround } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
@@ -459,29 +459,27 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   }
 }
 
-// Hold `want` gap from the NEAREST enemy. When too close, back off — but along a
-// tangential arc (toward whichever side has more arena to run into), so the unit
-// circles the threat instead of pinning itself in a corner. Small dead-band to
-// avoid jitter.
+// Hold `want` gap from the NEAREST enemy, AND maintain a clear shot. When too
+// close, back off along a tangential arc (toward whichever side has more arena
+// to run into) so the kiter circles instead of pinning itself in a corner. When
+// in range but a wall sits between us and the threat, relocate along the
+// visibility-graph path to gain LoS — a kiter that can't shoot isn't kiting.
+// Small dead-band to avoid jitter.
 function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const threat = nearestEnemyTo(self, state)
   if (!threat) return
   const d = distance(self.pos, threat.pos)
+  const losClear = sightlineClear(self.pos, threat.pos, state.barriers)
   const band = 0.4
-  if (Math.abs(d - want) <= band) return   // in the sweet spot: stand and shoot
+
+  // Sweet spot: right gap AND a clear shot → stand and fire.
+  if (losClear && Math.abs(d - want) <= band) return
 
   const before = { ...self.pos }
   const step = moveSpeedOf(self)
-  let dx: number, dy: number
   let retreating = false
 
-  if (d > want + band) {
-    // Too far: close in straight along the line to the threat.
-    dx = (threat.pos.x - self.pos.x) / (d || 1)
-    dy = (threat.pos.y - self.pos.y) / (d || 1)
-    const cap = Math.min(step, d - want)
-    self.pos = slideMove(self.pos, { x: self.pos.x + dx * cap, y: self.pos.y + dy * cap }, state.barriers)
-  } else {
+  if (d < want - band) {
     // Too close: back off. With open arena behind, go straight (so a faster
     // kiter gains ground on a slower foe). When pinned near a wall, arc along
     // the perimeter tangentially toward whichever side has more room — so the
@@ -505,6 +503,20 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
       dx = bx / blen; dy = by / blen
     }
     self.pos = slideMove(self.pos, { x: self.pos.x + dx * step, y: self.pos.y + dy * step }, state.barriers)
+  } else {
+    // Too far, OR in range but a wall blocks the shot: route toward the threat
+    // via the visibility graph so we'll round the corner that re-opens line of
+    // sight. With a clear line, cap the step so we don't overshoot `want`.
+    const { point } = steerAround(self.pos, threat.pos, state.barriers)
+    const gd = distance(self.pos, point)
+    if (gd > EPS) {
+      const ux = (point.x - self.pos.x) / gd
+      const uy = (point.y - self.pos.y) / gd
+      const cap = losClear ? Math.min(step, gd, Math.max(0, d - want)) : Math.min(step, gd)
+      if (cap > EPS) {
+        self.pos = slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers)
+      }
+    }
   }
 
   enforceSeparation(self, state.combatants, state.barriers)

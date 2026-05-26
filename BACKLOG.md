@@ -50,9 +50,6 @@ same way" by penalising left-side detours.
 - **Ambush combo** — primitives exist (cloak, back-stab, flanker,
   focus-casters); needs an orchestrator that holds Cloak until in Back Stab
   range of the focus target.
-- **LoS-aware positioning** — kiter holds *distance* but doesn't relocate to
-  gain a clear shot if a wall is between it and the target. Casters can
-  silently stall behind a cross arm.
 - **1v1 chase circling** — a lone chaser orbits a barrier after a fleeing
   target forever. Multi-unit fights converge so this rarely bites in
   practice; would need a "cut the corner" intercept.
