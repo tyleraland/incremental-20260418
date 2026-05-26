@@ -31,7 +31,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Ranger (kiting archer) ──────────────────────────────────────────────────
   {
     id: 'u2', name: 'Mira Ashdown', level: 4, exp: 80, expToNext: 420, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
-    class: 'Ranger', proficiencies: ['Bows'], locationId: 'kings-forest',
+    class: 'Ranger', proficiencies: ['Bows'], locationId: 'prontera-field-1',
     abilities: { strength: 6, agility: 7, dexterity: 8, constitution: 4, intelligence: 3 },
     abilityPoints: 15, skillPoints: 1,
     learnedSkills: { 'keen-eyes': 3, 'eagle-eyes': 2, 'arrow-shower': 3, 'ankle-snare': 2, 'poison': 2 },
@@ -45,7 +45,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Mage (burst nuker) ──────────────────────────────────────────────────────
   {
     id: 'u3', name: 'Theron Vance', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
-    class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'mount-mjolnir',
+    class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'geffen-field-1',
     abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 },
     abilityPoints: 25, skillPoints: 2,
     learnedSkills: { 'arcane-knowledge': 3, 'fire-bolt': 3, 'lightning-bolt': 2, 'frost-bolt': 2, 'freeze': 2, 'firewall': 1, 'dispel': 1 },

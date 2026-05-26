@@ -24,7 +24,7 @@ describe('waveComposition', () => {
 describe('locationBarriers', () => {
   it('seeds Geffen Dungeon 2 with terrain; other locations are open-field', () => {
     expect(locationBarriers('geffen-dungeon-2').length).toBeGreaterThan(0)
-    expect(locationBarriers('kings-forest')).toEqual([])
+    expect(locationBarriers('prontera-field-1')).toEqual([])
     expect(locationBarriers(null)).toEqual([])
   })
 })

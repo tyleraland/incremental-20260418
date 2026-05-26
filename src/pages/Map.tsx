@@ -25,38 +25,22 @@ interface PageDef extends PageNeighbors {
 }
 
 const PAGES: PageDef[] = [
-  // Prontera is east of Geffen.
-  { id: 'geffen',         name: 'Geffen Region',   right: 'prontera', down: 'kanto' },
-  { id: 'prontera',       name: 'Prontera Region', left:  'geffen',   down: 'kanto' },
-  { id: 'kanto',          name: 'Kanto',           up:    'prontera' },
+  // Linear path: Geffen ← Prontera, with the Geffen Dungeon entered from Geffen City.
+  { id: 'geffen',         name: 'Geffen Region',   right: 'prontera' },
+  { id: 'prontera',       name: 'Prontera Region', left:  'geffen' },
   { id: 'geffen-dungeon', name: 'Geffen Dungeon',  isDungeon: true,   entryLocationId: 'geffen-city' },
 ]
 
 const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
 
-// Per-region (col, row) on the 3×3 grid (0-indexed). Unknown ids fall back to auto-flow.
+// Per-region (col, row) on the 5×5 grid (0-indexed). Locations sit along the
+// middle row so each region reads as a straight east-west march, west to east:
+// Prontera Field 1 → Prontera City → (page right) → Geffen Field 1 → Geffen
+// City → (dungeon entry) → Floor 1 → Floor 2.
 const LOCATION_COORDS: Record<string, [number, number]> = {
-  // Prontera region
-  'prontera-field-1': [0, 0], 'prontera-field-2': [1, 0], 'prontera-field-3': [2, 0],
-  'kings-forest':     [0, 1], 'prontera-city':    [1, 1], 'prontera-field-4': [2, 1],
-  'duskwood':         [0, 2], 'prontera-field-5': [1, 2], 'prontera-field-6': [2, 2],
-
-  // Geffen region
-  'geffen-field-1': [0, 0], 'geffen-field-2': [1, 0], 'mount-mjolnir':  [2, 0],
-  'geffen-field-3': [0, 1], 'geffen-city':    [1, 1], 'geffen-field-4': [2, 1],
-  'geffen-field-5': [0, 2], 'geffen-field-6': [1, 2], 'geffen-field-7': [2, 2],
-
-  // Geffen Dungeon — top row + right column (Floor 1 top-left → Floor 5 bottom-right)
-  'geffen-dungeon-1': [0, 0],
-  'geffen-dungeon-2': [1, 0],
-  'geffen-dungeon-3': [2, 0],
-  'geffen-dungeon-4': [2, 1],
-  'geffen-dungeon-5': [2, 2],
-
-  // Kanto — 9 beaches fill the 3×3
-  'beach-1': [0, 0], 'beach-2': [1, 0], 'beach-3': [2, 0],
-  'beach-4': [0, 1], 'beach-5': [1, 1], 'beach-6': [2, 1],
-  'beach-7': [0, 2], 'beach-8': [1, 2], 'beach-9': [2, 2],
+  'prontera-field-1': [0, 2], 'prontera-city':    [1, 2],
+  'geffen-field-1':   [0, 2], 'geffen-city':      [1, 2],
+  'geffen-dungeon-1': [0, 2], 'geffen-dungeon-2': [1, 2],
 }
 
 function hpBarColor(hp: number) {
@@ -139,15 +123,6 @@ const REGION_TERRAIN: Record<string, RegionTerrain> = {
       ['grass', 'grass', 'grass',    'grass',    'grass'],
     ],
     river: 'M 30,-2 C 36,16 24,30 34,44 C 44,56 32,66 38,82',
-  },
-  kanto: {
-    grid: [
-      ['sand',  'sand',  'sand',  'water', 'water'],
-      ['sand',  'sand',  'sand',  'water', 'water'],
-      ['sand',  'sand',  'sand',  'water', 'water'],
-      ['sand',  'sand',  'water', 'water', 'water'],
-      ['water', 'water', 'water', 'water', 'water'],
-    ],
   },
   'geffen-dungeon': {
     grid: [

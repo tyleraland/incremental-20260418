@@ -18,7 +18,7 @@ import { makeSkillTactic } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo } from './spatial'
-import { traceMove, slideMove } from './barriers'
+import { traceMove, slideMove, steerAround, sightlineClear } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
@@ -466,12 +466,34 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
 function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const threat = nearestEnemyTo(self, state)
   if (!threat) return
+
+  const before = { ...self.pos }
+  const step = moveSpeedOf(self)
+
+  // LoS-aware: if a wall is between us and every enemy we can't shoot anyone
+  // — sidle to the corner that would open a sightline. Recomputed each round,
+  // so the kiter peeks around the terrain instead of stalling behind it.
+  const enemies = livingEnemies(state, self)
+  const anyVisible = enemies.some((e) => sightlineClear(self.pos, e.pos, state.barriers))
+  if (!anyVisible && state.barriers.length > 0) {
+    const { point } = steerAround(self.pos, threat.pos, state.barriers)
+    const wx = point.x - self.pos.x, wy = point.y - self.pos.y
+    const wd = Math.hypot(wx, wy)
+    if (wd > EPS) {
+      const cap = Math.min(step, wd)
+      self.pos = slideMove(self.pos, { x: self.pos.x + (wx / wd) * cap, y: self.pos.y + (wy / wd) * cap }, state.barriers)
+      enforceSeparation(self, state.combatants, state.barriers)
+      if (self.pos.x !== before.x || self.pos.y !== before.y) {
+        emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+      }
+    }
+    return
+  }
+
   const d = distance(self.pos, threat.pos)
   const band = 0.4
   if (Math.abs(d - want) <= band) return   // in the sweet spot: stand and shoot
 
-  const before = { ...self.pos }
-  const step = moveSpeedOf(self)
   let dx: number, dy: number
   let retreating = false
 
