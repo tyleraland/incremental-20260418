@@ -27,7 +27,7 @@ describe('engine: outcomes (§9)', () => {
     // Huge DEF on both sides → damage floored to 1/round, 50 HP each → never
     // resolves before the cap. meleeRange 10 puts them in reach from round 1.
     const tank = (id: string, team: 'player' | 'enemy') =>
-      eu({ id, team, str: 5, def: 1000, maxHp: 50, hp: 50, meleeRange: 10 })
+      eu({ id, team, str: 5, def: 1000, maxHp: 200, hp: 200, meleeRange: 10 })
     const r = resolve({
       playerUnits: [tank('p', 'player')],
       enemyUnits: [tank('e', 'enemy')],

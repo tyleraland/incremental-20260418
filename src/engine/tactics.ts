@@ -94,7 +94,7 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     description: 'Fall back and disengage when badly hurt.',
     movement: (self, _state, rank) => {
       const threshold = 0.4 - 0.05 * (rank - 1)
-      return hpRatio(self) < threshold ? { awayFromNearestEnemy: true, rows: 2, clearLock: true } : null
+      return hpRatio(self) < threshold ? { awayFromNearestEnemy: true, rows: 3, clearLock: true } : null
     },
   },
   'flanker': {

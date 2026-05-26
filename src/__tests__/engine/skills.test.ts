@@ -37,6 +37,7 @@ describe('instant casts', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 5, skills: [buildEngineSkill('fire-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, maxHp: 100, hp: 100 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // already in spell range
     advanceRound(b)
     expect(hasEvent(b, (e) => e.type === 'skill_use' && e.skillId === 'fire-bolt' && (e.value ?? 0) > 0)).toBe(true)
     expect(find(b, 'foe').hp).toBeLessThan(100)
@@ -68,6 +69,7 @@ describe('channeled casts', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, maxHp: 300, hp: 300, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 300, hp: 300, meleeRange: 1.2 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // in spell range, out of melee
     advanceRound(b)   // start the channel
     expect(hasEvent(b, (e) => e.type === 'cast_start' && e.skillId === 'lightning-bolt')).toBe(true)
     advanceRound(b)   // resolve it
@@ -79,6 +81,7 @@ describe('channeled casts', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, spd: 1, maxHp: 999, hp: 999, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', str: 20, spd: 100, meleeRange: 6, maxHp: 999, hp: 999 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 10 }   // foe already in striking reach
     advanceRound(b)   // mage starts channel; fast foe is already striking it
     advanceRound(b)   // foe (acts first) hits the channeling mage → interrupt
     expect(hasEvent(b, (e) => e.type === 'interrupt' && e.targetId === 'mage')).toBe(true)
@@ -197,6 +200,7 @@ describe('phase 3: combos & stealth', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 500, hp: 500, meleeRange: 1.2 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // in spell range
     if (frozen) find(b, 'foe').statuses.push(buildStatus('frozen', 'x')!)
     advanceRound(b)
     return b.events.find((e) => e.type === 'skill_use' && e.skillId === 'fire-bolt' && e.targetId === 'foe')!.value!

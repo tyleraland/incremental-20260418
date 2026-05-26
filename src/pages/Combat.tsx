@@ -137,7 +137,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
         </p>
       </div>
 
-      <div className="relative w-full max-w-[360px] mx-auto rounded-lg border border-game-border bg-game-surface overflow-hidden" style={{ aspectRatio: COLS / ROWS }}>
+      <div className="relative w-full max-w-[360px] mx-auto aspect-[2/3] rounded-lg border border-game-border bg-game-surface overflow-hidden">
         <GridBackdrop />
 
         {/* persistent ground hazards (Firewall, etc.) */}
@@ -307,7 +307,7 @@ function Preview() {
         </p>
       </div>
 
-      <div className="relative w-full max-w-[360px] mx-auto rounded-lg border border-game-border bg-game-surface overflow-hidden" style={{ aspectRatio: COLS / ROWS }}>
+      <div className="relative w-full max-w-[360px] mx-auto aspect-[2/3] rounded-lg border border-game-border bg-game-surface overflow-hidden">
         <GridBackdrop />
         {(() => { const seen: Record<string, number> = {}; return foes.map((id, i) => {
           const m = MONSTER_REGISTRY[id]

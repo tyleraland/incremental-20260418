@@ -13,14 +13,14 @@ describe('grid: distance (§2.2)', () => {
 describe('grid: ranks & zones (§2.3)', () => {
   it('rowsFromEdge mirrors for the enemy team', () => {
     expect(rowsFromEdge('player', 2)).toBe(2)
-    expect(rowsFromEdge('enemy', 8)).toBe(2)
+    expect(rowsFromEdge('enemy', ROWS - 2)).toBe(2)
   })
 
   it('classifies rank from current Y relative to the team edge', () => {
     expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 1 } }))).toBe('front')
     expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 4 } }))).toBe('mid')
     expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 8 } }))).toBe('back')
-    expect(rankOf(combatant({ team: 'enemy', pos: { x: 2, y: 9 } }))).toBe('front')
+    expect(rankOf(combatant({ team: 'enemy', pos: { x: 2, y: ROWS - 1 } }))).toBe('front')
   })
 
   it('flags the perimeter columns', () => {

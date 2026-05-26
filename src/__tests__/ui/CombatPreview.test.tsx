@@ -62,6 +62,8 @@ describe('Combat tab — live battle', () => {
       playerUnits: [eu({ id: 'u1', name: 'Mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'e0', name: 'Slime', team: 'enemy', maxHp: 100, hp: 100, meleeRange: 1.2 })],
     })
+    battle.combatants.find((c) => c.id === 'u1')!.pos = { x: 2.5, y: 6 }   // in spell range
+    battle.combatants.find((c) => c.id === 'e0')!.pos = { x: 2.5, y: 9 }
     advanceRound(battle)   // mage begins channeling Lightning Bolt
     useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
     await renderCombat()

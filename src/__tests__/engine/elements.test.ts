@@ -27,6 +27,7 @@ describe('elements in combat', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, armorElement: armor, maxHp: 500, hp: 500, meleeRange: 1.2 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }
     advanceRound(b)
     return skillValue(b, 'fire-bolt')
   }
@@ -40,6 +41,7 @@ describe('elements in combat', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('frost-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, armorElement: 'water', maxHp: 500, hp: 500, meleeRange: 1.2 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }
     advanceRound(b)
     expect(skillValue(b, 'frost-bolt')).toBeLessThan(20)   // ~0.33 × 20
   })
@@ -61,6 +63,7 @@ describe('Frozen acts as water armor (§3 combo)', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [lb] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }
     if (frozen) find(b, 'foe').statuses.push(buildStatus('frozen', 'x')!)
     advanceRound(b)
     return skillValue(b, 'lightning-bolt')
@@ -75,6 +78,7 @@ describe('Frozen acts as water armor (§3 combo)', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
     })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }
     find(b, 'foe').statuses.push(buildStatus('frozen', 'x')!)
     advanceRound(b)
     expect(find(b, 'foe').statuses.some((s) => s.id === 'frozen')).toBe(false)

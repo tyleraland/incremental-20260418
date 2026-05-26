@@ -3,11 +3,11 @@
 // stats. All numbers here are in *grid units*, not the game's feet.
 
 export const COLS = 5            // §2.1 grid columns (x ∈ [0, COLS])
-export const ROWS = 10           // §2.1 grid rows    (y ∈ [0, ROWS])
+export const ROWS = 14           // §2.1 grid rows    (y ∈ [0, ROWS]) — deep field so movement matters
 
-export const BASE_MOVE_SPEED = 0.6   // §2.5 grid units per round
+export const BASE_MOVE_SPEED = 0.7   // §2.5 grid units per round
 export const SEPARATION = 0.7        // §2.4 minimum distance between two units
-export const MAX_ROUNDS = 40         // §9.2 draw if unresolved by this round
+export const MAX_ROUNDS = 60         // §9.2 draw if unresolved by this round (deep field needs more rounds)
 
 // §2.3 zones, measured as rows from a team's own edge.
 export const FRONT_ROWS = 2          // ranks 0–2 = front
