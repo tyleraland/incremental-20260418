@@ -2,33 +2,28 @@
 // The engine is fully self-contained: it does not import game state, time, or
 // stats. All numbers here are in *grid units*, not the game's feet.
 
-export const COLS = 5            // §2.1 grid columns (x ∈ [0, COLS])
-export const ROWS = 14           // §2.1 grid rows    (y ∈ [0, ROWS]) — deep field so movement matters
+export const COLS = 30           // §2.1 grid columns (x ∈ [0, COLS]) — large arena
+export const ROWS = 30           // §2.1 grid rows    (y ∈ [0, ROWS])
 
-export const BASE_MOVE_SPEED = 0.7   // §2.5 grid units per round
+export const BASE_MOVE_SPEED = 0.9   // §2.5 grid units per round
 export const SEPARATION = 0.7        // §2.4 minimum distance between two units
-export const MAX_ROUNDS = 60         // §9.2 draw if unresolved by this round (deep field needs more rounds)
+export const MAX_ROUNDS = 80         // §9.2 draw if unresolved by this round
 
-// §2.3 zones, measured as rows from a team's own edge.
-export const FRONT_ROWS = 2          // ranks 0–2 = front
-export const MID_ROWS = 5            // ranks 3–5 = mid; 6+ = back
-export const PERIMETER_LEFT = 0.8    // x < this  → perimeter
-export const PERIMETER_RIGHT = 4.2   // x > this  → perimeter
+// §2.3 rank zones, measured as rows from a team's own edge (used by rankOf, a
+// query helper; combat behaviour doesn't read ranks).
+export const FRONT_ROWS = 6          // ranks 0–6 = front
+export const MID_ROWS = 12           // 7–12 = mid; 13+ = back
+export const PERIMETER_LEFT = 4      // x < this  → perimeter
+export const PERIMETER_RIGHT = 26    // x > this  → perimeter
 
-// Starting Y as rows from a team's OWN edge. Everyone deploys close to their
-// edge (far bottom for players, far top for enemies) and advances toward the
-// center; melee (front) starts a touch ahead, ranged/support (back) sits at the
-// very rear. NOTE: this is intentionally tighter than the §2.3 zone bands —
-// zones classify a unit's *current* position mid-fight; this is just the deploy.
-export const RANK_START_Y = { front: 1.7, mid: 1.1, back: 0.5 } as const
-
-// Column order from center outward (for COLS=5), so a formation deploys around
-// the middle column rather than hugging the left edge.
-export const CENTERED_COLS = [2, 1, 3, 0, 4] as const
+// Deploy model: teams form up a fixed distance from the arena center (not at the
+// far edges), leaving open ground behind to maneuver/retreat and room in the
+// middle for terrain. Deeper ranks fall back toward their own edge.
+export const DEPLOY_FRONT = 7                                  // front rank's distance from center
+export const RANK_SETBACK = { front: 0, mid: 1.6, back: 3.2 } as const
 
 // When a rank holds more units than there are columns, extra units stack into
 // deeper rows this far apart (≥ SEPARATION so they don't start overlapping).
-// This is what lets an arbitrarily large party deploy on a fixed-width grid.
-export const FORMATION_ROW_STEP = 0.75
+export const FORMATION_ROW_STEP = 0.9
 
 export const EPS = 1e-6

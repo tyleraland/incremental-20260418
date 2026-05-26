@@ -69,7 +69,7 @@ describe('channeled casts', () => {
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, maxHp: 300, hp: 300, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 300, hp: 300, meleeRange: 1.2 })],
     })
-    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // in spell range, out of melee
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 11 }   // in spell range, won't reach melee in 2 rounds
     advanceRound(b)   // start the channel
     expect(hasEvent(b, (e) => e.type === 'cast_start' && e.skillId === 'lightning-bolt')).toBe(true)
     advanceRound(b)   // resolve it

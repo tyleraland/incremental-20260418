@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, createBattle, ROWS } from '@/engine'
+import { distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, createBattle, ROWS, COLS } from '@/engine'
 import { moveToward, enforceSeparation, attackReach } from '@/engine/grid'
 import { combatant, eu } from './helpers'
 
@@ -17,43 +17,43 @@ describe('grid: ranks & zones (§2.3)', () => {
   })
 
   it('classifies rank from current Y relative to the team edge', () => {
-    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 1 } }))).toBe('front')
-    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 4 } }))).toBe('mid')
-    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 8 } }))).toBe('back')
-    expect(rankOf(combatant({ team: 'enemy', pos: { x: 2, y: ROWS - 1 } }))).toBe('front')
+    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 3 } }))).toBe('front')
+    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 9 } }))).toBe('mid')
+    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 20 } }))).toBe('back')
+    expect(rankOf(combatant({ team: 'enemy', pos: { x: 2, y: ROWS - 3 } }))).toBe('front')
   })
 
   it('flags the perimeter columns', () => {
-    expect(isPerimeter({ x: 0.5, y: 5 })).toBe(true)
-    expect(isPerimeter({ x: 4.5, y: 5 })).toBe(true)
-    expect(isPerimeter({ x: 2.5, y: 5 })).toBe(false)
+    expect(isPerimeter({ x: 1, y: 5 })).toBe(true)
+    expect(isPerimeter({ x: COLS - 1, y: 5 })).toBe(true)
+    expect(isPerimeter({ x: COLS / 2, y: 5 })).toBe(false)
   })
 })
 
 describe('grid: starting positions', () => {
-  it('deploys players near the bottom edge and enemies near the top', () => {
+  it('forms teams up on opposite sides of the arena center', () => {
     const p = startingPosition('player', 'front', 0)
     const e = startingPosition('enemy', 'front', 0)
-    expect(p.y).toBeLessThan(3)         // clustered near the player edge
-    expect(e.y).toBeGreaterThan(ROWS - 3)
+    expect(p.y).toBeLessThan(ROWS / 2)          // player below center
+    expect(e.y).toBeGreaterThan(ROWS / 2)       // enemy above center
+    expect((ROWS / 2 - p.y)).toBeCloseTo(e.y - ROWS / 2)   // symmetric
   })
 
   it('puts ranged/back units behind melee/front units', () => {
     expect(startingPosition('player', 'back', 0).y)
-      .toBeLessThan(startingPosition('player', 'front', 0).y)
-    // enemies mirror: back is higher up (nearer the top edge)
+      .toBeLessThan(startingPosition('player', 'front', 0).y)   // player back is nearer its own (lower) edge
     expect(startingPosition('enemy', 'back', 0).y)
       .toBeGreaterThan(startingPosition('enemy', 'front', 0).y)
   })
 
   it('centers the formation (first unit takes the middle column)', () => {
-    expect(startingPosition('player', 'front', 0).x).toBe(2.5)
+    expect(startingPosition('player', 'front', 0).x).toBe(Math.floor(COLS / 2) + 0.5)
   })
 
   it('stacks same-rank units past the grid width into deeper rows', () => {
-    // 6th same-rank unit (index 5) wraps to a deeper row than the 1st
-    expect(startingPosition('player', 'front', 5).y).toBeGreaterThan(startingPosition('player', 'front', 0).y)
-    expect(startingPosition('enemy', 'front', 5).y).toBeLessThan(startingPosition('enemy', 'front', 0).y)
+    // an index past the grid width wraps to a deeper row, toward the team's own edge
+    expect(startingPosition('player', 'front', COLS).y).toBeLessThan(startingPosition('player', 'front', 0).y)
+    expect(startingPosition('enemy', 'front', COLS).y).toBeGreaterThan(startingPosition('enemy', 'front', 0).y)
   })
 
   it('deploys an arbitrarily large party with no two units co-located', () => {

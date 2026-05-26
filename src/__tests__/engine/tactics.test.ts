@@ -66,8 +66,8 @@ describe('tactics: movement', () => {
 
   it('Charger first melee hit deals +30%', () => {
     const mk = (tactics: { id: string; rank: number }[]) => createBattle({
-      playerUnits: [eu({ id: 'p', str: 20, tactics, meleeRange: 10 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, hp: 100, maxHp: 100, meleeRange: 10 })],
+      playerUnits: [eu({ id: 'p', str: 20, tactics, meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, hp: 100, maxHp: 100, meleeRange: 30 })],
     })
     const base = mk([]); const chg = mk([{ id: 'charger', rank: 1 }])
     advanceRound(base); advanceRound(chg)
@@ -77,8 +77,8 @@ describe('tactics: movement', () => {
 
   it('Retreater falls back and disengages once when badly hurt', () => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'p', hp: 8, maxHp: 100, tactics: [{ id: 'retreater', rank: 1 }], meleeRange: 10 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 10 })],
+      playerUnits: [eu({ id: 'p', hp: 8, maxHp: 100, tactics: [{ id: 'retreater', rank: 1 }], meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 30 })],
     })
     const before = find(b, 'p').pos.y
     advanceRound(b)
@@ -103,8 +103,8 @@ describe('tactics: action', () => {
 describe('tactics: reaction', () => {
   it('Last Stand buffs STR/SPD when near death (once)', () => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'p', hp: 5, maxHp: 100, str: 20, spd: 10, tactics: [{ id: 'last-stand', rank: 1 }], meleeRange: 10 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 1, meleeRange: 10 })],
+      playerUnits: [eu({ id: 'p', hp: 5, maxHp: 100, str: 20, spd: 10, tactics: [{ id: 'last-stand', rank: 1 }], meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 1, meleeRange: 30 })],
     })
     advanceRound(b)
     const p = find(b, 'p')
@@ -133,8 +133,8 @@ describe('tactics: passive helpers', () => {
 
   it('Armored mitigates incoming damage vs an unarmored twin', () => {
     const mk = (tactics: { id: string; rank: number }[]) => createBattle({
-      playerUnits: [eu({ id: 'p', tactics, maxHp: 300, hp: 300, meleeRange: 10 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 40, meleeRange: 10 })],
+      playerUnits: [eu({ id: 'p', tactics, maxHp: 300, hp: 300, meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 40, meleeRange: 30 })],
     })
     const plain = mk([]); const arm = mk([{ id: 'armored', rank: 1 }])
     advanceRound(plain); advanceRound(arm)
@@ -143,8 +143,8 @@ describe('tactics: passive helpers', () => {
 
   it('Nimble dodges every 7th incoming attack', () => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'p', tactics: [{ id: 'nimble', rank: 1 }], maxHp: 9999, hp: 9999, def: 9999, meleeRange: 10 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 5, def: 9999, maxHp: 9999, hp: 9999, meleeRange: 10 })],
+      playerUnits: [eu({ id: 'p', tactics: [{ id: 'nimble', rank: 1 }], maxHp: 9999, hp: 9999, def: 9999, meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 5, def: 9999, maxHp: 9999, hp: 9999, meleeRange: 30 })],
     })
     for (let i = 0; i < 10; i++) advanceRound(b)
     expect(b.events.some((e) => e.type === 'dodge' && e.targetId === 'p')).toBe(true)

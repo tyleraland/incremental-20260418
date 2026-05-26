@@ -27,7 +27,7 @@ describe('engine: outcomes (§9)', () => {
     // Huge DEF on both sides → damage floored to 1/round, 50 HP each → never
     // resolves before the cap. meleeRange 10 puts them in reach from round 1.
     const tank = (id: string, team: 'player' | 'enemy') =>
-      eu({ id, team, str: 5, def: 1000, maxHp: 200, hp: 200, meleeRange: 10 })
+      eu({ id, team, str: 5, def: 1000, maxHp: 200, hp: 200, meleeRange: 30 })
     const r = resolve({
       playerUnits: [tank('p', 'player')],
       enemyUnits: [tank('e', 'enemy')],
@@ -41,8 +41,8 @@ describe('engine: turn order (§10)', () => {
   it('a faster unit kills a slower one before it can act', () => {
     // Both in reach from round 1 (meleeRange 10). Player is faster and one-shots.
     const r = resolve({
-      playerUnits: [eu({ id: 'p', spd: 20, str: 100, meleeRange: 10 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 1, str: 100, maxHp: 30, hp: 30, meleeRange: 10 })],
+      playerUnits: [eu({ id: 'p', spd: 20, str: 100, meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 1, str: 100, maxHp: 30, hp: 30, meleeRange: 30 })],
     })
     expect(r.outcome).toBe('victory')
     expect(r.rounds).toBe(1)
@@ -79,8 +79,8 @@ describe('engine: invariants (§16.5)', () => {
 
   it('advanceRound is a no-op once the battle is decided', () => {
     const state = createBattle({
-      playerUnits: [eu({ id: 'p', spd: 20, str: 100, meleeRange: 10 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 1, maxHp: 10, hp: 10, meleeRange: 10 })],
+      playerUnits: [eu({ id: 'p', spd: 20, str: 100, meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 1, maxHp: 10, hp: 10, meleeRange: 30 })],
     })
     advanceRound(state)
     expect(state.outcome).toBe('victory')

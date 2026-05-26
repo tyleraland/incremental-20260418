@@ -3,7 +3,7 @@
 
 import {
   COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
-  PERIMETER_LEFT, PERIMETER_RIGHT, RANK_START_Y, CENTERED_COLS, FORMATION_ROW_STEP, EPS,
+  PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
 import type { Vec2, Rank, Team, Combatant } from './types'
 
@@ -37,15 +37,26 @@ export function isPerimeter(p: Vec2): boolean {
   return p.x < PERIMETER_LEFT || p.x > PERIMETER_RIGHT
 }
 
-// Starting position: deploy near the team's own edge (players bottom, enemies
-// top), spread around the center column. `indexInRank` is the unit's order
-// among same-rank teammates; columns fill center-outward, and once a row is full
-// extra units stack into a deeper row — so any party size fits a fixed-width grid.
+// The i-th grid column counting outward from the middle: center, +1, −1, +2, …
+// (replaces a hardcoded order so any COLS works).
+export function centeredColumn(i: number, cols: number): number {
+  const center = Math.floor(cols / 2)
+  if (i <= 0) return center
+  const k = Math.ceil(i / 2)
+  const col = center + (i % 2 === 1 ? k : -k)
+  return Math.min(cols - 1, Math.max(0, col))
+}
+
+// Starting position: teams form up DEPLOY_FRONT rows either side of the arena
+// center (players below, enemies above), columns filling center-outward. Deeper
+// ranks fall back toward their own edge; once a row fills, extras stack behind —
+// so any party size fits, with open ground behind and terrain room in the middle.
 export function startingPosition(team: Team, rank: Rank, indexInRank: number): Vec2 {
+  const center = ROWS / 2
   const depth = Math.floor(indexInRank / COLS)
-  const rankY = RANK_START_Y[rank] + depth * FORMATION_ROW_STEP
-  const y = team === 'player' ? rankY : ROWS - rankY
-  const col = CENTERED_COLS[indexInRank % COLS]
+  const setback = DEPLOY_FRONT + RANK_SETBACK[rank] + depth * FORMATION_ROW_STEP
+  const y = team === 'player' ? center - setback : center + setback
+  const col = centeredColumn(indexInRank % COLS, COLS)
   return clampToGrid({ x: col + 0.5, y })
 }
 

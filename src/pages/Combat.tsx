@@ -1,18 +1,17 @@
 import { useGameStore, waveComposition } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
-import { ELEMENT_COLORS } from '@/lib/elements'
 import {
-  COLS, ROWS, startingPosition, COMBAT_SKILLS, type Rank, type BattleState, type Combatant,
+  COLS, ROWS, startingPosition, COMBAT_SKILLS, type Rank, type Vec2, type BattleState, type Combatant,
 } from '@/engine'
 
 const skillName = (id: string) => COMBAT_SKILLS[id]?.(1)?.name ?? 'Casting'
+const CENTER_Y = ROWS / 2
 
-// The 1D ranged combat has been retired. Combat now resolves on a vertical 5×10
-// grid (enemies advance from the top, the party from the bottom) via the Combat
-// Tactic Engine, stepped one round per N ticks in the store. This tab renders
-// the live battle for the focused location; with no live battle it falls back to
-// a static starting-position preview.
+// Combat resolves on a large 30×30 grid via the Combat Tactic Engine, stepped one
+// round per N ticks in the store. A camera frames all combatants (bounding box +
+// padding) and follows them as they spread out and converge, so the action stays
+// readable on a field far bigger than the units.
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
@@ -21,38 +20,66 @@ function initials(name: string): string {
     : (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-// engine y=0 is a team's own edge. Players sit near y=0 (rendered bottom),
-// enemies near y=ROWS (rendered top).
-function leftPct(x: number) { return `${(x / COLS) * 100}%` }
-function topPct(y: number)  { return `${(1 - y / ROWS) * 100}%` }
-
 function hpColor(ratio: number): string {
   if (ratio >= 0.75) return 'bg-emerald-500'
   if (ratio >= 0.4) return 'bg-amber-500'
   return 'bg-red-500'
 }
 
-function GridBackdrop() {
+// ── Camera ──────────────────────────────────────────────────────────────────---
+// A square world-space window that always contains every combatant. Units are
+// placed as a % of this window; because the window is recomputed each round and
+// positions animate via CSS transitions, the camera pans/zooms smoothly for free.
+
+const MIN_CAM = 16   // never zoom tighter than this (world units)
+const CAM_PAD = 3    // breathing room around the outermost units
+
+interface Cam { x: number; y: number; size: number }
+
+function computeCamera(pts: Vec2[]): Cam {
+  const field = Math.max(COLS, ROWS)
+  if (pts.length === 0) return { x: 0, y: 0, size: field }
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity
+  for (const p of pts) {
+    minx = Math.min(minx, p.x); miny = Math.min(miny, p.y)
+    maxx = Math.max(maxx, p.x); maxy = Math.max(maxy, p.y)
+  }
+  const size = Math.min(field, Math.max(MIN_CAM, maxx - minx + CAM_PAD * 2, maxy - miny + CAM_PAD * 2))
+  const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2
+  const x = size >= COLS ? (COLS - size) / 2 : Math.max(0, Math.min(COLS - size, cx - size / 2))
+  const y = size >= ROWS ? (ROWS - size) / 2 : Math.max(0, Math.min(ROWS - size, cy - size / 2))
+  return { x, y, size }
+}
+
+const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
+const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
+
+function Arena({ cam, children }: { cam: Cam; children: React.ReactNode }) {
+  const cell = `${100 / cam.size}%`
+  const centerTop = Math.max(0, Math.min(100, (1 - (CENTER_Y - cam.y) / cam.size) * 100))
   return (
-    <>
-      <div className="absolute inset-x-0 top-0 h-1/2 bg-red-500/5" />
-      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-blue-500/5" />
+    <div className="relative w-full max-w-[380px] mx-auto aspect-square rounded-lg border border-game-border bg-game-surface overflow-hidden">
+      {/* team-half tints, split at the arena's center line */}
+      <div className="absolute inset-x-0 top-0 bg-red-500/5" style={{ height: `${centerTop}%` }} />
+      <div className="absolute inset-x-0 bottom-0 bg-blue-500/5" style={{ top: `${centerTop}%` }} />
+      {/* faint grid that scales with the camera */}
       <div
-        className="absolute inset-0 grid"
-        style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)` }}
-      >
-        {Array.from({ length: COLS * ROWS }).map((_, i) => (
-          <div key={i} className="border border-game-border/30" />
-        ))}
-      </div>
-    </>
+        className="absolute inset-0 opacity-40 pointer-events-none"
+        style={{
+          backgroundImage:
+            'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
+            'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
+          backgroundSize: `${cell} ${cell}`,
+        }}
+      />
+      {children}
+    </div>
   )
 }
 
 // ── Live battle ────────────────────────────────────────────────────────────────
 
-// Small square unit card; sized in px so units stay compact relative to the field.
-const CARD = 'w-8'
+const CARD = 'w-7'
 
 function CooldownMeter({ c }: { c: Combatant }) {
   if (c.skills.length === 0) return null
@@ -63,15 +90,8 @@ function CooldownMeter({ c }: { c: Combatant }) {
         const ready = left <= 0
         const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
         return (
-          <div
-            key={s.id}
-            title={ready ? `${s.name} — ready` : `${s.name} — ${left}`}
-            className="flex-1 h-[3px] rounded-sm bg-black/60 overflow-hidden"
-          >
-            <div
-              className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`}
-              style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }}
-            />
+          <div key={s.id} title={ready ? `${s.name} — ready` : `${s.name} — ${left}`} className="flex-1 h-[3px] rounded-sm bg-black/60 overflow-hidden">
+            <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
           </div>
         )
       })}
@@ -79,14 +99,14 @@ function CooldownMeter({ c }: { c: Combatant }) {
   )
 }
 
-function BattleChip({ c }: { c: Combatant }) {
+function BattleChip({ c, cam }: { c: Combatant; cam: Cam }) {
   const isPlayer = c.team === 'player'
   const ratio = Math.max(0, c.hp / c.maxHp)
   const casting = c.alive && !!c.channel
   return (
     <div
       className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2 animate-chip-spawn`}
-      style={{ left: leftPct(c.pos.x), top: topPct(c.pos.y), transition: 'left 380ms linear, top 380ms linear' }}
+      style={{ left: px(cam, c.pos.x), top: py(cam, c.pos.y), transition: 'left 380ms linear, top 380ms linear' }}
     >
       {casting && (
         <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[8px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
@@ -97,13 +117,12 @@ function BattleChip({ c }: { c: Combatant }) {
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         className={[
           'rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px transition-opacity',
-          casting
-            ? 'bg-blue-950 border-amber-300 ring-1 ring-amber-400/60'
+          casting ? 'bg-blue-950 border-amber-300 ring-1 ring-amber-400/60'
             : isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70',
           c.alive ? '' : 'opacity-25 grayscale',
         ].join(' ')}
       >
-        <div className={`text-center text-[9px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>
+        <div className={`text-center text-[8px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>
           {c.alive ? initials(c.name) : '✕'}
         </div>
         <div className="h-1 rounded-sm bg-black/50 overflow-hidden">
@@ -115,15 +134,24 @@ function BattleChip({ c }: { c: Combatant }) {
   )
 }
 
+function Float({ cam, pos, className, text, k }: { cam: Cam; pos: Vec2; className: string; text: string; k: string }) {
+  return (
+    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow animate-dmg-float whitespace-nowrap ${className}`} style={{ left: px(cam, pos.x), top: py(cam, pos.y) }}>
+      {text}
+    </div>
+  )
+}
+
 function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
   const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
+  const alive = battle.combatants.filter((c) => c.alive)
+  const cam = computeCamera((alive.length ? alive : battle.combatants).map((c) => c.pos))
+
   const roundEvents = battle.events.filter((e) => e.round === battle.round)
-  const hits  = roundEvents.filter((e) =>
-    (e.type === 'melee_attack' || e.type === 'ranged_attack' || (e.type === 'skill_use' && e.value != null)) && e.value != null,
-  )
+  const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
   const heals = roundEvents.filter((e) => e.type === 'heal' && e.value != null)
+  const dots  = roundEvents.filter((e) => e.type === 'dot' && e.value != null)
   const interrupts = roundEvents.filter((e) => e.type === 'interrupt')
-  const dots = roundEvents.filter((e) => e.type === 'dot' && e.value != null)
 
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
@@ -132,133 +160,70 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
     <div className="p-4 max-w-md mx-auto flex flex-col gap-3">
       <div>
         <h1 className="text-lg font-semibold text-game-text">Combat</h1>
-        <p className="text-xs text-game-text-dim mt-0.5">
-          {name} · round {battle.round}
-        </p>
+        <p className="text-xs text-game-text-dim mt-0.5">{name} · round {battle.round}</p>
       </div>
 
-      <div className="relative w-full max-w-[360px] mx-auto aspect-[2/3] rounded-lg border border-game-border bg-game-surface overflow-hidden">
-        <GridBackdrop />
-
+      <Arena cam={cam}>
         {/* persistent ground hazards (Firewall, etc.) */}
         {battle.zones.map((z) => (
           <div
             key={z.id}
             className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
-            style={{
-              left: leftPct(z.pos.x), top: topPct(z.pos.y),
-              width: `${(2 * z.radius / COLS) * 100}%`, height: `${(2 * z.radius / ROWS) * 100}%`,
-            }}
+            style={{ left: px(cam, z.pos.x), top: py(cam, z.pos.y), width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%` }}
           />
         ))}
 
         {/* attack arc lines for this round */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${COLS} ${ROWS}`} preserveAspectRatio="none">
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${ROWS - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
           {hits.map((e, i) => {
-            const src = byId(e.sourceId)
-            const tgt = byId(e.targetId)
+            const src = byId(e.sourceId), tgt = byId(e.targetId)
             if (!src || !tgt) return null
             const stroke = src.team === 'player' ? 'rgb(96,165,250)' : 'rgb(248,113,113)'
-            return (
-              <line
-                key={`l-${battle.round}-${i}`}
-                className="animate-line-fade"
-                x1={src.pos.x} y1={ROWS - src.pos.y} x2={tgt.pos.x} y2={ROWS - tgt.pos.y}
-                stroke={stroke} strokeWidth={0.06} strokeLinecap="round"
-              />
-            )
+            return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={src.pos.x} y1={ROWS - src.pos.y} x2={tgt.pos.x} y2={ROWS - tgt.pos.y} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
           })}
         </svg>
 
-        {/* hit flashes + floating damage */}
+        {/* hit flashes + floating numbers */}
         {hits.map((e, i) => {
           const tgt = byId(e.targetId)
           if (!tgt) return null
           return (
             <div key={`h-${battle.round}-${i}`}>
-              <div
-                className="absolute w-8 h-8 rounded-md border-2 border-white/70 animate-hit-flash"
-                style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
-              />
-              <div
-                className="absolute text-[13px] font-bold text-red-300 drop-shadow animate-dmg-float"
-                style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
-              >
-                -{e.value}
-              </div>
+              <div className={`absolute ${CARD} aspect-square -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-white/70 animate-hit-flash`} style={{ left: px(cam, tgt.pos.x), top: py(cam, tgt.pos.y) }} />
+              <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-red-300" text={`-${e.value}`} />
             </div>
           )
         })}
-
-        {/* floating heals */}
         {heals.map((e, i) => {
           const tgt = byId(e.targetId)
-          if (!tgt || !e.value) return null
-          return (
-            <div
-              key={`heal-${battle.round}-${i}`}
-              className="absolute text-[13px] font-bold text-emerald-300 drop-shadow animate-dmg-float"
-              style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
-            >
-              +{e.value}
-            </div>
-          )
+          return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-emerald-300" text={`+${e.value}`} /> : null
         })}
-
-        {/* damage-over-time / zone ticks */}
         {dots.map((e, i) => {
           const tgt = byId(e.targetId)
-          if (!tgt) return null
-          return (
-            <div
-              key={`dot-${battle.round}-${i}`}
-              className="absolute text-[12px] font-bold text-fuchsia-300 drop-shadow animate-dmg-float"
-              style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
-            >
-              -{e.value}
-            </div>
-          )
+          return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[11px] text-fuchsia-300" text={`-${e.value}`} /> : null
         })}
-
-        {/* interrupted-cast markers */}
         {interrupts.map((e, i) => {
           const tgt = byId(e.targetId)
-          if (!tgt) return null
-          return (
-            <div
-              key={`int-${battle.round}-${i}`}
-              className="absolute text-[10px] font-bold text-amber-300 drop-shadow animate-dmg-float whitespace-nowrap"
-              style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
-            >
-              interrupted
-            </div>
-          )
+          return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[10px] text-amber-300" text="interrupted" /> : null
         })}
 
-        {/* combatants */}
-        {battle.combatants.map((c) => <BattleChip key={c.id} c={c} />)}
+        {battle.combatants.map((c) => <BattleChip key={c.id} c={c} cam={cam} />)}
 
         {battle.outcome !== 'ongoing' && (
           <div className="absolute inset-0 flex items-center justify-center">
             <span className={[
               'px-3 py-1.5 rounded-md text-sm font-bold border backdrop-blur-sm',
-              battle.outcome === 'victory'
-                ? 'bg-emerald-950/80 text-emerald-200 border-emerald-600/60'
-                : 'bg-red-950/80 text-red-200 border-red-600/60',
+              battle.outcome === 'victory' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-600/60' : 'bg-red-950/80 text-red-200 border-red-600/60',
             ].join(' ')}>
               {battle.outcome === 'victory' ? 'Victory!' : battle.outcome === 'defeat' ? 'Defeated' : 'Stalemate'}
             </span>
           </div>
         )}
-      </div>
+      </Arena>
 
       <div className="flex items-center justify-center gap-4 text-[11px] text-game-text-dim">
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-blue-900 border border-blue-400/70 inline-block" /> Party ({playersAlive})
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-red-950 border border-red-500/70 inline-block" /> Enemies ({enemiesAlive})
-        </span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-950 border border-blue-400/70 inline-block" /> Party ({playersAlive})</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-950 border border-red-500/70 inline-block" /> Enemies ({enemiesAlive})</span>
       </div>
     </div>
   )
@@ -266,20 +231,11 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
 
 // ── Static preview (no live battle: between waves / not yet started) ─────────────
 
-function PreviewChip({ pos, label, title, isPlayer }: {
-  pos: { x: number; y: number }; label: string; title: string; isPlayer: boolean
-}) {
+function PreviewChip({ cam, pos, label, title, isPlayer }: { cam: Cam; pos: Vec2; label: string; title: string; isPlayer: boolean }) {
   return (
-    <div
-      title={title}
-      style={{ left: leftPct(pos.x), top: topPct(pos.y) }}
-      className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2`}
-    >
-      <div className={[
-        'rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px',
-        isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70',
-      ].join(' ')}>
-        <div className={`text-center text-[9px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>{label}</div>
+    <div title={title} style={{ left: px(cam, pos.x), top: py(cam, pos.y) }} className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2`}>
+      <div className={['rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px', isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70'].join(' ')}>
+        <div className={`text-center text-[8px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>{label}</div>
         <div className="h-1 rounded-sm bg-emerald-500/80" />
       </div>
     </div>
@@ -296,62 +252,44 @@ function Preview() {
   const party    = units.filter((u) => u.locationId === combatLocationId)
   const foes     = location ? waveComposition(location, party.length) : []
 
+  const enemyRank: Record<string, number> = {}
+  const enemyChips = foes.map((id, i) => {
+    const m = MONSTER_REGISTRY[id]
+    const rank: Rank = (m?.stats.attackRange ?? 5) > 5 ? 'back' : 'front'
+    const within = enemyRank[rank] ?? 0; enemyRank[rank] = within + 1
+    return { key: `${id}-${i}`, pos: startingPosition('enemy', rank, within), label: initials(m?.name ?? id), title: m?.name ?? id }
+  })
+  const partyRank: Record<string, number> = {}
+  const partyChips = party.map((u) => {
+    const ranged = getDerivedStats(u, equipment).attackRange > 5
+    const rank: Rank = ranged ? 'back' : 'front'
+    const within = partyRank[rank] ?? 0; partyRank[rank] = within + 1
+    return { key: u.id, pos: startingPosition('player', rank, within), label: initials(u.name), title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
+  })
+  const cam = computeCamera([...enemyChips, ...partyChips].map((c) => c.pos))
+
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
       <div>
         <h1 className="text-lg font-semibold text-game-text">Combat</h1>
         <p className="text-xs text-game-text-dim leading-snug mt-1">
           {location
-            ? <>Engaging at <span className="text-game-text">{location.name}</span> — enemies advance from the top, your party from the bottom. The next wave forms shortly.</>
+            ? <>Engaging at <span className="text-game-text">{location.name}</span> — enemies form up across the field; your party from below. The next wave forms shortly.</>
             : 'Pick a location on the Map and tap "Go to Combat" to deploy your party.'}
         </p>
       </div>
 
-      <div className="relative w-full max-w-[360px] mx-auto aspect-[2/3] rounded-lg border border-game-border bg-game-surface overflow-hidden">
-        <GridBackdrop />
-        {(() => { const seen: Record<string, number> = {}; return foes.map((id, i) => {
-          const m = MONSTER_REGISTRY[id]
-          const ranged = (m?.stats.attackRange ?? 5) > 5
-          const rank: Rank = ranged ? 'back' : 'front'
-          const within = seen[rank] ?? 0; seen[rank] = within + 1
-          return (
-            <PreviewChip
-              key={`${id}-${i}`}
-              pos={startingPosition('enemy', rank, within)}
-              label={initials(m?.name ?? id)}
-              title={m?.name ?? id}
-              isPlayer={false}
-            />
-          )
-        }) })()}
-        {(() => { const seen: Record<string, number> = {}; return party.map((u) => {
-          const ranged = getDerivedStats(u, equipment).attackRange > 5
-          const rank: Rank = ranged ? 'back' : 'front'
-          const within = seen[rank] ?? 0; seen[rank] = within + 1
-          return (
-            <PreviewChip
-              key={u.id}
-              pos={startingPosition('player', rank, within)}
-              label={initials(u.name)}
-              title={`${u.name} — ${ranged ? 'ranged' : 'melee'}`}
-              isPlayer={true}
-            />
-          )
-        }) })()}
+      <Arena cam={cam}>
+        {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={false} />)}
+        {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} title={c.title} isPlayer={true} />)}
         {(party.length === 0 && foes.length === 0) && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">
-            No combatants to preview.
-          </div>
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">No combatants to preview.</div>
         )}
-      </div>
+      </Arena>
 
       <div className="flex items-center justify-center gap-4 text-[11px] text-game-text-dim">
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-blue-900 border border-blue-400/70 inline-block" /> Party ({party.length})
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-red-950 border border-red-500/70 inline-block" /> Enemies ({foes.length})
-        </span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-950 border border-blue-400/70 inline-block" /> Party ({party.length})</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-950 border border-red-500/70 inline-block" /> Enemies ({foes.length})</span>
       </div>
     </div>
   )

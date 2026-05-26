@@ -7,7 +7,7 @@
 export * from './types'
 export {
   COLS, ROWS, BASE_MOVE_SPEED, SEPARATION, MAX_ROUNDS,
-  FRONT_ROWS, MID_ROWS, PERIMETER_LEFT, PERIMETER_RIGHT, RANK_START_Y,
+  FRONT_ROWS, MID_ROWS, PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT,
 } from './constants'
 export {
   distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, attackReach, moveTowardPoint,
