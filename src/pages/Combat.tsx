@@ -51,37 +51,66 @@ function GridBackdrop() {
 
 // ── Live battle ────────────────────────────────────────────────────────────────
 
+// Small square unit card; sized in px so units stay compact relative to the field.
+const CARD = 'w-8'
+
+function CooldownMeter({ c }: { c: Combatant }) {
+  if (c.skills.length === 0) return null
+  return (
+    <div className="flex gap-px">
+      {c.skills.map((s) => {
+        const left = c.skillCooldowns[s.id] ?? 0
+        const ready = left <= 0
+        const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
+        return (
+          <div
+            key={s.id}
+            title={ready ? `${s.name} — ready` : `${s.name} — ${left}`}
+            className="flex-1 h-[3px] rounded-sm bg-black/60 overflow-hidden"
+          >
+            <div
+              className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`}
+              style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }}
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function BattleChip({ c }: { c: Combatant }) {
   const isPlayer = c.team === 'player'
   const ratio = Math.max(0, c.hp / c.maxHp)
   const casting = c.alive && !!c.channel
   return (
     <div
-      className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5 animate-chip-spawn"
+      className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2 animate-chip-spawn`}
       style={{ left: leftPct(c.pos.x), top: topPct(c.pos.y), transition: 'left 380ms linear, top 380ms linear' }}
     >
       {casting && (
-        <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[8px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[8px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
           ✦ {skillName(c.channel!.skillId)}
         </div>
       )}
       <div
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         className={[
-          'w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-semibold shadow transition-opacity',
+          'rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px transition-opacity',
           casting
-            ? 'bg-blue-900 text-amber-100 border-amber-300 ring-2 ring-amber-400/60'
-            : isPlayer ? 'bg-blue-900 text-blue-100 border-blue-400/70' : 'bg-red-950 text-red-200 border-red-500/70',
+            ? 'bg-blue-950 border-amber-300 ring-1 ring-amber-400/60'
+            : isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70',
           c.alive ? '' : 'opacity-25 grayscale',
         ].join(' ')}
       >
-        {c.alive ? initials(c.name) : '✕'}
-      </div>
-      {c.alive && (
-        <div className="w-9 h-1 rounded-full bg-black/50 overflow-hidden">
+        <div className={`text-center text-[9px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>
+          {c.alive ? initials(c.name) : '✕'}
+        </div>
+        <div className="h-1 rounded-sm bg-black/50 overflow-hidden">
           <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
         </div>
-      )}
+        {c.alive && <CooldownMeter c={c} />}
+      </div>
     </div>
   )
 }
@@ -108,7 +137,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
         </p>
       </div>
 
-      <div className="relative w-full max-w-[300px] mx-auto aspect-[1/2] rounded-lg border border-game-border bg-game-surface overflow-hidden">
+      <div className="relative w-full max-w-[360px] mx-auto rounded-lg border border-game-border bg-game-surface overflow-hidden" style={{ aspectRatio: COLS / ROWS }}>
         <GridBackdrop />
 
         {/* persistent ground hazards (Firewall, etc.) */}
@@ -148,7 +177,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
           return (
             <div key={`h-${battle.round}-${i}`}>
               <div
-                className="absolute w-9 h-9 rounded-full border-2 border-white/70 animate-hit-flash"
+                className="absolute w-8 h-8 rounded-md border-2 border-white/70 animate-hit-flash"
                 style={{ left: leftPct(tgt.pos.x), top: topPct(tgt.pos.y) }}
               />
               <div
@@ -237,20 +266,22 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
 
 // ── Static preview (no live battle: between waves / not yet started) ─────────────
 
-function PreviewChip({ pos, label, title, className }: {
-  pos: { x: number; y: number }; label: string; title: string; className: string
+function PreviewChip({ pos, label, title, isPlayer }: {
+  pos: { x: number; y: number }; label: string; title: string; isPlayer: boolean
 }) {
   return (
     <div
       title={title}
       style={{ left: leftPct(pos.x), top: topPct(pos.y) }}
-      className={[
-        'absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border',
-        'flex items-center justify-center text-[11px] font-semibold shadow',
-        className,
-      ].join(' ')}
+      className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2`}
     >
-      {label}
+      <div className={[
+        'rounded-md border shadow flex flex-col gap-px px-0.5 pt-0.5 pb-px',
+        isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70',
+      ].join(' ')}>
+        <div className={`text-center text-[9px] font-semibold leading-none ${isPlayer ? 'text-blue-100' : 'text-red-200'}`}>{label}</div>
+        <div className="h-1 rounded-sm bg-emerald-500/80" />
+      </div>
     </div>
   )
 }
@@ -262,7 +293,7 @@ function Preview() {
   const equipment        = useGameStore((s) => s.equipment)
 
   const location = combatLocationId ? locations.find((l) => l.id === combatLocationId) ?? null : null
-  const party    = units.filter((u) => u.locationId === combatLocationId).slice(0, 5)
+  const party    = units.filter((u) => u.locationId === combatLocationId)
   const foes     = location ? waveComposition(location, party.length) : []
 
   return (
@@ -276,7 +307,7 @@ function Preview() {
         </p>
       </div>
 
-      <div className="relative w-full max-w-[300px] mx-auto aspect-[1/2] rounded-lg border border-game-border bg-game-surface overflow-hidden">
+      <div className="relative w-full max-w-[360px] mx-auto rounded-lg border border-game-border bg-game-surface overflow-hidden" style={{ aspectRatio: COLS / ROWS }}>
         <GridBackdrop />
         {(() => { const seen: Record<string, number> = {}; return foes.map((id, i) => {
           const m = MONSTER_REGISTRY[id]
@@ -289,7 +320,7 @@ function Preview() {
               pos={startingPosition('enemy', rank, within)}
               label={initials(m?.name ?? id)}
               title={m?.name ?? id}
-              className="bg-red-950 text-red-200 border-red-500/70"
+              isPlayer={false}
             />
           )
         }) })()}
@@ -303,7 +334,7 @@ function Preview() {
               pos={startingPosition('player', rank, within)}
               label={initials(u.name)}
               title={`${u.name} — ${ranged ? 'ranged' : 'melee'}`}
-              className="bg-blue-900 text-blue-100 border-blue-400/70"
+              isPlayer={true}
             />
           )
         }) })()}
