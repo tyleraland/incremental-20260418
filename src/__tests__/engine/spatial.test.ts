@@ -77,6 +77,23 @@ describe('movement behaviours', () => {
     expect(find(b, 'g').pos.y).toBeGreaterThan(2)   // moved up to interpose
   })
 
+  it('a faster Kiter ranged unit opens distance on a slower attacker', () => {
+    // Mira-style: high spd + ranged + kiter. Pursuer is melee and slower.
+    const fb = buildEngineSkill('fire-bolt', 1)!
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', spd: 18, int: 20, rangedRange: 4, maxHp: 999, hp: 999, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 5, str: 10, maxHp: 999, hp: 999 })],
+    })
+    find(b, 'r').pos = { x: 7, y: 6 }
+    find(b, 'e').pos = { x: 7, y: 8.5 }                // melee distance, threatening
+    const startGap = Math.hypot(0, 8.5 - 6)
+    for (let i = 0; i < 6; i++) advanceRound(b)
+    const r = find(b, 'r'), e = find(b, 'e')
+    const endGap = Math.hypot(r.pos.x - e.pos.x, r.pos.y - e.pos.y)
+    expect(endGap).toBeGreaterThan(startGap)            // the kiter opened ground on the slower foe
+    expect(b.events.some((ev) => ev.type === 'skill_use' && ev.skillId === 'fire-bolt')).toBe(true)
+  })
+
   it('a Kiter caster holds at spell range and casts instead of closing to melee', () => {
     const fireBolt = buildEngineSkill('fire-bolt', 1)!   // range 6
     const b = createBattle({

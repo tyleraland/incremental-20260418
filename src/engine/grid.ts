@@ -2,7 +2,7 @@
 // Continuous 2D space on a 5×10 logical grid. Euclidean distance only.
 
 import {
-  COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
+  COLS, ROWS, BASE_MOVE_SPEED, SEPARATION, FRONT_ROWS, MID_ROWS,
   PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
 import { slideMove, steerAround } from './barriers'
@@ -64,6 +64,15 @@ export function startingPosition(team: Team, rank: Rank, indexInRank: number): V
 // Reach used for the unit's basic attack and as its melee stop distance.
 export function attackReach(c: Combatant): number {
   return c.rangedRange > 0 ? c.rangedRange : c.meleeRange
+}
+
+// §2.5 per-unit move speed: spd scales the base step so high-spd skirmishers
+// actually outpace slow attackers (the foundation of real kiting). Default spd
+// (10 in the unit helper) yields exactly BASE_MOVE_SPEED so existing tests keep
+// the same pacing; clamped at the extremes to avoid pathological values.
+export function moveSpeedOf(c: Combatant): number {
+  const scale = Math.max(0.6, Math.min(1.4, 0.6 + c.spd * 0.04))
+  return BASE_MOVE_SPEED * scale
 }
 
 // Move `mover` toward `target`, stopping `reach` units short so melee attackers

@@ -32,7 +32,7 @@ function hpColor(ratio: number): string {
 // scene feel like it was swimming as units moved, and showing the whole 30×30
 // made units feel tiny — this static frame crops to the engagement zone.
 
-const CAM_SIZE = 22   // world units (action sits inside y∈[4,26], x∈[4,26])
+const CAM_SIZE = 15   // world units (whole 15×15 arena in view)
 
 interface Cam { x: number; y: number; size: number }
 

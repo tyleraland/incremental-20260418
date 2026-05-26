@@ -36,14 +36,14 @@ describe('barriers in combat', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'p', str: 20, skills: [as] })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 500, hp: 500, meleeRange: 99 })],
-      barriers: [{ x: 0, y: 20, w: 30, h: 2 }],   // a wall across the field at y∈[20,22]
+      barriers: [{ x: 0, y: 11, w: 15, h: 1 }],   // a wall across the field at y∈[11,12]
     })
-    find(b, 'p').pos = { x: 15, y: 10 }
-    find(b, 'e').pos = { x: 15, y: 18 }
+    find(b, 'p').pos = { x: 7, y: 6 }
+    find(b, 'e').pos = { x: 7, y: 9.5 }
     advanceRound(b)
     const e = find(b, 'e')
-    expect(e.pos.y).toBeGreaterThan(18)   // got shoved back
-    expect(e.pos.y).toBeLessThan(20)      // stopped against the wall, not pushed through it
+    expect(e.pos.y).toBeGreaterThan(9.5)   // got shoved back
+    expect(e.pos.y).toBeLessThan(11)      // stopped against the wall, not pushed through it
   })
 
   it('a unit routes around the central cross to reach its target', () => {

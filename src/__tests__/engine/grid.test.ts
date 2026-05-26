@@ -17,10 +17,10 @@ describe('grid: ranks & zones (§2.3)', () => {
   })
 
   it('classifies rank from current Y relative to the team edge', () => {
-    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 3 } }))).toBe('front')
-    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 9 } }))).toBe('mid')
-    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 20 } }))).toBe('back')
-    expect(rankOf(combatant({ team: 'enemy', pos: { x: 2, y: ROWS - 3 } }))).toBe('front')
+    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 2 } }))).toBe('front')   // 2 ≤ FRONT_ROWS
+    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 5 } }))).toBe('mid')     // FRONT < 5 ≤ MID
+    expect(rankOf(combatant({ team: 'player', pos: { x: 2, y: 12 } }))).toBe('back')   // 12 > MID
+    expect(rankOf(combatant({ team: 'enemy', pos: { x: 2, y: ROWS - 2 } }))).toBe('front')
   })
 
   it('flags the perimeter columns', () => {

@@ -5,8 +5,8 @@
 // in place so the host can step combat "one round per N ticks"; `resolve` runs
 // to completion for tests and bulk/idle resolution.
 
-import { BASE_MOVE_SPEED, MAX_ROUNDS, EPS } from './constants'
-import { startingPosition, moveToward, moveTowardPoint, attackReach, distance, clampToGrid, enforceSeparation } from './grid'
+import { MAX_ROUNDS, EPS } from './constants'
+import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies,
@@ -447,14 +447,14 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   if (plan?.desiredRange != null) { kiteToward(state, self, plan.desiredRange); return }
   // Move to a computed spot (flank / guard / regroup).
   if (plan?.toPoint) {
-    if (moveTowardPoint(self, plan.toPoint, BASE_MOVE_SPEED * (plan.speedMult ?? 1), state.combatants, state.barriers)) {
+    if (moveTowardPoint(self, plan.toPoint, moveSpeedOf(self) * (plan.speedMult ?? 1), state.combatants, state.barriers)) {
       emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
     }
     return
   }
   const target = findCombatant(state, self.lockedTargetId)
   if (target && target.alive) {
-    const moved = moveToward(self, target, BASE_MOVE_SPEED * (plan?.speedMult ?? 1), state.combatants, state.barriers)
+    const moved = moveToward(self, target, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
   }
 }
@@ -472,7 +472,7 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const sign = d < want ? -1 : 1            // closer than want → move away; farther → approach
   const dirx = ((threat.pos.x - self.pos.x) / (d || 1)) * sign
   const diry = ((threat.pos.y - self.pos.y) / (d || 1)) * sign
-  const step = Math.min(BASE_MOVE_SPEED, Math.abs(d - want))
+  const step = Math.min(moveSpeedOf(self), Math.abs(d - want))
   self.pos = slideMove(self.pos, { x: self.pos.x + dirx * step, y: self.pos.y + diry * step }, state.barriers)
   enforceSeparation(self, state.combatants, state.barriers)
   if (self.pos.x !== before.x || self.pos.y !== before.y) {

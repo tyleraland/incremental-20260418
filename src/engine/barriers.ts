@@ -143,8 +143,8 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
 // there's always a way around. Centered on a COLS×ROWS grid.
 export function arenaBarriers(): Barrier[] {
   const cx = COLS / 2, cy = ROWS / 2
-  const arm = DEPLOY_FRONT - 2   // reach toward (but stop short of) the deploy lines
-  const half = 1.5               // bar half-thickness
+  const arm = DEPLOY_FRONT - 1.5   // reach toward (but stop short of) the deploy lines
+  const half = 0.75                // bar half-thickness
   return [
     { x: cx - half, y: cy - arm, w: half * 2, h: arm * 2 }, // vertical bar
     { x: cx - arm, y: cy - half, w: arm * 2, h: half * 2 }, // horizontal bar
