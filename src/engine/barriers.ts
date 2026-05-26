@@ -11,6 +11,12 @@
 import { COLS, ROWS, EPS, DEPLOY_FRONT } from './constants'
 import type { Vec2, Barrier } from './types'
 
+// Soft tie-break in the path search: corners on the left side of the arena cost
+// a little extra, so two units staring down the same obstacle tend to route to
+// the same side instead of splitting unpredictably. Truly-shorter detours still
+// win — this only herds the borderline cases where left and right are close.
+const HERD_BIAS = 1.0
+
 // Units are treated as small discs so they stop just shy of a wall.
 const UNIT_PAD = 0.4
 
@@ -108,10 +114,14 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
     for (let v = 0; v < n; v++) if (!seen[v] && dArr[v] < bu) { bu = dArr[v]; u = v }
     if (u < 0 || u === T) break
     seen[u] = true
+    const cx = COLS / 2
     for (let v = 0; v < n; v++) {
       if (seen[v] || !usable[v]) continue
       if (!lineClear(nodes[u], nodes[v], barriers, pad)) continue
-      const nd = dArr[u] + dist(nodes[u], nodes[v])
+      // Small left-side surcharge on intermediate corners → consistent herding
+      // for near-tie detours (true shortcuts on the left still win).
+      const bias = v !== 0 && v !== T && nodes[v].x < cx ? HERD_BIAS : 0
+      const nd = dArr[u] + dist(nodes[u], nodes[v]) + bias
       if (nd < dArr[v]) { dArr[v] = nd; prev[v] = u }
     }
   }

@@ -28,28 +28,15 @@ function hpColor(ratio: number): string {
 }
 
 // ── Camera ──────────────────────────────────────────────────────────────────---
-// A square world-space window that always contains every combatant. Units are
-// placed as a % of this window; because the window is recomputed each round and
-// positions animate via CSS transitions, the camera pans/zooms smoothly for free.
-
-const MIN_CAM = 16   // never zoom tighter than this (world units)
-const CAM_PAD = 3    // breathing room around the outermost units
+// Fixed full-field view: the whole 30×30 arena is always on screen. We tried a
+// camera that followed the bounding box of all combatants, but pan/zoom-per-round
+// made the scene feel like it was swimming. Action sits comfortably inside the
+// deploy zone, so a static frame reads better.
 
 interface Cam { x: number; y: number; size: number }
 
-function computeCamera(pts: Vec2[]): Cam {
-  const field = Math.max(COLS, ROWS)
-  if (pts.length === 0) return { x: 0, y: 0, size: field }
-  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity
-  for (const p of pts) {
-    minx = Math.min(minx, p.x); miny = Math.min(miny, p.y)
-    maxx = Math.max(maxx, p.x); maxy = Math.max(maxy, p.y)
-  }
-  const size = Math.min(field, Math.max(MIN_CAM, maxx - minx + CAM_PAD * 2, maxy - miny + CAM_PAD * 2))
-  const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2
-  const x = size >= COLS ? (COLS - size) / 2 : Math.max(0, Math.min(COLS - size, cx - size / 2))
-  const y = size >= ROWS ? (ROWS - size) / 2 : Math.max(0, Math.min(ROWS - size, cy - size / 2))
-  return { x, y, size }
+function computeCamera(_pts: Vec2[]): Cam {
+  return { x: 0, y: 0, size: Math.max(COLS, ROWS) }
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
@@ -88,7 +75,8 @@ function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; chi
 
 // ── Live battle ────────────────────────────────────────────────────────────────
 
-const CARD = 'w-7'
+// Smaller cards so units don't overlap heavily on the fixed full-field view.
+const CARD = 'w-6'
 
 function CooldownMeter({ c }: { c: Combatant }) {
   if (c.skills.length === 0) return null
