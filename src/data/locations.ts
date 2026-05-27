@@ -50,14 +50,26 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
 
   // ── Geffen Dungeon (separate sub-area, 5 floors) ─────────────────────────
-  ...Array.from({ length: 5 }, (_, i) => ({
-    id: `geffen-dungeon-${i + 1}`, region: 'geffen-dungeon',
-    name: `Geffen Dungeon Floor ${i + 1}`,
-    description: `Floor ${i + 1} of the catacombs beneath Geffen.`,
-    traits: ['dungeon', 'underground'],
-    monsterIds: (i === 1 ? ['tough-slime', 'bat'] : ['bat']) as string[],
-    familiarityMax: 100, connections: [] as string[],
-    // F2 is the cross-wall scenario; other floors use their default wave.
-    testScenarioId: i === 1 ? 'geffen-f2-cross' : undefined,
-  })),
+  // Floor-specific encounters: F2 stages the cross-wall scenario, F3 puts the
+  // dumb-tank Animated Armor on the floor (slow + heavy DEF — exercises kite
+  // logic against a damage-soak target). Other floors default to bats.
+  ...Array.from({ length: 5 }, (_, i) => {
+    const floor = i + 1
+    const monsters: Record<number, string[]> = {
+      2: ['tough-slime', 'bat'],
+      3: ['animated-armor'],
+    }
+    const scenarios: Record<number, string> = { 2: 'geffen-f2-cross' }
+    return {
+      id: `geffen-dungeon-${floor}`, region: 'geffen-dungeon',
+      name: `Geffen Dungeon Floor ${floor}`,
+      description: floor === 3
+        ? 'Floor 3 of the catacombs beneath Geffen — empty suits of armor patrol the halls.'
+        : `Floor ${floor} of the catacombs beneath Geffen.`,
+      traits: ['dungeon', 'underground'],
+      monsterIds: monsters[floor] ?? ['bat'],
+      familiarityMax: 100, connections: [] as string[],
+      testScenarioId: scenarios[floor],
+    }
+  }),
 ]

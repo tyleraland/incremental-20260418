@@ -12,6 +12,7 @@ export const DROP_ITEMS: Record<string, string> = {
   'drop-stone-shard':   'Stone Shard',   'drop-golem-core':    'Golem Core',
   'drop-ectoplasm':     'Ectoplasm',     'drop-ancient-coin':  'Ancient Coin',
   'drop-bat-wing':      'Bat Wing',      'drop-bat-fang':      'Bat Fang',
+  'drop-plate-scrap':   'Plate Scrap',   'drop-haunted-iron':  'Haunted Iron',
 }
 
 // moveSpeed: ft/s (divide by TICKS_PER_SECOND in tick loop for ft/tick)
@@ -31,4 +32,8 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   'stone-golem':   { id: 'stone-golem',  name: 'Stone Golem',   level: 7, health: 120, element: 'earth',   size: 'large',  attackName: 'Fist',   stats: { attack: 22, defense: [12,12], magicAttack: 3,  magicDefense: [5,5],  attackSpeed: 6,  accuracy: 12, dodge: 3,  moveSpeed: 2,   attackRange: 5  }, drops: [{ itemId: 'drop-stone-shard',    dropRate: 0.85, quantityMin: 1, quantityMax: 4 }, { itemId: 'drop-golem-core',    dropRate: 0.10, quantityMin: 1, quantityMax: 1 }] },
   'ruins-specter': { id: 'ruins-specter',name: 'Ruins Specter', level: 6, health:  90, element: 'neutral', size: 'medium', attackName: 'Claws',  stats: { attack: 8,  defense: [2,2],   magicAttack: 20, magicDefense: [9,9],  attackSpeed: 10, accuracy: 16, dodge: 12, moveSpeed: 4,   attackRange: 35 }, drops: [{ itemId: 'drop-ectoplasm',      dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ancient-coin',  dropRate: 0.20, quantityMin: 1, quantityMax: 3 }] },
   'bat':           { id: 'bat',          name: 'Bat',           level: 2, health:  25, element: 'undead',  size: 'small',  attackName: 'Bite',   stats: { attack: 2,  defense: [1,1],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 22, accuracy: 22, dodge: 14, moveSpeed: 15,  attackRange: 5  }, drops: [{ itemId: 'drop-bat-wing',       dropRate: 0.65, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-bat-fang',      dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
+  // Animated Armor — a dumb-tank: slime-slow, hard to hit, hard to dent, but
+  // only swings a middling sword. Accuracy is mediocre and dodge is bottom of
+  // the table (it's a slab of metal). Lives on Geffen Dungeon Floor 3.
+  'animated-armor':{ id: 'animated-armor',name: 'Animated Armor',level: 4, health: 130, element: 'neutral', size: 'medium', attackName: 'Slam',   stats: { attack: 10, defense: [24,24], magicAttack: 1,  magicDefense: [6,6],  attackSpeed: 5,  accuracy: 8,  dodge: 1,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-plate-scrap',     dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-haunted-iron',  dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
 }
