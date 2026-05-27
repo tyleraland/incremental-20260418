@@ -4,6 +4,17 @@ Deferred work and known shortcuts for the combat engine (`src/engine`).
 Implemented behavior is in `CLAUDE.md` → Feature Specifications (which is
 itself behind — see *Spec drift* below).
 
+## Long-horizon shape changes
+
+- **Open world instead of single encounters.** Today combat is a discrete
+  wave at one location at a time, fully deterministic from a known starting
+  formation. The longer-term shape is an open field where parties roam,
+  bump into hostile groups, retreat, regroup — closer to a continuous sim
+  than a per-location arena. This loosens determinism: encounter spawn
+  positions, who-meets-who, when reinforcements arrive, all get
+  controllable randomness. We keep determinism for tests via seeded RNG,
+  but live play is no longer "same inputs → same outputs" by default.
+
 ## Combat content
 
 - **Pneuma / protective zones** — friendly zone that blocks (or halves) ranged

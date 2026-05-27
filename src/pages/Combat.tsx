@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useGameStore, waveComposition, locationBarriers } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
@@ -254,7 +254,51 @@ function UnitDetailCard({ c }: { c: Combatant }) {
 function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
-  const selected = selectedId ? byId(selectedId) : undefined
+  // Frozen-able snapshot of the selected combatant. We refresh it from live
+  // each round AS LONG AS we're in the same wave (same combatants array
+  // reference). When a new wave starts, the snapshot freezes — even if the
+  // new wave has a same-id monster (slime#0 → slime#0), we keep showing the
+  // dead one so the player doesn't confuse a respawned same-id slot for the
+  // entity they just killed. Cleared by tapping the unit again or selecting
+  // a different combatant.
+  const [snapshot, setSnapshot] = useState<Combatant | null>(null)
+  const snapshotWaveRef = useRef<Combatant[] | null>(null)
+
+  // Round-by-round snapshot refresh. Same-wave only — once `battle.combatants`
+  // gets a fresh reference (new wave), this no-ops and the snapshot is what
+  // the unit looked like at the moment the previous wave ended.
+  useEffect(() => {
+    if (!selectedId) return
+    if (snapshotWaveRef.current !== battle.combatants) return   // frozen
+    const live = battle.combatants.find((c) => c.id === selectedId)
+    if (live) setSnapshot(live)
+  }, [battle, selectedId])
+
+  const handleSelect = (c: Combatant) => {
+    if (selectedId === c.id) {
+      setSelectedId(null)
+      setSnapshot(null)
+      snapshotWaveRef.current = null
+    } else {
+      // Capture snapshot + wave synchronously so the detail card shows
+      // immediately on tap, without waiting a tick for the effect to fire.
+      setSelectedId(c.id)
+      setSnapshot(c)
+      snapshotWaveRef.current = battle.combatants
+    }
+  }
+
+  // Same wave as when we picked? Drives both the chip highlight and whether
+  // the detail card reads live vs the frozen snapshot.
+  const sameWave = snapshotWaveRef.current === battle.combatants
+  const selected: Combatant | null = (() => {
+    if (!selectedId) return null
+    if (sameWave) {
+      const live = battle.combatants.find((c) => c.id === selectedId)
+      if (live) return live
+    }
+    return snapshot
+  })()
   const alive = battle.combatants.filter((c) => c.alive)
   // Hold the default camera once the fight is decided — otherwise the bbox
   // collapses around the surviving team and the auto-zoom snaps, which reads
@@ -360,13 +404,18 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
             key={c.id}
             c={c}
             cam={cam}
-            selected={c.id === selectedId}
-            onSelect={() => setSelectedId(selectedId === c.id ? null : c.id)}
+            // Only highlight in the wave the selection was made on — otherwise
+            // a new-wave same-id monster would appear "still selected".
+            selected={sameWave && c.id === selectedId}
+            onSelect={() => handleSelect(c)}
           />
         ))}
 
         {battle.outcome !== 'ongoing' && (
-          <div className="absolute inset-0 flex items-center justify-center">
+          // pointer-events-none on the overlay so the player can still tap/
+          // un-tap chips behind the banner — useful for reading a KO'd
+          // monster's final stats post-fight.
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <span className={[
               'px-3 py-1.5 rounded-md text-sm font-bold border backdrop-blur-sm',
               battle.outcome === 'victory' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-600/60' : 'bg-red-950/80 text-red-200 border-red-600/60',
