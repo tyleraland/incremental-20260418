@@ -4,8 +4,8 @@
 import { describe, it, expect } from 'vitest'
 import { createBattle, advanceRound, buildEngineSkill, type BattleState } from '@/engine'
 import { distance } from '@/engine/grid'
-import { flankPoint, guardPoint, squishiestAlly, centroid } from '@/engine/spatial'
-import { eu, combatant } from './helpers'
+import { flankPoint, guardPoint, squishiestAlly, centroid, isCaster, kiteDistanceFor } from '@/engine/spatial'
+import { eu, combatant, attackSkill } from './helpers'
 
 const stateOf = (cs: ReturnType<typeof combatant>[]) => ({ combatants: cs } as unknown as BattleState)
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
@@ -39,6 +39,33 @@ describe('spatial queries', () => {
     const c = centroid([combatant({ id: 'a', pos: { x: 0, y: 0 } }), combatant({ id: 'b', pos: { x: 4, y: 2 } })])
     expect(c).toEqual({ x: 2, y: 1 })
   })
+
+  it('isCaster: channel-time spell ⇒ caster; magic-statted with skills ⇒ caster; plain melee ⇒ not', () => {
+    const channelSpell = attackSkill({ id: 'chan', channelTime: 2, range: 6 })
+    const instantSpell = attackSkill({ id: 'inst', channelTime: 0, range: 6 })
+    expect(isCaster(combatant({ skills: [channelSpell] }))).toBe(true)             // has channel spell
+    expect(isCaster(combatant({ int: 9, str: 3, skills: [instantSpell] }))).toBe(true)  // magic-statted
+    expect(isCaster(combatant({ int: 3, str: 9, skills: [instantSpell] }))).toBe(false) // physical-statted, instant skill
+    expect(isCaster(combatant({ skills: [] }))).toBe(false)                        // no skills
+  })
+
+  it('kiteDistanceFor: a faster threat pushes the kite hold wider than a slower one', () => {
+    // Channel time large enough that the threat-speed term actually dominates
+    // (otherwise both fall back to "just inside spell range").
+    const caster = combatant({ skills: [attackSkill({ id: 's', channelTime: 3, range: 6 })] })
+    const slow = combatant({ id: 'slow', team: 'enemy', spd: 5,  meleeRange: 1.2 })
+    const fast = combatant({ id: 'fast', team: 'enemy', spd: 20, meleeRange: 1.2 })
+    expect(kiteDistanceFor(caster, fast)).toBeGreaterThan(kiteDistanceFor(caster, slow))
+  })
+
+  it('kiteDistanceFor: a longer channel spell forces a wider hold than an instant one', () => {
+    // Channel difference vs. the same threat — only the long-channel case
+    // pushes minSafe past maxRange.
+    const inst = combatant({ skills: [attackSkill({ id: 'i', channelTime: 0, range: 6 })] })
+    const chan = combatant({ skills: [attackSkill({ id: 'c', channelTime: 4, range: 6 })] })
+    const threat = combatant({ id: 'e', team: 'enemy', spd: 20, meleeRange: 1.2 })
+    expect(kiteDistanceFor(chan, threat)).toBeGreaterThan(kiteDistanceFor(inst, threat))
+  })
 })
 
 describe('movement behaviours', () => {
@@ -63,6 +90,21 @@ describe('movement behaviours', () => {
     const p = find(b, 'p'); p.pos = { x: 2.5, y: 5 }; p.lockedTargetId = 'back'
     advanceRound(b)
     expect(find(b, 'p').pos.y).toBeGreaterThan(5)   // circling toward the backliner's far side
+  })
+
+  it('a caster without a Kiter tactic still backs off when a threat closes', () => {
+    // No movement tactic equipped — the engine's caster-aware default movement
+    // should still keep distance instead of marching into melee mid-channel.
+    const channel = buildEngineSkill('lightning-bolt', 1)!
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, str: 3, rangedRange: 6, maxHp: 200, hp: 200, skills: [channel] })],
+      enemyUnits: [eu({ id: 'goon', team: 'enemy', spd: 10, str: 5, meleeRange: 1.2 })],
+    })
+    find(b, 'mage').pos = { x: 5, y: 5 }   // too close — within the threat's catch-up window
+    find(b, 'goon').pos = { x: 5, y: 6.2 }
+    const startY = find(b, 'mage').pos.y
+    advanceRound(b)
+    expect(find(b, 'mage').pos.y).toBeLessThan(startY)   // backed off toward own edge
   })
 
   it('Guardian steps toward the threat side of its squishy ally', () => {

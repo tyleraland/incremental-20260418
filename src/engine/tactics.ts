@@ -15,7 +15,7 @@ import { SEPARATION } from './constants'
 import { effectiveStat } from './damage'
 import {
   alliesOf, nearestTo, lockedTarget, centroid, nearestEnemyTo,
-  squishiestAlly, flankPoint, guardPoint, maxSkillRange,
+  squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
 } from './spatial'
 import type {
   BattleState, Combatant, ResolvedTactic, StatusEffect, TacticDef, TacticRef,
@@ -108,12 +108,12 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   },
   'kiter': {
     id: 'kiter', name: 'Kiter', scope: 'unit', channel: 'movement',
-    description: 'Ranged: hold at spell/attack range from the nearest foe; back off if any close in.',
+    description: 'Ranged: hold at spell/attack range from the nearest foe; back off further if a fast chaser or a long-channel spell would catch you mid-cast.',
     movement: (self, state) => {
       if (self.rangedRange <= 0 || !lockedTarget(self, state)) return null
-      // Stand off at the longest range we can act from, kept just inside it so a
-      // cast actually lands — and well outside melee so it isn't interrupted.
-      return { desiredRange: Math.max(self.rangedRange * 0.9, maxSkillRange(self) - 0.8) }
+      const threat = nearestEnemyTo(self, state)
+      if (!threat) return null
+      return { desiredRange: kiteDistanceFor(self, threat) }
     },
   },
   'guardian': {

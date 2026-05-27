@@ -17,7 +17,7 @@ import {
 import { makeSkillTactic } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo } from './spatial'
+import { nearestEnemyTo, isCaster, kiteDistanceFor } from './spatial'
 import { traceMove, slideMove, sightlineClear, steerAround } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
@@ -462,6 +462,15 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   }
   const target = findCombatant(state, self.lockedTargetId)
   if (target && target.alive) {
+    // Casters without an explicit movement tactic still need cast-aware
+    // positioning — otherwise they walk into melee while their spell is
+    // mid-channel. Treat them as kiters by default; this also makes monster
+    // casters work without any per-unit configuration.
+    if (isCaster(self)) {
+      const threat = nearestEnemyTo(self, state) ?? target
+      kiteToward(state, self, kiteDistanceFor(self, threat))
+      return
+    }
     const moved = moveToward(self, target, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
   }

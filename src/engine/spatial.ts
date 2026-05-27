@@ -7,7 +7,7 @@
 // Kept dependency-light (grid + types only, no behaviour/tactics) to avoid an
 // import cycle: tactics.ts → spatial.ts.
 
-import { distance } from './grid'
+import { distance, moveSpeedOf } from './grid'
 import { EPS } from './constants'
 import type { BattleState, Combatant, Vec2 } from './types'
 
@@ -88,4 +88,41 @@ export function guardPoint(ally: Combatant, threat: Combatant, gap: number): Vec
   const dx = threat.pos.x - ally.pos.x, dy = threat.pos.y - ally.pos.y
   const d = Math.hypot(dx, dy) || 1
   return { x: ally.pos.x + (dx / d) * gap, y: ally.pos.y + (dy / d) * gap }
+}
+
+// A "caster" is any combatant whose offence is spells, not a basic attack —
+// they have at least one ready skill or are magic-statted with skills. Used
+// by chooseAction (skip the basic-ranged fallback) and by kite math (need
+// safe distance to finish a channeled cast). Applies to monsters too.
+export function isCaster(c: Combatant): boolean {
+  if (c.skills.length === 0) return false
+  // A unit with a channel-time spell is definitionally a caster.
+  if (c.skills.some((s) => s.channelTime >= 1)) return true
+  // Otherwise: magic-leaning stats with skills (Theron, Sera). Mostly catches
+  // instant-spell mages — they still don't want to throw weak basic shots.
+  return c.int > c.str
+}
+
+// Distance to hold from `threat` while we expect to cast. Accounts for:
+//   * our longest-channel spell (the threat closes at full speed while we're
+//     rooted in the channel + the round the cast starts on),
+//   * the threat's actual move speed (a fast chaser pushes the kite wider),
+//   * the threat's melee reach + a safety buffer,
+//   * our longest skill range (the cast still has to land).
+// If `minSafe` exceeds our range, we keep the safe distance and just don't
+// shoot that round — preferable to dying mid-channel.
+export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
+  const maxRange = maxSkillRange(self)
+  const maxChannel = self.skills.reduce((m, s) => Math.max(m, s.channelTime), 0)
+  // `channelTime + 1`: the threat moves once on the cast-start round AND once
+  // per channeled-resolution round before the spell lands.
+  const threatClose = moveSpeedOf(threat) * (maxChannel + 1)
+  // Cap threat melee at a realistic polearm reach. Some tests use absurd
+  // meleeRange values (30, 99) as a "doesn't matter, it's already in reach"
+  // sentinel; we don't want those to push the caster to retreat off the map.
+  const effectiveMelee = Math.min(threat.meleeRange, 3)
+  const minSafe = effectiveMelee + threatClose + 0.5
+  // Prefer just inside max range so the cast comfortably lands, but never
+  // below minSafe.
+  return Math.max(minSafe, maxRange - 0.5)
 }
