@@ -313,6 +313,14 @@ function affectedTargets(state: BattleState, self: Combatant, skill: EngineSkill
 // then put it on cooldown and record the single use.
 function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, targetId: string): void {
   recordSkillUse(state, self, skill)
+  // Non-damage skills (heal, buff, status, zone) don't go through dealAttack,
+  // so they never emit a skill_use otherwise — UI floating labels would miss
+  // them. Emit a source-anchored marker once per cast so "Heal", "Cloak",
+  // "Poison", etc. surface above the caster. Damage skills already emit a
+  // per-target skill_use via dealAttack and don't need this marker.
+  if (!skill.damageFormula) {
+    emit(state, { round: state.round, type: 'skill_use', sourceId: self.id, targetId, skillId: skill.id })
+  }
   const primary = findCombatant(state, targetId)
   if (!primary) return
 
@@ -530,7 +538,15 @@ function evalActionTactics(state: BattleState, self: Combatant): ActionResult | 
     if (t.def.channel !== 'action' || !t.def.action) continue
     if (onCooldown(self, t) || usedUp(self, t)) continue
     const res = t.def.action(self, state, t.rank)
-    if (res) { markFired(self, t); return res }   // first action tactic owns the turn's action
+    if (res) {
+      markFired(self, t)
+      // Skill tactics already emit `skill_use` when their cast lands — only
+      // surface non-skill action tactics (Shield Wall, etc.) here.
+      if (!t.def.id.startsWith('skill:')) {
+        emit(state, { round: state.round, type: 'tactic_use', sourceId: self.id, tacticId: t.def.id, extra: { label: t.def.name } })
+      }
+      return res   // first action tactic owns the turn's action
+    }
   }
   return null
 }
@@ -540,7 +556,11 @@ function evalReactions(state: BattleState, self: Combatant): ReactionResult | nu
     if (t.def.channel !== 'reaction' || !t.def.reaction) continue
     if (onCooldown(self, t) || usedUp(self, t)) continue
     const res = t.def.reaction(self, state, t.rank)
-    if (res) { markFired(self, t); return res }
+    if (res) {
+      markFired(self, t)
+      emit(state, { round: state.round, type: 'tactic_use', sourceId: self.id, tacticId: t.def.id, extra: { label: t.def.name } })
+      return res
+    }
   }
   return null
 }

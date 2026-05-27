@@ -275,6 +275,18 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
   const heals = roundEvents.filter((e) => e.type === 'heal' && e.value != null)
   const dots  = roundEvents.filter((e) => e.type === 'dot' && e.value != null)
   const interrupts = roundEvents.filter((e) => e.type === 'interrupt')
+  // Source-anchored labels: spell starts, skill resolutions, and non-skill
+  // tactic fires (Counter, Shield Wall…). Dedupe skill_use per (source,
+  // skill) so AoE multi-target casts surface a single label instead of N.
+  const seenSkills = new Set<string>()
+  const skillLabels = roundEvents.filter((e) => {
+    if (e.type !== 'skill_use' || !e.skillId) return false
+    const k = `${e.sourceId}:${e.skillId}`
+    if (seenSkills.has(k)) return false
+    seenSkills.add(k); return true
+  })
+  const castStarts = roundEvents.filter((e) => e.type === 'cast_start')
+  const tacticUses = roundEvents.filter((e) => e.type === 'tactic_use')
 
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
@@ -328,6 +340,26 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
         {interrupts.map((e, i) => {
           const tgt = byId(e.targetId)
           return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[10px] text-amber-300" text="interrupted" /> : null
+        })}
+
+        {/* source-anchored ability labels: spell cast starts, skill resolutions,
+            non-skill tactics (Counter, Shield Wall…). Floats above the caster
+            so the player can read what each unit just did. */}
+        {castStarts.map((e, i) => {
+          const src = byId(e.sourceId)
+          if (!src || !e.skillId) return null
+          return <Float key={`cs-${battle.round}-${i}`} k={`cs-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-amber-200" text={`✦ ${skillName(e.skillId)}`} />
+        })}
+        {skillLabels.map((e, i) => {
+          const src = byId(e.sourceId)
+          if (!src || !e.skillId) return null
+          return <Float key={`sl-${battle.round}-${i}`} k={`sl-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-sky-200" text={skillName(e.skillId)} />
+        })}
+        {tacticUses.map((e, i) => {
+          const src = byId(e.sourceId)
+          const label = (e.extra?.label as string | undefined)
+          if (!src || !label) return null
+          return <Float key={`tu-${battle.round}-${i}`} k={`tu-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-violet-200" text={label} />
         })}
 
         {battle.combatants.map((c) => (

@@ -67,6 +67,10 @@ describe('Combat tab — live battle', () => {
     advanceRound(battle)   // mage begins channeling Lightning Bolt
     useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
     await renderCombat()
-    expect(screen.getByText(/Lightning Bolt/)).toBeInTheDocument()
+    // The chip carries a persistent "✦ Lightning Bolt" channel badge AND the
+    // cast_start event surfaces a floating "✦ Lightning Bolt" label that
+    // rises and fades — either is the casting indicator. We just want at
+    // least one of them present.
+    expect(screen.getAllByText(/Lightning Bolt/).length).toBeGreaterThan(0)
   })
 })

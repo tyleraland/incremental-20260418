@@ -213,6 +213,11 @@ export type BattleEventType =
   | 'heal' | 'unit_death' | 'target_switch' | 'status_expire'
   | 'dodge' | 'retreat' | 'buff_apply'
   | 'cast_start' | 'interrupt' | 'dot' | 'knockback'
+  // tactic_use: a non-skill tactic fired (Counterattacker, Shield Wall, Last
+  // Stand…). UI floats the tactic name above the source so the player can see
+  // why a unit just acted. Skill tactics already emit `skill_use` and don't
+  // need this marker.
+  | 'tactic_use'
 
 export interface BattleEvent {
   round: number
