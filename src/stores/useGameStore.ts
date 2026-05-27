@@ -173,7 +173,9 @@ export function locationBarriers(loc?: Location | null): Barrier[] {
 export function waveComposition(loc: Location, partySize: number): string[] {
   const scen = scenarioOf(loc)
   if (scen?.wave) return scen.wave
-  const size = Math.max(1, partySize)
+  const partyEff = Math.max(1, partySize)
+  const mult = loc.encounterMultiplier ?? 1
+  const size = Math.max(1, Math.round(partyEff * mult))
   return Array.from({ length: size }, (_, i) => loc.monsterIds[i % loc.monsterIds.length])
 }
 

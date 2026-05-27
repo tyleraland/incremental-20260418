@@ -105,3 +105,24 @@ describe('engine: naive heal behavior (§4.1)', () => {
     expect(state.stats.totalHealingByUnit['medic']).toBe(20)
   })
 })
+
+describe('engine: caster behavior', () => {
+  it('a caster (int > str) doesn’t basic-attack while spells are on cooldown', () => {
+    // High-int / low-str unit with an exhausted attack-skill. With no skill
+    // ready and no melee reach, a non-caster would fall back to a weak basic
+    // ranged shot; a caster waits.
+    const state = createBattle({
+      playerUnits: [eu({
+        id: 'mage', str: 1, int: 20, rangedRange: 4, meleeRange: 1.2,
+        skills: [attackSkill({ id: 'sk', range: 6, cooldown: 5 })],
+      })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 999, hp: 999, meleeRange: 30 })],
+    })
+    state.combatants.find((c) => c.id === 'mage')!.pos = { x: 2.5, y: 5 }
+    state.combatants.find((c) => c.id === 'e')!.pos    = { x: 2.5, y: 7.5 }   // in skill range, in basic range
+    state.combatants.find((c) => c.id === 'mage')!.skillCooldowns['sk'] = 3   // skill on cooldown
+    advanceRound(state)
+    // No basic ranged attack should have been emitted.
+    expect(state.events.some((e) => e.type === 'ranged_attack' && e.sourceId === 'mage')).toBe(false)
+  })
+})

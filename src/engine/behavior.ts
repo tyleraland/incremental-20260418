@@ -97,6 +97,11 @@ export function chooseAction(state: BattleState, self: Combatant): Action | null
     (s) => s.type === 'attack' && ready(self, s) && d <= s.range + EPS,
   )
   if (atkSkill) return { kind: 'skill', skill: atkSkill, targetId: target.id }
+  // Casters (magic > physical) don't fall through to basic ranged — a str-3
+  // mage poking with an arrow while his spells cool isn't useful behavior, and
+  // it produces the "weak ranged shot then real cast" sequence the player
+  // doesn't want. They just wait for a spell to come back up.
+  if (self.int > self.str) return null
   return { kind: 'basic', targetId: target.id }
 }
 

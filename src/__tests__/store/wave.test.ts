@@ -25,6 +25,13 @@ describe('waveComposition', () => {
     expect(waveComposition(scenLoc, 1)).toEqual(['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'])
     expect(waveComposition(scenLoc, 99)).toEqual(['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'])
   })
+
+  it('encounterMultiplier scales the wave per hero', () => {
+    expect(waveComposition(loc({ monsterIds: ['slime'], encounterMultiplier: 2 }), 3)).toHaveLength(6)
+    expect(waveComposition(loc({ monsterIds: ['slime'], encounterMultiplier: 0.5 }), 4)).toHaveLength(2)
+    // a scenario wave still trumps the multiplier
+    expect(waveComposition(loc({ testScenarioId: 'geffen-f2-cross', encounterMultiplier: 5 }), 1)).toHaveLength(5)
+  })
 })
 
 describe('locationBarriers', () => {

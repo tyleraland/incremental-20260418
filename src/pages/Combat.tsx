@@ -29,16 +29,15 @@ function hpColor(ratio: number): string {
 }
 
 // ── Camera ──────────────────────────────────────────────────────────────────---
-// Defaults to a slightly-zoomed-in window centered on the arena (combat starts
-// here). When live units cluster tighter than DEFAULT_CAM_SIZE, the camera
-// zooms in further so cards stay readable; when they spread past it, the
-// camera zooms out (up to the whole arena) so nothing leaves the frame. Most
-// of the time you're in the default, hence the wide hysteresis thresholds.
+// Sits at a slightly-zoomed-in default the whole fight. The only time it
+// budges is when the alive units genuinely won't fit in that window — then
+// we zoom out to the whole arena so nobody leaves the frame. No zoom-in:
+// auto-zoom on tight clusters caused the camera to snap on the last kill,
+// which looked like the surviving heroes "teleporting" toward the corpse.
 
 const DEFAULT_CAM_SIZE = 13   // world units shown by default
 const FULL_CAM_SIZE    = COLS // whole arena (zoom-out cap)
-const CLOSE_EXTENT     = 4    // bbox extent below this → zoom in on the cluster
-const SPREAD_EXTENT    = 12   // bbox extent above this → zoom out to fit them all
+const SPREAD_EXTENT    = 12   // bbox extent above this → zoom out to fit everyone
 
 interface Cam { x: number; y: number; size: number }
 
@@ -54,19 +53,8 @@ function computeCamera(pts: Vec2[]): Cam {
     if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
   }
   const extent = Math.max(maxX - minX, maxY - minY)
-
-  if (extent >= CLOSE_EXTENT && extent <= SPREAD_EXTENT) return defaultCamera()
-
-  // Centered on the bbox midpoint, clamped to stay inside the arena.
-  const size = extent < CLOSE_EXTENT
-    ? Math.max(CLOSE_EXTENT + 2, extent + 3)   // tight cluster: zoom in close
-    : FULL_CAM_SIZE                            // very spread: show everything
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
-  return {
-    x: Math.max(0, Math.min(COLS - size, cx - size / 2)),
-    y: Math.max(0, Math.min(ROWS - size, cy - size / 2)),
-    size,
-  }
+  if (extent <= SPREAD_EXTENT) return defaultCamera()
+  return { x: 0, y: 0, size: FULL_CAM_SIZE }   // very spread: show everything
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
@@ -268,7 +256,12 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
   const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
   const selected = selectedId ? byId(selectedId) : undefined
   const alive = battle.combatants.filter((c) => c.alive)
-  const cam = computeCamera((alive.length ? alive : battle.combatants).map((c) => c.pos))
+  // Hold the default camera once the fight is decided — otherwise the bbox
+  // collapses around the surviving team and the auto-zoom snaps, which reads
+  // as the winners "teleporting" toward the corpse.
+  const cam = battle.outcome !== 'ongoing'
+    ? defaultCamera()
+    : computeCamera((alive.length ? alive : battle.combatants).map((c) => c.pos))
 
   const roundEvents = battle.events.filter((e) => e.round === battle.round)
   const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
