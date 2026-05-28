@@ -35,5 +35,5 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   // Animated Armor — a dumb-tank: slime-slow, hard to hit, hard to dent, but
   // only swings a middling sword. Accuracy is mediocre and dodge is bottom of
   // the table (it's a slab of metal). Lives on Geffen Dungeon Floor 3.
-  'animated-armor':{ id: 'animated-armor',name: 'Animated Armor',level: 4, health: 130, element: 'neutral', size: 'medium', attackName: 'Slam',   stats: { attack: 10, defense: [24,24], magicAttack: 1,  magicDefense: [6,6],  attackSpeed: 5,  accuracy: 8,  dodge: 1,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-plate-scrap',     dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-haunted-iron',  dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
+  'animated-armor':{ id: 'animated-armor',name: 'Animated Armor',level: 4, health: 1300, element: 'neutral', size: 'medium', attackName: 'Slam',   stats: { attack: 10, defense: [40,60], magicAttack: 1,  magicDefense: [6,6],  attackSpeed: 5,  accuracy: 8,  dodge: 1,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-plate-scrap',     dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-haunted-iron',  dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
 }
