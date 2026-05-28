@@ -68,7 +68,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('heal', 'aoe-heal', 'boost-agility', 'dispel', 'sight'),
-    tactics: [t('retreater'), t('regroup'), t('kiter'), t('nimble')],
+    tactics: [t('retreater'), t('kiter'), t('nimble')],
   },
   // ── Fighter (defensive knight / tank) ───────────────────────────────────────
   {

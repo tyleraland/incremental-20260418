@@ -90,6 +90,20 @@ export function guardPoint(ally: Combatant, threat: Combatant, gap: number): Vec
   return { x: ally.pos.x + (dx / d) * gap, y: ally.pos.y + (dy / d) * gap }
 }
 
+// Unit vector from `self` toward the centroid of its living allies — used as
+// a light "stay with the pack" bias in back-off movements (kite retreats,
+// `awayFromNearestEnemy` retreats). Returns (0, 0) when already at the
+// centroid or the unit is alone, so callers can blend it in unconditionally.
+export function cohesionVec(self: Combatant, state: BattleState): Vec2 {
+  const mates = state.combatants.filter((c) => c.alive && c.team === self.team && c.id !== self.id)
+  const c = centroid(mates)
+  if (!c) return { x: 0, y: 0 }
+  const dx = c.x - self.pos.x, dy = c.y - self.pos.y
+  const d = Math.hypot(dx, dy)
+  if (d < 1) return { x: 0, y: 0 }   // already with the pack — no nudge
+  return { x: dx / d, y: dy / d }
+}
+
 // A "caster" is any combatant whose offence is spells, not a basic attack —
 // they have at least one ready skill or are magic-statted with skills. Used
 // by chooseAction (skip the basic-ranged fallback) and by kite math (need

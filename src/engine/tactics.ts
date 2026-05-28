@@ -14,7 +14,7 @@ import { distance } from './grid'
 import { SEPARATION } from './constants'
 import { effectiveStat } from './damage'
 import {
-  alliesOf, nearestTo, lockedTarget, centroid, nearestEnemyTo,
+  lockedTarget, nearestEnemyTo,
   squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
 } from './spatial'
 import type {
@@ -127,19 +127,10 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       return { toPoint: guardPoint(ally, threat, SEPARATION * 1.6) }
     },
   },
-  'regroup': {
-    id: 'regroup', name: 'Regroup', scope: 'unit', channel: 'movement',
-    description: 'Fall back to the group when you get isolated from allies.',
-    movement: (self, state, rank) => {
-      const mates = alliesOf(state, self)
-      if (mates.length === 0) return null
-      const near = nearestTo(self.pos, mates)
-      const isolation = 3 + 0.5 * (rank - 1)
-      if (near && distance(self.pos, near.pos) <= isolation) return null
-      const c = centroid(mates)
-      return c ? { toPoint: c } : null
-    },
-  },
+  // Regroup retired: cohesion is now a light default bias inside back-off
+  // movements (kite retreat, retreater fall-back). The old standalone tactic
+  // fought kiter for priority and produced visible oscillation when a healer's
+  // tank advanced — see `cohesionVec` in spatial.ts.
 
   // Action ---------------------------------------------------------------------
   'shield-wall': {

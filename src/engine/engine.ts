@@ -17,7 +17,13 @@ import {
 import { makeSkillTactic } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo, isCaster, kiteDistanceFor } from './spatial'
+import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec } from './spatial'
+
+// Weight applied to the cohesion bias when a unit is moving AWAY from enemies
+// (kite retreat or retreater fall-back). Kept light — the back-off direction
+// still dominates, cohesion just curves it toward the party so a healer doesn't
+// strand themselves behind the front line.
+const COHESION_WEIGHT = 0.35
 import { traceMove, slideMove, sightlineClear, steerAround } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
@@ -443,8 +449,15 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   if (plan?.hold) return
   if (plan?.awayFromNearestEnemy) {
     const dir = self.team === 'player' ? -1 : 1
+    const rows = plan.rows ?? 1
+    const coh = cohesionVec(self, state)
+    // Pull-toward-team-edge as the dominant move; cohesion gives a sideways
+    // curve so a retreater drifts toward the surviving party instead of
+    // straight back into a corner.
+    const dx = coh.x * COHESION_WEIGHT * rows
+    const dy = dir * rows + coh.y * COHESION_WEIGHT * rows
     const before = { ...self.pos }
-    self.pos = slideMove(self.pos, { x: self.pos.x, y: self.pos.y + dir * (plan.rows ?? 1) }, state.barriers)
+    self.pos = slideMove(self.pos, { x: self.pos.x + dx, y: self.pos.y + dy }, state.barriers)
     enforceSeparation(self, state.combatants, state.barriers)
     if (self.pos.x !== before.x || self.pos.y !== before.y) {
       emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
@@ -516,6 +529,16 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
       const tx = lRoom >= rRoom ? tLx : tRx
       const ty = lRoom >= rRoom ? tLy : tRy
       const bx = ax + tx, by = ay + ty       // 50/50 blend: hard arc when wall is behind
+      const blen = Math.hypot(bx, by) || 1
+      dx = bx / blen; dy = by / blen
+    }
+    // Light cohesion bias: nudge the back-off direction toward the party
+    // centroid so a kiting healer doesn't strand itself behind the front
+    // line. The away-from-threat vector still dominates; cohesion just curves
+    // the path slightly toward where the allies are.
+    const coh = cohesionVec(self, state)
+    if (coh.x !== 0 || coh.y !== 0) {
+      const bx = dx + coh.x * COHESION_WEIGHT, by = dy + coh.y * COHESION_WEIGHT
       const blen = Math.hypot(bx, by) || 1
       dx = bx / blen; dy = by / blen
     }

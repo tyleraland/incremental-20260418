@@ -191,15 +191,35 @@ describe('movement behaviours', () => {
     expect(b.events.some((ev) => ev.type === 'skill_use' && ev.skillId === 'fire-bolt')).toBe(true)   // it actually cast
   })
 
-  it('Regroup pulls an isolated unit back toward its allies', () => {
-    const b = createBattle({
-      playerUnits: [eu({ id: 'a', tactics: [{ id: 'regroup', rank: 1 }] }), eu({ id: 'b1' }), eu({ id: 'b2' })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy' })],
+  it('cohesion bias curves a Kiter\'s retreat toward the party, not straight back', () => {
+    // Solo kiter retreats due-south away from the threat. Add allies off to
+    // the east: the cohesion bias should pull the retreat east-ish so the
+    // healer doesn't strand themselves off the front-line flank.
+    const fb = buildEngineSkill('fire-bolt', 1)!
+    const solo = createBattle({
+      playerUnits: [eu({ id: 'r', int: 20, str: 3, rangedRange: 6, maxHp: 500, hp: 500, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits:  [eu({ id: 'e', team: 'enemy', spd: 20, str: 5, meleeRange: 1.2 })],
     })
-    find(b, 'a').pos = { x: 0, y: 0 }
-    find(b, 'b1').pos = { x: 2.5, y: 2 }
-    find(b, 'b2').pos = { x: 3, y: 2 }
-    advanceRound(b)
-    expect(distance(find(b, 'a').pos, { x: 2.75, y: 2 })).toBeLessThan(3)   // closed on the group's center
+    find(solo, 'r').pos = { x: 5, y: 5 }
+    find(solo, 'e').pos = { x: 5, y: 6 }   // too close — kiter will back off straight down
+    advanceRound(solo)
+
+    const grouped = createBattle({
+      playerUnits: [
+        eu({ id: 'r',  int: 20, str: 3, rangedRange: 6, maxHp: 500, hp: 500, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] }),
+        eu({ id: 'a1', maxHp: 500, hp: 500 }),
+        eu({ id: 'a2', maxHp: 500, hp: 500 }),
+      ],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 20, str: 5, meleeRange: 1.2 })],
+    })
+    find(grouped, 'r').pos  = { x: 5, y: 5 }
+    find(grouped, 'a1').pos = { x: 9, y: 6 }   // allies parked east-ish
+    find(grouped, 'a2').pos = { x: 9, y: 5 }
+    find(grouped, 'e').pos  = { x: 5, y: 6 }
+    advanceRound(grouped)
+
+    // Solo retreats due-east-x ≈ 5. With cohesion bias, the same retreat
+    // should curve toward the eastern allies.
+    expect(find(grouped, 'r').pos.x).toBeGreaterThan(find(solo, 'r').pos.x)
   })
 })
