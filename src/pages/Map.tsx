@@ -115,17 +115,17 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
     <button
       onClick={() => toggleSelectUnit(unit.id)}
       className={[
-        'shrink-0 w-28 px-3 py-2 border-b text-left select-none transition-colors duration-100',
+        'shrink-0 w-24 px-2 py-1.5 border-b text-left select-none transition-colors duration-100',
         unit.health <= 0 ? 'opacity-60' : '',
         isSelected
           ? 'border-game-primary bg-game-primary/25 text-white'
           : 'border-game-border bg-game-surface text-game-text hover:bg-white/5',
       ].join(' ')}
     >
-      <div className="flex items-center gap-1.5 mb-1">
+      <div className="flex items-center gap-1 mb-1">
         <span
           className={[
-            'shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border',
+            'shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border',
             isSelected ? 'bg-game-primary/40 border-game-primary/60 text-white' : 'bg-game-primary/15 border-game-border text-game-text',
           ].join(' ')}
         >
