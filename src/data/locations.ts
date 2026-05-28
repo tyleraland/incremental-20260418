@@ -25,7 +25,7 @@ export const INITIAL_LOCATIONS: Location[] = [
   {
     id: 'prontera-field-1', region: 'world', name: 'Western Approach',
     description: 'Rolling hills west of Prontera ringed by ruined walls — a natural perimeter for kiting tests.',
-    traits: ['plains'], monsterIds: ['skeleton-archer'],
+    traits: ['plains'], monsterIds: ['tough-slime'],
     familiarityMax: 100, connections: [],
     testScenarioId: 'los-kiting-perimeter',
   },
@@ -36,9 +36,15 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [],
   },
   {
+    id: 'prontera-field-3', region: 'world', name: 'Prontera Field',
+    description: 'A grassy plain east of Prontera, dotted with patches of nightshade.',
+    traits: ['plains'], monsterIds: ['living-nightshade'],
+    familiarityMax: 100, connections: [],
+  },
+  {
     id: 'prontera-field-2', region: 'world', name: 'Southern Road',
     description: 'A coastal road descending south toward Kanto.',
-    traits: ['plains'], monsterIds: ['living-nightshade'],
+    traits: ['plains'], monsterIds: ['skeleton-archer'],
     familiarityMax: 100, connections: [],
   },
   {
