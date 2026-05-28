@@ -154,7 +154,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
   )
 }
 
-function RosterCarousel({ units }: { units: Unit[] }) {
+export function RosterCarousel({ units }: { units: Unit[] }) {
   return (
     <div className="-mt-7 overflow-x-auto">
       <div className="flex gap-px">

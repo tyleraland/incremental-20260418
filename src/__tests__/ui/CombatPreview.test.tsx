@@ -36,11 +36,13 @@ describe('Combat tab — grid preview', () => {
       units: [makeUnit({ id: 'u1', name: 'Ada Vale', locationId: 'loc1' })],
     })
     await renderCombat()
-    expect(screen.getByText('Test Forest')).toBeInTheDocument()
+    // Location name appears both in the header and on the unit's roster card.
+    expect(screen.getAllByText('Test Forest').length).toBeGreaterThan(0)
     expect(screen.getByText('Party (1)')).toBeInTheDocument()
     // TEST_LOCATION has monsterIds: ['wolf', 'slime'] → 2 enemies
     expect(screen.getByText('Enemies (2)')).toBeInTheDocument()
-    expect(screen.getByText('AV')).toBeInTheDocument()   // unit initials chip
+    // Initials show on both the chip and the roster card — at least one of each.
+    expect(screen.getAllByText('AV').length).toBeGreaterThan(0)
   })
 })
 
@@ -54,7 +56,7 @@ describe('Combat tab — live battle', () => {
     useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
     await renderCombat()
     expect(screen.getByText(/round/i)).toBeInTheDocument()
-    expect(screen.getByText('AV')).toBeInTheDocument()  // party chip
+    expect(screen.getAllByText('AV').length).toBeGreaterThan(0)  // party chip + roster card
   })
 
   it('shows a casting indicator while a unit channels a spell', async () => {
