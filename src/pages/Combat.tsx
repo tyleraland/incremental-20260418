@@ -69,16 +69,17 @@ const TOKEN_INSET = 0.7
 const insetX = (cam: Cam, x: number) => Math.max(cam.x + TOKEN_INSET, Math.min(cam.x + cam.size - TOKEN_INSET, x))
 const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(cam.y + cam.size - TOKEN_INSET, y))
 
-// Pan-aware arena. Owns a pixel-drag pan; converts it to a world-coords offset
-// and exposes the resulting effective camera to children via a render prop, so
-// chip / attack-line positioning sees the same panned view as terrain & tints.
-function Arena({ baseCam, barriers, children }: { baseCam: Cam; barriers: Barrier[]; children: (cam: Cam) => React.ReactNode }) {
+// Pan-aware arena. Owns a pixel-drag pan applied as a CSS transform on the
+// inner world layer; chips, barriers, and attack lines move with the wrapper
+// instantly because their own `left`/`top` don't change — so the chips'
+// round-to-round position transition can't fight the pan and the drag tracks
+// the finger immediately.
+function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   const suppressClickRef = useRef(false)
   const [pan, setPan] = useState<Vec2>({ x: 0, y: 0 })
 
-  const cam: Cam = { x: baseCam.x + pan.x, y: baseCam.y + pan.y, size: baseCam.size }
   const cell = `${100 / cam.size}%`
   const centerTop = Math.max(0, Math.min(100, (1 - (CENTER_Y - cam.y) / cam.size) * 100))
 
@@ -88,22 +89,14 @@ function Arena({ baseCam, barriers, children }: { baseCam: Cam; barriers: Barrie
   }
   const onPointerMove = (e: React.PointerEvent) => {
     const d = dragRef.current
-    if (!d || !ref.current) return
+    if (!d) return
     const dx = e.clientX - d.startX
     const dy = e.clientY - d.startY
     if (!d.moved && Math.hypot(dx, dy) > 6) {
       d.moved = true
       try { d.target.setPointerCapture(d.pointerId) } catch { /* noop in tests */ }
     }
-    if (d.moved) {
-      const rect = ref.current.getBoundingClientRect()
-      // drag-right → see what's to the west: cam.x decreases (so pan.x is -dx in world).
-      // drag-down  → see what's to the north: cam.y increases (so pan.y is +dy in world,
-      // because py is screen-down = world-up).
-      const sx = baseCam.size / Math.max(1, rect.width)
-      const sy = baseCam.size / Math.max(1, rect.height)
-      setPan({ x: d.basePan.x - dx * sx, y: d.basePan.y + dy * sy })
-    }
+    if (d.moved) setPan({ x: d.basePan.x + dx, y: d.basePan.y + dy })
   }
   const onPointerUp = () => {
     if (dragRef.current?.moved) suppressClickRef.current = true
@@ -136,34 +129,36 @@ function Arena({ baseCam, barriers, children }: { baseCam: Cam; barriers: Barrie
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      {/* team-half tints, split at the arena's center line */}
-      <div className="absolute inset-x-0 top-0 bg-red-500/5 pointer-events-none" style={{ height: `${centerTop}%` }} />
-      <div className="absolute inset-x-0 bottom-0 bg-blue-500/5 pointer-events-none" style={{ top: `${centerTop}%` }} />
-      {/* faint grid that scales with the camera */}
-      <div
-        className="absolute inset-0 opacity-40 pointer-events-none"
-        style={{
-          backgroundImage:
-            'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
-            'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
-          backgroundSize: `${cell} ${cell}`,
-        }}
-      />
-      {/* terrain: walls are solid (block movement + sight), cliffs are translucent
-          and dashed (block movement only — ranged attacks fire over them) */}
-      {barriers.map((b, i) => {
-        const isCliff = b.kind === 'cliff'
-        return (
-          <div
-            key={i}
-            className={isCliff
-              ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
-              : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
-            style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%` }}
-          />
-        )
-      })}
-      {children(cam)}
+      <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, willChange: 'transform' }}>
+        {/* team-half tints, split at the arena's center line */}
+        <div className="absolute inset-x-0 top-0 bg-red-500/5 pointer-events-none" style={{ height: `${centerTop}%` }} />
+        <div className="absolute inset-x-0 bottom-0 bg-blue-500/5 pointer-events-none" style={{ top: `${centerTop}%` }} />
+        {/* faint grid that scales with the camera */}
+        <div
+          className="absolute inset-0 opacity-40 pointer-events-none"
+          style={{
+            backgroundImage:
+              'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
+              'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
+            backgroundSize: `${cell} ${cell}`,
+          }}
+        />
+        {/* terrain: walls are solid (block movement + sight), cliffs are translucent
+            and dashed (block movement only — ranged attacks fire over them) */}
+        {barriers.map((b, i) => {
+          const isCliff = b.kind === 'cliff'
+          return (
+            <div
+              key={i}
+              className={isCliff
+                ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
+                : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
+              style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%` }}
+            />
+          )
+        })}
+        {children}
+      </div>
     </div>
   )
 }
@@ -377,7 +372,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
   // Hold the default camera once the fight is decided — otherwise the bbox
   // collapses around the surviving team and the auto-zoom snaps, which reads
   // as the winners "teleporting" toward the corpse.
-  const baseCam = battle.outcome !== 'ongoing'
+  const cam = battle.outcome !== 'ongoing'
     ? defaultCamera()
     : computeCamera((alive.length ? alive : battle.combatants).map((c) => c.pos))
 
@@ -409,100 +404,98 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
         <p className="text-xs text-game-text-dim mt-0.5">{name} · round {battle.round}</p>
       </div>
 
-      <Arena baseCam={baseCam} barriers={battle.barriers}>
-        {(cam) => <>
-          {/* persistent ground hazards (Firewall, etc.) */}
-          {battle.zones.map((z) => (
-            <div
-              key={z.id}
-              className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
-              style={{ left: px(cam, z.pos.x), top: py(cam, z.pos.y), width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%` }}
-            />
-          ))}
+      <Arena cam={cam} barriers={battle.barriers}>
+        {/* persistent ground hazards (Firewall, etc.) */}
+        {battle.zones.map((z) => (
+          <div
+            key={z.id}
+            className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
+            style={{ left: px(cam, z.pos.x), top: py(cam, z.pos.y), width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%` }}
+          />
+        ))}
 
-          {/* attack arc lines for this round — endpoints use the same inset as
-              the chips so the line runs token-center to token-center even when
-              a combatant is pinned against the arena edge. */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${ROWS - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
-            {hits.map((e, i) => {
-              const src = byId(e.sourceId), tgt = byId(e.targetId)
-              if (!src || !tgt) return null
-              const stroke = src.team === 'player' ? 'rgb(96,165,250)' : 'rgb(248,113,113)'
-              return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, src.pos.x)} y1={ROWS - insetY(cam, src.pos.y)} x2={insetX(cam, tgt.pos.x)} y2={ROWS - insetY(cam, tgt.pos.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
-            })}
-          </svg>
-
-          {/* hit flashes + floating numbers */}
+        {/* attack arc lines for this round — endpoints use the same inset as
+            the chips so the line runs token-center to token-center even when
+            a combatant is pinned against the arena edge. */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${ROWS - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
           {hits.map((e, i) => {
-            const tgt = byId(e.targetId)
-            if (!tgt) return null
-            return (
-              <div key={`h-${battle.round}-${i}`}>
-                <div className={`absolute ${CHIP_SIZE} -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash`} style={{ left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
-                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-red-300" text={`-${e.value}`} />
-              </div>
-            )
+            const src = byId(e.sourceId), tgt = byId(e.targetId)
+            if (!src || !tgt) return null
+            const stroke = src.team === 'player' ? 'rgb(96,165,250)' : 'rgb(248,113,113)'
+            return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, src.pos.x)} y1={ROWS - insetY(cam, src.pos.y)} x2={insetX(cam, tgt.pos.x)} y2={ROWS - insetY(cam, tgt.pos.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
           })}
-          {heals.map((e, i) => {
-            const tgt = byId(e.targetId)
-            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-emerald-300" text={`+${e.value}`} /> : null
-          })}
-          {dots.map((e, i) => {
-            const tgt = byId(e.targetId)
-            return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[11px] text-fuchsia-300" text={`-${e.value}`} /> : null
-          })}
-          {interrupts.map((e, i) => {
-            const tgt = byId(e.targetId)
-            return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[10px] text-amber-300" text="interrupted" /> : null
-          })}
+        </svg>
 
-          {/* source-anchored ability labels: spell cast starts, skill resolutions,
-              non-skill tactics (Counter, Shield Wall…). Floats above the caster
-              so the player can read what each unit just did. */}
-          {castStarts.map((e, i) => {
-            const src = byId(e.sourceId)
-            if (!src || !e.skillId) return null
-            return <Float key={`cs-${battle.round}-${i}`} k={`cs-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-amber-200" text={`✦ ${skillName(e.skillId)}`} />
-          })}
-          {skillLabels.map((e, i) => {
-            const src = byId(e.sourceId)
-            if (!src || !e.skillId) return null
-            return <Float key={`sl-${battle.round}-${i}`} k={`sl-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-sky-200" text={skillName(e.skillId)} />
-          })}
-          {tacticUses.map((e, i) => {
-            const src = byId(e.sourceId)
-            const label = (e.extra?.label as string | undefined)
-            if (!src || !label) return null
-            return <Float key={`tu-${battle.round}-${i}`} k={`tu-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-violet-200" text={label} />
-          })}
-
-          {battle.combatants.map((c) => (
-            <BattleChip
-              key={c.id}
-              c={c}
-              cam={cam}
-              // Only highlight in the wave the selection was made on — otherwise
-              // a new-wave same-id monster would appear "still selected".
-              selected={sameWave && c.id === selectedId}
-              onSelect={() => handleSelect(c)}
-              glyph={chipGlyph(c, classFor)}
-            />
-          ))}
-
-          {battle.outcome !== 'ongoing' && (
-            // pointer-events-none on the overlay so the player can still tap/
-            // un-tap chips behind the banner — useful for reading a KO'd
-            // monster's final stats post-fight.
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span className={[
-                'px-3 py-1.5 rounded-md text-sm font-bold border backdrop-blur-sm',
-                battle.outcome === 'victory' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-600/60' : 'bg-red-950/80 text-red-200 border-red-600/60',
-              ].join(' ')}>
-                {battle.outcome === 'victory' ? 'Victory!' : battle.outcome === 'defeat' ? 'Defeated' : 'Stalemate'}
-              </span>
+        {/* hit flashes + floating numbers */}
+        {hits.map((e, i) => {
+          const tgt = byId(e.targetId)
+          if (!tgt) return null
+          return (
+            <div key={`h-${battle.round}-${i}`}>
+              <div className={`absolute ${CHIP_SIZE} -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash`} style={{ left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
+              <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-red-300" text={`-${e.value}`} />
             </div>
-          )}
-        </>}
+          )
+        })}
+        {heals.map((e, i) => {
+          const tgt = byId(e.targetId)
+          return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-emerald-300" text={`+${e.value}`} /> : null
+        })}
+        {dots.map((e, i) => {
+          const tgt = byId(e.targetId)
+          return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[11px] text-fuchsia-300" text={`-${e.value}`} /> : null
+        })}
+        {interrupts.map((e, i) => {
+          const tgt = byId(e.targetId)
+          return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[10px] text-amber-300" text="interrupted" /> : null
+        })}
+
+        {/* source-anchored ability labels: spell cast starts, skill resolutions,
+            non-skill tactics (Counter, Shield Wall…). Floats above the caster
+            so the player can read what each unit just did. */}
+        {castStarts.map((e, i) => {
+          const src = byId(e.sourceId)
+          if (!src || !e.skillId) return null
+          return <Float key={`cs-${battle.round}-${i}`} k={`cs-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-amber-200" text={`✦ ${skillName(e.skillId)}`} />
+        })}
+        {skillLabels.map((e, i) => {
+          const src = byId(e.sourceId)
+          if (!src || !e.skillId) return null
+          return <Float key={`sl-${battle.round}-${i}`} k={`sl-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-sky-200" text={skillName(e.skillId)} />
+        })}
+        {tacticUses.map((e, i) => {
+          const src = byId(e.sourceId)
+          const label = (e.extra?.label as string | undefined)
+          if (!src || !label) return null
+          return <Float key={`tu-${battle.round}-${i}`} k={`tu-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-violet-200" text={label} />
+        })}
+
+        {battle.combatants.map((c) => (
+          <BattleChip
+            key={c.id}
+            c={c}
+            cam={cam}
+            // Only highlight in the wave the selection was made on — otherwise
+            // a new-wave same-id monster would appear "still selected".
+            selected={sameWave && c.id === selectedId}
+            onSelect={() => handleSelect(c)}
+            glyph={chipGlyph(c, classFor)}
+          />
+        ))}
+
+        {battle.outcome !== 'ongoing' && (
+          // pointer-events-none on the overlay so the player can still tap/
+          // un-tap chips behind the banner — useful for reading a KO'd
+          // monster's final stats post-fight.
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className={[
+              'px-3 py-1.5 rounded-md text-sm font-bold border backdrop-blur-sm',
+              battle.outcome === 'victory' ? 'bg-emerald-950/80 text-emerald-200 border-emerald-600/60' : 'bg-red-950/80 text-red-200 border-red-600/60',
+            ].join(' ')}>
+              {battle.outcome === 'victory' ? 'Victory!' : battle.outcome === 'defeat' ? 'Defeated' : 'Stalemate'}
+            </span>
+          </div>
+        )}
       </Arena>
 
       <div className="flex items-center justify-center gap-4 text-[11px] text-game-text-dim">
@@ -566,7 +559,7 @@ function Preview() {
     const label = (u.class && CLASS_ICON[u.class]) ? CLASS_ICON[u.class] : initials(u.name)
     return { key: u.id, pos: startingPosition('player', rank, within), label, name: u.name, title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
   })
-  const baseCam = computeCamera([...enemyChips, ...partyChips].map((c) => c.pos))
+  const cam = computeCamera([...enemyChips, ...partyChips].map((c) => c.pos))
 
   return (
     <div className="p-4 max-w-md mx-auto flex flex-col gap-4">
@@ -579,14 +572,12 @@ function Preview() {
         </p>
       </div>
 
-      <Arena baseCam={baseCam} barriers={locationBarriers(location)}>
-        {(cam) => <>
-          {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} />)}
-          {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} />)}
-          {(party.length === 0 && foes.length === 0) && (
-            <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">No combatants to preview.</div>
-          )}
-        </>}
+      <Arena cam={cam} barriers={locationBarriers(location)}>
+        {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} />)}
+        {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} />)}
+        {(party.length === 0 && foes.length === 0) && (
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">No combatants to preview.</div>
+        )}
       </Arena>
 
       <div className="flex items-center justify-center gap-4 text-[11px] text-game-text-dim">
