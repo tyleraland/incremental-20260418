@@ -495,7 +495,8 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
 // to run into) so the kiter circles instead of pinning itself in a corner. When
 // in range but a wall sits between us and the threat, relocate along the
 // visibility-graph path to gain LoS — a kiter that can't shoot isn't kiting.
-// Small dead-band to avoid jitter.
+// Small dead-band to avoid jitter; also peek one round ahead at the threat's
+// approach so a chaser doesn't get a free tick of closing before we react.
 function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const threat = nearestEnemyTo(self, state)
   if (!threat) return
@@ -503,14 +504,22 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const losClear = sightlineClear(self.pos, threat.pos, state.barriers)
   const band = 0.4
 
-  // Sweet spot: right gap AND a clear shot → stand and fire.
-  if (losClear && Math.abs(d - want) <= band) return
+  // Predict where this threat will be after its turn this round, assuming a
+  // straight chase. If standing still would let it close past the kite line,
+  // we retreat NOW instead of waiting for next round.
+  const threatStep = moveSpeedOf(threat)
+  const predictedD = d - threatStep
+  const tooClose = d < want - band || predictedD < want - band
+
+  // Sweet spot: right gap, clear shot, AND the threat can't close past the
+  // line next turn → stand and fire.
+  if (losClear && !tooClose && d <= want + band) return
 
   const before = { ...self.pos }
   const step = moveSpeedOf(self)
   let retreating = false
 
-  if (d < want - band) {
+  if (tooClose) {
     // Too close: back off. With open arena behind, go straight (so a faster
     // kiter gains ground on a slower foe). When pinned against a wall — outer
     // OR inner — arc tangentially toward whichever side actually has room to
