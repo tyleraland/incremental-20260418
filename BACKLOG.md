@@ -17,6 +17,12 @@ itself behind — see *Spec drift* below).
 
 ## Combat content
 
+- **Ranger Beast Master pets** — a Ranger subclass / kit that fields a
+  combat companion (wolf, hawk, bear?) that fights alongside the party.
+  Needs: a pet as an extra player combatant with its own stats / tactics,
+  an "owner" link for follow-the-ranger movement, summon / dismiss flow,
+  and probably an action-bar pet command (sic / heel / guard) before the
+  AI is interesting on its own.
 - **Pneuma / protective zones** — friendly zone that blocks (or halves) ranged
   damage to allies inside. Needs `blocksRanged` on `BattleZone`.
 - **Reaction-channel skills** — Counter and Pneuma as equippable skills (we
