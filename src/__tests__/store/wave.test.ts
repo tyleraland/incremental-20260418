@@ -1,4 +1,4 @@
-// The enemy wave mirrors the deployed party size (no 5-unit cap), unless the
+// The enemy wave uses all the location's monsterIds, unless the
 // location pins a fixed wave via `testScenarioId` → SCENARIO_REGISTRY.
 import { describe, it, expect } from 'vitest'
 import { waveComposition, locationBarriers } from '@/stores/useGameStore'
@@ -8,13 +8,13 @@ const loc = (overrides: Partial<Location> = {}): Location =>
   ({ id: 'loc', name: 'L', region: 'r', description: '', traits: [], monsterIds: ['slime'], familiarityMax: 100, connections: [], ...overrides })
 
 describe('waveComposition', () => {
-  it('runs one monster of the location\'s primary type, regardless of party size', () => {
+  it('runs the location\'s monsterIds as the wave, regardless of party size', () => {
     expect(waveComposition(loc({ monsterIds: ['slime'] }), 1)).toEqual(['slime'])
     expect(waveComposition(loc({ monsterIds: ['slime'] }), 8)).toEqual(['slime'])
   })
 
-  it('ignores extra monsterIds (the first one is the location\'s default encounter)', () => {
-    expect(waveComposition(loc({ monsterIds: ['slime', 'wolf'] }), 3)).toEqual(['slime'])
+  it('uses all monsterIds when a location has multiple monsters', () => {
+    expect(waveComposition(loc({ monsterIds: ['slime', 'wolf'] }), 3)).toEqual(['slime', 'wolf'])
   })
 
   it('a scenario with a fixed wave overrides the default and ignores party size', () => {

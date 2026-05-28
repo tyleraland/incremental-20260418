@@ -38,8 +38,8 @@ describe('Combat tab — grid preview', () => {
     await renderCombat()
     expect(screen.getByText('Test Forest')).toBeInTheDocument()
     expect(screen.getByText('Party (1)')).toBeInTheDocument()
-    // Preview now mirrors the real wave: party-sized (1 unit → 1 enemy)
-    expect(screen.getByText('Enemies (1)')).toBeInTheDocument()
+    // TEST_LOCATION has monsterIds: ['wolf', 'slime'] → 2 enemies
+    expect(screen.getByText('Enemies (2)')).toBeInTheDocument()
     expect(screen.getByText('AV')).toBeInTheDocument()   // unit initials chip
   })
 })

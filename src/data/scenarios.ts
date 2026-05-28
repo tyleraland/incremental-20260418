@@ -33,7 +33,6 @@ export const SCENARIO_REGISTRY: Record<string, ScenarioDef> = {
     id: 'los-kiting-perimeter',
     name: 'LoS Kiting Perimeter',
     description: 'Solid block in the centre, narrow halls around the perimeter. Drop a fast ranged unit with the Kiter tactic vs. a slow tanky chaser — mirrors the LoS-aware kiting engine test.',
-    wave: ['tough-slime'],
     barriers: () => [{ x: 3, y: 3, w: 9, h: 9, kind: 'wall' as const }],
   },
 }
