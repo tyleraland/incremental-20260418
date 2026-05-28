@@ -14,6 +14,7 @@ export function eu(overrides: Partial<EngineUnitInput> = {}): EngineUnitInput {
     preferredRank: 'front',
     meleeRange: 1.2,
     rangedRange: 0,
+    moveSpeed: 0.9,  // 10 ft/s * MOVE_SCALE (0.09) — hero baseline
     skills: [],
     ...overrides,
   }
@@ -36,6 +37,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     preferredRank: 'front' as Rank,
     meleeRange: 1.2,
     rangedRange: 0,
+    moveSpeed: 0.9,  // 10 ft/s * MOVE_SCALE (0.09) — hero baseline
     attackElement: 'neutral',
     armorElement: 'neutral',
     skills: [],

@@ -55,6 +55,7 @@ export interface StatModifiers {
   def?: number
   int?: number
   spd?: number
+  moveSpeed?: number  // grid units/round added to base (positive = faster, negative = slow)
 }
 
 export interface StatusEffect {
@@ -149,6 +150,7 @@ export interface EngineUnitInput {
 
   meleeRange: number      // grid units; melee reach
   rangedRange: number     // 0 if melee-only; >0 enables ranged basic attacks
+  moveSpeed: number       // grid units/round; 0 = stationary; not derived from spd
   attackElement?: Element // default 'neutral'
   armorElement?: Element  // default 'neutral'
 
@@ -187,6 +189,7 @@ export interface Combatant {
   preferredRank: Rank
   meleeRange: number
   rangedRange: number
+  moveSpeed: number        // grid units/round; 0 = stationary
   attackElement: Element   // element of this unit's basic attacks (§3)
   armorElement: Element    // defensive element
 

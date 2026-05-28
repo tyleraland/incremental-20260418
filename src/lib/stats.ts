@@ -56,7 +56,7 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
     accuracy:     Math.max(1, Math.floor(dex * 1.5 + agi * 0.5)           + (sb.accuracy     ?? 0)),
     dodge:        Math.max(1, Math.floor(agi * 2   + dex * 0.5)           + (sb.dodge        ?? 0)),
     maxHp:        Math.max(1, Math.floor(50 + con * 10)),
-    moveSpeed:    Math.max(2, 10 + agi * 0.025 + (sb.moveSpeed ?? 0)), // ft/s; divide by TICKS_PER_SECOND in tick loop
+    moveSpeed:    10 + (sb.moveSpeed ?? 0), // ft/s; all heroes share the same base; skill buffs/debuffs add here
     attackRange:  Math.max(5, (eq.range || 5) + (sb.attackRange ?? 0)), // feet; melee=5, bow=35
     attackElement,
     armorElement,

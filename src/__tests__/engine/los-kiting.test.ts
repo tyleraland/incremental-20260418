@@ -30,13 +30,13 @@ describe('kiter: LoS-aware positioning', () => {
     const b = createBattle({
       playerUnits: [eu({
         id: 'archer', spd: 20, str: 30, int: 20, def: 1, maxHp: 100, hp: 100,
-        preferredRank: 'back', meleeRange: 1.2, rangedRange: 6,
+        preferredRank: 'back', meleeRange: 1.2, rangedRange: 6, moveSpeed: 1.3,
         skills: [{ ...bow, range: 6 }],
         tactics: [{ id: 'kiter', rank: 1 }],
       })],
       enemyUnits: [eu({
         id: 'monster', team: 'enemy', spd: 1, str: 1, def: 200, int: 200,
-        maxHp: 500, hp: 500, meleeRange: 1.2, rangedRange: 0,
+        maxHp: 500, hp: 500, meleeRange: 1.2, rangedRange: 0, moveSpeed: 0.58,
       })],
       barriers: HALL_BARRIERS,
       maxRounds: 100,
@@ -68,13 +68,13 @@ describe('kiter: LoS-aware positioning', () => {
     const b = createBattle({
       playerUnits: [eu({
         id: 'archer', spd: 20, str: 30, int: 20, def: 1, maxHp: 100, hp: 100,
-        preferredRank: 'back', meleeRange: 1.2, rangedRange: 6,
+        preferredRank: 'back', meleeRange: 1.2, rangedRange: 6, moveSpeed: 1.3,
         skills: [{ ...bow, range: 6 }],
         tactics: [{ id: 'kiter', rank: 1 }],
       })],
       enemyUnits: [eu({
         id: 'monster', team: 'enemy', spd: 1, str: 4, def: 200, int: 200,
-        maxHp: 500, hp: 500, meleeRange: 1.2, rangedRange: 0,
+        maxHp: 500, hp: 500, meleeRange: 1.2, rangedRange: 0, moveSpeed: 0.58,
       })],
       barriers: HALL_BARRIERS,
       // generous cap so the test terminates even if the chase goes long

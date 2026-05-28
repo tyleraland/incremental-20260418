@@ -28,6 +28,11 @@ const MELEE_GRID_RANGE = 1.1
 const RANGED_GRID_RANGE = 4
 const RANGED_FEET_THRESHOLD = 5   // game attackRange > this ⇒ ranged
 
+// game moveSpeed (ft/s) → engine moveSpeed (grid units/round).
+// 10 ft/s maps to 0.9 grid/round — the baseline for heroes and medium-speed
+// monsters. 0 ft/s stays 0 so stationary monsters never drift from their spawn.
+const MOVE_SCALE = 0.09
+
 export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team): EngineUnitInput {
   const ranged = derived.attackRange > RANGED_FEET_THRESHOLD
   return {
@@ -43,6 +48,7 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
     rangedRange: ranged ? RANGED_GRID_RANGE : 0,
+    moveSpeed: derived.moveSpeed * MOVE_SCALE,
     attackElement: derived.attackElement,   // §3 weapon-imbued attack element
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
     skills: equippedCombatSkills(unit),   // action-bar skills → casts (each injects its usage tactic)
@@ -66,6 +72,7 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
     rangedRange: ranged ? RANGED_GRID_RANGE : 0,
+    moveSpeed: (def.stats.moveSpeed ?? 10) * MOVE_SCALE,
     attackElement: 'neutral',   // §3 monsters attack neutral; def.element is defensive
     armorElement: def.element,
     skills: [],

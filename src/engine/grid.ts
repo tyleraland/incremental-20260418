@@ -66,13 +66,15 @@ export function attackReach(c: Combatant): number {
   return c.rangedRange > 0 ? c.rangedRange : c.meleeRange
 }
 
-// §2.5 per-unit move speed: spd scales the base step so high-spd skirmishers
-// actually outpace slow attackers (the foundation of real kiting). Default spd
-// (10 in the unit helper) yields exactly BASE_MOVE_SPEED so existing tests keep
-// the same pacing; clamped at the extremes to avoid pathological values.
+// §2.5 per-unit move speed: a standalone rate in grid units/round, independent
+// of attack speed. Status effects (slow, haste, etc.) add to the base via
+// StatModifiers.moveSpeed. Clamped at 0 so stationary units never back-pedal.
 export function moveSpeedOf(c: Combatant): number {
-  const scale = Math.max(0.6, Math.min(1.4, 0.6 + c.spd * 0.04))
-  return BASE_MOVE_SPEED * scale
+  let speed = c.moveSpeed
+  for (const s of c.statuses) {
+    if (s.statModifiers.moveSpeed) speed += s.statModifiers.moveSpeed
+  }
+  return Math.max(0, speed)
 }
 
 // Move `mover` toward `target`, stopping `reach` units short so melee attackers

@@ -56,6 +56,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     def: input.def,
     int: input.int,
     spd: input.spd,
+    moveSpeed: input.moveSpeed,
     maxHp: input.maxHp,
     hp: input.hp,
     alive: input.hp > 0,

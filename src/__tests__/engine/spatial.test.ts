@@ -53,8 +53,8 @@ describe('spatial queries', () => {
     // Channel time large enough that the threat-speed term actually dominates
     // (otherwise both fall back to "just inside spell range").
     const caster = combatant({ skills: [attackSkill({ id: 's', channelTime: 3, range: 6 })] })
-    const slow = combatant({ id: 'slow', team: 'enemy', spd: 5,  meleeRange: 1.2 })
-    const fast = combatant({ id: 'fast', team: 'enemy', spd: 20, meleeRange: 1.2 })
+    const slow = combatant({ id: 'slow', team: 'enemy', moveSpeed: 0.72, meleeRange: 1.2 })
+    const fast = combatant({ id: 'fast', team: 'enemy', moveSpeed: 1.26, meleeRange: 1.2 })
     expect(kiteDistanceFor(caster, fast)).toBeGreaterThan(kiteDistanceFor(caster, slow))
   })
 
@@ -63,7 +63,7 @@ describe('spatial queries', () => {
     // pushes minSafe past maxRange.
     const inst = combatant({ skills: [attackSkill({ id: 'i', channelTime: 0, range: 6 })] })
     const chan = combatant({ skills: [attackSkill({ id: 'c', channelTime: 4, range: 6 })] })
-    const threat = combatant({ id: 'e', team: 'enemy', spd: 20, meleeRange: 1.2 })
+    const threat = combatant({ id: 'e', team: 'enemy', moveSpeed: 1.26, meleeRange: 1.2 })
     expect(kiteDistanceFor(chan, threat)).toBeGreaterThan(kiteDistanceFor(inst, threat))
   })
 })
@@ -128,10 +128,12 @@ describe('movement behaviours', () => {
     const b = createBattle({
       playerUnits: [eu({
         id: 'a', spd: 20, int: 20, rangedRange: 4, maxHp: 9999, hp: 9999,
+        moveSpeed: 1.3,
         skills: [fb], tactics: [{ id: 'kiter', rank: 1 }],
       })],
       enemyUnits: [eu({
         id: 'g', team: 'enemy', spd: 3, str: 5, def: 200, maxHp: 5000, hp: 5000, meleeRange: 1.2,
+        moveSpeed: 0.65,
       })],
       barriers: [{ x: 3, y: 3, w: 9, h: 9, kind: 'wall' }],
       maxRounds: 250,
@@ -166,8 +168,8 @@ describe('movement behaviours', () => {
     // Mira-style: high spd + ranged + kiter. Pursuer is melee and slower.
     const fb = buildEngineSkill('fire-bolt', 1)!
     const b = createBattle({
-      playerUnits: [eu({ id: 'r', spd: 18, int: 20, rangedRange: 4, maxHp: 999, hp: 999, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 5, str: 10, maxHp: 999, hp: 999 })],
+      playerUnits: [eu({ id: 'r', spd: 18, int: 20, rangedRange: 4, maxHp: 999, hp: 999, moveSpeed: 1.2, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 5, str: 10, maxHp: 999, hp: 999, moveSpeed: 0.72 })],
     })
     find(b, 'r').pos = { x: 7, y: 6 }
     find(b, 'e').pos = { x: 7, y: 8.5 }                // melee distance, threatening
