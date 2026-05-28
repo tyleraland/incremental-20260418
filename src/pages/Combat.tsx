@@ -105,16 +105,35 @@ function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; chi
 
 // ── Live battle ────────────────────────────────────────────────────────────────
 
-// Cards are bigger now (portrait + first name + HP) so the field is more
-// readable. Wider start positions (DEPLOY_FRONT bumped) keep them from
-// stacking up on round 1; expect some overlap once melee converges.
-const CARD = 'w-16'
+// Chip = circle (icon inside) with name + HP bar floating above. Smaller
+// footprint than the old card so the field reads as units on a board rather
+// than name-tags drifting around.
+const CHIP_SIZE = 'w-10 h-10'        // 40px circle
+const CHIP_FLOAT_W = 'w-14'          // floating name/HP plate above the chip
+
+// Class-specific glyphs for player heroes. Class-less units (Novices, test
+// fixtures) and monsters fall back to initials inside the circle.
+const CLASS_ICON: Record<string, string> = {
+  Fighter: '⚔',
+  Ranger:  '🏹',
+  Mage:    '✦',
+  Cleric:  '✚',
+  Rogue:   '🗡',
+}
 
 // First name (or short label) for the chip header. Falls back to initials for
 // single-word monster names where the first word is the whole thing.
 function shortName(name: string): string {
   const first = name.trim().split(/\s+/)[0] ?? ''
   return first.length > 8 ? first.slice(0, 7) + '…' : first
+}
+
+function chipGlyph(c: Combatant, classFor: (id: string) => string | null): string {
+  if (c.team === 'player') {
+    const cls = classFor(c.id)
+    if (cls && CLASS_ICON[cls]) return CLASS_ICON[cls]
+  }
+  return initials(c.name)
 }
 
 function CooldownMeter({ c }: { c: Combatant }) {
@@ -135,57 +154,59 @@ function CooldownMeter({ c }: { c: Combatant }) {
   )
 }
 
-function BattleChip({ c, cam, selected, onSelect }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void }) {
+function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void; glyph: string }) {
   const isPlayer = c.team === 'player'
   const ratio = Math.max(0, c.hp / c.maxHp)
   const casting = c.alive && !!c.channel
   return (
     <div
       onClick={onSelect}
-      className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer`}
+      className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
     >
       {casting && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[9px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[9px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
           ✦ {skillName(c.channel!.skillId)}
         </div>
       )}
+      {/* Floating name + HP above the circle — slightly transparent so the
+          arena reads through them. */}
+      <div className={`absolute -top-5 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
+        <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
+          {shortName(c.name)}
+        </span>
+        <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+          <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+        </div>
+      </div>
+      {/* Circle token */}
       <div
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         className={[
-          'rounded-md border shadow flex flex-col gap-0.5 px-1 pt-0.5 pb-1 transition-opacity',
-          casting ? 'bg-blue-950 border-amber-300 ring-1 ring-amber-400/60'
-            : isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70',
+          CHIP_SIZE,
+          'rounded-full border-2 shadow-md flex items-center justify-center text-[15px] font-bold leading-none select-none transition-opacity',
+          casting ? 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100'
+            : isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50'
+                       : 'bg-red-900  border-red-300/80  text-red-50',
           selected ? 'ring-2 ring-emerald-300' : '',
           c.alive ? '' : 'opacity-25 grayscale',
         ].join(' ')}
       >
-        <div className="flex items-center gap-1 min-w-0">
-          <span
-            aria-hidden
-            className={[
-              'shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold border',
-              isPlayer ? 'bg-blue-900 border-blue-300/60 text-blue-100' : 'bg-red-900 border-red-300/60 text-red-100',
-            ].join(' ')}
-          >
-            {c.alive ? initials(c.name) : '✕'}
-          </span>
-          <span className={`text-[10px] font-semibold leading-tight truncate ${isPlayer ? 'text-blue-100' : 'text-red-100'}`}>
-            {shortName(c.name)}
-          </span>
-        </div>
-        <div className="h-1 rounded-sm bg-black/50 overflow-hidden">
-          <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
-        </div>
-        {c.alive && <CooldownMeter c={c} />}
+        {c.alive ? glyph : '✕'}
       </div>
+      {/* Cooldown meter just under the circle */}
+      {c.alive && c.skills.length > 0 && (
+        <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-1 ${CHIP_FLOAT_W} pointer-events-none`}>
+          <CooldownMeter c={c} />
+        </div>
+      )}
     </div>
   )
 }
 
 function Float({ cam, pos, className, text, k }: { cam: Cam; pos: Vec2; className: string; text: string; k: string }) {
   return (
-    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow animate-dmg-float whitespace-nowrap ${className}`} style={{ left: px(cam, pos.x), top: py(cam, pos.y) }}>
+    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow animate-dmg-float whitespace-nowrap ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }}>
       {text}
     </div>
   )
@@ -252,6 +273,8 @@ function UnitDetailCard({ c }: { c: Combatant }) {
 }
 
 function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
+  const units = useGameStore((s) => s.units)
+  const classFor = (id: string) => units.find((u) => u.id === id)?.class ?? null
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
   // Frozen-able snapshot of the selected combatant. We refresh it from live
@@ -345,13 +368,15 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
           />
         ))}
 
-        {/* attack arc lines for this round */}
+        {/* attack arc lines for this round — endpoints use the same inset as
+            the chips so the line runs token-center to token-center even when
+            a combatant is pinned against the arena edge. */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${ROWS - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
           {hits.map((e, i) => {
             const src = byId(e.sourceId), tgt = byId(e.targetId)
             if (!src || !tgt) return null
             const stroke = src.team === 'player' ? 'rgb(96,165,250)' : 'rgb(248,113,113)'
-            return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={src.pos.x} y1={ROWS - src.pos.y} x2={tgt.pos.x} y2={ROWS - tgt.pos.y} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
+            return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, src.pos.x)} y1={ROWS - insetY(cam, src.pos.y)} x2={insetX(cam, tgt.pos.x)} y2={ROWS - insetY(cam, tgt.pos.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
           })}
         </svg>
 
@@ -361,7 +386,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
           if (!tgt) return null
           return (
             <div key={`h-${battle.round}-${i}`}>
-              <div className={`absolute ${CARD} aspect-square -translate-x-1/2 -translate-y-1/2 rounded-md border-2 border-white/70 animate-hit-flash`} style={{ left: px(cam, tgt.pos.x), top: py(cam, tgt.pos.y) }} />
+              <div className={`absolute ${CHIP_SIZE} -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash`} style={{ left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
               <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-red-300" text={`-${e.value}`} />
             </div>
           )
@@ -408,6 +433,7 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
             // a new-wave same-id monster would appear "still selected".
             selected={sameWave && c.id === selectedId}
             onSelect={() => handleSelect(c)}
+            glyph={chipGlyph(c, classFor)}
           />
         ))}
 
@@ -427,8 +453,8 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
       </Arena>
 
       <div className="flex items-center justify-center gap-4 text-[11px] text-game-text-dim">
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-950 border border-blue-400/70 inline-block" /> Party ({playersAlive})</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-950 border border-red-500/70 inline-block" /> Enemies ({enemiesAlive})</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-900 border border-blue-300/80 inline-block" /> Party ({playersAlive})</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-900 border border-red-300/80 inline-block" /> Enemies ({enemiesAlive})</span>
       </div>
 
       {selected && <UnitDetailCard c={selected} />}
@@ -440,23 +466,23 @@ function LiveBattle({ name, battle }: { name: string; battle: BattleState }) {
 
 function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos: Vec2; label: string; name: string; title: string; isPlayer: boolean }) {
   return (
-    <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className={`absolute ${CARD} -translate-x-1/2 -translate-y-1/2`}>
-      <div className={['rounded-md border shadow flex flex-col gap-0.5 px-1 pt-0.5 pb-1', isPlayer ? 'bg-blue-950 border-blue-400/70' : 'bg-red-950 border-red-500/70'].join(' ')}>
-        <div className="flex items-center gap-1 min-w-0">
-          <span
-            aria-hidden
-            className={[
-              'shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold border',
-              isPlayer ? 'bg-blue-900 border-blue-300/60 text-blue-100' : 'bg-red-900 border-red-300/60 text-red-100',
-            ].join(' ')}
-          >
-            {label}
-          </span>
-          <span className={`text-[10px] font-semibold leading-tight truncate ${isPlayer ? 'text-blue-100' : 'text-red-100'}`}>
-            {shortName(name)}
-          </span>
+    <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className="absolute -translate-x-1/2 -translate-y-1/2">
+      {/* Floating name + (full) HP bar above the circle — matches the live
+          battle chip layout so the preview reads the same. */}
+      <div className={`absolute -top-5 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
+        <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
+          {shortName(name)}
+        </span>
+        <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+          <div className="h-full bg-emerald-500/90" />
         </div>
-        <div className="h-1 rounded-sm bg-emerald-500/80" />
+      </div>
+      <div className={[
+        CHIP_SIZE,
+        'rounded-full border-2 shadow-md flex items-center justify-center text-[15px] font-bold leading-none select-none',
+        isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50' : 'bg-red-900 border-red-300/80 text-red-50',
+      ].join(' ')}>
+        {label}
       </div>
     </div>
   )
@@ -485,7 +511,8 @@ function Preview() {
     const ranged = getDerivedStats(u, equipment).attackRange > 5
     const rank: Rank = ranged ? 'back' : 'front'
     const within = partyRank[rank] ?? 0; partyRank[rank] = within + 1
-    return { key: u.id, pos: startingPosition('player', rank, within), label: initials(u.name), name: u.name, title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
+    const label = (u.class && CLASS_ICON[u.class]) ? CLASS_ICON[u.class] : initials(u.name)
+    return { key: u.id, pos: startingPosition('player', rank, within), label, name: u.name, title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
   })
   const cam = computeCamera([...enemyChips, ...partyChips].map((c) => c.pos))
 
@@ -509,8 +536,8 @@ function Preview() {
       </Arena>
 
       <div className="flex items-center justify-center gap-4 text-[11px] text-game-text-dim">
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-blue-950 border border-blue-400/70 inline-block" /> Party ({party.length})</span>
-        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-950 border border-red-500/70 inline-block" /> Enemies ({foes.length})</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-900 border border-blue-300/80 inline-block" /> Party ({party.length})</span>
+        <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-900 border border-red-300/80 inline-block" /> Enemies ({foes.length})</span>
       </div>
     </div>
   )
