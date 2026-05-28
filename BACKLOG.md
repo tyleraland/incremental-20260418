@@ -6,6 +6,14 @@ itself behind — see *Spec drift* below).
 
 ## Long-horizon shape changes
 
+- **Combat lives inside the Map tab.** The separate Combat tab goes away;
+  double-tapping a location on the overworld zooms from the map view into
+  that location's battlefield. Single-tap stays a location selection. The
+  pannable arena from the current Combat tab becomes the inner view of a
+  Map cell; a tap on empty arena space (or a back chip) zooms back out to
+  the overworld. Folds the two views into one navigation flow so the
+  player travels straight from "pick where to go" to "watch what
+  happens" without a tab switch.
 - **Open world instead of single encounters.** Today combat is a discrete
   wave at one location at a time, fully deterministic from a known starting
   formation. The longer-term shape is an open field where parties roam,
