@@ -97,14 +97,19 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
   }
 
   // enemy targeting: respect stealth (except reveal skills) AND walls (no firing
-  // through them — cliffs let line of sight through, walls don't)
+  // through them — cliffs let line of sight through, walls don't). A pure debuff
+  // (no damage formula) skips targets already bearing the status — no point
+  // re-rooting a rooted enemy. Skills with both damage AND a status (freeze)
+  // still re-cast for the damage.
   const canSeeStealth = sk.removesStatusId === 'stealthed'
   const visible = (e: Combatant) =>
     (canSeeStealth || !isStealthed(e)) && sightlineClear(self.pos, e.pos, state.barriers)
+  const redundant = (e: Combatant) =>
+    !!sk.statusApplied && !sk.damageFormula && e.statuses.some((s) => s.id === sk.statusApplied)
   const locked = findCombatant(state, self.lockedTargetId)
-  if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(self, locked, sk.range)) return locked.id
+  if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(self, locked, sk.range) && !redundant(locked)) return locked.id
   const pool = (canSeeStealth ? livingEnemies(state, self) : targetableEnemies(state, self))
-    .filter((e) => inRange(self, e, sk.range) && sightlineClear(self.pos, e.pos, state.barriers))
+    .filter((e) => inRange(self, e, sk.range) && sightlineClear(self.pos, e.pos, state.barriers) && !redundant(e))
   return pool.length ? nearest(self, pool).id : null
 }
 

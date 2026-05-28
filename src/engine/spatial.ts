@@ -55,10 +55,19 @@ export function squishiestAlly(self: Combatant, state: BattleState): Combatant |
 }
 
 // The farthest a unit can act from: the longest range among its skills (falls
-// back to basic-attack reach). Casters use this to stand off at spell range.
+// back to basic-attack reach). Casters use this to stand off at spell range —
+// they always need positioning for the next cast since they have no basic
+// ranged attack, so we count ALL skills regardless of cooldown. Non-casters
+// (hybrid archers like the Ranger) only count READY skills so that once their
+// skills are all on cooldown they close to basic attack range and fire the bow
+// instead of idling at skill range with nothing to cast.
 export function maxSkillRange(self: Combatant): number {
   let r = self.rangedRange
-  for (const s of self.skills) if (s.range > r) r = s.range
+  const includeAll = isCaster(self)
+  for (const s of self.skills) {
+    if (!includeAll && (self.skillCooldowns[s.id] ?? 0) > 0) continue
+    if (s.range > r) r = s.range
+  }
   return r
 }
 
@@ -127,7 +136,13 @@ export function isCaster(c: Combatant): boolean {
 // shoot that round — preferable to dying mid-channel.
 export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
   const maxRange = maxSkillRange(self)
-  const maxChannel = self.skills.reduce((m, s) => Math.max(m, s.channelTime), 0)
+  // Match maxSkillRange's filter: casters consider all skills (positioning for
+  // next cast); non-casters only need cast room for skills currently ready.
+  const includeAll = isCaster(self)
+  const maxChannel = self.skills.reduce(
+    (m, s) => (!includeAll && (self.skillCooldowns[s.id] ?? 0) > 0 ? m : Math.max(m, s.channelTime)),
+    0,
+  )
   // `channelTime + 1`: the threat moves once on the cast-start round AND once
   // per channeled-resolution round before the spell lands.
   const threatClose = moveSpeedOf(threat) * (maxChannel + 1)
