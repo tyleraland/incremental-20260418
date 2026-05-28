@@ -106,9 +106,6 @@ export interface Location {
   connections: string[]  // §2: locationIds reachable directly from here
   dungeonEntryRegion?: string  // §10: if set, location's detail panel exposes "Enter <Region>" → switches map to that region
   testScenarioId?: string  // §scenario: pin a SCENARIO_REGISTRY entry — overrides wave + barriers in combat
-  // Monsters per deployed hero (default 1). e.g. 2 = a 3-hero party fights
-  // 6 monsters here. Ignored when the location's scenario pins a fixed wave.
-  encounterMultiplier?: number
 }
 
 // ── Monster ───────────────────────────────────────────────────────────────────

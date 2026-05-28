@@ -8,29 +8,23 @@ const loc = (overrides: Partial<Location> = {}): Location =>
   ({ id: 'loc', name: 'L', region: 'r', description: '', traits: [], monsterIds: ['slime'], familiarityMax: 100, connections: [], ...overrides })
 
 describe('waveComposition', () => {
-  it('sizes the wave to the full (uncapped) party', () => {
-    expect(waveComposition(loc({ monsterIds: ['slime'] }), 8)).toHaveLength(8)
+  it('runs one monster of the location\'s primary type, regardless of party size', () => {
+    expect(waveComposition(loc({ monsterIds: ['slime'] }), 1)).toEqual(['slime'])
+    expect(waveComposition(loc({ monsterIds: ['slime'] }), 8)).toEqual(['slime'])
   })
 
-  it('cycles the location monster list across the party', () => {
-    expect(waveComposition(loc({ monsterIds: ['slime', 'wolf'] }), 3)).toEqual(['slime', 'wolf', 'slime'])
+  it('ignores extra monsterIds (the first one is the location\'s default encounter)', () => {
+    expect(waveComposition(loc({ monsterIds: ['slime', 'wolf'] }), 3)).toEqual(['slime'])
   })
 
-  it('always fields at least one monster', () => {
-    expect(waveComposition(loc({ monsterIds: ['slime'] }), 0)).toEqual(['slime'])
-  })
-
-  it('a scenario with a fixed wave ignores party size', () => {
+  it('a scenario with a fixed wave overrides the default and ignores party size', () => {
     const scenLoc = loc({ testScenarioId: 'geffen-f2-cross' })
     expect(waveComposition(scenLoc, 1)).toEqual(['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'])
     expect(waveComposition(scenLoc, 99)).toEqual(['tough-slime', 'tough-slime', 'tough-slime', 'bat', 'bat'])
   })
 
-  it('encounterMultiplier scales the wave per hero', () => {
-    expect(waveComposition(loc({ monsterIds: ['slime'], encounterMultiplier: 2 }), 3)).toHaveLength(6)
-    expect(waveComposition(loc({ monsterIds: ['slime'], encounterMultiplier: 0.5 }), 4)).toHaveLength(2)
-    // a scenario wave still trumps the multiplier
-    expect(waveComposition(loc({ testScenarioId: 'geffen-f2-cross', encounterMultiplier: 5 }), 1)).toHaveLength(5)
+  it('returns an empty wave when the location has no monsters', () => {
+    expect(waveComposition(loc({ monsterIds: [] }), 1)).toEqual([])
   })
 })
 

@@ -170,13 +170,14 @@ export function locationBarriers(loc?: Location | null): Barrier[] {
   return scenarioOf(loc)?.barriers?.() ?? []
 }
 
-export function waveComposition(loc: Location, partySize: number): string[] {
+// A location runs one fixed encounter — independent of party size — until we
+// have multiple encounter variants per location to randomise across. Scenarios
+// can still pin a multi-monster wave (the F2 cross-wall gang), everything else
+// is a single monster of the location's primary type.
+export function waveComposition(loc: Location, _partySize: number): string[] {
   const scen = scenarioOf(loc)
   if (scen?.wave) return scen.wave
-  const partyEff = Math.max(1, partySize)
-  const mult = loc.encounterMultiplier ?? 1
-  const size = Math.max(1, Math.round(partyEff * mult))
-  return Array.from({ length: size }, (_, i) => loc.monsterIds[i % loc.monsterIds.length])
+  return loc.monsterIds.length > 0 ? [loc.monsterIds[0]] : []
 }
 
 function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): BattleState {

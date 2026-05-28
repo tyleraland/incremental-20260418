@@ -37,10 +37,9 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
   {
     id: 'prontera-field-2', region: 'world', name: 'Southern Road',
-    description: 'A coastal road descending south toward Kanto — slimes travel in packs here.',
+    description: 'A coastal road descending south toward Kanto.',
     traits: ['plains'], monsterIds: ['slime'],
     familiarityMax: 100, connections: [],
-    encounterMultiplier: 2,   // 2 monsters per hero — test the swarm path
   },
   {
     id: 'beach-1', region: 'world', name: 'Kanto Beach',
