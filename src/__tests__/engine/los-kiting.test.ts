@@ -26,7 +26,7 @@ describe('kiter: LoS-aware positioning', () => {
     // hall. d ≈ 8.5 (well within ranged range) but LoS is broken. A
     // LoS-blind kiter would stand still; the LoS-aware one routes to a
     // corner that re-opens the shot.
-    const bow = buildEngineSkill('fire-bolt', 1)!
+    const bow = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo
     const b = createBattle({
       playerUnits: [eu({
         id: 'archer', spd: 20, str: 30, int: 20, def: 1, maxHp: 100, hp: 100,
@@ -64,7 +64,7 @@ describe('kiter: LoS-aware positioning', () => {
     // (high DEF blocks basic attacks, high INT blocks fire-bolt). A working
     // kiter has to lap the ring; a broken one stalls at a wall and gets
     // chewed down.
-    const bow = buildEngineSkill('fire-bolt', 1)!
+    const bow = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo
     const b = createBattle({
       playerUnits: [eu({
         id: 'archer', spd: 20, str: 30, int: 20, def: 1, maxHp: 100, hp: 100,
@@ -108,7 +108,7 @@ describe('kiter: LoS-aware positioning', () => {
     // (outer wall), so a naive kiter just sits there. A perimeter-aware kiter
     // recognises the inner wall is blocking real retreat and routes south
     // through the left hall (around the central block) to keep distance.
-    const bow = buildEngineSkill('fire-bolt', 1)!
+    const bow = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo
     const b = createBattle({
       playerUnits: [eu({
         id: 'archer', spd: 20, str: 30, int: 20, def: 1, maxHp: 200, hp: 200,

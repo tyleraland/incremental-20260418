@@ -24,7 +24,7 @@ describe('element matrix', () => {
 describe('elements in combat', () => {
   const fireBoltVs = (armor: Element): number => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!] })],
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [{ ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, armorElement: armor, maxHp: 500, hp: 500, meleeRange: 1.2 })],
     })
     find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }
@@ -75,7 +75,7 @@ describe('Frozen acts as water armor (§3 combo)', () => {
 
   it('Fire melts a frozen target (clears the status)', () => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!] })],
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [{ ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
     })
     find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }

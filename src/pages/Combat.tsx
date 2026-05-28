@@ -136,24 +136,6 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
   return initials(c.name)
 }
 
-function CooldownMeter({ c }: { c: Combatant }) {
-  if (c.skills.length === 0) return null
-  return (
-    <div className="flex gap-px">
-      {c.skills.map((s) => {
-        const left = c.skillCooldowns[s.id] ?? 0
-        const ready = left <= 0
-        const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
-        return (
-          <div key={s.id} title={ready ? `${s.name} — ready` : `${s.name} — ${left}`} className="flex-1 h-[3px] rounded-sm bg-black/60 overflow-hidden">
-            <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void; glyph: string }) {
   const isPlayer = c.team === 'player'
   const ratio = Math.max(0, c.hp / c.maxHp)
@@ -164,20 +146,21 @@ function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: 
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
     >
-      {casting && (
-        <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-1 py-px rounded bg-amber-500/90 text-[9px] font-bold text-amber-50 whitespace-nowrap shadow animate-pulse z-10">
-          ✦ {skillName(c.channel!.skillId)}
-        </div>
-      )}
-      {/* Floating name + HP above the circle — slightly transparent so the
-          arena reads through them. */}
-      <div className={`absolute -top-5 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
+      {/* Floating name + HP (and a compact casting line when channeling)
+          above the circle — slightly transparent so the arena reads through
+          them. */}
+      <div className={`absolute ${casting ? '-top-7' : '-top-5'} left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
         <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
           {shortName(c.name)}
         </span>
         <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
           <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
         </div>
+        {casting && (
+          <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
+            ✦ {skillName(c.channel!.skillId)}
+          </span>
+        )}
       </div>
       {/* Circle token */}
       <div
@@ -194,12 +177,6 @@ function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: 
       >
         {c.alive ? glyph : '✕'}
       </div>
-      {/* Cooldown meter just under the circle */}
-      {c.alive && c.skills.length > 0 && (
-        <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-1 ${CHIP_FLOAT_W} pointer-events-none`}>
-          <CooldownMeter c={c} />
-        </div>
-      )}
     </div>
   )
 }

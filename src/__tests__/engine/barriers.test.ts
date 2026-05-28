@@ -60,7 +60,7 @@ describe('barriers in combat', () => {
   })
 
   it('a caster cannot fire through a wall (but can over a cliff)', () => {
-    const fb = buildEngineSkill('fire-bolt', 1)!
+    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant for the assertion
     const mk = (kind: 'wall' | 'cliff') => {
       const b = createBattle({
         playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [fb] })],

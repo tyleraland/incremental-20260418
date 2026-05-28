@@ -16,7 +16,7 @@ describe('catalog', () => {
   it('scales power with level and keeps ids aligned with the game', () => {
     expect(buildEngineSkill('fire-bolt', 1)!.damageFormula).toBe('int * 1.00')
     expect(buildEngineSkill('fire-bolt', 3)!.damageFormula).toBe('int * 1.40')
-    expect(buildEngineSkill('lightning-bolt', 1)!.channelTime).toBe(1)
+    expect(buildEngineSkill('lightning-bolt', 1)!.channelTime).toBeGreaterThan(0)
     expect(buildEngineSkill('hammer-fall', 1)!.statusApplied).toBe('stunned')
     expect(buildEngineSkill('arrow-shower', 1)!.knockback).toBeGreaterThan(0)
     expect(buildEngineSkill('firewall', 1)!.zone?.duration).toBeGreaterThan(0)
@@ -33,8 +33,9 @@ describe('catalog', () => {
 
 describe('instant casts', () => {
   it('Fire Bolt damages an enemy in range', () => {
+    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant for the assertion
     const b = createBattle({
-      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 5, skills: [buildEngineSkill('fire-bolt', 1)!] })],
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 5, skills: [fb] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, maxHp: 100, hp: 100 })],
     })
     find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // already in spell range
@@ -64,15 +65,17 @@ describe('instant casts', () => {
 })
 
 describe('channeled casts', () => {
-  it('Lightning Bolt resolves a round after it starts', () => {
+  it('Lightning Bolt resolves a few rounds after it starts', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, maxHp: 300, hp: 300, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 300, hp: 300, meleeRange: 1.2 })],
     })
-    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 11 }   // in spell range, won't reach melee in 2 rounds
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 11 }   // in spell range, won't reach melee
     advanceRound(b)   // start the channel
     expect(hasEvent(b, (e) => e.type === 'cast_start' && e.skillId === 'lightning-bolt')).toBe(true)
-    advanceRound(b)   // resolve it
+    // tick the channel down (channelTime+1 turns total from start to resolve)
+    const channelLen = buildEngineSkill('lightning-bolt', 1)!.channelTime
+    for (let i = 0; i < channelLen; i++) advanceRound(b)
     expect(hasEvent(b, (e) => e.type === 'skill_use' && e.skillId === 'lightning-bolt' && (e.value ?? 0) > 0)).toBe(true)
   })
 
@@ -158,7 +161,7 @@ describe('phase 2: spatial', () => {
   })
 
   it('Firewall drops a hazard that burns enemies standing in it', () => {
-    const fw = { ...buildEngineSkill('firewall', 1)!, range: 99 }
+    const fw = { ...buildEngineSkill('firewall', 1)!, range: 99, channelTime: 0 }   // instant for the assertion
     const b = createBattle({
       playerUnits: [eu({ id: 'p', skills: [fw] })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 200, hp: 200, meleeRange: 1.2 })],
@@ -203,8 +206,9 @@ describe('phase 2: spatial', () => {
 
 describe('phase 3: combos & stealth', () => {
   const fireValue = (frozen: boolean): number => {
+    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant for the assertion
     const b = createBattle({
-      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!] })],
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [fb] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 500, hp: 500, meleeRange: 1.2 })],
     })
     find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // in spell range
@@ -218,7 +222,7 @@ describe('phase 3: combos & stealth', () => {
   })
 
   it('Freeze applies the frozen status', () => {
-    const fz = { ...buildEngineSkill('freeze', 1)!, range: 99 }
+    const fz = { ...buildEngineSkill('freeze', 1)!, range: 99, channelTime: 0 }   // instant for the assertion
     const b = createBattle({
       playerUnits: [eu({ id: 'mage', int: 20, skills: [fz] })],
       enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, maxHp: 500, hp: 500, meleeRange: 1.2 })],

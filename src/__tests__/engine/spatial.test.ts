@@ -124,7 +124,7 @@ describe('movement behaviours', () => {
     // perimeter. A fast ranged unit should circle the outside, peeking line of
     // sight around the corners and never stalling — landing dozens of shots on
     // a slow, defensive chaser.
-    const fb = buildEngineSkill('fire-bolt', 1)!
+    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo
     const b = createBattle({
       playerUnits: [eu({
         id: 'a', spd: 20, int: 20, rangedRange: 4, maxHp: 9999, hp: 9999,
@@ -166,7 +166,7 @@ describe('movement behaviours', () => {
 
   it('a faster Kiter ranged unit opens distance on a slower attacker', () => {
     // Mira-style: high spd + ranged + kiter. Pursuer is melee and slower.
-    const fb = buildEngineSkill('fire-bolt', 1)!
+    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo
     const b = createBattle({
       playerUnits: [eu({ id: 'r', spd: 18, int: 20, rangedRange: 4, maxHp: 999, hp: 999, moveSpeed: 1.2, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', spd: 5, str: 10, maxHp: 999, hp: 999, moveSpeed: 0.72 })],
@@ -182,7 +182,7 @@ describe('movement behaviours', () => {
   })
 
   it('a Kiter caster holds at spell range and casts instead of closing to melee', () => {
-    const fireBolt = buildEngineSkill('fire-bolt', 1)!   // range 6
+    const fireBolt = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — range 6, we want shots/round
     const b = createBattle({
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 4, maxHp: 500, hp: 500, skills: [fireBolt], tactics: [{ id: 'kiter', rank: 1 }] })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', str: 10, maxHp: 500, hp: 500 })],
