@@ -101,4 +101,49 @@ describe('kiter: LoS-aware positioning', () => {
     expect(monster.hp).toBeLessThan(500)                  // dinged the monster
     expect(closestApproach).toBeGreaterThan(archer.meleeRange + 1)  // never let it close to melee
   })
+
+  it('cornered against the central wall, routes around it instead of pinning', () => {
+    // Archer pinned at the left wall in the top hall; threat approaches along
+    // the same hall from the east. The "back further west" direction is dead
+    // (outer wall), so a naive kiter just sits there. A perimeter-aware kiter
+    // recognises the inner wall is blocking real retreat and routes south
+    // through the left hall (around the central block) to keep distance.
+    const bow = buildEngineSkill('fire-bolt', 1)!
+    const b = createBattle({
+      playerUnits: [eu({
+        id: 'archer', spd: 20, str: 30, int: 20, def: 1, maxHp: 200, hp: 200,
+        preferredRank: 'back', meleeRange: 1.2, rangedRange: 6, moveSpeed: 1.3,
+        skills: [{ ...bow, range: 6 }],
+        tactics: [{ id: 'kiter', rank: 1 }],
+      })],
+      enemyUnits: [eu({
+        id: 'monster', team: 'enemy', spd: 5, str: 50, def: 1, int: 1,
+        maxHp: 999, hp: 999, meleeRange: 1.2, rangedRange: 0, moveSpeed: 0.8,
+      })],
+      barriers: HALL_BARRIERS,
+      maxRounds: 60,
+    })
+    find(b, 'archer').pos = { x: 0.4, y: 1.5 }     // top-left corner of top hall, jammed at the wall
+    find(b, 'monster').pos = { x: 5.5, y: 1.5 }    // approaching from the east along the top hall
+
+    const startPos = { ...find(b, 'archer').pos }
+    let closestApproach = Infinity
+    let maxDisplacement = 0
+    for (let i = 0; i < 40 && b.outcome === 'ongoing'; i++) {
+      advanceRound(b)
+      const a = find(b, 'archer'), m = find(b, 'monster')
+      closestApproach = Math.min(closestApproach, Math.hypot(a.pos.x - m.pos.x, a.pos.y - m.pos.y))
+      maxDisplacement = Math.max(maxDisplacement, Math.hypot(a.pos.x - startPos.x, a.pos.y - startPos.y))
+    }
+
+    const archer = find(b, 'archer')
+    // The archer left the corner (perimeter-routed at least several grid units
+    // from its starting tile — exact endpoint depends on how far it laps).
+    expect(maxDisplacement).toBeGreaterThan(5)
+    // And survived: didn't just sit there getting chewed down.
+    expect(archer.alive).toBe(true)
+    expect(archer.hp).toBeGreaterThan(50)
+    // Threat never reached melee (would happen if the archer was pinned).
+    expect(closestApproach).toBeGreaterThan(archer.meleeRange + 0.5)
+  })
 })

@@ -512,23 +512,29 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
 
   if (d < want - band) {
     // Too close: back off. With open arena behind, go straight (so a faster
-    // kiter gains ground on a slower foe). When pinned near a wall, arc along
-    // the perimeter tangentially toward whichever side has more room — so the
-    // kiter circles instead of pinning itself into a corner.
+    // kiter gains ground on a slower foe). When pinned against a wall — outer
+    // OR inner — arc tangentially toward whichever side actually has room to
+    // travel, so the kiter perimeter-routes around obstacles instead of
+    // freezing in a corner.
     retreating = true
     const ax = (self.pos.x - threat.pos.x) / (d || 1)
     const ay = (self.pos.y - threat.pos.y) / (d || 1)
     const probe = step * 2.5
-    const room = (qx: number, qy: number) => Math.min(qx, COLS - qx, qy, ROWS - qy)
-    const awayRoom = room(self.pos.x + ax * probe, self.pos.y + ay * probe)
+    // How far we'd actually travel in a unit direction (walls AND outer
+    // bounds), measured by tracing the probe to the nearest blocker.
+    const probeReach = (dxN: number, dyN: number): number => {
+      const target = { x: self.pos.x + dxN * probe, y: self.pos.y + dyN * probe }
+      return distance(self.pos, traceMove(self.pos, target, state.barriers))
+    }
     let dx = ax, dy = ay
-    if (awayRoom < 1.5) {
+    const awayReach = probeReach(ax, ay)
+    if (awayReach < probe * 0.4) {
       const tLx = -ay, tLy = ax
       const tRx = ay,  tRy = -ax
-      const lRoom = room(self.pos.x + tLx * probe, self.pos.y + tLy * probe)
-      const rRoom = room(self.pos.x + tRx * probe, self.pos.y + tRy * probe)
-      const tx = lRoom >= rRoom ? tLx : tRx
-      const ty = lRoom >= rRoom ? tLy : tRy
+      const lReach = probeReach(tLx, tLy)
+      const rReach = probeReach(tRx, tRy)
+      const tx = lReach >= rReach ? tLx : tRx
+      const ty = lReach >= rReach ? tLy : tRy
       const bx = ax + tx, by = ay + ty       // 50/50 blend: hard arc when wall is behind
       const blen = Math.hypot(bx, by) || 1
       dx = bx / blen; dy = by / blen
