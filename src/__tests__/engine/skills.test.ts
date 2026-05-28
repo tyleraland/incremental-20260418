@@ -21,7 +21,7 @@ describe('catalog', () => {
     expect(buildEngineSkill('arrow-shower', 1)!.knockback).toBeGreaterThan(0)
     expect(buildEngineSkill('firewall', 1)!.zone?.duration).toBeGreaterThan(0)
     expect(buildEngineSkill('poison', 1)!.statusApplied).toBe('poisoned')
-    expect(buildEngineSkill('ankle-snare', 1)!.retreatAfter).toBeGreaterThan(0)
+    expect(buildEngineSkill('ankle-snare', 1)!.statusApplied).toBe('rooted')
     expect(buildEngineSkill('back-stab', 1)!.stealthBonus).toBeGreaterThan(1)
     expect(buildEngineSkill('cloak', 1)!.statusApplied).toBe('stealthed')
     expect(buildEngineSkill('freeze', 1)!.statusApplied).toBe('frozen')
@@ -171,16 +171,23 @@ describe('phase 2: spatial', () => {
     expect(find(b, 'e').hp).toBeLessThan(hp)
   })
 
-  it('Ankle Snare roots the target and the caster retreats', () => {
+  it('Ankle Snare roots the target without moving the caster', () => {
     const snare = { ...buildEngineSkill('ankle-snare', 1)!, range: 99 }
     const b = createBattle({
       playerUnits: [eu({ id: 'p', skills: [snare] })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 100, hp: 100, meleeRange: 1.2 })],
     })
-    const startY = find(b, 'p').pos.y
+    // Start the caster well clear of the target so it has no reason to close
+    // distance via the default movement; we want to verify the cast itself
+    // doesn't trigger any backwards step.
+    find(b, 'p').pos = { x: 2.5, y: 2 }
+    find(b, 'e').pos = { x: 2.5, y: 8 }
+    const startPos = { ...find(b, 'p').pos }
     advanceRound(b)
     expect(find(b, 'e').statuses.some((s) => s.id === 'rooted')).toBe(true)
-    expect(find(b, 'p').pos.y).toBeLessThan(startY)   // net backward despite advancing first
+    // Caster didn't fall back from the cast — Ankle Snare is no longer a
+    // self-retreat skill.
+    expect(find(b, 'p').pos.y).toBeGreaterThanOrEqual(startPos.y)
   })
 
   it('a rooted unit cannot move', () => {

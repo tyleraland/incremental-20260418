@@ -21,12 +21,22 @@ function equippedCombatSkills(unit: Unit): EngineSkill[] {
 }
 
 // The engine grid is 5×10 abstract units; the game's "feet" don't map 1:1.
-// We collapse to two reach bands: melee stops ~1.1 away (just shy of contact),
-// ranged fires from ~4. Melee reach must stay above SEPARATION (0.7) so an
-// attacker isn't pushed back out of range by the spacing rule.
+// Melee stops ~1.1 away (just shy of contact). Ranged is tiered: long-range
+// weapons (bows, staves) reach 6 cells; medium-range (rods, wands, monster
+// spitters like Living Nightshade or Giant Frog) reach 4. Melee reach must
+// stay above SEPARATION (0.7) so an attacker isn't pushed back out of range
+// by the spacing rule.
 const MELEE_GRID_RANGE = 1.1
-const RANGED_GRID_RANGE = 4
 const RANGED_FEET_THRESHOLD = 5   // game attackRange > this ⇒ ranged
+
+// Map a game-feet attack range to an engine grid range. The threshold at 25 ft
+// separates "true bowman / mage" (35 ft bow, 28 ft staff) from "medium ranged"
+// (20 ft rod/nightshade, 18 ft wand, 15 ft poacher). Returning 0 means melee.
+function gridRangeFromFeet(feet: number): number {
+  if (feet <= RANGED_FEET_THRESHOLD) return 0   // melee
+  if (feet >= 25) return 6                       // long-range (bow, staff, skeleton archer, ruins specter)
+  return 4                                       // medium-range
+}
 
 // game moveSpeed (ft/s) → engine moveSpeed (grid units/round).
 // 10 ft/s maps to 0.9 grid/round — the baseline for heroes and medium-speed
@@ -34,7 +44,8 @@ const RANGED_FEET_THRESHOLD = 5   // game attackRange > this ⇒ ranged
 const MOVE_SCALE = 0.09
 
 export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team): EngineUnitInput {
-  const ranged = derived.attackRange > RANGED_FEET_THRESHOLD
+  const rangedRange = gridRangeFromFeet(derived.attackRange)
+  const ranged = rangedRange > 0
   return {
     id: unit.id,
     name: unit.name,
@@ -47,7 +58,7 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     hp: Math.max(0, Math.min(unit.health, derived.maxHp)),
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
-    rangedRange: ranged ? RANGED_GRID_RANGE : 0,
+    rangedRange,
     moveSpeed: derived.moveSpeed * MOVE_SCALE,
     attackElement: derived.attackElement,   // §3 weapon-imbued attack element
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
@@ -57,7 +68,8 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
 }
 
 export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: Team): EngineUnitInput {
-  const ranged = (def.stats.attackRange ?? RANGED_FEET_THRESHOLD) > RANGED_FEET_THRESHOLD
+  const rangedRange = gridRangeFromFeet(def.stats.attackRange ?? RANGED_FEET_THRESHOLD)
+  const ranged = rangedRange > 0
   const defense = def.stats.defense[0] + def.stats.defense[1]   // ability + armor
   return {
     id: instanceId,
@@ -71,7 +83,7 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     hp: def.health,
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
-    rangedRange: ranged ? RANGED_GRID_RANGE : 0,
+    rangedRange,
     moveSpeed: (def.stats.moveSpeed ?? 10) * MOVE_SCALE,
     attackElement: 'neutral',   // §3 monsters attack neutral; def.element is defensive
     armorElement: def.element,
