@@ -13,6 +13,10 @@ export const DROP_ITEMS: Record<string, string> = {
   'drop-ectoplasm':     'Ectoplasm',     'drop-ancient-coin':  'Ancient Coin',
   'drop-bat-wing':      'Bat Wing',      'drop-bat-fang':      'Bat Fang',
   'drop-plate-scrap':   'Plate Scrap',   'drop-haunted-iron':  'Haunted Iron',
+  'drop-hornet-stinger':'Hornet Stinger','drop-hornet-wing':   'Hornet Wing',
+  'drop-nightshade-berry':'Nightshade Berry','drop-toxic-spore':'Toxic Spore',
+  'drop-larva':         'Larva',         'drop-chitin':        'Chitin',
+  'drop-bone-arrow':    'Bone Arrow',    'drop-skull-fragment':'Skull Fragment',
 }
 
 // moveSpeed: ft/s (divide by TICKS_PER_SECOND in tick loop for ft/tick)
@@ -36,4 +40,12 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   // only swings a middling sword. Accuracy is mediocre and dodge is bottom of
   // the table (it's a slab of metal). Lives on Geffen Dungeon Floor 3.
   'animated-armor':{ id: 'animated-armor',name: 'Animated Armor',level: 4, health: 1300, element: 'neutral', size: 'medium', attackName: 'Slam',   stats: { attack: 10, defense: [40,60], magicAttack: 1,  magicDefense: [6,6],  attackSpeed: 5,  accuracy: 8,  dodge: 1,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-plate-scrap',     dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-haunted-iron',  dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
+  // Hornet — glass cannon pest. Fast move + fast sting, but folds to one solid hit.
+  'hornet':        { id: 'hornet',       name: 'Hornet',         level: 2, health:  18, element: 'poison',  size: 'small',  attackName: 'Sting',  stats: { attack: 3,  defense: [1,1],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 24, accuracy: 18, dodge: 18, moveSpeed: 16,  attackRange: 5  }, drops: [{ itemId: 'drop-hornet-stinger',  dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-hornet-wing',   dropRate: 0.45, quantityMin: 1, quantityMax: 2 }] },
+  // Living Nightshade — rooted plant; spits spores at 20 ft (4 spaces). Can't dodge.
+  'living-nightshade':{ id: 'living-nightshade',name: 'Living Nightshade',level: 3, health: 50, element: 'poison',  size: 'small',  attackName: 'Spores', stats: { attack: 10, defense: [2,1],   magicAttack: 8,  magicDefense: [4,3],  attackSpeed: 12, accuracy: 12, dodge: 2,  moveSpeed: 0,   attackRange: 20 }, drops: [{ itemId: 'drop-nightshade-berry',dropRate: 0.55, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-toxic-spore',   dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
+  // Egg Sac — inert hazard. Doesn't attack, doesn't move; just sits there absorbing hits.
+  'egg-sac':       { id: 'egg-sac',      name: 'Egg Sac',        level: 1, health:  55, element: 'neutral', size: 'medium', attackName: 'Burst',  stats: { attack: 0,  defense: [1,0],   magicAttack: 0,  magicDefense: [1,0],  attackSpeed: 0,  accuracy: 0,  dodge: 0,  moveSpeed: 0,   attackRange: 5  }, drops: [{ itemId: 'drop-larva',           dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-chitin',        dropRate: 0.40, quantityMin: 1, quantityMax: 2 }] },
+  // Skeleton Archer — slow-firing ranged undead. 35 ft bow shot, modest HP, brittle.
+  'skeleton-archer':{ id: 'skeleton-archer',name: 'Skeleton Archer',level: 4, health: 50, element: 'undead',  size: 'medium', attackName: 'Arrow',  stats: { attack: 14, defense: [3,2],   magicAttack: 1,  magicDefense: [2,2],  attackSpeed: 6,  accuracy: 14, dodge: 4,  moveSpeed: 3,   attackRange: 35 }, drops: [{ itemId: 'drop-bone-arrow',      dropRate: 0.70, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-skull-fragment',dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
 }

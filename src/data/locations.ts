@@ -18,14 +18,14 @@ export const INITIAL_LOCATIONS: Location[] = [
   {
     id: 'geffen-field-1', region: 'world', name: 'Geffen Outskirts',
     description: 'A windswept plain east of Geffen — first proving ground on the road to Prontera.',
-    traits: ['plains'], monsterIds: ['slime'],
+    traits: ['plains'], monsterIds: ['hornet', 'egg-sac'],
     familiarityMax: 100, connections: [],
     testScenarioId: 'open-field',
   },
   {
     id: 'prontera-field-1', region: 'world', name: 'Western Approach',
     description: 'Rolling hills west of Prontera ringed by ruined walls — a natural perimeter for kiting tests.',
-    traits: ['plains'], monsterIds: ['slime'],
+    traits: ['plains'], monsterIds: ['living-nightshade'],
     familiarityMax: 100, connections: [],
     testScenarioId: 'los-kiting-perimeter',
   },
@@ -38,7 +38,7 @@ export const INITIAL_LOCATIONS: Location[] = [
   {
     id: 'prontera-field-2', region: 'world', name: 'Southern Road',
     description: 'A coastal road descending south toward Kanto.',
-    traits: ['plains'], monsterIds: ['slime'],
+    traits: ['plains'], monsterIds: ['skeleton-archer'],
     familiarityMax: 100, connections: [],
   },
   {
