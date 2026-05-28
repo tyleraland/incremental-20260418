@@ -24,10 +24,11 @@ describe('engine: outcomes (§9)', () => {
   })
 
   it('draws at the round cap when neither side can kill the other', () => {
-    // Huge DEF on both sides → damage floored to 1/round, 50 HP each → never
-    // resolves before the cap. meleeRange 10 puts them in reach from round 1.
+    // Huge DEF on both sides → damage floored to 1/round; HP comfortably
+    // outlasts the cap so the fight is unresolved when MAX_ROUNDS hits.
+    // meleeRange 10 puts them in reach from round 1.
     const tank = (id: string, team: 'player' | 'enemy') =>
-      eu({ id, team, str: 5, def: 1000, maxHp: 200, hp: 200, meleeRange: 30 })
+      eu({ id, team, str: 5, def: 1000, maxHp: MAX_ROUNDS * 4, hp: MAX_ROUNDS * 4, meleeRange: 30 })
     const r = resolve({
       playerUnits: [tank('p', 'player')],
       enemyUnits: [tank('e', 'enemy')],

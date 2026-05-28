@@ -7,7 +7,7 @@ export const ROWS = 15           // §2.1 grid rows    (y ∈ [0, ROWS])
 
 export const BASE_MOVE_SPEED = 0.9   // §2.5 grid units per round
 export const SEPARATION = 0.7        // §2.4 minimum distance between two units
-export const MAX_ROUNDS = 50         // §9.2 draw if unresolved by this round
+export const MAX_ROUNDS = 200        // §9.2 draw if unresolved by this round
 
 // §2.3 rank zones, measured as rows from a team's own edge (used by rankOf, a
 // query helper; combat behaviour doesn't read ranks).
