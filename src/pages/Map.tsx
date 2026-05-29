@@ -39,6 +39,7 @@ const PAGE_GRID: Record<string, { cols: number; rows: number }> = {
 const LOCATION_COORDS: Record<string, [number, number]> = {
   // World — path runs east through the middle, then turns south.
   'geffen-city':      [2, 3],
+  'elite-four':       [2, 2],   // Elite Four arena (north of Geffen)
   'geffen-field-1':   [3, 3],   // Geffen Outskirts
   'prontera-field-1': [4, 3],   // Western Approach
   'prontera-city':    [5, 3],

@@ -39,4 +39,13 @@ describe('adapter: monsterToEngineInput', () => {
     expect(e.preferredRank).toBe('back')
     expect(e.rangedRange).toBeGreaterThan(0)
   })
+
+  it('carries optional skills + tactics through to the engine (humanoid monsters)', () => {
+    // Elite Four members are stats-like-a-monster but inherit the hero engine
+    // kit: skills give per-skill engine tactics, and the explicit tactics list
+    // flows through unchanged.
+    const e = monsterToEngineInput(MONSTER_REGISTRY['elite-ranger'], 'elite-ranger#0', 'enemy')
+    expect(e.skills.map((s) => s.id).sort()).toEqual(['ankle-snare', 'arrow-shower'])
+    expect((e.tactics ?? []).map((t) => t.id).sort()).toEqual(['focus-casters', 'kiter', 'opportunist', 'retreater'])
+  })
 })

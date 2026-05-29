@@ -71,6 +71,14 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
   const rangedRange = gridRangeFromFeet(def.stats.attackRange ?? RANGED_FEET_THRESHOLD)
   const ranged = rangedRange > 0
   const defense = def.stats.defense[0] + def.stats.defense[1]   // ability + armor
+  // Optional skill kit — same merge as heroes: each becomes an action-channel
+  // tactic via makeSkillTactic, so a monster with `skills` gets sensible
+  // when-to-cast behavior for free.
+  const skills: EngineSkill[] = []
+  for (const { id, level } of def.skills ?? []) {
+    const built = buildEngineSkill(id, level)
+    if (built) skills.push(built)
+  }
   return {
     id: instanceId,
     name: def.name,
@@ -87,6 +95,7 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     moveSpeed: (def.stats.moveSpeed ?? 10) * MOVE_SCALE,
     attackElement: 'neutral',   // §3 monsters attack neutral; def.element is defensive
     armorElement: def.element,
-    skills: [],
+    skills,
+    tactics: def.tactics ?? [],
   }
 }

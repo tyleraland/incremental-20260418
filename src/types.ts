@@ -142,6 +142,14 @@ export interface MonsterDef {
   size: MonsterSize        // §3: default 'medium'
   isBoss?: boolean         // §3: undefined = false
   attackName: string
+  // Optional engine-skill kit. Each entry is built via buildEngineSkill(id, level)
+  // and behaves exactly like an action-bar skill on a hero — including the
+  // "skills give you tactics" merge.
+  skills?: { id: string; level: number }[]
+  // Optional engine tactics. Same shape as a hero's tactic loadout — opens the
+  // door for skill/tactic-bearing humanoid encounters (the Elite Four, future
+  // monsters with class-like kits).
+  tactics?: TacticSlot[]
 }
 
 // ── Equipment item ────────────────────────────────────────────────────────────

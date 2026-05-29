@@ -16,6 +16,13 @@ export const INITIAL_LOCATIONS: Location[] = [
     dungeonEntryRegion: 'geffen-dungeon',
   },
   {
+    id: 'elite-four', region: 'world', name: 'Elite Four',
+    description: 'A walled arena north of Geffen where four champions — a Fighter, a Rogue, a Cleric, and a Ranger — test all comers.',
+    traits: ['plains', 'dangerous'],
+    monsterIds: ['elite-fighter', 'elite-rogue', 'elite-cleric', 'elite-ranger'],
+    familiarityMax: 100, connections: [],
+  },
+  {
     id: 'geffen-field-1', region: 'world', name: 'Geffen Outskirts',
     description: 'A windswept plain east of Geffen — first proving ground on the road to Prontera.',
     traits: ['plains'], monsterIds: ['hornet', 'egg-sac'],
