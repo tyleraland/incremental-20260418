@@ -392,7 +392,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      <div className="flex-1 min-h-0 grid place-items-center p-2">
+      <div className="flex-1 min-h-0 grid justify-items-center items-start">
         <Arena cam={cam} barriers={battle.barriers}>
           {/* persistent ground hazards (Firewall, etc.) */}
           {battle.zones.map((z) => (
@@ -537,7 +537,7 @@ export function Preview({ location }: { location: Location | null }) {
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      <div className="flex-1 min-h-0 grid place-items-center p-2">
+      <div className="flex-1 min-h-0 grid justify-items-center items-start">
         <Arena cam={cam} barriers={locationBarriers(location)}>
           {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} />)}
           {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} />)}

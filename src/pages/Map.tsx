@@ -661,8 +661,9 @@ function BattleDropIn() {
   return (
     <div className="h-full flex flex-col pt-4 min-h-0">
       <RosterCarousel units={units} />
-      {/* context bar — zoom out, location, round */}
-      <div className="h-10 px-3 flex items-center gap-2 border-b border-game-border bg-game-surface/40 shrink-0">
+      {/* context bar — matches the overworld action bar's height so the
+          roster → bar → content rhythm is identical across modes */}
+      <div className="h-12 px-3 flex items-center gap-1.5 border-b border-game-border bg-game-surface/40 shrink-0">
         <button
           onClick={exitBattleView}
           className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0"
