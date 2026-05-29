@@ -102,6 +102,8 @@ export interface GameState {
   // Drop into a location's battlefield viewer / return to the overworld.
   enterBattleView: (locationId: string) => void
   exitBattleView: () => void
+  // Jump the overworld to a unit's deployed location (roster double-tap).
+  showUnitOnMap: (unitId: string) => void
   setMapPage: (id: string) => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
@@ -536,6 +538,16 @@ export const useGameStore = create<GameState>((set) => ({
     return {
       mapMode: 'world',
       ...(loc ? { mapPageId: loc.region, selectedLocationId: loc.id } : {}),
+    }
+  }),
+  // Roster double-tap: pop back to the overworld and frame the unit's location
+  // (or just the overworld with nothing selected if it's unassigned).
+  showUnitOnMap: (unitId) => set((s) => {
+    const u = s.units.find((x) => x.id === unitId)
+    const loc = u?.locationId ? s.locations.find((l) => l.id === u.locationId) : null
+    return {
+      mapMode: 'world',
+      ...(loc ? { mapPageId: loc.region, selectedLocationId: loc.id } : { selectedLocationId: null }),
     }
   }),
   setMapPage: (id) => set({ mapPageId: id }),

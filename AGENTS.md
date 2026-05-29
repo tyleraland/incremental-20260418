@@ -119,6 +119,9 @@ stops at walls and the arena perimeter.
   or hit the **Drop in ›** button (location detail panel / unit action bar), to
   enter battle mode (`enterBattleView`). A **⤢ Overworld** chip zooms back out
   (`exitBattleView`), re-selecting the location you were watching.
+- **Roster double-tap:** double-tapping a hero in the roster carousel pops back
+  to the overworld framed on that unit's location (`showUnitOnMap`) — the
+  mirror of the location double-tap. Single-tap still toggles selection.
 - **Combat keeps running for every location regardless of view** — the engine
   ticks all battles each tick; the drop-in is purely which one you're watching.
 - The viewer is `src/components/BattleView.tsx` (`<BattleView locationId>`): live

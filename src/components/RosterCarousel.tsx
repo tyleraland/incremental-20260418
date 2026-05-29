@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useGameStore, RECOVERY_TICKS, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
 
 // Horizontal hero roster strip, pinned at the top of the Map tab in both the
@@ -13,9 +14,25 @@ function hpBarColor(hp: number) {
 function RosterUnitCard({ unit }: { unit: Unit }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
+  const showUnitOnMap    = useGameStore((s) => s.showUnitOnMap)
   const equipment        = useGameStore((s) => s.equipment)
   const locations        = useGameStore((s) => s.locations)
   const isSelected       = selectedUnitIds.includes(unit.id)
+  const lastTapRef       = useRef(0)
+
+  // Single tap toggles selection; double-tap (within 300 ms) pops back to the
+  // overworld framed on this unit's location — mirrors the location double-tap
+  // that drops into battle.
+  function handleTap() {
+    const now = Date.now()
+    if (now - lastTapRef.current < 300) {
+      lastTapRef.current = 0
+      showUnitOnMap(unit.id)
+      return
+    }
+    lastTapRef.current = now
+    toggleSelectUnit(unit.id)
+  }
   const isRecovering     = unit.recoveryTicksLeft > 0
   const isResting        = unit.isResting
   const maxHp            = getDerivedStats(unit, equipment).maxHp
@@ -25,7 +42,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 
   return (
     <button
-      onClick={() => toggleSelectUnit(unit.id)}
+      onClick={handleTap}
       className={[
         'shrink-0 w-24 px-2 py-1.5 border-b text-left select-none transition-colors duration-100',
         unit.health <= 0 ? 'opacity-60' : '',
