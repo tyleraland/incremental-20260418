@@ -25,6 +25,14 @@ itself behind — see *Spec drift* below).
 
 ## Combat content
 
+- **Per-location quests & async choices.** Each location grows a small
+  pool of quest hooks (kill X, escort Y, recover Z) and pinch-point
+  choices the player resolves out-of-combat. Resolution is async — the
+  party at the location ticks toward the objective in the background,
+  and choice nodes surface in a notification / location panel for the
+  player to answer when convenient. Folds into the open-world shape
+  (above) and the location codex, so each cell is more than "the wave
+  it spawns."
 - **Ranger Beast Master pets** — a Ranger subclass / kit that fields a
   combat companion (wolf, hawk, bear?) that fights alongside the party.
   Needs: a pet as an extra player combatant with its own stats / tactics,
