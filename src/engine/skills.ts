@@ -43,6 +43,11 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'poison':        () =>   skill({ id: 'poison', name: 'Poison', type: 'debuff', targeting: 'single_enemy', range: 1.2, cooldown: 4, statusApplied: 'poisoned' }),
   'arrow-shower':  (lv) => skill({ id: 'arrow-shower', name: 'Arrow Shower', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 1.8, cooldown: 4, damageFormula: `str * ${coef(0.7, 0.15, lv)}`, knockback: 3 }),
   'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 5, aoeRadius: 1.6, cooldown: 6, channelTime: 2, element: 'fire', retreatAfter: 2.5, zone: { dotDamage: 3 + lv, duration: 3 } }),
+  // Lightning Storm: a wide, long-lived cloud that zaps anything inside it for 1
+  // lightning/round (§2 zones). The catch is a *very* long channel — easy to
+  // interrupt — so it's a high-risk pre-positioned nuke, not a panic button.
+  // ~10 real-seconds of storm at ~2.5 rounds/sec ⇒ ~24 rounds of duration.
+  'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 7, aoeRadius: 2.6, cooldown: 10, channelTime: 5, element: 'lightning', zone: { dotDamage: 1, duration: 24, element: 'lightning' } }),
   'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: 5, statusApplied: 'rooted' }),
 
   // Phase 3 — behavioural & combos: freeze→amplify, stealth, dispel/reveal.

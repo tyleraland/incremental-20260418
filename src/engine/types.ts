@@ -41,7 +41,7 @@ export interface EngineSkill {
   statusApplied?: string // status effect id, if any
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
-  zone?: { dotDamage: number; duration: number }  // place a persistent ground hazard (aoe_point)
+  zone?: { dotDamage: number; duration: number; element?: Element }  // place a persistent ground hazard (aoe_point)
   stealthBonus?: number  // damage multiplier when cast from stealth (Back Stab, §3)
   dispelCategory?: 'buff' | 'debuff'  // strip statuses of this category from affected targets
   removesStatusId?: string            // strip a specific status from affected targets (Sight → stealthed)
@@ -207,6 +207,7 @@ export interface Combatant {
   attacksReceived: number                // for Nimble's deterministic dodge
   lastHitById: string | null             // attacker since this unit's last turn (Counterattacker)
   channel: ChannelState | null           // active channeled cast, if any (§4 cast time)
+  interruptedCount: number               // times a channel of theirs has been disrupted (Wary Caster reads this)
 }
 
 // ── Events (§12) ─────────────────────────────────────────────────────────────--
@@ -298,6 +299,7 @@ export interface BattleZone {
   dotDamage: number
   roundsLeft: number
   skillId: string
+  element?: Element       // flavour element for the tick (UI label); damage itself bypasses the matrix
 }
 
 // Steppable battle state — `advanceRound` mutates this in place. Carries the

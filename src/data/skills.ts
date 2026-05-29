@@ -107,6 +107,12 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  'lightning-storm': {
+    id: 'lightning-storm', name: 'Lightning Storm', maxLevel: 10, type: 'active',
+    description: () => `Conjure a storm cloud: 1 lightning/round to anything inside for ~10s. Very long cast — set it up before the fight comes to you.`,
+    requires: [{ skillId: 'arcane-knowledge', minLevel: 2 }],
+    getBonuses: () => ({}),
+  },
   'ankle-snare': {
     id: 'ankle-snare', name: 'Ankle Snare', maxLevel: 10, type: 'active',
     description: () => `Root a foe in place, then retreat.`,

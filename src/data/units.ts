@@ -48,13 +48,13 @@ export const INITIAL_UNITS: Unit[] = [
     class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'prontera-city',
     abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 },
     abilityPoints: 25, skillPoints: 2,
-    learnedSkills: { 'arcane-knowledge': 3, 'fire-bolt': 3, 'lightning-bolt': 2, 'frost-bolt': 2, 'freeze': 2, 'firewall': 1, 'dispel': 1 },
+    learnedSkills: { 'arcane-knowledge': 3, 'fire-bolt': 3, 'lightning-bolt': 2, 'frost-bolt': 2, 'freeze': 2, 'firewall': 1, 'lightning-storm': 1, 'dispel': 1 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-staff', offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
-    actionSlots: bar('freeze', 'lightning-bolt', 'fire-bolt', 'frost-bolt', 'firewall', 'dispel'),
-    tactics: [t('opportunist'), t('retreater'), t('kiter'), t('nimble')],
+    actionSlots: bar('freeze', 'lightning-bolt', 'fire-bolt', 'lightning-storm', 'firewall', 'dispel'),
+    tactics: [t('storm-caller'), t('retreater'), t('wary-caster'), t('nimble')],
   },
   // ── Cleric (back-line healer / support) ─────────────────────────────────────
   {
@@ -96,6 +96,6 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('cloak', 'back-stab', 'arrow-shower', 'ankle-snare', 'sight', 'poison'),
-    tactics: [t('focus-casters'), t('opportunist'), t('retreater'), t('flanker')],
+    tactics: [t('focus-casters'), t('opportunist'), t('retreater'), t('ambusher')],
   },
 ]

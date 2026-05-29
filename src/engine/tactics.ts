@@ -11,10 +11,10 @@
 // with rank (§15).
 
 import { distance } from './grid'
-import { SEPARATION } from './constants'
+import { SEPARATION, EPS } from './constants'
 import { effectiveStat } from './damage'
 import {
-  lockedTarget, nearestEnemyTo,
+  lockedTarget, nearestEnemyTo, isCaster,
   squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
 } from './spatial'
 import type {
@@ -29,6 +29,13 @@ function enemiesOf(state: BattleState, self: Combatant): Combatant[] {
 }
 function defOf(c: Combatant): number { return effectiveStat(c, 'def') }
 function hpRatio(c: Combatant): number { return c.hp / c.maxHp }
+function isCloaked(c: Combatant): boolean { return c.statuses.some((s) => s.flags.includes('stealthed')) }
+// The widest blast radius among a unit's skills (0 if it has no AoE skill).
+function maxAoeRadius(c: Combatant): number {
+  let r = 0
+  for (const s of c.skills) if (s.aoeRadius > r) r = s.aoeRadius
+  return r
+}
 
 // Deterministic min-by with id tiebreak.
 function pickBy(list: Combatant[], score: (c: Combatant) => number, prefer: 'min' | 'max'): Combatant | null {
@@ -82,6 +89,27 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       return casters.length ? pickBy(casters, (e) => effectiveStat(e, 'int'), 'max')!.id : null
     },
   },
+  'storm-caller': {
+    id: 'storm-caller', name: 'Storm Caller', scope: 'unit', channel: 'targeting',
+    description: 'AoE casters: drop the blast on the densest enemy cluster to catch the most foes — but only settle for a thin (2-foe) cluster when you can hit it from a safe distance, since the long cast is wasted on a single target.',
+    targeting: (self, state, rank) => {
+      const aoeR = maxAoeRadius(self)
+      if (aoeR <= 0) return null   // no AoE skill → let other targeting tactics decide
+      const foes = enemiesOf(state, self)
+      if (foes.length === 0) return null
+      // Cluster value of a candidate epicentre = foes within one blast radius.
+      const clusterSize = (c: Combatant) => foes.filter((e) => distance(c.pos, e.pos) <= aoeR + EPS).length
+      const center = pickBy(foes, clusterSize, 'max')
+      if (!center) return null
+      // How many foes justify committing the long channel. We want a fat cluster
+      // (3+), but it's fine to nuke just 2 when we're safely out of reach (can
+      // channel uninterrupted). Higher rank lowers the bar (more trigger-happy).
+      const threat = nearestEnemyTo(self, state)
+      const safe = !threat || distance(self.pos, threat.pos) >= kiteDistanceFor(self, threat)
+      const want = Math.max(2, (safe ? 2 : 3) - (rank - 1))
+      return clusterSize(center) >= want ? center.id : null
+    },
+  },
 
   // Movement -------------------------------------------------------------------
   'charger': {
@@ -125,6 +153,30 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       const threat = nearestEnemyTo(ally, state)
       if (!threat) return null
       return { toPoint: guardPoint(ally, threat, SEPARATION * 1.6) }
+    },
+  },
+  'ambusher': {
+    id: 'ambusher', name: 'Ambusher', scope: 'unit', channel: 'movement',
+    description: "While cloaked, stalk to your target's blind side to line up the opening strike before you're seen. Pairs with Cloak + Back Stab as a pre-ambush.",
+    movement: (self, state) => {
+      if (!isCloaked(self)) return null   // only steers the approach while hidden; once revealed, normal movement
+      const t = lockedTarget(self, state)
+      if (!t) return null
+      return { toPoint: flankPoint(self, t, state, Math.max(self.meleeRange, SEPARATION)) }
+    },
+  },
+  'wary-caster': {
+    id: 'wary-caster', name: 'Wary Caster', scope: 'unit', channel: 'movement',
+    description: "A caster who keeps getting their spell interrupted assumes the enemy is hunting the cast — backs off further from assailants after each disruption so they can channel from a safer distance.",
+    movement: (self, state, rank) => {
+      if (self.rangedRange <= 0 && !isCaster(self)) return null   // melee can't kite-cast
+      if (self.interruptedCount <= 0) return null                 // unbothered → leave positioning to the default caster kite
+      const threat = nearestEnemyTo(self, state)
+      if (!threat) return null
+      // Widen the kite gap the more we've been denied (capped) so a chaser can't
+      // keep clipping the cast; rank steepens the back-off.
+      const extra = Math.min(self.interruptedCount, 4) * (0.8 + 0.4 * (rank - 1))
+      return { desiredRange: kiteDistanceFor(self, threat) + extra }
     },
   },
   // Regroup retired: cohesion is now a light default bias inside back-off

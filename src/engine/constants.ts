@@ -9,6 +9,11 @@ export const BASE_MOVE_SPEED = 0.9   // §2.5 grid units per round
 export const SEPARATION = 0.7        // §2.4 minimum distance between two units
 export const MAX_ROUNDS = 200        // §9.2 draw if unresolved by this round
 
+// §3 "sneak attack" / ambush: a strike made from stealth lands for +25% extra
+// damage. Back Stab's own `stealthBonus` multiplies on top of this. A future
+// Sneak Attack skill would scale this base further (see BACKLOG).
+export const STEALTH_ATTACK_BONUS = 0.25
+
 // §2.3 rank zones, measured as rows from a team's own edge (used by rankOf, a
 // query helper; combat behaviour doesn't read ranks).
 export const FRONT_ROWS = 3          // ranks 0–3 = front

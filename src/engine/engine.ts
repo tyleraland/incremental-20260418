@@ -5,7 +5,7 @@
 // in place so the host can step combat "one round per N ticks"; `resolve` runs
 // to completion for tests and bulk/idle resolution.
 
-import { COLS, ROWS, MAX_ROUNDS, EPS } from './constants'
+import { COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS } from './constants'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
 import {
@@ -78,6 +78,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     attacksReceived: 0,
     lastHitById: null,
     channel: null,
+    interruptedCount: 0,
   }
 }
 
@@ -129,6 +130,10 @@ function applyDamageRaw(
   amount: number,
 ): void {
   target.hp = Math.max(0, target.hp - amount)
+  // §3 stealth: taking damage drops a cloak. Single-target attacks can't even
+  // pick a hidden unit, so in practice this is AoE / ground-zone / DoT splash
+  // "disrupting" the cloak — the hidden unit pops back into view.
+  if (amount > 0 && target.statuses.length) breakStealth(state, target)
   addStat(state.stats.totalDamageByUnit, attackerId, amount)
   if (target.hp <= 0 && target.alive) {
     target.alive = false
@@ -164,6 +169,7 @@ function knockbackTarget(state: BattleState, caster: Combatant, target: Combatan
   if (target.channel) {
     emit(state, { round: state.round, type: 'interrupt', sourceId: caster.id, targetId: target.id, extra: { skillId: target.channel.skillId } })
     target.channel = null
+    target.interruptedCount += 1
   }
 }
 
@@ -185,7 +191,7 @@ function tickZones(state: BattleState): void {
   for (const z of state.zones) {
     for (const c of state.combatants) {
       if (!c.alive || c.team !== z.team) continue
-      if (distance(c.pos, z.pos) <= z.radius + EPS) applyTickDamage(state, z.sourceId, c, z.dotDamage, 'fire')
+      if (distance(c.pos, z.pos) <= z.radius + EPS) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'fire')
     }
     z.roundsLeft -= 1
     if (z.roundsLeft > 0) kept.push(z)
@@ -236,6 +242,7 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
     if (target.channel) {   // §4 a landed hit disrupts a channeled cast
       emit(state, { round: state.round, type: 'interrupt', sourceId: attacker.id, targetId: target.id, extra: { skillId: target.channel.skillId } })
       target.channel = null
+      target.interruptedCount += 1
     }
   }
 }
@@ -269,10 +276,11 @@ function clearByElement(state: BattleState, target: Combatant, element: Element)
   }
 }
 
-// Back Stab and friends: bonus only when the attacker is currently hidden.
+// Striking from stealth (§3): every ambush gets the base sneak-attack bonus
+// (+STEALTH_ATTACK_BONUS); Back Stab's own `stealthBonus` multiplies on top.
 function stealthMult(attacker: Combatant, skill: EngineSkill | null): number {
-  if (skill?.stealthBonus && attacker.statuses.some((s) => s.flags.includes('stealthed'))) return skill.stealthBonus
-  return 1
+  if (!attacker.statuses.some((s) => s.flags.includes('stealthed'))) return 1
+  return (1 + STEALTH_ATTACK_BONUS) * (skill?.stealthBonus ?? 1)
 }
 
 // Dealing damage drops stealth (called once per offensive action, after it lands).
@@ -342,6 +350,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
       dotDamage: skill.zone.dotDamage,
       roundsLeft: skill.zone.duration,
       skillId: skill.id,
+      element: skill.zone.element ?? skill.element,
     })
   }
 

@@ -83,8 +83,13 @@ same way" by penalising left-side detours.
   Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),
   *Lock & Focus* (Controller + Focus Fire), *Kite* (existing + maintain LoS).
 - **Ambush combo** — primitives exist (cloak, back-stab, flanker,
-  focus-casters); needs an orchestrator that holds Cloak until in Back Stab
-  range of the focus target.
+  focus-casters, **ambusher** — stalk-while-cloaked); needs an orchestrator
+  that holds Cloak until in Back Stab range of the focus target.
+- **Sneak Attack skill** — a learnable skill that scales the base
+  `STEALTH_ATTACK_BONUS` (currently a flat +25% on any strike from stealth) up
+  with level, so investing in stealth makes the opening ambush hit harder.
+  Today the bonus is a single engine constant; the skill would read its level
+  and feed a per-unit multiplier through the adapter.
 - **1v1 chase circling** — a lone chaser orbits a barrier after a fleeing
   target forever. Multi-unit fights converge so this rarely bites in
   practice; would need a "cut the corner" intercept.

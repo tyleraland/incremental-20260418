@@ -6,7 +6,7 @@
 
 export * from './types'
 export {
-  COLS, ROWS, BASE_MOVE_SPEED, SEPARATION, MAX_ROUNDS,
+  COLS, ROWS, BASE_MOVE_SPEED, SEPARATION, MAX_ROUNDS, STEALTH_ATTACK_BONUS,
   FRONT_ROWS, MID_ROWS, PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT,
 } from './constants'
 export {
@@ -14,7 +14,7 @@ export {
 } from './grid'
 export {
   alliesOf, visibleEnemiesOf, lockedTarget, centroid, nearestTo,
-  nearestEnemyTo, squishiestAlly, flankPoint, guardPoint,
+  nearestEnemyTo, squishiestAlly, flankPoint, guardPoint, kiteDistanceFor, isCaster,
 } from './spatial'
 export {
   variation, evalFormula, effectiveStat, defaultCalculateDamage, calculateHeal,
