@@ -1,8 +1,7 @@
 # Combat / Tactic Engine — Backlog
 
 Deferred work and known shortcuts for the combat engine (`src/engine`).
-Implemented behavior is in `CLAUDE.md` → Feature Specifications (which is
-itself behind — see *Spec drift* below).
+Implemented behavior is in `CLAUDE.md` → Feature Specifications.
 
 ## Long-horizon shape changes
 
@@ -110,9 +109,14 @@ same way" by penalising left-side detours.
 
 ## Data / spec drift
 
-- **`CLAUDE.md` Feature Specifications** still documents the pre-engine
-  combat (KO recovery, monster-behavior dropdowns, encounter slots). The
-  tactic engine replaced most of it. The doc lags.
+- **Crafting loop is disconnected at the joints.** Monster drops add
+  `drop-*` items to inventory, but recipes consume the starter items
+  `m1`–`m4` (not the `drop-*` items), and recipe outputs are `craft-*`
+  items that don't exist in `equipment.ts` — so nothing crafted is
+  equippable. Closing drops → recipes → equipment is the main inventory
+  gameplay gap.
+- **Dead code removed** (was: `HelloWorld.tsx`, `Codex.tsx` page,
+  `useResourceStore`). The codex UI lives embedded in `Map.tsx`.
 - **Per-location terrain** is a single hardcoded map (`LOCATION_TERRAIN`)
   and `arenaBarriers()` returns one fixed cross regardless of location.
 - **No save migrations** — recent INITIAL_UNITS overhaul, new skills, new

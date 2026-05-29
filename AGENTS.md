@@ -4,11 +4,13 @@ We're iterating fast on UI. No tests yet. Don't over-engineer toward future feat
 
 ## Architecture patterns
 
-**Single Zustand store** (`src/stores/useGameStore.ts`) holds all state — game data and UI state alike (expanded rows, active tab, equip context, etc.).
+**Single Zustand store** (`src/stores/useGameStore.ts`) holds all game and UI state — units, equipment, inventory, plus UI bits (expanded rows, active tab, equip context, etc.). The one exception is live combat: per-location `BattleState` objects live in `battles[locationId]` (runtime-only, not persisted) and are produced by the combat engine, not hand-written by the store.
+
+**The combat engine is a separate, pure module** (`src/engine/`). It is a deterministic, round-based *spatial* simulation on a 15×15 grid — units have positions, move, kite, flank, and body-block. It imports no game state, time, or stats; `src/engine/adapter.ts` is the only translation layer between game `Unit`/`MonsterDef` + `DerivedStats` and the engine's `EngineUnitInput`. The engine never mutates its inputs. See the Combat spec below and `BACKLOG.md` for deferred engine work.
 
 **Derived stats are computed at render time**, never stored. `getDerivedStats(unit, equipment)` reads abilities + equipment bonuses + skill bonuses each time. Same for `getUnitTraits`, `getAvailableSkills`, etc.
 
-**Registries are plain exported objects** — `TRAIT_REGISTRY`, `MONSTER_REGISTRY`, `SKILL_REGISTRY`, `RECIPE_REGISTRY`. Add entries there; the UI reads them.
+**Registries are plain exported objects** — `TRAIT_REGISTRY`, `MONSTER_REGISTRY`, `SKILL_REGISTRY`, `RECIPE_REGISTRY`, `TACTIC_REGISTRY`. Add entries there; the UI and engine read them.
 
 **Collapsible row pattern** throughout: header always visible, body toggled via `expandedXxxIds: string[]` in the store.
 
@@ -37,72 +39,91 @@ These are the implemented behaviors. Written so they can eventually become test 
 
 ### Health
 
-- Unit health is stored as a whole integer (0–100). `Math.floor` is applied at the moment damage is written, never at display time.
-- A unit with `health <= 0` is KO'd.
-- KO'd units enter recovery: `recoveryTicksLeft` counts down from `RECOVERY_TICKS` (10) once per tick.
-- Health regenerates at `REGEN_RATE` (5 HP) per tick during recovery — so a unit returns from KO with at least 5 HP, never 0.
-- Units not assigned to any location also regen at `REGEN_RATE` per tick (idle recovery).
-- Health is capped at 100 after regen.
+- Unit health is a whole integer capped at `maxHp` (derived: `floor(50 + con * 10)`, see `src/lib/stats.ts`). `Math.floor` is applied at the moment damage is written, never at display time.
+- A unit with `health <= 0` is KO'd. KO'd units (and units still in recovery) do not participate in combat.
+- KO'd units enter a recovery phase: `recoveryTicksLeft` counts down from `RECOVERY_TICKS` (15) once per tick. **No regen during this phase.**
+- When recovery ends the unit enters *resting* (`isResting`), regenerating `RESTING_REGEN_RATE` (1 HP/tick) until it reaches `maxHp`, at which point `isResting` clears.
+- Units not assigned to any location regen `REGEN_RATE` (1 HP/tick) — idle recovery.
+- Health is capped at `maxHp` after regen. `batchTick` applies the same logic in bulk for offline catch-up (it does **not** simulate combat — only regen/recovery/leveling).
 
-### Locations & Regions
+### Map & Locations
 
-- Every location belongs to a `region` (string id).
-- Locations are displayed grouped under their region header on the Locations tab.
-- Each region header is independently collapsible. Expanded state persisted to `localStorage` key `expandedRegionIds`. Default: all regions expanded.
-- Each location row is independently collapsible. Expanded state persisted to `localStorage` key `expandedLocationIds`. Default: all collapsed.
-- A collapsed location with **no units assigned** renders as a compact name-only row (minimal padding, dimmed text).
-- A collapsed location with **units assigned** renders its normal header plus the unit cards below it.
-- Locations act as drop targets for drag-and-drop unit assignment.
+- The Map tab is a **pannable overworld**, not a list. Each location's `region` field names the map *page* it lives on (`'world'`, `'geffen-dungeon'`); `mapPageId` selects the visible page. Region-grouped collapsible headers are gone.
+- Locations sit on a fixed grid (`LOCATION_COORDS` in `Map.tsx`); adjacent path cells are adjacent on the grid so the route reads as a connected chain. The world is larger than a phone screen — the player drags the camera to navigate (mobile-first, no scroll-wheel assumed).
+- Dungeon pages (`isDungeon`) are entered from a world location (`entryLocationId`) and exit back to it.
+- Tapping a location selects it and opens a detail panel (units present, monsters, **Familiarity** meter = `locationFamiliarity[id] / familiarityMax`, deploy button).
+- `expandedLocationIds` / `expandedRegionIds` localStorage keys persist (the latter defaults to `["world","geffen-dungeon"]`) but drive collapse state within panels, not the old region list.
 
-### Encounters & Combat (tick-driven)
+### Combat — spatial tactic engine
 
-- Every location has an active encounter: a list of monster slots (`activeEncounters[locationId]`). A monster id may appear more than once.
-- Monster kill progress is tracked per slot as a value 0–1 (`encounterProgress[locationId][slotIndex]`). Progress advances at `1 / (monster.level * 5)` per tick (i.e. `monster.level * 5` seconds per kill) for each attacked slot.
-- When a slot reaches progress 1 the monster is defeated (loot & exp awarded) and its progress resets to 0 for the next spawn.
-- Only slots in `attackedSlots` (see targeting below) advance progress. Slots not being attacked stay frozen.
-- Monster HP bars animate continuously downward during combat and **snap instantly to full** on reset — no upward animation (`useLayoutEffect` suppresses the CSS transition on reset).
-- Damage from monsters to units: each alive monster applies `monster.stats.attack / max(unit.defense, 1)` HP damage per tick to its target unit.
-- Units that are KO'd (`health <= 0` or `recoveryTicksLeft > 0`) do not participate in combat on either side.
+Combat is a deterministic, round-based **spatial** simulation in `src/engine/`. The
+old per-slot model (`encounterProgress`, `locationStrategy`, `focusSlots`, the
+`normal`/`prioritize`/`ignore`/`avoid` dropdowns, the flee state machine) is **gone** —
+it was fully replaced. Per-monster behavior dropdowns no longer exist; behaviour is
+driven by **tactics** (below).
 
-### Targeting
+**One battle per location.** `battles[locationId]` holds a `BattleState` with
+`combatants[]` (cloned from inputs, never mutated), positions on a 15×15 grid
+(`COLS = ROWS = 15`, grid units — *not* the game's feet), ground `zones[]`,
+`barriers[]`, `round`, `outcome`, `events[]`, and accumulating `stats`.
 
-- **Monster → Unit** (who monsters attack): slot `i` targets `aliveUnits[i % aliveUnits.length]` round-robin. Shown on monster HP bar as `→ UnitName`.
-- **Unit → Monster** (who units attack): determined by `focusSlots` (see behavior below). Unit `i` attacks `focusSlots[i % focusSlots.length]`. Shown on unit card as `→ MonsterName`.
-- `aliveUnits` = units at the location with `health > 0` and `recoveryTicksLeft === 0`.
+**Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
+- The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round
+  advances every `ROUND_EVERY_TICKS` (2) ticks → ~2.5 rounds/sec.
+- For each location with eligible units (`health > 0`, `recoveryTicksLeft === 0`,
+  not resting) **and** at least one monster: spawn a fresh battle if none exists or
+  the last one finished (after a `BATTLE_RESPAWN_TICKS` = 15 cooldown), otherwise
+  advance one round.
+- After each round, kills award exp (to surviving player units), gold, and loot
+  (each defeated monster rolls its `drops` by `dropRate`). Live player HP is synced
+  back to the unit records every tick.
+- Player units that die in a round get `recoveryTicksLeft = RECOVERY_TICKS`.
 
-### Monster Behavior
+**A round** (`advanceRound`, `src/engine/engine.ts`): tick statuses (DoT, age-out) →
+tick ground zones → tick cooldowns → sort turn order by SPD desc (deterministic id
+tiebreak) → each alive combatant takes a turn → evaluate `outcome`
+(`victory`/`defeat`/`draw`; draw at `MAX_ROUNDS` = 200).
 
-Each monster slot at each location has an independently-set behavior (`locationStrategy[locationId][monsterId]`). Default is `'normal'`.
+**Determinism:** the engine uses no RNG — damage variation is a pure function of
+round + combatant index. (Loot rolls use `Math.random` in the *store*, outside the
+engine.) The same roster + tactics replays identically.
 
-| Behavior | Effect on progress | Effect on damage | Flee trigger |
-|---|---|---|---|
-| `normal` | Advances if in attackedSlots | Monster deals damage to units | No |
-| `prioritize` | Advances if in attackedSlots | Monster deals damage to units | No |
-| `ignore` | Frozen (never advances) | Monster deals damage to units | Triggers flee if all remaining slots are ignore/avoid |
-| `avoid` | Frozen (never advances) | Monster **does not** deal damage | Triggers flee immediately |
+**Movement is spatial:** units move toward targets, kite at range, flank, and
+body-block; `moveSpeed` is decoupled from `attackSpeed`. Barriers block movement and
+line-of-sight; casters won't fire through walls (but will through cliffs); knockback
+stops at walls and the arena perimeter.
 
-**Priority targeting**: `focusSlots` = all `prioritize` slots if any exist, otherwise all `normal` slots. `ignore` and `avoid` slots are never in `focusSlots` and so are never attacked.
+### Tactics (the player's combat lever)
 
-**Flee state machine**:
-- Flee triggers when: any `avoid` monster is present, OR all monster slots are `ignore`/`avoid`.
-- On trigger: `locationFleeing[locationId]` is set to `FLEE_TICKS` (2).
-- Each tick the counter decrements. On the final tick (counter reaches 0) encounter progress resets to all zeros.
-- During flee: no damage is dealt in either direction; all target assignments are null; unit cards show `fleeing` instead of `→ MonsterName`; monster bars show no target.
-- No loot is awarded for monsters that weren't fully defeated before the flee completed.
+- Tactics are named behaviours in `TACTIC_REGISTRY`, each on exactly one **channel**:
+  `movement`, `targeting`, `action`, `reaction`, or `passive`. The engine evaluates
+  the equipped tactics per channel in priority order each turn.
+- Each unit equips up to `MAX_UNIT_TACTICS` (4) tactics (`unit.tactics`); the party
+  shares up to `MAX_PARTY_TACTICS` (2) party-scope tactics (`partyTactics`). Scope is
+  enforced against `TacticDef.scope`.
+- **Skills granted as tactics:** action-bar skills are injected as action-channel
+  tactics via the adapter, so equipping a skill gives a unit a combat action without a
+  separate tactic slot.
+- Monsters may carry their own skills and tactics (see `monsterToEngineInput`).
+- Targeting examples that ship today: `tank-buster` (lock highest-DEF enemy),
+  `opportunist`, kiter/flanker/guardian movement tactics, etc.
 
-### Monster Behavior UI
+### Combat view (Combat tab → being folded into Map)
 
-- Tapping a monster card selects it (toggles); a behavior panel appears inline below the monsters row.
-- The panel shows four compact pill buttons: Normal, Prioritize, Ignore, Avoid. The active one is highlighted with a behavior-specific color (Normal=blue, Prioritize=amber, Ignore=dim, Avoid=sky).
-- One description line below the pills describes the **currently active** behavior only.
-- A bordered `Codex →` button in the panel opens the MonsterCodex modal for that monster.
-- Pressing ✕ or tapping the selected monster again closes the panel.
-- Monster cards have a colored border tint when behavior ≠ normal (amber for prioritize, sky for avoid, dimmed for ignore).
+- A pannable arena shows circular unit/monster tokens with floating name + HP,
+  attack lines, hit flashes, cast lines, and floating damage/heal/DoT numbers.
+- Monster HP bars animate down during combat and **snap to full** on respawn (no
+  upward animation).
+- Tapping a token opens a detail card (name, team, HP, stats, per-skill cooldowns,
+  statuses, casting line).
+- **Direction (`BACKLOG.md`):** the standalone Combat tab is slated to fold into Map —
+  zooming from the overworld into a location's battlefield as a drop-in view. Treat
+  Combat/Map as converging; check `BACKLOG.md` before investing in either in isolation.
 
 ### Unit Selection & Detail Card
 
 - Tapping a unit card toggles its selection. Multiple units can be selected.
-- When **exactly 1 unit** is selected on the Locations tab, a detail card is shown above the action bar containing:
+- When **exactly 1 unit** is selected on the Map tab, a detail card is shown above the action bar containing:
   - Unit name and class badge.
   - Exact integer HP (color-coded: green ≥75, gold ≥40, red <40) and an HP bar.
   - Element trait badges (filtered from `getUnitTraits`).
@@ -119,7 +140,7 @@ All collapsible sections remember their state across tab switches via localStora
 | Location rows | `expandedLocationIds` | `expandedLocationIds` | `[]` (all collapsed) |
 | Unit rows | `expandedUnitIds` | `expandedUnitIds` | `[]` (all collapsed) |
 | Inventory sections | `expandedInventorySections` | `expandedInventorySections` | all three expanded |
-| Region headers | `expandedRegionIds` | `expandedRegionIds` | all regions expanded |
+| Map pages | `expandedRegionIds` | `expandedRegionIds` | `["world","geffen-dungeon"]` |
 
 ### Crafting
 
