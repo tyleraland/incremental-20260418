@@ -117,7 +117,7 @@ function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; chi
   return (
     <div
       ref={ref}
-      className="relative h-full max-h-full max-w-full aspect-square rounded-lg border border-game-border bg-game-surface overflow-hidden select-none"
+      className="relative w-full max-h-full aspect-square rounded-lg border border-game-border bg-game-surface overflow-hidden select-none"
       style={{ touchAction: 'none' }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -392,7 +392,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      <div className="flex-1 min-h-0 grid justify-items-center items-start">
+      <div className="flex-1 min-h-0 flex justify-center items-start">
         <Arena cam={cam} barriers={battle.barriers}>
           {/* persistent ground hazards (Firewall, etc.) */}
           {battle.zones.map((z) => (
@@ -537,7 +537,7 @@ export function Preview({ location }: { location: Location | null }) {
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      <div className="flex-1 min-h-0 grid justify-items-center items-start">
+      <div className="flex-1 min-h-0 flex justify-center items-start">
         <Arena cam={cam} barriers={locationBarriers(location)}>
           {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} />)}
           {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} />)}
