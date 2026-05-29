@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { useGameStore, MONSTER_REGISTRY, RECOVERY_TICKS, getDerivedStats, getInitials, type Unit, type Location } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
+import { RosterCarousel } from '@/components/RosterCarousel'
+import { BattleView } from '@/components/BattleView'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
 
 // ── Pages ────────────────────────────────────────────────────────────────────
@@ -64,12 +66,6 @@ function cellOriginY(row: number): number { return row * (CELL_H + CELL_GAP) }
 function cellCenterX(col: number): number { return cellOriginX(col) + CELL_W / 2 }
 function cellCenterY(row: number): number { return cellOriginY(row) + CELL_H / 2 }
 
-function hpBarColor(hp: number) {
-  if (hp > 60) return 'bg-game-green'
-  if (hp > 30) return 'bg-game-gold'
-  return 'bg-red-500'
-}
-
 const ELEMENT_COLORS: Record<string, string> = {
   fire:      'text-orange-400 bg-orange-950/40 border-orange-800/50',
   lightning: 'text-yellow-300 bg-yellow-950/40 border-yellow-700/50',
@@ -97,87 +93,35 @@ function getLocationKind(traits: string[]) {
   return null
 }
 
-// ── RosterUnitCard ────────────────────────────────────────────────────────────
-
-function RosterUnitCard({ unit }: { unit: Unit }) {
-  const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
-  const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
-  const equipment        = useGameStore((s) => s.equipment)
-  const locations        = useGameStore((s) => s.locations)
-  const isSelected       = selectedUnitIds.includes(unit.id)
-  const isRecovering     = unit.recoveryTicksLeft > 0
-  const isResting        = unit.isResting
-  const maxHp            = getDerivedStats(unit, equipment).maxHp
-  const hpPct            = Math.max(0, Math.min(100, (unit.health / maxHp) * 100))
-  const recoverPct       = isRecovering ? ((RECOVERY_TICKS - unit.recoveryTicksLeft) / RECOVERY_TICKS) * 100 : 0
-  const locationName     = unit.locationId ? (locations.find((l) => l.id === unit.locationId)?.name ?? null) : null
-
-  return (
-    <button
-      onClick={() => toggleSelectUnit(unit.id)}
-      className={[
-        'shrink-0 w-24 px-2 py-1.5 border-b text-left select-none transition-colors duration-100',
-        unit.health <= 0 ? 'opacity-60' : '',
-        isSelected
-          ? 'border-game-primary bg-game-primary/25 text-white'
-          : 'border-game-border bg-game-surface text-game-text hover:bg-white/5',
-      ].join(' ')}
-    >
-      <div className="flex items-center gap-1 mb-1">
-        <span
-          className={[
-            'shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border',
-            isSelected ? 'bg-game-primary/40 border-game-primary/60 text-white' : 'bg-game-primary/15 border-game-border text-game-text',
-          ].join(' ')}
-        >
-          {getInitials(unit.name)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold leading-tight truncate">{unit.name}</div>
-          <div className="text-[10px] text-game-text-dim leading-none mt-0.5">Lv.{unit.level}</div>
-        </div>
-      </div>
-      <div className="w-full bg-game-border/60 rounded-full h-1.5 overflow-hidden">
-        {isRecovering ? (
-          <div className="bg-purple-500 h-1.5 rounded-full" style={{ width: `${recoverPct}%`, transition: 'none' }} />
-        ) : isResting ? (
-          <div className="bg-sky-500 h-1.5 rounded-full" style={{ width: `${hpPct}%`, transition: 'none' }} />
-        ) : (
-          <div className={`${hpBarColor(hpPct)} h-1.5 rounded-full`} style={{ width: `${hpPct}%`, transition: 'none' }} />
-        )}
-      </div>
-      <div className="text-[10px] text-game-text-dim truncate mt-1">
-        {isRecovering ? <span className="text-purple-400">KO</span>
-          : isResting   ? <span className="text-sky-400">Resting</span>
-          : locationName ?? <span className="text-game-muted italic">unassigned</span>}
-      </div>
-    </button>
-  )
-}
-
-export function RosterCarousel({ units }: { units: Unit[] }) {
-  return (
-    <div className="-mt-7 overflow-x-auto">
-      <div className="flex gap-px">
-        {units.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
-      </div>
-    </div>
-  )
-}
-
 // ── LocationCell ──────────────────────────────────────────────────────────────
 
 function LocationCell({ location, units, style }: { location: Location; units: Unit[]; style: React.CSSProperties }) {
   const equipment           = useGameStore((s) => s.equipment)
   const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
+  const enterBattleView     = useGameStore((s) => s.enterBattleView)
   const isSelected          = selectedLocationId === location.id
   const kind                = getLocationKind(location.traits)
   const hasScenario         = !!location.testScenarioId
+  const lastTapRef          = useRef(0)
+
+  // Single tap selects (shows the detail panel); double-tap (within 300 ms)
+  // drops straight into the location's battlefield. The first tap still
+  // selects immediately — the second tap short-circuits before re-toggling.
+  function handleTap() {
+    const now = Date.now()
+    if (now - lastTapRef.current < 300) {
+      lastTapRef.current = 0
+      enterBattleView(location.id)
+      return
+    }
+    lastTapRef.current = now
+    setSelectedLocation(isSelected ? null : location.id)
+  }
 
   return (
     <button
-      onClick={() => setSelectedLocation(isSelected ? null : location.id)}
+      onClick={handleTap}
       style={style}
       title={location.name}
       className={[
@@ -419,7 +363,7 @@ function UnitActionBar() {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
-  const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
+  const enterBattleView     = useGameStore((s) => s.enterBattleView)
   const toggleUnit          = useGameStore((s) => s.toggleUnit)
   const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
   const locations           = useGameStore((s) => s.locations)
@@ -460,10 +404,8 @@ function UnitActionBar() {
     setSelectedLocation(sharedLocId)
   }
   function handleGoCombat() {
-    if (combatTargetLocId) setCombatLocation(combatTargetLocId)
-    setActiveTab('combat')
-    clearSelection()
-    setSelectedLocation(null)
+    if (!combatTargetLocId) return
+    enterBattleView(combatTargetLocId)
   }
 
   return (
@@ -493,7 +435,7 @@ function UnitActionBar() {
       )}
       {combatTargetLocId && (
         <button onClick={handleGoCombat} className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
-          Combat
+          Drop in
         </button>
       )}
       <button onClick={() => clearSelection()} aria-label="Clear unit selection" className="w-7 h-7 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors shrink-0">
@@ -510,8 +452,7 @@ function LocationDetailPanel() {
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit    = useGameStore((s) => s.toggleSelectUnit)
-  const setActiveTab        = useGameStore((s) => s.setActiveTab)
-  const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
+  const enterBattleView     = useGameStore((s) => s.enterBattleView)
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
@@ -533,9 +474,7 @@ function LocationDetailPanel() {
 
   function handleGoCombat() {
     if (!locationOnlyCombatTargetId) return
-    setCombatLocation(locationOnlyCombatTargetId)
-    setActiveTab('combat')
-    setSelectedLocation(null)
+    enterBattleView(locationOnlyCombatTargetId)
   }
   function handleEnterDungeon() {
     if (!dungeonEntry) return
@@ -679,8 +618,8 @@ function LocationDetailPanel() {
           <>
             <span className="text-xs text-game-text-dim mr-auto italic">Location actions</span>
             {locationOnlyCombatTargetId && (
-              <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
-                Go to Combat ›
+              <button onClick={handleGoCombat} className="text-sm py-1.5 px-3 rounded-lg border border-game-primary/60 bg-game-primary/15 text-game-text hover:bg-game-primary/25 transition-colors">
+                Drop in ›
               </button>
             )}
             {dungeonEntry && (
@@ -708,11 +647,47 @@ function LocationDetailPanel() {
   )
 }
 
+// ── BattleDropIn (Map's battle mode) ───────────────────────────────────────────
+
+function BattleDropIn() {
+  const units            = useGameStore((s) => s.units)
+  const locations        = useGameStore((s) => s.locations)
+  const combatLocationId = useGameStore((s) => s.combatLocationId)
+  const exitBattleView   = useGameStore((s) => s.exitBattleView)
+  const round            = useGameStore((s) => (combatLocationId ? s.battles[combatLocationId]?.round : undefined))
+
+  const name = combatLocationId ? (locations.find((l) => l.id === combatLocationId)?.name ?? 'Battlefield') : 'Battlefield'
+
+  return (
+    <div className="h-full flex flex-col pt-4 min-h-0">
+      <RosterCarousel units={units} />
+      {/* context bar — zoom out, location, round */}
+      <div className="h-10 px-3 flex items-center gap-2 border-b border-game-border bg-game-surface/40 shrink-0">
+        <button
+          onClick={exitBattleView}
+          className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0"
+        >
+          ⤢ Overworld
+        </button>
+        <span className="text-sm font-semibold text-game-text truncate">{name}</span>
+        {round != null && <span className="text-xs text-game-text-dim ml-auto tabular-nums shrink-0">round {round}</span>}
+      </div>
+      <BattleView locationId={combatLocationId} />
+    </div>
+  )
+}
+
 // ── Map ───────────────────────────────────────────────────────────────────────
 
 export function Map() {
   const units     = useGameStore((s) => s.units)
   const locations = useGameStore((s) => s.locations)
+  const mapMode   = useGameStore((s) => s.mapMode)
+  const combatLocationId = useGameStore((s) => s.combatLocationId)
+
+  if (mapMode === 'battle' && combatLocationId) {
+    return <BattleDropIn />
+  }
 
   return (
     <div className="h-full grid grid-rows-[auto_auto_32vh_minmax(0,1fr)] pt-4 min-h-0">

@@ -74,6 +74,9 @@ export interface GameState {
   selectedUnitIds: string[]
   selectedLocationId: string | null
   combatLocationId: string | null
+  // Map tab view: 'world' = pannable overworld + location details; 'battle' =
+  // drop-in battlefield viewer for `combatLocationId`.
+  mapMode: 'world' | 'battle'
   mapPageId: string
   expandedLocationIds: string[]
   expandedUnitIds: string[]
@@ -96,6 +99,9 @@ export interface GameState {
   clearSelection: () => void
   setSelectedLocation: (id: string | null) => void
   setCombatLocation: (id: string | null) => void
+  // Drop into a location's battlefield viewer / return to the overworld.
+  enterBattleView: (locationId: string) => void
+  exitBattleView: () => void
   setMapPage: (id: string) => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
@@ -350,6 +356,7 @@ export const useGameStore = create<GameState>((set) => ({
   selectedUnitIds: [],
   selectedLocationId: null,
   combatLocationId: null,
+  mapMode: 'world',
   mapPageId: 'world',
   expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
@@ -493,27 +500,7 @@ export const useGameStore = create<GameState>((set) => ({
     : { paused: true }
   ),
 
-  setActiveTab: (tab) => set((s) => {
-    const update: Partial<GameState> = { activeTab: tab }
-    if (tab === 'combat') {
-      // Map → Combat: if only a location is selected (no units), surface it
-      // as the combat focus so we land on its encounter view.
-      if (s.selectedLocationId && s.selectedUnitIds.length === 0) {
-        update.combatLocationId = s.selectedLocationId
-      }
-    } else if (tab === 'map') {
-      // Combat → Map: bring the combat-focused location onto the map by
-      // paging to its region and selecting it.
-      if (s.combatLocationId) {
-        const loc = s.locations.find((l) => l.id === s.combatLocationId)
-        if (loc) {
-          update.mapPageId = loc.region
-          update.selectedLocationId = s.combatLocationId
-        }
-      }
-    }
-    return update
-  }),
+  setActiveTab: (tab) => set({ activeTab: tab }),
   toggleRegion: (id) => set((s) => {
     const next = s.expandedRegionIds.includes(id) ? s.expandedRegionIds.filter((x) => x !== id) : [...s.expandedRegionIds, id]
     localStorage.setItem('expandedRegionIds', JSON.stringify(next))
@@ -538,6 +525,19 @@ export const useGameStore = create<GameState>((set) => ({
   clearSelection:    () => set({ selectedUnitIds: [] }),
   setSelectedLocation: (id) => set({ selectedLocationId: id }),
   setCombatLocation: (id) => set({ combatLocationId: id }),
+  // Drop into a location's battlefield: focus it and switch the Map to battle
+  // mode. Combat itself keeps running in the engine regardless — this is just
+  // which view the Map tab renders.
+  enterBattleView: (locationId) => set({ combatLocationId: locationId, mapMode: 'battle', selectedUnitIds: [] }),
+  // Zoom back out to the overworld, re-selecting the location we were watching
+  // (paged to its region) so the player lands back where they dropped in.
+  exitBattleView: () => set((s) => {
+    const loc = s.combatLocationId ? s.locations.find((l) => l.id === s.combatLocationId) : null
+    return {
+      mapMode: 'world',
+      ...(loc ? { mapPageId: loc.region, selectedLocationId: loc.id } : {}),
+    }
+  }),
   setMapPage: (id) => set({ mapPageId: id }),
   assignUnits: (unitIds, locationId) => set((s) => ({
     units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u),
@@ -740,6 +740,7 @@ export const useGameStore = create<GameState>((set) => ({
       selectedUnitIds: [],
       selectedLocationId: null,
       combatLocationId: null,
+      mapMode: 'world',
       mapPageId: 'world',
       expandedLocationIds: [],
       expandedUnitIds: [],

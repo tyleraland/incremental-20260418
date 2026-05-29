@@ -108,17 +108,29 @@ stops at walls and the arena perimeter.
 - Targeting examples that ship today: `tank-buster` (lock highest-DEF enemy),
   `opportunist`, kiter/flanker/guardian movement tactics, etc.
 
-### Combat view (Combat tab → being folded into Map)
+### Combat view (a drop-in mode of the Map tab)
 
-- A pannable arena shows circular unit/monster tokens with floating name + HP,
-  attack lines, hit flashes, cast lines, and floating damage/heal/DoT numbers.
+- There is **no standalone Combat tab.** The battlefield is a *mode* of the Map
+  tab: `mapMode` is `'world'` (pannable overworld + location details) or
+  `'battle'` (the drop-in viewer for `combatLocationId`). The roster carousel
+  (`src/components/RosterCarousel.tsx`) stays pinned across both so the
+  transition is seamless.
+- **Drop in:** single-tap a map location to select it; **double-tap** a location,
+  or hit the **Drop in ›** button (location detail panel / unit action bar), to
+  enter battle mode (`enterBattleView`). A **⤢ Overworld** chip zooms back out
+  (`exitBattleView`), re-selecting the location you were watching.
+- **Combat keeps running for every location regardless of view** — the engine
+  ticks all battles each tick; the drop-in is purely which one you're watching.
+- The viewer is `src/components/BattleView.tsx` (`<BattleView locationId>`): live
+  battle if one is running, otherwise the static form-up `Preview`. The pannable
+  arena fills its space (square, centred); tokens are circles with floating
+  name + HP, attack lines, hit flashes, cast lines, and floating
+  damage/heal/DoT numbers.
 - Monster HP bars animate down during combat and **snap to full** on respawn (no
   upward animation).
-- Tapping a token opens a detail card (name, team, HP, stats, per-skill cooldowns,
-  statuses, casting line).
-- **Direction (`BACKLOG.md`):** the standalone Combat tab is slated to fold into Map —
-  zooming from the overworld into a location's battlefield as a drop-in view. Treat
-  Combat/Map as converging; check `BACKLOG.md` before investing in either in isolation.
+- Tapping a token opens a **dismissable bottom-sheet overlay** (name, team, HP,
+  stats, per-skill cooldowns, statuses, casting line) that floats over the arena
+  so it never steals arena height.
 
 ### Unit Selection & Detail Card
 

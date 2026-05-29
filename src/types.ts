@@ -42,7 +42,7 @@ export interface SkillDef {
 
 export type EquipSlot    = 'mainHand' | 'offHand' | 'sideboard1' | 'sideboard2' | 'armor' | 'accessory'
 export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
-export type TabId        = 'map' | 'combat' | 'units' | 'inventory' | 'guild' | 'time'
+export type TabId        = 'map' | 'units' | 'inventory' | 'guild' | 'time'
 
 // Each unit has a 6-slot action bar; entries either reference an equipment
 // item id or an active-skill id.

@@ -4,7 +4,6 @@ import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
 import { TabBar } from '@/components/TabBar'
 import { Map } from '@/pages/Map'
-import { Combat } from '@/pages/Combat'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
 import { Guild } from '@/pages/Guild'
@@ -56,7 +55,6 @@ function App() {
     <div className="h-full flex flex-col">
       <main className="flex-1 overflow-y-auto pt-16">
         {activeTab === 'map'       && <Map />}
-        {activeTab === 'combat'    && <Combat />}
         {activeTab === 'units'     && <Units />}
         {activeTab === 'inventory' && <Inventory />}
         {activeTab === 'guild'     && <Guild />}

@@ -1,5 +1,8 @@
-// Smoke test for the rebuilt Combat tab: it renders the 5×10 grid preview and
-// places party/enemy chips. Full combat behavior lives in the engine tests.
+// Smoke test for the battle viewer (BattleView, used by the Map tab's drop-in
+// mode): it renders the form-up preview and the live battle, placing
+// party/enemy chips. Full combat behavior lives in the engine tests. The
+// surrounding chrome (roster, context bar with location name + round) is the
+// Map shell's job, not BattleView's.
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import React from 'react'
@@ -16,16 +19,15 @@ const TEST_LOCATION = {
   description: '', traits: [], monsterIds: ['wolf', 'slime'], familiarityMax: 100, connections: [],
 }
 
-async function renderCombat() {
-  const { Combat } = await import('@/pages/Combat')
-  return render(React.createElement(Combat))
+async function renderBattle(locationId: string | null) {
+  const { BattleView } = await import('@/components/BattleView')
+  return render(React.createElement(BattleView, { locationId }))
 }
 
-describe('Combat tab — grid preview', () => {
+describe('BattleView — form-up preview', () => {
   it('prompts to pick a location when none is focused', async () => {
     useGameStore.setState({ combatLocationId: null, locations: [TEST_LOCATION] })
-    await renderCombat()
-    expect(screen.getByText('Combat')).toBeInTheDocument()
+    await renderBattle(null)
     expect(screen.getByText(/Pick a location/i)).toBeInTheDocument()
   })
 
@@ -35,28 +37,26 @@ describe('Combat tab — grid preview', () => {
       locations: [TEST_LOCATION],
       units: [makeUnit({ id: 'u1', name: 'Ada Vale', locationId: 'loc1' })],
     })
-    await renderCombat()
-    // Location name appears both in the header and on the unit's roster card.
-    expect(screen.getAllByText('Test Forest').length).toBeGreaterThan(0)
+    await renderBattle('loc1')
     expect(screen.getByText('Party (1)')).toBeInTheDocument()
     // TEST_LOCATION has monsterIds: ['wolf', 'slime'] → 2 enemies
     expect(screen.getByText('Enemies (2)')).toBeInTheDocument()
-    // Initials show on both the chip and the roster card — at least one of each.
+    // Player chip carries the unit's initials.
     expect(screen.getAllByText('AV').length).toBeGreaterThan(0)
   })
 })
 
-describe('Combat tab — live battle', () => {
-  it('renders the running battle (round, combatants, HP) when one is active', async () => {
+describe('BattleView — live battle', () => {
+  it('renders the running battle combatants when one is active', async () => {
     const battle = createBattle({
       playerUnits: [eu({ id: 'u1', name: 'Ada Vale', str: 100, meleeRange: 10 })],
       enemyUnits: [eu({ id: 'slime#0', name: 'Slime', team: 'enemy', maxHp: 25, hp: 25, meleeRange: 10 })],
     })
     advanceRound(battle)   // produce a round with movement/attacks
     useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
-    await renderCombat()
-    expect(screen.getByText(/round/i)).toBeInTheDocument()
-    expect(screen.getAllByText('AV').length).toBeGreaterThan(0)  // party chip + roster card
+    await renderBattle('loc1')
+    expect(screen.getAllByText('AV').length).toBeGreaterThan(0)   // party chip
+    expect(screen.getByText(/Party \(/)).toBeInTheDocument()      // legend
   })
 
   it('shows a casting indicator while a unit channels a spell', async () => {
@@ -68,11 +68,10 @@ describe('Combat tab — live battle', () => {
     battle.combatants.find((c) => c.id === 'e0')!.pos = { x: 2.5, y: 9 }
     advanceRound(battle)   // mage begins channeling Lightning Bolt
     useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
-    await renderCombat()
+    await renderBattle('loc1')
     // The chip carries a persistent "✦ Lightning Bolt" channel badge AND the
-    // cast_start event surfaces a floating "✦ Lightning Bolt" label that
-    // rises and fades — either is the casting indicator. We just want at
-    // least one of them present.
+    // cast_start event surfaces a floating "✦ Lightning Bolt" label — either is
+    // the casting indicator; we just want at least one present.
     expect(screen.getAllByText(/Lightning Bolt/).length).toBeGreaterThan(0)
   })
 })

@@ -5,14 +5,17 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
 
 ## Long-horizon shape changes
 
-- **Combat lives inside the Map tab.** The separate Combat tab goes away;
-  double-tapping a location on the overworld zooms from the map view into
-  that location's battlefield. Single-tap stays a location selection. The
-  pannable arena from the current Combat tab becomes the inner view of a
-  Map cell; a tap on empty arena space (or a back chip) zooms back out to
-  the overworld. Folds the two views into one navigation flow so the
-  player travels straight from "pick where to go" to "watch what
-  happens" without a tab switch.
+- **✅ Combat lives inside the Map tab.** Done — the standalone Combat tab is
+  gone; the battlefield is a `mapMode === 'battle'` drop-in of the Map tab
+  (`BattleView` + `RosterCarousel`). Single-tap selects a location; double-tap
+  (or the **Drop in ›** button) zooms in; the **⤢ Overworld** chip zooms back
+  out. Known follow-ups:
+  - *Sizing* — the arena is `aspect-square` filling its flex region; verify it
+    on short / landscape viewports (the proportions differ a lot from the
+    overworld layout — expect a couple more tuning passes).
+  - *Roster taps in battle mode are currently inert* (no action bar there). A
+    natural next step: tapping a roster hero in battle mode highlights/centres
+    their chip, or surfaces a slim deploy/recall control.
 - **Open world instead of single encounters.** Today combat is a discrete
   wave at one location at a time, fully deterministic from a known starting
   formation. The longer-term shape is an open field where parties roam,
