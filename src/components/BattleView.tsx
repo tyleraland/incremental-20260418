@@ -338,10 +338,11 @@ function FacingNub({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boo
   )
 }
 
-// The "moving" indicator: a second chevron in FRONT of the direction arrow
-// (further out along facing), shown only while the unit is actually moving — so
-// a token reads as one arrow when holding, two when on the move. Same rotation
-// basis and construction as FacingNub; scales with the chip.
+// The "moving" indicator: a pulsing chevron BEHIND the solid direction arrow
+// (closer to the token, still ahead in the facing direction), shown only while
+// the unit is actually moving — so a token reads as one arrow when holding, a
+// trailing second chevron when on the move. Same rotation basis and
+// construction as FacingNub; scales with the chip.
 function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boolean }) {
   const f = c.facing ?? { x: 0, y: isPlayer ? 1 : -1 }
   if (Math.hypot(f.x, f.y) < 1e-6) return null
@@ -349,7 +350,7 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
   const cqmin = (CHIP_CELL_FRACTION * 100) / cam.size
   const half = `clamp(3px, ${cqmin * 0.22}cqmin, 14px)`   // match FacingNub
   const len  = `clamp(4px, ${cqmin * 0.3}cqmin, 18px)`
-  const reach = `clamp(15px, ${cqmin * 1.0}cqmin, 58px)`  // just beyond the direction arrow
+  const reach = `clamp(4px, ${cqmin * 0.32}cqmin, 19px)`  // behind the front direction arrow (0.6)
   return (
     <div className="absolute left-1/2 top-1/2 w-0 h-0 pointer-events-none animate-pulse" style={{ transform: `rotate(${angle}deg)` }}>
       <div
