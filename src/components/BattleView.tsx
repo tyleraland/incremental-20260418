@@ -95,6 +95,15 @@ function computeCamera(pts: Vec2[]): Cam {
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
 
+// True when a world point is inside the camera viewport. Off-screen tokens are
+// clipped (not clamped to the rim, which made them pile up misleadingly in a
+// corner); off-screen *heroes* are instead represented by an EdgeMarker arrow.
+export function isOnScreen(cam: Cam, pos: Vec2): boolean {
+  const fx = (pos.x - cam.x) / cam.size
+  const fy = (pos.y - cam.y) / cam.size
+  return fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1
+}
+
 // Half a token in world units — clamp the rendered center inward so the card's
 // body never clips the arena edge even when a unit is pinned to it.
 const TOKEN_INSET = 0.7
@@ -607,13 +616,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
       : computeCamera(allPts)
 
   // Party members outside the current viewport → edge bubbles point to them.
-  const offscreen = isOpen
-    ? party.filter((c) => {
-        const fx = (c.pos.x - cam.x) / cam.size
-        const fy = (c.pos.y - cam.y) / cam.size
-        return fx < 0 || fx > 1 || fy < 0 || fy > 1
-      })
-    : []
+  const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, c.pos)) : []
 
   const roundEvents = battle.events.filter((e) => e.round === battle.round)
   const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
@@ -764,7 +767,10 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             )
           })}
 
-          {battle.combatants.map((c) => (
+          {/* Tokens. Open-world clips off-screen units (off-screen heroes show as
+              EdgeMarkers instead); encounters render everyone (nothing is ever
+              truly off the small arena). */}
+          {(isOpen ? battle.combatants.filter((c) => isOnScreen(cam, c.pos)) : battle.combatants).map((c) => (
             <BattleChip
               key={c.id}
               c={c}
