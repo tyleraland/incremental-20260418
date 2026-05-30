@@ -107,6 +107,7 @@ export function createBattle(setup: CombatSetup): BattleState {
     combatants,
     zones: [],
     barriers: setup.barriers ?? [],
+    mode: setup.mode ?? 'encounter',
     round: 0,
     outcome: 'ongoing',
     events: [],
@@ -115,6 +116,31 @@ export function createBattle(setup: CombatSetup): BattleState {
     collectEvents: setup.collectEvents ?? true,
     calculateDamage: setup.callbacks?.calculateDamage ?? defaultCalculateDamage,
   }
+}
+
+// Inject a combatant into an already-running battle (§open-world). Used for
+// open-world reinforcements (a monster wandering in) and heroes re-joining a
+// persistent battle after recovery. Mirrors `createBattle`'s placement: a fresh
+// stable index (seeds damage variation), a formation slot at the team's edge,
+// and separation against whoever's already standing there. Emits a `spawn`
+// event so the viewer can flash the arrival.
+export function addCombatant(
+  state: BattleState,
+  input: EngineUnitInput,
+  team: Team,
+  partyTactics?: TacticRef[],
+): Combatant {
+  const index = state.combatants.reduce((m, c) => Math.max(m, c.index), -1) + 1
+  const sameRank = state.combatants.filter(
+    (c) => c.team === team && c.preferredRank === input.preferredRank,
+  ).length
+  const pos = startingPosition(team, input.preferredRank, sameRank)
+  const tactics = resolveTactics(input.tactics ?? [], partyTactics)
+  const c = makeCombatant({ ...input, team }, index, pos, tactics)
+  enforceSeparation(c, state.combatants, state.barriers)
+  state.combatants.push(c)
+  emit(state, { round: state.round, type: 'spawn', sourceId: c.id, position: { ...c.pos } })
+  return c
 }
 
 function emit(state: BattleState, e: BattleEvent): void {
@@ -719,6 +745,10 @@ function takeTurn(state: BattleState, self: Combatant): void {
 }
 
 function evalOutcome(state: BattleState): Outcome {
+  // Open-world battles are persistent — they never self-terminate on a wipe.
+  // The host trickles reinforcements in and decides when to tear the battle
+  // down (e.g. no eligible heroes remain at the location).
+  if (state.mode === 'open') return 'ongoing'
   const playersAlive = state.combatants.some((c) => c.alive && c.team === 'player')
   const enemiesAlive = state.combatants.some((c) => c.alive && c.team === 'enemy')
   if (!enemiesAlive) return 'victory'

@@ -10,7 +10,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -65,6 +65,7 @@ export interface GameState {
   locations: Location[]
   battles: Record<string, BattleState>                // locationId → live engine battle (one wave)
   battleCooldown: Record<string, number>              // locationId → ticks until the next wave spawns
+  monsterSpawnTimers: Record<string, number>          // open-world: locationId → ticks until next monster trickles in
   itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
@@ -163,6 +164,18 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 const ROUND_EVERY_TICKS   = 2    // advance one engine round every N ticks (~400ms/round)
 const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
 
+// Open-world pacing (§open-world). A persistent battle keeps a FIXED number of
+// monsters on the field (per-location `openWorldCap`, default below). When the
+// count drops below the cap a fresh monster trickles in every
+// OPEN_WORLD_SPAWN_TICKS ticks, drawn at random from the location's `monsterIds`
+// pool so the party has to adapt to whatever wanders in. Deliberately simple —
+// per-location monster distributions and smarter spawn timing come later.
+const OPEN_WORLD_SPAWN_TICKS = 30  // ~6s between trickle spawns while below cap
+const OPEN_WORLD_DEFAULT_CAP = 3   // fallback field size when a location sets none
+function openWorldCap(loc: Location): number {
+  return loc.openWorldCap ?? OPEN_WORLD_DEFAULT_CAP
+}
+
 // Enemy combatant ids are `${monsterId}#${index}`; players use the unit id.
 function monsterIdOf(combatantId: string): string {
   return combatantId.split('#')[0]
@@ -202,6 +215,61 @@ function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[
   return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true })
 }
 
+// ── Open-world battle helpers (§open-world) ─────────────────────────────────--
+
+// Pick a random monster id from the location's pool (equal weight for now).
+function pickMonsterId(loc: Location): string | null {
+  return loc.monsterIds.length ? loc.monsterIds[Math.floor(Math.random() * loc.monsterIds.length)] : null
+}
+
+// A combatant id `${monsterId}#${n}` not already used in this battle. The engine
+// only needs uniqueness within the live combatant set; `monsterIdOf` still
+// recovers the monster id from the prefix.
+function uniqueEnemyId(battle: BattleState, monsterId: string): string {
+  let i = 0
+  while (battle.combatants.some((c) => c.id === `${monsterId}#${i}`)) i++
+  return `${monsterId}#${i}`
+}
+
+// Stand up a fresh persistent battle: the whole party plus `cap` monsters drawn
+// from the pool. Marked `mode: 'open'` so it never self-terminates.
+function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number): BattleState {
+  const playerUnits = party.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player'))
+  const enemyUnits = []
+  for (let i = 0; i < cap; i++) {
+    const mid = pickMonsterId(loc)
+    const def = mid ? MONSTER_REGISTRY[mid] : null
+    if (def && mid) enemyUnits.push(monsterToEngineInput(def, `${mid}#${i}`, 'enemy'))
+  }
+  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, mode: 'open' })
+}
+
+// Reconcile a persistent battle's player combatants against who's eligible right
+// now: drop heroes that died or left (clearing stale enemy locks), and field any
+// eligible hero not already present (fresh deploys, returnees from recovery).
+// Returns true if the combatant set changed. Mutates `battle` in place.
+function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): boolean {
+  const eligibleIds = new Set(eligible.map((u) => u.id))
+  let changed = false
+
+  const remove = new Set(
+    battle.combatants.filter((c) => c.team === 'player' && (!c.alive || !eligibleIds.has(c.id))).map((c) => c.id),
+  )
+  if (remove.size) {
+    battle.combatants = battle.combatants.filter((c) => !remove.has(c.id))
+    for (const c of battle.combatants) if (c.lockedTargetId && remove.has(c.lockedTargetId)) c.lockedTargetId = null
+    changed = true
+  }
+
+  const present = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+  for (const u of eligible) {
+    if (present.has(u.id)) continue
+    addCombatant(battle, unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), 'player', partyTactics)
+    changed = true
+  }
+  return changed
+}
+
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
   const out = misc.map((m) => ({ ...m }))
   for (const [id, qty] of Object.entries(deltas)) {
@@ -216,6 +284,7 @@ function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): Misc
 interface CombatStep {
   battles: Record<string, BattleState>
   battleCooldown: Record<string, number>
+  monsterSpawnTimers: Record<string, number>   // open-world: locationId → ticks until next monster trickles in
   hpByUnit: Record<string, number>    // unitId → live HP for units in an active battle
   koUnitIds: Set<string>              // player units that died this tick
   expByUnit: Record<string, number>
@@ -234,6 +303,7 @@ interface CombatStep {
 function advanceBattles(s: GameState, newTicks: number, advance: boolean): CombatStep {
   const battles        = { ...s.battles }
   const battleCooldown = { ...s.battleCooldown }
+  const monsterSpawnTimers   = { ...s.monsterSpawnTimers }
   const monsterDefeated      = { ...s.monsterDefeated }
   const monsterSeen          = { ...s.monsterSeen }
   const locationMonstersSeen = { ...s.locationMonstersSeen }
@@ -245,6 +315,82 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   let goldEarned = 0
   const logs: { category: LogCategory; message: string }[] = []
 
+  // ── Shared per-battle bookkeeping (used by both the encounter and open paths) ─
+
+  // Count each given monster id as sighted, both globally and at this location.
+  const markSeen = (loc: Location, monsterIds: string[]) => {
+    const seen = [...(locationMonstersSeen[loc.id] ?? [])]
+    let changed = false
+    for (const mid of monsterIds) {
+      monsterSeen[mid] = (monsterSeen[mid] ?? 0) + 1
+      if (!seen.includes(mid)) { seen.push(mid); changed = true }
+    }
+    if (changed) locationMonstersSeen[loc.id] = seen
+  }
+  const enemyMonsterIds = (battle: BattleState) =>
+    battle.combatants.filter((c) => c.team === 'enemy').map((c) => monsterIdOf(c.id))
+
+  // Award exp/gold/loot for every enemy that died this round (was alive before).
+  const rewardKills = (loc: Location, battle: BattleState, enemiesBefore: Set<string>) => {
+    let killsThisRound = 0
+    for (const c of battle.combatants) {
+      if (c.team !== 'enemy' || c.alive || !enemiesBefore.has(c.id)) continue
+      killsThisRound++
+      const mid = monsterIdOf(c.id)
+      monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + 1
+      goldEarned++
+      const def = MONSTER_REGISTRY[mid]
+      const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+      const itemsDropped = { ...prev.itemsDropped }
+      if (def) {
+        for (const d of def.drops) {
+          if (Math.random() < d.dropRate) {
+            const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
+            lootDelta[d.itemId]    = (lootDelta[d.itemId] ?? 0) + qty
+            itemsDropped[d.itemId] = (itemsDropped[d.itemId] ?? 0) + qty
+          }
+        }
+      }
+      locationStats[loc.id] = {
+        ...prev,
+        monstersDefeated: { ...prev.monstersDefeated, [mid]: (prev.monstersDefeated[mid] ?? 0) + 1 },
+        itemsDropped,
+        expDistributed: prev.expDistributed + 1,
+        goldEarned:     prev.goldEarned + 1,
+      }
+    }
+    if (killsThisRound > 0) {
+      for (const c of battle.combatants) {
+        if (c.team === 'player' && c.alive) expByUnit[c.id] = (expByUnit[c.id] ?? 0) + killsThisRound
+      }
+    }
+  }
+
+  // Flag player units that died in this round's events (→ store sets recovery).
+  const detectDeaths = (battle: BattleState) => {
+    for (const e of battle.events) {
+      if (e.round !== battle.round || e.type !== 'unit_death' || !e.targetId) continue
+      const dead = battle.combatants.find((c) => c.id === e.targetId)
+      if (dead && dead.team === 'player') koUnitIds.add(dead.id)
+    }
+  }
+
+  // Drop dead enemy combatants from a persistent (open) battle so the list
+  // doesn't grow without bound. Locks pointing at them were already cleared on
+  // death; this just reclaims the corpses.
+  const pruneDeadEnemies = (battle: BattleState) => {
+    const before = battle.combatants.length
+    battle.combatants = battle.combatants.filter((c) => !(c.team === 'enemy' && !c.alive))
+    return battle.combatants.length !== before
+  }
+
+  // Sync living player HP back to the game units every tick (engine is authoritative).
+  const syncHp = (battle: BattleState) => {
+    for (const c of battle.combatants) {
+      if (c.team === 'player' && c.alive) hpByUnit[c.id] = c.hp
+    }
+  }
+
   for (const loc of s.locations) {
     const locationId = loc.id
     const eligible = s.units.filter(
@@ -255,9 +401,69 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     if (eligible.length === 0 || loc.monsterIds.length === 0) {
       if (battles[locationId]) delete battles[locationId]
       if (battleCooldown[locationId]) delete battleCooldown[locationId]
+      if (monsterSpawnTimers[locationId]) delete monsterSpawnTimers[locationId]
       continue
     }
 
+    // ── Open-world: one persistent battle; monsters trickle in over time and
+    // heroes join / leave it as they deploy or recover. Never self-terminates.
+    if (loc.openWorld) {
+      const cap = openWorldCap(loc)
+      let battle = battles[locationId]
+      if (!battle || battle.mode !== 'open') {
+        battle = createOpenBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], cap)
+        battles[locationId] = battle
+        monsterSpawnTimers[locationId] = OPEN_WORLD_SPAWN_TICKS
+        markSeen(loc, enemyMonsterIds(battle))
+      }
+      // Field the right heroes (fresh deploys, KO removals, recovery returnees).
+      if (reconcileOpenPlayers(battle, eligible, s.equipment, s.partyTactics ?? [])) {
+        battles[locationId] = { ...battle }
+      }
+
+      if (advance) {
+        // Clear out enemy corpses from prior rounds before this one resolves —
+        // a persistent battle never resets, so without this the combatant list
+        // (and the viewer's ✕ chips) would grow without bound. They've already
+        // been rewarded; killed-this-round enemies stay until the next advance
+        // so their death still animates.
+        pruneDeadEnemies(battle)
+        const enemiesBefore = new Set(
+          battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => c.id),
+        )
+        advanceRound(battle)
+        battles[locationId] = { ...battle }
+        rewardKills(loc, battle, enemiesBefore)
+        detectDeaths(battle)
+      }
+
+      // Respawn trickle (every tick, independent of the round cadence): while the
+      // field is below the cap, count down a fixed timer and add one monster when
+      // it hits zero. At cap the timer is held full so the next vacancy waits a
+      // whole interval — monsters dribble back in rather than refilling at once.
+      const living = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
+      if (living < cap) {
+        let timer = Math.max(0, (monsterSpawnTimers[locationId] ?? OPEN_WORLD_SPAWN_TICKS) - 1)
+        if (timer === 0) {
+          const mid = pickMonsterId(loc)
+          const def = mid ? MONSTER_REGISTRY[mid] : null
+          if (def && mid) {
+            addCombatant(battle, monsterToEngineInput(def, uniqueEnemyId(battle, mid), 'enemy'), 'enemy')
+            battles[locationId] = { ...battle }
+            markSeen(loc, [mid])
+          }
+          timer = OPEN_WORLD_SPAWN_TICKS
+        }
+        monsterSpawnTimers[locationId] = timer
+      } else {
+        monsterSpawnTimers[locationId] = OPEN_WORLD_SPAWN_TICKS
+      }
+
+      syncHp(battle)
+      continue
+    }
+
+    // ── Discrete encounter (the original wave model; kept for testing) ─────────
     let battle = battles[locationId]
 
     // Between waves: count down the respawn timer, then start a fresh battle.
@@ -273,16 +479,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       battle = createBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [])
       battles[locationId] = battle
       delete battleCooldown[locationId]
-      // Mark the wave's monsters as seen.
-      const seen = [...(locationMonstersSeen[locationId] ?? [])]
-      let seenChanged = false
-      for (const c of battle.combatants) {
-        if (c.team !== 'enemy') continue
-        const mid = monsterIdOf(c.id)
-        monsterSeen[mid] = (monsterSeen[mid] ?? 0) + 1
-        if (!seen.includes(mid)) { seen.push(mid); seenChanged = true }
-      }
-      if (seenChanged) locationMonstersSeen[locationId] = seen
+      markSeen(loc, enemyMonsterIds(battle))
     }
 
     // Advance one round on the cadence and reward kills.
@@ -292,59 +489,19 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       )
       advanceRound(battle)
       battles[locationId] = { ...battle }   // new identity so React re-renders
-
-      let killsThisRound = 0
-      for (const c of battle.combatants) {
-        if (c.team !== 'enemy' || c.alive || !enemiesBefore.has(c.id)) continue
-        killsThisRound++
-        const mid = monsterIdOf(c.id)
-        monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + 1
-        goldEarned++
-        const def = MONSTER_REGISTRY[mid]
-        const prev = locationStats[locationId] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
-        const itemsDropped = { ...prev.itemsDropped }
-        if (def) {
-          for (const d of def.drops) {
-            if (Math.random() < d.dropRate) {
-              const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
-              lootDelta[d.itemId]    = (lootDelta[d.itemId] ?? 0) + qty
-              itemsDropped[d.itemId] = (itemsDropped[d.itemId] ?? 0) + qty
-            }
-          }
-        }
-        locationStats[locationId] = {
-          ...prev,
-          monstersDefeated: { ...prev.monstersDefeated, [mid]: (prev.monstersDefeated[mid] ?? 0) + 1 },
-          itemsDropped,
-          expDistributed: prev.expDistributed + 1,
-          goldEarned:     prev.goldEarned + 1,
-        }
-      }
-      if (killsThisRound > 0) {
-        for (const c of battle.combatants) {
-          if (c.team === 'player' && c.alive) expByUnit[c.id] = (expByUnit[c.id] ?? 0) + killsThisRound
-        }
-      }
-      // Flag fresh player deaths from this round's events.
-      for (const e of battle.events) {
-        if (e.round !== battle.round || e.type !== 'unit_death' || !e.targetId) continue
-        const dead = battle.combatants.find((c) => c.id === e.targetId)
-        if (dead && dead.team === 'player') koUnitIds.add(dead.id)
-      }
+      rewardKills(loc, battle, enemiesBefore)
+      detectDeaths(battle)
       if (battle.outcome !== 'ongoing') {
         battleCooldown[locationId] = BATTLE_RESPAWN_TICKS
         logs.push({ category: battle.outcome === 'victory' ? 'defeat' : 'flee', message: `${loc.name}: ${battle.outcome}` })
       }
     }
 
-    // Sync living player HP back to the game units every tick.
-    for (const c of battle.combatants) {
-      if (c.team === 'player' && c.alive) hpByUnit[c.id] = c.hp
-    }
+    syncHp(battle)
   }
 
   return {
-    battles, battleCooldown, hpByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
+    battles, battleCooldown, monsterSpawnTimers, hpByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
     monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, logs,
   }
 }
@@ -381,6 +538,7 @@ export const useGameStore = create<GameState>((set) => ({
   itemSockets: {},
   battles: {},
   battleCooldown: {},
+  monsterSpawnTimers: {},
 
   tick: () => set((s) => {
     const newTicks    = s.ticks + 1
@@ -435,6 +593,7 @@ export const useGameStore = create<GameState>((set) => ({
       units,
       battles: combat.battles,
       battleCooldown: combat.battleCooldown,
+      monsterSpawnTimers: combat.monsterSpawnTimers,
       monsterDefeated: combat.monsterDefeated,
       monsterSeen: combat.monsterSeen,
       locationMonstersSeen: combat.locationMonstersSeen,
@@ -753,6 +912,7 @@ export const useGameStore = create<GameState>((set) => ({
       partyTactics:    [{ id: 'finish-them', rank: 1 }],
       battles:           {},
       battleCooldown:    {},
+      monsterSpawnTimers: {},
       ticks:         0,
       lastTickAt:    Date.now(),
       paused:        false,

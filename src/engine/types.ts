@@ -217,6 +217,9 @@ export type BattleEventType =
   | 'heal' | 'unit_death' | 'target_switch' | 'status_expire'
   | 'dodge' | 'retreat' | 'buff_apply'
   | 'cast_start' | 'interrupt' | 'dot' | 'knockback'
+  // spawn: a combatant entered an already-running battle (open-world
+  // reinforcement, or a hero re-joining after recovery). UI can flash it in.
+  | 'spawn'
   // tactic_use: a non-skill tactic fired (Counterattacker, Shield Wall, Last
   // Stand…). UI floats the tactic name above the source so the player can see
   // why a unit just acted. Skill tactics already emit `skill_use` and don't
@@ -266,7 +269,14 @@ export interface CombatSetup {
   maxRounds?: number
   collectEvents?: boolean   // default true; set false for fast bulk resolution (§11)
   barriers?: Barrier[]      // impassable terrain (default none)
+  // 'encounter' (default): a discrete wave — `evalOutcome` ends it on a wipe
+  // (victory/defeat/draw). 'open': a persistent open-world battle that never
+  // self-terminates; the host trickles reinforcements in via `addCombatant`
+  // and owns teardown. See the open-world model in CLAUDE.md.
+  mode?: BattleMode
 }
+
+export type BattleMode = 'encounter' | 'open'
 
 export type Outcome = 'ongoing' | 'victory' | 'defeat' | 'draw'
 
@@ -308,6 +318,7 @@ export interface BattleState {
   combatants: Combatant[]
   zones: BattleZone[]
   barriers: Barrier[]
+  mode: BattleMode
   round: number
   outcome: Outcome
   events: BattleEvent[]

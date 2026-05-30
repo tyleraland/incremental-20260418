@@ -107,6 +107,16 @@ export interface Location {
   connections: string[]  // §2: locationIds reachable directly from here
   dungeonEntryRegion?: string  // §10: if set, location's detail panel exposes "Enter <Region>" → switches map to that region
   testScenarioId?: string  // §scenario: pin a SCENARIO_REGISTRY entry — overrides wave + barriers in combat
+  // §open-world: when true the location runs a single *persistent* battle —
+  // monsters trickle in over time (respawn) and heroes join/leave it as they
+  // deploy or recover, instead of the discrete start→wipe→respawn wave model.
+  // Mutually exclusive with `testScenarioId` (scenarios stay discrete for
+  // deterministic testing). Default (undefined/false) = discrete encounter.
+  openWorld?: boolean
+  // §open-world: fixed number of monsters this location keeps on the field at
+  // once (refilled one at a time as they're killed). Only read when `openWorld`.
+  // Per-location and party-independent for now; defaults to OPEN_WORLD_DEFAULT_CAP.
+  openWorldCap?: number
 }
 
 // ── Monster ───────────────────────────────────────────────────────────────────

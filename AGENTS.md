@@ -65,7 +65,23 @@ driven by **tactics** (below).
 **One battle per location.** `battles[locationId]` holds a `BattleState` with
 `combatants[]` (cloned from inputs, never mutated), positions on a 15×15 grid
 (`COLS = ROWS = 15`, grid units — *not* the game's feet), ground `zones[]`,
-`barriers[]`, `round`, `outcome`, `events[]`, and accumulating `stats`.
+`barriers[]`, a `mode`, `round`, `outcome`, `events[]`, and accumulating `stats`.
+
+**Two battle modes** (`BattleState.mode`):
+- `'encounter'` (default) — a discrete wave. `evalOutcome` ends it on a wipe
+  (`victory`/`defeat`/`draw`), then a `BATTLE_RESPAWN_TICKS` (15) cooldown and a
+  fresh identical wave. This is what scenarios/tests rely on; it's deterministic.
+- `'open'` — a *persistent* open-world battle for a location with `openWorld:
+  true`. It never self-terminates (`evalOutcome` returns `'ongoing'`); instead
+  the store keeps a **fixed** `openWorldCap` of monsters on the field, trickling
+  one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via the engine's
+  `addCombatant`, drawn at random from `monsterIds`. Heroes join/leave the live
+  fight as they deploy or recover (`reconcileOpenPlayers`). The store owns
+  teardown: when no eligible heroes remain at the location, the battle is
+  dropped. Spawn/feed events surface in `BattleView` (a ring + name flash; a
+  "⟳ Open world · persistent" badge). Open-world is **per-location and
+  party-independent** for now — see `BACKLOG.md` for the deferred pieces
+  (in-battle wander, overworld travel, weighted spawn distributions, seeded RNG).
 
 **Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
 - The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round

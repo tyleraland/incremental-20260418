@@ -20,7 +20,7 @@ export {
   variation, evalFormula, effectiveStat, defaultCalculateDamage, calculateHeal,
 } from './damage'
 export { selectTarget, chooseAction, livingEnemies, livingAllies, findCombatant } from './behavior'
-export { createBattle, advanceRound, resolve, finalize } from './engine'
+export { createBattle, addCombatant, advanceRound, resolve, finalize } from './engine'
 export { unitToEngineInput, monsterToEngineInput } from './adapter'
 export {
   TACTIC_REGISTRY, resolveTactics, getTactic, hasTactic,

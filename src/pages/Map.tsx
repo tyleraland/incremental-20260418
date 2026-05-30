@@ -523,6 +523,18 @@ function LocationDetailPanel() {
                 </div>
               )}
 
+              {location.openWorld && (
+                <div className="rounded-md border border-emerald-700/40 bg-emerald-950/20 px-2.5 py-2">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-emerald-300/90 mb-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80" />
+                    Open World
+                  </div>
+                  <p className="text-[11px] text-emerald-100/80 leading-snug">
+                    A persistent hunting ground — monsters respawn over time and your deployed heroes fight them continuously. No discrete waves.
+                  </p>
+                </div>
+              )}
+
               {unitsHere.length > 0 && (
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Units here</div>

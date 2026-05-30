@@ -386,12 +386,19 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   })
   const castStarts = roundEvents.filter((e) => e.type === 'cast_start')
   const tacticUses = roundEvents.filter((e) => e.type === 'tactic_use')
+  // Open-world reinforcements / returnees entering a live battle this round.
+  const spawns = roundEvents.filter((e) => e.type === 'spawn')
 
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
+      {battle.mode === 'open' && (
+        <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-600/50 bg-emerald-950/70 text-emerald-200 backdrop-blur-sm pointer-events-none">
+          ⟳ Open world · persistent
+        </div>
+      )}
       <div className="flex-1 min-h-0 flex justify-center items-start">
         <Arena cam={cam} barriers={battle.barriers}>
           {/* persistent ground hazards (Firewall, etc.) */}
@@ -453,6 +460,29 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             const label = (e.extra?.label as string | undefined)
             if (!src || !label) return null
             return <Float key={`tu-${battle.round}-${i}`} k={`tu-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-violet-200" text={label} />
+          })}
+
+          {/* spawn markers: a ring + name float where a combatant just entered */}
+          {spawns.map((e, i) => {
+            const c = byId(e.sourceId)
+            const pos = e.position ?? c?.pos
+            if (!pos) return null
+            const isPlayer = c?.team === 'player'
+            return (
+              <div key={`sp-${battle.round}-${i}`}>
+                <div
+                  className={`absolute w-16 h-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 animate-hit-flash pointer-events-none ${isPlayer ? 'border-blue-300/70' : 'border-red-300/70'}`}
+                  style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }}
+                />
+                <Float
+                  k={`spt-${battle.round}-${i}`}
+                  cam={cam}
+                  pos={pos}
+                  className={`text-[10px] ${isPlayer ? 'text-blue-200' : 'text-red-200'}`}
+                  text={`${isPlayer ? '▲' : '⚠'} ${shortName(c?.name ?? '')}`}
+                />
+              </div>
+            )
           })}
 
           {battle.combatants.map((c) => (

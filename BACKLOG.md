@@ -16,14 +16,32 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
   - *Roster taps in battle mode are currently inert* (no action bar there). A
     natural next step: tapping a roster hero in battle mode highlights/centres
     their chip, or surfaces a slim deploy/recall control.
-- **Open world instead of single encounters.** Today combat is a discrete
-  wave at one location at a time, fully deterministic from a known starting
-  formation. The longer-term shape is an open field where parties roam,
-  bump into hostile groups, retreat, regroup — closer to a continuous sim
-  than a per-location arena. This loosens determinism: encounter spawn
-  positions, who-meets-who, when reinforcements arrive, all get
-  controllable randomness. We keep determinism for tests via seeded RNG,
-  but live play is no longer "same inputs → same outputs" by default.
+- **🟡 Open world instead of single encounters (first iteration shipped).**
+  A location can now set `openWorld: true` to run a *persistent* battle
+  (`BattleState.mode === 'open'`) instead of the discrete wave model:
+  - The battle never self-terminates — `evalOutcome` returns `'ongoing'` in
+    open mode; the store owns teardown (no eligible heroes → battle removed).
+  - Monsters trickle back in via the engine's new `addCombatant`, one at a
+    time, up to a fixed per-location `openWorldCap`, every
+    `OPEN_WORLD_SPAWN_TICKS`. Picked at random from `monsterIds`.
+  - Heroes join / leave the live fight as they deploy or recover
+    (`reconcileOpenPlayers`), so the party adapts to who's standing.
+  - Discrete encounters are unchanged and still the default — scenarios,
+    the Elite Four, cities and the dungeon stay deterministic for tests.
+  Follow-ups still open:
+  - *In-battle wander* — between spawns heroes just hold; they don't roam the
+    arena hunting. (Deliberately deferred — agreed with the owner.)
+  - *Overworld wandering* — units moving from one location to another on their
+    own (the `travelPath` field exists but isn't driven yet).
+  - *Smarter spawns* — per-location monster *distributions* (weights, level
+    bands, time-of-day) and non-uniform spawn timers. Today it's an equal-weight
+    random pick on a fixed timer.
+  - *Seeded RNG for determinism* — spawn picks / loot use `Math.random` in the
+    store. Live open-world play is no longer "same inputs → same outputs";
+    tests pin `Math.random`. A seeded generator would make replays exact.
+  - *Spawn positions* — reinforcements drop at the team's formation edge via
+    `startingPosition`; an open field would want randomised / off-screen entry
+    points and "who-meets-who" emergence.
 
 ## Combat content
 

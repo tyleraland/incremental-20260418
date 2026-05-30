@@ -46,19 +46,19 @@ export const INITIAL_LOCATIONS: Location[] = [
     id: 'prontera-field-3', region: 'world', name: 'Prontera Field',
     description: 'A grassy plain east of Prontera, dotted with patches of nightshade.',
     traits: ['plains'], monsterIds: ['living-nightshade'],
-    familiarityMax: 100, connections: [],
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 3,
   },
   {
     id: 'prontera-field-2', region: 'world', name: 'Southern Road',
     description: 'A coastal road descending south toward Kanto.',
     traits: ['plains'], monsterIds: ['skeleton-archer'],
-    familiarityMax: 100, connections: [],
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 3,
   },
   {
     id: 'beach-1', region: 'world', name: 'Kanto Beach',
     description: 'A sunny stretch of coastline dotted with rock pools.',
-    traits: ['beach', 'water'], monsterIds: ['rock-crab'],
-    familiarityMax: 100, connections: [],
+    traits: ['beach', 'water'], monsterIds: ['rock-crab', 'giant-frog'],
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 4,
   },
 
   // ── Proving Grounds (sandbox arenas, east of the world path) ─────────────
