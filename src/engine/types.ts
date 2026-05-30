@@ -215,12 +215,38 @@ export interface Combatant {
 
   // §open-world (mode === 'open' only). visionRange gates target acquisition.
   // wanderTarget/wanderDwell drive idle roaming: a monster lurks for wanderDwell
-  // rounds, then hops toward wanderTarget; heroes ignore these and roam toward
-  // the team waypoint instead.
+  // rounds, then hops toward wanderTarget; heroes read the team plan's waypoint
+  // instead.
   visionRange: number
   wanderTarget: Vec2 | null
   wanderDwell: number
+
+  // §debug: a small ring buffer of one-line summaries of what this unit did each
+  // turn (targeting / movement / action). Purely observational — the BattleView
+  // debug tab and tests read it; nothing in the sim depends on it.
+  trace: TraceEntry[]
 }
+
+// One turn's worth of "what this unit just did", newest pushed to the end.
+export interface TraceEntry {
+  round: number
+  text: string
+}
+
+// ── Team blackboard (§coordination) ──────────────────────────────────────────--
+//
+// A per-team scratchpad recomputed once per round by a pluggable `Planner` and
+// stashed on `BattleState.plans`. Tactics *read* the plan instead of each unit
+// recomputing — so "the party roams to one waypoint / focus-fires one target"
+// falls out of shared state rather than coincidence. Easy to inspect for
+// debugging (BattleView debug tab) and to assert on in tests.
+export interface TeamPlan {
+  waypoint: Vec2 | null            // shared roam target (heroes wander toward it)
+  focusTargetId: string | null     // enemy the team should concentrate on (advisory)
+  threat: Record<string, number>   // enemyId → threat score (higher = scarier)
+}
+
+export type Planner = (state: BattleState, team: Team) => TeamPlan
 
 // ── Events (§12) ─────────────────────────────────────────────────────────────--
 
@@ -283,6 +309,7 @@ export interface CombatSetup {
   barriers?: Barrier[]      // impassable terrain (default none)
   cols?: number             // arena width in grid units (default COLS); open-world is larger
   rows?: number             // arena height in grid units (default ROWS)
+  planner?: Planner         // team blackboard producer (default: built-in defaultPlanner)
   // 'encounter' (default): a discrete wave — `evalOutcome` ends it on a wipe
   // (victory/defeat/draw). 'open': a persistent open-world battle that never
   // self-terminates; the host trickles reinforcements in via `addCombatant`
@@ -335,7 +362,8 @@ export interface BattleState {
   cols: number
   rows: number
   mode: BattleMode
-  wander: Partial<Record<Team, Vec2>>   // §open-world: current roam waypoint per team
+  plans: Partial<Record<Team, TeamPlan>>   // §coordination: per-team blackboard, recomputed each round
+  planner: Planner                          // produces the plans (pluggable)
   round: number
   outcome: Outcome
   events: BattleEvent[]

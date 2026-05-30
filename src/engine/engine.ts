@@ -14,7 +14,7 @@ import { setArenaBounds, arenaClamp } from './arena'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
 import {
-  selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies,
+  selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
 } from './behavior'
 import {
   resolveTactics, chargerBonus, armoredFactor, nimblePeriod,
@@ -34,6 +34,7 @@ import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
+  TeamPlan, Planner,
 } from './types'
 
 // Deterministic [0,1) hash of an integer — seeds open-world wander choices
@@ -109,6 +110,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     // Monsters lurk a (deterministic) few rounds before their first hop; heroes
     // don't use the dwell timer (they roam toward the team waypoint).
     wanderDwell: input.team === 'enemy' ? monsterDwell(index + 1) : 0,
+    trace: [],
   }
 }
 
@@ -138,7 +140,8 @@ export function createBattle(setup: CombatSetup): BattleState {
     cols,
     rows,
     mode: setup.mode ?? 'encounter',
-    wander: {},
+    plans: {},
+    planner: setup.planner ?? defaultPlanner,
     round: 0,
     outcome: 'ongoing',
     events: [],
@@ -566,51 +569,78 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   if (state.mode === 'open') executeWander(state, self)
 }
 
-// ── Open-world wander (only reached when a unit has no target, mode === 'open') ─
+// ── Team blackboard (§coordination) ─────────────────────────────────────────--
 
-// The party's shared roam waypoint, re-picked once they arrive (within
-// WANDER_REPATH of it). Deterministic (hash of the round it's chosen) so replays
-// match. Stored on state.wander.player.
-function updateHeroWaypoint(state: BattleState): void {
-  const heroes = state.combatants.filter((c) => c.alive && c.team === 'player')
-  if (heroes.length === 0) return
-  const cx = heroes.reduce((s, c) => s + c.pos.x, 0) / heroes.length
-  const cy = heroes.reduce((s, c) => s + c.pos.y, 0) / heroes.length
-  const wp = state.wander.player
-  if (wp && distance({ x: cx, y: cy }, wp) > WANDER_REPATH) return
-  // Keep waypoints in the interior so the party roams the field instead of
-  // hugging the perimeter (margin shrinks on tiny maps so it never inverts).
-  const mx = Math.min(WANDER_MARGIN, state.cols / 2 - 0.5)
-  const my = Math.min(WANDER_MARGIN, state.rows / 2 - 0.5)
-  state.wander.player = {
-    x: mx + hash01(state.round * 2 + 1) * (state.cols - 2 * mx),
-    y: my + hash01(state.round * 2 + 2) * (state.rows - 2 * my),
+function centroidOf(cs: Combatant[]): Vec2 {
+  let x = 0, y = 0
+  for (const c of cs) { x += c.pos.x; y += c.pos.y }
+  return { x: x / cs.length, y: y / cs.length }
+}
+
+// The built-in blackboard producer. Computes, per team:
+//   • waypoint — the party's shared roam target. If anyone's engaged, it's the
+//     centroid of the fight (roamers regroup on it); otherwise a fresh interior
+//     point, re-picked once the party arrives (deterministic hash, so replays
+//     match). Heroes read this in executeWander; that's how "wander together"
+//     stops being coincidence and becomes shared state.
+//   • focusTargetId — lowest-HP enemy the team can see (advisory; exposed for
+//     debugging and available to a future focus-fire tactic).
+//   • threat — per-enemy danger score.
+export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
+  const members = state.combatants.filter((c) => c.alive && c.team === team)
+  const enemies = state.combatants.filter((c) => c.alive && c.team !== team)
+
+  const threat: Record<string, number> = {}
+  for (const e of enemies) threat[e.id] = Math.round(effectiveStat(e, 'str') + effectiveStat(e, 'int'))
+
+  let focus: Combatant | null = null
+  for (const e of enemies) {
+    if (isStealthed(e)) continue
+    if (!members.some((m) => distance(m.pos, e.pos) <= m.visionRange)) continue   // unseen
+    if (!focus || e.hp < focus.hp || (e.hp === focus.hp && e.id < focus.id)) focus = e
+  }
+
+  let waypoint = state.plans[team]?.waypoint ?? null
+  const engaged = members.filter((m) => {
+    const t = findCombatant(state, m.lockedTargetId)
+    return !!(t && t.alive)
+  })
+  if (engaged.length) {
+    waypoint = centroidOf(engaged)
+  } else if (members.length) {
+    const c = centroidOf(members)
+    if (!waypoint || distance(c, waypoint) <= WANDER_REPATH) {
+      // Interior point so the party roams the field, not the perimeter (margin
+      // shrinks on tiny maps so it never inverts).
+      const mx = Math.min(WANDER_MARGIN, state.cols / 2 - 0.5)
+      const my = Math.min(WANDER_MARGIN, state.rows / 2 - 0.5)
+      const seed = team === 'player' ? 1 : 7
+      waypoint = {
+        x: mx + hash01(state.round * 2 + seed) * (state.cols - 2 * mx),
+        y: my + hash01(state.round * 2 + seed + 1) * (state.rows - 2 * my),
+      }
+    }
+  }
+  return { waypoint, focusTargetId: focus?.id ?? null, threat }
+}
+
+// Recompute every team's blackboard once per round (start of advanceRound).
+function runPlanners(state: BattleState): void {
+  for (const team of ['player', 'enemy'] as Team[]) {
+    state.plans[team] = state.planner(state, team)
   }
 }
+
+// ── Open-world wander (only reached when a unit has no target, mode === 'open') ─
 
 // Fan the shared waypoint out per unit (a small 3-wide grid offset by index) so
 // the party walks as a loose cluster instead of all aiming at the exact same
 // cell — which separation would otherwise grind into edge jitter.
-function offsetWaypoint(wp: Vec2 | undefined, index: number): Vec2 | null {
+function offsetWaypoint(wp: Vec2 | null | undefined, index: number): Vec2 | null {
   if (!wp) return null
   const ox = ((index % 3) - 1) * 2.5
   const oy = ((Math.floor(index / 3) % 3) - 1) * 2.5
   return { x: wp.x + ox, y: wp.y + oy }
-}
-
-// Nearest living ally already locked onto a live enemy — wanderers head for the
-// fight so the party converges instead of straggling.
-function nearestEngagedAlly(state: BattleState, self: Combatant): Combatant | null {
-  let best: Combatant | null = null
-  let bestD = Infinity
-  for (const c of state.combatants) {
-    if (c === self || !c.alive || c.team !== self.team || !c.lockedTargetId) continue
-    const tgt = findCombatant(state, c.lockedTargetId)
-    if (!tgt || !tgt.alive) continue
-    const d = distance(self.pos, c.pos)
-    if (d < bestD) { bestD = d; best = c }
-  }
-  return best
 }
 
 function executeWander(state: BattleState, self: Combatant): void {
@@ -620,11 +650,9 @@ function executeWander(state: BattleState, self: Combatant): void {
     // Travel speed: roaming the big map is movement *between* fights, so heroes
     // cross it briskly. (Combat movement, once a target is locked, isn't here.)
     const speed = moveSpeedOf(self) * WANDER_SPEED_MULT
-    // Converge on any ally already fighting; otherwise roam the team waypoint —
-    // fanned out per unit so the party spreads into a loose group instead of
-    // stacking on a single point (which separation turns into edge jitter).
-    const ally = nearestEngagedAlly(state, self)
-    const point = ally ? ally.pos : offsetWaypoint(state.wander.player, self.index)
+    // Read the team blackboard's shared waypoint (regroups on a fight, else
+    // roams), fanned out per unit so the party travels as a loose cluster.
+    const point = offsetWaypoint(state.plans[self.team]?.waypoint, self.index)
     if (!point) return
     if (moveTowardPoint(self, point, speed, state.combatants, state.barriers)) {
       emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
@@ -834,37 +862,80 @@ function tickChannel(state: BattleState, self: Combatant): boolean {
   return true   // a channel always consumes the turn (rooted while casting)
 }
 
+// ── Per-unit debug trace (§debug) ────────────────────────────────────────────--
+const TRACE_CAP = 20
+function pushTrace(c: Combatant, round: number, text: string): void {
+  c.trace.push({ round, text })
+  if (c.trace.length > TRACE_CAP) c.trace.splice(0, c.trace.length - TRACE_CAP)
+}
+function traceName(state: BattleState, id: string | null | undefined): string {
+  if (!id) return '—'
+  return findCombatant(state, id)?.name ?? id
+}
+
 function takeTurn(state: BattleState, self: Combatant): void {
+  const round = state.round
   // (0) hard control — lose the turn. Stun is consumed on the skipped turn;
   // Freeze ages out normally (so its damage amplification persists, §3).
   const control = self.statuses.find((s) => s.flags.includes('stunned') || s.flags.includes('frozen'))
   if (control) {
     if (control.flags.includes('stunned')) self.statuses = self.statuses.filter((s) => s !== control)
+    pushTrace(self, round, control.flags.includes('frozen') ? 'frozen — skip turn' : 'stunned — skip turn')
     self.lastHitById = null
     return
   }
 
   // (0) channeled cast in progress — continue or resolve it
-  if (tickChannel(state, self)) { self.lastHitById = null; return }
+  if (self.channel) {
+    const sk = self.channel.skillId
+    tickChannel(state, self)
+    pushTrace(self, round, self.channel ? `channeling ${sk} (${self.channel.roundsLeft} left)` : `cast ${sk} resolved`)
+    self.lastHitById = null
+    return
+  }
 
   // (1) reaction — may consume the turn
   const reaction = evalReactions(state, self)
-  if (reaction && applyReaction(state, self, reaction)) { self.lastHitById = null; return }
+  if (reaction && applyReaction(state, self, reaction)) {
+    pushTrace(self, round, `reaction${reaction.counterAttack ? ` · counter ${traceName(state, reaction.counterAttack)}` : ''}`)
+    self.lastHitById = null
+    return
+  }
 
   // (3→2) targeting, then movement aimed at the resolved lock
+  const lockBefore = self.lockedTargetId
   evalTargeting(state, self)
+  const tgtText = self.lockedTargetId
+    ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`
+    : (state.mode === 'open' ? 'no target · wander' : 'no target')
+
+  const posBefore = { ...self.pos }
   executeMovement(state, self, evalMovement(state, self))
+  const moveText = (self.pos.x !== posBefore.x || self.pos.y !== posBefore.y)
+    ? `move (${posBefore.x.toFixed(1)},${posBefore.y.toFixed(1)})→(${self.pos.x.toFixed(1)},${self.pos.y.toFixed(1)})`
+    : 'hold'
 
   // (4) action — an action tactic owns the turn if it fires: Shield Wall (status)
   // or a skill cast (skills are action tactics). Else fall back to a basic attack.
+  let actionText: string
   const act = evalActionTactics(state, self)
   if (act) {
     if (act.applyStatusToSelf) addStatus(self, act.applyStatusToSelf)
     if (act.castSkill && act.skillTarget) castSkill(state, self, act.castSkill, act.skillTarget)
+    actionText = act.castSkill ? `cast ${act.castSkill.name} @ ${traceName(state, act.skillTarget)}`
+      : act.applyStatusToSelf ? `self-buff ${act.applyStatusToSelf.name ?? act.applyStatusToSelf.id}`
+      : 'act'
   } else {
+    const peek = chooseAction(state, self)   // pure read; executeNaiveAction re-derives it
+    actionText = peek
+      ? (peek.kind === 'heal' ? `heal ${traceName(state, peek.targetId)}`
+        : peek.kind === 'skill' ? `cast ${peek.skill.name} @ ${traceName(state, peek.targetId)}`
+        : `attack ${traceName(state, peek.targetId)}`)
+      : 'idle'
     executeNaiveAction(state, self)
   }
 
+  pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}`)
   // consume "hit since last turn" so Counterattacker only fires on fresh hits
   self.lastHitById = null
 }
@@ -883,14 +954,21 @@ function evalOutcome(state: BattleState): Outcome {
 }
 
 // Resolve exactly one round in place (§9.1). No-op once the battle is decided.
+const EVENT_CAP = 600   // open battles never reset; keep the event log bounded
+
 export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
   setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
+  // Open battles run forever — trim the event log so it can't grow unbounded
+  // (only the current round's events are ever read for rendering).
+  if (state.mode === 'open' && state.collectEvents && state.events.length > EVENT_CAP) {
+    state.events.splice(0, state.events.length - EVENT_CAP)
+  }
   state.round += 1
 
-  // §open-world: refresh the party's shared roam waypoint (heroes with no target
-  // in sight walk toward it; see executeWander).
-  if (state.mode === 'open') updateHeroWaypoint(state)
+  // §coordination: refresh every team's blackboard (shared waypoint, focus,
+  // threat) before any unit acts; tactics/wander read it this round.
+  runPlanners(state)
 
   // §9.1.1 tick status effects (apply DoT, then age out)
   for (const c of state.combatants) {

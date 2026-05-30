@@ -90,17 +90,19 @@ The biggest open chunk. Today every unit picks targets and paths
 independently; `HERD_BIAS = 4` is a one-line hack that approximates "go the
 same way" by penalising left-side detours.
 
-- **Team blackboard.** Per-team scratchpad computed once at round start and
-  stashed on `BattleState`:
-  ```
-  state.plans: Record<Team, TeamPlan>
-  TeamPlan = { focusTargetId, disableTargetId, threat: Record<id, number> }
-  ```
-  Tactics *read* the plan instead of recomputing, so "A disables X while B+C
-  focus-fire Y" falls out. Produced by a pluggable **planner** — that's the
-  injection point (a team's AI = planner + tactic loadout). Replaces
-  HERD_BIAS with real coordination; also fixes flanker pulling a rogue the
-  long way around.
+- **🟡 Team blackboard (first iteration shipped).** Per-team scratchpad
+  recomputed each round by a pluggable **planner** and stashed on
+  `BattleState.plans: Partial<Record<Team, TeamPlan>>`, where
+  `TeamPlan = { waypoint, focusTargetId, threat }`. Wired in so far:
+  - *Wander reads the plan* — the party's shared roam `waypoint` (regroups on a
+    fight, else roams the interior) lives on the blackboard; `executeWander`
+    just reads it, so "wander together" is shared state, not coincidence.
+  - `defaultPlanner` also computes an advisory `focusTargetId` (lowest-HP
+    visible enemy) and a per-enemy `threat` score; both are exposed in the
+    BattleView **Debug tab** and asserted in `blackboard.test.ts`.
+  Still open: actually *consume* focus in a targeting tactic (focus-fire), add
+  `disableTargetId`, and use the blackboard to replace the `HERD_BIAS` path
+  detour (flanker pulling a rogue the long way around).
 - **Strategies = multi-channel tactic bundles.** A `STRATEGY_REGISTRY` where
   each entry expands to TacticRefs across channels + an optional planner.
   Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),

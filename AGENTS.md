@@ -92,9 +92,8 @@ driven by **tactics** (below).
   and never wander, so the 15×15 tuned feel is untouched). Each unit only
   acquires targets within `visionRange` (heroes 10, monsters 8 cells;
   `targetableEnemies` filters on it). With nothing in sight a unit *wanders*
-  (`executeWander`, mode `'open'` only): **heroes** roam toward a shared team
-  waypoint (`state.wander.player`, re-picked on arrival) but **converge on any
-  engaged ally** so the party regroups on fights; **monsters** lurk
+  (`executeWander`, mode `'open'` only): **heroes** roam toward the team
+  blackboard's shared `waypoint` (below); **monsters** lurk
   `MONSTER_WANDER_MIN..MAX` rounds then hop `NEAR..FAR` cells to a new local
   spot. Wander/vision are deterministic (a `hash01` of round+index, no RNG).
 
@@ -103,6 +102,24 @@ driven by **tactics** (below).
   point — no size constant is hardcoded in the movement clamps. See `BACKLOG.md`
   for the still-deferred pieces (overworld travel between locations, weighted
   spawn distributions, seeded RNG for exact replays).
+
+**Team blackboard** (`BattleState.plans: Partial<Record<Team, TeamPlan>>`). A
+per-team scratchpad recomputed each round at the top of `advanceRound` by a
+pluggable `planner` (`CombatSetup.planner`, default `defaultPlanner`). A
+`TeamPlan` is `{ waypoint, focusTargetId, threat }`: the shared roam `waypoint`
+(centroid of an engaged fight so roamers regroup, else a fresh interior point)
+is what makes the party wander *together*; `focusTargetId` (lowest-HP visible
+enemy) + `threat` are advisory today (exposed for debugging, available to a
+future focus-fire tactic). Tactics **read** the plan rather than recompute.
+
+**Combat debugging.** Every combatant keeps a `trace: TraceEntry[]` ring buffer
+(last 20) of one-line per-turn summaries (targeting · movement · action),
+appended in `takeTurn`. The BattleView unit detail overlay has a **Debug** tab
+(blackboard snapshot, tactic resolution with competing-channel ⚠ flags, the
+recent trace) and a **copy-last-15** button that dumps a shareable text block
+(`buildDebugText`). `plans` and `trace` are also handy in tests
+(`blackboard.test.ts`). Open battles trim `events` to `EVENT_CAP` so the
+never-resetting log stays bounded.
 
 **Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
 - The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round

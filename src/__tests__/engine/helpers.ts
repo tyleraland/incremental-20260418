@@ -56,6 +56,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     visionRange: Infinity,
     wanderTarget: null,
     wanderDwell: 0,
+    trace: [],
     ...overrides,
   }
 }

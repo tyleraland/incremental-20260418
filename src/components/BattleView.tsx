@@ -344,11 +344,165 @@ function Float({ cam, pos, className, text, k }: { cam: Cam; pos: Vec2; classNam
   )
 }
 
-// Selected-unit detail as a dismissable bottom-sheet overlay. Floats over the
-// arena so the board keeps its full height regardless of screen size.
-function UnitDetailOverlay({ c, onClose }: { c: Combatant; onClose: () => void }) {
-  const isPlayer = c.team === 'player'
+// Resolve a combatant id to a display name within a battle.
+function nameInBattle(battle: BattleState, id: string | null | undefined): string {
+  if (!id) return '—'
+  return battle.combatants.find((x) => x.id === id)?.name ?? id
+}
+
+// A plain-text dump of a unit's current decision state + last 15 turns, for
+// pasting into a bug report. Mirrors what the Debug tab shows.
+function buildDebugText(c: Combatant, battle: BattleState): string {
+  const plan = battle.plans[c.team]
+  const wp = plan?.waypoint
+  const L: string[] = []
+  L.push(`# ${c.name} (${c.team}${c.alive ? '' : ' · KO'}) — battle round ${battle.round}`)
+  L.push(`hp ${Math.ceil(c.hp)}/${c.maxHp}  pos (${c.pos.x.toFixed(1)},${c.pos.y.toFixed(1)})  vision ${c.visionRange === Infinity ? '∞' : c.visionRange}`)
+  L.push(`lock: ${nameInBattle(battle, c.lockedTargetId)}  team-focus: ${nameInBattle(battle, plan?.focusTargetId)}  waypoint: ${wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}`)
+  L.push(`tactics: ${c.tactics.map((t) => `${t.def.channel}:${t.def.name}`).join(', ') || '(none)'}`)
+  if (c.statuses.length) L.push(`statuses: ${c.statuses.map((s) => `${s.name}(${s.duration})`).join(', ')}`)
+  if (c.channel) L.push(`channeling: ${c.channel.skillId} (${c.channel.roundsLeft} left)`)
+  L.push(`-- last ${Math.min(15, c.trace.length)} turns (newest first) --`)
+  for (const e of c.trace.slice().reverse().slice(0, 15)) L.push(`R${e.round}: ${e.text}`)
+  return L.join('\n')
+}
+
+function StatsTab({ c }: { c: Combatant }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
+  return (
+    <>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden">
+          <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+        </div>
+        <div className="text-game-text-dim tabular-nums">{Math.ceil(c.hp)}/{c.maxHp}</div>
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-1 text-[10px] text-game-text-dim">
+        <div>STR <span className="text-game-text tabular-nums">{c.str}</span></div>
+        <div>DEF <span className="text-game-text tabular-nums">{c.def}</span></div>
+        <div>INT <span className="text-game-text tabular-nums">{c.int}</span></div>
+        <div>SPD <span className="text-game-text tabular-nums">{c.spd}</span></div>
+      </div>
+      {c.skills.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] text-game-text-dim mb-1">Skills</div>
+          <div className="space-y-0.5">
+            {c.skills.map((s) => {
+              const left = c.skillCooldowns[s.id] ?? 0
+              const ready = left <= 0
+              const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
+              return (
+                <div key={s.id} className="flex items-center gap-2 text-[10px]">
+                  <div className="flex-1 truncate">{s.name}</div>
+                  <div className="w-20 h-1 rounded-sm bg-black/50 overflow-hidden">
+                    <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
+                  </div>
+                  <div className="w-6 text-right tabular-nums text-game-text-dim">{ready ? 'rdy' : left}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {c.statuses.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {c.statuses.map((s, i) => (
+            <span key={i} className="px-1.5 py-0.5 rounded bg-game-bg border border-game-border text-[10px]">
+              {s.name} <span className="text-game-text-dim tabular-nums">({s.duration})</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {c.channel && (
+        <div className="mt-2 text-[10px] text-amber-300">
+          ✦ Casting {skillName(c.channel.skillId)} — {c.channel.roundsLeft} round{c.channel.roundsLeft === 1 ? '' : 's'} left
+        </div>
+      )}
+    </>
+  )
+}
+
+// Debug tab: the team blackboard, this unit's tactic resolution (flagging
+// channels with competing priorities), and the last-15-turns trace. Built so a
+// developer — or you, pasting the copied block into chat — can see exactly what
+// the unit was deciding and why.
+function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
+  const plan = battle.plans[c.team]
+  const wp = plan?.waypoint
+  const lockName = nameInBattle(battle, c.lockedTargetId)
+  const focusName = nameInBattle(battle, plan?.focusTargetId)
+  const divergent = c.lockedTargetId && plan?.focusTargetId && c.lockedTargetId !== plan.focusTargetId
+
+  // Group tactics by channel to surface competing priorities (1st wins).
+  const channels = new Map<string, typeof c.tactics>()
+  for (const t of c.tactics) {
+    const arr = channels.get(t.def.channel) ?? []
+    arr.push(t); channels.set(t.def.channel, arr)
+  }
+  const recent = c.trace.slice().reverse().slice(0, 15)
+
+  return (
+    <div className="mt-2 space-y-2 text-[10px]">
+      {/* Blackboard */}
+      <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
+        <div className="text-game-text-dim uppercase tracking-wide mb-1">Blackboard · {c.team}</div>
+        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-game-text-dim">
+          <div>round <span className="text-game-text tabular-nums">{battle.round}</span></div>
+          <div>pos <span className="text-game-text tabular-nums">({c.pos.x.toFixed(1)},{c.pos.y.toFixed(1)})</span></div>
+          <div>lock <span className={c.lockedTargetId ? 'text-game-text' : 'text-game-muted'}>{lockName}</span></div>
+          <div>team-focus <span className={plan?.focusTargetId ? 'text-game-text' : 'text-game-muted'}>{focusName}</span></div>
+          <div className="col-span-2">waypoint <span className="text-game-text tabular-nums">{wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}</span></div>
+        </div>
+        {divergent && <div className="mt-1 text-amber-300">⚠ this unit's lock ≠ team focus</div>}
+      </div>
+
+      {/* Tactic resolution */}
+      <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
+        <div className="text-game-text-dim uppercase tracking-wide mb-1">Tactics (priority order)</div>
+        {channels.size === 0 && <div className="text-game-muted">no tactics equipped</div>}
+        {[...channels.entries()].map(([ch, list]) => (
+          <div key={ch} className="flex items-start gap-1.5 leading-tight">
+            <span className={`shrink-0 w-16 ${list.length > 1 ? 'text-amber-300' : 'text-game-text-dim'}`}>{ch}{list.length > 1 ? ' ⚠' : ''}</span>
+            <span className="flex-1">
+              {list.map((t, i) => (
+                <span key={t.def.id} className={i === 0 ? 'text-game-text' : 'text-game-muted line-through'}>
+                  {i > 0 && ' › '}{t.def.name}<span className="text-game-muted">·r{t.rank}</span>
+                </span>
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Recent trace */}
+      <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
+        <div className="text-game-text-dim uppercase tracking-wide mb-1">Recent (last {recent.length}, newest first)</div>
+        {recent.length === 0 && <div className="text-game-muted">no actions yet</div>}
+        <div className="space-y-0.5 font-mono text-[9.5px] leading-tight max-h-32 overflow-y-auto">
+          {recent.map((e, i) => (
+            <div key={i} className="text-game-text-dim"><span className="text-game-muted">R{e.round}</span> {e.text}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Selected-unit detail as a dismissable bottom-sheet overlay. Floats over the
+// arena so the board keeps its full height regardless of screen size. Two tabs:
+// Stats (the card) and Debug (blackboard + tactics + trace, with copy-to-share).
+function UnitDetailOverlay({ c, battle, onClose }: { c: Combatant; battle: BattleState; onClose: () => void }) {
+  const isPlayer = c.team === 'player'
+  const [tab, setTab] = useState<'stats' | 'debug'>('stats')
+  const [copied, setCopied] = useState(false)
+
+  const copy = () => {
+    const text = buildDebugText(c, battle)
+    try { navigator.clipboard?.writeText(text) } catch { /* clipboard unavailable */ }
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1200)
+  }
+
   return (
     <div className="absolute inset-x-0 bottom-0 z-20 px-2 pb-2 pointer-events-none">
       <div className="max-w-md mx-auto w-full rounded-md border border-game-border bg-game-surface/95 backdrop-blur-sm shadow-lg p-3 text-xs pointer-events-auto">
@@ -359,53 +513,18 @@ function UnitDetailOverlay({ c, onClose }: { c: Combatant; onClose: () => void }
             <button onClick={onClose} aria-label="Close unit detail" className="w-5 h-5 flex items-center justify-center rounded border border-game-border text-game-text-dim hover:bg-white/5">✕</button>
           </div>
         </div>
-        <div className="mt-1.5 flex items-center gap-2">
-          <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden">
-            <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
-          </div>
-          <div className="text-game-text-dim tabular-nums">{Math.ceil(c.hp)}/{c.maxHp}</div>
+
+        <div className="mt-2 flex items-center gap-1">
+          <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
+          <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
+          {tab === 'debug' && (
+            <button onClick={copy} className="ml-auto px-2 py-0.5 rounded text-[10px] border border-game-border text-game-text-dim hover:bg-white/5" aria-label="Copy debug info">
+              {copied ? '✓ copied' : '⧉ copy last 15'}
+            </button>
+          )}
         </div>
-        <div className="mt-2 grid grid-cols-4 gap-1 text-[10px] text-game-text-dim">
-          <div>STR <span className="text-game-text tabular-nums">{c.str}</span></div>
-          <div>DEF <span className="text-game-text tabular-nums">{c.def}</span></div>
-          <div>INT <span className="text-game-text tabular-nums">{c.int}</span></div>
-          <div>SPD <span className="text-game-text tabular-nums">{c.spd}</span></div>
-        </div>
-        {c.skills.length > 0 && (
-          <div className="mt-2">
-            <div className="text-[10px] text-game-text-dim mb-1">Skills</div>
-            <div className="space-y-0.5">
-              {c.skills.map((s) => {
-                const left = c.skillCooldowns[s.id] ?? 0
-                const ready = left <= 0
-                const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
-                return (
-                  <div key={s.id} className="flex items-center gap-2 text-[10px]">
-                    <div className="flex-1 truncate">{s.name}</div>
-                    <div className="w-20 h-1 rounded-sm bg-black/50 overflow-hidden">
-                      <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
-                    </div>
-                    <div className="w-6 text-right tabular-nums text-game-text-dim">{ready ? 'rdy' : left}</div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-        {c.statuses.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {c.statuses.map((s, i) => (
-              <span key={i} className="px-1.5 py-0.5 rounded bg-game-bg border border-game-border text-[10px]">
-                {s.name} <span className="text-game-text-dim tabular-nums">({s.duration})</span>
-              </span>
-            ))}
-          </div>
-        )}
-        {c.channel && (
-          <div className="mt-2 text-[10px] text-amber-300">
-            ✦ Casting {skillName(c.channel.skillId)} — {c.channel.roundsLeft} round{c.channel.roundsLeft === 1 ? '' : 's'} left
-          </div>
-        )}
+
+        {tab === 'stats' ? <StatsTab c={c} /> : <DebugTab c={c} battle={battle} />}
       </div>
     </div>
   )
@@ -670,7 +789,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
       </div>
 
       <Legend players={playersAlive} enemies={enemiesAlive} />
-      {selected && <UnitDetailOverlay c={selected} onClose={closeDetail} />}
+      {selected && <UnitDetailOverlay c={selected} battle={battle} onClose={closeDetail} />}
     </div>
   )
 }
