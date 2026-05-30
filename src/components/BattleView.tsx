@@ -37,7 +37,9 @@ function hpColor(ratio: number): string {
 const DEFAULT_CAM_SIZE = 13   // world units shown by default
 const FULL_CAM_SIZE    = COLS // whole arena (zoom-out cap)
 const SPREAD_EXTENT    = 12   // bbox extent above this → zoom out to fit everyone
-const OPEN_CAM_SIZE    = 28   // open-world: window onto the big map, follows the party
+const OPEN_CAM_SIZE     = 15  // open-world: default cells shown (pinch to resize)
+const OPEN_CAM_MIN_SIZE = 8   // most zoomed-in
+const OPEN_CAM_MAX_SIZE = 60  // most zoomed-out (still less than the whole map)
 
 interface Cam { x: number; y: number; size: number }
 
@@ -48,8 +50,8 @@ function defaultCamera(): Cam {
 // Open-world: a fixed-size window that follows the centroid of the given points
 // (alive combatants), clamped so it never shows past the map edges. The whole
 // 100×100 field can't fit at once — the player pans to look around.
-function followCamera(pts: Vec2[], cols: number, rows: number): Cam {
-  const size = Math.min(OPEN_CAM_SIZE, cols, rows)
+function followCamera(pts: Vec2[], cols: number, rows: number, want: number): Cam {
+  const size = Math.min(want, cols, rows)
   if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
   let sx = 0, sy = 0
   for (const p of pts) { sx += p.x; sy += p.y }
@@ -86,20 +88,53 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // world layer; chips/barriers/lines move with the wrapper instantly so the
 // drag tracks the finger. Sizes itself to a square that fits the space it's
 // given (`grid place-items-center` parent), so it grows on the drop-in view.
-function Arena({ cam, barriers, children, centerY = CENTER_Y }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number }) {
+// `zoom`, when provided (open-world), lets a two-finger pinch resize the camera
+// (`size` = cells shown; squeeze together → zoom out, spread → zoom in). A single
+// finger still pans.
+interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
+
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
+  // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
+  const pointersRef = useRef<Map<number, Vec2>>(new Map())
+  const pinchRef = useRef<{ startDist: number; startSize: number } | null>(null)
   const suppressClickRef = useRef(false)
   const [pan, setPan] = useState<Vec2>({ x: 0, y: 0 })
 
   const cell = `${100 / cam.size}%`
   const centerTop = Math.max(0, Math.min(100, (1 - (centerY - cam.y) / cam.size) * 100))
 
+  const pointerGap = (): number => {
+    const [a, b] = [...pointersRef.current.values()]
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
     suppressClickRef.current = false
-    dragRef.current = { startX: e.clientX, startY: e.clientY, basePan: pan, moved: false, pointerId: e.pointerId, target: e.currentTarget }
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (zoom && pointersRef.current.size === 2) {
+      // Second finger down → start a pinch; abandon any single-finger pan.
+      dragRef.current = null
+      pinchRef.current = { startDist: pointerGap(), startSize: zoom.size }
+      suppressClickRef.current = true
+    } else if (pointersRef.current.size === 1) {
+      dragRef.current = { startX: e.clientX, startY: e.clientY, basePan: pan, moved: false, pointerId: e.pointerId, target: e.currentTarget }
+    }
   }
   const onPointerMove = (e: React.PointerEvent) => {
+    if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    // Pinch: scale the camera size by the inverse of the finger spread.
+    if (pinchRef.current && zoom && pointersRef.current.size >= 2) {
+      const dist = pointerGap()
+      if (dist > 0 && pinchRef.current.startDist > 0) {
+        const next = pinchRef.current.startSize * (pinchRef.current.startDist / dist)
+        zoom.set(Math.max(zoom.min, Math.min(zoom.max, next)))
+      }
+      return
+    }
+
     const d = dragRef.current
     if (!d) return
     const dx = e.clientX - d.startX
@@ -110,7 +145,9 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y }: { cam: Cam; barr
     }
     if (d.moved) setPan({ x: d.basePan.x + dx, y: d.basePan.y + dy })
   }
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
     if (dragRef.current?.moved) suppressClickRef.current = true
     dragRef.current = null
   }
@@ -385,12 +422,15 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const alive = battle.combatants.filter((c) => c.alive)
   const cols = battle.cols ?? COLS
   const rows = battle.rows ?? ROWS
+  const isOpen = battle.mode === 'open'
+  // Open-world camera zoom (cells shown), pinch-adjustable; see Arena.
+  const [camSize, setCamSize] = useState(OPEN_CAM_SIZE)
   const camPts = (alive.length ? alive : battle.combatants).map((c) => c.pos)
   // Open-world: a follow-cam over the big map. Encounter: hold the default camera
   // once decided — otherwise the bbox collapses around the survivors and the
   // auto-zoom snaps, reading as the winners teleporting.
-  const cam = battle.mode === 'open'
-    ? followCamera(camPts, cols, rows)
+  const cam = isOpen
+    ? followCamera(camPts, cols, rows, camSize)
     : battle.outcome !== 'ongoing'
       ? defaultCamera()
       : computeCamera(camPts)
@@ -415,15 +455,41 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
 
+  const zoomBy = (factor: number) =>
+    setCamSize((s) => Math.max(OPEN_CAM_MIN_SIZE, Math.min(Math.min(OPEN_CAM_MAX_SIZE, cols, rows), s * factor)))
+
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      {battle.mode === 'open' && (
-        <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-600/50 bg-emerald-950/70 text-emerald-200 backdrop-blur-sm pointer-events-none">
-          ⟳ Open world · persistent
-        </div>
+      {isOpen && (
+        <>
+          <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-600/50 bg-emerald-950/70 text-emerald-200 backdrop-blur-sm pointer-events-none">
+            ⟳ Open world · persistent
+          </div>
+          {/* Zoom: pinch the arena, or use these (squeeze to resize the camera). */}
+          <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1">
+            <button
+              onClick={() => zoomBy(1 / 0.8)}
+              aria-label="Zoom out"
+              className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
+            >−</button>
+            <span className="px-1.5 h-6 flex items-center rounded-md border border-game-border bg-game-surface/90 text-[10px] tabular-nums text-game-text-dim backdrop-blur-sm">
+              {Math.round(cam.size)}c
+            </span>
+            <button
+              onClick={() => zoomBy(0.8)}
+              aria-label="Zoom in"
+              className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
+            >+</button>
+          </div>
+        </>
       )}
       <div className="flex-1 min-h-0 flex justify-center items-start">
-        <Arena cam={cam} barriers={battle.barriers} centerY={rows / 2}>
+        <Arena
+          cam={cam}
+          barriers={battle.barriers}
+          centerY={rows / 2}
+          zoom={isOpen ? { size: camSize, min: OPEN_CAM_MIN_SIZE, max: Math.min(OPEN_CAM_MAX_SIZE, cols, rows), set: setCamSize } : undefined}
+        >
           {/* persistent ground hazards (Firewall, etc.) */}
           {battle.zones.map((z) => (
             <div

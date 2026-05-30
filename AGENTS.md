@@ -74,7 +74,8 @@ driven by **tactics** (below).
 - `'open'` — a *persistent* open-world battle for a location with `openWorld:
   true`, fought on a **large per-battle map** (`BattleState.cols/rows`, default
   `openWorldSize` = 100×100; the camera can't fit it, so `BattleView` uses a
-  party-following `followCamera` and you pan to look around). It never
+  party-following `followCamera` showing ~15 cells, with pinch-to-zoom / zoom
+  buttons to resize and one-finger pan to look around). It never
   self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
   **fixed** `openWorldCap` of monsters **scattered** across the field, trickling
   one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via the engine's `addCombatant`
