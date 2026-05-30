@@ -190,6 +190,7 @@ export interface Combatant {
   alive: boolean
 
   pos: Vec2
+  facing: Vec2             // unit vector the token points (move dir, else toward target); (1,0) at spawn
   preferredRank: Rank
   meleeRange: number
   rangedRange: number

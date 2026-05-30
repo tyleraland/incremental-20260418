@@ -87,6 +87,8 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     hp: input.hp,
     alive: input.hp > 0,
     pos: { x: pos.x, y: pos.y },
+    // Face the opposing edge to start: players (bottom) look up, enemies down.
+    facing: { x: 0, y: input.team === 'player' ? 1 : -1 },
     preferredRank: input.preferredRank,
     meleeRange: input.meleeRange,
     rangedRange: input.rangedRange,
@@ -873,6 +875,21 @@ function traceName(state: BattleState, id: string | null | undefined): string {
   return findCombatant(state, id)?.name ?? id
 }
 
+// Point the token where the unit is heading: its actual move delta if it moved
+// this turn, else toward whatever it's locked onto (so a stationary attacker
+// still faces its foe). Keeps the last facing when neither applies. Normalised.
+function updateFacing(state: BattleState, self: Combatant, from: Vec2, moved: boolean): void {
+  let dx = 0, dy = 0
+  if (moved) {
+    dx = self.pos.x - from.x; dy = self.pos.y - from.y
+  } else {
+    const tgt = findCombatant(state, self.lockedTargetId)
+    if (tgt && tgt.alive) { dx = tgt.pos.x - self.pos.x; dy = tgt.pos.y - self.pos.y }
+  }
+  const len = Math.hypot(dx, dy)
+  if (len > EPS) self.facing = { x: dx / len, y: dy / len }
+}
+
 function takeTurn(state: BattleState, self: Combatant): void {
   const round = state.round
   // (0) hard control — lose the turn. Stun is consumed on the skipped turn;
@@ -911,7 +928,9 @@ function takeTurn(state: BattleState, self: Combatant): void {
 
   const posBefore = { ...self.pos }
   executeMovement(state, self, evalMovement(state, self))
-  const moveText = (self.pos.x !== posBefore.x || self.pos.y !== posBefore.y)
+  const moved = self.pos.x !== posBefore.x || self.pos.y !== posBefore.y
+  updateFacing(state, self, posBefore, moved)
+  const moveText = moved
     ? `move (${posBefore.x.toFixed(1)},${posBefore.y.toFixed(1)})→(${self.pos.x.toFixed(1)},${self.pos.y.toFixed(1)})`
     : 'hold'
 

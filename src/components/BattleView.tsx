@@ -302,6 +302,42 @@ function FloatingLabel({ c, isPlayer, casting }: { c: Combatant; isPlayer: boole
   )
 }
 
+// Subtle facing/heading pointer: a small triangular nub at the chip rim,
+// rotated to the unit's facing. Engine facing is world-space where +y renders
+// UP on screen (py flips y), so the on-screen angle is atan2(-fy, fx). Scales
+// with the chip (cqmin) and rides just outside its edge.
+function FacingNub({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boolean }) {
+  const f = c.facing ?? { x: 0, y: isPlayer ? 1 : -1 }
+  if (Math.hypot(f.x, f.y) < 1e-6) return null
+  const angle = (Math.atan2(-f.y, f.x) * 180) / Math.PI   // 0° = pointing right (+x)
+  const cqmin = (CHIP_CELL_FRACTION * 100) / cam.size
+  const half = `clamp(3px, ${cqmin * 0.22}cqmin, 14px)`   // triangle half-height
+  const len  = `clamp(4px, ${cqmin * 0.3}cqmin, 18px)`    // triangle length (the point)
+  const reach = `clamp(8px, ${cqmin * 0.6}cqmin, 36px)`   // chip-centre → triangle base
+  // Outer wrapper sits at the chip centre and rotates; the triangle is pushed
+  // out along local +x. A right-pointing CSS triangle: transparent top/bottom
+  // borders give the height, the coloured left border tapers to the right tip.
+  return (
+    <div className="absolute left-1/2 top-1/2 w-0 h-0 pointer-events-none" style={{ transform: `rotate(${angle}deg)` }}>
+      <div
+        className="absolute"
+        style={{
+          left: reach,
+          top: 0,
+          transform: 'translateY(-50%)',
+          width: 0, height: 0,
+          borderStyle: 'solid',
+          borderColor: 'transparent',
+          borderTopWidth: half,
+          borderBottomWidth: half,
+          borderLeftWidth: len,
+          borderLeftColor: isPlayer ? 'rgb(191 219 254 / 0.75)' : 'rgb(254 202 202 / 0.75)',
+        }}
+      />
+    </div>
+  )
+}
+
 function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void; glyph: string }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
@@ -312,6 +348,7 @@ function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: 
       style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
     >
       <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} />
+      {c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
       <div
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         style={chipDims(cam)}
