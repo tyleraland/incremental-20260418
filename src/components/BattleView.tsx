@@ -627,8 +627,13 @@ function Legend({ players, enemies }: { players: number; enemies: number }) {
 
 function LiveBattle({ battle }: { battle: BattleState }) {
   const units = useGameStore((s) => s.units)
+  const battleFocus = useGameStore((s) => s.battleFocus)
   const classFor = (id: string) => units.find((u) => u.id === id)?.class ?? null
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Roster double-tap in battle mode asks to centre on a specific unit
+  // (battleFocus). While set, the camera frames that unit instead of the whole
+  // party; cleared once the player interacts (tap a chip / zoom / pan-reset).
+  const [focusUnitId, setFocusUnitId] = useState<string | null>(null)
   const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
   // Frozen-able snapshot of the selected combatant — refreshed each round while
   // we're in the same wave (same combatants array reference). When a new wave
@@ -644,7 +649,14 @@ function LiveBattle({ battle }: { battle: BattleState }) {
     if (live) setSnapshot(live)
   }, [battle, selectedId])
 
+  // Roster double-tap → centre on that unit (nonce so the same unit re-fires).
+  useEffect(() => {
+    if (battleFocus) setFocusUnitId(battleFocus.unitId)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battleFocus?.nonce])
+
   const handleSelect = (c: Combatant) => {
+    setFocusUnitId(null)   // tapping a chip ends roster-focus follow
     if (selectedId === c.id) {
       setSelectedId(null)
       setSnapshot(null)
@@ -682,12 +694,16 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const party = battle.combatants.filter((c) => c.team === 'player' && c.alive)
   const partyPts = party.map((c) => c.pos)
   const allPts = (alive.length ? alive : battle.combatants).map((c) => c.pos)
-  const effSize = manualZoom ? camSize : autoFitSize(partyPts, cols, rows)
+  // If a roster unit was double-tapped (focusUnitId) and it's alive on this
+  // field, frame just that unit; otherwise follow the whole party.
+  const focusUnit = focusUnitId ? battle.combatants.find((c) => c.id === focusUnitId && c.alive) : null
+  const followPts = focusUnit ? [focusUnit.pos] : (partyPts.length ? partyPts : allPts)
+  const effSize = manualZoom ? camSize : autoFitSize(focusUnit ? [focusUnit.pos] : partyPts, cols, rows)
   // Encounter: hold the default camera once decided — otherwise the bbox
   // collapses around the survivors and the auto-zoom snaps, reading as the
   // winners teleporting.
   const cam = isOpen
-    ? followCamera(partyPts.length ? partyPts : allPts, cols, rows, effSize)
+    ? followCamera(followPts, cols, rows, effSize)
     : battle.outcome !== 'ongoing'
       ? defaultCamera()
       : computeCamera(allPts)
@@ -737,12 +753,12 @@ function LiveBattle({ battle }: { battle: BattleState }) {
               className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
             >−</button>
             <button
-              onClick={() => setManualZoom(false)}
+              onClick={() => { setManualZoom(false); setFocusUnitId(null) }}
               aria-label="Auto-fit the party"
               title="Auto-fit the party"
-              className={`px-1.5 h-6 flex items-center rounded-md border text-[10px] tabular-nums backdrop-blur-sm ${manualZoom ? 'border-game-border bg-game-surface/90 text-game-text-dim hover:bg-white/5' : 'border-emerald-600/60 bg-emerald-950/70 text-emerald-200'}`}
+              className={`px-1.5 h-6 flex items-center rounded-md border text-[10px] tabular-nums backdrop-blur-sm ${(manualZoom || focusUnit) ? 'border-game-border bg-game-surface/90 text-game-text-dim hover:bg-white/5' : 'border-emerald-600/60 bg-emerald-950/70 text-emerald-200'}`}
             >
-              {manualZoom ? `${Math.round(cam.size)}c` : 'auto'}
+              {focusUnit ? '◎' : manualZoom ? `${Math.round(cam.size)}c` : 'auto'}
             </button>
             <button
               onClick={() => zoomBy(0.8)}

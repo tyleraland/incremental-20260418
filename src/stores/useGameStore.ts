@@ -79,6 +79,13 @@ export interface GameState {
   // drop-in battlefield viewer for `combatLocationId`.
   mapMode: 'world' | 'battle'
   mapPageId: string
+  // Bumped to ask the pannable overworld to recentre its camera on
+  // `selectedLocationId` (e.g. roster double-tap / "Map" button). A nonce so
+  // re-focusing the same location still fires.
+  mapFocusNonce: number
+  // Bumped to ask the battle view to centre on a roster-selected unit, with the
+  // unit id so the camera knows which combatant to frame.
+  battleFocus: { unitId: string; nonce: number } | null
   expandedLocationIds: string[]
   expandedUnitIds: string[]
   expandedInventorySections: string[]
@@ -103,8 +110,11 @@ export interface GameState {
   // Drop into a location's battlefield viewer / return to the overworld.
   enterBattleView: (locationId: string) => void
   exitBattleView: () => void
-  // Jump the overworld to a unit's deployed location (roster double-tap).
+  // Jump the overworld to a unit's deployed location (roster double-tap), or
+  // (in battle mode) drop into that unit's battlefield centred on them.
   showUnitOnMap: (unitId: string) => void
+  // Centre the overworld camera on the selected location (roster "Map" button).
+  focusLocationOnMap: (locationId: string) => void
   setMapPage: (id: string) => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
@@ -566,6 +576,8 @@ export const useGameStore = create<GameState>((set) => ({
   combatLocationId: null,
   mapMode: 'world',
   mapPageId: 'world',
+  mapFocusNonce: 0,
+  battleFocus: null,
   expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
@@ -748,14 +760,34 @@ export const useGameStore = create<GameState>((set) => ({
       ...(loc ? { mapPageId: loc.region, selectedLocationId: loc.id } : {}),
     }
   }),
-  // Roster double-tap: pop back to the overworld and frame the unit's location
-  // (or just the overworld with nothing selected if it's unassigned).
+  // Roster double-tap. In battle mode: drop into this unit's battlefield centred
+  // on them (mirror of the location double-tap). In overworld mode: frame +
+  // centre the camera on the unit's location (or clear if unassigned).
   showUnitOnMap: (unitId) => set((s) => {
     const u = s.units.find((x) => x.id === unitId)
     const loc = u?.locationId ? s.locations.find((l) => l.id === u.locationId) : null
+    if (s.mapMode === 'battle') {
+      // Keep the current battlefield if the unit is unassigned; else jump to
+      // theirs. Either way, ask the battle view to centre on this unit.
+      return {
+        ...(loc ? { combatLocationId: loc.id } : {}),
+        battleFocus: { unitId, nonce: (s.battleFocus?.nonce ?? 0) + 1 },
+      }
+    }
     return {
       mapMode: 'world',
+      mapFocusNonce: s.mapFocusNonce + 1,
       ...(loc ? { mapPageId: loc.region, selectedLocationId: loc.id } : { selectedLocationId: null }),
+    }
+  }),
+  // Centre the overworld camera on a location (roster "Map" button / find).
+  focusLocationOnMap: (locationId) => set((s) => {
+    const loc = s.locations.find((l) => l.id === locationId)
+    return {
+      mapMode: 'world',
+      mapFocusNonce: s.mapFocusNonce + 1,
+      selectedLocationId: locationId,
+      ...(loc ? { mapPageId: loc.region } : {}),
     }
   }),
   setMapPage: (id) => set({ mapPageId: id }),
@@ -971,6 +1003,8 @@ export const useGameStore = create<GameState>((set) => ({
       combatLocationId: null,
       mapMode: 'world',
       mapPageId: 'world',
+      mapFocusNonce: 0,
+      battleFocus: null,
       expandedLocationIds: [],
       expandedUnitIds: [],
       expandedInventorySections: ['equipment', 'misc', 'crafting'],

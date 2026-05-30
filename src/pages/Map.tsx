@@ -192,6 +192,8 @@ function PannableWorld({ pageId, locations, units }: { pageId: string; locations
   const suppressClickRef = useRef(false)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [centered, setCentered] = useState(false)
+  const selectedLocationId = useGameStore((s) => s.selectedLocationId)
+  const mapFocusNonce      = useGameStore((s) => s.mapFocusNonce)
 
   const pageLocations = locations.filter((l) => l.region === pageId)
   const grid = PAGE_GRID[pageId] ?? { cols: 1, rows: 1 }
@@ -225,6 +227,22 @@ function PannableWorld({ pageId, locations, units }: { pageId: string; locations
     })
     setCentered(true)
   }, [pageId, centered])
+
+  // Recentre on the selected location when something requests focus (roster
+  // double-tap / "Map" button bumps mapFocusNonce). Nonce-driven so re-focusing
+  // the same cell still re-centres after a manual pan.
+  useEffect(() => {
+    if (mapFocusNonce === 0 || !selectedLocationId || !containerRef.current) return
+    const c = LOCATION_COORDS[selectedLocationId]
+    if (!c) return
+    const rect = containerRef.current.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+    setPan({
+      x: rect.width  / 2 - cellCenterX(c[0]),
+      y: rect.height / 2 - cellCenterY(c[1]),
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapFocusNonce])
 
   // Pointer capture only kicks in once the pointer has actually moved past the
   // tap threshold — otherwise a child cell's `click` gets diverted to the
@@ -369,7 +387,7 @@ function UnitActionBar() {
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
   const clearSelection      = useGameStore((s) => s.clearSelection)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
-  const setMapPage          = useGameStore((s) => s.setMapPage)
+  const focusLocationOnMap  = useGameStore((s) => s.focusLocationOnMap)
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
   const enterBattleView     = useGameStore((s) => s.enterBattleView)
@@ -407,10 +425,7 @@ function UnitActionBar() {
   }
   function handleFindOnMap() {
     if (!sharedLocId) return
-    const loc = locations.find((l) => l.id === sharedLocId)
-    if (!loc) return
-    setMapPage(loc.region === 'geffen-dungeon' ? 'geffen-dungeon' : 'world')
-    setSelectedLocation(sharedLocId)
+    focusLocationOnMap(sharedLocId)
   }
   function handleGoCombat() {
     if (!combatTargetLocId) return
@@ -675,6 +690,7 @@ function BattleDropIn() {
   const locations        = useGameStore((s) => s.locations)
   const combatLocationId = useGameStore((s) => s.combatLocationId)
   const exitBattleView   = useGameStore((s) => s.exitBattleView)
+  const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const round            = useGameStore((s) => (combatLocationId ? s.battles[combatLocationId]?.round : undefined))
 
   const name = combatLocationId ? (locations.find((l) => l.id === combatLocationId)?.name ?? 'Battlefield') : 'Battlefield'
@@ -682,18 +698,25 @@ function BattleDropIn() {
   return (
     <div className="h-full flex flex-col pt-4 min-h-0">
       <RosterCarousel units={units} />
-      {/* context bar — matches the overworld action bar's height so the
-          roster → bar → content rhythm is identical across modes */}
-      <div className="h-12 px-3 flex items-center gap-1.5 border-b border-game-border bg-game-surface/40 shrink-0">
-        <button
-          onClick={exitBattleView}
-          className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0"
-        >
-          ⤢ Overworld
-        </button>
-        <span className="text-sm font-semibold text-game-text truncate">{name}</span>
-        {round != null && <span className="text-xs text-game-text-dim ml-auto tabular-nums shrink-0">round {round}</span>}
-      </div>
+      {/* When a roster unit is selected, surface the same action bar as the
+          overworld (Deploy/Here, View, Map, Drop in) so the controls are
+          available without leaving the battlefield. Otherwise the battle
+          context bar (Overworld chip + location name + round). Both share the
+          h-12 height so the roster → bar → content rhythm is identical. */}
+      {selectedUnitIds.length > 0 ? (
+        <UnitActionBar />
+      ) : (
+        <div className="h-12 px-3 flex items-center gap-1.5 border-b border-game-border bg-game-surface/40 shrink-0">
+          <button
+            onClick={exitBattleView}
+            className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0"
+          >
+            ⤢ Overworld
+          </button>
+          <span className="text-sm font-semibold text-game-text truncate">{name}</span>
+          {round != null && <span className="text-xs text-game-text-dim ml-auto tabular-nums shrink-0">round {round}</span>}
+        </div>
+      )}
       <BattleView locationId={combatLocationId} />
     </div>
   )
