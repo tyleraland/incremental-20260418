@@ -225,7 +225,11 @@ stops at walls and the arena perimeter.
   size-container), with a subtle front-facing arrow (`Combatant.facing`, set in
   `takeTurn`: move direction, else toward the locked target) plus a second
   chevron just ahead of it while `Combatant.moving`, floating name + HP, attack
-  lines, hit flashes, cast lines, and floating damage/heal/DoT numbers.
+  lines, hit flashes, floating damage/heal/DoT numbers, and **lingering cast
+  labels** — a skill's name stays anchored above its caster for `CAST_LABEL_MS`
+  (3s, covering the channel + a beat after it lands), keyed by caster+skill so a
+  channel's start/resolve and rapid re-casts collapse to one label; multiple
+  distinct casts stack newest-on-top (`animate-cast-label`).
 - Monster HP bars animate down during combat and **snap to full** on respawn (no
   upward animation).
 - Tapping a token opens a **dismissable bottom-sheet overlay** (name, team, HP,

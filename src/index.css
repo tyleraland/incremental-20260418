@@ -53,3 +53,13 @@
   to   { opacity: 0; }
 }
 .animate-line-fade { animation: line-fade 0.45s ease-out forwards; }
+
+/* Lingering cast label: pops in, holds for the cast, then fades over the last
+   ~0.6s of its ~3s life. */
+@keyframes cast-label {
+  0%   { opacity: 0; transform: translateY(3px) scale(0.9); }
+  6%   { opacity: 1; transform: translateY(0)   scale(1); }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-cast-label { animation: cast-label 3s ease-out forwards; }

@@ -16,6 +16,10 @@ import {
 const skillName = (id: string) => COMBAT_SKILLS[id]?.(1)?.name ?? 'Casting'
 const CENTER_Y = ROWS / 2
 
+// How long a cast's name lingers anchored to its caster (covers the channel +
+// a beat after the cast lands). Newest cast stacks on top of older ones.
+const CAST_LABEL_MS = 3000
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
   return parts.length === 1
@@ -642,6 +646,59 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const [snapshot, setSnapshot] = useState<Combatant | null>(null)
   const snapshotWaveRef = useRef<Combatant[] | null>(null)
 
+  // Lingering cast labels: each skill cast leaves its name anchored to the
+  // caster for CAST_LABEL_MS (covering the channel + a beat after it lands).
+  // Keyed by caster so a newer cast supersedes the older one's slot; `seq`
+  // orders the stack (newest on top). The list itself only needs an occasional
+  // sweep to drop expired entries — render filters by expiry each frame.
+  const [castLabels, setCastLabels] = useState<{ id: string; sourceId: string; skillId: string; born: number; seq: number }[]>([])
+  const castSeqRef = useRef(0)
+  const lastRoundRef = useRef(-1)
+
+  // Harvest this round's cast events into lingering labels. cast_start (channel
+  // begins) and skill_use (instant cast / channel resolves) both count. Keyed by
+  // caster+skill so a channel's start+resolve, and rapid re-casts of one spell,
+  // collapse into ONE label that refreshes its timer and rises to the top;
+  // distinct skills stack separately. Guarded by round so a re-render doesn't
+  // re-harvest the same round's events.
+  useEffect(() => {
+    if (battle.round === lastRoundRef.current) return
+    lastRoundRef.current = battle.round
+    const now = Date.now()
+    const castsThisRound: { sourceId: string; skillId: string }[] = []
+    const seen = new Set<string>()
+    for (const e of battle.events) {
+      if (e.round !== battle.round) continue
+      if ((e.type !== 'cast_start' && e.type !== 'skill_use') || !e.skillId) continue
+      const key = `${e.sourceId}:${e.skillId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      castsThisRound.push({ sourceId: e.sourceId, skillId: e.skillId })
+    }
+    setCastLabels((prev) => {
+      const kept = prev.filter((l) => now - l.born < CAST_LABEL_MS)
+      if (castsThisRound.length === 0) return kept.length === prev.length ? prev : kept
+      const fresh = new Set(castsThisRound.map((c) => `${c.sourceId}:${c.skillId}`))
+      // Drop any label being re-cast this round (it'll be re-added on top,
+      // refreshed), keep the rest, then append the fresh casts newest-last.
+      const next = kept.filter((l) => !fresh.has(`${l.sourceId}:${l.skillId}`))
+      for (const { sourceId, skillId } of castsThisRound) {
+        next.push({ id: `${sourceId}:${skillId}:${castSeqRef.current}`, sourceId, skillId, born: now, seq: castSeqRef.current++ })
+      }
+      return next
+    })
+  }, [battle])
+
+  // Tick a sweep so labels disappear on time even if no new round arrives.
+  useEffect(() => {
+    if (castLabels.length === 0) return
+    const t = setInterval(() => {
+      const now = Date.now()
+      setCastLabels((prev) => (prev.some((l) => now - l.born >= CAST_LABEL_MS) ? prev.filter((l) => now - l.born < CAST_LABEL_MS) : prev))
+    }, 300)
+    return () => clearInterval(t)
+  }, [castLabels.length])
+
   useEffect(() => {
     if (!selectedId) return
     if (snapshotWaveRef.current !== battle.combatants) return   // frozen
@@ -716,15 +773,23 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const heals = roundEvents.filter((e) => e.type === 'heal' && e.value != null)
   const dots  = roundEvents.filter((e) => e.type === 'dot' && e.value != null)
   const interrupts = roundEvents.filter((e) => e.type === 'interrupt')
-  const seenSkills = new Set<string>()
-  const skillLabels = roundEvents.filter((e) => {
-    if (e.type !== 'skill_use' || !e.skillId) return false
-    const k = `${e.sourceId}:${e.skillId}`
-    if (seenSkills.has(k)) return false
-    seenSkills.add(k); return true
-  })
-  const castStarts = roundEvents.filter((e) => e.type === 'cast_start')
   const tacticUses = roundEvents.filter((e) => e.type === 'tactic_use')
+
+  // Active (non-expired) cast labels, grouped by caster and ordered oldest →
+  // newest so the newest renders on top (the stack uses flex-col-reverse).
+  const nowMs = Date.now()
+  const castLabelGroups = (() => {
+    const bySource = new Map<string, typeof castLabels>()
+    for (const l of castLabels) {
+      if (nowMs - l.born >= CAST_LABEL_MS) continue
+      const arr = bySource.get(l.sourceId) ?? []
+      arr.push(l); bySource.set(l.sourceId, arr)
+    }
+    return [...bySource.entries()].map(([sourceId, labels]) => ({
+      sourceId,
+      labels: labels.sort((a, b) => a.seq - b.seq),
+    }))
+  })()
   // Open-world reinforcements / returnees entering a live battle this round.
   const spawns = roundEvents.filter((e) => e.type === 'spawn')
 
@@ -819,16 +884,24 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[10px] text-amber-300" text="interrupted" /> : null
           })}
 
-          {/* source-anchored ability labels */}
-          {castStarts.map((e, i) => {
-            const src = byId(e.sourceId)
-            if (!src || !e.skillId) return null
-            return <Float key={`cs-${battle.round}-${i}`} k={`cs-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-amber-200" text={`✦ ${skillName(e.skillId)}`} />
-          })}
-          {skillLabels.map((e, i) => {
-            const src = byId(e.sourceId)
-            if (!src || !e.skillId) return null
-            return <Float key={`sl-${battle.round}-${i}`} k={`sl-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-sky-200" text={skillName(e.skillId)} />
+          {/* lingering cast labels: each cast's name stays anchored to its
+              caster for ~3s; multiple casts on one caster stack, newest on top. */}
+          {castLabelGroups.map(({ sourceId, labels }) => {
+            const src = byId(sourceId)
+            if (!src || !isOnScreen(cam, src.pos)) return null
+            return (
+              <div
+                key={`cl-${sourceId}`}
+                className="absolute -translate-x-1/2 flex flex-col-reverse items-center gap-0.5 pointer-events-none"
+                style={{ left: px(cam, insetX(cam, src.pos.x)), top: py(cam, insetY(cam, src.pos.y)), transform: 'translate(-50%, -150%)' }}
+              >
+                {labels.map((l) => (
+                  <span key={l.id} className="px-1 rounded bg-black/45 text-amber-200 text-[10px] font-semibold leading-tight whitespace-nowrap drop-shadow animate-cast-label">
+                    ✦ {skillName(l.skillId)}
+                  </span>
+                ))}
+              </div>
+            )
           })}
           {tacticUses.map((e, i) => {
             const src = byId(e.sourceId)
