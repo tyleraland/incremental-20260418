@@ -56,6 +56,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     channel: null,
     interruptedCount: 0,
     visionRange: Infinity,
+    moveOrder: null,
     wanderTarget: null,
     wanderDwell: 0,
     trace: [],

@@ -10,7 +10,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -285,14 +285,30 @@ function partyAnchor(battle: BattleState, size: number): { x: number; y: number 
   }
 }
 
-// Drop one fresh monster into a live open battle at a random spot. Returns the
-// monster id (for sighting bookkeeping) or null if the pool is empty.
+// Spawn one monster of `monsterId` into a live battle at an explicit position.
+// The primitive behind all monster spawns. Returns the spawned Combatant, or
+// null if the id is unknown. (Tests can spawn a specific monster at a specific
+// spot; the game's timed respawn is the `spawnMonsterInto` special case below.)
+export function spawnMonsterAt(battle: BattleState, monsterId: string, at: { x: number; y: number }): Combatant | null {
+  const def = MONSTER_REGISTRY[monsterId]
+  if (!def) return null
+  return addCombatant(battle, withVision(monsterToEngineInput(def, uniqueEnemyId(battle, monsterId), 'enemy'), MONSTER_VISION), 'enemy', undefined, at)
+}
+
+// Deploy a hero into a live battle at an explicit position (symmetry with
+// spawnMonsterAt). The reconcile loop fields heroes at the party anchor; this is
+// for placing one somewhere specific (manual deploy on a battlefield, tests).
+export function deployUnitAt(battle: BattleState, unit: Unit, equipment: EquipmentItem[], partyTactics: TacticSlot[], at: { x: number; y: number }): Combatant {
+  return addCombatant(battle, withVision(unitToEngineInput(unit, getDerivedStats(unit, equipment), 'player'), HERO_VISION), 'player', partyTactics, at)
+}
+
+// Timed/random respawn: a special case of spawnMonsterAt — pick a random monster
+// from the location pool and scatter it across the field (off the edges, never
+// inside a wall). Returns the monster id (for sighting bookkeeping) or null.
 function spawnMonsterInto(battle: BattleState, loc: Location, size: number): string | null {
   const mid = pickMonsterId(loc)
-  const def = mid ? MONSTER_REGISTRY[mid] : null
-  if (!def || !mid) return null
-  addCombatant(battle, withVision(monsterToEngineInput(def, uniqueEnemyId(battle, mid), 'enemy'), MONSTER_VISION), 'enemy', undefined, scatterPos(size, battle.barriers))
-  return mid
+  if (!mid) return null
+  return spawnMonsterAt(battle, mid, scatterPos(size, battle.barriers)) ? mid : null
 }
 
 // Stand up a fresh persistent battle on the location's (large) open-world map:

@@ -115,6 +115,20 @@ driven by **tactics** (below).
   (`wander-jitter.test.ts` covers jitter, ring + two-ring-spiral threading, and
   give-up-on-impossible + dynamic reachability.)
 
+  **Spawn & move primitives** (used by the game and tests). `addCombatant(state,
+  input, team, partyTactics?, at?)` drops a combatant at an explicit position —
+  the primitive behind all spawns. The store wraps it: `spawnMonsterAt(battle,
+  monsterId, at)` / `deployUnitAt(battle, unit, …, at)` place a specific
+  monster/hero at a specific spot; the open-world **timed respawn is the special
+  case** (`spawnMonsterInto` → random monster + `scatterPos`). A **move order**
+  (`issueMoveOrder(state, id, to)` / `clearMoveOrder`) is an explicit "go here"
+  on `Combatant.moveOrder` that overrides AI (targeting/wander) in `takeTurn`:
+  the unit paths toward it (routing known terrain), clears on arrival, and
+  **holds** if it's unreachable. Movement is instantaneous in grid steps —
+  overworld travel *between* locations is deferred (BACKLOG), but the move-order
+  primitive is what it'll build on. (`move-orders.test.ts`: clear path arrives,
+  blocked path can't, the order beats AI targeting.)
+
   Bigger arenas work because spatial bounds are read from a per-battle ambient
   (`engine/arena.ts` `setArenaBounds`/`arenaClamp`), set at each engine entry
   point — no size constant is hardcoded in the movement clamps. See `BACKLOG.md`

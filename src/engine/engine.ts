@@ -109,6 +109,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     channel: null,
     interruptedCount: 0,
     visionRange: input.visionRange ?? Infinity,
+    moveOrder: null,
     wanderTarget: null,
     // Monsters lurk a (deterministic) few rounds before their first hop; heroes
     // don't use the dwell timer (they roam toward the team waypoint).
@@ -181,6 +182,26 @@ export function addCombatant(
   emit(state, { round: state.round, type: 'spawn', sourceId: c.id, position: { ...c.pos } })
   return c
 }
+
+// ── Move orders (§move-order) ────────────────────────────────────────────────--
+// An explicit "go to this point" command that overrides normal AI until the unit
+// arrives or it's cleared. The game uses it to send a deployed unit somewhere;
+// tests use it to force pathing (incl. impossible paths the unit can't satisfy).
+// Resolution is instantaneous in grid steps each round — overworld travel
+// between locations is deferred (see BACKLOG).
+export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2): boolean {
+  const c = findCombatant(state, combatantId)
+  if (!c) return false
+  c.moveOrder = arenaClamp(to)
+  return true
+}
+export function clearMoveOrder(state: BattleState, combatantId: string): void {
+  const c = findCombatant(state, combatantId)
+  if (c) c.moveOrder = null
+}
+
+// How close counts as "arrived" at a move-order point.
+const MOVE_ORDER_ARRIVE = 0.6
 
 function emit(state: BattleState, e: BattleEvent): void {
   if (state.collectEvents) state.events.push(e)
@@ -950,6 +971,31 @@ function takeTurn(state: BattleState, self: Combatant): void {
   const reaction = evalReactions(state, self)
   if (reaction && applyReaction(state, self, reaction)) {
     pushTrace(self, round, `reaction${reaction.counterAttack ? ` · counter ${traceName(state, reaction.counterAttack)}` : ''}`)
+    self.lastHitById = null
+    return
+  }
+
+  // (1.5) move order — an explicit "go here" overrides targeting/wander. Path
+  // toward it (routing around known terrain); clear on arrival; hold if it's
+  // unreachable. Consumes the turn's movement+action (the unit is marching).
+  if (self.moveOrder) {
+    if (self.statuses.some((s) => s.flags.includes('rooted'))) { pushTrace(self, round, 'order: rooted — hold'); self.lastHitById = null; return }
+    const dest = self.moveOrder
+    const posBefore = { ...self.pos }
+    let moved = false
+    if (distance(self.pos, dest) > MOVE_ORDER_ARRIVE) {
+      moved = moveTowardPoint(self, dest, moveSpeedOf(self) * WANDER_SPEED_MULT, state.combatants, state.barriers)
+      updateFacing(state, self, posBefore, moved)
+      if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    }
+    // Arrived (this turn's step landed us there, or we were already close) →
+    // clear the order in the same turn so control returns immediately.
+    const arrived = distance(self.pos, dest) <= MOVE_ORDER_ARRIVE
+    if (arrived) self.moveOrder = null
+    pushTrace(self, round,
+      arrived ? `order: arrived (${dest.x.toFixed(1)},${dest.y.toFixed(1)})`
+      : moved ? `order → (${dest.x.toFixed(1)},${dest.y.toFixed(1)})  move (${posBefore.x.toFixed(1)},${posBefore.y.toFixed(1)})→(${self.pos.x.toFixed(1)},${self.pos.y.toFixed(1)})`
+      : `order → (${dest.x.toFixed(1)},${dest.y.toFixed(1)})  blocked/unreachable — hold`)
     self.lastHitById = null
     return
   }

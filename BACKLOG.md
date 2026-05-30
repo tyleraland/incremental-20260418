@@ -35,8 +35,13 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
   **scatter** across the field; the camera follows the party. Per-battle bounds
   live in `engine/arena.ts` so no movement clamp hardcodes a size.
   Follow-ups still open:
-  - *Overworld wandering* — units moving from one location to another on their
-    own (the `travelPath` field exists but isn't driven yet).
+  - *Overworld travel between locations* — a deployed unit walking from one
+    open-world map to a connected one (the `travelPath` field exists but isn't
+    driven yet). The engine **move-order** primitive (`issueMoveOrder`, paths to
+    a point / holds if blocked, instantaneous in grid steps) is the building
+    block; this would make it non-instantaneous and cross-location, and likely
+    add a teleport-style movement ability that satisfies an otherwise-impossible
+    path (the move-order tests already model the impossible case).
   - *Smarter spawns* — per-location monster *distributions* (weights, level
     bands, time-of-day) and non-uniform spawn timers. Today it's an equal-weight
     random pick on a fixed timer, scattered uniformly across the map.

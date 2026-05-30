@@ -223,6 +223,13 @@ export interface Combatant {
   wanderTarget: Vec2 | null
   wanderDwell: number
 
+  // §move-order: an explicit "go here" command that overrides normal AI
+  // (targeting/wander) until the unit arrives or the order is cleared. The host
+  // sets it via issueMoveOrder; the engine paths toward it each turn, routing
+  // around known terrain, and gives up (holds) if it's unreachable. Used by the
+  // game to send a unit somewhere and by tests to force pathing. null = no order.
+  moveOrder: Vec2 | null
+
   // §debug: a small ring buffer of one-line summaries of what this unit did each
   // turn (targeting / movement / action). Purely observational — the BattleView
   // debug tab and tests read it; nothing in the sim depends on it.
