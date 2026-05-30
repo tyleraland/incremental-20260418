@@ -72,16 +72,33 @@ driven by **tactics** (below).
   (`victory`/`defeat`/`draw`), then a `BATTLE_RESPAWN_TICKS` (15) cooldown and a
   fresh identical wave. This is what scenarios/tests rely on; it's deterministic.
 - `'open'` — a *persistent* open-world battle for a location with `openWorld:
-  true`. It never self-terminates (`evalOutcome` returns `'ongoing'`); instead
-  the store keeps a **fixed** `openWorldCap` of monsters on the field, trickling
-  one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via the engine's
-  `addCombatant`, drawn at random from `monsterIds`. Heroes join/leave the live
-  fight as they deploy or recover (`reconcileOpenPlayers`). The store owns
-  teardown: when no eligible heroes remain at the location, the battle is
+  true`, fought on a **large per-battle map** (`BattleState.cols/rows`, default
+  `openWorldSize` = 100×100; the camera can't fit it, so `BattleView` uses a
+  party-following `followCamera` and you pan to look around). It never
+  self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
+  **fixed** `openWorldCap` of monsters **scattered** across the field, trickling
+  one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via the engine's `addCombatant`
+  (which takes an explicit spawn position), drawn at random from `monsterIds`.
+  Heroes join/leave the live fight as they deploy or recover
+  (`reconcileOpenPlayers`). The store owns teardown: no eligible heroes → battle
   dropped. Spawn/feed events surface in `BattleView` (a ring + name flash; a
-  "⟳ Open world · persistent" badge). Open-world is **per-location and
-  party-independent** for now — see `BACKLOG.md` for the deferred pieces
-  (in-battle wander, overworld travel, weighted spawn distributions, seeded RNG).
+  "⟳ Open world · persistent" badge). Per-location, party-independent.
+
+  **Vision & wander** (open-world only — encounters keep `visionRange: Infinity`
+  and never wander, so the 15×15 tuned feel is untouched). Each unit only
+  acquires targets within `visionRange` (heroes 10, monsters 8 cells;
+  `targetableEnemies` filters on it). With nothing in sight a unit *wanders*
+  (`executeWander`, mode `'open'` only): **heroes** roam toward a shared team
+  waypoint (`state.wander.player`, re-picked on arrival) but **converge on any
+  engaged ally** so the party regroups on fights; **monsters** lurk
+  `MONSTER_WANDER_MIN..MAX` rounds then hop `NEAR..FAR` cells to a new local
+  spot. Wander/vision are deterministic (a `hash01` of round+index, no RNG).
+
+  Bigger arenas work because spatial bounds are read from a per-battle ambient
+  (`engine/arena.ts` `setArenaBounds`/`arenaClamp`), set at each engine entry
+  point — no size constant is hardcoded in the movement clamps. See `BACKLOG.md`
+  for the still-deferred pieces (overworld travel between locations, weighted
+  spawn distributions, seeded RNG for exact replays).
 
 **Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
 - The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round

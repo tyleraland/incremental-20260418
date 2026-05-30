@@ -157,6 +157,10 @@ export interface EngineUnitInput {
   skills: EngineSkill[]
   potions?: number        // count of self-heal consumables available this fight
   tactics?: TacticRef[]   // unit-level tactics, priority order (first = highest)
+  // §open-world: max distance at which this unit can *acquire* a new target.
+  // Default Infinity (unlimited — what encounters use). Open-world sets finite
+  // values (heroes see farther than monsters) so the party has to hunt.
+  visionRange?: number
 }
 
 // An in-progress channeled cast (channelTime ≥ 1). Resolves when roundsLeft hits
@@ -208,6 +212,14 @@ export interface Combatant {
   lastHitById: string | null             // attacker since this unit's last turn (Counterattacker)
   channel: ChannelState | null           // active channeled cast, if any (§4 cast time)
   interruptedCount: number               // times a channel of theirs has been disrupted (Wary Caster reads this)
+
+  // §open-world (mode === 'open' only). visionRange gates target acquisition.
+  // wanderTarget/wanderDwell drive idle roaming: a monster lurks for wanderDwell
+  // rounds, then hops toward wanderTarget; heroes ignore these and roam toward
+  // the team waypoint instead.
+  visionRange: number
+  wanderTarget: Vec2 | null
+  wanderDwell: number
 }
 
 // ── Events (§12) ─────────────────────────────────────────────────────────────--
@@ -269,6 +281,8 @@ export interface CombatSetup {
   maxRounds?: number
   collectEvents?: boolean   // default true; set false for fast bulk resolution (§11)
   barriers?: Barrier[]      // impassable terrain (default none)
+  cols?: number             // arena width in grid units (default COLS); open-world is larger
+  rows?: number             // arena height in grid units (default ROWS)
   // 'encounter' (default): a discrete wave — `evalOutcome` ends it on a wipe
   // (victory/defeat/draw). 'open': a persistent open-world battle that never
   // self-terminates; the host trickles reinforcements in via `addCombatant`
@@ -318,7 +332,10 @@ export interface BattleState {
   combatants: Combatant[]
   zones: BattleZone[]
   barriers: Barrier[]
+  cols: number
+  rows: number
   mode: BattleMode
+  wander: Partial<Record<Team, Vec2>>   // §open-world: current roam waypoint per team
   round: number
   outcome: Outcome
   events: BattleEvent[]

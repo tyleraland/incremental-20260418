@@ -10,7 +10,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -171,9 +171,18 @@ const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
 // pool so the party has to adapt to whatever wanders in. Deliberately simple —
 // per-location monster distributions and smarter spawn timing come later.
 const OPEN_WORLD_SPAWN_TICKS = 30  // ~6s between trickle spawns while below cap
-const OPEN_WORLD_DEFAULT_CAP = 3   // fallback field size when a location sets none
+const OPEN_WORLD_DEFAULT_CAP = 8   // fallback field size when a location sets none
+// Open-world maps are large — the camera can't show the whole field at once, so
+// the party hunts across it with limited vision. Every map should really set its
+// own `openWorldCap` (density) override; size defaults here unless overridden.
+const OPEN_WORLD_DEFAULT_SIZE = 100
+const HERO_VISION = 10             // heroes acquire targets within this many cells
+const MONSTER_VISION = 8           // monsters see a little less far
 function openWorldCap(loc: Location): number {
   return loc.openWorldCap ?? OPEN_WORLD_DEFAULT_CAP
+}
+function openWorldSize(loc: Location): number {
+  return loc.openWorldSize ?? OPEN_WORLD_DEFAULT_SIZE
 }
 
 // Enemy combatant ids are `${monsterId}#${index}`; players use the unit id.
@@ -231,23 +240,61 @@ function uniqueEnemyId(battle: BattleState, monsterId: string): string {
   return `${monsterId}#${i}`
 }
 
-// Stand up a fresh persistent battle: the whole party plus `cap` monsters drawn
-// from the pool. Marked `mode: 'open'` so it never self-terminates.
-function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number): BattleState {
-  const playerUnits = party.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player'))
-  const enemyUnits = []
-  for (let i = 0; i < cap; i++) {
-    const mid = pickMonsterId(loc)
-    const def = mid ? MONSTER_REGISTRY[mid] : null
-    if (def && mid) enemyUnits.push(monsterToEngineInput(def, `${mid}#${i}`, 'enemy'))
+// Stamp a finite sight radius onto an adapted input (open-world only).
+function withVision(input: EngineUnitInput, range: number): EngineUnitInput {
+  return { ...input, visionRange: range }
+}
+
+// A random point anywhere on the map — monsters scatter across the whole field.
+function scatterPos(size: number): { x: number; y: number } {
+  return { x: Math.random() * size, y: Math.random() * size }
+}
+
+// Heroes form up as a loose knot near the map centre; the engine's separation
+// rule fans them out, and they roam from there.
+function heroSpawnPos(size: number, i: number): { x: number; y: number } {
+  const c = size / 2
+  return { x: c + (i % 3) - 1, y: c + Math.floor(i / 3) - 1 }
+}
+
+// Where a returning/late hero drops in: the current party's centre of mass (so
+// they rejoin the group), or the map centre if nobody's fielded yet.
+function partyAnchor(battle: BattleState, size: number): { x: number; y: number } {
+  const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
+  if (heroes.length === 0) return { x: size / 2, y: size / 2 }
+  return {
+    x: heroes.reduce((s, c) => s + c.pos.x, 0) / heroes.length,
+    y: heroes.reduce((s, c) => s + c.pos.y, 0) / heroes.length,
   }
-  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, mode: 'open' })
+}
+
+// Drop one fresh monster into a live open battle at a random spot. Returns the
+// monster id (for sighting bookkeeping) or null if the pool is empty.
+function spawnMonsterInto(battle: BattleState, loc: Location, size: number): string | null {
+  const mid = pickMonsterId(loc)
+  const def = mid ? MONSTER_REGISTRY[mid] : null
+  if (!def || !mid) return null
+  addCombatant(battle, withVision(monsterToEngineInput(def, uniqueEnemyId(battle, mid), 'enemy'), MONSTER_VISION), 'enemy', undefined, scatterPos(size))
+  return mid
+}
+
+// Stand up a fresh persistent battle on the location's (large) open-world map:
+// the party knotted at the centre, `cap` monsters scattered across the field,
+// everyone with a limited sight radius. Marked `mode: 'open'` so it never ends.
+function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number): BattleState {
+  const size = openWorldSize(loc)
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, mode: 'open', cols: size, rows: size })
+  party.forEach((u, i) => {
+    addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
+  })
+  for (let i = 0; i < cap; i++) spawnMonsterInto(battle, loc, size)
+  return battle
 }
 
 // Reconcile a persistent battle's player combatants against who's eligible right
 // now: drop heroes that died or left (clearing stale enemy locks), and field any
-// eligible hero not already present (fresh deploys, returnees from recovery).
-// Returns true if the combatant set changed. Mutates `battle` in place.
+// eligible hero not already present (fresh deploys, returnees from recovery) at
+// the party anchor. Returns true if the combatant set changed. Mutates in place.
 function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): boolean {
   const eligibleIds = new Set(eligible.map((u) => u.id))
   let changed = false
@@ -264,7 +311,7 @@ function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: 
   const present = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
   for (const u of eligible) {
     if (present.has(u.id)) continue
-    addCombatant(battle, unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), 'player', partyTactics)
+    addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, partyAnchor(battle, battle.cols))
     changed = true
   }
   return changed
@@ -445,10 +492,8 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       if (living < cap) {
         let timer = Math.max(0, (monsterSpawnTimers[locationId] ?? OPEN_WORLD_SPAWN_TICKS) - 1)
         if (timer === 0) {
-          const mid = pickMonsterId(loc)
-          const def = mid ? MONSTER_REGISTRY[mid] : null
-          if (def && mid) {
-            addCombatant(battle, monsterToEngineInput(def, uniqueEnemyId(battle, mid), 'enemy'), 'enemy')
+          const mid = spawnMonsterInto(battle, loc, openWorldSize(loc))
+          if (mid) {
             battles[locationId] = { ...battle }
             markSeen(loc, [mid])
           }

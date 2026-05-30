@@ -1,8 +1,10 @@
 // Open-world engine primitives: a persistent battle that never self-terminates
 // and `addCombatant` for trickling reinforcements / returnees into a live fight.
 import { describe, expect, it } from 'vitest'
-import { createBattle, addCombatant, advanceRound, type BattleState } from '@/engine'
+import { createBattle, addCombatant, advanceRound, distance, type BattleState } from '@/engine'
 import { eu } from './helpers'
+
+const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
 
 function freshOpen(): BattleState {
   return createBattle({
@@ -55,5 +57,61 @@ describe('engine — open-world mode', () => {
     for (let i = 0; i < 20; i++) advanceRound(b)
     expect(b.combatants.find((c) => c.id === 'e2')!.alive).toBe(false)   // killed by the player
     expect(b.outcome).toBe('ongoing')                                    // still persistent
+  })
+})
+
+describe('engine — open-world map, vision & wander', () => {
+  function bigBattle(playerVision = Infinity): BattleState {
+    return createBattle({
+      playerUnits: [eu({ id: 'p', team: 'player', visionRange: playerVision })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 1000, hp: 1000 })],
+      mode: 'open', cols: 100, rows: 100,
+    })
+  }
+
+  it('carries a per-battle grid size; defaults stay 15×15', () => {
+    expect(createBattle({ playerUnits: [], enemyUnits: [] }).cols).toBe(15)
+    const big = bigBattle()
+    expect(big.cols).toBe(100)
+    expect(big.rows).toBe(100)
+  })
+
+  it('movement uses the battle bounds — a chaser crosses past the old 15 edge', () => {
+    const b = bigBattle()  // player has unlimited vision → it chases
+    find(b, 'p').pos = { x: 50, y: 50 }
+    find(b, 'e').pos = { x: 50, y: 95 }
+    for (let i = 0; i < 30; i++) advanceRound(b)
+    expect(find(b, 'p').pos.y).toBeGreaterThan(20)   // would clamp at 15 without per-battle bounds
+  })
+
+  it('vision gates target acquisition: out of sight → no lock; in sight → lock', () => {
+    const b = bigBattle(10)
+    find(b, 'p').pos = { x: 50, y: 50 }
+    find(b, 'e').pos = { x: 50, y: 80 }   // 30 cells away, beyond vision 10
+    advanceRound(b)
+    expect(find(b, 'p').lockedTargetId).toBeNull()
+
+    find(b, 'p').pos = { x: 50, y: 50 }
+    find(b, 'e').pos = { x: 50, y: 57 }   // 7 cells — within vision
+    advanceRound(b)
+    expect(find(b, 'p').lockedTargetId).toBe('e')
+  })
+
+  it('a hero with nothing in sight wanders (position changes)', () => {
+    const b = createBattle({ playerUnits: [eu({ id: 'p', team: 'player', visionRange: 10 })], enemyUnits: [], mode: 'open', cols: 100, rows: 100 })
+    find(b, 'p').pos = { x: 50, y: 50 }
+    const start = { ...find(b, 'p').pos }
+    for (let i = 0; i < 10; i++) advanceRound(b)
+    expect(distance(find(b, 'p').pos, start)).toBeGreaterThan(0)
+  })
+
+  it('an idle monster lurks, then hops to a new local spot', () => {
+    const b = createBattle({ playerUnits: [], enemyUnits: [eu({ id: 'e', team: 'enemy', visionRange: 8 })], mode: 'open', cols: 100, rows: 100 })
+    find(b, 'e').pos = { x: 50, y: 50 }
+    const start = { ...find(b, 'e').pos }
+    for (let i = 0; i < 20; i++) advanceRound(b)
+    const moved = distance(find(b, 'e').pos, start)
+    expect(moved).toBeGreaterThan(0)     // it eventually hopped
+    expect(moved).toBeLessThan(20)       // but only a short local distance
   })
 })

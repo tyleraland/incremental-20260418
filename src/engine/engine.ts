@@ -5,7 +5,11 @@
 // in place so the host can step combat "one round per N ticks"; `resolve` runs
 // to completion for tests and bulk/idle resolution.
 
-import { COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS } from './constants'
+import {
+  COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
+  WANDER_REPATH, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
+} from './constants'
+import { setArenaBounds, arenaClamp } from './arena'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
 import {
@@ -28,8 +32,23 @@ import { traceMove, slideMove, sightlineClear, steerAround } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
-  ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult,
+  ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
 } from './types'
+
+// Deterministic [0,1) hash of an integer — seeds open-world wander choices
+// (lurk duration, hop direction) without an RNG, so replays stay deterministic.
+function hash01(n: number): number {
+  let x = (n ^ 0x9e3779b9) >>> 0
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0
+  x = Math.imul(x ^ (x >>> 16), 0x45d9f3b) >>> 0
+  x = (x ^ (x >>> 16)) >>> 0
+  return x / 4294967296
+}
+
+function monsterDwell(seed: number): number {
+  const span = MONSTER_WANDER_MAX - MONSTER_WANDER_MIN + 1
+  return MONSTER_WANDER_MIN + Math.floor(hash01(seed) * span)
+}
 
 function emptyStats(): BattleStats {
   return {
@@ -84,10 +103,18 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     lastHitById: null,
     channel: null,
     interruptedCount: 0,
+    visionRange: input.visionRange ?? Infinity,
+    wanderTarget: null,
+    // Monsters lurk a (deterministic) few rounds before their first hop; heroes
+    // don't use the dwell timer (they roam toward the team waypoint).
+    wanderDwell: input.team === 'enemy' ? monsterDwell(index + 1) : 0,
   }
 }
 
 export function createBattle(setup: CombatSetup): BattleState {
+  const cols = setup.cols ?? COLS
+  const rows = setup.rows ?? ROWS
+  setArenaBounds(cols, rows)   // so startingPosition/clamp use this battle's bounds
   const combatants: Combatant[] = []
   let index = 0
   const place = (units: EngineUnitInput[], team: Team, party?: TacticRef[]) => {
@@ -107,7 +134,10 @@ export function createBattle(setup: CombatSetup): BattleState {
     combatants,
     zones: [],
     barriers: setup.barriers ?? [],
+    cols,
+    rows,
     mode: setup.mode ?? 'encounter',
+    wander: {},
     round: 0,
     outcome: 'ongoing',
     events: [],
@@ -129,12 +159,14 @@ export function addCombatant(
   input: EngineUnitInput,
   team: Team,
   partyTactics?: TacticRef[],
+  at?: Vec2,                 // explicit spawn position (open-world scatter); else formation slot
 ): Combatant {
+  setArenaBounds(state.cols, state.rows)
   const index = state.combatants.reduce((m, c) => Math.max(m, c.index), -1) + 1
   const sameRank = state.combatants.filter(
     (c) => c.team === team && c.preferredRank === input.preferredRank,
   ).length
-  const pos = startingPosition(team, input.preferredRank, sameRank)
+  const pos = at ? arenaClamp(at) : startingPosition(team, input.preferredRank, sameRank)
   const tactics = resolveTactics(input.tactics ?? [], partyTactics)
   const c = makeCombatant({ ...input, team }, index, pos, tactics)
   enforceSeparation(c, state.combatants, state.barriers)
@@ -527,7 +559,75 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
     }
     const moved = moveToward(self, target, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    return
   }
+  // §open-world: nothing in sight → roam (heroes) / lurk-and-hop (monsters).
+  if (state.mode === 'open') executeWander(state, self)
+}
+
+// ── Open-world wander (only reached when a unit has no target, mode === 'open') ─
+
+// The party's shared roam waypoint, re-picked once they arrive (within
+// WANDER_REPATH of it). Deterministic (hash of the round it's chosen) so replays
+// match. Stored on state.wander.player.
+function updateHeroWaypoint(state: BattleState): void {
+  const heroes = state.combatants.filter((c) => c.alive && c.team === 'player')
+  if (heroes.length === 0) return
+  const cx = heroes.reduce((s, c) => s + c.pos.x, 0) / heroes.length
+  const cy = heroes.reduce((s, c) => s + c.pos.y, 0) / heroes.length
+  const wp = state.wander.player
+  if (wp && distance({ x: cx, y: cy }, wp) > WANDER_REPATH) return
+  state.wander.player = {
+    x: hash01(state.round * 2 + 1) * state.cols,
+    y: hash01(state.round * 2 + 2) * state.rows,
+  }
+}
+
+// Nearest living ally already locked onto a live enemy — wanderers head for the
+// fight so the party converges instead of straggling.
+function nearestEngagedAlly(state: BattleState, self: Combatant): Combatant | null {
+  let best: Combatant | null = null
+  let bestD = Infinity
+  for (const c of state.combatants) {
+    if (c === self || !c.alive || c.team !== self.team || !c.lockedTargetId) continue
+    const tgt = findCombatant(state, c.lockedTargetId)
+    if (!tgt || !tgt.alive) continue
+    const d = distance(self.pos, c.pos)
+    if (d < bestD) { bestD = d; best = c }
+  }
+  return best
+}
+
+function executeWander(state: BattleState, self: Combatant): void {
+  if (self.statuses.some((s) => s.flags.includes('rooted'))) return
+
+  if (self.team === 'player') {
+    // Converge on any ally already fighting; otherwise roam the team waypoint.
+    const ally = nearestEngagedAlly(state, self)
+    const point = ally ? ally.pos : state.wander.player
+    if (!point) return
+    if (moveTowardPoint(self, point, moveSpeedOf(self), state.combatants, state.barriers)) {
+      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    }
+    return
+  }
+
+  // Monsters: lurk, then hop a short distance to a new local spot.
+  if (self.wanderTarget) {
+    if (moveTowardPoint(self, self.wanderTarget, moveSpeedOf(self), state.combatants, state.barriers)) {
+      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    }
+    if (distance(self.pos, self.wanderTarget) < 0.6) {
+      self.wanderTarget = null
+      self.wanderDwell = monsterDwell(state.round + self.index)
+    }
+    return
+  }
+  if (self.wanderDwell > 0) { self.wanderDwell -= 1; return }
+  // Pick a hop: a deterministic direction + a 5–8 cell distance.
+  const ang = hash01(state.round * 3 + self.index) * Math.PI * 2
+  const dist = MONSTER_WANDER_NEAR + hash01(state.round * 3 + self.index + 7) * (MONSTER_WANDER_FAR - MONSTER_WANDER_NEAR)
+  self.wanderTarget = arenaClamp({ x: self.pos.x + Math.cos(ang) * dist, y: self.pos.y + Math.sin(ang) * dist })
 }
 
 // Hold `want` gap from the NEAREST enemy, AND maintain a clear shot. When too
@@ -760,7 +860,12 @@ function evalOutcome(state: BattleState): Outcome {
 // Resolve exactly one round in place (§9.1). No-op once the battle is decided.
 export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
+  setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
   state.round += 1
+
+  // §open-world: refresh the party's shared roam waypoint (heroes with no target
+  // in sight walk toward it; see executeWander).
+  if (state.mode === 'open') updateHeroWaypoint(state)
 
   // §9.1.1 tick status effects (apply DoT, then age out)
   for (const c of state.combatants) {

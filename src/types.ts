@@ -117,6 +117,10 @@ export interface Location {
   // once (refilled one at a time as they're killed). Only read when `openWorld`.
   // Per-location and party-independent for now; defaults to OPEN_WORLD_DEFAULT_CAP.
   openWorldCap?: number
+  // §open-world: side length (grid cells) of this location's square map. Only
+  // read when `openWorld`; defaults to OPEN_WORLD_DEFAULT_SIZE (a large field the
+  // camera can't fully fit). The party hunts across it with limited vision.
+  openWorldSize?: number
 }
 
 // ── Monster ───────────────────────────────────────────────────────────────────

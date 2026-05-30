@@ -32,3 +32,13 @@ export const RANK_SETBACK = { front: 0, mid: 0.8, back: 1.6 } as const
 export const FORMATION_ROW_STEP = 0.8
 
 export const EPS = 1e-6
+
+// §open-world wander (only consulted when BattleState.mode === 'open'). Heroes
+// roam toward a shared team waypoint, re-picking it when they get within
+// WANDER_REPATH of it. Idle monsters lurk MONSTER_WANDER_MIN..MAX rounds, then
+// hop a short MONSTER_WANDER_NEAR..FAR distance to a new local spot.
+export const WANDER_REPATH = 4
+export const MONSTER_WANDER_MIN = 5
+export const MONSTER_WANDER_MAX = 10
+export const MONSTER_WANDER_NEAR = 5
+export const MONSTER_WANDER_FAR = 8

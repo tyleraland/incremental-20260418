@@ -6,6 +6,7 @@ import {
   PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
 import { slideMove, steerAround } from './barriers'
+import { arenaClamp } from './arena'
 import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -14,11 +15,9 @@ export function distance(a: Vec2, b: Vec2): number {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+// Clamp to the active arena bounds (set per-battle; 15×15 by default).
 export function clampToGrid(p: Vec2): Vec2 {
-  return {
-    x: Math.min(COLS, Math.max(0, p.x)),
-    y: Math.min(ROWS, Math.max(0, p.y)),
-  }
+  return arenaClamp(p)
 }
 
 // §2.3 a unit's rank is derived from its *current* Y relative to its team edge,

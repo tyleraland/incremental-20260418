@@ -9,6 +9,7 @@
 // Leaf module (constants + types only) so grid.ts can import it without a cycle.
 
 import { COLS, ROWS, EPS, DEPLOY_FRONT } from './constants'
+import { arenaClamp } from './arena'
 import type { Vec2, Barrier } from './types'
 
 // Tie-break in the path search: corners on the left side of the arena cost
@@ -28,7 +29,8 @@ export function pointBlocked(barriers: Barrier[], p: Vec2, pad = UNIT_PAD): bool
   return false
 }
 
-const clamp = (p: Vec2): Vec2 => ({ x: Math.min(COLS, Math.max(0, p.x)), y: Math.min(ROWS, Math.max(0, p.y)) })
+// Clamp to the active arena (15×15 by default; larger for open-world battles).
+const clamp = (p: Vec2): Vec2 => arenaClamp(p)
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y)
 
 // Farthest point from `from` toward `to` that isn't inside a barrier — i.e. stop

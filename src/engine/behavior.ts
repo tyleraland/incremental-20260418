@@ -18,9 +18,14 @@ export function isStealthed(c: Combatant): boolean {
   return c.statuses.some((s) => s.flags.includes('stealthed'))
 }
 
-// Enemies a unit may lock onto: living, and not currently hidden (§3 stealth).
+// Enemies a unit may lock onto: living, not currently hidden (§3 stealth), and
+// within vision range. visionRange is Infinity for encounters (so this is a
+// no-op there); open-world gives heroes/monsters a finite sight radius so they
+// only engage what they can actually see — and wander otherwise.
 export function targetableEnemies(state: BattleState, self: Combatant): Combatant[] {
-  return livingEnemies(state, self).filter((c) => !isStealthed(c))
+  return livingEnemies(state, self).filter(
+    (c) => !isStealthed(c) && distance(self.pos, c.pos) <= self.visionRange,
+  )
 }
 
 export function livingAllies(state: BattleState, self: Combatant): Combatant[] {

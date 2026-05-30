@@ -53,6 +53,9 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     lastHitById: null,
     channel: null,
     interruptedCount: 0,
+    visionRange: Infinity,
+    wanderTarget: null,
+    wanderDwell: 0,
     ...overrides,
   }
 }

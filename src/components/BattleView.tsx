@@ -37,11 +37,28 @@ function hpColor(ratio: number): string {
 const DEFAULT_CAM_SIZE = 13   // world units shown by default
 const FULL_CAM_SIZE    = COLS // whole arena (zoom-out cap)
 const SPREAD_EXTENT    = 12   // bbox extent above this → zoom out to fit everyone
+const OPEN_CAM_SIZE    = 28   // open-world: window onto the big map, follows the party
 
 interface Cam { x: number; y: number; size: number }
 
 function defaultCamera(): Cam {
   return { x: (COLS - DEFAULT_CAM_SIZE) / 2, y: (ROWS - DEFAULT_CAM_SIZE) / 2, size: DEFAULT_CAM_SIZE }
+}
+
+// Open-world: a fixed-size window that follows the centroid of the given points
+// (alive combatants), clamped so it never shows past the map edges. The whole
+// 100×100 field can't fit at once — the player pans to look around.
+function followCamera(pts: Vec2[], cols: number, rows: number): Cam {
+  const size = Math.min(OPEN_CAM_SIZE, cols, rows)
+  if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
+  let sx = 0, sy = 0
+  for (const p of pts) { sx += p.x; sy += p.y }
+  const cx = sx / pts.length, cy = sy / pts.length
+  return {
+    x: Math.max(0, Math.min(cols - size, cx - size / 2)),
+    y: Math.max(0, Math.min(rows - size, cy - size / 2)),
+    size,
+  }
 }
 
 function computeCamera(pts: Vec2[]): Cam {
@@ -69,14 +86,14 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // world layer; chips/barriers/lines move with the wrapper instantly so the
 // drag tracks the finger. Sizes itself to a square that fits the space it's
 // given (`grid place-items-center` parent), so it grows on the drop-in view.
-function Arena({ cam, barriers, children }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   const suppressClickRef = useRef(false)
   const [pan, setPan] = useState<Vec2>({ x: 0, y: 0 })
 
   const cell = `${100 / cam.size}%`
-  const centerTop = Math.max(0, Math.min(100, (1 - (CENTER_Y - cam.y) / cam.size) * 100))
+  const centerTop = Math.max(0, Math.min(100, (1 - (centerY - cam.y) / cam.size) * 100))
 
   const onPointerDown = (e: React.PointerEvent) => {
     suppressClickRef.current = false
@@ -366,11 +383,17 @@ function LiveBattle({ battle }: { battle: BattleState }) {
     return snapshot
   })()
   const alive = battle.combatants.filter((c) => c.alive)
-  // Hold the default camera once decided — otherwise the bbox collapses around
-  // the survivors and the auto-zoom snaps, reading as the winners teleporting.
-  const cam = battle.outcome !== 'ongoing'
-    ? defaultCamera()
-    : computeCamera((alive.length ? alive : battle.combatants).map((c) => c.pos))
+  const cols = battle.cols ?? COLS
+  const rows = battle.rows ?? ROWS
+  const camPts = (alive.length ? alive : battle.combatants).map((c) => c.pos)
+  // Open-world: a follow-cam over the big map. Encounter: hold the default camera
+  // once decided — otherwise the bbox collapses around the survivors and the
+  // auto-zoom snaps, reading as the winners teleporting.
+  const cam = battle.mode === 'open'
+    ? followCamera(camPts, cols, rows)
+    : battle.outcome !== 'ongoing'
+      ? defaultCamera()
+      : computeCamera(camPts)
 
   const roundEvents = battle.events.filter((e) => e.round === battle.round)
   const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
@@ -400,7 +423,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
         </div>
       )}
       <div className="flex-1 min-h-0 flex justify-center items-start">
-        <Arena cam={cam} barriers={battle.barriers}>
+        <Arena cam={cam} barriers={battle.barriers} centerY={rows / 2}>
           {/* persistent ground hazards (Firewall, etc.) */}
           {battle.zones.map((z) => (
             <div
@@ -411,12 +434,12 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           ))}
 
           {/* attack arc lines for this round */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${ROWS - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${rows - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
             {hits.map((e, i) => {
               const src = byId(e.sourceId), tgt = byId(e.targetId)
               if (!src || !tgt) return null
               const stroke = src.team === 'player' ? 'rgb(96,165,250)' : 'rgb(248,113,113)'
-              return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, src.pos.x)} y1={ROWS - insetY(cam, src.pos.y)} x2={insetX(cam, tgt.pos.x)} y2={ROWS - insetY(cam, tgt.pos.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
+              return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, src.pos.x)} y1={rows - insetY(cam, src.pos.y)} x2={insetX(cam, tgt.pos.x)} y2={rows - insetY(cam, tgt.pos.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
             })}
           </svg>
 

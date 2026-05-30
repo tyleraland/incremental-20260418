@@ -6,10 +6,12 @@ import { useGameStore } from '@/stores/useGameStore'
 import type { Location } from '@/types'
 import { makeUnit, resetStore, tick } from '../helpers'
 
-const OPEN = (monsterIds: string[], cap: number): Location => ({
+// Small map by default so the party and scattered monsters are within sight and
+// actually fight (the real maps are 100×100; size is overridable per test).
+const OPEN = (monsterIds: string[], cap: number, size = 12): Location => ({
   id: 'field', region: 'world', name: 'Field',
   description: '', traits: [], monsterIds, familiarityMax: 100, connections: [],
-  openWorld: true, openWorldCap: cap,
+  openWorld: true, openWorldCap: cap, openWorldSize: size,
 })
 
 // Pin randomness (loot rolls + monster pick) so assertions are stable.
@@ -32,6 +34,20 @@ describe('open-world locations', () => {
     expect(b).toBeDefined()
     expect(b.mode).toBe('open')
     expect(b.combatants.filter((c) => c.team === 'enemy').length).toBe(3)
+  })
+
+  it('uses a large per-location map (heroes hunt across it)', () => {
+    resetStore({
+      locations: [OPEN(['slime'], 3, 100)],
+      units: [makeUnit({ id: 'u1', locationId: 'field', health: 100 })],
+    })
+    tick()
+    const b = useGameStore.getState().battles['field']
+    expect(b.cols).toBe(100)
+    expect(b.rows).toBe(100)
+    // Heroes get a finite sight radius; encounters keep Infinity.
+    expect(b.combatants.find((c) => c.team === 'player')!.visionRange).toBe(10)
+    expect(b.combatants.find((c) => c.team === 'enemy')!.visionRange).toBe(8)
   })
 
   it('never self-terminates: a strong party keeps killing as monsters respawn', () => {

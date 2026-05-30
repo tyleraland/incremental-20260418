@@ -28,20 +28,25 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
     (`reconcileOpenPlayers`), so the party adapts to who's standing.
   - Discrete encounters are unchanged and still the default — scenarios,
     the Elite Four, cities and the dungeon stay deterministic for tests.
+  Second iteration (shipped): a **large per-battle map** (`cols/rows`, default
+  100×100 via `openWorldSize`), **vision-limited targeting** (`visionRange` —
+  heroes 10, monsters 8), and **wander** — heroes roam a shared waypoint and
+  converge on engaged allies; idle monsters lurk then hop locally. Monsters
+  **scatter** across the field; the camera follows the party. Per-battle bounds
+  live in `engine/arena.ts` so no movement clamp hardcodes a size.
   Follow-ups still open:
-  - *In-battle wander* — between spawns heroes just hold; they don't roam the
-    arena hunting. (Deliberately deferred — agreed with the owner.)
   - *Overworld wandering* — units moving from one location to another on their
     own (the `travelPath` field exists but isn't driven yet).
   - *Smarter spawns* — per-location monster *distributions* (weights, level
     bands, time-of-day) and non-uniform spawn timers. Today it's an equal-weight
-    random pick on a fixed timer.
-  - *Seeded RNG for determinism* — spawn picks / loot use `Math.random` in the
-    store. Live open-world play is no longer "same inputs → same outputs";
-    tests pin `Math.random`. A seeded generator would make replays exact.
-  - *Spawn positions* — reinforcements drop at the team's formation edge via
-    `startingPosition`; an open field would want randomised / off-screen entry
-    points and "who-meets-who" emergence.
+    random pick on a fixed timer, scattered uniformly across the map.
+  - *Seeded RNG for determinism* — spawn picks / loot / scatter use
+    `Math.random` in the store. Live open-world play is no longer "same inputs →
+    same outputs"; tests pin `Math.random`. A seeded generator would make
+    replays exact. (Engine wander/vision are already deterministic.)
+  - *Hunt pacing* — wander is a pure roam; a strong party of 3 clears ~1
+    monster / ~20s on a 100×100 field at cap 12. Vision radius, move speed, cap
+    and map size are the knobs; no "track the nearest scent" heuristic yet.
 
 ## Combat content
 
@@ -206,8 +211,13 @@ edits):
 
 ## Grid-size independence (invariant — keep)
 
-`COLS`/`ROWS` are the only size knobs. **No tactic may hardcode absolute
-coordinates** — everything is relative to enemies/allies/edges. Things to
-re-tune (not re-architect) when the grid grows: `BASE_MOVE_SPEED`, reach
-bands in the adapter, `startingPosition` formations, `SEPARATION`,
-`HERD_BIAS`, kiter probe distance, `CAM_SIZE`.
+Arena size is now **per-battle** (`BattleState.cols/rows`), defaulting to
+`COLS`/`ROWS` (15×15) for encounters and set large (100×100) for open-world.
+Movement clamps read the active bounds via `engine/arena.ts`
+(`setArenaBounds`/`arenaClamp`), set at each engine entry point — **no movement
+clamp hardcodes a size**. **No tactic may hardcode absolute coordinates** —
+everything is relative to enemies/allies/edges. Tuned-for-15×15 knobs that an
+*encounter* still depends on (don't blindly scale them with the open-world map):
+`BASE_MOVE_SPEED`, reach bands in the adapter, `startingPosition` formations,
+`SEPARATION`, `HERD_BIAS`, kiter probe distance, `DEFAULT_CAM_SIZE`. Open-world
+has its own `followCamera` + `OPEN_CAM_SIZE`.
