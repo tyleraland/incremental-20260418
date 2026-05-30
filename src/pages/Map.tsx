@@ -57,6 +57,13 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'pg-ravine':          [9, 3],
   'pg-slime-huddle':    [10, 3],
 
+  // Pathing Grounds — a second sandbox row below the proving grounds.
+  'pg-bottleneck':      [8, 5],
+  'pg-serpentine':      [9, 5],
+  'pg-pillared-hall':   [10, 5],
+  'pg-moat':            [8, 6],
+  'pg-overgrown-maze':  [9, 6],
+
   // Geffen Dungeon — L-shape (top row + right column), Floor 1 → Floor 5.
   'geffen-dungeon-1': [1, 1],
   'geffen-dungeon-2': [2, 1],

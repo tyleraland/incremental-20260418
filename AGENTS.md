@@ -82,9 +82,11 @@ driven by **tactics** (below).
   them. One-finger pan too). It
   never
   self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
-  **fixed** `openWorldCap` of monsters **scattered** across the field, trickling
-  one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via the engine's `addCombatant`
-  (which takes an explicit spawn position), drawn at random from `monsterIds`.
+  **fixed** `openWorldCap` of monsters **scattered** across the field (off the
+  edges, and never inside a barrier — `scatterPos` retries against
+  `pointBlocked`), trickling one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via
+  the engine's `addCombatant` (which takes an explicit spawn position), drawn at
+  random from `monsterIds`.
   Heroes join/leave the live fight as they deploy or recover
   (`reconcileOpenPlayers`). The store owns teardown: no eligible heroes → battle
   dropped. Spawn/feed events surface in `BattleView` (a ring + name flash; a

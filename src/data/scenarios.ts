@@ -84,6 +84,64 @@ export const SCENARIO_REGISTRY: Record<string, ScenarioDef> = {
     description: 'Five Rock Crabs packed tight, open field — a clean target for AoE. A mage with Lightning Storm (Storm Caller inherited) should drop the cloud on the densest knot and zap them all.',
     wave: ['rock-crab', 'rock-crab', 'rock-crab', 'rock-crab', 'rock-crab'],
   },
+
+  // ── Pathing & terrain testbeds (15×15 deploy model: players form up in the
+  // top half, enemies the bottom; mid-field terrain is what they route around) ─
+  'pg-bottleneck': {
+    id: 'pg-bottleneck',
+    name: 'The Bottleneck',
+    description: 'Two long mid-field walls leave a single narrow gap dead centre — the only way across. The whole fight is forced to funnel through one chokepoint: a body-block, pathing, and line-of-sight pressure cooker. Bring a Guardian to hold the gap.',
+    wave: ['stone-golem', 'harpy', 'harpy'],
+    barriers: () => [
+      { x: 0,    y: 7, w: 6, h: 1.5, kind: 'wall' as const },   // left bar (gap 6..9)
+      { x: 9,    y: 7, w: 6, h: 1.5, kind: 'wall' as const },   // right bar
+    ],
+  },
+  'pg-serpentine': {
+    id: 'pg-serpentine',
+    name: 'The Serpentine',
+    description: 'Three offset wall stubs force a zig-zag S between you and the far side. A route-and-flank test: melee must weave the switchbacks to reach a back-line Living Nightshade that spits down the lane.',
+    wave: ['living-nightshade', 'rock-crab', 'rock-crab'],
+    barriers: () => [
+      { x: 0,  y: 5,  w: 10, h: 1.2, kind: 'wall' as const },   // stub from the left
+      { x: 5,  y: 7.5, w: 10, h: 1.2, kind: 'wall' as const },  // stub from the right
+      { x: 0,  y: 10, w: 10, h: 1.2, kind: 'wall' as const },   // stub from the left
+    ],
+  },
+  'pg-pillared-hall': {
+    id: 'pg-pillared-hall',
+    name: 'The Pillared Hall',
+    description: 'Four stone pillars dot an open hall. A body-block + line-of-sight weave: melee threads between the pillars while casters on both sides lose and regain their shot as targets duck behind cover.',
+    wave: ['harpy', 'harpy', 'skeleton-archer'],
+    barriers: () => [
+      { x: 3.5,  y: 5.5, w: 2, h: 2, kind: 'wall' as const },
+      { x: 9.5,  y: 5.5, w: 2, h: 2, kind: 'wall' as const },
+      { x: 3.5,  y: 8.5, w: 2, h: 2, kind: 'wall' as const },
+      { x: 9.5,  y: 8.5, w: 2, h: 2, kind: 'wall' as const },
+    ],
+  },
+  'pg-moat': {
+    id: 'pg-moat',
+    name: 'The Moat',
+    description: 'A wide cliff-band cuts across mid-field: it blocks movement but NOT line of sight, and the far side is a back-line of ranged poachers. Your casters/archers can snipe across the gap while your melee has to detour around the ends — a ranged-vs-melee asymmetry test.',
+    wave: ['poacher', 'poacher', 'skeleton-archer'],
+    barriers: () => [{ x: 1.5, y: 7, w: 12, h: 1.6, kind: 'cliff' as const }],
+  },
+
+  // ── Open-world terrain testbed (the only barrier scenario fought in *open*
+  // mode: persistent, vision-limited, wandering — rubble to route around) ──────
+  'pg-overgrown-maze': {
+    id: 'pg-overgrown-maze',
+    name: 'The Overgrown Ruins',
+    description: 'A persistent open-world ruin (60×60) studded with toppled walls. Vision is limited, so the party hunts and wanders between the rubble — a live testbed for reachable-waypoint roaming and threading terrain to whatever wanders into sight.',
+    barriers: () => [
+      { x: 18, y: 14, w: 3, h: 14, kind: 'wall' as const },
+      { x: 34, y: 22, w: 3, h: 16, kind: 'wall' as const },
+      { x: 14, y: 38, w: 18, h: 3, kind: 'wall' as const },
+      { x: 40, y: 8,  w: 12, h: 3, kind: 'wall' as const },
+      { x: 24, y: 44, w: 3, h: 12, kind: 'wall' as const },
+    ],
+  },
 }
 
 export function getScenario(id?: string | null): ScenarioDef | null {

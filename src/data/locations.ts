@@ -101,6 +101,41 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [], testScenarioId: 'pg-slime-huddle',
   },
 
+  // ── Pathing Grounds (barrier / terrain testbeds, a second sandbox row) ───────
+  // Stage the known-terrain pathing work. The last one is open-world
+  // (persistent, vision-limited, wandering); the rest are discrete encounters.
+  {
+    id: 'pg-bottleneck', region: 'world', name: 'The Bottleneck',
+    description: 'Two mid-field walls leave one narrow centre gap — the whole fight funnels through a single chokepoint.',
+    traits: ['arena', 'ruins'], monsterIds: ['stone-golem', 'harpy'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-bottleneck',
+  },
+  {
+    id: 'pg-serpentine', region: 'world', name: 'The Serpentine',
+    description: 'A zig-zag S of offset wall stubs guarding a back-line caster — a route-and-flank weave.',
+    traits: ['arena', 'ruins'], monsterIds: ['living-nightshade', 'rock-crab'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-serpentine',
+  },
+  {
+    id: 'pg-pillared-hall', region: 'world', name: 'The Pillared Hall',
+    description: 'Four pillars in an open hall — a body-block + line-of-sight weave.',
+    traits: ['arena', 'ruins'], monsterIds: ['harpy', 'skeleton-archer'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-pillared-hall',
+  },
+  {
+    id: 'pg-moat', region: 'world', name: 'The Moat',
+    description: 'A wide cliff cuts mid-field — it blocks movement, not sight. Snipe across while melee detours.',
+    traits: ['arena', 'cliff'], monsterIds: ['poacher', 'skeleton-archer'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-moat',
+  },
+  {
+    id: 'pg-overgrown-maze', region: 'world', name: 'The Overgrown Ruins',
+    description: 'A persistent open-world ruin studded with toppled walls — hunt-and-wander over terrain.',
+    traits: ['arena', 'ruins'], monsterIds: ['shadow-wolf', 'dark-slime', 'forest-sprite'],
+    familiarityMax: 100, connections: [],
+    openWorld: true, openWorldCap: 8, openWorldSize: 60, testScenarioId: 'pg-overgrown-maze',
+  },
+
   // ── Geffen Dungeon (separate sub-area, 5 floors) ─────────────────────────
   // Floor-specific encounters: F2 stages the cross-wall scenario, F3 puts the
   // dumb-tank Animated Armor on the floor (slow + heavy DEF — exercises kite

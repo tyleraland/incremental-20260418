@@ -10,7 +10,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -256,10 +256,15 @@ function withVision(input: EngineUnitInput, range: number): EngineUnitInput {
 }
 
 // A random point on the map (kept a few cells off the edges so monsters don't
-// spawn jammed in a corner) — monsters scatter across the whole field.
-function scatterPos(size: number): { x: number; y: number } {
+// spawn jammed in a corner) — monsters scatter across the whole field. On a map
+// with terrain, retry a few times so a monster never spawns *inside* a wall.
+function scatterPos(size: number, barriers: Barrier[] = []): { x: number; y: number } {
   const m = Math.min(4, size / 2 - 0.5)
-  return { x: m + Math.random() * (size - 2 * m), y: m + Math.random() * (size - 2 * m) }
+  let p = { x: m + Math.random() * (size - 2 * m), y: m + Math.random() * (size - 2 * m) }
+  for (let i = 0; i < 12 && barriers.length && pointBlocked(barriers, p); i++) {
+    p = { x: m + Math.random() * (size - 2 * m), y: m + Math.random() * (size - 2 * m) }
+  }
+  return p
 }
 
 // Heroes form up as a loose knot near the map centre; the engine's separation
@@ -286,7 +291,7 @@ function spawnMonsterInto(battle: BattleState, loc: Location, size: number): str
   const mid = pickMonsterId(loc)
   const def = mid ? MONSTER_REGISTRY[mid] : null
   if (!def || !mid) return null
-  addCombatant(battle, withVision(monsterToEngineInput(def, uniqueEnemyId(battle, mid), 'enemy'), MONSTER_VISION), 'enemy', undefined, scatterPos(size))
+  addCombatant(battle, withVision(monsterToEngineInput(def, uniqueEnemyId(battle, mid), 'enemy'), MONSTER_VISION), 'enemy', undefined, scatterPos(size, battle.barriers))
   return mid
 }
 
