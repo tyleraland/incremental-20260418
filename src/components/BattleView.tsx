@@ -748,7 +748,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           {spawns.map((e, i) => {
             const c = byId(e.sourceId)
             const pos = e.position ?? c?.pos
-            if (!pos) return null
+            if (!pos || !isOnScreen(cam, pos)) return null   // don't flash off-screen spawns in the corner
             const isPlayer = c?.team === 'player'
             return (
               <div key={`sp-${battle.round}-${i}`}>

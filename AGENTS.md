@@ -76,8 +76,10 @@ driven by **tactics** (below).
   `openWorldSize` = 100×100; the camera can't fit it, so `BattleView` uses a
   `followCamera` centred on the **party** that **auto-fits** to keep them all in
   view — until the player takes manual control via pinch-to-zoom / −,+ buttons
-  (⊙ re-enables auto-fit). Any party member outside the viewport gets an
-  `EdgeMarker` bubble on the rim pointing toward them. One-finger pan too). It
+  (⊙ re-enables auto-fit). Off-screen tokens are **clipped, not clamped** to the
+  rim (`isOnScreen`): off-screen monsters aren't drawn, and each off-screen
+  **party member** gets an `EdgeMarker` rim bubble with an arrow pointing toward
+  them. One-finger pan too). It
   never
   self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
   **fixed** `openWorldCap` of monsters **scattered** across the field, trickling
