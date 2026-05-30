@@ -29,7 +29,7 @@ import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec } from './spatia
 // still dominates, cohesion just curves it toward the party so a healer doesn't
 // strand themselves behind the front line.
 const COHESION_WEIGHT = 0.35
-import { traceMove, slideMove, sightlineClear, steerAround } from './barriers'
+import { traceMove, slideMove, sightlineClear, steerAround, canReach } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
@@ -635,16 +635,27 @@ function pickRoamPoint(state: BattleState, from: Vec2, seed: number): Vec2 {
   const iw = Math.max(1, state.cols - 2 * mx)
   const ih = Math.max(1, state.rows - 2 * my)
   const roamMin = 0.45 * Math.min(iw, ih)
+  // Sample several interior points; keep the FARTHEST *reachable* one (and at
+  // least the farthest sampled as a fallback). Reachability uses the known
+  // terrain, so the party never commits to roaming at a walled-off region it
+  // can't actually get to — it just picks somewhere it can.
   let best = from
   let bestD = -1
-  for (let k = 0; k < 8; k++) {
+  let bestReachable: Vec2 | null = null
+  let bestReachableD = -1
+  const samples = state.barriers.length ? 14 : 8
+  for (let k = 0; k < samples; k++) {
     const px = mx + hash01(state.round * 11 + seed + k * 131) * iw
     const py = my + hash01(state.round * 11 + seed + k * 131 + 61) * ih
+    const p = { x: px, y: py }
     const d = Math.hypot(px - from.x, py - from.y)
-    if (d > bestD) { bestD = d; best = { x: px, y: py } }
-    if (d >= roamMin) break
+    if (d > bestD) { bestD = d; best = p }
+    if (d > bestReachableD && (state.barriers.length === 0 || canReach(from, p, state.barriers))) {
+      bestReachableD = d; bestReachable = p
+      if (d >= roamMin) break
+    }
   }
-  return best
+  return bestReachable ?? best
 }
 
 // Recompute every team's blackboard once per round (start of advanceRound).

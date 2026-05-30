@@ -98,9 +98,20 @@ driven by **tactics** (below).
   blackboard's shared `waypoint` (below); **monsters** lurk
   `MONSTER_WANDER_MIN..MAX` rounds then hop `NEAR..FAR` cells to a new local
   spot. Wander/vision are deterministic (a `hash01` of round+index, no RNG). The
-  shared `waypoint` is chosen genuinely *far* from the party (`pickRoamPoint`):
-  re-picking a nearby point on arrival caused a corner "tiny-step" jitter
-  (`wander-jitter.test.ts` guards both that and barrier pathing to a centre).
+  shared `waypoint` is chosen genuinely *far* and **reachable** from the party
+  (`pickRoamPoint`): re-picking a nearby point on arrival caused a corner
+  "tiny-step" jitter, and picking a walled-off region would make them grind.
+
+  **Terrain is fully known** — line-of-sight (`visionRange`) is fog-of-war for
+  *units only*, never for walls. `steerAround` runs Dijkstra over the *entire*
+  passed barrier set, so pathing threads arbitrary mazes/spirals to a target.
+  When no route exists it reports `reachable: false`; `moveToward`/
+  `moveTowardPoint` then **hold** instead of grinding into the wall, and
+  `canReach(from, to, barriers)` exposes the same check. Reachability is
+  **dynamic in the barrier set**: a future "walk on lava" party buff that passes
+  a reduced set flips impossible targets to reachable with no special-casing.
+  (`wander-jitter.test.ts` covers jitter, ring + two-ring-spiral threading, and
+  give-up-on-impossible + dynamic reachability.)
 
   Bigger arenas work because spatial bounds are read from a per-battle ambient
   (`engine/arena.ts` `setArenaBounds`/`arenaClamp`), set at each engine entry

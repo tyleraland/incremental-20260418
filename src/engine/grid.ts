@@ -91,7 +91,10 @@ export function moveToward(
   if (d <= reach + EPS) return false   // already in range; hold position
 
   // Route around terrain toward a corner that keeps line of sight (§spatial).
-  const { point, direct } = steerAround(mover.pos, target.pos, barriers)
+  // No route through the known terrain → give up (hold) rather than grind into
+  // a wall toward an unreachable target.
+  const { point, direct, reachable } = steerAround(mover.pos, target.pos, barriers)
+  if (!reachable) return false
   const dd = distance(mover.pos, point)
   if (dd <= EPS) return false
   const step = Math.min(speed, direct ? d - reach : dd)
@@ -113,7 +116,8 @@ export function moveTowardPoint(
 ): boolean {
   const d = distance(mover.pos, point)
   if (d <= EPS) return false
-  const { point: wp } = steerAround(mover.pos, point, barriers)   // route around terrain
+  const { point: wp, reachable } = steerAround(mover.pos, point, barriers)   // route around terrain
+  if (!reachable) return false   // unreachable through known terrain → hold
   const dd = distance(mover.pos, wp)
   if (dd <= EPS) return false
   const step = Math.min(speed, dd)

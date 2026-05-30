@@ -96,8 +96,8 @@ export function sightlineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = 
 // graph (from + target + barrier corners), so a unit picks the route with the
 // shortest total detour instead of just the locally-cheapest next corner. Pure
 // per-call (memory-less, recomputed each round) — when the line is clear, beeline.
-export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): { point: Vec2; direct: boolean } {
-  if (lineClear(from, target, barriers, pad)) return { point: target, direct: true }
+export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): { point: Vec2; direct: boolean; reachable: boolean } {
+  if (lineClear(from, target, barriers, pad)) return { point: target, direct: true, reachable: true }
   const off = pad + 0.3
   // Build node graph: 0 = from, last = target, middle = barrier corners.
   const nodes: Vec2[] = [from]
@@ -135,7 +135,12 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
       if (nd < dArr[v]) { dArr[v] = nd; prev[v] = u }
     }
   }
-  if (dArr[T] === Infinity) return { point: target, direct: false }
+  // No route through the *known* terrain → the target is unreachable. Report it
+  // so movement can give up (hold) instead of grinding into a wall. "Known"
+  // means: routes around the full barrier set passed in — so a future "walk on
+  // lava" party buff that drops some barriers from the set makes the same target
+  // reachable again, dynamically, with no special-casing here.
+  if (dArr[T] === Infinity) return { point: target, direct: false, reachable: false }
 
   // Walk the path forward and take the first hop that isn't right under our feet
   // (so a unit already standing on a corner advances to the next one).
@@ -144,7 +149,15 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
   path.reverse()
   let hop = 1
   while (hop < path.length - 1 && dist(nodes[path[hop]], from) < 0.6) hop++
-  return { point: nodes[path[hop]], direct: path[hop] === T }
+  return { point: nodes[path[hop]], direct: path[hop] === T, reachable: true }
+}
+
+// Is `target` reachable from `from` given the *known* terrain (`barriers`)?
+// Thin wrapper over steerAround's reachability — used to (a) make a unit give up
+// on an impossible target, and (b) pick only reachable roam waypoints. Dynamic:
+// pass a reduced barrier set (e.g. lava-immune party) and more becomes reachable.
+export function canReach(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): boolean {
+  return steerAround(from, target, barriers, pad).reachable
 }
 
 // Default arena terrain: a central cross ('+') that the teams fight around. The

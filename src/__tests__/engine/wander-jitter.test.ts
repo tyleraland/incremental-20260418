@@ -7,7 +7,7 @@
 // each fresh waypoint genuinely far, so the party commits to a long traverse.
 // Also stresses pathing through a barrier-heavy spiral map.
 import { describe, it, expect } from 'vitest'
-import { createBattle, advanceRound, type BattleState, type Barrier } from '@/engine'
+import { createBattle, advanceRound, canReach, type BattleState, type Barrier } from '@/engine'
 import { eu } from './helpers'
 
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
@@ -113,5 +113,75 @@ describe('barrier pathing — thread to the centre', () => {
     }
     // Reaches melee reach of the centre target → it threaded the gap inward.
     expect(closest).toBeLessThan(2)
+  })
+
+  // A two-ring spiral: outer ring with a gap on the right, inner ring with a gap
+  // on the left, so the only route to the centre winds through both openings.
+  // Terrain is fully known (line-of-sight is fog-of-war for *units*, not walls),
+  // so steerAround routes over the whole barrier set and threads it.
+  function spiralBarriers(): Barrier[] {
+    const w = 1.5
+    return [
+      { x: 6, y: 6, w: 28, h: w }, { x: 6, y: 32.5, w: 28, h: w }, { x: 6, y: 6, w: w, h: 28 },
+      { x: 32.5, y: 6, w: w, h: 11 }, { x: 32.5, y: 23, w: w, h: 11 },          // outer gap right
+      { x: 13, y: 13, w: 14, h: w }, { x: 13, y: 25.5, w: 14, h: w }, { x: 25.5, y: 13, w: w, h: 14 },
+      { x: 13, y: 13, w: w, h: 4 }, { x: 13, y: 23, w: w, h: 4 },               // inner gap left
+    ]
+  }
+
+  it('a hunter threads a two-ring spiral to the centre (known structure)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: Infinity, str: 1 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 9999, hp: 9999, moveSpeed: 0 })],
+      mode: 'open', cols: 40, rows: 40,
+      barriers: spiralBarriers(),
+    })
+    find(b, 'a').pos = { x: 38, y: 20 }
+    find(b, 'e').pos = { x: 20, y: 20 }   // spiral centre
+    let closest = dist(find(b, 'a').pos, find(b, 'e').pos)
+    for (let r = 0; r < 200; r++) {
+      advanceRound(b)
+      closest = Math.min(closest, dist(find(b, 'a').pos, find(b, 'e').pos))
+    }
+    expect(closest).toBeLessThan(2)
+  })
+})
+
+describe('reachability — give up on the impossible', () => {
+  // A 40×40 map split by a solid full-height wall, no gap. A unit on one side
+  // cannot reach a target on the other.
+  function fullWall(): Barrier[] {
+    return [{ x: 19, y: 0, w: 2, h: 40, kind: 'wall' as const }]
+  }
+
+  it('canReach is false across an impassable wall, true on the same side', () => {
+    const wall = fullWall()
+    expect(canReach({ x: 5, y: 20 }, { x: 35, y: 20 }, wall)).toBe(false)
+    expect(canReach({ x: 5, y: 20 }, { x: 15, y: 30 }, wall)).toBe(true)
+  })
+
+  it('a unit gives up (holds) instead of grinding into the wall', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: Infinity, str: 1 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 9999, hp: 9999, moveSpeed: 0 })],
+      mode: 'open', cols: 40, rows: 40,
+      barriers: fullWall(),
+    })
+    find(b, 'a').pos = { x: 5, y: 20 }
+    find(b, 'e').pos = { x: 35, y: 20 }   // unreachable: other side of the wall
+    // Let it settle, then confirm it isn't creeping toward the wall round after round.
+    for (let r = 0; r < 20; r++) advanceRound(b)
+    const settled = { ...find(b, 'a').pos }
+    for (let r = 0; r < 20; r++) advanceRound(b)
+    const after = find(b, 'a').pos
+    expect(after.x).toBeLessThan(19)                 // never crossed / sat on the wall
+    expect(dist(after, settled)).toBeLessThan(0.5)   // stopped trying (held position)
+  })
+
+  it('reachability is dynamic: dropping the wall (e.g. a party buff) opens the route', () => {
+    const wall: Barrier[] = [{ x: 19, y: 0, w: 2, h: 40, kind: 'wall' }]
+    const from = { x: 5, y: 20 }, target = { x: 35, y: 20 }
+    expect(canReach(from, target, wall)).toBe(false)   // walled off
+    expect(canReach(from, target, [])).toBe(true)      // buff drops the barrier → reachable
   })
 })
