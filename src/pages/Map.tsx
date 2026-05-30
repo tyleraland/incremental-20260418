@@ -49,6 +49,14 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'prontera-field-2': [5, 4],   // Southern Road
   'beach-1':          [5, 5],   // Kanto Beach
 
+  // Proving Grounds — a sandbox cluster east of the path (no path connections).
+  'pg-guardian-stand': [8, 2],
+  'pg-veiled-approach': [9, 2],
+  'pg-wolf-pack':       [10, 2],
+  'pg-divided-hall':    [8, 3],
+  'pg-ravine':          [9, 3],
+  'pg-slime-huddle':    [10, 3],
+
   // Geffen Dungeon — L-shape (top row + right column), Floor 1 → Floor 5.
   'geffen-dungeon-1': [1, 1],
   'geffen-dungeon-2': [2, 1],
@@ -84,9 +92,10 @@ const LOCATION_KIND: Record<string, { symbol: string; label: string; cls: string
   beach:    { symbol: '≈', label: 'Beach',    cls: 'text-sky-300   border-sky-800/60   bg-sky-950/40',   iconCls: 'text-sky-300/80'    },
   dungeon:  { symbol: '◆', label: 'Dungeon',  cls: 'text-rose-300  border-rose-800/60  bg-rose-950/40',  iconCls: 'text-rose-300/80'   },
   plains:   { symbol: '·', label: 'Plains',   cls: 'text-emerald-300 border-emerald-800/50 bg-emerald-950/30', iconCls: 'text-emerald-400/60' },
+  arena:    { symbol: '⚔', label: 'Arena',    cls: 'text-violet-300 border-violet-800/60 bg-violet-950/40', iconCls: 'text-violet-400/80' },
 }
 
-const KIND_PRIORITY = ['dungeon', 'city', 'mountain', 'forest', 'beach', 'plains'] as const
+const KIND_PRIORITY = ['dungeon', 'arena', 'city', 'mountain', 'forest', 'beach', 'plains'] as const
 
 function getLocationKind(traits: string[]) {
   for (const k of KIND_PRIORITY) if (traits.includes(k)) return { key: k, ...LOCATION_KIND[k] }

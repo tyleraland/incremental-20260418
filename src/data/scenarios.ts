@@ -41,6 +41,49 @@ export const SCENARIO_REGISTRY: Record<string, ScenarioDef> = {
     description: 'Open ground, no terrain — six Tough Slimes (200 HP, heavy DEF) swarm in. A grind/attrition check: can the party chew through a wall of high-defense sponges before it gets overwhelmed?',
     wave: ['tough-slime', 'tough-slime', 'tough-slime', 'tough-slime', 'tough-slime', 'tough-slime'],
   },
+
+  // ── Proving Grounds: sandbox arenas to watch one tactic / terrain idea ───────
+  // Each pins a monster combo (+ optional terrain) that makes a specific
+  // behaviour legible. Bring the suggested tactic and watch it fire. These
+  // mirror the engine tests in src/__tests__/engine/movement-*.test.ts.
+  'pg-guardian-stand': {
+    id: 'pg-guardian-stand',
+    name: 'The Last Line',
+    description: 'One hard-hitting bruiser (Garrick) + a wolf, open field. Field a Guardian tank in front of a squishy back-liner and watch it body-block — the bruiser should eat the tank, not your mage.',
+    wave: ['elite-fighter', 'wolf'],
+  },
+  'pg-veiled-approach': {
+    id: 'pg-veiled-approach',
+    name: 'Veiled Approach',
+    description: 'A Stone Golem screening a Harpy caster. Bring a Rogue with Cloak + Back Stab (Ambusher comes free): stalk the golem\'s flank while hidden and open on the Harpy for a stealth-multiplied hit.',
+    wave: ['stone-golem', 'harpy'],
+  },
+  'pg-wolf-pack': {
+    id: 'pg-wolf-pack',
+    name: 'Wolf Pack',
+    description: 'Three fast Wolves, open field. A juicy test for ranged/casters: Kiter holds the gap, and Wary Caster backs off further each time a cast gets interrupted by the rush.',
+    wave: ['wolf', 'wolf', 'wolf'],
+  },
+  'pg-divided-hall': {
+    id: 'pg-divided-hall',
+    name: 'The Divided Hall',
+    description: 'A wall bisects the field with a Cleric + Animated Armor behind it. Flankers must route around the ends; casters can\'t fire through the wall, so positioning is everything.',
+    wave: ['elite-cleric', 'animated-armor'],
+    barriers: () => [{ x: 4, y: 6, w: 7, h: 1.5, kind: 'wall' as const }],
+  },
+  'pg-ravine': {
+    id: 'pg-ravine',
+    name: 'The Ravine',
+    description: 'A cliff splits the field — it blocks movement but not line of sight. Two Harpies hold the far rim: your casters can snipe over the cliff while melee has to route around it.',
+    wave: ['harpy', 'harpy'],
+    barriers: () => [{ x: 2, y: 7, w: 11, h: 2, kind: 'cliff' as const }],
+  },
+  'pg-slime-huddle': {
+    id: 'pg-slime-huddle',
+    name: 'Slime Huddle',
+    description: 'Five Rock Crabs packed tight, open field — a clean target for AoE. A mage with Lightning Storm (Storm Caller inherited) should drop the cloud on the densest knot and zap them all.',
+    wave: ['rock-crab', 'rock-crab', 'rock-crab', 'rock-crab', 'rock-crab'],
+  },
 }
 
 export function getScenario(id?: string | null): ScenarioDef | null {

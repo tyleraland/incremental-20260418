@@ -61,6 +61,46 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [],
   },
 
+  // ── Proving Grounds (sandbox arenas, east of the world path) ─────────────
+  // Each stages one tactic / terrain idea so it can be watched in the browser;
+  // see SCENARIO_REGISTRY (pg-*) and the movement-* engine tests.
+  {
+    id: 'pg-guardian-stand', region: 'world', name: 'The Last Line',
+    description: 'A bare arena where a lone bruiser tests whether your Guardian can body-block for the back line.',
+    traits: ['arena'], monsterIds: ['elite-fighter', 'wolf'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-guardian-stand',
+  },
+  {
+    id: 'pg-veiled-approach', region: 'world', name: 'Veiled Approach',
+    description: 'A screened caster begging to be ambushed — a stage for Cloak, Back Stab and the Ambusher flank.',
+    traits: ['arena'], monsterIds: ['stone-golem', 'harpy'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-veiled-approach',
+  },
+  {
+    id: 'pg-wolf-pack', region: 'world', name: 'Wolf Pack',
+    description: 'Three fast wolves that punish a stationary caster — bring Kiter and Wary Caster.',
+    traits: ['arena'], monsterIds: ['wolf'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-wolf-pack',
+  },
+  {
+    id: 'pg-divided-hall', region: 'world', name: 'The Divided Hall',
+    description: 'A wall splits the field with the enemy behind it — a flank-around-terrain and line-of-sight test.',
+    traits: ['arena', 'ruins'], monsterIds: ['elite-cleric', 'animated-armor'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-divided-hall',
+  },
+  {
+    id: 'pg-ravine', region: 'world', name: 'The Ravine',
+    description: 'A cliff blocks movement but not sight — snipe over it while melee routes around.',
+    traits: ['arena', 'cliff'], monsterIds: ['harpy'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-ravine',
+  },
+  {
+    id: 'pg-slime-huddle', region: 'world', name: 'Slime Huddle',
+    description: 'A tight knot of crabs — the cleanest target in the world for Lightning Storm.',
+    traits: ['arena'], monsterIds: ['rock-crab'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-slime-huddle',
+  },
+
   // ── Geffen Dungeon (separate sub-area, 5 floors) ─────────────────────────
   // Floor-specific encounters: F2 stages the cross-wall scenario, F3 puts the
   // dumb-tank Animated Armor on the floor (slow + heavy DEF — exercises kite
