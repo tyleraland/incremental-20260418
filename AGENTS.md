@@ -73,7 +73,7 @@ driven by **tactics** (below).
   fresh identical wave. This is what scenarios/tests rely on; it's deterministic.
 - `'open'` — a *persistent* open-world battle for a location with `openWorld:
   true`, fought on a **large per-battle map** (`BattleState.cols/rows`, default
-  `openWorldSize` = 100×100; the camera can't fit it, so `BattleView` uses a
+  `openWorldSize` = 75×75; the camera can't fit it, so `BattleView` uses a
   `followCamera` centred on the **party** that **auto-fits** to keep them all in
   view — until the player takes manual control via pinch-to-zoom / −,+ buttons
   (⊙ re-enables auto-fit). Off-screen tokens are **clipped, not clamped** to the

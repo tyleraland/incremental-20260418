@@ -49,7 +49,7 @@ function defaultCamera(): Cam {
 
 // Open-world: a fixed-size window that follows the centroid of the given points
 // (alive combatants), clamped so it never shows past the map edges. The whole
-// 100×100 field can't fit at once — the player pans to look around.
+// open-world field can't fit at once — the player pans to look around.
 function followCamera(pts: Vec2[], cols: number, rows: number, want: number): Cam {
   const size = Math.min(want, cols, rows)
   if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
