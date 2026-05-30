@@ -44,6 +44,35 @@ describe('store: per-unit tactics', () => {
   })
 })
 
+describe('store: inherited tactics (skill coupling)', () => {
+  const mageUnit = () => makeUnit({
+    id: 'm', tactics: [],
+    learnedSkills: { 'lightning-storm': 1 },
+    actionSlots: [{ kind: 'skill', id: 'lightning-storm' }, null, null, null, null, null],
+  })
+
+  it('inherits Storm Caller from an equipped AoE skill (free, into combat)', () => {
+    const u = mageUnit()
+    const e = unitToEngineInput(u, getDerivedStats(u, []), 'player')
+    expect(ids(e.tactics)).toContain('storm-caller')
+  })
+
+  it('toggleInheritedTactic decouples it (and re-couples on a second toggle)', () => {
+    resetStore({ units: [mageUnit()] })
+    const { toggleInheritedTactic } = useGameStore.getState()
+
+    toggleInheritedTactic('m', 'storm-caller')
+    const off = useGameStore.getState().units[0]
+    expect(off.suppressedTactics).toEqual(['storm-caller'])
+    expect(ids(unitToEngineInput(off, getDerivedStats(off, []), 'player').tactics)).not.toContain('storm-caller')
+
+    toggleInheritedTactic('m', 'storm-caller')
+    const on = useGameStore.getState().units[0]
+    expect(on.suppressedTactics).toEqual([])
+    expect(ids(unitToEngineInput(on, getDerivedStats(on, []), 'player').tactics)).toContain('storm-caller')
+  })
+})
+
 describe('store: party tactics', () => {
   beforeEach(() => resetStore({ units: [], partyTactics: [] }))
 

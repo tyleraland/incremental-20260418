@@ -5,6 +5,7 @@ import {
   SLOT_LABELS, getUnitTraits, getDerivedStats,
   getAvailableSkills, getLearnedSkills, abilityPointCost, SKILL_REGISTRY,
   ACTION_SLOT_COUNT, TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS,
+  SKILL_TACTICS, inheritedTacticIds,
 } from '@/stores/useGameStore'
 import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
 import { TraitRow } from '@/components/TraitBubble'
@@ -322,12 +323,23 @@ function ChannelBadge({ channel }: { channel: TacticChannel }) {
 }
 
 function TacticsTab({ unit }: { unit: Unit }) {
-  const { equipTactic, unequipTactic, moveTactic } = useGameStore((s) => ({
+  const { equipTactic, unequipTactic, moveTactic, toggleInheritedTactic } = useGameStore((s) => ({
     equipTactic: s.equipTactic, unequipTactic: s.unequipTactic, moveTactic: s.moveTactic,
+    toggleInheritedTactic: s.toggleInheritedTactic,
   }))
   const equipped  = unit.tactics ?? []
   const equippedIds = new Set(equipped.map((t) => t.id))
-  const available = listTactics('unit').filter((d) => !equippedIds.has(d.id))
+
+  // Tactics this unit inherits from its equipped skills (free — they don't count
+  // against the manual cap). Track which skill granted each, and which the player
+  // has decoupled, so we can show + toggle them in their own colour.
+  const equippedSkillIds = (unit.actionSlots ?? []).filter((s): s is ActionSlotEntry => s?.kind === 'skill').map((s) => s.id)
+  const suppressed = new Set(unit.suppressedTactics ?? [])
+  const grantedBy: Record<string, string[]> = {}
+  for (const sid of equippedSkillIds) for (const tid of SKILL_TACTICS[sid] ?? []) (grantedBy[tid] ??= []).push(SKILL_REGISTRY[sid]?.name ?? sid)
+  const inherited = inheritedTacticIds(equippedSkillIds).filter((id) => !equippedIds.has(id))
+
+  const available = listTactics('unit').filter((d) => !equippedIds.has(d.id) && !(d.id in grantedBy))
   const atMax = equipped.length >= MAX_UNIT_TACTICS
 
   return (
@@ -380,6 +392,42 @@ function TacticsTab({ unit }: { unit: Unit }) {
           </div>
         )}
       </div>
+
+      {/* Inherited from skills — auto-granted, decouple-able (debug/tuning) */}
+      {inherited.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs uppercase tracking-widest text-game-text-dim">Inherited from skills</div>
+            <span className="text-[10px] text-game-text-dim">free · auto</span>
+          </div>
+          <div className="space-y-1.5">
+            {inherited.map((id) => {
+              const def = TACTIC_REGISTRY[id]
+              if (!def) return null
+              const off = suppressed.has(id)
+              const sources = (grantedBy[id] ?? []).join(', ')
+              return (
+                <div key={id} className={['rounded-lg px-2.5 py-2 flex items-start gap-2 border border-dashed', off ? 'border-game-border bg-game-bg/40 opacity-60' : 'border-amber-400/40 bg-amber-400/5'].join(' ')}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                      <ChannelBadge channel={def.channel} />
+                      <span className={['text-sm font-medium truncate', off ? 'text-game-muted line-through' : 'text-game-text'].join(' ')}>{def.name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-400/40 text-amber-300/90 shrink-0">from {sources}</span>
+                    </div>
+                    <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                  </div>
+                  <button
+                    onClick={() => toggleInheritedTactic(unit.id, id)}
+                    title={off ? `Re-couple ${def.name}` : `Decouple ${def.name} (debug)`}
+                    aria-label={off ? 'Re-enable inherited tactic' : 'Decouple inherited tactic'}
+                    className={['shrink-0 w-6 h-6 rounded flex items-center justify-center text-sm mt-0.5', off ? 'bg-game-green/15 text-game-green hover:bg-game-green/25' : 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'].join(' ')}
+                  >{off ? '+' : '−'}</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Available catalog */}
       {available.length > 0 && (

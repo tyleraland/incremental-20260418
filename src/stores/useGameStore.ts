@@ -10,7 +10,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, advanceRound, unitToEngineInput, monsterToEngineInput, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -34,7 +34,7 @@ export * from '@/data/locations'
 
 // ── Tactics catalog (UI reads this to list equippable tactics) ────────────────-
 
-export { TACTIC_REGISTRY }
+export { TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds }
 export type { TacticDef, TacticChannel }
 
 export const MAX_UNIT_TACTICS = 4
@@ -116,6 +116,8 @@ export interface GameState {
   equipTactic: (unitId: string, tacticId: string) => void
   unequipTactic: (unitId: string, tacticId: string) => void
   moveTactic: (unitId: string, tacticId: string, dir: -1 | 1) => void
+  // Decouple/recouple a tactic a unit inherits from one of its skills (debug/tuning).
+  toggleInheritedTactic: (unitId: string, tacticId: string) => void
   equipPartyTactic: (tacticId: string) => void
   unequipPartyTactic: (tacticId: string) => void
   recruitUnit: () => void
@@ -715,6 +717,14 @@ export const useGameStore = create<GameState>((set) => ({
       if (i < 0 || j < 0 || j >= cur.length) return u
       ;[cur[i], cur[j]] = [cur[j], cur[i]]
       return { ...u, tactics: cur }
+    }),
+  })),
+  toggleInheritedTactic: (unitId, tacticId) => set((s) => ({
+    units: s.units.map((u) => {
+      if (u.id !== unitId) return u
+      const cur = u.suppressedTactics ?? []
+      const next = cur.includes(tacticId) ? cur.filter((id) => id !== tacticId) : [...cur, tacticId]
+      return { ...u, suppressedTactics: next }
     }),
   })),
   equipPartyTactic: (tacticId) => set((s) => {
