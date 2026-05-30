@@ -198,7 +198,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: {
     <div
       ref={ref}
       className="relative w-full max-h-full aspect-square rounded-lg border border-game-border bg-game-surface overflow-hidden select-none"
-      style={{ touchAction: 'none' }}
+      style={{ touchAction: 'none', containerType: 'size' }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -243,8 +243,19 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: {
 
 // ── Live battle ────────────────────────────────────────────────────────────────
 
-const CHIP_SIZE = 'w-10 h-10'        // 40px circle
 const CHIP_FLOAT_W = 'w-14'          // floating name/HP plate above the chip
+
+// Token diameter that tracks the zoom: ~0.9 of a grid cell, expressed in cqmin
+// (percent of the square arena's side) so it scales as the camera resizes. The
+// arena is a CSS size-container (containerType:'size'). One cell spans
+// 100/cam.size of the arena; clamped so it stays visible/tappable at extreme
+// zoom. Glyph font-size scales with it.
+const CHIP_CELL_FRACTION = 0.9
+function chipDims(cam: Cam): { width: string; height: string; fontSize: string } {
+  const cqmin = (CHIP_CELL_FRACTION * 100) / cam.size       // one chip in cqmin units
+  const size = `clamp(14px, ${cqmin}cqmin, 64px)`
+  return { width: size, height: size, fontSize: `clamp(7px, ${cqmin * 0.4}cqmin, 26px)` }
+}
 
 const CLASS_ICON: Record<string, string> = {
   Fighter: '⚔',
@@ -303,9 +314,9 @@ function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: 
       <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} />
       <div
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
+        style={chipDims(cam)}
         className={[
-          CHIP_SIZE,
-          'rounded-full border-2 shadow-md flex items-center justify-center text-[15px] font-bold leading-none select-none transition-opacity',
+          'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
           casting ? 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100'
             : isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50'
                        : 'bg-red-900  border-red-300/80  text-red-50',
@@ -708,7 +719,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             if (!tgt) return null
             return (
               <div key={`h-${battle.round}-${i}`}>
-                <div className={`absolute ${CHIP_SIZE} -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash`} style={{ left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
+                <div className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
                 <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-red-300" text={`-${e.value}`} />
               </div>
             )
@@ -814,11 +825,12 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos
           <div className="h-full bg-emerald-500/90" />
         </div>
       </div>
-      <div className={[
-        CHIP_SIZE,
-        'rounded-full border-2 shadow-md flex items-center justify-center text-[15px] font-bold leading-none select-none',
-        isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50' : 'bg-red-900 border-red-300/80 text-red-50',
-      ].join(' ')}>
+      <div
+        style={chipDims(cam)}
+        className={[
+          'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none',
+          isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50' : 'bg-red-900 border-red-300/80 text-red-50',
+        ].join(' ')}>
         {label}
       </div>
     </div>

@@ -182,9 +182,10 @@ stops at walls and the arena perimeter.
   ticks all battles each tick; the drop-in is purely which one you're watching.
 - The viewer is `src/components/BattleView.tsx` (`<BattleView locationId>`): live
   battle if one is running, otherwise the static form-up `Preview`. The pannable
-  arena fills its space (square, centred); tokens are circles with floating
-  name + HP, attack lines, hit flashes, cast lines, and floating
-  damage/heal/DoT numbers.
+  arena fills its space (square, centred); tokens are circles sized to ~0.9 of a
+  grid cell so they scale with zoom (`chipDims` in `cqmin`, the arena is a CSS
+  size-container), with floating name + HP, attack lines, hit flashes, cast
+  lines, and floating damage/heal/DoT numbers.
 - Monster HP bars animate down during combat and **snap to full** on respawn (no
   upward animation).
 - Tapping a token opens a **dismissable bottom-sheet overlay** (name, team, HP,
