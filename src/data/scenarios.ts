@@ -35,6 +35,12 @@ export const SCENARIO_REGISTRY: Record<string, ScenarioDef> = {
     description: 'Solid block in the centre, narrow halls around the perimeter. Drop a fast ranged unit with the Kiter tactic vs. a slow tanky chaser — mirrors the LoS-aware kiting engine test.',
     barriers: () => [{ x: 3, y: 3, w: 9, h: 9, kind: 'wall' as const }],
   },
+  'geffen-f4-slime-field': {
+    id: 'geffen-f4-slime-field',
+    name: 'Slime Field',
+    description: 'Open ground, no terrain — six Tough Slimes (200 HP, heavy DEF) swarm in. A grind/attrition check: can the party chew through a wall of high-defense sponges before it gets overwhelmed?',
+    wave: ['tough-slime', 'tough-slime', 'tough-slime', 'tough-slime', 'tough-slime', 'tough-slime'],
+  },
 }
 
 export function getScenario(id?: string | null): ScenarioDef | null {

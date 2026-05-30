@@ -64,20 +64,27 @@ export const INITIAL_LOCATIONS: Location[] = [
   // ── Geffen Dungeon (separate sub-area, 5 floors) ─────────────────────────
   // Floor-specific encounters: F2 stages the cross-wall scenario, F3 puts the
   // dumb-tank Animated Armor on the floor (slow + heavy DEF — exercises kite
-  // logic against a damage-soak target). Other floors default to bats.
+  // logic against a damage-soak target), F4 is an open slime field (six Tough
+  // Slimes — an attrition check). Other floors default to bats.
   ...Array.from({ length: 5 }, (_, i) => {
     const floor = i + 1
     const monsters: Record<number, string[]> = {
       2: ['tough-slime', 'bat'],
       3: ['animated-armor'],
+      4: ['tough-slime'],
     }
-    const scenarios: Record<number, string> = { 2: 'geffen-f2-cross' }
+    const scenarios: Record<number, string> = {
+      2: 'geffen-f2-cross',
+      4: 'geffen-f4-slime-field',
+    }
+    const descriptions: Record<number, string> = {
+      3: 'Floor 3 of the catacombs beneath Geffen — empty suits of armor patrol the halls.',
+      4: 'Floor 4 of the catacombs beneath Geffen opens into a cavern hall — a writhing pack of Tough Slimes oozes across the floor.',
+    }
     return {
       id: `geffen-dungeon-${floor}`, region: 'geffen-dungeon',
       name: `Geffen Dungeon Floor ${floor}`,
-      description: floor === 3
-        ? 'Floor 3 of the catacombs beneath Geffen — empty suits of armor patrol the halls.'
-        : `Floor ${floor} of the catacombs beneath Geffen.`,
+      description: descriptions[floor] ?? `Floor ${floor} of the catacombs beneath Geffen.`,
       traits: ['dungeon', 'underground'],
       monsterIds: monsters[floor] ?? ['bat'],
       familiarityMax: 100, connections: [] as string[],
