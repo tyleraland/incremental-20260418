@@ -74,8 +74,11 @@ driven by **tactics** (below).
 - `'open'` — a *persistent* open-world battle for a location with `openWorld:
   true`, fought on a **large per-battle map** (`BattleState.cols/rows`, default
   `openWorldSize` = 100×100; the camera can't fit it, so `BattleView` uses a
-  party-following `followCamera` showing ~15 cells, with pinch-to-zoom / zoom
-  buttons to resize and one-finger pan to look around). It never
+  `followCamera` centred on the **party** that **auto-fits** to keep them all in
+  view — until the player takes manual control via pinch-to-zoom / −,+ buttons
+  (⊙ re-enables auto-fit). Any party member outside the viewport gets an
+  `EdgeMarker` bubble on the rim pointing toward them. One-finger pan too). It
+  never
   self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
   **fixed** `openWorldCap` of monsters **scattered** across the field, trickling
   one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via the engine's `addCombatant`

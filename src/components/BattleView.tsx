@@ -63,6 +63,23 @@ function followCamera(pts: Vec2[], cols: number, rows: number, want: number): Ca
   }
 }
 
+const FIT_PAD = 5  // cells of breathing room around the party's bounding box
+
+// Auto-zoom that keeps the whole party framed: the party's spread + padding,
+// never tighter than the default view nor wider than the zoom-out cap. Used
+// until the player takes manual control (pinch / buttons).
+function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
+  const maxSize = Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
+  if (pts.length === 0) return Math.min(OPEN_CAM_SIZE, maxSize)
+  let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+  }
+  const spread = Math.max(maxX - minX, maxY - minY) + FIT_PAD * 2
+  return Math.max(OPEN_CAM_SIZE, Math.min(maxSize, spread))
+}
+
 function computeCamera(pts: Vec2[]): Cam {
   if (pts.length === 0) return defaultCamera()
   let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
@@ -93,7 +110,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -208,6 +225,9 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom }: { cam: Cam
         })}
         {children}
       </div>
+      {/* viewport-fixed overlay (off-screen markers): not panned, clipped to the
+          arena square so edge bubbles sit on the rim. */}
+      {overlay && <div className="absolute inset-0 z-10 pointer-events-none">{overlay}</div>}
     </div>
   )
 }
@@ -286,6 +306,32 @@ function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: 
       >
         {c.alive ? glyph : '✕'}
       </div>
+    </div>
+  )
+}
+
+// An edge bubble pointing at an off-camera party member: a small initials chip
+// clamped to the arena rim plus an arrow rotated toward the unit. `cam` excludes
+// manual pan (rare in the follow view), so it tracks the camera, not the pan.
+function EdgeMarker({ c, cam }: { c: Combatant; cam: Cam }) {
+  const fx = (c.pos.x - cam.x) / cam.size            // 0..1 across the view
+  const fy = 1 - (c.pos.y - cam.y) / cam.size        // 0..1 top→bottom
+  const dx = fx - 0.5, dy = fy - 0.5
+  const m = Math.max(Math.abs(dx), Math.abs(dy)) || 1
+  const pad = 0.05
+  const bx = Math.max(pad, Math.min(1 - pad, 0.5 + (dx * 0.5) / m))
+  const by = Math.max(pad, Math.min(1 - pad, 0.5 + (dy * 0.5) / m))
+  const ratio = Math.max(0, c.hp / c.maxHp)
+  const angle = (Math.atan2(dy, dx) * 180) / Math.PI
+  return (
+    <div className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-0.5" style={{ left: `${bx * 100}%`, top: `${by * 100}%` }}>
+      <div
+        title={`${c.name} — ${Math.ceil(c.hp)}/${c.maxHp} (off-screen)`}
+        className={`w-6 h-6 rounded-full bg-blue-900/90 border-2 flex items-center justify-center text-[8px] font-bold text-blue-50 shadow ${ratio >= 0.75 ? 'border-emerald-300/80' : ratio >= 0.4 ? 'border-amber-300/80' : 'border-red-300/80'}`}
+      >
+        {initials(c.name)}
+      </div>
+      <span className="text-blue-200 text-[11px] leading-none drop-shadow" style={{ transform: `rotate(${angle}deg)` }}>➤</span>
     </div>
   )
 }
@@ -423,17 +469,32 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const cols = battle.cols ?? COLS
   const rows = battle.rows ?? ROWS
   const isOpen = battle.mode === 'open'
-  // Open-world camera zoom (cells shown), pinch-adjustable; see Arena.
+  // Open-world camera: auto-fits the party until the player pinches / uses the
+  // zoom buttons (manualZoom), then holds their chosen size. Always centred on
+  // the party.
   const [camSize, setCamSize] = useState(OPEN_CAM_SIZE)
-  const camPts = (alive.length ? alive : battle.combatants).map((c) => c.pos)
-  // Open-world: a follow-cam over the big map. Encounter: hold the default camera
-  // once decided — otherwise the bbox collapses around the survivors and the
-  // auto-zoom snaps, reading as the winners teleporting.
+  const [manualZoom, setManualZoom] = useState(false)
+  const party = battle.combatants.filter((c) => c.team === 'player' && c.alive)
+  const partyPts = party.map((c) => c.pos)
+  const allPts = (alive.length ? alive : battle.combatants).map((c) => c.pos)
+  const effSize = manualZoom ? camSize : autoFitSize(partyPts, cols, rows)
+  // Encounter: hold the default camera once decided — otherwise the bbox
+  // collapses around the survivors and the auto-zoom snaps, reading as the
+  // winners teleporting.
   const cam = isOpen
-    ? followCamera(camPts, cols, rows, camSize)
+    ? followCamera(partyPts.length ? partyPts : allPts, cols, rows, effSize)
     : battle.outcome !== 'ongoing'
       ? defaultCamera()
-      : computeCamera(camPts)
+      : computeCamera(allPts)
+
+  // Party members outside the current viewport → edge bubbles point to them.
+  const offscreen = isOpen
+    ? party.filter((c) => {
+        const fx = (c.pos.x - cam.x) / cam.size
+        const fy = (c.pos.y - cam.y) / cam.size
+        return fx < 0 || fx > 1 || fy < 0 || fy > 1
+      })
+    : []
 
   const roundEvents = battle.events.filter((e) => e.round === battle.round)
   const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
@@ -455,8 +516,11 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
 
-  const zoomBy = (factor: number) =>
-    setCamSize((s) => Math.max(OPEN_CAM_MIN_SIZE, Math.min(Math.min(OPEN_CAM_MAX_SIZE, cols, rows), s * factor)))
+  const maxSize = Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
+  const zoomBy = (factor: number) => {
+    setManualZoom(true)
+    setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, cam.size * factor)))
+  }
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
@@ -465,16 +529,22 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-600/50 bg-emerald-950/70 text-emerald-200 backdrop-blur-sm pointer-events-none">
             ⟳ Open world · persistent
           </div>
-          {/* Zoom: pinch the arena, or use these (squeeze to resize the camera). */}
+          {/* Zoom: pinch the arena, or use these (squeeze to resize the camera).
+              ⊙ recentres / re-enables auto-fit on the party. */}
           <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1">
             <button
               onClick={() => zoomBy(1 / 0.8)}
               aria-label="Zoom out"
               className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
             >−</button>
-            <span className="px-1.5 h-6 flex items-center rounded-md border border-game-border bg-game-surface/90 text-[10px] tabular-nums text-game-text-dim backdrop-blur-sm">
-              {Math.round(cam.size)}c
-            </span>
+            <button
+              onClick={() => setManualZoom(false)}
+              aria-label="Auto-fit the party"
+              title="Auto-fit the party"
+              className={`px-1.5 h-6 flex items-center rounded-md border text-[10px] tabular-nums backdrop-blur-sm ${manualZoom ? 'border-game-border bg-game-surface/90 text-game-text-dim hover:bg-white/5' : 'border-emerald-600/60 bg-emerald-950/70 text-emerald-200'}`}
+            >
+              {manualZoom ? `${Math.round(cam.size)}c` : 'auto'}
+            </button>
             <button
               onClick={() => zoomBy(0.8)}
               aria-label="Zoom in"
@@ -488,7 +558,8 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           cam={cam}
           barriers={battle.barriers}
           centerY={rows / 2}
-          zoom={isOpen ? { size: camSize, min: OPEN_CAM_MIN_SIZE, max: Math.min(OPEN_CAM_MAX_SIZE, cols, rows), set: setCamSize } : undefined}
+          zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
+          overlay={offscreen.map((c) => <EdgeMarker key={c.id} c={c} cam={cam} />)}
         >
           {/* persistent ground hazards (Firewall, etc.) */}
           {battle.zones.map((z) => (
