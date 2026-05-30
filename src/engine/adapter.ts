@@ -3,8 +3,21 @@
 // owns no stat definitions; this is where the game's stats are projected in.
 
 import type { Unit, DerivedStats, MonsterDef } from '@/types'
-import type { EngineUnitInput, EngineSkill, Team } from './types'
-import { buildEngineSkill } from './skills'
+import type { EngineUnitInput, EngineSkill, Team, TacticRef } from './types'
+import { buildEngineSkill, inheritedTacticIds } from './skills'
+
+// "Skills give you tactics" (behavioural flavour): append the tactics a unit's
+// equipped skills bring along, deduped against what it already runs explicitly
+// and minus any it has chosen to decouple. Inherited tactics sit *after* the
+// explicit ones (lower priority) and don't count against the manual slot cap —
+// they're free with the skill, just like the per-skill cast tactic already is.
+function withInheritedTactics(explicit: TacticRef[], skills: EngineSkill[], suppressed: readonly string[] = []): TacticRef[] {
+  const have = new Set(explicit.map((t) => t.id))
+  const inherited = inheritedTacticIds(skills.map((s) => s.id))
+    .filter((id) => !have.has(id) && !suppressed.includes(id))
+    .map((id) => ({ id, rank: 1 }))
+  return inherited.length ? [...explicit, ...inherited] : explicit
+}
 
 // Active skills the unit has slotted on its action bar (kind === 'skill') and
 // that exist in the combat catalog become usable in combat — equipping is how
@@ -46,6 +59,7 @@ const MOVE_SCALE = 0.09
 export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team): EngineUnitInput {
   const rangedRange = gridRangeFromFeet(derived.attackRange)
   const ranged = rangedRange > 0
+  const skills = equippedCombatSkills(unit)
   return {
     id: unit.id,
     name: unit.name,
@@ -62,8 +76,8 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     moveSpeed: derived.moveSpeed * MOVE_SCALE,
     attackElement: derived.attackElement,   // §3 weapon-imbued attack element
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
-    skills: equippedCombatSkills(unit),   // action-bar skills → casts (each injects its usage tactic)
-    tactics: unit.tactics ?? [],          // player-equipped tactics drive engine behavior (§5)
+    skills,                               // action-bar skills → casts (each injects its usage tactic)
+    tactics: withInheritedTactics(unit.tactics ?? [], skills, unit.suppressedTactics),  // explicit + skill-inherited (§5)
   }
 }
 
@@ -96,6 +110,6 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     attackElement: 'neutral',   // §3 monsters attack neutral; def.element is defensive
     armorElement: def.element,
     skills,
-    tactics: def.tactics ?? [],
+    tactics: withInheritedTactics(def.tactics ?? [], skills),   // explicit + skill-inherited (§5)
   }
 }

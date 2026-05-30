@@ -58,11 +58,17 @@ describe('Lightning Storm zone', () => {
 
   it('only resolves after the long channel finishes', () => {
     const ls = buildEngineSkill('lightning-storm', 1)!
+    // Two clustered, immobile foes well out of reach → the gate is satisfied
+    // (cluster + safe), so the mage commits the long channel.
     const b = createBattle({
       playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 7, maxHp: 500, hp: 500, skills: [ls] })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0, maxHp: 500, hp: 500, meleeRange: 1.2, moveSpeed: 0 })],
+      enemyUnits: [
+        eu({ id: 'e0', team: 'enemy', str: 0, maxHp: 500, hp: 500, meleeRange: 1.2, moveSpeed: 0 }),
+        eu({ id: 'e1', team: 'enemy', str: 0, maxHp: 500, hp: 500, meleeRange: 1.2, moveSpeed: 0 }),
+      ],
     })
-    find(b, 'mage').pos = { x: 2.5, y: 3 }; find(b, 'e').pos = { x: 2.5, y: 9 }   // in spell range, foe can't reach
+    find(b, 'mage').pos = { x: 2.5, y: 3 }
+    find(b, 'e0').pos = { x: 2.5, y: 9 }; find(b, 'e1').pos = { x: 3.2, y: 9 }   // in range, can't reach
     advanceRound(b)   // start the channel
     expect(hasEvent(b, (e) => e.type === 'cast_start' && e.skillId === 'lightning-storm')).toBe(true)
     expect(b.zones).toHaveLength(0)   // nothing on the ground yet

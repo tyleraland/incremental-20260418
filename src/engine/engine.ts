@@ -14,7 +14,7 @@ import {
 import {
   resolveTactics, chargerBonus, armoredFactor, nimblePeriod,
 } from './tactics'
-import { makeSkillTactic } from './skills'
+import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec } from './spatial'
@@ -46,7 +46,12 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
   // "Skills give you tactics": each equipped skill becomes an action-channel
   // tactic, appended below the player's explicit tactics (lower priority) so
   // behavioural tactics still steer targeting/movement around the cast (§5).
-  const skillTactics: ResolvedTactic[] = skills.map((sk) => ({ def: makeSkillTactic(sk), rank: 1 }))
+  // Long-channel AoE (Lightning Storm) is evaluated *before* single-target nukes
+  // so a good area opportunity wins — its own gate (cluster + safety) makes it
+  // yield back to the single-target cast when an AoE wouldn't pay off, so it
+  // never wastes the long channel on a lone target.
+  const ordered = [...skills.filter(isChanneledAoe), ...skills.filter((s) => !isChanneledAoe(s))]
+  const skillTactics: ResolvedTactic[] = ordered.map((sk) => ({ def: makeSkillTactic(sk), rank: 1 }))
   return {
     id: input.id,
     name: input.name,

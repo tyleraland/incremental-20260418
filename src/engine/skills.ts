@@ -9,7 +9,7 @@
 // one in the action bar (adapter) both grants the ability and its behaviour.
 // Numeric power scales with the unit's learned level.
 
-import { distance } from './grid'
+import { distance, moveSpeedOf } from './grid'
 import { EPS } from './constants'
 import { livingEnemies, livingAllies, targetableEnemies, isStealthed, findCombatant, mostInjuredAllyInRange } from './behavior'
 import { sightlineClear } from './barriers'
@@ -47,7 +47,10 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // lightning/round (§2 zones). The catch is a *very* long channel — easy to
   // interrupt — so it's a high-risk pre-positioned nuke, not a panic button.
   // ~10 real-seconds of storm at ~2.5 rounds/sec ⇒ ~24 rounds of duration.
-  'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 7, aoeRadius: 2.6, cooldown: 10, channelTime: 5, element: 'lightning', zone: { dotDamage: 1, duration: 24, element: 'lightning' } }),
+  // Range matches Lightning Bolt's so a kiting mage (which holds its longest
+  // skill range) can actually land the storm from where it stands, instead of
+  // hanging back at bolt range with the cloud just out of reach.
+  'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 8, aoeRadius: 2.6, cooldown: 10, channelTime: 5, element: 'lightning', zone: { dotDamage: 1, duration: 24, element: 'lightning' } }),
   'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: 5, statusApplied: 'rooted' }),
 
   // Phase 3 — behavioural & combos: freeze→amplify, stealth, dispel/reveal.
@@ -61,6 +64,30 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
 export function buildEngineSkill(id: string, level: number): EngineSkill | null {
   const make = COMBAT_SKILLS[id]
   return make ? make(Math.max(1, level)) : null
+}
+
+// Behavioural tactics a skill "brings along": equip the skill and you inherit
+// the tactic that makes it shine, *without* spending a manual tactic slot — the
+// adapter injects these (deduped against what you've equipped explicitly). The
+// pairing is intentional coupling: an AoE nuke wants to aim at clusters
+// (Storm Caller); a cloak wants to stalk the flank before it strikes (Ambusher).
+// A unit can opt out per-tactic via `suppressedTactics` (the UI's "decouple").
+export const SKILL_TACTICS: Record<string, string[]> = {
+  'hammer-fall':     ['storm-caller'],
+  'arrow-shower':    ['storm-caller'],
+  'firewall':        ['storm-caller'],
+  'lightning-storm': ['storm-caller'],
+  'cloak':           ['ambusher'],
+}
+
+// Distinct tactic ids inherited from a set of equipped skill ids, in first-seen
+// order. Pure lookup over SKILL_TACTICS — the adapter handles dedupe/suppression.
+export function inheritedTacticIds(skillIds: Iterable<string>): string[] {
+  const out: string[] = []
+  for (const id of skillIds) {
+    for (const t of SKILL_TACTICS[id] ?? []) if (!out.includes(t)) out.push(t)
+  }
+  return out
 }
 
 const isAllyTargeting = (t: SkillTargeting) => t === 'self' || t === 'single_ally' || t === 'aoe_ally'
@@ -118,10 +145,40 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
   return pool.length ? nearest(self, pool).id : null
 }
 
+// Minimum enemies in the blast to justify committing a long AoE *channel* over
+// just nuking the primary target single-target.
+const MIN_AOE_CHANNEL_TARGETS = 2
+
+export const isOffensiveAoe = (sk: EngineSkill): boolean =>
+  sk.targeting === 'aoe_enemy' || sk.targeting === 'aoe_point'
+// A long-channel AoE (Lightning Storm) is the one cast where "which skill" is a
+// real choice — it ties the caster up for several rounds, so it should only win
+// out over a quick single-target nuke when it actually pays off. Instant AoE
+// (Hammer Fall, Arrow Shower) has no channel to lose and is unaffected.
+export const isChanneledAoe = (sk: EngineSkill): boolean => sk.channelTime >= 1 && isOffensiveAoe(sk)
+
+// Is firing this channeled AoE *now* worth it? Two gates, matching the player's
+// own reasoning: (1) it must catch a cluster, not a lone target, and (2) we must
+// be able to finish the channel — no enemy close enough to reach us and break it
+// before it lands (a tank soaking out front is exactly what makes this safe).
+function channeledAoeWorthIt(self: Combatant, state: BattleState, sk: EngineSkill, primary: Combatant): boolean {
+  const enemies = livingEnemies(state, self)
+  const inBlast = enemies.filter((e) => distance(e.pos, primary.pos) <= sk.aoeRadius + EPS).length
+  if (inBlast < MIN_AOE_CHANNEL_TARGETS) return false
+  const turns = sk.channelTime + 1   // cast-start round + each channel round the threat can keep closing
+  return !enemies.some((e) => {
+    const reach = e.rangedRange > 0 ? e.rangedRange : e.meleeRange
+    return distance(self.pos, e.pos) - moveSpeedOf(e) * turns <= reach + EPS
+  })
+}
+
 // The action-channel tactic that a skill brings with it (the merge). Fires when
 // the skill is off cooldown and a valid target exists; otherwise yields to the
-// next tactic / basic attack.
+// next tactic / basic attack. A long AoE channel additionally yields unless it'd
+// hit a cluster from safety, so the caster falls through to its single-target
+// nuke when an area cast wouldn't pay off (§4 cluster/safety gate).
 export function makeSkillTactic(sk: EngineSkill): TacticDef {
+  const gated = isChanneledAoe(sk)
   return {
     id: `skill:${sk.id}`,
     name: sk.name,
@@ -131,7 +188,12 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
     action: (self, state) => {
       if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
       const targetId = selectSkillTarget(self, state, sk)
-      return targetId ? { castSkill: sk, skillTarget: targetId } : null
+      if (!targetId) return null
+      if (gated) {
+        const primary = findCombatant(state, targetId)
+        if (!primary || !channeledAoeWorthIt(self, state, sk, primary)) return null
+      }
+      return { castSkill: sk, skillTarget: targetId }
     },
   }
 }

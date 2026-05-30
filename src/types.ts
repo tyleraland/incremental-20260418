@@ -94,6 +94,7 @@ export interface Unit {
   activeWeaponSet: 0 | 1                  // §5: which weapon set is active
   actionSlots: (ActionSlotEntry | null)[] // length ACTION_SLOT_COUNT; tap/drag-to-fill
   tactics: TacticSlot[]                    // combat tactics in priority order (first = highest)
+  suppressedTactics?: string[]             // skill-inherited tactic ids the player has decoupled (debug/tuning)
   recoveryTicksLeft: number               // >0: KO countdown; 0: active, resting, or idle
   isResting: boolean                      // true after KO countdown ends, until health reaches maxHp
 }

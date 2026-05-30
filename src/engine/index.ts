@@ -26,7 +26,7 @@ export {
   TACTIC_REGISTRY, resolveTactics, getTactic, hasTactic,
   chargerBonus, armoredFactor, nimblePeriod, tauntBiasOf,
 } from './tactics'
-export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget } from './skills'
+export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget, SKILL_TACTICS, inheritedTacticIds, isChanneledAoe, isOffensiveAoe } from './skills'
 export { STATUS_REGISTRY, buildStatus } from './status'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'
 export { arenaBarriers, pointBlocked, traceMove, slideMove } from './barriers'

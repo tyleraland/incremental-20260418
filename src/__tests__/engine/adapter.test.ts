@@ -42,10 +42,44 @@ describe('adapter: monsterToEngineInput', () => {
 
   it('carries optional skills + tactics through to the engine (humanoid monsters)', () => {
     // Elite Four members are stats-like-a-monster but inherit the hero engine
-    // kit: skills give per-skill engine tactics, and the explicit tactics list
-    // flows through unchanged.
+    // kit: skills give per-skill engine tactics, the explicit tactics list flows
+    // through, and skill-inherited behavioural tactics get appended (Arrow Shower
+    // → Storm Caller, so the ranger aims volleys at clusters).
     const e = monsterToEngineInput(MONSTER_REGISTRY['elite-ranger'], 'elite-ranger#0', 'enemy')
     expect(e.skills.map((s) => s.id).sort()).toEqual(['ankle-snare', 'arrow-shower'])
-    expect((e.tactics ?? []).map((t) => t.id).sort()).toEqual(['focus-casters', 'kiter', 'opportunist', 'retreater'])
+    expect((e.tactics ?? []).map((t) => t.id).sort()).toEqual(['focus-casters', 'kiter', 'opportunist', 'retreater', 'storm-caller'])
+  })
+})
+
+describe('adapter: skills inherit their behavioural tactic', () => {
+  const slot = (id: string) => ({ kind: 'skill' as const, id })
+
+  it('grants Storm Caller from an AoE skill without spending a manual slot', () => {
+    const unit = makeUnit({ learnedSkills: { 'lightning-storm': 1 }, actionSlots: [slot('lightning-storm'), null, null, null, null, null], tactics: [] })
+    const e = unitToEngineInput(unit, getDerivedStats(unit, []), 'player')
+    expect((e.tactics ?? []).map((t) => t.id)).toContain('storm-caller')
+  })
+
+  it('does not duplicate a tactic the unit already equips explicitly', () => {
+    const unit = makeUnit({
+      learnedSkills: { 'lightning-storm': 1 },
+      actionSlots: [slot('lightning-storm'), null, null, null, null, null],
+      tactics: [{ id: 'storm-caller', rank: 3 }],
+    })
+    const e = unitToEngineInput(unit, getDerivedStats(unit, []), 'player')
+    const storm = (e.tactics ?? []).filter((t) => t.id === 'storm-caller')
+    expect(storm).toHaveLength(1)
+    expect(storm[0].rank).toBe(3)   // the explicit equip (and its rank) wins
+  })
+
+  it('lets a unit decouple an inherited tactic via suppressedTactics', () => {
+    const unit = makeUnit({
+      learnedSkills: { 'lightning-storm': 1 },
+      actionSlots: [slot('lightning-storm'), null, null, null, null, null],
+      tactics: [],
+      suppressedTactics: ['storm-caller'],
+    })
+    const e = unitToEngineInput(unit, getDerivedStats(unit, []), 'player')
+    expect((e.tactics ?? []).some((t) => t.id === 'storm-caller')).toBe(false)
   })
 })

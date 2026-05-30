@@ -54,7 +54,9 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('freeze', 'lightning-bolt', 'fire-bolt', 'lightning-storm', 'firewall', 'dispel'),
-    tactics: [t('storm-caller'), t('retreater'), t('wary-caster'), t('nimble')],
+    // Storm Caller is inherited from the AoE skills (Lightning Storm / Firewall),
+    // so it isn't equipped manually here — see SKILL_TACTICS.
+    tactics: [t('retreater'), t('wary-caster'), t('nimble')],
   },
   // ── Cleric (back-line healer / support) ─────────────────────────────────────
   {
@@ -96,6 +98,8 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('cloak', 'back-stab', 'arrow-shower', 'ankle-snare', 'sight', 'poison'),
-    tactics: [t('focus-casters'), t('opportunist'), t('retreater'), t('ambusher')],
+    // Ambusher is inherited from Cloak (and Storm Caller from Arrow Shower), so
+    // the manual slots go to targeting/retreat — see SKILL_TACTICS.
+    tactics: [t('focus-casters'), t('opportunist'), t('retreater')],
   },
 ]
