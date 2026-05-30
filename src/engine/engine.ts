@@ -89,6 +89,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     pos: { x: pos.x, y: pos.y },
     // Face the opposing edge to start: players (bottom) look up, enemies down.
     facing: { x: 0, y: input.team === 'player' ? 1 : -1 },
+    moving: false,
     preferredRank: input.preferredRank,
     meleeRange: input.meleeRange,
     rangedRange: input.rangedRange,
@@ -878,7 +879,9 @@ function traceName(state: BattleState, id: string | null | undefined): string {
 // Point the token where the unit is heading: its actual move delta if it moved
 // this turn, else toward whatever it's locked onto (so a stationary attacker
 // still faces its foe). Keeps the last facing when neither applies. Normalised.
+// Also records `moving` (did the position change) for the UI "tail".
 function updateFacing(state: BattleState, self: Combatant, from: Vec2, moved: boolean): void {
+  self.moving = moved
   let dx = 0, dy = 0
   if (moved) {
     dx = self.pos.x - from.x; dy = self.pos.y - from.y
@@ -892,6 +895,7 @@ function updateFacing(state: BattleState, self: Combatant, from: Vec2, moved: bo
 
 function takeTurn(state: BattleState, self: Combatant): void {
   const round = state.round
+  self.moving = false   // set true only if this turn produces a position change
   // (0) hard control — lose the turn. Stun is consumed on the skipped turn;
   // Freeze ages out normally (so its damage amplification persists, §3).
   const control = self.statuses.find((s) => s.flags.includes('stunned') || s.flags.includes('frozen'))

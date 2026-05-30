@@ -338,6 +338,39 @@ function FacingNub({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boo
   )
 }
 
+// Subtle "moving" tail: two small chevrons trailing BEHIND the token, only
+// while the unit actually changed position this round — reads as motion
+// streaks. The chevrons point in the facing direction (like »). Same rotation
+// basis as FacingNub; scales with the chip.
+function MovingTail({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boolean }) {
+  const f = c.facing ?? { x: 0, y: isPlayer ? 1 : -1 }
+  if (Math.hypot(f.x, f.y) < 1e-6) return null
+  const angle = (Math.atan2(-f.y, f.x) * 180) / Math.PI   // 0° = facing +x
+  const cell = 100 / cam.size                             // one grid cell in cqmin
+  const half = `clamp(2px, ${cell * 0.16}cqmin, 10px)`    // chevron half-height
+  const len  = `clamp(3px, ${cell * 0.2}cqmin, 12px)`     // chevron depth
+  const color = isPlayer ? 'rgb(191 219 254 / 0.55)' : 'rgb(254 202 202 / 0.55)'
+  // Right-pointing CSS triangle (same construction as FacingNub), placed behind
+  // the chip along local −x at two staggered distances → a double-arrow trail.
+  const chevron = (reachCqmin: number, key: number) => (
+    <div
+      key={key}
+      className="absolute animate-pulse"
+      style={{
+        top: 0, left: `-${reachCqmin}cqmin`, transform: 'translateY(-50%)',
+        width: 0, height: 0, borderStyle: 'solid', borderColor: 'transparent',
+        borderTopWidth: half, borderBottomWidth: half, borderLeftWidth: len, borderLeftColor: color,
+      }}
+    />
+  )
+  return (
+    <div className="absolute left-1/2 top-1/2 w-0 h-0 pointer-events-none" style={{ transform: `rotate(${angle}deg)` }}>
+      {chevron(cell * CHIP_CELL_FRACTION * 0.62, 0)}
+      {chevron(cell * CHIP_CELL_FRACTION * 0.92, 1)}
+    </div>
+  )
+}
+
 function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void; glyph: string }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
@@ -348,6 +381,7 @@ function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: 
       style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
     >
       <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} />
+      {c.alive && c.moving && !casting && <MovingTail c={c} cam={cam} isPlayer={isPlayer} />}
       {c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
       <div
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}

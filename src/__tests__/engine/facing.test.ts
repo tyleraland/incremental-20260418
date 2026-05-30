@@ -43,4 +43,21 @@ describe('engine — facing', () => {
     expect(f.x).toBeGreaterThan(0.9)      // faces +x toward the foe without moving
     expect(Math.abs(f.y)).toBeLessThan(0.2)
   })
+
+  it('flags `moving` only on turns that change position (UI tail)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', team: 'player', str: 1, meleeRange: 1.2 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 999, hp: 999 })],
+    })
+    find(b, 'p').pos = { x: 7.5, y: 4 }
+    find(b, 'e').pos = { x: 7.5, y: 11 }   // far → player closes in
+    advanceRound(b)
+    expect(find(b, 'p').moving).toBe(true)
+
+    // Now sit it in reach so it attacks without moving.
+    find(b, 'p').pos = { x: 7.5, y: 10 }
+    find(b, 'e').pos = { x: 7.5, y: 10.8 }
+    advanceRound(b)
+    expect(find(b, 'p').moving).toBe(false)
+  })
 })

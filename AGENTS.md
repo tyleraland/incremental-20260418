@@ -185,8 +185,9 @@ stops at walls and the arena perimeter.
   arena fills its space (square, centred); tokens are circles sized to ~0.9 of a
   grid cell so they scale with zoom (`chipDims` in `cqmin`, the arena is a CSS
   size-container), with a subtle facing nub (`Combatant.facing`, set in
-  `takeTurn`: move direction, else toward the locked target), floating name + HP,
-  attack lines, hit flashes, cast lines, and floating damage/heal/DoT numbers.
+  `takeTurn`: move direction, else toward the locked target) plus a double-chevron
+  "tail" while `Combatant.moving`, floating name + HP, attack lines, hit flashes,
+  cast lines, and floating damage/heal/DoT numbers.
 - Monster HP bars animate down during combat and **snap to full** on respawn (no
   upward animation).
 - Tapping a token opens a **dismissable bottom-sheet overlay** (name, team, HP,

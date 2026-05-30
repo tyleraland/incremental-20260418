@@ -35,6 +35,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     alive: true,
     pos: { x: 0.5, y: 0 },
     facing: { x: 0, y: 1 },
+    moving: false,
     preferredRank: 'front' as Rank,
     meleeRange: 1.2,
     rangedRange: 0,

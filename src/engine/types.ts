@@ -191,6 +191,7 @@ export interface Combatant {
 
   pos: Vec2
   facing: Vec2             // unit vector the token points (move dir, else toward target); (1,0) at spawn
+  moving: boolean          // did this unit actually change position on its last turn (UI "tail")
   preferredRank: Rank
   meleeRange: number
   rangedRange: number
