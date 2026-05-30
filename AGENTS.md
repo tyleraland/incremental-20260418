@@ -97,7 +97,10 @@ driven by **tactics** (below).
   (`executeWander`, mode `'open'` only): **heroes** roam toward the team
   blackboard's shared `waypoint` (below); **monsters** lurk
   `MONSTER_WANDER_MIN..MAX` rounds then hop `NEAR..FAR` cells to a new local
-  spot. Wander/vision are deterministic (a `hash01` of round+index, no RNG).
+  spot. Wander/vision are deterministic (a `hash01` of round+index, no RNG). The
+  shared `waypoint` is chosen genuinely *far* from the party (`pickRoamPoint`):
+  re-picking a nearby point on arrival caused a corner "tiny-step" jitter
+  (`wander-jitter.test.ts` guards both that and barrier pathing to a centre).
 
   Bigger arenas work because spatial bounds are read from a per-battle ambient
   (`engine/arena.ts` `setArenaBounds`/`arenaClamp`), set at each engine entry

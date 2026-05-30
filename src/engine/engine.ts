@@ -612,19 +612,39 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
     waypoint = centroidOf(engaged)
   } else if (members.length) {
     const c = centroidOf(members)
+    // Only re-pick once the party has actually arrived. A fresh waypoint is
+    // chosen FAR from the party (pickRoamPoint) so they commit to a long
+    // traverse instead of re-picking a nearby point each round — the latter
+    // caused the corner "tiny step" left-right-left jitter.
     if (!waypoint || distance(c, waypoint) <= WANDER_REPATH) {
-      // Interior point so the party roams the field, not the perimeter (margin
-      // shrinks on tiny maps so it never inverts).
-      const mx = Math.min(WANDER_MARGIN, state.cols / 2 - 0.5)
-      const my = Math.min(WANDER_MARGIN, state.rows / 2 - 0.5)
-      const seed = team === 'player' ? 1 : 7
-      waypoint = {
-        x: mx + hash01(state.round * 2 + seed) * (state.cols - 2 * mx),
-        y: my + hash01(state.round * 2 + seed + 1) * (state.rows - 2 * my),
-      }
+      waypoint = pickRoamPoint(state, c, team === 'player' ? 1 : 7)
     }
   }
   return { waypoint, focusTargetId: focus?.id ?? null, threat }
+}
+
+// Pick a fresh roam target well away from `from`. Samples a handful of
+// deterministic interior points and keeps the farthest that clears `roamMin`
+// (and at least the farthest sampled), so the party always heads somewhere
+// across the field rather than re-picking on top of itself. Interior margin is
+// proportional to the map so it never collapses on big maps. Deterministic
+// (hash of round), so replays match.
+function pickRoamPoint(state: BattleState, from: Vec2, seed: number): Vec2 {
+  const mx = Math.min(WANDER_MARGIN, state.cols * 0.15)
+  const my = Math.min(WANDER_MARGIN, state.rows * 0.15)
+  const iw = Math.max(1, state.cols - 2 * mx)
+  const ih = Math.max(1, state.rows - 2 * my)
+  const roamMin = 0.45 * Math.min(iw, ih)
+  let best = from
+  let bestD = -1
+  for (let k = 0; k < 8; k++) {
+    const px = mx + hash01(state.round * 11 + seed + k * 131) * iw
+    const py = my + hash01(state.round * 11 + seed + k * 131 + 61) * ih
+    const d = Math.hypot(px - from.x, py - from.y)
+    if (d > bestD) { bestD = d; best = { x: px, y: py } }
+    if (d >= roamMin) break
+  }
+  return best
 }
 
 // Recompute every team's blackboard once per round (start of advanceRound).
