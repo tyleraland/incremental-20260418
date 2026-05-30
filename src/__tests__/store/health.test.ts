@@ -67,12 +67,14 @@ describe('Health — idle regen', () => {
 
 describe('Health — batchTick KO recovery', () => {
   it('regens RESTING_REGEN_RATE × remaining ticks after KO phase ends mid-batch', () => {
+    const maxHp = getDerivedStats(makeUnit(), []).maxHp
     resetStore({ units: [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: RECOVERY_TICKS, locationId: null })] })
     useGameStore.getState().batchTick(RECOVERY_TICKS + 10)
     const { units } = useGameStore.getState()
     expect(units[0].recoveryTicksLeft).toBe(0)
-    expect(units[0].health).toBe(10 * RESTING_REGEN_RATE)
-    expect(units[0].isResting).toBe(true)
+    // 10 resting ticks of RESTING_REGEN_RATE, capped at maxHp.
+    expect(units[0].health).toBe(Math.min(maxHp, 10 * RESTING_REGEN_RATE))
+    expect(units[0].isResting).toBe(units[0].health < maxHp)
   })
 
   it('stays in KO phase if batch ends before countdown reaches 0', () => {
@@ -90,7 +92,7 @@ describe('Health — batchTick KO recovery', () => {
     useGameStore.getState().batchTick(20)
     const { units } = useGameStore.getState()
     expect(units[0].health).toBe(Math.min(maxHp, 20 * RESTING_REGEN_RATE))
-    expect(units[0].isResting).toBe(true)
+    expect(units[0].isResting).toBe(units[0].health < maxHp)
   })
 
   it('clears isResting in batchTick when regen reaches maxHp', () => {
@@ -113,10 +115,11 @@ describe('Health — isResting save-migration guard', () => {
   })
 
   it('batchTick(): unit with explicit isResting=false at health=0 is healed (not stuck)', () => {
+    const maxHp = getDerivedStats(makeUnit(), []).maxHp
     resetStore({ units: [makeUnit({ health: 0, recoveryTicksLeft: 0, isResting: false, locationId: null })] })
     useGameStore.getState().batchTick(10)
     const { units } = useGameStore.getState()
-    expect(units[0].health).toBeGreaterThan(0)
-    expect(units[0].isResting).toBe(true)
+    expect(units[0].health).toBeGreaterThan(0)              // healed, not stuck at 0
+    expect(units[0].isResting).toBe(units[0].health < maxHp) // resting until full, then clears
   })
 })

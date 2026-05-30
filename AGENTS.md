@@ -41,9 +41,9 @@ These are the implemented behaviors. Written so they can eventually become test 
 
 - Unit health is a whole integer capped at `maxHp` (derived: `floor(50 + con * 10)`, see `src/lib/stats.ts`). `Math.floor` is applied at the moment damage is written, never at display time.
 - A unit with `health <= 0` is KO'd. KO'd units (and units still in recovery) do not participate in combat.
-- KO'd units enter a recovery phase: `recoveryTicksLeft` counts down from `RECOVERY_TICKS` (15) once per tick. **No regen during this phase.**
-- When recovery ends the unit enters *resting* (`isResting`), regenerating `RESTING_REGEN_RATE` (1 HP/tick) until it reaches `maxHp`, at which point `isResting` clears.
-- Units not assigned to any location regen `REGEN_RATE` (1 HP/tick) — idle recovery.
+- KO'd units enter a recovery phase: `recoveryTicksLeft` counts down from `RECOVERY_TICKS` (5, ~1 real-sec) once per tick. **No regen during this phase.**
+- When recovery ends the unit enters *resting* (`isResting`), regenerating `RESTING_REGEN_RATE` (50 HP/tick — full in ~1s) until it reaches `maxHp`, at which point `isResting` clears.
+- Units not assigned to any location regen `REGEN_RATE` (50 HP/tick — full in ~1s) — idle recovery.
 - Health is capped at `maxHp` after regen. `batchTick` applies the same logic in bulk for offline catch-up (it does **not** simulate combat — only regen/recovery/leveling).
 
 ### Map & Locations
