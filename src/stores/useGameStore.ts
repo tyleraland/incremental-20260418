@@ -245,9 +245,11 @@ function withVision(input: EngineUnitInput, range: number): EngineUnitInput {
   return { ...input, visionRange: range }
 }
 
-// A random point anywhere on the map — monsters scatter across the whole field.
+// A random point on the map (kept a few cells off the edges so monsters don't
+// spawn jammed in a corner) — monsters scatter across the whole field.
 function scatterPos(size: number): { x: number; y: number } {
-  return { x: Math.random() * size, y: Math.random() * size }
+  const m = Math.min(4, size / 2 - 0.5)
+  return { x: m + Math.random() * (size - 2 * m), y: m + Math.random() * (size - 2 * m) }
 }
 
 // Heroes form up as a loose knot near the map centre; the engine's separation

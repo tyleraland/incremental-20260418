@@ -8,6 +8,7 @@
 import {
   COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
   WANDER_REPATH, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
+  WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN,
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
@@ -577,10 +578,24 @@ function updateHeroWaypoint(state: BattleState): void {
   const cy = heroes.reduce((s, c) => s + c.pos.y, 0) / heroes.length
   const wp = state.wander.player
   if (wp && distance({ x: cx, y: cy }, wp) > WANDER_REPATH) return
+  // Keep waypoints in the interior so the party roams the field instead of
+  // hugging the perimeter (margin shrinks on tiny maps so it never inverts).
+  const mx = Math.min(WANDER_MARGIN, state.cols / 2 - 0.5)
+  const my = Math.min(WANDER_MARGIN, state.rows / 2 - 0.5)
   state.wander.player = {
-    x: hash01(state.round * 2 + 1) * state.cols,
-    y: hash01(state.round * 2 + 2) * state.rows,
+    x: mx + hash01(state.round * 2 + 1) * (state.cols - 2 * mx),
+    y: my + hash01(state.round * 2 + 2) * (state.rows - 2 * my),
   }
+}
+
+// Fan the shared waypoint out per unit (a small 3-wide grid offset by index) so
+// the party walks as a loose cluster instead of all aiming at the exact same
+// cell — which separation would otherwise grind into edge jitter.
+function offsetWaypoint(wp: Vec2 | undefined, index: number): Vec2 | null {
+  if (!wp) return null
+  const ox = ((index % 3) - 1) * 2.5
+  const oy = ((Math.floor(index / 3) % 3) - 1) * 2.5
+  return { x: wp.x + ox, y: wp.y + oy }
 }
 
 // Nearest living ally already locked onto a live enemy — wanderers head for the
@@ -602,11 +617,16 @@ function executeWander(state: BattleState, self: Combatant): void {
   if (self.statuses.some((s) => s.flags.includes('rooted'))) return
 
   if (self.team === 'player') {
-    // Converge on any ally already fighting; otherwise roam the team waypoint.
+    // Travel speed: roaming the big map is movement *between* fights, so heroes
+    // cross it briskly. (Combat movement, once a target is locked, isn't here.)
+    const speed = moveSpeedOf(self) * WANDER_SPEED_MULT
+    // Converge on any ally already fighting; otherwise roam the team waypoint —
+    // fanned out per unit so the party spreads into a loose group instead of
+    // stacking on a single point (which separation turns into edge jitter).
     const ally = nearestEngagedAlly(state, self)
-    const point = ally ? ally.pos : state.wander.player
+    const point = ally ? ally.pos : offsetWaypoint(state.wander.player, self.index)
     if (!point) return
-    if (moveTowardPoint(self, point, moveSpeedOf(self), state.combatants, state.barriers)) {
+    if (moveTowardPoint(self, point, speed, state.combatants, state.barriers)) {
       emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
     }
     return
@@ -624,10 +644,15 @@ function executeWander(state: BattleState, self: Combatant): void {
     return
   }
   if (self.wanderDwell > 0) { self.wanderDwell -= 1; return }
-  // Pick a hop: a deterministic direction + a 5–8 cell distance.
+  // Pick a hop: a deterministic direction + a 5–8 cell distance, kept a few
+  // cells off the edges so monsters don't lurk jammed in a corner.
   const ang = hash01(state.round * 3 + self.index) * Math.PI * 2
   const dist = MONSTER_WANDER_NEAR + hash01(state.round * 3 + self.index + 7) * (MONSTER_WANDER_FAR - MONSTER_WANDER_NEAR)
-  self.wanderTarget = arenaClamp({ x: self.pos.x + Math.cos(ang) * dist, y: self.pos.y + Math.sin(ang) * dist })
+  const m = Math.min(MONSTER_EDGE_MARGIN, state.cols / 2 - 0.5, state.rows / 2 - 0.5)
+  self.wanderTarget = {
+    x: Math.max(m, Math.min(state.cols - m, self.pos.x + Math.cos(ang) * dist)),
+    y: Math.max(m, Math.min(state.rows - m, self.pos.y + Math.sin(ang) * dist)),
+  }
 }
 
 // Hold `want` gap from the NEAREST enemy, AND maintain a clear shot. When too

@@ -97,12 +97,15 @@ describe('engine — open-world map, vision & wander', () => {
     expect(find(b, 'p').lockedTargetId).toBe('e')
   })
 
-  it('a hero with nothing in sight wanders (position changes)', () => {
-    const b = createBattle({ playerUnits: [eu({ id: 'p', team: 'player', visionRange: 10 })], enemyUnits: [], mode: 'open', cols: 100, rows: 100 })
+  it('a hero with nothing in sight wanders, and travels faster than combat pace', () => {
+    const moveSpeed = 0.9
+    const b = createBattle({ playerUnits: [eu({ id: 'p', team: 'player', visionRange: 10, moveSpeed })], enemyUnits: [], mode: 'open', cols: 100, rows: 100 })
     find(b, 'p').pos = { x: 50, y: 50 }
     const start = { ...find(b, 'p').pos }
-    for (let i = 0; i < 10; i++) advanceRound(b)
-    expect(distance(find(b, 'p').pos, start)).toBeGreaterThan(0)
+    advanceRound(b)
+    // One round of roaming covers clearly more ground than one combat step
+    // (travel uses WANDER_SPEED_MULT), so the big map isn't a crawl.
+    expect(distance(find(b, 'p').pos, start)).toBeGreaterThan(moveSpeed * 1.5)
   })
 
   it('an idle monster lurks, then hops to a new local spot', () => {
