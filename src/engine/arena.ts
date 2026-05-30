@@ -1,7 +1,7 @@
 // Combat Tactic Engine — active arena bounds.
 //
 // The grid is normally COLS×ROWS (15×15), but open-world battles run on a much
-// larger field (e.g. 75×75) carried per-battle on `BattleState.cols/rows`.
+// larger field (e.g. 50×50) carried per-battle on `BattleState.cols/rows`.
 // Spatial helpers (clamp/trace/slide) need those bounds, but threading them
 // through every signature would be a deep refactor. Instead, since the engine
 // processes exactly one battle at a time, synchronously, each engine entry point

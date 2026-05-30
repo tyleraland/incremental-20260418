@@ -175,7 +175,7 @@ const OPEN_WORLD_DEFAULT_CAP = 8   // fallback field size when a location sets n
 // Open-world maps are large — the camera can't show the whole field at once, so
 // the party hunts across it with limited vision. Every map should really set its
 // own `openWorldCap` (density) override; size defaults here unless overridden.
-const OPEN_WORLD_DEFAULT_SIZE = 75
+const OPEN_WORLD_DEFAULT_SIZE = 50
 const HERO_VISION = 10             // heroes acquire targets within this many cells
 const MONSTER_VISION = 8           // monsters see a little less far
 function openWorldCap(loc: Location): number {
