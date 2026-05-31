@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR, type LogCategory } from '@/stores/useGameStore'
+import { exportSave, importSave, persistSave } from '@/save'
 
 function ResetSaveButton() {
   const resetSave = useGameStore((s) => s.resetSave)
@@ -32,6 +33,56 @@ function ResetSaveButton() {
     >
       Reset Save
     </button>
+  )
+}
+
+// Copy the whole-game save string out / paste one in. A player backup, and the
+// highest-fidelity bug-repro handoff (it includes live battles via battlesCodec,
+// so a pasted save reproduces the exact in-progress fights too).
+function SaveTransfer() {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [status, setStatus] = useState<string | null>(null)
+
+  const doExport = () => {
+    const str = exportSave()
+    setText(str)
+    try { navigator.clipboard?.writeText(str) } catch { /* clipboard unavailable */ }
+    setStatus('Copied save to clipboard')
+  }
+  const doImport = () => {
+    if (!importSave(text)) { setStatus('Could not read that save string'); return }
+    persistSave()   // write the imported state straight to localStorage
+    setStatus('Save imported')
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors"
+      >
+        Export / Import Save
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <button onClick={doExport} className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors">Export (copy)</button>
+        <button onClick={doImport} disabled={!text.trim()} className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${text.trim() ? 'border-game-border text-game-text-dim hover:border-game-primary/50' : 'border-game-border/40 text-game-muted cursor-not-allowed'}`}>Import (paste below)</button>
+        <button onClick={() => { setOpen(false); setStatus(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors ml-auto">Close</button>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Paste a save string here to import, or hit Export to copy this game's save."
+        spellCheck={false}
+        className="w-full h-24 text-[10px] font-mono p-2 rounded-lg border border-game-border bg-game-bg text-game-text-dim resize-none"
+      />
+      {status && <div className="text-xs text-game-accent">{status}</div>}
+    </div>
   )
 }
 
@@ -244,6 +295,7 @@ export function Time() {
             ))}
           </ul>
         )}
+        <SaveTransfer />
         <ResetSaveButton />
       </div>
     </div>
