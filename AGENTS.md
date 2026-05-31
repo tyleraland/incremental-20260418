@@ -153,6 +153,19 @@ recent trace) and a **copy-last-15** button that dumps a shareable text block
 (`blackboard.test.ts`). Open battles trim `events` to `EVENT_CAP` so the
 never-resetting log stays bounded.
 
+**Battle snapshots** (`engine/snapshot.ts`). `serializeBattle(state)` →
+`BSNAP.<base64>` token that captures everything the deterministic sim reads
+(combatants, positions, cooldowns, statuses, channels, move-orders, wander
+state, grid size, mode, barriers, zones, team plans, round, outcome — but not
+the `events`/`trace` logs). `deserializeBattle(token)` rebuilds a ready-to-step
+`BattleState`: tactics are re-resolved from their `{id,rank}` refs
+(`skill:`-tactics via `makeSkillTactic`) and the function fields (`planner`,
+`calculateDamage`) are restored to the defaults. Since the engine is RNG-free,
+reload + advance replays **1:1**. The BattleView has a **⎘ state** button
+(bottom-left, any live battle) so a player can copy a fight's exact state for a
+dev to reproduce. (`snapshot.test.ts` proves the round-trip and replay
+determinism.)
+
 **Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
 - The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round
   advances every `ROUND_EVERY_TICKS` (2) ticks → ~2.5 rounds/sec.

@@ -3,7 +3,7 @@ import { useGameStore, waveComposition, locationBarriers, type Location } from '
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import {
-  COLS, ROWS, startingPosition, COMBAT_SKILLS,
+  COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant,
 } from '@/engine'
 
@@ -802,8 +802,26 @@ function LiveBattle({ battle }: { battle: BattleState }) {
     setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, cam.size * factor)))
   }
 
+  // Debug: copy a 1:1 snapshot token of this battle's state. A dev can reload it
+  // (deserializeBattle) to reproduce the exact scenario. Available for any live
+  // battle, no unit selection required.
+  const [snapCopied, setSnapCopied] = useState(false)
+  const copySnapshot = () => {
+    try { navigator.clipboard?.writeText(serializeBattle(battle)) } catch { /* clipboard unavailable */ }
+    setSnapCopied(true)
+    setTimeout(() => setSnapCopied(false), 1200)
+  }
+
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
+      <button
+        onClick={copySnapshot}
+        title="Copy a snapshot of this battle's state (for bug reports / reproduction)"
+        aria-label="Copy battle state snapshot"
+        className="absolute bottom-1.5 left-1.5 z-20 px-2 h-6 flex items-center rounded-md border border-game-border bg-game-surface/90 text-[10px] text-game-text-dim backdrop-blur-sm hover:bg-white/5"
+      >
+        {snapCopied ? '✓ state copied' : '⎘ state'}
+      </button>
       {isOpen && (
         <>
           <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-600/50 bg-emerald-950/70 text-emerald-200 backdrop-blur-sm pointer-events-none">

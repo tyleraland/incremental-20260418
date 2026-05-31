@@ -28,5 +28,6 @@ export {
 } from './tactics'
 export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget, SKILL_TACTICS, inheritedTacticIds, isChanneledAoe, isOffensiveAoe } from './skills'
 export { STATUS_REGISTRY, buildStatus } from './status'
+export { serializeBattle, deserializeBattle } from './snapshot'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'
 export { arenaBarriers, pointBlocked, traceMove, slideMove, steerAround, canReach } from './barriers'
