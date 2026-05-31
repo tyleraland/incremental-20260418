@@ -29,7 +29,7 @@ import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec } from './spatia
 // still dominates, cohesion just curves it toward the party so a healer doesn't
 // strand themselves behind the front line.
 const COHESION_WEIGHT = 0.35
-import { traceMove, slideMove, sightlineClear, steerAround, canReach } from './barriers'
+import { traceMove, slideMove, sightlineClear, lineClear, steerAround, canReach } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
@@ -738,13 +738,16 @@ function executeWander(state: BattleState, self: Combatant): void {
   }
 }
 
-// Hold `want` gap from the NEAREST enemy, AND maintain a clear shot. When too
-// close, back off along a tangential arc (toward whichever side has more arena
-// to run into) so the kiter circles instead of pinning itself in a corner. When
-// in range but a wall sits between us and the threat, relocate along the
-// visibility-graph path to gain LoS — a kiter that can't shoot isn't kiting.
-// Small dead-band to avoid jitter; also peek one round ahead at the threat's
-// approach so a chaser doesn't get a free tick of closing before we react.
+// Hold `want` gap from the NEAREST enemy, AND maintain a clear shot. We only
+// flee a threat that can actually close on us *directly* — if a movement barrier
+// (wall/cliff) lies between us it can't reach without a long detour, so fleeing
+// just wastes turns and panics into the wall (the Moat bug); instead we hold and
+// shoot. When too close (and the threat can reach), back off along a tangential
+// arc so the kiter circles instead of pinning itself in a corner. When too far:
+// if we have a clear shot (incl. over a cliff) we close straight to firing
+// range; only when a WALL blocks the shot do we route the visibility graph to
+// round the corner. Small dead-band to avoid jitter; also peek one round ahead
+// at the threat's approach so a chaser doesn't get a free tick of closing.
 function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const threat = nearestEnemyTo(self, state)
   if (!threat) return
@@ -752,12 +755,20 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const losClear = sightlineClear(self.pos, threat.pos, state.barriers)
   const band = 0.4
 
+  // Only retreat from a threat that can actually close on us *directly*. If a
+  // movement barrier (wall or cliff) sits on the straight line between us, the
+  // threat can't reach without a long detour around it — fleeing just opens the
+  // gap past our own range and wastes turns (the classic "flee into the wall and
+  // panic" loop). When separated like this we hold and shoot if we have LoS
+  // (cliffs don't block sight), or close in to firing range if too far.
+  const canCloseDirectly = lineClear(self.pos, threat.pos, state.barriers)
+
   // Predict where this threat will be after its turn this round, assuming a
   // straight chase. If standing still would let it close past the kite line,
   // we retreat NOW instead of waiting for next round.
   const threatStep = moveSpeedOf(threat)
   const predictedD = d - threatStep
-  const tooClose = d < want - band || predictedD < want - band
+  const tooClose = canCloseDirectly && (d < want - band || predictedD < want - band)
 
   // Sweet spot: right gap, clear shot, AND the threat can't close past the
   // line next turn → stand and fire.
@@ -807,16 +818,27 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
       dx = bx / blen; dy = by / blen
     }
     self.pos = slideMove(self.pos, { x: self.pos.x + dx * step, y: self.pos.y + dy * step }, state.barriers)
+  } else if (losClear) {
+    // We have a clear shot but we're too far — close the gap *straight* toward
+    // the threat until in firing range. If a movement-only barrier (a cliff)
+    // sits between us, slideMove stops us at its edge; we keep LoS and shoot
+    // over it (the Moat). Don't path AROUND here: the far side may be
+    // unreachable on foot, yet perfectly shootable across the gap.
+    const ux = (threat.pos.x - self.pos.x) / (d || 1)
+    const uy = (threat.pos.y - self.pos.y) / (d || 1)
+    const cap = Math.min(step, Math.max(0, d - want))
+    if (cap > EPS) {
+      self.pos = slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers)
+    }
   } else {
-    // Too far, OR in range but a wall blocks the shot: route toward the threat
-    // via the visibility graph so we'll round the corner that re-opens line of
-    // sight. With a clear line, cap the step so we don't overshoot `want`.
+    // In range but a WALL blocks the shot: route toward the threat via the
+    // visibility graph so we round the corner that re-opens line of sight.
     const { point } = steerAround(self.pos, threat.pos, state.barriers)
     const gd = distance(self.pos, point)
     if (gd > EPS) {
       const ux = (point.x - self.pos.x) / gd
       const uy = (point.y - self.pos.y) / gd
-      const cap = losClear ? Math.min(step, gd, Math.max(0, d - want)) : Math.min(step, gd)
+      const cap = Math.min(step, gd)
       if (cap > EPS) {
         self.pos = slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers)
       }
