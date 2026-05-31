@@ -80,6 +80,37 @@ describe('open-world wander — no corner jitter', () => {
   })
 })
 
+describe('open-world wander — no terrain freeze', () => {
+  // Regression: the per-unit waypoint fan-out could shove a roamer's target
+  // inside a wall (or into an unroutable pocket), and the "hold if unreachable"
+  // movement guard then froze it forever ("stuck wanderer" on the Overgrown
+  // Ruins). It must fall back to the reachable shared waypoint and keep moving.
+  function ruinsBarriers(): Barrier[] {
+    return [
+      { x: 18, y: 14, w: 3, h: 14, kind: 'wall' },
+      { x: 34, y: 22, w: 3, h: 16, kind: 'wall' },
+      { x: 14, y: 38, w: 18, h: 3, kind: 'wall' },
+      { x: 40, y: 8, w: 12, h: 3, kind: 'wall' },
+      { x: 24, y: 44, w: 3, h: 12, kind: 'wall' },
+    ]
+  }
+
+  it('a wanderer pinned beside a wall roams away instead of freezing', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 10, moveSpeed: 0.9 })],
+      enemyUnits: [], mode: 'open', cols: 60, rows: 60, barriers: ruinsBarriers(),
+    })
+    find(b, 'a').pos = { x: 18.1, y: 28.4 }   // right at the foot of the first wall
+    const start = { ...find(b, 'a').pos }
+    let maxFromStart = 0
+    for (let r = 0; r < 60; r++) {
+      advanceRound(b)
+      maxFromStart = Math.max(maxFromStart, dist(find(b, 'a').pos, start))
+    }
+    expect(maxFromStart).toBeGreaterThan(15)   // genuinely roamed off, not stuck
+  })
+})
+
 describe('barrier pathing — thread to the centre', () => {
   // "Can units path to the centre of a barrier-heavy map?" Modelled as a pathing
   // question (not wander): a target sits at the centre and the hunter has the

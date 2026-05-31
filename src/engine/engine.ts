@@ -29,12 +29,12 @@ import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec } from './spatia
 // still dominates, cohesion just curves it toward the party so a healer doesn't
 // strand themselves behind the front line.
 const COHESION_WEIGHT = 0.35
-import { traceMove, slideMove, sightlineClear, lineClear, steerAround, canReach } from './barriers'
+import { traceMove, slideMove, sightlineClear, lineClear, steerAround, canReach, pointBlocked } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
-  TeamPlan, Planner,
+  TeamPlan, Planner, Barrier,
 } from './types'
 
 // Deterministic [0,1) hash of an integer — seeds open-world wander choices
@@ -690,12 +690,18 @@ function runPlanners(state: BattleState): void {
 
 // Fan the shared waypoint out per unit (a small 3-wide grid offset by index) so
 // the party walks as a loose cluster instead of all aiming at the exact same
-// cell — which separation would otherwise grind into edge jitter.
-function offsetWaypoint(wp: Vec2 | null | undefined, index: number): Vec2 | null {
+// cell — which separation would otherwise grind into edge jitter. But the
+// per-unit offset can shove the point inside a wall or into an unroutable pocket
+// (the shared waypoint itself is always reachable — see pickRoamPoint); when it
+// does, fall back to the unoffset shared point so a wanderer never freezes
+// against terrain (the "stuck wanderer" bug).
+function offsetWaypoint(self: Combatant, wp: Vec2 | null | undefined, barriers: Barrier[]): Vec2 | null {
   if (!wp) return null
-  const ox = ((index % 3) - 1) * 2.5
-  const oy = ((Math.floor(index / 3) % 3) - 1) * 2.5
-  return { x: wp.x + ox, y: wp.y + oy }
+  const ox = ((self.index % 3) - 1) * 2.5
+  const oy = ((Math.floor(self.index / 3) % 3) - 1) * 2.5
+  const offset = { x: wp.x + ox, y: wp.y + oy }
+  if (pointBlocked(barriers, offset) || !canReach(self.pos, offset, barriers)) return wp
+  return offset
 }
 
 function executeWander(state: BattleState, self: Combatant): void {
@@ -707,7 +713,7 @@ function executeWander(state: BattleState, self: Combatant): void {
     const speed = moveSpeedOf(self) * WANDER_SPEED_MULT
     // Read the team blackboard's shared waypoint (regroups on a fight, else
     // roams), fanned out per unit so the party travels as a loose cluster.
-    const point = offsetWaypoint(state.plans[self.team]?.waypoint, self.index)
+    const point = offsetWaypoint(self, state.plans[self.team]?.waypoint, state.barriers)
     if (!point) return
     if (moveTowardPoint(self, point, speed, state.combatants, state.barriers)) {
       emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
