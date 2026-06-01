@@ -64,9 +64,9 @@ export const INITIAL_LOCATIONS: Location[] = [
     id: 'harpy-roost', region: 'world', name: 'Harpy Roost',
     description: 'A wind-scoured crag east of Prontera, its every ledge boiling with harpies — a sky black with claws and screeching. A swarm, not a skirmish.',
     traits: ['mountain', 'dangerous'], monsterIds: ['harpy'],
-    // Deliberately dense: a small (25×25) field kept packed with 50 harpies —
+    // Deliberately dense: a small (25×25) field kept packed with 25 harpies —
     // a stress arena for AoE, body-blocking, and the open-world sim at scale.
-    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 50, openWorldSize: 25,
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 25, openWorldSize: 25,
   },
 
   // ── Proving Grounds (sandbox arenas, east of the world path) ─────────────
