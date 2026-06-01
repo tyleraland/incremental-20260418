@@ -11,7 +11,8 @@
 
 import { distance, moveSpeedOf } from './grid'
 import { EPS } from './constants'
-import { livingEnemies, livingAllies, targetableEnemies, isStealthed, findCombatant, mostInjuredAllyInRange } from './behavior'
+import { livingEnemies, livingAllies, isStealthed, findCombatant, mostInjuredAllyInRange } from './behavior'
+import { visibleEnemiesOf } from './spatial'
 import { sightlineClear } from './barriers'
 import type { BattleState, Combatant, EngineSkill, TacticDef, SkillTargeting } from './types'
 
@@ -140,7 +141,7 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
     !!sk.statusApplied && !sk.damageFormula && e.statuses.some((s) => s.id === sk.statusApplied)
   const locked = findCombatant(state, self.lockedTargetId)
   if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(self, locked, sk.range) && !redundant(locked)) return locked.id
-  const pool = (canSeeStealth ? livingEnemies(state, self) : targetableEnemies(state, self))
+  const pool = (canSeeStealth ? livingEnemies(state, self) : visibleEnemiesOf(state, self))
     .filter((e) => inRange(self, e, sk.range) && sightlineClear(self.pos, e.pos, state.barriers) && !redundant(e))
   return pool.length ? nearest(self, pool).id : null
 }

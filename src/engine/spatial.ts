@@ -16,10 +16,21 @@ const isHidden = (c: Combatant) => c.statuses.some((s) => s.flags.includes('stea
 export function alliesOf(state: BattleState, self: Combatant): Combatant[] {
   return state.combatants.filter((c) => c.alive && c.team === self.team && c.id !== self.id)
 }
+// THE canonical "enemies this unit can perceive and act on": alive, on the other
+// team, not stealthed (§3), and within sight (§open-world fog-of-war). This is
+// the ONE predicate all targeting/movement uses — default targeting
+// (selectTarget), every targeting tactic, and the spatial movement tactics
+// (Guardian, Kiter) — so the fog-of-war gate lives in exactly one place and can't
+// drift between them (it did: tactics once scanned the whole map and locked foes
+// 40 cells out of sight, freezing the party). visionRange is Infinity in
+// encounters, so this is a no-op there. Lives in this leaf module so behaviour.ts
+// and tactics.ts can both share it without an import cycle.
+//
+// NOT to be confused with livingEnemies (behaviour.ts) — that one is deliberately
+// UNFILTERED (everyone alive on the other team) for the physical questions: AoE
+// splash hits whoever's in the blast, the win-check counts all survivors. Don't
+// add a vision/stealth filter there.
 export function visibleEnemiesOf(state: BattleState, self: Combatant): Combatant[] {
-  // §open-world fog-of-war: only enemies in sight (and not stealthed). Movement
-  // tactics (Guardian, Kiter) read this, so a guardian won't body-block against
-  // a foe 20 cells away it can't see. visionRange is Infinity in encounters → no-op.
   return state.combatants.filter((c) => c.alive && c.team !== self.team && !isHidden(c) && distance(self.pos, c.pos) <= self.visionRange)
 }
 export function lockedTarget(self: Combatant, state: BattleState): Combatant | null {

@@ -6,26 +6,20 @@
 import { distance, attackReach } from './grid'
 import { sightlineClear } from './barriers'
 import { tauntBiasOf } from './tactics'
-import { isCaster } from './spatial'
+import { isCaster, visibleEnemiesOf } from './spatial'
 import type { BattleState, Combatant, EngineSkill } from './types'
 import { EPS } from './constants'
 
+// ALL living foes, UNFILTERED by perception — for the physical questions only:
+// AoE splash (hits whoever's in the blast), blast-count, and the win-check. For
+// "who can this unit target/engage", use visibleEnemiesOf (spatial.ts), the
+// single fog-of-war-gated predicate. Don't add a vision/stealth filter here.
 export function livingEnemies(state: BattleState, self: Combatant): Combatant[] {
   return state.combatants.filter((c) => c.alive && c.team !== self.team)
 }
 
 export function isStealthed(c: Combatant): boolean {
   return c.statuses.some((s) => s.flags.includes('stealthed'))
-}
-
-// Enemies a unit may lock onto: living, not currently hidden (§3 stealth), and
-// within vision range. visionRange is Infinity for encounters (so this is a
-// no-op there); open-world gives heroes/monsters a finite sight radius so they
-// only engage what they can actually see — and wander otherwise.
-export function targetableEnemies(state: BattleState, self: Combatant): Combatant[] {
-  return livingEnemies(state, self).filter(
-    (c) => !isStealthed(c) && distance(self.pos, c.pos) <= self.visionRange,
-  )
 }
 
 export function livingAllies(state: BattleState, self: Combatant): Combatant[] {
@@ -44,7 +38,7 @@ export function selectTarget(state: BattleState, self: Combatant): string | null
   const current = findCombatant(state, self.lockedTargetId)
   if (current && current.alive && !isStealthed(current)) return null   // a target that cloaks is lost
 
-  const enemies = targetableEnemies(state, self)
+  const enemies = visibleEnemiesOf(state, self)
   if (enemies.length === 0) {
     const prev = self.lockedTargetId
     self.lockedTargetId = null

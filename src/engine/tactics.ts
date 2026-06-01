@@ -14,7 +14,7 @@ import { distance } from './grid'
 import { SEPARATION, EPS } from './constants'
 import { effectiveStat, skillDamageEstimate } from './damage'
 import {
-  lockedTarget, nearestEnemyTo, isCaster,
+  lockedTarget, nearestEnemyTo, isCaster, visibleEnemiesOf,
   squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
 } from './spatial'
 import type {
@@ -23,20 +23,10 @@ import type {
 
 // ── small local helpers (kept here to avoid import cycles) ──────────────────────
 
-function enemiesOf(state: BattleState, self: Combatant): Combatant[] {
-  // hidden enemies (§3 stealth) can't be picked until revealed or they attack;
-  // and (open-world fog-of-war) neither can ones out of sight — a targeting
-  // tactic must not lock a foe the unit can't actually see, same gate as the
-  // default targeting (targetableEnemies). visionRange is Infinity in encounters,
-  // so this is a no-op there. Without it, an AoE caster's Storm Caller (etc.)
-  // locks a cluster clear across the map, pinning the unit "engaged" on an
-  // unreachable far target and freezing the party in place.
-  return state.combatants.filter(
-    (c) => c.alive && c.team !== self.team
-      && !c.statuses.some((s) => s.flags.includes('stealthed'))
-      && distance(self.pos, c.pos) <= self.visionRange,
-  )
-}
+// Targeting tactics pick from the foes a unit can actually perceive — the shared
+// fog-of-war-gated set (visibleEnemiesOf). Using the whole roster here is what let
+// an AoE caster's Storm Caller lock a cluster 40 cells out of sight.
+const enemiesOf = visibleEnemiesOf
 // §coordination read-side: the team's shared focus target (lowest-HP visible enemy)
 // computed once per round by the planner (defaultPlanner). Targeting tactics read
 // this instead of each re-scanning for "who's hurt" — so the party concentrates on

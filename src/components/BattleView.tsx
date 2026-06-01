@@ -440,6 +440,19 @@ function nameInBattle(battle: BattleState, id: string | null | undefined): strin
   return battle.combatants.find((x) => x.id === id)?.name ?? id
 }
 
+// Name + how far the referenced target is from `c`, flagged when it sits beyond
+// `c`'s vision. Surfaces the "locked onto something I can't see" case at a glance
+// — a stale far lock keeps a unit "engaged", which pins the team waypoint and can
+// freeze the party in place. (Infinity vision in encounters never flags.)
+function targetSight(battle: BattleState, c: Combatant, id: string | null | undefined): { text: string; beyond: boolean } {
+  if (!id) return { text: '—', beyond: false }
+  const t = battle.combatants.find((x) => x.id === id)
+  if (!t) return { text: id, beyond: false }
+  const d = Math.hypot(c.pos.x - t.pos.x, c.pos.y - t.pos.y)
+  const beyond = d > c.visionRange
+  return { text: `${t.name} @${d.toFixed(0)}${beyond ? ' ⚠out-of-sight' : ''}`, beyond }
+}
+
 // A plain-text dump of a unit's current decision state + last 15 turns, for
 // pasting into a bug report. Mirrors what the Debug tab shows.
 function buildDebugText(c: Combatant, battle: BattleState): string {
@@ -448,7 +461,7 @@ function buildDebugText(c: Combatant, battle: BattleState): string {
   const L: string[] = []
   L.push(`# ${c.name} (${c.team}${c.alive ? '' : ' · KO'}) — battle round ${battle.round}`)
   L.push(`hp ${Math.ceil(c.hp)}/${c.maxHp}  pos (${c.pos.x.toFixed(1)},${c.pos.y.toFixed(1)})  vision ${c.visionRange === Infinity ? '∞' : c.visionRange}`)
-  L.push(`lock: ${nameInBattle(battle, c.lockedTargetId)}  team-focus: ${nameInBattle(battle, plan?.focusTargetId)}  hunt: ${nameInBattle(battle, plan?.huntTargetId)}  waypoint: ${wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}`)
+  L.push(`lock: ${targetSight(battle, c, c.lockedTargetId).text}  team-focus: ${nameInBattle(battle, plan?.focusTargetId)}  hunt: ${nameInBattle(battle, plan?.huntTargetId)}  waypoint: ${wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}`)
   L.push(`tactics: ${c.tactics.map((t) => `${t.def.channel}:${t.def.name}`).join(', ') || '(none)'}`)
   if (c.lastResolution.length) {
     L.push('-- tactic resolution (most recent turn) --')
@@ -533,7 +546,7 @@ const DEBUG_CHANNEL_ORDER = ['targeting', 'movement', 'action', 'reaction', 'pas
 function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const plan = battle.plans[c.team]
   const wp = plan?.waypoint
-  const lockName = nameInBattle(battle, c.lockedTargetId)
+  const lock = targetSight(battle, c, c.lockedTargetId)
   const focusName = nameInBattle(battle, plan?.focusTargetId)
   const huntName = nameInBattle(battle, plan?.huntTargetId)
   const divergent = c.lockedTargetId && plan?.focusTargetId && c.lockedTargetId !== plan.focusTargetId
@@ -555,11 +568,12 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-game-text-dim">
           <div>round <span className="text-game-text tabular-nums">{battle.round}</span></div>
           <div>pos <span className="text-game-text tabular-nums">({c.pos.x.toFixed(1)},{c.pos.y.toFixed(1)})</span></div>
-          <div>lock <span className={c.lockedTargetId ? 'text-game-text' : 'text-game-muted'}>{lockName}</span></div>
+          <div>lock <span className={!c.lockedTargetId ? 'text-game-muted' : lock.beyond ? 'text-amber-300' : 'text-game-text'}>{lock.text}</span></div>
           <div>team-focus <span className={plan?.focusTargetId ? 'text-game-text' : 'text-game-muted'}>{focusName}</span></div>
           <div>hunt <span className={plan?.huntTargetId ? 'text-game-text' : 'text-game-muted'}>{huntName}</span></div>
           <div>waypoint <span className="text-game-text tabular-nums">{wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}</span></div>
         </div>
+        {lock.beyond && <div className="mt-1 text-amber-300">⚠ locked target is out of sight (it can't be reached/hit — a stale far lock keeps this unit "engaged")</div>}
         {divergent && <div className="mt-1 text-amber-300">⚠ this unit's lock ≠ team focus</div>}
       </div>
 
