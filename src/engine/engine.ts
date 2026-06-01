@@ -638,11 +638,13 @@ function centroidOf(cs: Combatant[]): Vec2 {
 }
 
 // The built-in blackboard producer. Computes, per team:
-//   • waypoint — the party's shared roam target. If anyone's engaged, it's the
-//     centroid of the fight (roamers regroup on it); otherwise a fresh interior
-//     point, re-picked once the party arrives (deterministic hash, so replays
-//     match). Heroes read this in executeWander; that's how "wander together"
-//     stops being coincidence and becomes shared state.
+//   • waypoint — the party's shared roam target. If anyone's engaged it's the
+//     centroid of the fight (roamers regroup on it); else, in open world, the
+//     position of the committed hunt target (the party marches to known prey); else
+//     a fresh far interior point, re-picked once the party arrives (deterministic
+//     hash, so replays match). Heroes read this in executeWander; that's how
+//     "wander together" stops being coincidence and becomes shared state.
+//   • huntTargetId — the foe the party is routing toward (see §hunt below).
 //   • focusTargetId — lowest-HP enemy the team can see. Read by the focus-fire
 //     targeting tactics (Opportunist, Finish Them) via teamFocus so the party
 //     converges on one foe and the "who's hurt" scan lives only here.
@@ -662,23 +664,60 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
   }
 
   let waypoint = state.plans[team]?.waypoint ?? null
+  let huntTargetId: string | null = state.plans[team]?.huntTargetId ?? null
   const engaged = members.filter((m) => {
     const t = findCombatant(state, m.lockedTargetId)
     return !!(t && t.alive)
   })
   if (engaged.length) {
     waypoint = centroidOf(engaged)
+    huntTargetId = null   // already in the fight; the engaged centroid is the rally point
   } else if (members.length) {
     const c = centroidOf(members)
-    // Only re-pick once the party has actually arrived. A fresh waypoint is
-    // chosen FAR from the party (pickRoamPoint) so they commit to a long
-    // traverse instead of re-picking a nearby point each round — the latter
-    // caused the corner "tiny step" left-right-left jitter.
-    if (!waypoint || distance(c, waypoint) <= WANDER_REPATH) {
-      waypoint = pickRoamPoint(state, c, team === 'player' ? 1 : 7)
+    // §hunt: in open world, route the whole party to the nearest enemy a member
+    // can currently *see* (fog-of-war) and march there together; commit until it's
+    // dead/out of sight, then re-pick. Nothing in sight → fall back to roaming a
+    // far point to explore and find prey. (Per-unit target *acquisition* still
+    // gates on vision — this only steers the group toward known prey.)
+    const hunt = state.mode === 'open' ? pickHuntTarget(state, members, enemies, c, huntTargetId) : null
+    if (hunt) {
+      huntTargetId = hunt.id
+      waypoint = { x: hunt.pos.x, y: hunt.pos.y }
+    } else {
+      huntTargetId = null
+      // Only re-pick once the party has actually arrived. A fresh waypoint is
+      // chosen FAR from the party (pickRoamPoint) so they commit to a long
+      // traverse instead of re-picking a nearby point each round — the latter
+      // caused the corner "tiny step" left-right-left jitter.
+      if (!waypoint || distance(c, waypoint) <= WANDER_REPATH) {
+        waypoint = pickRoamPoint(state, c, team === 'player' ? 1 : 7)
+      }
     }
   }
-  return { waypoint, focusTargetId: focus?.id ?? null, threat }
+  return { waypoint, focusTargetId: focus?.id ?? null, threat, huntTargetId }
+}
+
+// §hunt target pick (open world). The nearest enemy to the party centroid that
+// ANY living member can see (fog-of-war) and that's reachable through known
+// terrain. Sticks with the previous commitment while it stays seen + reachable
+// (no jitter from re-picking a marginally-closer foe each round); returns null
+// when nothing's in sight so the caller roams to explore instead.
+function pickHuntTarget(
+  state: BattleState, members: Combatant[], enemies: Combatant[], center: Vec2, prevId: string | null,
+): Combatant | null {
+  const reachable = (p: Vec2) => state.barriers.length === 0 || canReach(center, p, state.barriers)
+  const seen = enemies.filter(
+    (e) => !isStealthed(e) && members.some((m) => distance(m.pos, e.pos) <= m.visionRange),
+  )
+  const held = prevId ? seen.find((e) => e.id === prevId) : undefined
+  if (held && reachable(held.pos)) return held
+  let best: Combatant | null = null
+  for (const e of seen) {
+    if (!reachable(e.pos)) continue
+    if (!best || distance(center, e.pos) < distance(center, best.pos)
+      || (distance(center, e.pos) === distance(center, best.pos) && e.id < best.id)) best = e
+  }
+  return best
 }
 
 // Pick a fresh roam target well away from `from`. Samples a handful of

@@ -279,6 +279,11 @@ export interface TeamPlan {
   waypoint: Vec2 | null            // shared roam target (heroes wander toward it)
   focusTargetId: string | null     // enemy the team should concentrate on (advisory)
   threat: Record<string, number>   // enemyId → threat score (higher = scarier)
+  // §hunt (open world): the enemy the party has committed to routing toward — the
+  // nearest foe ANY member can currently see (fog-of-war). `waypoint` tracks its
+  // position so the squad marches there together; held while it stays seen +
+  // reachable, else re-picked, else null (nothing in sight → roam to explore).
+  huntTargetId?: string | null
 }
 
 export type Planner = (state: BattleState, team: Team) => TeamPlan

@@ -448,7 +448,7 @@ function buildDebugText(c: Combatant, battle: BattleState): string {
   const L: string[] = []
   L.push(`# ${c.name} (${c.team}${c.alive ? '' : ' · KO'}) — battle round ${battle.round}`)
   L.push(`hp ${Math.ceil(c.hp)}/${c.maxHp}  pos (${c.pos.x.toFixed(1)},${c.pos.y.toFixed(1)})  vision ${c.visionRange === Infinity ? '∞' : c.visionRange}`)
-  L.push(`lock: ${nameInBattle(battle, c.lockedTargetId)}  team-focus: ${nameInBattle(battle, plan?.focusTargetId)}  waypoint: ${wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}`)
+  L.push(`lock: ${nameInBattle(battle, c.lockedTargetId)}  team-focus: ${nameInBattle(battle, plan?.focusTargetId)}  hunt: ${nameInBattle(battle, plan?.huntTargetId)}  waypoint: ${wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}`)
   L.push(`tactics: ${c.tactics.map((t) => `${t.def.channel}:${t.def.name}`).join(', ') || '(none)'}`)
   if (c.lastResolution.length) {
     L.push('-- tactic resolution (most recent turn) --')
@@ -535,6 +535,7 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const wp = plan?.waypoint
   const lockName = nameInBattle(battle, c.lockedTargetId)
   const focusName = nameInBattle(battle, plan?.focusTargetId)
+  const huntName = nameInBattle(battle, plan?.huntTargetId)
   const divergent = c.lockedTargetId && plan?.focusTargetId && c.lockedTargetId !== plan.focusTargetId
 
   // Per-turn resolution (what fired vs why the rest were dormant), keyed by id.
@@ -556,7 +557,8 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
           <div>pos <span className="text-game-text tabular-nums">({c.pos.x.toFixed(1)},{c.pos.y.toFixed(1)})</span></div>
           <div>lock <span className={c.lockedTargetId ? 'text-game-text' : 'text-game-muted'}>{lockName}</span></div>
           <div>team-focus <span className={plan?.focusTargetId ? 'text-game-text' : 'text-game-muted'}>{focusName}</span></div>
-          <div className="col-span-2">waypoint <span className="text-game-text tabular-nums">{wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}</span></div>
+          <div>hunt <span className={plan?.huntTargetId ? 'text-game-text' : 'text-game-muted'}>{huntName}</span></div>
+          <div>waypoint <span className="text-game-text tabular-nums">{wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}</span></div>
         </div>
         {divergent && <div className="mt-1 text-amber-300">⚠ this unit's lock ≠ team focus</div>}
       </div>

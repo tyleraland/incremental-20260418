@@ -49,9 +49,15 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
     `Math.random` in the store. Live open-world play is no longer "same inputs →
     same outputs"; tests pin `Math.random`. A seeded generator would make
     replays exact. (Engine wander/vision are already deterministic.)
-  - *Hunt pacing* — wander is a pure roam; a strong party of 3 clears ~1
-    monster / ~20s on a 100×100 field at cap 12. Vision radius, move speed, cap
-    and map size are the knobs; no "track the nearest scent" heuristic yet.
+  - *Hunt pacing* — 🟡 first iteration shipped. The blackboard now routes the
+    party to the nearest enemy ANY member can *see* (fog-of-war) and marches the
+    whole group there together (`defaultPlanner` → `pickHuntTarget`, committed via
+    `TeamPlan.huntTargetId`); nothing in sight → roam to explore. Still open:
+    *scattered hunt* (split the party across 2–3 objectives to clear faster
+    instead of one tight group), hysteresis on a flickering edge-of-vision target,
+    and tuning the vision/speed/cap/size knobs. The residual cloaked-rogue
+    "jitter next to an engaged fight" (separation crowding at the rally point) is
+    cosmetic and separate.
 
 ## Combat content
 
