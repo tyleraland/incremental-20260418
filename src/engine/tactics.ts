@@ -243,9 +243,16 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       if (attacks.length < 2) return null   // nothing to chain
       let biggest = attacks[0]
       for (const s of attacks) if (skillDamageEstimate(self, s) > skillDamageEstimate(self, biggest)) biggest = s
+      const window = 2 + (rank - 1)
+      // The chain only ever happens in the rounds where the heavy hitter is on
+      // cooldown but *outside* the bank window. With cooldowns ticking before turns
+      // that range is non-empty only when its cooldown ≥ window + 2 — on a faster
+      // recharge we'd bank the filler every ready round and never chain (strictly
+      // worse than not equipping Burst), so don't bank at all.
+      if (biggest.cooldown <= window + 1) return null
       const cd = self.skillCooldowns[biggest.id] ?? 0
       if (cd <= 0) return null               // heavy hitter ready → let it fire (front-load)
-      if (cd > 2 + (rank - 1)) return null    // not imminent (just cast / far off) → attack normally, small skills chain freely
+      if (cd > window) return null            // not imminent (just cast / far off) → attack normally, small skills chain freely
       const otherReady = attacks.some((s) => s.id !== biggest.id && (self.skillCooldowns[s.id] ?? 0) <= 0)
       return otherReady ? { skipAttack: true } : null   // hold the small skill for the chain
     },

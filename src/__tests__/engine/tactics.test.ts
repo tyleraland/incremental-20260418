@@ -327,6 +327,14 @@ describe('tactics: burst kit (item 8)', () => {
     expect(TACTIC_REGISTRY['burst'].action!(self, stateOf([self]), 1)).toBeNull()
   })
 
+  it('Burst does not bank when the heavy hitter recharges too fast to ever chain', () => {
+    // cooldown 3 ≤ window(2)+1 → no round exists where it is on cooldown but
+    // outside the bank window, so banking would just starve the filler forever.
+    const fast = () => attackSkill({ id: 'big', name: 'Big', damageFormula: 'str * 4', cooldown: 3 })
+    const self = combatant({ id: 'p', skills: [fast(), small()], skillCooldowns: { big: 2, small: 0 } })
+    expect(TACTIC_REGISTRY['burst'].action!(self, stateOf([self]), 1)).toBeNull()
+  })
+
   it('Focus Fire locks the shared blackboard focus for the whole team', () => {
     const self = combatant({ id: 'p' })
     const full = combatant({ id: 'e1', team: 'enemy', hp: 100, maxHp: 100 })
