@@ -12,7 +12,7 @@
 
 import { distance } from './grid'
 import { SEPARATION, EPS } from './constants'
-import { effectiveStat } from './damage'
+import { effectiveStat, skillDamageEstimate } from './damage'
 import {
   lockedTarget, nearestEnemyTo, isCaster,
   squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
@@ -125,6 +125,20 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     },
   },
 
+  'assassinate': {
+    id: 'assassinate', name: 'Assassinate', scope: 'unit', channel: 'targeting',
+    description: "Hunt the enemy's healer/support and blow it up first.",
+    // Role-based target pick (pairs with Burst for an alpha strike on the
+    // backline): a healer if the enemy has one, else their strongest caster.
+    targeting: (self, state) => {
+      const foes = enemiesOf(state, self)
+      const healers = foes.filter((e) => e.skills.some((s) => s.type === 'heal'))
+      if (healers.length) return pickBy(healers, (e) => effectiveStat(e, 'int'), 'max')!.id
+      const casters = foes.filter((e) => effectiveStat(e, 'int') > effectiveStat(e, 'str'))
+      return casters.length ? pickBy(casters, (e) => effectiveStat(e, 'int'), 'max')!.id : null
+    },
+  },
+
   // Movement -------------------------------------------------------------------
   'charger': {
     id: 'charger', name: 'Charger', scope: 'unit', channel: 'movement',
@@ -213,6 +227,30 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     },
   },
 
+  'burst': {
+    id: 'burst', name: 'Burst', scope: 'unit', channel: 'action',
+    description: 'Bank a small skill while your heavy hitter is about to come off cooldown, then chain big → small.',
+    // Front-load combo. With item 6 the action channel already opens with the
+    // biggest ready nuke; Burst adds the anticipation: when the heavy hitter is
+    // *imminent* (on cooldown but ≤ window rounds out) and a smaller skill is
+    // ready, hold the small one so it chains right after the big one lands —
+    // rather than spending it now and having nothing to follow up with. It does
+    // NOT bank basic attacks (no other skill ready → returns null → attack
+    // normally), so a lull only costs a skill, not all tempo. Stateless: reads
+    // skillCooldowns (cooldown-lookahead) — no per-unit combo memory (item 7).
+    action: (self, _state, rank) => {
+      const attacks = self.skills.filter((s) => s.type === 'attack')
+      if (attacks.length < 2) return null   // nothing to chain
+      let biggest = attacks[0]
+      for (const s of attacks) if (skillDamageEstimate(self, s) > skillDamageEstimate(self, biggest)) biggest = s
+      const cd = self.skillCooldowns[biggest.id] ?? 0
+      if (cd <= 0) return null               // heavy hitter ready → let it fire (front-load)
+      if (cd > 2 + (rank - 1)) return null    // not imminent (just cast / far off) → attack normally, small skills chain freely
+      const otherReady = attacks.some((s) => s.id !== biggest.id && (self.skillCooldowns[s.id] ?? 0) <= 0)
+      return otherReady ? { skipAttack: true } : null   // hold the small skill for the chain
+    },
+  },
+
   // Reaction -------------------------------------------------------------------
   'last-stand': {
     id: 'last-stand', name: 'Last Stand', scope: 'unit', channel: 'reaction', oncePerCombat: true,
@@ -257,6 +295,16 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       const focus = teamFocus(self, state)
       return focus && hpRatio(focus) < 0.25 ? focus.id : null
     },
+  },
+  'focus-fire': {
+    id: 'focus-fire', name: 'Focus Fire', scope: 'party', channel: 'targeting', kind: 'floor',
+    description: 'The whole team concentrates fire on one shared target.',
+    // The blackboard's first party-scope consumer: lock the planner's focus
+    // (lowest-HP visible enemy) unconditionally — no HP gate, so the team
+    // coordinates from full HP. A floor (fires whenever a focus exists), and a
+    // party-default, so it sits at the bottom and only steers units that haven't
+    // locked something more specific.
+    targeting: (self, state) => teamFocus(self, state)?.id ?? null,
   },
 }
 

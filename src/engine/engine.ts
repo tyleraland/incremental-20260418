@@ -1100,6 +1100,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
     if (act.castSkill && act.skillTarget) castSkill(state, self, act.castSkill, act.skillTarget)
     actionText = act.castSkill ? `cast ${act.castSkill.name} @ ${traceName(state, act.skillTarget)}`
       : act.applyStatusToSelf ? `self-buff ${act.applyStatusToSelf.name ?? act.applyStatusToSelf.id}`
+      : act.skipAttack ? 'hold (banking)'
       : 'act'
   } else {
     const peek = chooseAction(state, self)   // pure read; executeNaiveAction re-derives it

@@ -4,7 +4,7 @@ import {
   chargerBonus, armoredFactor, nimblePeriod, tauntBiasOf,
   type BattleState, type Combatant, type ResolvedTactic,
 } from '@/engine'
-import { eu, combatant } from './helpers'
+import { eu, combatant, attackSkill, healSkill } from './helpers'
 
 const stateOf = (combatants: Combatant[]) => ({ combatants } as unknown as BattleState)
 // Seed the team blackboard the way the planner would: focusTargetId = lowest-HP
@@ -286,5 +286,52 @@ describe('tactics: per-turn resolution (§debug)', () => {
     const res = find(b, 'p').lastResolution
     expect(res.find((r) => r.id === 'opportunist')?.outcome).toBe('idle')
     expect(res.find((r) => r.id === 'tank-buster')?.outcome).toBe('fired')
+  })
+})
+
+describe('tactics: burst kit (item 8)', () => {
+  const big = () => attackSkill({ id: 'big', name: 'Big', damageFormula: 'str * 4', cooldown: 5 })
+  const small = () => attackSkill({ id: 'small', name: 'Small', damageFormula: 'str * 1', cooldown: 2 })
+
+  it('Assassinate hunts the enemy healer first, else the top caster, else falls through', () => {
+    const tac = TACTIC_REGISTRY['assassinate'].targeting!
+    const self = combatant({ id: 'p' })
+    const healer = combatant({ id: 'e1', team: 'enemy', int: 5, skills: [healSkill()] })
+    const mage = combatant({ id: 'e2', team: 'enemy', int: 12, str: 2 })
+    const bruiser = combatant({ id: 'e3', team: 'enemy', int: 1, str: 20 })
+    expect(tac(self, stateOf([self, healer, mage, bruiser]), 1)).toBe('e1')      // healer wins
+    expect(tac(self, stateOf([self, mage, bruiser]), 1)).toBe('e2')              // else top caster
+    expect(tac(self, stateOf([self, bruiser]), 1)).toBeNull()                    // else fall through
+  })
+
+  it('Burst banks a ready small skill while the heavy hitter is imminent', () => {
+    const self = combatant({ id: 'p', skills: [big(), small()], skillCooldowns: { big: 2, small: 0 } })
+    // big imminent (cd 2 ≤ window 2 at rank 1) and small ready → hold the small one
+    expect(TACTIC_REGISTRY['burst'].action!(self, stateOf([self]), 1)).toEqual({ skipAttack: true })
+  })
+
+  it('Burst does not bank when the heavy hitter is ready or far off', () => {
+    const ready = combatant({ id: 'p', skills: [big(), small()], skillCooldowns: { big: 0, small: 0 } })
+    expect(TACTIC_REGISTRY['burst'].action!(ready, stateOf([ready]), 1)).toBeNull()     // big ready → fire it
+    const farOff = combatant({ id: 'p', skills: [big(), small()], skillCooldowns: { big: 4, small: 0 } })
+    expect(TACTIC_REGISTRY['burst'].action!(farOff, stateOf([farOff]), 1)).toBeNull()   // cd 4 > window → just cast / chain
+  })
+
+  it('Burst does not bank when no small skill is ready (keeps tempo)', () => {
+    const self = combatant({ id: 'p', skills: [big(), small()], skillCooldowns: { big: 2, small: 1 } })
+    expect(TACTIC_REGISTRY['burst'].action!(self, stateOf([self]), 1)).toBeNull()       // nothing to bank → attack normally
+  })
+
+  it('Burst is inert for a one-skill unit', () => {
+    const self = combatant({ id: 'p', skills: [big()], skillCooldowns: { big: 2 } })
+    expect(TACTIC_REGISTRY['burst'].action!(self, stateOf([self]), 1)).toBeNull()
+  })
+
+  it('Focus Fire locks the shared blackboard focus for the whole team', () => {
+    const self = combatant({ id: 'p' })
+    const full = combatant({ id: 'e1', team: 'enemy', hp: 100, maxHp: 100 })
+    const hurt = combatant({ id: 'e2', team: 'enemy', hp: 30, maxHp: 100 })
+    expect(TACTIC_REGISTRY['focus-fire'].targeting!(self, withFocus([self, full, hurt]), 1)).toBe('e2')
+    expect(TACTIC_REGISTRY['focus-fire'].scope).toBe('party')
   })
 })

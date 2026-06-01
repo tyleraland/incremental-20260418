@@ -218,13 +218,36 @@ stops at walls and the arena perimeter.
   the equipped tactics per channel in priority order each turn.
 - Each unit equips up to `MAX_UNIT_TACTICS` (4) tactics (`unit.tactics`); the party
   shares up to `MAX_PARTY_TACTICS` (2) party-scope tactics (`partyTactics`). Scope is
-  enforced against `TacticDef.scope`.
+  enforced against `TacticDef.scope`. Priority competes **per channel** (channels are
+  evaluated independently); the Units `TacticsTab` groups equipped tactics by channel
+  and the ▲/▼ arrows reorder *within* a channel only.
+- **Floor vs trigger** (`TacticDef.kind`, default `'trigger'`). *Floors* fire whenever
+  a basic precondition holds (`tank-buster`, `flanker`, `kiter`, `guardian`); a floor
+  above a trigger in the same channel would starve it, so `resolveTactics`
+  (`demoteFloors`) stable-sorts floors to the bottom of their channel and the UI warns
+  on a manual floor-above-trigger ordering.
 - **Skills granted as tactics:** action-bar skills are injected as action-channel
   tactics via the adapter, so equipping a skill gives a unit a combat action without a
-  separate tactic slot.
+  separate tactic slot. Among the injected attack skills the action channel leads with
+  the **biggest ready nuke** (`orderAttacksByPower` + `skillDamageEstimate`,
+  first-match over a power-sorted list); channeled-AoE keeps its first slot + worth-it
+  gate, non-attack skills keep type priority.
+- **Charger** is a *modifier*, not a movement plan: `chargerSpeedMult` folds its
+  speed-up into whichever movement plan wins, so it never occupies (and starves) the
+  movement channel; its first-hit damage bonus is `chargerBonus`.
+- **Team blackboard read side:** `teamFocus(self, state)` reads the planner's shared
+  `focusTargetId` (lowest-HP visible enemy). `opportunist` (rank-scaled HP gate),
+  `finish-them` (party, near-dead gate), and `focus-fire` (party, unconditional)
+  read it instead of each re-scanning — the "who's hurt" + vision/stealth filtering
+  lives once in `defaultPlanner`.
+- **Burst kit** (opt-in, role-specific): `assassinate` (hunt the enemy healer/top
+  caster), `burst` (bank a ready small skill while the heavy hitter is ≤window rounds
+  out, then chain — stateless **cooldown-lookahead**, no per-unit memory bag), and the
+  party-scope `focus-fire`.
+- **Per-turn resolution** (`Combatant.lastResolution`, runtime-only): the eval loops
+  record what fired vs why the rest were dormant (`fired`/`idle`/`starved`/`cooldown`),
+  surfaced live in the BattleView DebugTab.
 - Monsters may carry their own skills and tactics (see `monsterToEngineInput`).
-- Targeting examples that ship today: `tank-buster` (lock highest-DEF enemy),
-  `opportunist`, kiter/flanker/guardian movement tactics, etc.
 
 ### Combat view (a drop-in mode of the Map tab)
 

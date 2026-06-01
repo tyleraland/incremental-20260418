@@ -5,40 +5,53 @@ blackboard's unused read side, and add a damage-aware action layer (burst).
 Keep tactics pure within their channel; read forward in the pipeline
 (targeting → movement → action); source shared facts from one place.
 
-## 1. Floor vs trigger tagging
-- Add `kind: 'floor' | 'trigger'` to `TacticDef` (`engine/types.ts`, `engine/tactics.ts`).
-- Floors = fire whenever a target/ally exists: `tank-buster`, `flanker`, `kiter`, `guardian`. Rest are triggers.
-- `resolveTactics` (`tactics.ts`): stable-sort floors to the bottom of their channel.
-- Warn in UI when a floor sits above a trigger (it'd starve it).
+## 1. Floor vs trigger tagging ✅
+- `TacticDef.kind: 'floor' | 'trigger'` (default trigger). Floors: `tank-buster`,
+  `flanker`, `kiter`, `guardian`.
+- `resolveTactics` (`tactics.ts` `demoteFloors`) stable-sorts floors to the bottom
+  of their channel, per channel, cross-channel interleave untouched.
+- `TacticsTab` warns when an always-on (floor) tactic sits above a trigger in the
+  same channel.
 
-## 2. Charger: plan → modifier
-- `charger` currently always returns `{speedMult}` → starves movement channel.
-- Make `speedMult` a modifier applied to whichever movement plan wins, not its own plan. Damage half (`chargerBonus`, read at `engine.ts:303`) is already decoupled — leave it.
+## 2. Charger: plan → modifier ✅
+- `charger` no longer produces a movement plan. `chargerSpeedMult` folds its
+  speed-up into whichever movement plan wins (`evalMovement`); it can't starve the
+  channel. Damage half (`chargerBonus`) unchanged.
 
-## 3. Tactics UI: per-channel
-- `Units.tsx` `TacticsTab`: group equipped into 5 channel lists; arrows reorder *within* a channel only. Document this.
-- No hard 1-per-channel cap (layering is the feature).
+## 3. Tactics UI: per-channel ✅
+- `TacticsTab` groups equipped tactics by channel (fixed `CHANNEL_ORDER`); ▲/▼
+  reorder *within* a channel only (`moveTactic` swaps the nearest same-channel
+  neighbour). No 1-per-channel cap — layering is the feature.
 
-## 4. Live "active now"
-- `BattleView.tsx` `DebugTab`: per channel, mark the tactic winning *this turn* and why others are dormant (condition false vs starved-by-priority). Needs the per-turn resolution surfaced (extend trace or a per-turn resolution snapshot).
+## 4. Live "active now" ✅
+- `Combatant.lastResolution` (runtime-only, excluded from snapshot) records per-turn
+  outcomes (fired / idle / starved / cooldown), written by the eval loops.
+- `BattleView` DebugTab shows, per channel, what fired and why the rest are dormant;
+  `buildDebugText` includes it.
 
-## 5. Wire the blackboard read side
-- Planner already writes `focusTargetId`/`threat` each round (`defaultPlanner`, `engine.ts:613/685`); nothing reads them.
-- Let targeting tactics read `state.plans[team]`. Retire duplicate "who's hurt" in `opportunist` + `finish-them` (compute once in planner).
+## 5. Wire the blackboard read side ✅
+- `teamFocus(self, state)` reads `state.plans[team].focusTargetId`. `opportunist` and
+  `finish-them` read it instead of re-scanning; the "who's hurt" + vision/stealth
+  filtering lives once in `defaultPlanner`.
 
-## 6. Action selection policy
-- Today: injected skills in fixed order (channeled-AoE first) + naive "first ready attack in range" (`behavior.ts` `chooseAction`).
-- Add damage-aware ordering so an action tactic can choose cast order. Touches `makeCombatant` skill-tactic build (`engine.ts:65`) + `evalActionTactics`.
+## 6. Action selection policy ✅
+- `skillDamageEstimate` (`damage.ts`) + `orderAttacksByPower` (`engine.ts`) inject
+  attack skill-tactics biggest-first; first-match over them = "open with the
+  hardest-hitting ready attack, fall through while it cools down." Channeled-AoE
+  keeps its slot/gate; non-attack skills keep type priority.
 
-## 7. Per-unit tactic scratchpad (decide first)
-- Burst needs anticipation/combo memory. Either: cooldown-lookahead (stateless) OR a small per-unit `tacticState` bag on `Combatant`.
-- Pick one before shipping any stateful tactic. (Existing fakes: `tacticsUsed`, `interruptedCount`, `lastHitById`.)
+## 7. Per-unit tactic scratchpad (decide first) ✅ — decision: stateless
+- **Chosen: cooldown-lookahead (stateless).** No per-unit `tacticState` bag. Burst
+  reads `skillCooldowns` to anticipate; combo "memory" is derived from cooldown
+  state, not stored. Revisit only if a tactic needs memory cooldowns can't express.
 
-## 8. Burst tactic (blackboard's first consumer)
-- Targeting: "focus the support/healer" (reads blackboard focus).
-- Action: front-load — open with biggest ready nuke; hold small skills if a big one is ≤N rounds from ready; chain after.
-- Party-scope variant: whole team dumps on `focusTargetId`.
-- Opt-in (rogue/coordinated party), not a default. Role-specific.
+## 8. Burst tactic (blackboard's first consumer) ✅
+- `assassinate` (unit/targeting): hunt the enemy healer, else top caster.
+- `burst` (unit/action): bank a ready small skill while the heavy hitter is ≤window
+  (`2 + rank-1`) rounds out; never banks basic attacks (keeps tempo). Stateless.
+- `focus-fire` (party/targeting, floor): whole team locks the shared blackboard
+  focus — the first party-scope blackboard consumer.
+- All opt-in (not auto-equipped), role-specific.
 
 ## 9. (Longer horizon) Collapse channels
 - Migrate `action`/`reaction`/`passive` onto skills/traits/gear; keep `targeting`+`movement` as the explicit lever. Action is already skill-injected.

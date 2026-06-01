@@ -48,3 +48,25 @@ describe('action selection: biggest ready nuke first', () => {
     expect(find(b, 'e').hp).toBeLessThan(999)
   })
 })
+
+describe('Burst tactic in a live fight (item 8)', () => {
+  // A long-cooldown heavy hitter + a short-cooldown filler.
+  const heavy = () => attackSkill({ id: 'heavy', name: 'Heavy', damageFormula: 'str * 4', range: 30, cooldown: 5 })
+  const filler = () => attackSkill({ id: 'filler', name: 'Filler', damageFormula: 'str * 1', range: 30, cooldown: 2 })
+  const castsOf = (b: BattleState, skillId: string) =>
+    b.events.filter((e) => e.type === 'skill_use' && e.sourceId === 'p' && e.skillId === skillId).length
+
+  it('banks the filler while the heavy hitter is imminent (fewer filler casts than a plain unit)', () => {
+    const mk = (withBurst: boolean) => createBattle({
+      playerUnits: [eu({ id: 'p', str: 20, skills: [filler(), heavy()], meleeRange: 30, tactics: withBurst ? [{ id: 'burst', rank: 1 }] : [] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, hp: 99999, maxHp: 99999, meleeRange: 30 })],
+    })
+    const plain = mk(false)
+    const burst = mk(true)
+    for (let i = 0; i < 8; i++) { advanceRound(plain); advanceRound(burst) }
+    // Burst still lands its heavy nukes…
+    expect(castsOf(burst, 'heavy')).toBeGreaterThanOrEqual(1)
+    // …but withholds the filler during the bank windows, so it spends fewer.
+    expect(castsOf(burst, 'filler')).toBeLessThan(castsOf(plain, 'filler'))
+  })
+})
