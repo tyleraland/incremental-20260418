@@ -61,3 +61,11 @@ export function defaultCalculateDamage(
 export function calculateHeal(caster: Combatant, skill: EngineSkill): number {
   return Math.floor(evalFormula(skill.healFormula, caster))
 }
+
+// Target-independent damage estimate for an attack skill (raw formula on the
+// caster's current stats, before the defender's mitigation/variation). Used to
+// order the action channel "biggest ready nuke first" (§action policy) and by
+// burst tactics to pick a cast. Non-attack skills score 0.
+export function skillDamageEstimate(caster: Combatant, skill: EngineSkill): number {
+  return skill.type === 'attack' ? evalFormula(skill.damageFormula, caster) : 0
+}

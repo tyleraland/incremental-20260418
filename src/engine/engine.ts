@@ -12,7 +12,7 @@ import {
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
-import { defaultCalculateDamage, calculateHeal, effectiveStat } from './damage'
+import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
 } from './behavior'
@@ -62,6 +62,20 @@ function emptyStats(): BattleStats {
   }
 }
 
+// Stable descending-power reorder of *attack* skills within a skill list, leaving
+// every non-attack skill in its original slot (§action policy). Power is the
+// target-independent damage estimate on the unit's base stats; ties break by id
+// so the order is deterministic. A unit with one (or zero) attack skill is
+// unchanged.
+function orderAttacksByPower(input: EngineUnitInput, skills: EngineSkill[]): EngineSkill[] {
+  const stub = { str: input.str, def: input.def, int: input.int, spd: input.spd, statuses: [] } as unknown as Combatant
+  const attacks = skills
+    .filter((s) => s.type === 'attack')
+    .sort((a, b) => skillDamageEstimate(stub, b) - skillDamageEstimate(stub, a) || (a.id < b.id ? -1 : 1))
+  let ai = 0
+  return skills.map((s) => (s.type === 'attack' ? attacks[ai++] : s))
+}
+
 function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; y: number }, tactics: ResolvedTactic[]): Combatant {
   const skills = input.skills.map((s) => ({ ...s }))   // clone so the engine never mutates input
   // "Skills give you tactics": each equipped skill becomes an action-channel
@@ -71,7 +85,12 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
   // so a good area opportunity wins — its own gate (cluster + safety) makes it
   // yield back to the single-target cast when an AoE wouldn't pay off, so it
   // never wastes the long channel on a lone target.
-  const ordered = [...skills.filter(isChanneledAoe), ...skills.filter((s) => !isChanneledAoe(s))]
+  // §action policy: among the rest, attack skills are ordered biggest-nuke-first
+  // (by target-independent damage estimate); since the action channel is
+  // first-match and on-cooldown skills are skipped, this resolves at runtime to
+  // "open with the hardest-hitting attack that's ready." Non-attack skills
+  // (heal/buff/…) keep their slots so type priority is unchanged.
+  const ordered = [...skills.filter(isChanneledAoe), ...orderAttacksByPower(input, skills.filter((s) => !isChanneledAoe(s)))]
   const skillTactics: ResolvedTactic[] = ordered.map((sk) => ({ def: makeSkillTactic(sk), rank: 1 }))
   return {
     id: input.id,
