@@ -40,9 +40,11 @@ export type { TacticDef, TacticChannel }
 export const MAX_UNIT_TACTICS = 4
 export const MAX_PARTY_TACTICS = 2
 
-// Catalog entries of a given scope, in registry (declaration) order.
+// Catalog entries of a given scope, in registry (declaration) order. Monster
+// dispositions (skittish, pack-tactics, …) are monsterOnly — never offered to the
+// player.
 export function listTactics(scope: 'unit' | 'party'): TacticDef[] {
-  return Object.values(TACTIC_REGISTRY).filter((t) => t.scope === scope)
+  return Object.values(TACTIC_REGISTRY).filter((t) => t.scope === scope && !t.monsterOnly)
 }
 
 // ── Store interface ───────────────────────────────────────────────────────────

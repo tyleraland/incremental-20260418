@@ -313,6 +313,33 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     // locked something more specific.
     targeting: (self, state) => teamFocus(self, state)?.id ?? null,
   },
+
+  // Monster dispositions (§aggression) -----------------------------------------
+  // These shape how a monster engages. They're `monsterOnly` (hidden from the
+  // player's tactic picker) but otherwise ordinary tactics. skittish / pack-tactics
+  // / pack-hunter are passive *markers* — they carry no fn; the engine reads them
+  // directly (evalTargeting's provoked gate, rallyPack, executeWander). flee is a
+  // real movement tactic.
+  'skittish': {
+    id: 'skittish', name: 'Skittish', scope: 'unit', channel: 'passive', monsterOnly: true,
+    description: 'Non-aggressive: ignores heroes (just wanders/holds) until it takes a hit or a packmate calls it — then it fights back.',
+  },
+  'pack-tactics': {
+    id: 'pack-tactics', name: 'Pack Tactics', scope: 'unit', channel: 'passive', monsterOnly: true,
+    description: 'Once roused, screams for kin: same-named allies in sight turn aggressive on its target. A herd aggros together; a cornered one calls for help.',
+  },
+  'pack-hunter': {
+    id: 'pack-hunter', name: 'Pack Hunter', scope: 'unit', channel: 'passive', monsterOnly: true,
+    description: 'Roams as a group toward the pack’s shared waypoint (like the hero party) instead of lurking alone — so the pack travels, and converges, together.',
+  },
+  'flee': {
+    id: 'flee', name: 'Flee', scope: 'unit', channel: 'movement', monsterOnly: true,
+    description: 'Badly wounded: break off and run for its own edge (and toward the pack), still calling for help. Rank raises the bail-out HP.',
+    movement: (self, _state, rank) => {
+      const threshold = 0.3 + 0.05 * (rank - 1)
+      return hpRatio(self) < threshold ? { awayFromNearestEnemy: true, rows: 3 } : null
+    },
+  },
 }
 
 // ── resolution & passive readers ────────────────────────────────────────────--

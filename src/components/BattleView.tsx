@@ -567,6 +567,7 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
         <div className="text-game-text-dim uppercase tracking-wide mb-1">Blackboard · {c.team}</div>
         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-game-text-dim">
           <div>round <span className="text-game-text tabular-nums">{battle.round}</span></div>
+          <div>mood <span className={c.provoked ? 'text-game-text' : 'text-amber-300'}>{c.provoked ? 'hostile' : 'passive (until hit/called)'}</span></div>
           <div>pos <span className="text-game-text tabular-nums">({c.pos.x.toFixed(1)},{c.pos.y.toFixed(1)})</span></div>
           <div>lock <span className={!c.lockedTargetId ? 'text-game-muted' : lock.beyond ? 'text-amber-300' : 'text-game-text'}>{lock.text}</span></div>
           <div>team-focus <span className={plan?.focusTargetId ? 'text-game-text' : 'text-game-muted'}>{focusName}</span></div>

@@ -17,7 +17,7 @@ import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
 } from './behavior'
 import {
-  resolveTactics, chargerBonus, chargerSpeedMult, armoredFactor, nimblePeriod,
+  resolveTactics, chargerBonus, chargerSpeedMult, armoredFactor, nimblePeriod, hasTactic,
 } from './tactics'
 import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
@@ -123,6 +123,9 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     statuses: [],
     lockedTargetId: null,
     potionsLeft: input.potions ?? 0,
+    // §aggression: skittish monsters start non-hostile (won't acquire targets
+    // until hit/called); everyone else is hostile from the start.
+    provoked: !tactics.some((t) => t.def.id === 'skittish'),
     tactics: [...tactics, ...skillTactics],
     tacticCooldowns: {},
     tacticsUsed: [],
@@ -252,6 +255,12 @@ function applyDamageRaw(
     target.lastDamageRound = state.round
     const dealer = findCombatant(state, attackerId)
     if (dealer) dealer.lastDamageRound = state.round
+    // §aggression: a hit from an enemy rouses a skittish monster — it turns
+    // hostile and retaliates against whoever struck it.
+    if (!target.provoked && dealer && dealer.team !== target.team) {
+      target.provoked = true
+      target.lockedTargetId = attackerId
+    }
   }
   // §3 stealth: taking damage drops a cloak. Single-target attacks can't even
   // pick a hidden unit, so in practice this is AoE / ground-zone / DoT splash
@@ -557,6 +566,10 @@ function setLock(state: BattleState, self: Combatant, id: string): void {
 }
 
 function evalTargeting(state: BattleState, self: Combatant): void {
+  // §aggression: a non-provoked unit (a skittish monster that hasn't been hit or
+  // called) ignores foes entirely — no lock, so it wanders/holds instead of
+  // hunting. It flips provoked on a hit (applyDamageRaw) or a packmate's call.
+  if (!self.provoked) { self.lockedTargetId = null; return }
   let won = false
   for (const t of self.tactics) {
     if (t.def.channel !== 'targeting' || !t.def.targeting) continue
@@ -799,24 +812,28 @@ function offsetWaypoint(self: Combatant, wp: Vec2 | null | undefined, barriers: 
   return offset
 }
 
+// Roam toward the team blackboard's shared waypoint (regroups on a fight, else
+// roams a far point), fanned out per unit so the group travels as a loose
+// cluster. Used by the hero party and by pack-hunter monsters alike — that's how
+// a pack travels (and converges) together. Travel speed: crossing the big map is
+// movement *between* fights, so it's brisk.
+function roamTowardWaypoint(state: BattleState, self: Combatant): void {
+  const speed = moveSpeedOf(self) * WANDER_SPEED_MULT
+  const point = offsetWaypoint(self, state.plans[self.team]?.waypoint, state.barriers)
+  if (!point) return
+  if (moveTowardPoint(self, point, speed, state.combatants, state.barriers)) {
+    emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+  }
+}
+
 function executeWander(state: BattleState, self: Combatant): void {
   if (self.statuses.some((s) => s.flags.includes('rooted'))) return
 
-  if (self.team === 'player') {
-    // Travel speed: roaming the big map is movement *between* fights, so heroes
-    // cross it briskly. (Combat movement, once a target is locked, isn't here.)
-    const speed = moveSpeedOf(self) * WANDER_SPEED_MULT
-    // Read the team blackboard's shared waypoint (regroups on a fight, else
-    // roams), fanned out per unit so the party travels as a loose cluster.
-    const point = offsetWaypoint(self, state.plans[self.team]?.waypoint, state.barriers)
-    if (!point) return
-    if (moveTowardPoint(self, point, speed, state.combatants, state.barriers)) {
-      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
-    }
-    return
-  }
+  // Heroes always roam as a party; pack-hunter monsters do the same (§pack wander)
+  // so they travel as a group instead of each lurking alone.
+  if (self.team === 'player' || hasTactic(self, 'pack-hunter')) { roamTowardWaypoint(state, self); return }
 
-  // Monsters: lurk, then hop a short distance to a new local spot.
+  // Other monsters: lurk, then hop a short distance to a new local spot.
   if (self.wanderTarget) {
     if (moveTowardPoint(self, self.wanderTarget, moveSpeedOf(self), state.combatants, state.barriers)) {
       emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
@@ -1078,6 +1095,24 @@ function updateFacing(state: BattleState, self: Combatant, from: Vec2, moved: bo
   if (len > EPS) self.facing = { x: dx / len, y: dy / len }
 }
 
+// §pack tactics: a provoked unit with Pack Tactics screams for kin — every
+// same-NAME ally within its sight that isn't already fighting is roused and
+// pointed at the caller's current target. This is what makes a herd aggro
+// together and a cornered straggler call for help; ones already engaged keep
+// their own quarry. Cheap to run each turn (the future "longer range / louder
+// call" knobs are just this, gated or scaled). Threat-based retargeting onto
+// other heroes is a later extension — for now newcomers adopt the caller's foe.
+function rallyPack(state: BattleState, self: Combatant): void {
+  if (!self.provoked || !hasTactic(self, 'pack-tactics')) return
+  for (const ally of state.combatants) {
+    if (ally === self || !ally.alive || ally.provoked) continue
+    if (ally.team !== self.team || ally.name !== self.name) continue
+    if (distance(self.pos, ally.pos) > self.visionRange) continue
+    ally.provoked = true
+    if (self.lockedTargetId) ally.lockedTargetId = self.lockedTargetId
+  }
+}
+
 function takeTurn(state: BattleState, self: Combatant): void {
   const round = state.round
   self.moving = false   // set true only if this turn produces a position change
@@ -1137,6 +1172,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // (3→2) targeting, then movement aimed at the resolved lock
   const lockBefore = self.lockedTargetId
   evalTargeting(state, self)
+  rallyPack(state, self)   // §pack tactics: call kin to this fight (see helper)
   const tgtText = self.lockedTargetId
     ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`
     : (state.mode === 'open' ? 'no target · wander' : 'no target')

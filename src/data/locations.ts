@@ -68,6 +68,22 @@ export const INITIAL_LOCATIONS: Location[] = [
     // a stress arena for AoE, body-blocking, and the open-world sim at scale.
     familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 25, openWorldSize: 25,
   },
+  {
+    id: 'boar-meadow', region: 'world', name: 'Boar Meadow',
+    description: 'A quiet upland meadow where boar herds graze. They pay you no mind — until one is struck, and the whole herd wheels around to answer the squeal.',
+    traits: ['plains'], monsterIds: ['wild-boar'],
+    // §aggression showcase: a passive herd (skittish + pack-tactics + flee) —
+    // ignores you until provoked, then aggros together and bolts when hurt.
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 12, openWorldSize: 30,
+  },
+  {
+    id: 'wolf-den', region: 'world', name: 'Dire Wolf Den',
+    description: 'A wooded hollow prowled by dire wolves that hunt in coordinated packs — they roam together and fall on intruders as one.',
+    traits: ['forest'], monsterIds: ['dire-wolf'],
+    // §aggression showcase: an aggressive hunting pack (pack-hunter + pack-tactics)
+    // — wanders as a group and aggros together on sight.
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 10, openWorldSize: 30,
+  },
 
   // ── Proving Grounds (sandbox arenas, east of the world path) ─────────────
   // Each stages one tactic / terrain idea so it can be watched in the browser;

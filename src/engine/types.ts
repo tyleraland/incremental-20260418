@@ -126,6 +126,7 @@ export interface TacticDef {
   cooldown?: number             // rounds between activations (0/undefined = always)
   oncePerCombat?: boolean
   override?: boolean            // party tactics: inject at the TOP instead of bottom (§5.5)
+  monsterOnly?: boolean         // §aggression: monster-disposition tactics (skittish, pack-…, flee); hidden from the player's picker (listTactics) but fully functional on monsters
   targeting?: (self: Combatant, state: BattleState, rank: number) => string | null
   movement?:  (self: Combatant, state: BattleState, rank: number) => MovementResult | null
   action?:    (self: Combatant, state: BattleState, rank: number) => ActionResult | null
@@ -226,6 +227,13 @@ export interface Combatant {
   statuses: StatusEffect[]
   lockedTargetId: string | null
   potionsLeft: number
+
+  // §aggression: is this unit currently hostile? Heroes and aggressive-on-sight
+  // monsters start true. A "skittish" (non-aggressive) monster starts false and
+  // ignores foes — no targeting, just wanders/holds — until it's provoked: it
+  // takes a hit from an enemy (applyDamageRaw) or a packmate calls it (rallyPack).
+  // Once true it stays true. Round-trips in the snapshot (legacy tokens → true).
+  provoked: boolean
 
   // Tactics (§5)
   tactics: ResolvedTactic[]              // unit tactics + injected party tactics, priority order

@@ -47,6 +47,8 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'prontera-city':    [5, 3],
   'prontera-field-3': [6, 3],   // Prontera Field (east)
   'harpy-roost':      [7, 3],   // Harpy Roost (continues east; dense open-world)
+  'boar-meadow':      [6, 4],   // Boar Meadow (passive herd — aggression showcase)
+  'wolf-den':         [7, 4],   // Dire Wolf Den (aggressive pack — aggression showcase)
   'prontera-field-2': [5, 4],   // Southern Road
   'beach-1':          [5, 5],   // Kanto Beach
 

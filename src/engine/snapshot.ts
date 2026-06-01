@@ -129,7 +129,10 @@ export function deserializeBattle(token: string): BattleState {
     // a reloaded fight would treat them as blind (visionRange null ⇒ sees nothing)
     // and diverge from the original run.
     const visionRange = rest.visionRange == null ? Infinity : rest.visionRange
-    return { ...rest, visionRange, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    // §aggression: legacy tokens predate `provoked` — those monsters were all
+    // hostile, so a missing flag defaults to true (don't reload them as passive).
+    const provoked = rest.provoked ?? true
+    return { ...rest, visionRange, provoked, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {
