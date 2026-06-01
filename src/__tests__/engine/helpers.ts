@@ -60,6 +60,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     wanderTarget: null,
     wanderDwell: 0,
     trace: [],
+    lastResolution: [],
     ...overrides,
   }
 }

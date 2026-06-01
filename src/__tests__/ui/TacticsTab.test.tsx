@@ -36,15 +36,43 @@ describe('Tactics detail tab', () => {
     expect(tacticIds()).toEqual([])
   })
 
-  it('reorders priority with the up control', () => {
+  it('reorders priority within a channel with the up control', () => {
     const { equipTactic } = useGameStore.getState()
+    // two targeting tactics so they share a channel and can be reordered
+    equipTactic('u1', 'opportunist'); equipTactic('u1', 'interrupt')
+    render(<Units />)
+    fireEvent.click(screen.getByText('Tactics'))
+    // two "Move up" buttons render; the second (interrupt) is enabled
+    const ups = screen.getAllByLabelText('Move up')
+    fireEvent.click(ups[1])
+    expect(tacticIds()).toEqual(['interrupt', 'opportunist'])
+  })
+
+  it('keeps the up control disabled for a lone tactic in its channel', () => {
+    const { equipTactic } = useGameStore.getState()
+    // charger (movement) + armored (passive): different channels, neither can move
     equipTactic('u1', 'charger'); equipTactic('u1', 'armored')
     render(<Units />)
     fireEvent.click(screen.getByText('Tactics'))
-    // two "Move up" buttons render; the second (armored) is enabled
-    const ups = screen.getAllByLabelText('Move up')
-    fireEvent.click(ups[1])
-    expect(tacticIds()).toEqual(['armored', 'charger'])
+    for (const btn of screen.getAllByLabelText('Move up')) expect(btn).toBeDisabled()
+    for (const btn of screen.getAllByLabelText('Move down')) expect(btn).toBeDisabled()
+  })
+
+  it('warns when an always-on (floor) tactic sits above a trigger in the same channel', () => {
+    const { equipTactic } = useGameStore.getState()
+    // tank-buster (floor) above opportunist (trigger) — both targeting
+    equipTactic('u1', 'tank-buster'); equipTactic('u1', 'opportunist')
+    render(<Units />)
+    fireEvent.click(screen.getByText('Tactics'))
+    expect(screen.getByText(/Always-on tactics run after this channel's conditional triggers/)).toBeInTheDocument()
+  })
+
+  it('does not warn when the trigger sits above the floor', () => {
+    const { equipTactic } = useGameStore.getState()
+    equipTactic('u1', 'opportunist'); equipTactic('u1', 'tank-buster')
+    render(<Units />)
+    fireEvent.click(screen.getByText('Tactics'))
+    expect(screen.queryByText(/Always-on tactics run after/)).not.toBeInTheDocument()
   })
 })
 

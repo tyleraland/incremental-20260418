@@ -317,6 +317,10 @@ const CHANNEL_META: Record<TacticChannel, { label: string; cls: string }> = {
   passive:   { label: 'Passive', cls: 'text-violet-400 border-violet-400/40 bg-violet-400/10' },
 }
 
+// Channels are evaluated independently, so priority only competes per channel.
+// The Equipped list groups by this fixed order; arrows reorder within a group.
+const CHANNEL_ORDER: TacticChannel[] = ['targeting', 'movement', 'action', 'reaction', 'passive']
+
 function ChannelBadge({ channel }: { channel: TacticChannel }) {
   const m = CHANNEL_META[channel]
   return <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${m.cls}`}>{m.label}</span>
@@ -344,48 +348,77 @@ function TacticsTab({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-4">
-      {/* Equipped — priority order */}
+      {/* Equipped — grouped by channel; priority competes only within a channel */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs uppercase tracking-widest text-game-text-dim">Equipped</div>
-          <span className="text-[10px] text-game-text-dim">{equipped.length}/{MAX_UNIT_TACTICS} · priority order</span>
+          <span className="text-[10px] text-game-text-dim">{equipped.length}/{MAX_UNIT_TACTICS} · by channel</span>
         </div>
         {equipped.length === 0 ? (
           <p className="text-xs text-game-muted italic px-1">No tactics equipped — this unit uses only the party tactics in combat.</p>
         ) : (
-          <div className="space-y-1.5">
-            {equipped.map((slot, i) => {
-              const def = TACTIC_REGISTRY[slot.id]
-              if (!def) return null
+          <div className="space-y-3">
+            {CHANNEL_ORDER.filter((ch) => equipped.some((t) => TACTIC_REGISTRY[t.id]?.channel === ch)).map((ch) => {
+              const group = equipped.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch)
+              // A floor placed above a trigger in the same channel can't actually
+              // run first (the engine demotes floors) — flag it so the order shown
+              // is honest about who acts first.
+              const firstFloor = group.findIndex((t) => TACTIC_REGISTRY[t.id]?.kind === 'floor')
+              const floorAboveTrigger = firstFloor >= 0 && group.slice(firstFloor + 1).some((t) => TACTIC_REGISTRY[t.id]?.kind !== 'floor')
               return (
-                <div key={slot.id} className="bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2">
-                  <span className="text-xs font-mono text-game-muted w-4 text-center shrink-0 mt-0.5">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <ChannelBadge channel={def.channel} />
-                      <span className="text-sm font-medium text-game-text truncate">{def.name}</span>
-                    </div>
-                    <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                <div key={ch}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <ChannelBadge channel={ch} />
+                    {group.length > 1 && <span className="text-[10px] text-game-text-dim">priority order</span>}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      disabled={i === 0}
-                      onClick={() => moveTactic(unit.id, slot.id, -1)}
-                      className="w-6 h-6 rounded flex items-center justify-center text-xs bg-game-border/60 text-game-text hover:bg-game-border disabled:opacity-30 disabled:cursor-not-allowed"
-                      aria-label="Move up"
-                    >▲</button>
-                    <button
-                      disabled={i === equipped.length - 1}
-                      onClick={() => moveTactic(unit.id, slot.id, 1)}
-                      className="w-6 h-6 rounded flex items-center justify-center text-xs bg-game-border/60 text-game-text hover:bg-game-border disabled:opacity-30 disabled:cursor-not-allowed"
-                      aria-label="Move down"
-                    >▼</button>
-                    <button
-                      onClick={() => unequipTactic(unit.id, slot.id)}
-                      className="w-6 h-6 rounded flex items-center justify-center text-xs bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                      aria-label="Remove"
-                    >✕</button>
+                  <div className="space-y-1.5">
+                    {group.map((slot, gi) => {
+                      const def = TACTIC_REGISTRY[slot.id]
+                      if (!def) return null
+                      const isFloor = def.kind === 'floor'
+                      return (
+                        <div key={slot.id} className="bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2">
+                          <span className="text-xs font-mono text-game-muted w-4 text-center shrink-0 mt-0.5">{gi + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                              <span className="text-sm font-medium text-game-text truncate">{def.name}</span>
+                              {isFloor && (
+                                <span
+                                  className="text-[9px] px-1 py-0.5 rounded border border-game-border text-game-muted shrink-0"
+                                  title="Always fires when a target/ally is in range — evaluated after this channel's conditional triggers."
+                                >always-on</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              disabled={gi === 0}
+                              onClick={() => moveTactic(unit.id, slot.id, -1)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-xs bg-game-border/60 text-game-text hover:bg-game-border disabled:opacity-30 disabled:cursor-not-allowed"
+                              aria-label="Move up"
+                            >▲</button>
+                            <button
+                              disabled={gi === group.length - 1}
+                              onClick={() => moveTactic(unit.id, slot.id, 1)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-xs bg-game-border/60 text-game-text hover:bg-game-border disabled:opacity-30 disabled:cursor-not-allowed"
+                              aria-label="Move down"
+                            >▼</button>
+                            <button
+                              onClick={() => unequipTactic(unit.id, slot.id)}
+                              className="w-6 h-6 rounded flex items-center justify-center text-xs bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                              aria-label="Remove"
+                            >✕</button>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
+                  {floorAboveTrigger && (
+                    <p className="mt-1 text-[10px] text-amber-300/90 leading-snug">
+                      ⚠ Always-on tactics run after this channel's conditional triggers — the trigger(s) below still act first.
+                    </p>
+                  )}
                 </div>
               )
             })}

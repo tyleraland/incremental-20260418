@@ -228,3 +228,33 @@ describe('tactics: floor demotion (§5.3)', () => {
     expect(find(b, 'p').lockedTargetId).toBe('e2')   // opportunist, not tank-buster's e1
   })
 })
+
+describe('tactics: per-turn resolution (§debug)', () => {
+  it('records what fired vs what was starved/dormant each turn', () => {
+    // opportunist (trigger) above tank-buster (floor, demoted below it). With a
+    // wounded foe present, opportunist fires and starves the floor below it.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', tactics: [{ id: 'opportunist', rank: 1 }, { id: 'tank-buster', rank: 1 }] })],
+      enemyUnits: [
+        eu({ id: 'e1', team: 'enemy', def: 99, hp: 100, maxHp: 100 }),
+        eu({ id: 'e2', team: 'enemy', def: 1, hp: 10, maxHp: 100 }),
+      ],
+    })
+    advanceRound(b)
+    const res = find(b, 'p').lastResolution
+    expect(res.find((r) => r.id === 'opportunist')?.outcome).toBe('fired')
+    expect(res.find((r) => r.id === 'tank-buster')?.outcome).toBe('starved')
+  })
+
+  it('marks a trigger idle when its condition is not met (floor then fires)', () => {
+    // No wounded foe → opportunist is dormant, so the demoted floor takes over.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', tactics: [{ id: 'opportunist', rank: 1 }, { id: 'tank-buster', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e1', team: 'enemy', def: 5, hp: 100, maxHp: 100 })],
+    })
+    advanceRound(b)
+    const res = find(b, 'p').lastResolution
+    expect(res.find((r) => r.id === 'opportunist')?.outcome).toBe('idle')
+    expect(res.find((r) => r.id === 'tank-buster')?.outcome).toBe('fired')
+  })
+})

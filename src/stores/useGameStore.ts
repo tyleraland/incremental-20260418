@@ -967,13 +967,19 @@ export const useGameStore = create<GameState>((set) => ({
   unequipTactic: (unitId, tacticId) => set((s) => ({
     units: s.units.map((u) => u.id === unitId ? { ...u, tactics: (u.tactics ?? []).filter((t) => t.id !== tacticId) } : u),
   })),
+  // Reorder within the tactic's own channel: priority only competes per channel
+  // (the engine evaluates each channel independently), so the arrows swap with the
+  // nearest equipped neighbour sharing the channel — not the raw-array neighbour.
   moveTactic: (unitId, tacticId, dir) => set((s) => ({
     units: s.units.map((u) => {
       if (u.id !== unitId) return u
       const cur = [...(u.tactics ?? [])]
       const i = cur.findIndex((t) => t.id === tacticId)
-      const j = i + dir
-      if (i < 0 || j < 0 || j >= cur.length) return u
+      if (i < 0) return u
+      const ch = TACTIC_REGISTRY[cur[i].id]?.channel
+      let j = i + dir
+      while (j >= 0 && j < cur.length && TACTIC_REGISTRY[cur[j].id]?.channel !== ch) j += dir
+      if (j < 0 || j >= cur.length) return u
       ;[cur[i], cur[j]] = [cur[j], cur[i]]
       return { ...u, tactics: cur }
     }),

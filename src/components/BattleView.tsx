@@ -450,6 +450,10 @@ function buildDebugText(c: Combatant, battle: BattleState): string {
   L.push(`hp ${Math.ceil(c.hp)}/${c.maxHp}  pos (${c.pos.x.toFixed(1)},${c.pos.y.toFixed(1)})  vision ${c.visionRange === Infinity ? '∞' : c.visionRange}`)
   L.push(`lock: ${nameInBattle(battle, c.lockedTargetId)}  team-focus: ${nameInBattle(battle, plan?.focusTargetId)}  waypoint: ${wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}`)
   L.push(`tactics: ${c.tactics.map((t) => `${t.def.channel}:${t.def.name}`).join(', ') || '(none)'}`)
+  if (c.lastResolution.length) {
+    L.push('-- tactic resolution (most recent turn) --')
+    for (const r of c.lastResolution) L.push(`  ${r.channel}:${r.name} → ${r.outcome}`)
+  }
   if (c.statuses.length) L.push(`statuses: ${c.statuses.map((s) => `${s.name}(${s.duration})`).join(', ')}`)
   if (c.channel) L.push(`channeling: ${c.channel.skillId} (${c.channel.roundsLeft} left)`)
   L.push(`-- last ${Math.min(15, c.trace.length)} turns (newest first) --`)
@@ -516,6 +520,16 @@ function StatsTab({ c }: { c: Combatant }) {
 // channels with competing priorities), and the last-15-turns trace. Built so a
 // developer — or you, pasting the copied block into chat — can see exactly what
 // the unit was deciding and why.
+// How each tactic resolved last turn → dot, colour, and a one-word reason. Drives
+// the "active now" readout: green ● for what fired, muted/amber ○ for the dormant.
+const OUTCOME_META: Record<string, { dot: string; cls: string; note: string }> = {
+  fired:    { dot: '●', cls: 'text-game-green', note: 'active' },
+  idle:     { dot: '○', cls: 'text-game-muted', note: 'condition not met' },
+  starved:  { dot: '○', cls: 'text-amber-300',  note: 'lower priority' },
+  cooldown: { dot: '○', cls: 'text-game-muted', note: 'on cooldown' },
+}
+const DEBUG_CHANNEL_ORDER = ['targeting', 'movement', 'action', 'reaction', 'passive'] as const
+
 function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const plan = battle.plans[c.team]
   const wp = plan?.waypoint
@@ -523,12 +537,13 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const focusName = nameInBattle(battle, plan?.focusTargetId)
   const divergent = c.lockedTargetId && plan?.focusTargetId && c.lockedTargetId !== plan.focusTargetId
 
-  // Group tactics by channel to surface competing priorities (1st wins).
-  const channels = new Map<string, typeof c.tactics>()
-  for (const t of c.tactics) {
-    const arr = channels.get(t.def.channel) ?? []
-    arr.push(t); channels.set(t.def.channel, arr)
-  }
+  // Per-turn resolution (what fired vs why the rest were dormant), keyed by id.
+  const resById = new Map(c.lastResolution.map((r) => [r.id, r.outcome]))
+  const stepped = c.trace.length > 0   // has this unit taken a turn yet?
+  // Group equipped tactics by channel in a fixed evaluation order.
+  const groups = DEBUG_CHANNEL_ORDER
+    .map((ch) => [ch, c.tactics.filter((t) => t.def.channel === ch)] as const)
+    .filter(([, list]) => list.length > 0)
   const recent = c.trace.slice().reverse().slice(0, 15)
 
   return (
@@ -546,19 +561,36 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
         {divergent && <div className="mt-1 text-amber-300">⚠ this unit's lock ≠ team focus</div>}
       </div>
 
-      {/* Tactic resolution */}
+      {/* Tactic resolution — what's active now, and why the rest are dormant */}
       <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
-        <div className="text-game-text-dim uppercase tracking-wide mb-1">Tactics (priority order)</div>
-        {channels.size === 0 && <div className="text-game-muted">no tactics equipped</div>}
-        {[...channels.entries()].map(([ch, list]) => (
-          <div key={ch} className="flex items-start gap-1.5 leading-tight">
-            <span className={`shrink-0 w-16 ${list.length > 1 ? 'text-amber-300' : 'text-game-text-dim'}`}>{ch}{list.length > 1 ? ' ⚠' : ''}</span>
-            <span className="flex-1">
-              {list.map((t, i) => (
-                <span key={t.def.id} className={i === 0 ? 'text-game-text' : 'text-game-muted line-through'}>
-                  {i > 0 && ' › '}{t.def.name}<span className="text-game-muted">·r{t.rank}</span>
-                </span>
-              ))}
+        <div className="text-game-text-dim uppercase tracking-wide mb-1">
+          Tactics {stepped ? `· resolved R${battle.round}` : '· priority order'}
+        </div>
+        {groups.length === 0 && <div className="text-game-muted">no tactics equipped</div>}
+        {groups.map(([ch, list]) => (
+          <div key={ch} className="flex items-start gap-1.5 leading-tight mb-0.5">
+            <span className="shrink-0 w-16 text-game-text-dim">{ch}</span>
+            <span className="flex-1 space-y-0.5">
+              {list.map((t) => {
+                const outcome = resById.get(t.def.id)
+                const isPassive = t.def.channel === 'passive'
+                // movement channel w/o a movement fn = an always-on modifier (Charger)
+                const isModifier = !isPassive && !(t.def as unknown as Record<string, unknown>)[t.def.channel]
+                const meta = outcome ? OUTCOME_META[outcome]
+                  : isPassive  ? { dot: '●', cls: 'text-violet-400', note: 'passive' }
+                  : isModifier ? { dot: '●', cls: 'text-game-green', note: 'modifier' }
+                  : stepped    ? { dot: '·', cls: 'text-game-muted', note: 'not evaluated' }
+                  : { dot: '·', cls: 'text-game-text-dim', note: '' }
+                const lit = outcome === 'fired' || isPassive || isModifier
+                return (
+                  <div key={t.def.id} className="flex items-center gap-1">
+                    <span className={meta.cls}>{meta.dot}</span>
+                    <span className={lit ? 'text-game-text' : 'text-game-text-dim'}>{t.def.name}</span>
+                    <span className="text-game-muted">·r{t.rank}</span>
+                    {meta.note && <span className={`ml-auto ${meta.cls}`}>{meta.note}</span>}
+                  </div>
+                )
+              })}
             </span>
           </div>
         ))}
