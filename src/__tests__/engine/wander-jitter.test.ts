@@ -111,6 +111,45 @@ describe('open-world wander — no terrain freeze', () => {
   })
 })
 
+describe('open-world wander — no rim ping-pong', () => {
+  // Regression: when the shared waypoint sits within a couple cells of an edge,
+  // the per-unit fan-out shoved each target *off* the arena. Aiming off-map, a
+  // unit can't make straight progress into the rim, so it slides sideways along
+  // it a full step and diagonals back the next round — two units do this in
+  // lockstep and ping-pong left/right forever, cancelling each other's movement
+  // out (the reported bug: a party stuck stepping at the top edge, y pinned at 0,
+  // x oscillating). Clamping the offset into bounds gives each a reachable spot
+  // it can actually arrive at and hold.
+  it('two units settle at a near-edge waypoint instead of oscillating', () => {
+    const b = createBattle({
+      playerUnits: [
+        eu({ id: 'a', team: 'player', visionRange: 10 }),
+        eu({ id: 'bb', team: 'player', visionRange: 10 }),
+      ],
+      enemyUnits: [],
+      mode: 'open', cols: 50, rows: 50,
+      // Pin the shared waypoint one cell off the top edge (as captured live).
+      planner: () => ({ waypoint: { x: 32, y: 1 }, focusTargetId: null, threat: {}, huntTargetId: null }),
+    })
+    find(b, 'a').pos = { x: 31.5, y: 5 }
+    find(b, 'bb').pos = { x: 32.5, y: 5 }
+    // Let them travel in and settle.
+    for (let r = 0; r < 10; r++) advanceRound(b)
+    const prev: Record<string, { x: number; y: number }> = { a: { ...find(b, 'a').pos }, bb: { ...find(b, 'bb').pos } }
+    let maxStep = 0
+    for (let r = 0; r < 20; r++) {
+      advanceRound(b)
+      for (const id of ['a', 'bb']) {
+        const p = find(b, id).pos
+        expect(p.y).toBeGreaterThanOrEqual(0)   // stays in-bounds
+        maxStep = Math.max(maxStep, dist(p, prev[id]))
+        prev[id] = { ...p }
+      }
+    }
+    expect(maxStep).toBeLessThan(0.1)   // settled and holding, not ping-ponging
+  })
+})
+
 describe('barrier pathing — thread to the centre', () => {
   // "Can units path to the centre of a barrier-heavy map?" Modelled as a pathing
   // question (not wander): a target sits at the centre and the hunter has the

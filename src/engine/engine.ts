@@ -787,7 +787,14 @@ function offsetWaypoint(self: Combatant, wp: Vec2 | null | undefined, barriers: 
   if (!wp) return null
   const ox = ((self.index % 3) - 1) * 2.5
   const oy = ((Math.floor(self.index / 3) % 3) - 1) * 2.5
-  const offset = { x: wp.x + ox, y: wp.y + oy }
+  // Keep the fanned-out target INSIDE the arena. When the shared waypoint sits
+  // near an edge, the per-unit shove can push the offset off the map; aiming
+  // off-arena, moveTowardPoint can't make straight progress into the rim and
+  // slides sideways along it instead — two units then ping-pong left/right in
+  // lockstep and cancel each other's movement out (the rim-jitter bug). Clamping
+  // to bounds gives each unit a real, reachable spot it can actually arrive at
+  // and hold.
+  const offset = arenaClamp({ x: wp.x + ox, y: wp.y + oy })
   if (pointBlocked(barriers, offset) || !canReach(self.pos, offset, barriers)) return wp
   return offset
 }
