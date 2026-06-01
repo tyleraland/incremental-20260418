@@ -253,13 +253,26 @@ describe('phase 3: combos & stealth', () => {
     expect(find(b, 'e').lockedTargetId).toBeNull()
   })
 
-  it('Cloak hides the caster', () => {
+  it('Cloak hides the caster when a foe is in sight but >6 away (ambush window)', () => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'r', skills: [buildEngineSkill('cloak', 1)!] })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0 })],
+      playerUnits: [eu({ id: 'r', skills: [buildEngineSkill('cloak', 1)!], moveSpeed: 0 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0, moveSpeed: 0 })],
     })
+    find(b, 'r').pos = { x: 7, y: 2 }
+    find(b, 'e').pos = { x: 7, y: 13 }   // distance 11 > 6, in sight (∞ vision in encounters)
     advanceRound(b)
     expect(find(b, 'r').statuses.some((s) => s.id === 'stealthed')).toBe(true)
+  })
+
+  it('Cloak will not fire while a foe is within 6 (engaged / too close to slip away)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', skills: [buildEngineSkill('cloak', 1)!], moveSpeed: 0 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0, moveSpeed: 0 })],
+    })
+    find(b, 'r').pos = { x: 7, y: 7 }
+    find(b, 'e').pos = { x: 7, y: 11 }   // distance 4 ≤ 6
+    advanceRound(b)
+    expect(find(b, 'r').statuses.some((s) => s.id === 'stealthed')).toBe(false)
   })
 
   const backstabValue = (stealthed: boolean): number => {

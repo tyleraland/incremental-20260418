@@ -53,6 +53,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     chargeUsed: false,
     attacksReceived: 0,
     lastHitById: null,
+    lastDamageRound: -1000,
     channel: null,
     interruptedCount: 0,
     visionRange: Infinity,

@@ -133,7 +133,7 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
   },
   'cloak': {
     id: 'cloak', name: 'Cloak', maxLevel: 10, type: 'active',
-    description: () => `Vanish — enemies can't target you until you strike.`,
+    description: () => `Vanish for ~10s — enemies can't target you until you strike or get hit. Move at 75% while hidden. Only from safety: a foe in sight but >6 away and out of combat for a few rounds.`,
     requires: [],
     getBonuses: () => ({}),
   },

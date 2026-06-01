@@ -56,6 +56,7 @@ export interface StatModifiers {
   int?: number
   spd?: number
   moveSpeed?: number  // grid units/round added to base (positive = faster, negative = slow)
+  moveSpeedMult?: number  // multiplies final move speed after additive mods (e.g. 0.75 while cloaked)
 }
 
 export interface StatusEffect {
@@ -233,6 +234,7 @@ export interface Combatant {
   chargeUsed: boolean                    // Charger's first-hit damage bonus consumed
   attacksReceived: number                // for Nimble's deterministic dodge
   lastHitById: string | null             // attacker since this unit's last turn (Counterattacker)
+  lastDamageRound: number                // round this unit last dealt OR received damage (Cloak's "not engaged" gate; sentinel far-negative = never)
   channel: ChannelState | null           // active channeled cast, if any (§4 cast time)
   interruptedCount: number               // times a channel of theirs has been disrupted (Wary Caster reads this)
 

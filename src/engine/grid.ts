@@ -70,10 +70,12 @@ export function attackReach(c: Combatant): number {
 // StatModifiers.moveSpeed. Clamped at 0 so stationary units never back-pedal.
 export function moveSpeedOf(c: Combatant): number {
   let speed = c.moveSpeed
+  let mult = 1
   for (const s of c.statuses) {
     if (s.statModifiers.moveSpeed) speed += s.statModifiers.moveSpeed
+    if (s.statModifiers.moveSpeedMult != null) mult *= s.statModifiers.moveSpeedMult   // e.g. Cloak → 0.75
   }
-  return Math.max(0, speed)
+  return Math.max(0, speed * mult)
 }
 
 // Move `mover` toward `target`, stopping `reach` units short so melee attackers

@@ -172,13 +172,32 @@ function channeledAoeWorthIt(self: Combatant, state: BattleState, sk: EngineSkil
   })
 }
 
+// §cloak (ambush-only) gate. A self-cast stealth skill is only worth using when
+// the unit can slip away and set up a strike — never mid-melee and never with
+// nothing to ambush:
+//   • not engaged — no damage dealt/taken for CLOAK_CALM_ROUNDS rounds, and
+//   • room to vanish — no enemy within CLOAK_MIN_GAP cells, and
+//   • a reason to — at least one enemy in sight to stalk (so it's pointless on an
+//     empty field; in encounters vision is ∞ so any living foe counts).
+const CLOAK_MIN_GAP = 6
+const CLOAK_CALM_ROUNDS = 5
+const isStealthSkill = (sk: EngineSkill): boolean => sk.targeting === 'self' && sk.statusApplied === 'stealthed'
+function canCloak(self: Combatant, state: BattleState): boolean {
+  if (state.round - self.lastDamageRound < CLOAK_CALM_ROUNDS) return false   // recently in combat → engaged
+  const foes = livingEnemies(state, self)
+  if (foes.some((e) => distance(self.pos, e.pos) <= CLOAK_MIN_GAP)) return false   // someone's right on top of us
+  return foes.some((e) => distance(self.pos, e.pos) <= self.visionRange)            // a foe in sight worth ambushing
+}
+
 // The action-channel tactic that a skill brings with it (the merge). Fires when
 // the skill is off cooldown and a valid target exists; otherwise yields to the
 // next tactic / basic attack. A long AoE channel additionally yields unless it'd
 // hit a cluster from safety, so the caster falls through to its single-target
-// nuke when an area cast wouldn't pay off (§4 cluster/safety gate).
+// nuke when an area cast wouldn't pay off (§4 cluster/safety gate). A self-cast
+// cloak only fires from the ambush window (canCloak).
 export function makeSkillTactic(sk: EngineSkill): TacticDef {
   const gated = isChanneledAoe(sk)
+  const cloak = isStealthSkill(sk)
   return {
     id: `skill:${sk.id}`,
     name: sk.name,
@@ -187,6 +206,7 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
     channel: 'action',
     action: (self, state) => {
       if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
+      if (cloak && !canCloak(self, state)) return null
       const targetId = selectSkillTarget(self, state, sk)
       if (!targetId) return null
       if (gated) {

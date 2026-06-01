@@ -28,7 +28,9 @@ export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   // §3 combo: frozen skips the turn and counts as water armor — so Lightning/Fire
   // hit for 2x via the element table, while a fire hit also melts (clears) it.
   'frozen':    { id: 'frozen',    name: 'Frozen', duration: 2, flags: ['frozen'], armorOverride: 'water', removedByElement: ['fire'], category: 'control' },
-  'stealthed': { id: 'stealthed', name: 'Stealthed', duration: 4, flags: ['stealthed'], category: 'buff' },
+  // Cloak: ~10s of invisibility (≈25 rounds at 2.5 rounds/s) — or until the
+  // bearer deals/takes damage (breakStealth). Sneaking is slower: 75% move speed.
+  'stealthed': { id: 'stealthed', name: 'Stealthed', duration: 25, flags: ['stealthed'], statModifiers: { moveSpeedMult: 0.75 }, category: 'buff' },
 }
 
 export function buildStatus(specId: string, sourceId: string): StatusEffect | null {

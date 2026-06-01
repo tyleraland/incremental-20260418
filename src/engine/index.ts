@@ -10,7 +10,7 @@ export {
   FRONT_ROWS, MID_ROWS, PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT,
 } from './constants'
 export {
-  distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, attackReach, moveTowardPoint,
+  distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, attackReach, moveTowardPoint, moveSpeedOf,
 } from './grid'
 export {
   alliesOf, visibleEnemiesOf, lockedTarget, centroid, nearestTo,

@@ -76,6 +76,10 @@ function orderAttacksByPower(input: EngineUnitInput, skills: EngineSkill[]): Eng
   return skills.map((s) => (s.type === 'attack' ? attacks[ai++] : s))
 }
 
+// Sentinel for "this unit has never dealt or taken damage" — far enough in the
+// past that the Cloak calm-rounds gate always reads as calm at battle start.
+const NEVER_DAMAGED = -1000
+
 function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; y: number }, tactics: ResolvedTactic[]): Combatant {
   const skills = input.skills.map((s) => ({ ...s }))   // clone so the engine never mutates input
   // "Skills give you tactics": each equipped skill becomes an action-channel
@@ -125,6 +129,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     chargeUsed: false,
     attacksReceived: 0,
     lastHitById: null,
+    lastDamageRound: NEVER_DAMAGED,
     channel: null,
     interruptedCount: 0,
     visionRange: input.visionRange ?? Infinity,
@@ -241,6 +246,13 @@ function applyDamageRaw(
   amount: number,
 ): void {
   target.hp = Math.max(0, target.hp - amount)
+  // §cloak "not engaged" gate: stamp the round on both ends of a real hit so a
+  // unit must stay out of combat for a few rounds before it can re-cloak.
+  if (amount > 0) {
+    target.lastDamageRound = state.round
+    const dealer = findCombatant(state, attackerId)
+    if (dealer) dealer.lastDamageRound = state.round
+  }
   // §3 stealth: taking damage drops a cloak. Single-target attacks can't even
   // pick a hidden unit, so in practice this is AoE / ground-zone / DoT splash
   // "disrupting" the cloak — the hidden unit pops back into view.
