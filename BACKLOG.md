@@ -130,6 +130,37 @@ same way" by penalising left-side detours.
   target forever. Multi-unit fights converge so this rarely bites in
   practice; would need a "cut the corner" intercept.
 
+### Monster aggression & packs (extensions)
+
+First iteration shipped — `Combatant.provoked` + the `skittish` / `pack-tactics`
+/ `pack-hunter` / `flee` (monsterOnly) tactics, aggro-on-hit in `applyDamageRaw`,
+`rallyPack` in `takeTurn`, and `aggro`/`rally` events with BattleView feedback +
+a codex disposition note. Deferred:
+
+- **Call range / frequency.** `rallyPack` calls at full `visionRange` every turn.
+  Add a louder/longer-range or cooldown-gated "howl" (rank-scaled) instead of an
+  every-turn full-sight call.
+- **Threat-based retargeting.** Rallied kin adopt the *caller's* target only;
+  shift aggro toward whoever's dealing the most damage (incl. other party
+  members), reading the planner's `threat` map.
+- **Cross-species / faction packs.** Calls match exact `name` today; allow
+  "call any allied monster nearby" or tagged faction groups.
+- **Passive herd-wander.** Passive herds (skittish, no `pack-hunter`) lurk in
+  place; give them a non-hunting "graze together" group roam (vs. `pack-hunter`,
+  which converges on heroes via the team waypoint).
+- **Flee polish.** `flee` runs toward the unit's own edge (+ cohesion); make it
+  flee *directly away from* the nearest threat, seek terrain/cover, and regroup
+  with the pack rather than corner itself.
+- **Aggression decay / leashing.** `provoked` is permanent; let monsters calm
+  down and de-aggro when heroes break contact, or leash to a home area.
+- **Tiered dispositions.** Beyond skittish/aggressive: *territorial* (aggro only
+  within a radius), *ambush* (passive until a hero is adjacent), *fearful*
+  (flees on sight).
+- **Alert propagation.** A provoked monster alerts kin who then *hunt* the
+  party's last-known position even out of sight (vs. only adopting a live lock).
+- **Pack roles.** Leader/follower — kill the leader and the pack scatters/flees;
+  or coordinated flank/surround driven by the team blackboard.
+
 ## Engine inconsistencies & gaps
 
 - **Channeled spells don't recheck LoS at resolve time** — a target can step

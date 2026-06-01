@@ -128,6 +128,27 @@ describe('flee — run when badly hurt', () => {
   })
 })
 
+describe('events feed the UI feedback (aggro flash / rally ring)', () => {
+  it('emits an aggro event when a skittish monster is roused, and a rally on the call', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'hero', str: 24, moveSpeed: 0 })],
+      enemyUnits: [
+        mob({ id: 'a', name: 'Boar', moveSpeed: 0, tactics: [{ id: 'skittish', rank: 1 }, { id: 'pack-tactics', rank: 1 }] }),
+        mob({ id: 'b', name: 'Boar', moveSpeed: 0, tactics: [{ id: 'skittish', rank: 1 }, { id: 'pack-tactics', rank: 1 }] }),
+      ],
+    })
+    find(b, 'hero').pos = { x: 6, y: 6 }
+    find(b, 'a').pos = { x: 6, y: 6.9 }
+    find(b, 'b').pos = { x: 10, y: 6 }
+    for (let r = 0; r < 6; r++) advanceRound(b)
+    const aggro = b.events.filter((e) => e.type === 'aggro')
+    const rally = b.events.filter((e) => e.type === 'rally')
+    expect(aggro.some((e) => e.sourceId === 'a')).toBe(true)   // hit → roused
+    expect(aggro.some((e) => e.sourceId === 'b')).toBe(true)   // called → roused
+    expect(rally.some((e) => e.sourceId === 'a')).toBe(true)   // 'a' made the call
+  })
+})
+
 describe('data wiring (MONSTER_REGISTRY)', () => {
   it('Slime is skittish (starts non-aggressive); Dire Wolf is aggressive', () => {
     const b = createBattle({

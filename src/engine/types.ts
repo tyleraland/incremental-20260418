@@ -308,6 +308,12 @@ export type BattleEventType =
   // spawn: a combatant entered an already-running battle (open-world
   // reinforcement, or a hero re-joining after recovery). UI can flash it in.
   | 'spawn'
+  // aggro: a unit just turned hostile (provoked) — a skittish monster roused by
+  // a hit or a packmate's call. UI flashes a "!" over it.
+  | 'aggro'
+  // rally: a monster with Pack Tactics called same-named kin into the fight. UI
+  // pulses a "call ring" out from the caller.
+  | 'rally'
   // tactic_use: a non-skill tactic fired (Counterattacker, Shield Wall, Last
   // Stand…). UI floats the tactic name above the source so the player can see
   // why a unit just acted. Skill tactics already emit `skill_use` and don't

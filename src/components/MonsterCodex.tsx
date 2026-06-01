@@ -19,6 +19,17 @@ function fmtStat(key: string, val: number | [number, number]): string {
   return String(val)
 }
 
+// §aggression: human-readable disposition, derived from the monster's tactics.
+// Lead with hostile-vs-passive, then any pack / flee traits.
+function dispositionNotes(monster: MonsterDef): string[] {
+  const ids = new Set((monster.tactics ?? []).map((t) => t.id))
+  const notes = [ids.has('skittish') ? 'Passive — ignores you until struck or called, then fights back' : 'Aggressive — attacks on sight']
+  if (ids.has('pack-tactics')) notes.push('Pack tactics — calls same-kind nearby to its target')
+  if (ids.has('pack-hunter'))  notes.push('Hunts in packs — roams as a group')
+  if (ids.has('flee'))         notes.push('Flees when badly wounded')
+  return notes
+}
+
 export function MonsterCodex({ monster, seenCount, onClose }: {
   monster: MonsterDef
   seenCount: number
@@ -82,6 +93,26 @@ export function MonsterCodex({ monster, seenCount, onClose }: {
             ) : (
               <p className="text-xs text-game-muted italic">
                 Not enough sightings to assess combat capability.
+                {seenCount < FAMILIARITY_THRESHOLDS.stats && ` (${FAMILIARITY_THRESHOLDS.stats - seenCount} more needed)`}
+              </p>
+            )}
+          </div>
+
+          {/* Behavior (disposition) */}
+          <div>
+            <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Behavior</div>
+            {canSeeStats ? (
+              <div className="space-y-1.5">
+                {dispositionNotes(monster).map((note, i) => (
+                  <div key={i} className={`flex items-center gap-2 bg-game-bg rounded-lg px-3 py-2 text-xs ${i === 0 ? (note.startsWith('Passive') ? 'text-amber-300' : 'text-red-300') : 'text-game-text-dim'}`}>
+                    <span className="leading-none">{i === 0 ? (note.startsWith('Passive') ? '☮' : '⚔') : '•'}</span>
+                    <span className="flex-1">{note}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-game-muted italic">
+                Not enough sightings to read its disposition.
                 {seenCount < FAMILIARITY_THRESHOLDS.stats && ` (${FAMILIARITY_THRESHOLDS.stats - seenCount} more needed)`}
               </p>
             )}

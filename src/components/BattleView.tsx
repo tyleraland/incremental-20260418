@@ -841,6 +841,10 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   })()
   // Open-world reinforcements / returnees entering a live battle this round.
   const spawns = roundEvents.filter((e) => e.type === 'spawn')
+  // §aggression feedback: a monster turned hostile (hit/called) → "!" flash; a
+  // Pack Tactics call → a ring pulsing out from the caller.
+  const aggros  = roundEvents.filter((e) => e.type === 'aggro')
+  const rallies = roundEvents.filter((e) => e.type === 'rally')
 
   const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
@@ -996,6 +1000,36 @@ function LiveBattle({ battle }: { battle: BattleState }) {
                   className={`text-[10px] ${isPlayer ? 'text-blue-200' : 'text-red-200'}`}
                   text={`${isPlayer ? '▲' : '⚠'} ${shortName(c?.name ?? '')}`}
                 />
+              </div>
+            )
+          })}
+
+          {/* rally: a Pack Tactics call — a wide ring pulses out from the caller */}
+          {rallies.map((e, i) => {
+            const pos = e.position ?? byId(e.sourceId)?.pos
+            if (!pos || !isOnScreen(cam, pos)) return null
+            return (
+              <div key={`ra-${battle.round}-${i}`}>
+                <div
+                  className="absolute w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-400/70 animate-hit-flash pointer-events-none"
+                  style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }}
+                />
+                <Float k={`rat-${battle.round}-${i}`} cam={cam} pos={pos} className="text-[10px] font-bold text-amber-200" text="✦ rally!" />
+              </div>
+            )
+          })}
+
+          {/* aggro: a monster just turned hostile — a "!" pops over it */}
+          {aggros.map((e, i) => {
+            const pos = e.position ?? byId(e.sourceId)?.pos
+            if (!pos || !isOnScreen(cam, pos)) return null
+            return (
+              <div key={`ag-${battle.round}-${i}`}>
+                <div
+                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-300/80 animate-hit-flash pointer-events-none"
+                  style={{ ...chipDims(cam), left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }}
+                />
+                <Float k={`agt-${battle.round}-${i}`} cam={cam} pos={pos} className="text-[14px] font-black text-amber-300" text="!" />
               </div>
             )
           })}

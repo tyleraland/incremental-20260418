@@ -260,6 +260,7 @@ function applyDamageRaw(
     if (!target.provoked && dealer && dealer.team !== target.team) {
       target.provoked = true
       target.lockedTargetId = attackerId
+      emit(state, { round: state.round, type: 'aggro', sourceId: target.id, position: { ...target.pos } })
     }
   }
   // §3 stealth: taking damage drops a cloak. Single-target attacks can't even
@@ -1104,13 +1105,18 @@ function updateFacing(state: BattleState, self: Combatant, from: Vec2, moved: bo
 // other heroes is a later extension — for now newcomers adopt the caller's foe.
 function rallyPack(state: BattleState, self: Combatant): void {
   if (!self.provoked || !hasTactic(self, 'pack-tactics')) return
+  let called = 0
   for (const ally of state.combatants) {
     if (ally === self || !ally.alive || ally.provoked) continue
     if (ally.team !== self.team || ally.name !== self.name) continue
     if (distance(self.pos, ally.pos) > self.visionRange) continue
     ally.provoked = true
     if (self.lockedTargetId) ally.lockedTargetId = self.lockedTargetId
+    emit(state, { round: state.round, type: 'aggro', sourceId: ally.id, position: { ...ally.pos } })
+    called++
   }
+  // One "call ring" from the caller when it actually rouses kin.
+  if (called) emit(state, { round: state.round, type: 'rally', sourceId: self.id, position: { ...self.pos } })
 }
 
 function takeTurn(state: BattleState, self: Combatant): void {
