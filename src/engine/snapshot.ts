@@ -16,17 +16,26 @@ import { makeSkillTactic } from './skills'
 import { defaultCalculateDamage } from './damage'
 import { defaultPlanner } from './engine'
 import { MAX_ROUNDS } from './constants'
+import { zlibSync, unzlibSync, strToU8, strFromU8 } from 'fflate'
 import type { BattleState, Combatant, ResolvedTactic, TacticRef } from './types'
 
 const SNAPSHOT_VERSION = 1
 const MAGIC = 'BSNAP'   // human-identifiable prefix on the copied string
 
-// Unicode-safe base64 (works in browser + jsdom + node).
-function b64encode(s: string): string {
-  return btoa(unescape(encodeURIComponent(s)))
+// Binary ⇄ base64 (browser + jsdom + node; chunked so a big array can't blow the
+// call stack via spread). btoa/atob work on Latin-1 byte strings, which is what
+// these produce/consume.
+function u8ToB64(u8: Uint8Array): string {
+  let s = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < u8.length; i += CHUNK) s += String.fromCharCode(...u8.subarray(i, i + CHUNK))
+  return btoa(s)
 }
-function b64decode(s: string): string {
-  return decodeURIComponent(escape(atob(s)))
+function b64ToU8(b64: string): Uint8Array {
+  const s = atob(b64)
+  const u8 = new Uint8Array(s.length)
+  for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i)
+  return u8
 }
 
 // A combatant minus its resolved-tactic objects (functions); tactics travel as
@@ -73,7 +82,10 @@ interface BattleSnapshot {
   collectEvents: boolean
 }
 
-// Serialize → a single copy-pasteable token: `BSNAP.<base64-json>`.
+// Serialize → a single copy-pasteable token: `BSNAP.<base64(deflate(json))>`.
+// The JSON is dominated by repeated keys/strings (~12 combatants), so DEFLATE
+// shrinks the token ~6× — small enough to paste into a bug report. (Legacy
+// uncompressed tokens still load — see deserializeBattle.)
 export function serializeBattle(state: BattleState): string {
   const snap: BattleSnapshot = {
     v: SNAPSHOT_VERSION,
@@ -90,17 +102,21 @@ export function serializeBattle(state: BattleState): string {
     maxRounds: state.maxRounds,
     collectEvents: state.collectEvents,
   }
-  return `${MAGIC}.${b64encode(JSON.stringify(snap))}`
+  return `${MAGIC}.${u8ToB64(zlibSync(strToU8(JSON.stringify(snap))))}`
 }
 
 // Rebuild a BattleState from a token produced by serializeBattle. Throws on a
 // malformed/incompatible token. The result is ready to `advanceRound`.
 export function deserializeBattle(token: string): BattleState {
   const trimmed = token.trim()
-  const body = trimmed.startsWith(`${MAGIC}.`) ? trimmed.slice(MAGIC.length + 1) : trimmed
+  const body = (trimmed.startsWith(`${MAGIC}.`) ? trimmed.slice(MAGIC.length + 1) : trimmed).trim()
   let snap: BattleSnapshot
   try {
-    snap = JSON.parse(b64decode(body.trim()))
+    const bytes = b64ToU8(body)
+    // Compressed (DEFLATE/zlib) tokens start with the zlib header byte 0x78;
+    // legacy uncompressed tokens are raw UTF-8 JSON, starting with '{' (0x7B).
+    const json = bytes[0] === 0x78 ? strFromU8(unzlibSync(bytes)) : strFromU8(bytes)
+    snap = JSON.parse(json)
   } catch {
     throw new Error('Battle snapshot: not a valid token')
   }

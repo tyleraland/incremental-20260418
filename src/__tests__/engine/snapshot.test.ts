@@ -93,4 +93,36 @@ describe('battle snapshot', () => {
   it('throws on a malformed token', () => {
     expect(() => deserializeBattle('not-a-snapshot')).toThrow()
   })
+
+  it('compresses the token (much smaller than the raw JSON)', () => {
+    const b = richBattle()
+    const token = serializeBattle(b)
+    // The payload is DEFLATE'd, so the token is far smaller than the plain JSON
+    // it encodes — the whole point (a 12-combatant fight was ~13.6K → ~2.5K).
+    const rawJsonLen = JSON.stringify(b.combatants).length
+    expect(token.length).toBeLessThan(rawJsonLen * 0.7)
+  })
+
+  it('still loads a legacy uncompressed token (backward compatibility)', () => {
+    // Old format: BSNAP.<base64 of plain UTF-8 JSON> (no compression). Build one
+    // by hand from a live battle's snapshot shape and confirm it deserializes and
+    // replays identically to the new compressed token.
+    const original = richBattle()
+    const refs = (c: BattleState['combatants'][0]) => c.tactics.map((t) => ({ id: t.def.id, rank: t.rank }))
+    const snap = {
+      v: 1,
+      combatants: original.combatants.map((c) => {
+        const { tactics: _t, trace: _tr, lastResolution: _lr, ...rest } = c
+        return { ...rest, visionRange: rest.visionRange === Infinity ? null : rest.visionRange, tacticRefs: refs(c) }
+      }),
+      zones: original.zones, barriers: original.barriers, cols: original.cols, rows: original.rows,
+      mode: original.mode, plans: original.plans, round: original.round, outcome: original.outcome,
+      stats: original.stats, maxRounds: original.maxRounds, collectEvents: original.collectEvents,
+    }
+    const legacy = `BSNAP.${btoa(unescape(encodeURIComponent(JSON.stringify(snap))))}`
+    const reloaded = deserializeBattle(legacy)
+    for (const c of original.combatants) sameCombatant(c, find(reloaded, c.id))
+    for (let r = 0; r < 10; r++) { advanceRound(original); advanceRound(reloaded) }
+    for (const c of original.combatants) sameCombatant(c, find(reloaded, c.id))
+  })
 })
