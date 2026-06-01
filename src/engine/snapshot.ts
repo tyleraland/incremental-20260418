@@ -108,7 +108,12 @@ export function deserializeBattle(token: string): BattleState {
 
   const combatants: Combatant[] = snap.combatants.map((cs) => {
     const { tacticRefs, ...rest } = cs
-    return { ...rest, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    // JSON has no Infinity — `JSON.stringify(Infinity)` emits `null`. Encounter
+    // units carry `visionRange: Infinity` (no fog-of-war), so restore it here or
+    // a reloaded fight would treat them as blind (visionRange null ⇒ sees nothing)
+    // and diverge from the original run.
+    const visionRange = rest.visionRange == null ? Infinity : rest.visionRange
+    return { ...rest, visionRange, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {

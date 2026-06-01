@@ -17,7 +17,10 @@ export function alliesOf(state: BattleState, self: Combatant): Combatant[] {
   return state.combatants.filter((c) => c.alive && c.team === self.team && c.id !== self.id)
 }
 export function visibleEnemiesOf(state: BattleState, self: Combatant): Combatant[] {
-  return state.combatants.filter((c) => c.alive && c.team !== self.team && !isHidden(c))
+  // §open-world fog-of-war: only enemies in sight (and not stealthed). Movement
+  // tactics (Guardian, Kiter) read this, so a guardian won't body-block against
+  // a foe 20 cells away it can't see. visionRange is Infinity in encounters → no-op.
+  return state.combatants.filter((c) => c.alive && c.team !== self.team && !isHidden(c) && distance(self.pos, c.pos) <= self.visionRange)
 }
 export function lockedTarget(self: Combatant, state: BattleState): Combatant | null {
   if (!self.lockedTargetId) return null

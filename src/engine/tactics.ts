@@ -24,8 +24,18 @@ import type {
 // ── small local helpers (kept here to avoid import cycles) ──────────────────────
 
 function enemiesOf(state: BattleState, self: Combatant): Combatant[] {
-  // hidden enemies (§3 stealth) can't be picked until revealed or they attack
-  return state.combatants.filter((c) => c.alive && c.team !== self.team && !c.statuses.some((s) => s.flags.includes('stealthed')))
+  // hidden enemies (§3 stealth) can't be picked until revealed or they attack;
+  // and (open-world fog-of-war) neither can ones out of sight — a targeting
+  // tactic must not lock a foe the unit can't actually see, same gate as the
+  // default targeting (targetableEnemies). visionRange is Infinity in encounters,
+  // so this is a no-op there. Without it, an AoE caster's Storm Caller (etc.)
+  // locks a cluster clear across the map, pinning the unit "engaged" on an
+  // unreachable far target and freezing the party in place.
+  return state.combatants.filter(
+    (c) => c.alive && c.team !== self.team
+      && !c.statuses.some((s) => s.flags.includes('stealthed'))
+      && distance(self.pos, c.pos) <= self.visionRange,
+  )
 }
 // §coordination read-side: the team's shared focus target (lowest-HP visible enemy)
 // computed once per round by the planner (defaultPlanner). Targeting tactics read
