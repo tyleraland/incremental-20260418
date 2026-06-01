@@ -27,6 +27,17 @@ function enemiesOf(state: BattleState, self: Combatant): Combatant[] {
   // hidden enemies (§3 stealth) can't be picked until revealed or they attack
   return state.combatants.filter((c) => c.alive && c.team !== self.team && !c.statuses.some((s) => s.flags.includes('stealthed')))
 }
+// §coordination read-side: the team's shared focus target (lowest-HP visible enemy)
+// computed once per round by the planner (defaultPlanner). Targeting tactics read
+// this instead of each re-scanning for "who's hurt" — so the party concentrates on
+// one foe and vision/stealth filtering lives in exactly one place. Returns the
+// live combatant (alive) or null when there's no focus / the blackboard is unset.
+function teamFocus(self: Combatant, state: BattleState): Combatant | null {
+  const id = state.plans?.[self.team]?.focusTargetId
+  if (!id) return null
+  const c = state.combatants.find((x) => x.id === id)
+  return c && c.alive ? c : null
+}
 function defOf(c: Combatant): number { return effectiveStat(c, 'def') }
 function hpRatio(c: Combatant): number { return c.hp / c.maxHp }
 function isCloaked(c: Combatant): boolean { return c.statuses.some((s) => s.flags.includes('stealthed')) }
@@ -66,11 +77,14 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   },
   'opportunist': {
     id: 'opportunist', name: 'Opportunist', scope: 'unit', channel: 'targeting',
-    description: 'Lock onto a wounded enemy to finish it off.',
+    description: 'Lock onto the team\'s wounded focus to finish it off.',
+    // Reads the shared blackboard focus (the planner already picked the most
+    // wounded visible enemy) and commits only when it's actually low — rank
+    // loosens the bar. The "who's hurt" scan lives in the planner now.
     targeting: (self, state, rank) => {
       const threshold = 0.4 + 0.05 * (rank - 1)
-      const wounded = enemiesOf(state, self).filter((e) => hpRatio(e) < threshold)
-      return wounded.length ? pickBy(wounded, hpRatio, 'min')!.id : null
+      const focus = teamFocus(self, state)
+      return focus && hpRatio(focus) < threshold ? focus.id : null
     },
   },
   'interrupt': {
@@ -236,10 +250,12 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   // Party ----------------------------------------------------------------------
   'finish-them': {
     id: 'finish-them', name: 'Finish Them', scope: 'party', channel: 'targeting',
-    description: 'The team piles onto badly wounded enemies.',
+    description: 'The team piles onto the badly wounded focus.',
+    // Same shared focus as Opportunist, with a harsher "nearly dead" gate — the
+    // whole party converges on the one foe closest to dying.
     targeting: (self, state) => {
-      const wounded = enemiesOf(state, self).filter((e) => hpRatio(e) < 0.25)
-      return wounded.length ? pickBy(wounded, hpRatio, 'min')!.id : null
+      const focus = teamFocus(self, state)
+      return focus && hpRatio(focus) < 0.25 ? focus.id : null
     },
   },
 }

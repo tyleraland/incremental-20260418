@@ -624,9 +624,10 @@ function centroidOf(cs: Combatant[]): Vec2 {
 //     point, re-picked once the party arrives (deterministic hash, so replays
 //     match). Heroes read this in executeWander; that's how "wander together"
 //     stops being coincidence and becomes shared state.
-//   • focusTargetId — lowest-HP enemy the team can see (advisory; exposed for
-//     debugging and available to a future focus-fire tactic).
-//   • threat — per-enemy danger score.
+//   • focusTargetId — lowest-HP enemy the team can see. Read by the focus-fire
+//     targeting tactics (Opportunist, Finish Them) via teamFocus so the party
+//     converges on one foe and the "who's hurt" scan lives only here.
+//   • threat — per-enemy danger score (advisory; exposed for debugging).
 export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
   const members = state.combatants.filter((c) => c.alive && c.team === team)
   const enemies = state.combatants.filter((c) => c.alive && c.team !== team)

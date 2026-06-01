@@ -7,6 +7,19 @@ import {
 import { eu, combatant } from './helpers'
 
 const stateOf = (combatants: Combatant[]) => ({ combatants } as unknown as BattleState)
+// Seed the team blackboard the way the planner would: focusTargetId = lowest-HP
+// visible enemy. Targeting tactics that read the shared focus (Opportunist,
+// Finish Them) need it populated when called outside a full advanceRound.
+const withFocus = (combatants: Combatant[], team = 'player') => {
+  const s = stateOf(combatants)
+  let focus: Combatant | null = null
+  for (const e of combatants) {
+    if (!e.alive || e.team === team || e.statuses.some((x) => x.flags.includes('stealthed'))) continue
+    if (!focus || e.hp < focus.hp || (e.hp === focus.hp && e.id < focus.id)) focus = e
+  }
+  ;(s as unknown as { plans: Record<string, unknown> }).plans = { [team]: { waypoint: null, focusTargetId: focus?.id ?? null, threat: {} } }
+  return s
+}
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
 const T = (id: string, rank = 1): ResolvedTactic => ({ def: TACTIC_REGISTRY[id], rank })
 
@@ -18,12 +31,14 @@ describe('tactics: targeting', () => {
     expect(TACTIC_REGISTRY['tank-buster'].targeting!(self, stateOf([self, e1, e2]), 1)).toBe('e2')
   })
 
-  it('Opportunist locks a wounded enemy, else falls through', () => {
+  it('Opportunist locks the team\'s wounded focus, else falls through', () => {
     const self = combatant({ id: 'p' })
     const full = combatant({ id: 'e1', team: 'enemy', hp: 100, maxHp: 100 })
     const hurt = combatant({ id: 'e2', team: 'enemy', hp: 20, maxHp: 100 })
-    expect(TACTIC_REGISTRY['opportunist'].targeting!(self, stateOf([self, full, hurt]), 1)).toBe('e2')
-    expect(TACTIC_REGISTRY['opportunist'].targeting!(self, stateOf([self, full]), 1)).toBeNull()
+    // focus = e2 (most wounded) and it's below the 40% bar → lock it
+    expect(TACTIC_REGISTRY['opportunist'].targeting!(self, withFocus([self, full, hurt]), 1)).toBe('e2')
+    // focus = e1 (only enemy) at full HP → above the bar → fall through
+    expect(TACTIC_REGISTRY['opportunist'].targeting!(self, withFocus([self, full]), 1)).toBeNull()
   })
 
   it('Interrupt locks the nearest enemy that is mid-cast', () => {
@@ -173,6 +188,21 @@ describe('tactics: party injection (§5.5)', () => {
     // only thing under test (no floor demotion to muddy it).
     const r = resolveTactics([{ id: 'opportunist', rank: 1 }], [{ id: 'finish-them', rank: 1 }])
     expect(r.map((t) => t.def.id)).toEqual(['opportunist', 'finish-them'])
+  })
+
+  it('Opportunist reads the planner\'s shared focus in a live battle', () => {
+    // No bare-state seeding here: advanceRound runs the planner, which sets the
+    // blackboard focus to the most-wounded visible enemy; Opportunist reads it.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', tactics: [{ id: 'opportunist', rank: 1 }] })],
+      enemyUnits: [
+        eu({ id: 'e1', team: 'enemy', hp: 100, maxHp: 100 }),
+        eu({ id: 'e2', team: 'enemy', hp: 15, maxHp: 100 }),
+      ],
+    })
+    advanceRound(b)
+    expect(b.plans.player!.focusTargetId).toBe('e2')
+    expect(find(b, 'p').lockedTargetId).toBe('e2')
   })
 
   it('Finish Them focuses a near-dead enemy for units without their own targeting', () => {
