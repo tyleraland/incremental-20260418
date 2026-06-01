@@ -60,7 +60,7 @@ function status(id: string, name: string, source: string, duration: number, mods
 export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   // Targeting ------------------------------------------------------------------
   'tank-buster': {
-    id: 'tank-buster', name: 'Tank Buster', scope: 'unit', channel: 'targeting',
+    id: 'tank-buster', name: 'Tank Buster', scope: 'unit', channel: 'targeting', kind: 'floor',
     description: 'Lock onto the enemy with the highest defense.',
     targeting: (self, state) => pickBy(enemiesOf(state, self), defOf, 'max')?.id ?? null,
   },
@@ -115,7 +115,10 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   'charger': {
     id: 'charger', name: 'Charger', scope: 'unit', channel: 'movement',
     description: 'Sprint toward the target; the first hit lands harder.',
-    movement: () => ({ speedMult: 1.5 }),
+    // No movement fn of its own: Charger is a *modifier* — its speed-up is folded
+    // into whatever movement plan wins (see chargerSpeedMult + evalMovement), and
+    // its first-hit damage bonus is read via chargerBonus. Producing its own plan
+    // used to short-circuit the movement channel and starve flanker/kiter/guardian.
   },
   'retreater': {
     id: 'retreater', name: 'Retreater', scope: 'unit', channel: 'movement', oncePerCombat: true,
@@ -126,7 +129,7 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     },
   },
   'flanker': {
-    id: 'flanker', name: 'Flanker', scope: 'unit', channel: 'movement',
+    id: 'flanker', name: 'Flanker', scope: 'unit', channel: 'movement', kind: 'floor',
     description: "Circle to the locked target's least-guarded side before striking.",
     movement: (self, state) => {
       const t = lockedTarget(self, state)
@@ -135,7 +138,7 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     },
   },
   'kiter': {
-    id: 'kiter', name: 'Kiter', scope: 'unit', channel: 'movement',
+    id: 'kiter', name: 'Kiter', scope: 'unit', channel: 'movement', kind: 'floor',
     description: 'Ranged: hold at spell/attack range from the nearest foe; back off further if a fast chaser or a long-channel spell would catch you mid-cast.',
     movement: (self, state) => {
       if (self.rangedRange <= 0 || !lockedTarget(self, state)) return null
@@ -145,7 +148,7 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     },
   },
   'guardian': {
-    id: 'guardian', name: 'Guardian', scope: 'unit', channel: 'movement',
+    id: 'guardian', name: 'Guardian', scope: 'unit', channel: 'movement', kind: 'floor',
     description: 'Body-block: stand between your squishiest ally and the nearest threat.',
     movement: (self, state) => {
       const ally = squishiestAlly(self, state)
@@ -250,7 +253,31 @@ export function resolveTactics(unit: TacticRef[] = [], party: TacticRef[] = []):
   const partyT = toResolved(party)
   const top = partyT.filter((t) => t.def.override)        // §5.5 override → top
   const bottom = partyT.filter((t) => !t.def.override)    // default → bottom (lowest priority)
-  return [...top, ...unitT, ...bottom]
+  return demoteFloors([...top, ...unitT, ...bottom])
+}
+
+// 'floor' tactics fire whenever a basic precondition holds, so they'd starve any
+// trigger sitting below them in the same channel. Stable-sort floors to the
+// bottom of *their own* channel (triggers keep their relative order, floors keep
+// theirs), leaving each channel's slot positions — and the cross-channel
+// interleave — otherwise untouched. Channels are evaluated independently, so this
+// only ever changes who-beats-whom within a channel.
+function demoteFloors(tactics: ResolvedTactic[]): ResolvedTactic[] {
+  const reordered = new Map<string, ResolvedTactic[]>()
+  for (const t of tactics) (reordered.get(t.def.channel) ?? reordered.set(t.def.channel, []).get(t.def.channel)!).push(t)
+  for (const [ch, arr] of reordered) {
+    reordered.set(ch, [
+      ...arr.filter((t) => t.def.kind !== 'floor'),
+      ...arr.filter((t) => t.def.kind === 'floor'),
+    ])
+  }
+  const cursor = new Map<string, number>()
+  return tactics.map((t) => {
+    const ch = t.def.channel
+    const i = cursor.get(ch) ?? 0
+    cursor.set(ch, i + 1)
+    return reordered.get(ch)![i]
+  })
 }
 
 export function getTactic(c: Combatant, id: string): ResolvedTactic | undefined {
@@ -264,6 +291,11 @@ export function hasTactic(c: Combatant, id: string): boolean {
 export function chargerBonus(c: Combatant): number {
   const t = getTactic(c, 'charger')
   return t ? 0.3 + 0.1 * (t.rank - 1) : 0
+}
+// Charger movement-speed multiplier — folded into whichever movement plan wins
+// (1 = not equipped). Charger has no plan of its own; this is the modifier half.
+export function chargerSpeedMult(c: Combatant): number {
+  return hasTactic(c, 'charger') ? 1.5 : 1
 }
 // Armored: outgoing→incoming multiplier (1 = no reduction).
 export function armoredFactor(c: Combatant): number {

@@ -117,6 +117,11 @@ export interface TacticDef {
   description: string
   scope: TacticScope
   channel: TacticChannel
+  // 'floor' tactics fire whenever a basic precondition holds (a target/ally is
+  // in sight) — so a floor sitting above a trigger in the same channel would
+  // starve it (the trigger never gets a turn). resolveTactics demotes floors
+  // below triggers within each channel; undefined ⇒ 'trigger'.
+  kind?: 'floor' | 'trigger'
   cooldown?: number             // rounds between activations (0/undefined = always)
   oncePerCombat?: boolean
   override?: boolean            // party tactics: inject at the TOP instead of bottom (§5.5)
@@ -129,6 +134,22 @@ export interface TacticDef {
 export interface ResolvedTactic {
   def: TacticDef
   rank: number
+}
+
+// §debug: a per-turn record of how each equipped tactic resolved on this unit's
+// last turn — what actually fired vs why the rest stayed dormant:
+//   fired    — this tactic produced the channel's result this turn
+//   idle     — evaluated, but its condition returned nothing (dormant)
+//   starved  — never evaluated: a higher-priority tactic already won the channel
+//   cooldown — skipped (on cooldown or a spent once-per-combat)
+// Runtime-only (rebuilt every turn, never serialized); surfaced in BattleView.
+export type TacticOutcome = 'fired' | 'idle' | 'starved' | 'cooldown'
+export interface TacticResolution {
+  id: string
+  name: string
+  channel: TacticChannel
+  rank: number
+  outcome: TacticOutcome
 }
 
 
@@ -234,6 +255,11 @@ export interface Combatant {
   // turn (targeting / movement / action). Purely observational — the BattleView
   // debug tab and tests read it; nothing in the sim depends on it.
   trace: TraceEntry[]
+
+  // §debug: how each equipped tactic resolved on this unit's most recent turn
+  // (fired / idle / starved / cooldown), grouped per channel by the eval loops.
+  // Observational only — rebuilt each turn, never serialized.
+  lastResolution: TacticResolution[]
 }
 
 // One turn's worth of "what this unit just did", newest pushed to the end.

@@ -17,7 +17,7 @@ import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
 } from './behavior'
 import {
-  resolveTactics, chargerBonus, armoredFactor, nimblePeriod,
+  resolveTactics, chargerBonus, chargerSpeedMult, armoredFactor, nimblePeriod,
 } from './tactics'
 import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
@@ -34,7 +34,7 @@ import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
-  TeamPlan, Planner, Barrier,
+  TeamPlan, Planner, Barrier, TacticResolution, TacticOutcome,
 } from './types'
 
 // Deterministic [0,1) hash of an integer — seeds open-world wander choices
@@ -115,6 +115,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     // don't use the dwell timer (they roam toward the team waypoint).
     wanderDwell: input.team === 'enemy' ? monsterDwell(index + 1) : 0,
     trace: [],
+    lastResolution: [],
   }
 }
 
@@ -506,6 +507,10 @@ function markFired(self: Combatant, t: ResolvedTactic): void {
   if (t.def.cooldown) self.tacticCooldowns[t.def.id] = t.def.cooldown
   if (t.def.oncePerCombat && !self.tacticsUsed.includes(t.def.id)) self.tacticsUsed.push(t.def.id)
 }
+// §debug: log how a tactic resolved this turn (drives BattleView's "active now").
+function rec(self: Combatant, t: ResolvedTactic, outcome: TacticOutcome): void {
+  self.lastResolution.push({ id: t.def.id, name: t.def.name, channel: t.def.channel, rank: t.rank, outcome })
+}
 
 function addStatus(c: Combatant, s: import('./types').StatusEffect): void {
   const i = c.statuses.findIndex((x) => x.id === s.id)
@@ -521,12 +526,16 @@ function setLock(state: BattleState, self: Combatant, id: string): void {
 }
 
 function evalTargeting(state: BattleState, self: Combatant): void {
+  let won = false
   for (const t of self.tactics) {
     if (t.def.channel !== 'targeting' || !t.def.targeting) continue
-    if (onCooldown(self, t) || usedUp(self, t)) continue
+    if (won) { rec(self, t, 'starved'); continue }
+    if (onCooldown(self, t) || usedUp(self, t)) { rec(self, t, 'cooldown'); continue }
     const id = t.def.targeting(self, state, t.rank)
-    if (id) { setLock(state, self, id); markFired(self, t); return }
+    if (id) { setLock(state, self, id); markFired(self, t); rec(self, t, 'fired'); won = true; continue }
+    rec(self, t, 'idle')
   }
+  if (won) return
   // default: keep lock if alive, else nearest enemy (with taunt bias)
   const prev = selectTarget(state, self)
   if (prev !== null && self.lockedTargetId) {
@@ -535,13 +544,21 @@ function evalTargeting(state: BattleState, self: Combatant): void {
 }
 
 function evalMovement(state: BattleState, self: Combatant): MovementResult | null {
+  let plan: MovementResult | null = null
   for (const t of self.tactics) {
     if (t.def.channel !== 'movement' || !t.def.movement) continue
-    if (onCooldown(self, t) || usedUp(self, t)) continue
-    const plan = t.def.movement(self, state, t.rank)
-    if (plan) { markFired(self, t); return plan }
+    if (plan) { rec(self, t, 'starved'); continue }
+    if (onCooldown(self, t) || usedUp(self, t)) { rec(self, t, 'cooldown'); continue }
+    const p = t.def.movement(self, state, t.rank)
+    if (p) { markFired(self, t); rec(self, t, 'fired'); plan = p; continue }
+    rec(self, t, 'idle')
   }
-  return null
+  // Charger is a modifier (no plan of its own): fold its speed-up into whichever
+  // movement wins — a fired tactic, or the default advance-on-lock (plan === null →
+  // executeMovement's chase). It never occupies the channel, so it can't starve.
+  const mult = chargerSpeedMult(self)
+  if (mult !== 1) plan = { ...(plan ?? {}), speedMult: (plan?.speedMult ?? 1) * mult }
+  return plan
 }
 
 function executeMovement(state: BattleState, self: Combatant, plan: MovementResult | null): void {
@@ -858,35 +875,45 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
 }
 
 function evalActionTactics(state: BattleState, self: Combatant): ActionResult | null {
+  let result: ActionResult | null = null
   for (const t of self.tactics) {
     if (t.def.channel !== 'action' || !t.def.action) continue
-    if (onCooldown(self, t) || usedUp(self, t)) continue
+    if (result) { rec(self, t, 'starved'); continue }
+    if (onCooldown(self, t) || usedUp(self, t)) { rec(self, t, 'cooldown'); continue }
     const res = t.def.action(self, state, t.rank)
     if (res) {
       markFired(self, t)
+      rec(self, t, 'fired')
       // Skill tactics already emit `skill_use` when their cast lands — only
       // surface non-skill action tactics (Shield Wall, etc.) here.
       if (!t.def.id.startsWith('skill:')) {
         emit(state, { round: state.round, type: 'tactic_use', sourceId: self.id, tacticId: t.def.id, extra: { label: t.def.name } })
       }
-      return res   // first action tactic owns the turn's action
+      result = res   // first action tactic owns the turn's action
+      continue
     }
+    rec(self, t, 'idle')
   }
-  return null
+  return result
 }
 
 function evalReactions(state: BattleState, self: Combatant): ReactionResult | null {
+  let result: ReactionResult | null = null
   for (const t of self.tactics) {
     if (t.def.channel !== 'reaction' || !t.def.reaction) continue
-    if (onCooldown(self, t) || usedUp(self, t)) continue
+    if (result) { rec(self, t, 'starved'); continue }
+    if (onCooldown(self, t) || usedUp(self, t)) { rec(self, t, 'cooldown'); continue }
     const res = t.def.reaction(self, state, t.rank)
     if (res) {
       markFired(self, t)
+      rec(self, t, 'fired')
       emit(state, { round: state.round, type: 'tactic_use', sourceId: self.id, tacticId: t.def.id, extra: { label: t.def.name } })
-      return res
+      result = res
+      continue
     }
+    rec(self, t, 'idle')
   }
-  return null
+  return result
 }
 
 function applyReaction(state: BattleState, self: Combatant, res: ReactionResult): boolean {
@@ -976,6 +1003,7 @@ function updateFacing(state: BattleState, self: Combatant, from: Vec2, moved: bo
 function takeTurn(state: BattleState, self: Combatant): void {
   const round = state.round
   self.moving = false   // set true only if this turn produces a position change
+  self.lastResolution = []   // §debug: rebuilt by the eval loops below (see rec)
   // (0) hard control — lose the turn. Stun is consumed on the skipped turn;
   // Freeze ages out normally (so its damage amplification persists, §3).
   const control = self.statuses.find((s) => s.flags.includes('stunned') || s.flags.includes('frozen'))

@@ -31,10 +31,10 @@ function b64decode(s: string): string {
 
 // A combatant minus its resolved-tactic objects (functions); tactics travel as
 // {id, rank} refs and are re-resolved on load.
-type CombatantSnap = Omit<Combatant, 'tactics' | 'trace'> & { tacticRefs: TacticRef[] }
+type CombatantSnap = Omit<Combatant, 'tactics' | 'trace' | 'lastResolution'> & { tacticRefs: TacticRef[] }
 
 function combatantToSnap(c: Combatant): CombatantSnap {
-  const { tactics, trace: _trace, ...rest } = c
+  const { tactics, trace: _trace, lastResolution: _res, ...rest } = c
   return { ...rest, tacticRefs: tactics.map((t) => ({ id: t.def.id, rank: t.rank })) }
 }
 
@@ -108,7 +108,7 @@ export function deserializeBattle(token: string): BattleState {
 
   const combatants: Combatant[] = snap.combatants.map((cs) => {
     const { tacticRefs, ...rest } = cs
-    return { ...rest, tactics: rebuildTactics(cs), trace: [] }
+    return { ...rest, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {

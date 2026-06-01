@@ -64,6 +64,22 @@ describe('tactics: movement', () => {
     expect(find(chg, 'p').pos.y).toBeGreaterThan(find(base, 'p').pos.y)
   })
 
+  it('Charger is a modifier — it no longer starves a movement tactic below it', () => {
+    // Charger sits above Retreater. As a plan-producer it used to win the
+    // movement channel every turn and the badly-hurt unit would never fall back.
+    // As a modifier it has no plan, so Retreater fires.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', hp: 8, maxHp: 100, tactics: [{ id: 'charger', rank: 1 }, { id: 'retreater', rank: 1 }], meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 30 })],
+    })
+    const before = find(b, 'p').pos.y
+    advanceRound(b)
+    const p = find(b, 'p')
+    expect(p.pos.y).toBeLessThan(before)        // retreated toward own edge
+    expect(p.lockedTargetId).toBeNull()
+    expect(p.tacticsUsed).toContain('retreater')
+  })
+
   it('Charger first melee hit deals +30%', () => {
     const mk = (tactics: { id: string; rank: number }[]) => createBattle({
       playerUnits: [eu({ id: 'p', str: 20, tactics, meleeRange: 30 })],
@@ -153,8 +169,10 @@ describe('tactics: passive helpers', () => {
 
 describe('tactics: party injection (§5.5)', () => {
   it('injects party tactics at the bottom (lowest priority)', () => {
-    const r = resolveTactics([{ id: 'tank-buster', rank: 1 }], [{ id: 'finish-them', rank: 1 }])
-    expect(r.map((t) => t.def.id)).toEqual(['tank-buster', 'finish-them'])
+    // opportunist + finish-them are both triggers, so injection order is the
+    // only thing under test (no floor demotion to muddy it).
+    const r = resolveTactics([{ id: 'opportunist', rank: 1 }], [{ id: 'finish-them', rank: 1 }])
+    expect(r.map((t) => t.def.id)).toEqual(['opportunist', 'finish-them'])
   })
 
   it('Finish Them focuses a near-dead enemy for units without their own targeting', () => {
@@ -165,5 +183,48 @@ describe('tactics: party injection (§5.5)', () => {
     })
     advanceRound(b)
     expect(find(b, 'p').lockedTargetId).toBe('e2')
+  })
+})
+
+describe('tactics: floor demotion (§5.3)', () => {
+  const ids = (r: ResolvedTactic[]) => r.map((t) => t.def.id)
+
+  it('demotes a floor below a trigger in the same channel even when equipped first', () => {
+    // tank-buster (floor) always locks something; opportunist (trigger) only
+    // fires on a wounded foe. Equipped floor-first, the floor would starve the
+    // trigger — resolveTactics flips them so the trigger gets first crack.
+    const r = resolveTactics([{ id: 'tank-buster', rank: 1 }, { id: 'opportunist', rank: 1 }])
+    expect(ids(r)).toEqual(['opportunist', 'tank-buster'])
+  })
+
+  it('keeps two triggers (and two floors) in their equipped order', () => {
+    const triggers = resolveTactics([{ id: 'opportunist', rank: 1 }, { id: 'interrupt', rank: 1 }])
+    expect(ids(triggers)).toEqual(['opportunist', 'interrupt'])
+    const floors = resolveTactics([{ id: 'flanker', rank: 1 }, { id: 'guardian', rank: 1 }])
+    expect(ids(floors)).toEqual(['flanker', 'guardian'])
+  })
+
+  it('demotes per channel without disturbing other channels', () => {
+    // movement floor (flanker) + movement trigger (retreater) + a targeting
+    // trigger (opportunist): only the movement pair reorders.
+    const r = resolveTactics([
+      { id: 'flanker', rank: 1 }, { id: 'opportunist', rank: 1 }, { id: 'retreater', rank: 1 },
+    ])
+    // opportunist holds its slot; flanker (floor) drops below retreater (trigger).
+    expect(ids(r)).toEqual(['retreater', 'opportunist', 'flanker'])
+  })
+
+  it('lets a trigger fire before a floor that was equipped above it', () => {
+    // p has tank-buster (floor) equipped above opportunist (trigger). e2 is
+    // wounded, so opportunist should win the lock despite the floor's priority.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', tactics: [{ id: 'tank-buster', rank: 1 }, { id: 'opportunist', rank: 1 }] })],
+      enemyUnits: [
+        eu({ id: 'e1', team: 'enemy', def: 99, hp: 100, maxHp: 100 }),
+        eu({ id: 'e2', team: 'enemy', def: 1, hp: 10, maxHp: 100 }),
+      ],
+    })
+    advanceRound(b)
+    expect(find(b, 'p').lockedTargetId).toBe('e2')   // opportunist, not tank-buster's e1
   })
 })
