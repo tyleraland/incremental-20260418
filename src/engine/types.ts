@@ -41,7 +41,7 @@ export interface EngineSkill {
   statusApplied?: string // status effect id, if any
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
-  zone?: { dotDamage: number; duration: number; element?: Element }  // place a persistent ground hazard (aoe_point)
+  zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number }  // place a persistent ground hazard (aoe_point). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown).
   stealthBonus?: number  // damage multiplier when cast from stealth (Back Stab, §3)
   dispelCategory?: 'buff' | 'debuff'  // strip statuses of this category from affected targets
   removesStatusId?: string            // strip a specific status from affected targets (Sight → stealthed)

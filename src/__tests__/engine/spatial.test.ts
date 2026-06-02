@@ -124,7 +124,7 @@ describe('movement behaviours', () => {
     // perimeter. A fast ranged unit should circle the outside, peeking line of
     // sight around the corners and never stalling — landing dozens of shots on
     // a slow, defensive chaser.
-    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo
+    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0, cooldown: 2 }   // instant + short cd — this test measures kiting cadence, not skill balance
     const b = createBattle({
       playerUnits: [eu({
         id: 'a', spd: 20, int: 20, rangedRange: 4, maxHp: 9999, hp: 9999,

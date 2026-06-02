@@ -3,9 +3,13 @@ import { useGameStore, waveComposition, locationBarriers, type Location } from '
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import {
-  COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle,
-  type Rank, type Vec2, type Barrier, type BattleState, type Combatant,
+  COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY,
+  type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
 } from '@/engine'
+
+// The sim advances ~2.5 rounds/sec (store ROUND_EVERY_TICKS=2 over
+// TICKS_PER_SECOND=5), so status durations (in rounds) read back to real seconds.
+const ROUNDS_PER_SEC = 2.5
 
 // Battle rendering for the Map tab's "drop-in" view. The arena fills the space
 // it's given (square, centred) so the battle is showcased; the selected-unit
@@ -474,6 +478,80 @@ function buildDebugText(c: Combatant, battle: BattleState): string {
   return L.join('\n')
 }
 
+// Per-category chip tone for status effects (buff / control / debuff).
+function statusTone(s: StatusEffect): string {
+  return s.category === 'buff' ? 'border-emerald-500/50 text-emerald-200'
+    : s.category === 'control' ? 'border-amber-500/50 text-amber-200'
+    : 'border-red-500/50 text-red-200'
+}
+const statusIcon = (s: StatusEffect): string => STATUS_REGISTRY[s.id]?.icon ?? '✦'
+const roundsToSecs = (rounds: number): string => `${(rounds / ROUNDS_PER_SEC).toFixed(1)}s`
+
+// Human-readable breakdown of what a status does, derived from its own fields so
+// it stays correct for any status the engine builds.
+function statusEffectLines(s: StatusEffect): string[] {
+  const out: string[] = []
+  const signed = (n: number, unit: string) => `${n > 0 ? '+' : ''}${n} ${unit}`
+  const m = s.statModifiers
+  if (m.str) out.push(signed(m.str, 'STR'))
+  if (m.def) out.push(signed(m.def, 'DEF'))
+  if (m.int) out.push(signed(m.int, 'INT'))
+  if (m.spd) out.push(signed(m.spd, 'SPD'))
+  if (m.moveSpeed) out.push(signed(m.moveSpeed, 'move'))
+  if (m.moveSpeedMult != null && m.moveSpeedMult !== 1) out.push(`${Math.round(m.moveSpeedMult * 100)}% move speed`)
+  if (s.dotDamage) out.push(`${s.dotDamage} damage/round`)
+  if (s.damageTakenMult != null && s.damageTakenMult !== 1) out.push(`${Math.round(s.damageTakenMult * 100)}% damage taken`)
+  if (s.flags.includes('stunned')) out.push('Skips its turn')
+  if (s.flags.includes('rooted')) out.push("Can't move")
+  if (s.flags.includes('frozen')) out.push('Skips its turn; armor counts as water')
+  if (s.flags.includes('stealthed')) out.push('Hidden from enemies')
+  return out
+}
+
+// Tappable status chips with a per-status detail drawer (effects + time left).
+// Tapping a chip toggles its detail; tapping again (or another chip) closes it.
+function StatusList({ statuses }: { statuses: StatusEffect[] }) {
+  const [open, setOpen] = useState<number | null>(null)
+  const sel = open != null ? statuses[open] : null
+  return (
+    <div className="mt-2">
+      <div className="text-[10px] text-game-text-dim mb-1">Status</div>
+      <div className="flex flex-wrap gap-1">
+        {statuses.map((s, i) => (
+          <button
+            key={i}
+            onClick={() => setOpen(open === i ? null : i)}
+            className={`px-1.5 py-0.5 rounded bg-game-bg border text-[10px] flex items-center gap-1 ${statusTone(s)} ${open === i ? 'ring-1 ring-game-primary' : ''}`}
+          >
+            <span>{statusIcon(s)}</span>
+            <span>{s.name}</span>
+            <span className="text-game-text-dim tabular-nums">{roundsToSecs(s.duration)}</span>
+          </button>
+        ))}
+      </div>
+      {sel && (
+        <div className="mt-1 rounded border border-game-border bg-game-bg/60 p-1.5 text-[10px] space-y-0.5">
+          <div className="flex items-center justify-between">
+            <span className="text-game-text">{statusIcon(sel)} {sel.name}</span>
+            <span className="text-game-text-dim capitalize">{sel.category ?? 'effect'}</span>
+          </div>
+          {STATUS_REGISTRY[sel.id]?.description && (
+            <div className="text-game-text-dim">{STATUS_REGISTRY[sel.id]!.description}</div>
+          )}
+          <div className="text-game-text-dim tabular-nums">
+            {sel.duration} round{sel.duration === 1 ? '' : 's'} left (~{roundsToSecs(sel.duration)})
+          </div>
+          {statusEffectLines(sel).length > 0 && (
+            <ul className="text-game-text-dim list-disc list-inside">
+              {statusEffectLines(sel).map((l, i) => <li key={i}>{l}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function StatsTab({ c }: { c: Combatant }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   return (
@@ -511,15 +589,7 @@ function StatsTab({ c }: { c: Combatant }) {
           </div>
         </div>
       )}
-      {c.statuses.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {c.statuses.map((s, i) => (
-            <span key={i} className="px-1.5 py-0.5 rounded bg-game-bg border border-game-border text-[10px]">
-              {s.name} <span className="text-game-text-dim tabular-nums">({s.duration})</span>
-            </span>
-          ))}
-        </div>
-      )}
+      {c.statuses.length > 0 && <StatusList statuses={c.statuses} />}
       {c.channel && (
         <div className="mt-2 text-[10px] text-amber-300">
           ✦ Casting {skillName(c.channel.skillId)} — {c.channel.roundsLeft} round{c.channel.roundsLeft === 1 ? '' : 's'} left

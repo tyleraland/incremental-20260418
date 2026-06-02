@@ -21,6 +21,12 @@ function coef(base: number, per: number, level: number): string {
   return (base + per * (level - 1)).toFixed(2)
 }
 
+// Cooldowns are tracked in engine rounds, but the sim runs ~2.5 rounds/sec
+// (store ROUND_EVERY_TICKS=2 over TICKS_PER_SECOND=5), so author them in real
+// seconds and convert once. Current tuning: bolts + Heal at 5s, everything else 10s.
+const ROUNDS_PER_SEC = 2.5
+const cd = (seconds: number) => Math.round(seconds * ROUNDS_PER_SEC)
+
 function skill(s: Partial<EngineSkill> & Pick<EngineSkill, 'id' | 'name' | 'type' | 'targeting'>): EngineSkill {
   return {
     range: 6, aoeRadius: 0, cooldown: 2, channelTime: 0,
@@ -31,19 +37,22 @@ function skill(s: Partial<EngineSkill> & Pick<EngineSkill, 'id' | 'name' | 'type
 
 // id → builder(level). Keep ids aligned with the game's SKILL_REGISTRY actives.
 export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
-  'fire-bolt':     (lv) => skill({ id: 'fire-bolt', name: 'Fire Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 2, channelTime: 2, element: 'fire', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
-  'frost-bolt':    (lv) => skill({ id: 'frost-bolt', name: 'Frost Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 2, element: 'water', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
-  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 8, cooldown: 3, channelTime: 3, element: 'lightning', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
-  'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: 2, damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
-  'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: 2, healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
-  'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: 4, healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
-  'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: 5, statusApplied: 'agi-up' }),
-  'hammer-fall':   (lv) => skill({ id: 'hammer-fall', name: 'Hammer Fall', type: 'aoe', targeting: 'aoe_enemy', range: 2, aoeRadius: 1.8, cooldown: 4, damageFormula: `str * ${coef(0.8, 0.2, lv)}`, statusApplied: 'stunned' }),
+  'fire-bolt':     (lv) => skill({ id: 'fire-bolt', name: 'Fire Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'fire', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
+  'frost-bolt':    (lv) => skill({ id: 'frost-bolt', name: 'Frost Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), element: 'water', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
+  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 8, cooldown: cd(5), channelTime: 3, element: 'lightning', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
+  'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
+  'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
+  'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
+  'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: cd(10), statusApplied: 'agi-up' }),
+  'hammer-fall':   (lv) => skill({ id: 'hammer-fall', name: 'Hammer Fall', type: 'aoe', targeting: 'aoe_enemy', range: 2, aoeRadius: 1.8, cooldown: cd(10), damageFormula: `str * ${coef(0.8, 0.2, lv)}`, statusApplied: 'stunned' }),
 
   // Phase 2 — spatial: DoT, knockback, ground zones, root + retreat.
-  'poison':        () =>   skill({ id: 'poison', name: 'Poison', type: 'debuff', targeting: 'single_enemy', range: 1.2, cooldown: 4, statusApplied: 'poisoned' }),
-  'arrow-shower':  (lv) => skill({ id: 'arrow-shower', name: 'Arrow Shower', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 1.8, cooldown: 4, damageFormula: `str * ${coef(0.7, 0.15, lv)}`, knockback: 3 }),
-  'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 5, aoeRadius: 1.6, cooldown: 6, channelTime: 2, element: 'fire', retreatAfter: 2.5, zone: { dotDamage: 3 + lv, duration: 3 } }),
+  'poison':        () =>   skill({ id: 'poison', name: 'Poison', type: 'debuff', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), statusApplied: 'poisoned' }),
+  'arrow-shower':  (lv) => skill({ id: 'arrow-shower', name: 'Arrow Shower', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 1.8, cooldown: cd(10), damageFormula: `str * ${coef(0.7, 0.15, lv)}`, knockback: 3 }),
+  // Ground-zone AoEs may keep up to `maxActive` of the caster's hazards live at
+  // once (they stack within their duration); at the cap the skill reads as not
+  // off cooldown (see makeSkillTactic), a soft limiter on top of the cooldown.
+  'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 5, aoeRadius: 1.6, cooldown: cd(10), channelTime: 2, element: 'fire', retreatAfter: 2.5, zone: { dotDamage: 3 + lv, duration: 3, maxActive: 2 } }),
   // Lightning Storm: a wide, long-lived cloud that zaps anything inside it for 1
   // lightning/round (§2 zones). The catch is a *very* long channel — easy to
   // interrupt — so it's a high-risk pre-positioned nuke, not a panic button.
@@ -51,15 +60,15 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // Range matches Lightning Bolt's so a kiting mage (which holds its longest
   // skill range) can actually land the storm from where it stands, instead of
   // hanging back at bolt range with the cloud just out of reach.
-  'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 8, aoeRadius: 2.6, cooldown: 10, channelTime: 5, element: 'lightning', zone: { dotDamage: 1, duration: 24, element: 'lightning' } }),
-  'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: 5, statusApplied: 'rooted' }),
+  'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 8, aoeRadius: 2.6, cooldown: cd(10), channelTime: 5, element: 'lightning', zone: { dotDamage: 1, duration: 24, element: 'lightning', maxActive: 1 } }),
+  'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: cd(10), statusApplied: 'rooted' }),
 
   // Phase 3 — behavioural & combos: freeze→amplify, stealth, dispel/reveal.
-  'freeze':        (lv) => skill({ id: 'freeze', name: 'Freeze', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: 5, channelTime: 2, element: 'water', damageFormula: `int * ${coef(0.5, 0.1, lv)}`, statusApplied: 'frozen' }),
-  'cloak':         () =>   skill({ id: 'cloak', name: 'Cloak', type: 'buff', targeting: 'self', cooldown: 6, statusApplied: 'stealthed' }),
-  'back-stab':     (lv) => skill({ id: 'back-stab', name: 'Back Stab', type: 'attack', targeting: 'single_enemy', range: 1.6, cooldown: 3, damageFormula: `str * ${coef(1.0, 0.2, lv)}`, stealthBonus: 2.5 }),
-  'sight':         () =>   skill({ id: 'sight', name: 'Sight', type: 'debuff', targeting: 'aoe_enemy', range: 6, aoeRadius: 2.5, cooldown: 4, removesStatusId: 'stealthed' }),
-  'dispel':        () =>   skill({ id: 'dispel', name: 'Dispel', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: 4, dispelCategory: 'buff' }),
+  'freeze':        (lv) => skill({ id: 'freeze', name: 'Freeze', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: cd(10), channelTime: 2, element: 'water', damageFormula: `int * ${coef(0.5, 0.1, lv)}`, statusApplied: 'frozen' }),
+  'cloak':         () =>   skill({ id: 'cloak', name: 'Cloak', type: 'buff', targeting: 'self', cooldown: cd(10), statusApplied: 'stealthed' }),
+  'back-stab':     (lv) => skill({ id: 'back-stab', name: 'Back Stab', type: 'attack', targeting: 'single_enemy', range: 1.6, cooldown: cd(10), damageFormula: `str * ${coef(1.0, 0.2, lv)}`, stealthBonus: 2.5 }),
+  'sight':         () =>   skill({ id: 'sight', name: 'Sight', type: 'debuff', targeting: 'aoe_enemy', range: 6, aoeRadius: 2.5, cooldown: cd(10), removesStatusId: 'stealthed' }),
+  'dispel':        () =>   skill({ id: 'dispel', name: 'Dispel', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: cd(10), dispelCategory: 'buff' }),
 }
 
 export function buildEngineSkill(id: string, level: number): EngineSkill | null {
@@ -196,6 +205,13 @@ function canCloak(self: Combatant, state: BattleState): boolean {
 // hit a cluster from safety, so the caster falls through to its single-target
 // nuke when an area cast wouldn't pay off (§4 cluster/safety gate). A self-cast
 // cloak only fires from the ambush window (canCloak).
+// How many of a caster's ground zones from a given skill are currently live.
+function activeZoneCount(state: BattleState, casterId: string, skillId: string): number {
+  let n = 0
+  for (const z of state.zones ?? []) if (z.sourceId === casterId && z.skillId === skillId) n++
+  return n
+}
+
 export function makeSkillTactic(sk: EngineSkill): TacticDef {
   const gated = isChanneledAoe(sk)
   const cloak = isStealthSkill(sk)
@@ -207,6 +223,9 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
     channel: 'action',
     action: (self, state) => {
       if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
+      // Soft cap: a ground-zone AoE that already has `maxActive` of this caster's
+      // hazards live reads as not off cooldown — its zones stack until then.
+      if (sk.zone?.maxActive != null && activeZoneCount(state, self.id, sk.id) >= sk.zone.maxActive) return null
       if (cloak && !canCloak(self, state)) return null
       const targetId = selectSkillTarget(self, state, sk)
       if (!targetId) return null
