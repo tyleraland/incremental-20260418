@@ -49,10 +49,13 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // Phase 2 — spatial: DoT, knockback, ground zones, root + retreat.
   'poison':        () =>   skill({ id: 'poison', name: 'Poison', type: 'debuff', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), statusApplied: 'poisoned' }),
   'arrow-shower':  (lv) => skill({ id: 'arrow-shower', name: 'Arrow Shower', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 1.8, cooldown: cd(10), damageFormula: `str * ${coef(0.7, 0.15, lv)}`, knockback: 3 }),
-  // Ground-zone AoEs may keep up to `maxActive` of the caster's hazards live at
-  // once (they stack within their duration); at the cap the skill reads as not
-  // off cooldown (see makeSkillTactic), a soft limiter on top of the cooldown.
-  'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 5, aoeRadius: 1.6, cooldown: cd(10), channelTime: 2, element: 'fire', retreatAfter: 2.5, zone: { dotDamage: 3 + lv, duration: 3, maxActive: 2 } }),
+  // Firewall is a movement tool, not a hazard zone: it raises a 3-wide line of
+  // flame between the caster and a foe. Foes that try to cross are knocked back a
+  // cell and burned; only after bumping it `maxBumps` times do they break
+  // through — so a kiter buys distance (and chip damage) while the chaser bounces.
+  // Allies pass freely. maxActive caps the caster's simultaneous walls (a soft
+  // cooldown — at the cap the skill reads as not-ready; see makeSkillTactic).
+  'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 6, aoeRadius: 0, cooldown: cd(10), channelTime: 2, element: 'fire', retreatAfter: 2.5, wall: { fireDamage: 4 + lv, maxBumps: 5, duration: cd(8), halfWidth: 1.5, maxActive: 2 } }),
   // Lightning Storm: a wide, long-lived cloud that zaps anything inside it for 1
   // lightning/round (§2 zones). The catch is a *very* long channel — easy to
   // interrupt — so it's a high-risk pre-positioned nuke, not a panic button.
@@ -85,9 +88,10 @@ export function buildEngineSkill(id: string, level: number): EngineSkill | null 
 export const SKILL_TACTICS: Record<string, string[]> = {
   'hammer-fall':     ['storm-caller'],
   'arrow-shower':    ['storm-caller'],
-  'firewall':        ['storm-caller'],
   'lightning-storm': ['storm-caller'],
   'cloak':           ['ambusher'],
+  // Firewall brings no extra tactic — its placement logic is baked into the
+  // skill tactic itself (makeSkillTactic → firewallAction), not a cluster-aim.
 }
 
 // Distinct tactic ids inherited from a set of equipped skill ids, in first-seen
@@ -211,16 +215,54 @@ function activeZoneCount(state: BattleState, casterId: string, skillId: string):
   for (const z of state.zones ?? []) if (z.sourceId === casterId && z.skillId === skillId) n++
   return n
 }
+function activeWallCount(state: BattleState, casterId: string): number {
+  let n = 0
+  for (const w of state.firewalls ?? []) if (w.sourceId === casterId) n++
+  return n
+}
+
+// §firewall placement: the foe to wall off — the nearest visible enemy that's
+// far enough away to leave room for the wall (and to finish the channel before
+// it arrives) yet within cast range, with a clear line so the wall sits between
+// us with no terrain in the way. Targeting it; the wall itself is dropped on the
+// caster→foe line at resolve time (resolveSkill), set back toward the caster so
+// the foe — having advanced through our cast time — lands on the far side and
+// bounces. Aimed at the imminent chaser, so it reads as a kiting tool.
+const FIREWALL_MIN_GAP = 2.5
+function firewallThreat(self: Combatant, state: BattleState, sk: EngineSkill): Combatant | null {
+  let best: Combatant | null = null
+  let bd = Infinity
+  for (const e of visibleEnemiesOf(state, self)) {
+    const d = distance(self.pos, e.pos)
+    if (d < FIREWALL_MIN_GAP || d > sk.range + EPS) continue
+    if (!sightlineClear(self.pos, e.pos, state.barriers)) continue
+    if (d < bd - EPS || (Math.abs(d - bd) <= EPS && best !== null && e.id < best.id)) { bd = d; best = e }
+  }
+  return best
+}
 
 export function makeSkillTactic(sk: EngineSkill): TacticDef {
+  const base = { id: `skill:${sk.id}`, name: sk.name, description: `Use ${sk.name} when ready.`, scope: 'unit' as const, channel: 'action' as const }
+
+  // Firewall is a placement tool, not a target nuke: raise it between us and the
+  // nearest approaching foe (resolveSkill computes the exact spot). Soft-capped
+  // at maxActive simultaneous walls per caster (reads as not-ready at the cap).
+  if (sk.wall) {
+    return {
+      ...base,
+      action: (self, state) => {
+        if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
+        if (activeWallCount(state, self.id) >= sk.wall!.maxActive) return null
+        const foe = firewallThreat(self, state, sk)
+        return foe ? { castSkill: sk, skillTarget: foe.id } : null
+      },
+    }
+  }
+
   const gated = isChanneledAoe(sk)
   const cloak = isStealthSkill(sk)
   return {
-    id: `skill:${sk.id}`,
-    name: sk.name,
-    description: `Use ${sk.name} when ready.`,
-    scope: 'unit',
-    channel: 'action',
+    ...base,
     action: (self, state) => {
       if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
       // Soft cap: a ground-zone AoE that already has `maxActive` of this caster's

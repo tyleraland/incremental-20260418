@@ -42,6 +42,7 @@ export interface EngineSkill {
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
   zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number }  // place a persistent ground hazard (aoe_point). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown).
+  wall?: { fireDamage: number; maxBumps: number; duration: number; halfWidth: number; maxActive: number }  // Firewall: an oriented line that bounces foes who cross it (knockback + burn) until they've bumped maxBumps times. halfWidth = half the line length (3-wide ⇒ 1.5).
   stealthBonus?: number  // damage multiplier when cast from stealth (Back Stab, §3)
   dispelCategory?: 'buff' | 'debuff'  // strip statuses of this category from affected targets
   removesStatusId?: string            // strip a specific status from affected targets (Sight → stealthed)
@@ -395,8 +396,9 @@ export interface CombatantSnapshot {
   pos: Vec2
 }
 
-// A persistent ground hazard (e.g. Firewall). Units of the affected team inside
-// the radius take `dotDamage` each round until `roundsLeft` runs out (§2 zones).
+// A persistent ground hazard (e.g. Lightning Storm). Units of the affected team
+// inside the radius take `dotDamage` each round until `roundsLeft` runs out (§2
+// zones). (Firewall is no longer a zone — it's a FireWall line; see below.)
 export interface BattleZone {
   id: string
   sourceId: string        // caster (for kill attribution)
@@ -409,11 +411,29 @@ export interface BattleZone {
   element?: Element       // flavour element for the tick (UI label); damage itself bypasses the matrix
 }
 
+// A Firewall (§firewall): a short oriented line that bounces foes who try to
+// cross it. It blocks only `blockTeam` (the caster's foes) — allies pass freely.
+// Each foe must `bump` into it `maxBumps` times (each a knockback + burn) before
+// it lets them through, so a kiter can drop it between itself and a chaser.
+export interface FireWall {
+  id: string
+  sourceId: string          // caster (kill attribution)
+  blockTeam: Team           // the team that is blocked/burned; the other team passes
+  pos: Vec2                 // line centre
+  normal: Vec2              // unit normal — the caster↔foe axis the wall blocks across
+  half: number              // half the line length, in cells (3-wide ⇒ 1.5)
+  fireDamage: number        // burn dealt per bump
+  maxBumps: number          // bumps a unit absorbs before it can pass
+  roundsLeft: number        // duration
+  bumps: Record<string, number>   // per-combatant bump tally
+}
+
 // Steppable battle state — `advanceRound` mutates this in place. Carries the
 // engine's private copies; the input units are never touched.
 export interface BattleState {
   combatants: Combatant[]
   zones: BattleZone[]
+  firewalls: FireWall[]
   barriers: Barrier[]
   cols: number
   rows: number

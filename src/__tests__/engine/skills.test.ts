@@ -19,7 +19,7 @@ describe('catalog', () => {
     expect(buildEngineSkill('lightning-bolt', 1)!.channelTime).toBeGreaterThan(0)
     expect(buildEngineSkill('hammer-fall', 1)!.statusApplied).toBe('stunned')
     expect(buildEngineSkill('arrow-shower', 1)!.knockback).toBeGreaterThan(0)
-    expect(buildEngineSkill('firewall', 1)!.zone?.duration).toBeGreaterThan(0)
+    expect(buildEngineSkill('firewall', 1)!.wall?.maxBumps).toBeGreaterThan(0)
     expect(buildEngineSkill('poison', 1)!.statusApplied).toBe('poisoned')
     expect(buildEngineSkill('ankle-snare', 1)!.statusApplied).toBe('rooted')
     expect(buildEngineSkill('back-stab', 1)!.stealthBonus).toBeGreaterThan(1)
@@ -160,17 +160,24 @@ describe('phase 2: spatial', () => {
     expect(hasEvent(b, (e) => e.type === 'knockback' && e.targetId === 'e')).toBe(true)
   })
 
-  it('Firewall drops a hazard that burns enemies standing in it', () => {
+  it('Firewall raises a wall that bounces and burns a foe trying to cross it', () => {
     const fw = { ...buildEngineSkill('firewall', 1)!, range: 99, channelTime: 0 }   // instant for the assertion
     const b = createBattle({
-      playerUnits: [eu({ id: 'p', skills: [fw] })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 200, hp: 200, meleeRange: 1.2 })],
+      playerUnits: [eu({ id: 'p', rangedRange: 6, skills: [fw] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 400, hp: 400, meleeRange: 1.2, moveSpeed: 1.2 })],
     })
+    find(b, 'p').pos = { x: 7.5, y: 4 }
+    find(b, 'e').pos = { x: 7.5, y: 9 }     // due north, charging the caster
     advanceRound(b)
-    expect(b.zones).toHaveLength(1)
+    expect(b.firewalls).toHaveLength(1)     // a wall went up between them
     const hp = find(b, 'e').hp
-    advanceRound(b)
-    expect(hasEvent(b, (e) => e.type === 'dot' && e.targetId === 'e')).toBe(true)
+    // The foe keeps trying to close and bounces off the flame, taking burn damage.
+    let bumped = false
+    for (let i = 0; i < 8; i++) {
+      advanceRound(b)
+      if (hasEvent(b, (ev) => ev.type === 'dot' && ev.targetId === 'e')) bumped = true
+    }
+    expect(bumped).toBe(true)
     expect(find(b, 'e').hp).toBeLessThan(hp)
   })
 

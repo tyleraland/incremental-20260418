@@ -103,7 +103,7 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
   },
   'firewall': {
     id: 'firewall', name: 'Firewall', maxLevel: 10, type: 'active',
-    description: (lv) => `Raise a wall of flame (${3 + lv}/round) and step back.`,
+    description: (lv) => `Raise a 3-wide wall of flame between you and a foe. Enemies bounce back and burn (${4 + lv}) each time they hit it — 5 bumps to break through. Allies pass. A kiting tool.`,
     requires: [],
     getBonuses: () => ({}),
   },

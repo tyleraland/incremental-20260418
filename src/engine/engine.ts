@@ -34,7 +34,7 @@ import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
-  TeamPlan, Planner, Barrier, TacticResolution, TacticOutcome,
+  TeamPlan, Planner, Barrier, TacticResolution, TacticOutcome, FireWall,
 } from './types'
 
 // Deterministic [0,1) hash of an integer — seeds open-world wander choices
@@ -168,6 +168,7 @@ export function createBattle(setup: CombatSetup): BattleState {
   return {
     combatants,
     zones: [],
+    firewalls: [],
     barriers: setup.barriers ?? [],
     cols,
     rows,
@@ -332,6 +333,50 @@ function tickZones(state: BattleState): void {
   state.zones = kept
 }
 
+// Age out firewalls (§firewall). They burn on *contact* (applyFirewalls), not
+// each round, so there's no per-round area damage here — just the lifetime tick.
+function tickFirewalls(state: BattleState): void {
+  if (state.firewalls.length === 0) return
+  state.firewalls = state.firewalls.filter((w) => { w.roundsLeft -= 1; return w.roundsLeft > 0 })
+}
+
+// §firewall collision: after a unit moves this turn (from `fromPos` to its new
+// pos), bounce it off any firewall it tried to cross. Only the wall's
+// `blockTeam` (the caster's foes) is affected — allies walk through. A blocked
+// foe is knocked a cell back to its own side, burned, and its bump tally for
+// that wall ticks up; once it has bumped `maxBumps` times the wall lets it pass.
+const FIREWALL_THICK = 0.35   // half the flame's collision slab, in cells
+const FIREWALL_KNOCKBACK = 1  // cells shoved back on a bounce
+function applyFirewalls(state: BattleState, self: Combatant, fromPos: Vec2): void {
+  if (state.firewalls.length === 0 || !self.alive) return
+  for (const w of state.firewalls) {
+    if (self.team !== w.blockTeam) continue              // allies pass freely
+    if ((w.bumps[self.id] ?? 0) >= w.maxBumps) continue  // already broken through
+    const sFrom = (fromPos.x - w.pos.x) * w.normal.x + (fromPos.y - w.pos.y) * w.normal.y
+    const sTo = (self.pos.x - w.pos.x) * w.normal.x + (self.pos.y - w.pos.y) * w.normal.y
+    const crossed = (sFrom > 0) !== (sTo > 0)
+    const enteredSlab = Math.abs(sTo) <= FIREWALL_THICK && Math.abs(sFrom) > FIREWALL_THICK
+    if (!crossed && !enteredSlab) continue
+    // Where the path meets the wall plane, and how far along the line that is —
+    // a move that skirts past the end of the (finite) wall isn't blocked.
+    const denom = sFrom - sTo
+    const t = Math.abs(denom) > EPS ? sFrom / denom : 0
+    const hx = fromPos.x + (self.pos.x - fromPos.x) * t
+    const hy = fromPos.y + (self.pos.y - fromPos.y) * t
+    const along = (hx - w.pos.x) * -w.normal.y + (hy - w.pos.y) * w.normal.x   // dot with tangent (−ny, nx)
+    if (Math.abs(along) > w.half) continue
+    // Block: bump tally, burn, and shove back to the near side of the flame.
+    w.bumps[self.id] = (w.bumps[self.id] ?? 0) + 1
+    const side = sFrom >= 0 ? 1 : -1
+    const back = { x: hx + w.normal.x * side * (FIREWALL_THICK + FIREWALL_KNOCKBACK), y: hy + w.normal.y * side * (FIREWALL_THICK + FIREWALL_KNOCKBACK) }
+    self.pos = traceMove(fromPos, back, state.barriers)
+    enforceSeparation(self, state.combatants, state.barriers)
+    emit(state, { round: state.round, type: 'knockback', sourceId: w.sourceId, targetId: self.id, position: { ...self.pos } })
+    applyTickDamage(state, w.sourceId, self, w.fireDamage, 'fire')
+    return   // one wall per move
+  }
+}
+
 // A single hit (basic attack or a skill's damage component): applies tactic
 // modifiers (Charger on basic attacks only; Nimble dodge and Armored incoming),
 // emits the hit/dodge event, deals damage, records the attacker (Counterattacker),
@@ -472,7 +517,36 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
   const primary = findCombatant(state, targetId)
   if (!primary) return
 
-  // Persistent ground hazard (Firewall): drop it on the target's position.
+  // §firewall: raise an oriented line of flame between us and the target foe.
+  // Place it on the caster→foe line, set back toward the caster from the foe's
+  // *current* position (which already reflects its advance through our cast
+  // time), so the foe is on the far side and must cross — then bounces. Trace
+  // from the caster so the wall never forms inside terrain. Allies pass; only
+  // the foe team is blocked/burned (no friendly fire).
+  if (skill.wall) {
+    const dx = primary.pos.x - self.pos.x, dy = primary.pos.y - self.pos.y
+    const d = Math.hypot(dx, dy) || 1
+    const nx = dx / d, ny = dy / d
+    const wallD = Math.max(1.5, Math.min(skill.range, d - 1.5))   // a touch in front of the foe
+    const desired = { x: self.pos.x + nx * wallD, y: self.pos.y + ny * wallD }
+    const pos = traceMove(self.pos, desired, state.barriers)      // stop short of any real wall
+    state.firewalls.push({
+      id: `fw-${skill.id}-${state.round}-${self.id}`,
+      sourceId: self.id,
+      blockTeam: self.team === 'player' ? 'enemy' : 'player',
+      pos,
+      normal: { x: nx, y: ny },
+      half: skill.wall.halfWidth,
+      fireDamage: skill.wall.fireDamage,
+      maxBumps: skill.wall.maxBumps,
+      roundsLeft: skill.wall.duration,
+      bumps: {},
+    })
+    if (skill.retreatAfter) retreatCaster(state, self, skill.retreatAfter)
+    return
+  }
+
+  // Persistent ground hazard (Lightning Storm): drop it on the target's position.
   if (skill.zone) {
     state.zones.push({
       id: `z-${skill.id}-${state.round}-${self.id}`,
@@ -1201,6 +1275,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
     let moved = false
     if (distance(self.pos, dest) > MOVE_ORDER_ARRIVE) {
       moved = moveTowardPoint(self, dest, moveSpeedOf(self) * WANDER_SPEED_MULT, state.combatants, state.barriers)
+      applyFirewalls(state, self, posBefore)   // §firewall: a marching foe bounces too
       updateFacing(state, self, posBefore, moved)
       if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
     }
@@ -1226,6 +1301,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
 
   const posBefore = { ...self.pos }
   executeMovement(state, self, evalMovement(state, self))
+  applyFirewalls(state, self, posBefore)   // §firewall: bounce a foe that tried to cross
   const moved = self.pos.x !== posBefore.x || self.pos.y !== posBefore.y
   updateFacing(state, self, posBefore, moved)
   const moveText = moved
@@ -1301,8 +1377,9 @@ export function advanceRound(state: BattleState): BattleState {
     c.statuses = kept
   }
 
-  // §2 tick ground hazards (Firewall etc.)
+  // §2 tick ground hazards (Lightning Storm zones) and age out firewalls.
   tickZones(state)
+  tickFirewalls(state)
 
   // §9.1.2 tick cooldowns (skills + tactics)
   for (const c of state.combatants) {

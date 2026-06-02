@@ -971,12 +971,28 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={offscreen.map((c) => <EdgeMarker key={c.id} c={c} cam={cam} />)}
         >
-          {/* persistent ground hazards (Firewall, etc.) */}
+          {/* persistent ground hazards (Lightning Storm, etc.) */}
           {battle.zones.map((z) => (
             <div
               key={z.id}
               className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
               style={{ left: px(cam, z.pos.x), top: py(cam, z.pos.y), width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%` }}
+            />
+          ))}
+
+          {/* firewalls: a bar of flame along the wall's tangent (perpendicular to
+              its normal). Screen-space flips y, so the bar angle is atan2(nx, ny). */}
+          {battle.firewalls.map((w) => (
+            <div
+              key={w.id}
+              className="absolute rounded-sm bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)] animate-pulse pointer-events-none"
+              style={{
+                left: px(cam, w.pos.x),
+                top: py(cam, w.pos.y),
+                width: `${(2 * w.half / cam.size) * 100}%`,
+                height: `${(0.5 / cam.size) * 100}%`,
+                transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
+              }}
             />
           ))}
 

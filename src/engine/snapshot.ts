@@ -70,6 +70,7 @@ interface BattleSnapshot {
   v: number
   combatants: CombatantSnap[]
   zones: BattleState['zones']
+  firewalls: BattleState['firewalls']
   barriers: BattleState['barriers']
   cols: number
   rows: number
@@ -91,6 +92,7 @@ export function serializeBattle(state: BattleState): string {
     v: SNAPSHOT_VERSION,
     combatants: state.combatants.map(combatantToSnap),
     zones: state.zones,
+    firewalls: state.firewalls,
     barriers: state.barriers,
     cols: state.cols,
     rows: state.rows,
@@ -138,6 +140,7 @@ export function deserializeBattle(token: string): BattleState {
   return {
     combatants,
     zones: snap.zones,
+    firewalls: snap.firewalls ?? [],   // legacy tokens predate firewalls
     barriers: snap.barriers,
     cols: snap.cols,
     rows: snap.rows,
