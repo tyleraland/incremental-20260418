@@ -164,6 +164,25 @@ describe('movement behaviours', () => {
     expect(Math.abs(r.pos.y - startY)).toBeGreaterThan(0.5)   // moved tangentially along the wall, didn't freeze
   })
 
+  it('a swarmed Kiter threads the open lane between advancing foes instead of backing into one', () => {
+    // Mage dead-center, four melee bruisers closing from W/E/SW/SE — the NORTH
+    // lane is open. "Directly away from the nearest" would zig-zag into a chaser;
+    // escapeHeading should read the whole cluster and break north through the
+    // gap, keeping the kiter alive. Instant-cast so movement isn't channel-bound.
+    const fb = { ...buildEngineSkill('frost-bolt', 3)!, channelTime: 0 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 24, str: 2, spd: 14, rangedRange: 6, maxHp: 260, hp: 260, moveSpeed: 0.95, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [0, 1, 2, 3].map((i) => eu({ id: `e${i}`, team: 'enemy', str: 14, def: 8, spd: 9, maxHp: 400, hp: 400, meleeRange: 1.2, moveSpeed: 0.7 })),
+    })
+    find(b, 'mage').pos = { x: 7.5, y: 7.5 }
+    find(b, 'e0').pos = { x: 4.5, y: 9.5 }; find(b, 'e1').pos = { x: 10.5, y: 9.5 }
+    find(b, 'e2').pos = { x: 4.5, y: 7.5 }; find(b, 'e3').pos = { x: 10.5, y: 7.5 }
+    for (let i = 0; i < 40; i++) advanceRound(b)
+    const m = find(b, 'mage')
+    expect(m.alive).toBe(true)              // escaped the encirclement (the old "away from nearest" logic died here)
+    expect(m.pos.y).toBeLessThan(6)         // broke north through the open lane
+  })
+
   it('a faster Kiter ranged unit opens distance on a slower attacker', () => {
     // Mira-style: high spd + ranged + kiter. Pursuer is melee and slower.
     const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo

@@ -22,7 +22,7 @@ import {
 import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec } from './spatial'
+import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec, visibleEnemiesOf } from './spatial'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
 // (kite retreat or retreater fall-back). Kept light — the back-off direction
@@ -857,6 +857,65 @@ function executeWander(state: BattleState, self: Combatant): void {
   }
 }
 
+// Pick a retreat heading for a kiter that's been closed on. We score sampled
+// directions around the circle on the space each actually buys, so the kiter
+// reasons about *where* to flee instead of just "directly away from the nearest
+// foe" (which walks it into walls and into other enemies). For each candidate:
+//   • trace how far we can travel that way before a wall/edge stops us (`reach`)
+//     and step to the reachable landing spot — backing into a wall yields reach≈0
+//     so the landing barely moves and earns no clearance, ruling it out;
+//   • score the landing by its distance to the NEAREST of the surrounding
+//     threats *at their predicted next positions* (a straight one-step chase) —
+//     so a kiter hemmed in by several advancing foes is steered toward the gap
+//     between them, anticipating the swarm rather than reacting a step late.
+// A reach term favours roomy lanes over dead-ends, a mild away-from-nearest bias
+// keeps an open-field retreat straight (and damps left/right tangent jitter via
+// a deterministic tiebreak), and a light cohesion term keeps a kiting healer
+// near its pack. Deterministic: a fixed sample set, no RNG.
+const ESCAPE_SAMPLES = 16
+const ESCAPE_REACH_W = 0.2
+const ESCAPE_AWAY_W = 0.3
+const ESCAPE_THREAT_BUBBLE = 11   // cells: only foes this close shape the escape
+const ESCAPE_MAX_THREATS = 6      // cap the cluster we score against (perf + signal)
+
+function escapeHeading(state: BattleState, self: Combatant, nearest: Combatant, step: number): Vec2 {
+  const probe = step * 2.5
+  // The cluster to dodge: visible foes in a bubble, nearest first, capped. Each
+  // is predicted one step closer (straight chase) so we read where it's headed.
+  const threats = visibleEnemiesOf(state, self)
+    .filter((e) => distance(self.pos, e.pos) <= ESCAPE_THREAT_BUBBLE)
+    .sort((a, b) => distance(self.pos, a.pos) - distance(self.pos, b.pos))
+    .slice(0, ESCAPE_MAX_THREATS)
+  if (threats.length === 0) threats.push(nearest)
+  const pred = threats.map((e) => {
+    const vx = self.pos.x - e.pos.x, vy = self.pos.y - e.pos.y
+    const vd = Math.hypot(vx, vy) || 1
+    const s = moveSpeedOf(e)
+    return { x: e.pos.x + (vx / vd) * s, y: e.pos.y + (vy / vd) * s }
+  })
+  const nd = distance(self.pos, nearest.pos) || 1
+  const ax = (self.pos.x - nearest.pos.x) / nd, ay = (self.pos.y - nearest.pos.y) / nd
+  const coh = cohesionVec(self, state)
+
+  let best: Vec2 = { x: ax, y: ay }
+  let bestScore = -Infinity
+  for (let i = 0; i < ESCAPE_SAMPLES; i++) {
+    const ang = (i / ESCAPE_SAMPLES) * Math.PI * 2
+    const dx = Math.cos(ang), dy = Math.sin(ang)
+    const reach = distance(self.pos, traceMove(self.pos, { x: self.pos.x + dx * probe, y: self.pos.y + dy * probe }, state.barriers))
+    const travel = Math.min(step, reach)
+    const lpx = self.pos.x + dx * travel, lpy = self.pos.y + dy * travel
+    let clearance = Infinity
+    for (const p of pred) clearance = Math.min(clearance, Math.hypot(lpx - p.x, lpy - p.y))
+    const score = clearance
+      + ESCAPE_REACH_W * reach
+      + ESCAPE_AWAY_W * (dx * ax + dy * ay)
+      + COHESION_WEIGHT * (dx * coh.x + dy * coh.y)
+    if (score > bestScore + EPS) { bestScore = score; best = { x: dx, y: dy } }
+  }
+  return best
+}
+
 // Hold `want` gap from the NEAREST enemy, AND maintain a clear shot. We only
 // flee a threat that can actually close on us *directly* — if a movement barrier
 // (wall/cliff) lies between us it can't reach without a long detour, so fleeing
@@ -898,44 +957,12 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   let retreating = false
 
   if (tooClose) {
-    // Too close: back off. With open arena behind, go straight (so a faster
-    // kiter gains ground on a slower foe). When pinned against a wall — outer
-    // OR inner — arc tangentially toward whichever side actually has room to
-    // travel, so the kiter perimeter-routes around obstacles instead of
-    // freezing in a corner.
+    // Too close: back off along the heading that actually opens up the most
+    // space (escapeHeading samples directions and reads the whole threat
+    // cluster + terrain), so we flee through the gap between chasers instead
+    // of straight into a wall or another enemy.
     retreating = true
-    const ax = (self.pos.x - threat.pos.x) / (d || 1)
-    const ay = (self.pos.y - threat.pos.y) / (d || 1)
-    const probe = step * 2.5
-    // How far we'd actually travel in a unit direction (walls AND outer
-    // bounds), measured by tracing the probe to the nearest blocker.
-    const probeReach = (dxN: number, dyN: number): number => {
-      const target = { x: self.pos.x + dxN * probe, y: self.pos.y + dyN * probe }
-      return distance(self.pos, traceMove(self.pos, target, state.barriers))
-    }
-    let dx = ax, dy = ay
-    const awayReach = probeReach(ax, ay)
-    if (awayReach < probe * 0.4) {
-      const tLx = -ay, tLy = ax
-      const tRx = ay,  tRy = -ax
-      const lReach = probeReach(tLx, tLy)
-      const rReach = probeReach(tRx, tRy)
-      const tx = lReach >= rReach ? tLx : tRx
-      const ty = lReach >= rReach ? tLy : tRy
-      const bx = ax + tx, by = ay + ty       // 50/50 blend: hard arc when wall is behind
-      const blen = Math.hypot(bx, by) || 1
-      dx = bx / blen; dy = by / blen
-    }
-    // Light cohesion bias: nudge the back-off direction toward the party
-    // centroid so a kiting healer doesn't strand itself behind the front
-    // line. The away-from-threat vector still dominates; cohesion just curves
-    // the path slightly toward where the allies are.
-    const coh = cohesionVec(self, state)
-    if (coh.x !== 0 || coh.y !== 0) {
-      const bx = dx + coh.x * COHESION_WEIGHT, by = dy + coh.y * COHESION_WEIGHT
-      const blen = Math.hypot(bx, by) || 1
-      dx = bx / blen; dy = by / blen
-    }
+    const { x: dx, y: dy } = escapeHeading(state, self, threat, step)
     self.pos = slideMove(self.pos, { x: self.pos.x + dx * step, y: self.pos.y + dy * step }, state.barriers)
   } else if (losClear) {
     // We have a clear shot but we're too far — close the gap *straight* toward
