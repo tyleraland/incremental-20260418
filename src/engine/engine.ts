@@ -872,8 +872,15 @@ function executeWander(state: BattleState, self: Combatant): void {
 // keeps an open-field retreat straight (and damps left/right tangent jitter via
 // a deterministic tiebreak), and a light cohesion term keeps a kiting healer
 // near its pack. Deterministic: a fixed sample set, no RNG.
+//
+// The away-bias is *gated on whether straight-away is actually open* (awayOpen):
+// when a kiter is cornered, "away from the foe" points into the corner, so an
+// ungated bias both rewards backing deeper into the dead-end and penalises the
+// real escape — pinning the kiter there taking hits. Damping it when the away
+// lane is walled lets clearance + reach drive the breakout, while open-field
+// retreats (awayOpen≈1) keep the bias and its tuned behaviour untouched.
 const ESCAPE_SAMPLES = 16
-const ESCAPE_REACH_W = 0.2
+const ESCAPE_REACH_W = 0.25
 const ESCAPE_AWAY_W = 0.3
 const ESCAPE_THREAT_BUBBLE = 11   // cells: only foes this close shape the escape
 const ESCAPE_MAX_THREATS = 6      // cap the cluster we score against (perf + signal)
@@ -895,6 +902,13 @@ function escapeHeading(state: BattleState, self: Combatant, nearest: Combatant, 
   })
   const nd = distance(self.pos, nearest.pos) || 1
   const ax = (self.pos.x - nearest.pos.x) / nd, ay = (self.pos.y - nearest.pos.y) / nd
+  // How open the straight-away lane is (0 = walled/cornered, 1 = clear): scales
+  // the away-bias down when fleeing directly from the foe would just back us
+  // into terrain, so a cornered kiter isn't pulled deeper into its own corner.
+  // Sharp gate — it only bites a *genuine* dead-end (away lane under ~a cell),
+  // not a merely-tight perimeter turn where straight-away still has room.
+  const awayReach = distance(self.pos, traceMove(self.pos, { x: self.pos.x + ax * probe, y: self.pos.y + ay * probe }, state.barriers))
+  const awayOpen = Math.max(0, Math.min(1, (awayReach - 0.4) / 1.0))
   const coh = cohesionVec(self, state)
 
   let best: Vec2 = { x: ax, y: ay }
@@ -909,7 +923,7 @@ function escapeHeading(state: BattleState, self: Combatant, nearest: Combatant, 
     for (const p of pred) clearance = Math.min(clearance, Math.hypot(lpx - p.x, lpy - p.y))
     const score = clearance
       + ESCAPE_REACH_W * reach
-      + ESCAPE_AWAY_W * (dx * ax + dy * ay)
+      + ESCAPE_AWAY_W * awayOpen * (dx * ax + dy * ay)
       + COHESION_WEIGHT * (dx * coh.x + dy * coh.y)
     if (score > bestScore + EPS) { bestScore = score; best = { x: dx, y: dy } }
   }

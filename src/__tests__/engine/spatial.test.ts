@@ -164,6 +164,25 @@ describe('movement behaviours', () => {
     expect(Math.abs(r.pos.y - startY)).toBeGreaterThan(0.5)   // moved tangentially along the wall, didn't freeze
   })
 
+  it('a Kiter jammed in a corner breaks out instead of pinning itself taking hits', () => {
+    // Mage backed into the bottom-right corner, a slow foe right on top of it
+    // (gap ≈ 1). "Away from the foe" points *into* the corner, so an away-biased
+    // kiter backs deeper into the dead-end and sits there getting chewed. The
+    // breakout should commit to the open lane (north up the east wall), opening
+    // distance even though the first step doesn't gain the most clearance.
+    const fb = { ...buildEngineSkill('frost-bolt', 3)!, channelTime: 0 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 24, str: 2, spd: 12, rangedRange: 6, maxHp: 200, hp: 200, moveSpeed: 0.9, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 14, def: 8, spd: 4, maxHp: 600, hp: 600, meleeRange: 1.2, moveSpeed: 0.25 })],
+    })
+    find(b, 'mage').pos = { x: 14.6, y: 14.2 }   // jammed in the bottom-right corner
+    find(b, 'e').pos = { x: 13.6, y: 13.9 }       // slow foe right on top of it (gap ≈ 1)
+    for (let i = 0; i < 16; i++) advanceRound(b)
+    const m = find(b, 'mage'), e = find(b, 'e')
+    expect(m.pos.y).toBeLessThan(11)              // broke out of the corner (ran north up the wall)
+    expect(Math.hypot(m.pos.x - e.pos.x, m.pos.y - e.pos.y)).toBeGreaterThan(2.5)  // opened real distance
+  })
+
   it('a swarmed Kiter threads the open lane between advancing foes instead of backing into one', () => {
     // Mage dead-center, four melee bruisers closing from W/E/SW/SE — the NORTH
     // lane is open. "Directly away from the nearest" would zig-zag into a chaser;
