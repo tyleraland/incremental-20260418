@@ -38,21 +38,26 @@ function hpColor(ratio: number): string {
 }
 
 // ── Camera ──────────────────────────────────────────────────────────────────---
-// Sits at a slightly-zoomed-in default the whole fight. It only zooms out when
-// the alive units genuinely won't fit. No zoom-in: auto-zoom on tight clusters
-// snapped the camera on the last kill, reading as survivors "teleporting".
+// Encounters use a STATIC full-arena camera (arenaCamera); open-world battles
+// follow the party (followCamera + autoFitSize). The encounter board is a fixed
+// COLS×ROWS that fits on screen whole, so there's nothing to pan or zoom to.
 
-const DEFAULT_CAM_SIZE = 13   // world units shown by default
-const FULL_CAM_SIZE    = COLS // whole arena (zoom-out cap)
-const SPREAD_EXTENT    = 12   // bbox extent above this → zoom out to fit everyone
 const OPEN_CAM_SIZE     = 15  // open-world: default cells shown (pinch to resize)
 const OPEN_CAM_MIN_SIZE = 8   // most zoomed-in
 const OPEN_CAM_MAX_SIZE = 60  // most zoomed-out (still less than the whole map)
 
 interface Cam { x: number; y: number; size: number }
 
-function defaultCamera(): Cam {
-  return { x: (COLS - DEFAULT_CAM_SIZE) / 2, y: (ROWS - DEFAULT_CAM_SIZE) / 2, size: DEFAULT_CAM_SIZE }
+// Encounters frame the entire arena and never move. We used to sit slightly
+// zoomed in and pop out to "fit everyone" once the units spread past a
+// threshold — but in a perimeter-kiting fight the spread oscillates across that
+// line every few rounds, so the grid + barriers appeared to breathe in and out
+// (and a win snapped the survivors as the bbox collapsed). A fixed full-arena
+// frame is stable, shows the whole tuned board, and keeps perimeter action in
+// view. Square so the cells stay square in the square arena container.
+function arenaCamera(cols = COLS, rows = ROWS): Cam {
+  const size = Math.max(cols, rows)
+  return { x: (cols - size) / 2, y: (rows - size) / 2, size }
 }
 
 // Open-world: a fixed-size window that follows the centroid of the given points
@@ -86,18 +91,6 @@ function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
   }
   const spread = Math.max(maxX - minX, maxY - minY) + FIT_PAD * 2
   return Math.max(OPEN_CAM_SIZE, Math.min(maxSize, spread))
-}
-
-function computeCamera(pts: Vec2[]): Cam {
-  if (pts.length === 0) return defaultCamera()
-  let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
-  for (const p of pts) {
-    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
-    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
-  }
-  const extent = Math.max(maxX - minX, maxY - minY)
-  if (extent <= SPREAD_EXTENT) return defaultCamera()
-  return { x: 0, y: 0, size: FULL_CAM_SIZE }   // very spread: show everything
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
@@ -875,14 +868,10 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const focusUnit = focusUnitId ? battle.combatants.find((c) => c.id === focusUnitId && c.alive) : null
   const followPts = focusUnit ? [focusUnit.pos] : (partyPts.length ? partyPts : allPts)
   const effSize = manualZoom ? camSize : autoFitSize(focusUnit ? [focusUnit.pos] : partyPts, cols, rows)
-  // Encounter: hold the default camera once decided — otherwise the bbox
-  // collapses around the survivors and the auto-zoom snaps, reading as the
-  // winners teleporting.
+  // Open-world follows the party; an encounter statically frames its whole arena.
   const cam = isOpen
     ? followCamera(followPts, cols, rows, effSize)
-    : battle.outcome !== 'ongoing'
-      ? defaultCamera()
-      : computeCamera(allPts)
+    : arenaCamera(cols, rows)
 
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, c.pos)) : []
@@ -1186,7 +1175,7 @@ export function Preview({ location }: { location: Location | null }) {
     const label = (u.class && CLASS_ICON[u.class]) ? CLASS_ICON[u.class] : initials(u.name)
     return { key: u.id, pos: startingPosition('player', rank, within), label, name: u.name, title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
   })
-  const cam = computeCamera([...enemyChips, ...partyChips].map((c) => c.pos))
+  const cam = arenaCamera()
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
