@@ -14,6 +14,7 @@ import { EPS } from './constants'
 import { livingEnemies, livingAllies, isStealthed, findCombatant, mostInjuredAllyInRange } from './behavior'
 import { visibleEnemiesOf } from './spatial'
 import { sightlineClear } from './barriers'
+import { firewallBlocks } from './firewall'
 import type { BattleState, Combatant, EngineSkill, TacticDef, SkillTargeting } from './types'
 
 // level-scaled coefficient as a formula literal: base at lv1, +per each level.
@@ -50,12 +51,14 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'poison':        () =>   skill({ id: 'poison', name: 'Poison', type: 'debuff', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), statusApplied: 'poisoned' }),
   'arrow-shower':  (lv) => skill({ id: 'arrow-shower', name: 'Arrow Shower', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 1.8, cooldown: cd(10), damageFormula: `str * ${coef(0.7, 0.15, lv)}`, knockback: 3 }),
   // Firewall is a movement tool, not a hazard zone: it raises a 3-wide line of
-  // flame between the caster and a foe. Foes that try to cross are knocked back a
-  // cell and burned; only after bumping it `maxBumps` times do they break
-  // through — so a kiter buys distance (and chip damage) while the chaser bounces.
-  // Allies pass freely. maxActive caps the caster's simultaneous walls (a soft
-  // cooldown — at the cap the skill reads as not-ready; see makeSkillTactic).
-  'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 6, aoeRadius: 0, cooldown: cd(10), channelTime: 2, element: 'fire', retreatAfter: 2.5, wall: { fireDamage: 4 + lv, maxBumps: 5, duration: cd(8), halfWidth: 1.5, maxActive: 2 } }),
+  // flame (snapped to _ | / \) between the caster and a foe. Foes that try to
+  // cross are knocked back perpendicular to it and burned; only after bumping it
+  // `maxBumps` times do they break through — so a kiter holds behind it, blasts,
+  // and re-walls. Allies pass freely. A FAST cast + short cooldown so you can
+  // keep a wall up; capped at maxActive=2 simultaneous walls (at the cap the
+  // skill reads as not-ready until one expires). Cooldown/channel/duration here
+  // are in engine ROUNDS (not the cd()-seconds the other skills use).
+  'firewall':      (lv) => skill({ id: 'firewall', name: 'Firewall', type: 'aoe', targeting: 'aoe_point', range: 6, aoeRadius: 0, cooldown: 10, channelTime: 1, element: 'fire', retreatAfter: 2.5, wall: { fireDamage: 4 + lv, maxBumps: 5, duration: 15, halfWidth: 1.5, maxActive: 2 } }),
   // Lightning Storm: a wide, long-lived cloud that zaps anything inside it for 1
   // lightning/round (§2 zones). The catch is a *very* long channel — easy to
   // interrupt — so it's a high-risk pre-positioned nuke, not a panic button.
@@ -179,8 +182,19 @@ function channeledAoeWorthIt(self: Combatant, state: BattleState, sk: EngineSkil
   const enemies = livingEnemies(state, self)
   const inBlast = enemies.filter((e) => distance(e.pos, primary.pos) <= sk.aoeRadius + EPS).length
   if (inBlast < MIN_AOE_CHANNEL_TARGETS) return false
+  return canFinishChannel(self, state, sk)
+}
+
+// Can we finish this channel before an enemy reaches us and interrupts it? An
+// enemy walled off by one of our firewalls (that it hasn't broken through) can't
+// reach, so it doesn't count — which is exactly what lets a kiter stand behind
+// its flame and cast. Used to stop a kiter from feeding interrupted channels
+// (the "ran but couldn't cast before it caught me" death): if no cast is safe it
+// falls through to a faster option (e.g. raising a firewall) or keeps running.
+function canFinishChannel(self: Combatant, state: BattleState, sk: EngineSkill): boolean {
   const turns = sk.channelTime + 1   // cast-start round + each channel round the threat can keep closing
-  return !enemies.some((e) => {
+  return !livingEnemies(state, self).some((e) => {
+    if (firewallBlocks(state.firewalls ?? [], e.team, e.id, e.pos, self.pos)) return false
     const reach = e.rangedRange > 0 ? e.rangedRange : e.meleeRange
     return distance(self.pos, e.pos) - moveSpeedOf(e) * turns <= reach + EPS
   })
@@ -219,6 +233,11 @@ function activeWallCount(state: BattleState, casterId: string): number {
   let n = 0
   for (const w of state.firewalls ?? []) if (w.sourceId === casterId) n++
   return n
+}
+// Does this unit have a firewall it could raise right now (off cooldown, under
+// its simultaneous cap)? If so it has a defensive option besides a risky cast.
+function hasReadyFirewall(self: Combatant, state: BattleState): boolean {
+  return self.skills.some((s) => s.wall != null && (self.skillCooldowns[s.id] ?? 0) <= 0 && activeWallCount(state, self.id) < s.wall.maxActive)
 }
 
 // §firewall placement: the foe to wall off — the nearest visible enemy that's
@@ -274,6 +293,11 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
       if (gated) {
         const primary = findCombatant(state, targetId)
         if (!primary || !channeledAoeWorthIt(self, state, sk, primary)) return null
+      } else if (sk.channelTime >= 1 && sk.damageFormula && !isOffensiveAoe(sk) && hasReadyFirewall(self, state) && !canFinishChannel(self, state, sk)) {
+        // A single-target channel a threat would interrupt isn't worth starting
+        // when we could raise a firewall instead — yield so the wall tactic fires
+        // and we hold behind it. (No firewall ready ⇒ cast anyway, as before.)
+        return null
       }
       return { castSkill: sk, skillTarget: targetId }
     },

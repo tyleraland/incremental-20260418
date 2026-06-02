@@ -23,6 +23,7 @@ import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec, visibleEnemiesOf } from './spatial'
+import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
 // (kite retreat or retreater fall-back). Kept light — the back-off direction
@@ -352,23 +353,12 @@ function applyFirewalls(state: BattleState, self: Combatant, fromPos: Vec2): voi
   for (const w of state.firewalls) {
     if (self.team !== w.blockTeam) continue              // allies pass freely
     if ((w.bumps[self.id] ?? 0) >= w.maxBumps) continue  // already broken through
-    const sFrom = (fromPos.x - w.pos.x) * w.normal.x + (fromPos.y - w.pos.y) * w.normal.y
-    const sTo = (self.pos.x - w.pos.x) * w.normal.x + (self.pos.y - w.pos.y) * w.normal.y
-    const crossed = (sFrom > 0) !== (sTo > 0)
-    const enteredSlab = Math.abs(sTo) <= FIREWALL_THICK && Math.abs(sFrom) > FIREWALL_THICK
-    if (!crossed && !enteredSlab) continue
-    // Where the path meets the wall plane, and how far along the line that is —
-    // a move that skirts past the end of the (finite) wall isn't blocked.
-    const denom = sFrom - sTo
-    const t = Math.abs(denom) > EPS ? sFrom / denom : 0
-    const hx = fromPos.x + (self.pos.x - fromPos.x) * t
-    const hy = fromPos.y + (self.pos.y - fromPos.y) * t
-    const along = (hx - w.pos.x) * -w.normal.y + (hy - w.pos.y) * w.normal.x   // dot with tangent (−ny, nx)
-    if (Math.abs(along) > w.half) continue
-    // Block: bump tally, burn, and shove back to the near side of the flame.
+    const cross = wallCrossing(w, fromPos, self.pos, FIREWALL_THICK)
+    if (!cross) continue
+    // Block: bump tally, burn, and shove back perpendicular to the wall (along
+    // its normal) to its near side — knocking the foe off its approach line.
     w.bumps[self.id] = (w.bumps[self.id] ?? 0) + 1
-    const side = sFrom >= 0 ? 1 : -1
-    const back = { x: hx + w.normal.x * side * (FIREWALL_THICK + FIREWALL_KNOCKBACK), y: hy + w.normal.y * side * (FIREWALL_THICK + FIREWALL_KNOCKBACK) }
+    const back = { x: cross.hx + w.normal.x * cross.side * (FIREWALL_THICK + FIREWALL_KNOCKBACK), y: cross.hy + w.normal.y * cross.side * (FIREWALL_THICK + FIREWALL_KNOCKBACK) }
     self.pos = traceMove(fromPos, back, state.barriers)
     enforceSeparation(self, state.combatants, state.barriers)
     emit(state, { round: state.round, type: 'knockback', sourceId: w.sourceId, targetId: self.id, position: { ...self.pos } })
@@ -530,12 +520,15 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
     const wallD = Math.max(1.5, Math.min(skill.range, d - 1.5))   // a touch in front of the foe
     const desired = { x: self.pos.x + nx * wallD, y: self.pos.y + ny * wallD }
     const pos = traceMove(self.pos, desired, state.barriers)      // stop short of any real wall
+    // Snap the orientation to the nearest of  _ | / \  so the wall reads cleanly
+    // and bounces foes perpendicular to itself (along the snapped normal).
+    const normal = snapNormal(dx, dy)
     state.firewalls.push({
       id: `fw-${skill.id}-${state.round}-${self.id}`,
       sourceId: self.id,
       blockTeam: self.team === 'player' ? 'enemy' : 'player',
       pos,
-      normal: { x: nx, y: ny },
+      normal,
       half: skill.wall.halfWidth,
       fireDamage: skill.wall.fireDamage,
       maxBumps: skill.wall.maxBumps,
@@ -1022,12 +1015,15 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const band = 0.4
 
   // Only retreat from a threat that can actually close on us *directly*. If a
-  // movement barrier (wall or cliff) sits on the straight line between us, the
-  // threat can't reach without a long detour around it — fleeing just opens the
-  // gap past our own range and wastes turns (the classic "flee into the wall and
-  // panic" loop). When separated like this we hold and shoot if we have LoS
-  // (cliffs don't block sight), or close in to firing range if too far.
+  // movement barrier (wall or cliff) — or one of our own firewalls the threat
+  // hasn't broken through — sits on the straight line between us, the threat
+  // can't reach without going around it. Fleeing then just opens the gap past
+  // our own range and wastes turns (and, with a finite firewall, running
+  // laterally walks us out from behind it so the chaser flanks the end). When
+  // separated like this we HOLD and blast (keeping the wall between us), only
+  // closing in if we're actually out of firing range.
   const canCloseDirectly = lineClear(self.pos, threat.pos, state.barriers)
+    && !firewallBlocks(state.firewalls, threat.team, threat.id, threat.pos, self.pos)
 
   // Predict where this threat will be after its turn this round, assuming a
   // straight chase. If standing still would let it close past the kite line,

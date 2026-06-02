@@ -5,6 +5,7 @@
 // (Bounce + burn on contact is also covered in skills.test.ts.)
 import { describe, it, expect } from 'vitest'
 import { createBattle, advanceRound, buildEngineSkill, type BattleState, type FireWall } from '@/engine'
+import { snapNormal } from '@/engine/firewall'
 import { eu } from './helpers'
 
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
@@ -54,6 +55,41 @@ describe('firewall', () => {
     }
     expect(crossedRound).toBeGreaterThan(0)                          // it does eventually break through
     expect(b.firewalls[0].bumps['foe']).toBeGreaterThanOrEqual(3)    // but only after maxBumps bumps
+  })
+
+  it('a Kiter holds behind its wall and blasts instead of fleeing past it', () => {
+    // Without the wall the kiter would back away from the closing foe; with the
+    // flame between them (foe can't reach), it should hold its ground and fire
+    // rather than run laterally and let the chaser flank the wall's end.
+    const fb = { ...buildEngineSkill('frost-bolt', 3)!, channelTime: 0 }   // instant — isolate movement
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 24, str: 2, spd: 12, rangedRange: 6, maxHp: 200, hp: 200, moveSpeed: 0.95, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', str: 14, def: 20, spd: 8, maxHp: 999, hp: 999, meleeRange: 1.2, moveSpeed: 0.9 })],
+    })
+    find(b, 'mage').pos = { x: 7.5, y: 4 }
+    find(b, 'foe').pos = { x: 7.5, y: 9 }
+    b.firewalls.push(wallAt(6, { maxBumps: 99 }))   // a wall that keeps blocking the whole test
+    let fired = false
+    for (let i = 0; i < 10; i++) {
+      advanceRound(b)
+      if (b.events.some((e) => e.round === b.round && e.type === 'skill_use' && e.sourceId === 'mage')) fired = true
+    }
+    const mage = find(b, 'mage'), foe = find(b, 'foe')
+    expect(mage.pos.y).toBeGreaterThan(2.5)   // held its pocket — didn't flee toward its edge
+    expect(mage.pos.y).toBeLessThan(6)         // and didn't walk through its own wall
+    expect(foe.pos.y).toBeGreaterThan(5.5)     // the foe was kept on the far side
+    expect(fired).toBe(true)                    // and the kiter actually blasted
+  })
+
+  it('snaps its orientation to one of  _ | / \\', () => {
+    const ok = (v: { x: number; y: number }) => {
+      const on = (n: number) => Math.abs(Math.abs(n) - 0) < 1e-6 || Math.abs(Math.abs(n) - 1) < 1e-6 || Math.abs(Math.abs(n) - Math.SQRT1_2) < 1e-6
+      expect(on(v.x)).toBe(true); expect(on(v.y)).toBe(true)
+    }
+    ok(snapNormal(1, 0.2))      // ≈ east → snaps to (1,0)
+    ok(snapNormal(0.2, 1))      // ≈ north → (0,1)
+    ok(snapNormal(1, 0.9))      // ≈ NE → (√½,√½)
+    ok(snapNormal(-1, 1.1))     // ≈ NW → (−√½,√½)
   })
 
   it('a Kiter mage raises a firewall between itself and an approaching chaser', () => {
