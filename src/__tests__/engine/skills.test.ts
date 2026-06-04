@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createBattle, advanceRound, buildEngineSkill, buildStatus, COMBAT_SKILLS,
-  unitToEngineInput, type BattleState,
+  unitToEngineInput, skillActiveCap, type BattleState,
 } from '@/engine'
 import { getDerivedStats } from '@/lib/stats'
 import { eu } from './helpers'
@@ -179,6 +179,40 @@ describe('phase 2: spatial', () => {
     }
     expect(bumped).toBe(true)
     expect(find(b, 'e').hp).toBeLessThan(hp)
+  })
+
+  it('Agility is capped at one active buff on the team at a time', () => {
+    // Instant, no-cooldown Agility so we could otherwise stack it on every ally —
+    // the team-wide cap (statusMaxActive: 1) must keep at most one buff up.
+    const agi = { ...buildEngineSkill('boost-agility', 1)!, cooldown: 0, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'c', int: 10, skills: [agi] }), eu({ id: 'a1' }), eu({ id: 'a2' })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 999, hp: 999, meleeRange: 1.2 })],
+    })
+    let maxBuffed = 0
+    for (let i = 0; i < 12; i++) {
+      advanceRound(b)
+      const buffed = b.combatants.filter((u) => u.team === 'player' && u.statuses.some((s) => s.id === 'agi-up')).length
+      maxBuffed = Math.max(maxBuffed, buffed)
+    }
+    expect(maxBuffed).toBe(1)   // never two Agility buffs up at once
+  })
+
+  it('skillActiveCap reports active/max for capped skills (and null otherwise)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', skills: [buildEngineSkill('firewall', 1)!, buildEngineSkill('boost-agility', 1)!, buildEngineSkill('fire-bolt', 1)!] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 1.2 })],
+    })
+    const mage = find(b, 'mage')
+    const cap = (id: string) => skillActiveCap(b, mage, mage.skills.find((s) => s.id === id)!)
+    expect(cap('firewall')).toEqual({ active: 0, max: 2 })
+    expect(cap('boost-agility')).toEqual({ active: 0, max: 1 })
+    expect(cap('fire-bolt')).toBeNull()   // uncapped skill
+    // raise a wall + apply the buff, then the counts reflect it
+    b.firewalls.push({ id: 'w', sourceId: 'mage', blockTeam: 'enemy', pos: { x: 7, y: 7 }, normal: { x: 0, y: 1 }, half: 1.5, fireDamage: 5, maxBumps: 5, roundsLeft: 9, bumps: {} })
+    mage.statuses.push(buildStatus('agi-up', 'mage')!)
+    expect(cap('firewall')).toEqual({ active: 1, max: 2 })
+    expect(cap('boost-agility')).toEqual({ active: 1, max: 1 })
   })
 
   it('Ankle Snare roots the target without moving the caster', () => {

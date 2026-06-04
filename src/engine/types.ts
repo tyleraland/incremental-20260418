@@ -39,6 +39,7 @@ export interface EngineSkill {
   healFormula: string    // e.g. "int * 2.0"
   element?: Element       // attack element for damage (default 'neutral'); drives §3 matrix
   statusApplied?: string // status effect id, if any
+  statusMaxActive?: number // cap on simultaneous instances of statusApplied across the caster's team (e.g. Agility = 1); at the cap the skill reads as not-ready
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
   zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number }  // place a persistent ground hazard (aoe_point). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown).

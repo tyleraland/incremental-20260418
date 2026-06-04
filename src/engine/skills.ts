@@ -44,7 +44,7 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
-  'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: cd(10), statusApplied: 'agi-up' }),
+  'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: cd(10), statusApplied: 'agi-up', statusMaxActive: 1 }),
   'hammer-fall':   (lv) => skill({ id: 'hammer-fall', name: 'Hammer Fall', type: 'aoe', targeting: 'aoe_enemy', range: 2, aoeRadius: 1.8, cooldown: cd(10), damageFormula: `str * ${coef(0.8, 0.2, lv)}`, statusApplied: 'stunned' }),
 
   // Phase 2 — spatial: DoT, knockback, ground zones, root + retreat.
@@ -234,6 +234,23 @@ function activeWallCount(state: BattleState, casterId: string): number {
   for (const w of state.firewalls ?? []) if (w.sourceId === casterId) n++
   return n
 }
+
+// Active-instance cap for a skill limited to N simultaneous effects, or null if
+// uncapped. Two flavours: Firewall counts this caster's live walls; a capped buff
+// (Agility) counts how many of the caster's team currently bear its status. The
+// engine gates on it (at the cap the skill reads as not-ready) and the battle
+// card shows it as (active/max) next to the skill.
+export function skillActiveCap(state: BattleState, self: Combatant, sk: EngineSkill): { active: number; max: number } | null {
+  if (sk.wall) return { active: activeWallCount(state, self.id), max: sk.wall.maxActive }
+  if (sk.statusApplied && sk.statusMaxActive != null) {
+    let active = 0
+    for (const c of state.combatants) {
+      if (c.alive && c.team === self.team && c.statuses.some((s) => s.id === sk.statusApplied)) active++
+    }
+    return { active, max: sk.statusMaxActive }
+  }
+  return null
+}
 // Does this unit have a firewall it could raise right now (off cooldown, under
 // its simultaneous cap)? If so it has a defensive option besides a risky cast.
 function hasReadyFirewall(self: Combatant, state: BattleState): boolean {
@@ -271,7 +288,8 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
       ...base,
       action: (self, state) => {
         if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
-        if (activeWallCount(state, self.id) >= sk.wall!.maxActive) return null
+        const cap = skillActiveCap(state, self, sk)
+        if (cap && cap.active >= cap.max) return null   // at the simultaneous-wall cap
         const foe = firewallThreat(self, state, sk)
         return foe ? { castSkill: sk, skillTarget: foe.id } : null
       },
@@ -287,6 +305,10 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
       // Soft cap: a ground-zone AoE that already has `maxActive` of this caster's
       // hazards live reads as not off cooldown — its zones stack until then.
       if (sk.zone?.maxActive != null && activeZoneCount(state, self.id, sk.id) >= sk.zone.maxActive) return null
+      // Capped buff (Agility = 1 up at a time): don't recast while the team's at
+      // the cap of active instances of its status.
+      const cap = skillActiveCap(state, self, sk)
+      if (cap && cap.active >= cap.max) return null
       if (cloak && !canCloak(self, state)) return null
       const targetId = selectSkillTarget(self, state, sk)
       if (!targetId) return null

@@ -3,7 +3,7 @@ import { useGameStore, waveComposition, locationBarriers, type Location } from '
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import {
-  COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY,
+  COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
 } from '@/engine'
 
@@ -545,7 +545,7 @@ function StatusList({ statuses }: { statuses: StatusEffect[] }) {
   )
 }
 
-function StatsTab({ c }: { c: Combatant }) {
+function StatsTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   return (
     <>
@@ -569,9 +569,15 @@ function StatsTab({ c }: { c: Combatant }) {
               const left = c.skillCooldowns[s.id] ?? 0
               const ready = left <= 0
               const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
+              // Skills capped to N simultaneous effects (Firewall walls, Agility
+              // buff) show how many are active out of the max next to the name.
+              const cap = skillActiveCap(battle, c, s)
               return (
                 <div key={s.id} className="flex items-center gap-2 text-[10px]">
-                  <div className="flex-1 truncate">{s.name}</div>
+                  <div className="flex-1 truncate">
+                    {s.name}
+                    {cap && <span className={`ml-1 tabular-nums ${cap.active >= cap.max ? 'text-amber-400' : 'text-game-text-dim'}`}>({cap.active}/{cap.max})</span>}
+                  </div>
                   <div className="w-20 h-1 rounded-sm bg-black/50 overflow-hidden">
                     <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
                   </div>
@@ -726,7 +732,7 @@ function UnitDetailOverlay({ c, battle, onClose }: { c: Combatant; battle: Battl
           )}
         </div>
 
-        {tab === 'stats' ? <StatsTab c={c} /> : <DebugTab c={c} battle={battle} />}
+        {tab === 'stats' ? <StatsTab c={c} battle={battle} /> : <DebugTab c={c} battle={battle} />}
       </div>
     </div>
   )
