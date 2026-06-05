@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   useGameStore, type Unit, type EquipSlot, type Abilities, type ActionSlotEntry,
   type TacticDef, type TacticChannel,
@@ -596,12 +596,44 @@ function GearTab({ unit }: { unit: Unit }) {
 
 // One droppable square. Renders the slot's current content (skill or item)
 // or a placeholder. Tap to clear.
+// dnd-kit swallows the native `click` on a draggable under a mouse (desktop), so
+// "tap to equip/clear" silently did nothing there while working on touch. Detect
+// the tap ourselves — pointer down→up with little travel — while dnd-kit still
+// owns the >5px drag (the two are mutually exclusive: a drag moves past 5px).
+function mergeRefs<T>(...refs: ((node: T | null) => void)[]) {
+  return (node: T | null) => { for (const r of refs) r(node) }
+}
+function useTapDraggable(
+  args: { id: string; data: Record<string, unknown>; disabled?: boolean },
+  onTap: () => void,
+) {
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable(args)
+  const down = useRef<{ x: number; y: number } | null>(null)
+  const dndDown = (listeners as { onPointerDown?: (e: ReactPointerEvent) => void } | undefined)?.onPointerDown
+  const handlers = {
+    ...attributes,
+    onPointerDown: (e: ReactPointerEvent) => { down.current = { x: e.clientX, y: e.clientY }; dndDown?.(e) },
+    onPointerUp: (e: ReactPointerEvent) => {
+      const d = down.current; down.current = null
+      if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) onTap()
+    },
+  }
+  return { setNodeRef, handlers, isDragging }
+}
+
 function ActionSlotSquare({ unitId, index, entry }: {
   unitId: string; index: number; entry: ActionSlotEntry | null
 }) {
   const setActionSlot = useGameStore((s) => s.setActionSlot)
   const equipment     = useGameStore((s) => s.equipment)
   const drop          = useDroppable({ id: `slot:${unitId}:${index}` })
+  const isSkill = entry?.kind === 'skill'
+  // Tap clears the slot; a skill entry can also be dragged onto another slot to
+  // move it (overwriting whatever's there — setActionSlot de-dupes the source).
+  const drag = useTapDraggable(
+    { id: `slotdrag:${unitId}:${index}`, data: { kind: entry?.kind ?? 'skill', id: entry?.id ?? '' }, disabled: !isSkill },
+    () => { if (entry) setActionSlot(unitId, index, null) },
+  )
 
   let label = ''
   let title = `Slot ${index + 1}`
@@ -617,9 +649,10 @@ function ActionSlotSquare({ unitId, index, entry }: {
 
   return (
     <button
-      ref={drop.setNodeRef}
-      onClick={() => entry && setActionSlot(unitId, index, null)}
-      title={entry ? `${title} (tap to clear)` : title}
+      ref={mergeRefs(drop.setNodeRef, drag.setNodeRef)}
+      {...drag.handlers}
+      title={entry ? `${title} (tap to clear${isSkill ? ', drag to move' : ''})` : title}
+      style={{ touchAction: 'none' as const, opacity: drag.isDragging ? 0.4 : 1 }}
       className={[
         'aspect-square rounded-md border font-medium transition-colors flex items-center justify-center text-center px-0.5 leading-tight overflow-hidden break-words hyphens-auto',
         entry ? 'text-[9px]' : 'text-[10px]',
@@ -655,10 +688,6 @@ function ActionSlotBar({ unit }: { unit: Unit }) {
 // Small (slot-sized) square next to an active-skill row that can be dragged
 // onto any action-slot droppable above.
 function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string }) {
-  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
-    id: `skill:${unitId}:${skillId}`,
-    data: { kind: 'skill' as const, id: skillId },
-  })
   const setActionSlot = useGameStore((s) => s.setActionSlot)
   const slots = useGameStore((s) => s.units.find((u) => u.id === unitId)?.actionSlots) ?? []
   const sk = SKILL_REGISTRY[skillId]
@@ -667,16 +696,14 @@ function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string 
   const firstEmpty = slots.findIndex((e) => e == null)
   // Tap → drop into the first empty action slot (no-op if already on the bar or
   // the bar is full). Drag still works for placing in a specific slot.
-  const onClick = () => {
-    if (equipped || firstEmpty < 0) return
-    setActionSlot(unitId, firstEmpty, { kind: 'skill', id: skillId })
-  }
+  const { setNodeRef, handlers, isDragging } = useTapDraggable(
+    { id: `skill:${unitId}:${skillId}`, data: { kind: 'skill', id: skillId } },
+    () => { if (!equipped && firstEmpty >= 0) setActionSlot(unitId, firstEmpty, { kind: 'skill', id: skillId }) },
+  )
   return (
     <span
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      onClick={onClick}
+      {...handlers}
       style={{ touchAction: 'none' as const, opacity: isDragging ? 0.4 : equipped ? 0.5 : 1 }}
       title={equipped ? `${label} (on the bar)` : firstEmpty < 0 ? `${label} (bar full)` : `Tap to add ${label} to the bar (or drag to a slot)`}
       className="inline-flex w-10 h-10 rounded-md border border-game-border bg-game-surface text-[9px] font-medium text-game-text items-center justify-center text-center px-0.5 leading-tight overflow-hidden break-words cursor-pointer active:cursor-grabbing select-none hover:border-game-primary/60"
