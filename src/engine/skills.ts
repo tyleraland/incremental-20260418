@@ -45,6 +45,10 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
   'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: 5, statusApplied: 'agi-up', statusMaxActive: 1 }),
+  // Bless: per-level offence buff (+lv attack/magic/speed, +2·lv hit), same
+  // duration as Agility. Up to 2 active on the team (statusMaxActive). Buffs
+  // prefer the caster first, then allies (selectSkillTarget).
+  'bless':         (lv) => skill({ id: 'bless', name: 'Bless', type: 'buff', targeting: 'single_ally', range: 5, cooldown: 5, statusApplied: 'blessed', statusLevel: lv, statusMaxActive: 2 }),
   'hammer-fall':   (lv) => skill({ id: 'hammer-fall', name: 'Hammer Fall', type: 'aoe', targeting: 'aoe_enemy', range: 2, aoeRadius: 1.8, cooldown: cd(10), damageFormula: `str * ${coef(0.8, 0.2, lv)}`, statusApplied: 'stunned' }),
 
   // Phase 2 — spatial: DoT, knockback, ground zones, root + retreat.

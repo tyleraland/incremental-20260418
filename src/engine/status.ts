@@ -20,6 +20,7 @@ export interface StatusSpec {
   category?: 'buff' | 'debuff' | 'control'
   icon?: string                  // glyph for the BattleView status chips
   description?: string           // one-line flavour for the tappable status detail
+  perLevel?: boolean             // statModifiers are PER-LEVEL — buildStatus multiplies them by the applied level (e.g. Bless)
 }
 
 export const STATUS_REGISTRY: Record<string, StatusSpec> = {
@@ -28,6 +29,9 @@ export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   // Molasses slow: sluggish move + attack speed. Short duration, refreshed each
   // round a unit stands in the puddle, so it lingers a beat after it leaves.
   'slowed':    { id: 'slowed',    name: 'Slowed', duration: 3, statModifiers: { spd: -8, moveSpeedMult: 0.5 }, category: 'debuff', icon: '🐌', description: 'Sluggish — half move speed and much slower to act.' },
+  // Bless: per-level offence buff (+lv attack/magic/speed, +2·lv hit), same
+  // duration as Agility. statModifiers are per-level — scaled at apply time.
+  'blessed':   { id: 'blessed',   name: 'Blessed', duration: 25, statModifiers: { str: 1, int: 1, spd: 1, acc: 2 }, perLevel: true, category: 'buff', icon: '✨', description: 'Empowered — more attack, magic, speed, and hit.' },
   'poisoned':  { id: 'poisoned',  name: 'Poisoned', duration: 3, dotDamage: 4, category: 'debuff', icon: '☠️', description: 'Takes damage every round.' },
   'rooted':    { id: 'rooted',    name: 'Rooted', duration: 2, flags: ['rooted'], category: 'control', icon: '🪤', description: "Can't move — snared in place." },
   // §3 combo: frozen skips the turn and counts as water armor — so Lightning/Fire
@@ -38,15 +42,21 @@ export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   'stealthed': { id: 'stealthed', name: 'Stealthed', duration: 25, flags: ['stealthed'], statModifiers: { moveSpeedMult: 0.75 }, category: 'buff', icon: '🌫️', description: 'Hidden from enemies until it strikes or is hit; moves slower.' },
 }
 
-export function buildStatus(specId: string, sourceId: string): StatusEffect | null {
+export function buildStatus(specId: string, sourceId: string, level = 1): StatusEffect | null {
   const spec = STATUS_REGISTRY[specId]
   if (!spec) return null
+  // Per-level statuses (Bless) scale their modifiers by the applied skill level.
+  const base = spec.statModifiers ?? {}
+  const mult = spec.perLevel ? Math.max(1, level) : 1
+  const statModifiers = mult === 1
+    ? { ...base }
+    : Object.fromEntries(Object.entries(base).map(([k, v]) => [k, (v as number) * mult]))
   return {
     id: spec.id,
     name: spec.name,
     source: sourceId,
     duration: spec.duration,
-    statModifiers: { ...(spec.statModifiers ?? {}) },
+    statModifiers,
     flags: [...(spec.flags ?? [])],
     dotDamage: spec.dotDamage,
     damageTakenMult: spec.damageTakenMult,

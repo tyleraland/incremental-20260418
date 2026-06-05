@@ -83,6 +83,12 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  'bless': {
+    id: 'bless', name: 'Bless', maxLevel: 10, type: 'active',
+    description: (lv) => `Bless an ally: +${lv} attack, magic & speed and +${2 * lv} hit for ~10s. Up to 2 active; prefers the caster, then allies.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
   'hammer-fall': {
     id: 'hammer-fall', name: 'Hammer Fall', maxLevel: 10, type: 'active',
     description: (lv) => `Smash an area for ${(0.8 + 0.2 * (lv - 1)).toFixed(1)}× ATK and stun.`,

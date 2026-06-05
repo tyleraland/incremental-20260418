@@ -40,6 +40,7 @@ export interface EngineSkill {
   element?: Element       // attack element for damage (default 'neutral'); drives §3 matrix
   statusApplied?: string // status effect id, if any
   statusMaxActive?: number // cap on simultaneous instances of statusApplied across the caster's team (e.g. Agility = 1); at the cap the skill reads as not-ready
+  statusLevel?: number   // level to scale a per-level status by when applied (e.g. Bless)
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
   zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number; statusApplied?: string }  // place a persistent ground hazard (aoe_point). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown). statusApplied → a utility zone (Molasses) that refreshes a status on units inside instead of damaging.
@@ -59,6 +60,7 @@ export interface StatModifiers {
   spd?: number
   moveSpeed?: number  // grid units/round added to base (positive = faster, negative = slow)
   moveSpeedMult?: number  // multiplies final move speed after additive mods (e.g. 0.75 while cloaked)
+  acc?: number  // accuracy/"hit" bonus — tracked & shown (e.g. Bless), but not yet rolled in combat (like the game's accuracy stat)
 }
 
 export interface StatusEffect {
@@ -248,6 +250,9 @@ export interface Combatant {
   lastDamageRound: number                // round this unit last dealt OR received damage (Cloak's "not engaged" gate; sentinel far-negative = never)
   channel: ChannelState | null           // active channeled cast, if any (§4 cast time)
   interruptedCount: number               // times a channel of theirs has been disrupted (Wary Caster reads this)
+  lastCastSkillId: string | null         // last skill this unit cast — Chain tactics follow up with the next slot
+  lastCastTargetId: string | null        // who that cast was aimed at (Chain reuses the same target)
+  lastCastRound: number                  // round of that cast (Chain only follows up immediately after)
 
   // §open-world (mode === 'open' only). visionRange gates target acquisition.
   // wanderTarget/wanderDwell drive idle roaming: a monster lurks for wanderDwell

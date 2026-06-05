@@ -136,6 +136,9 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     lastDamageRound: NEVER_DAMAGED,
     channel: null,
     interruptedCount: 0,
+    lastCastSkillId: null,
+    lastCastTargetId: null,
+    lastCastRound: NEVER_DAMAGED,
     visionRange: input.visionRange ?? Infinity,
     moveOrder: null,
     wanderTarget: null,
@@ -507,6 +510,10 @@ function affectedTargets(state: BattleState, self: Combatant, skill: EngineSkill
 // then put it on cooldown and record the single use.
 function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, targetId: string, atPoint?: Vec2): void {
   recordSkillUse(state, self, skill)
+  // Remember this cast so a Chain tactic can follow up next turn on the same target.
+  self.lastCastSkillId = skill.id
+  self.lastCastTargetId = targetId
+  self.lastCastRound = state.round
   // Non-damage skills (heal, buff, status, zone) don't go through dealAttack,
   // so they never emit a skill_use otherwise — UI floating labels would miss
   // them. Emit a source-anchored marker once per cast so "Heal", "Cloak",
@@ -598,7 +605,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
 
 function applySkillStatus(state: BattleState, self: Combatant, target: Combatant, skill: EngineSkill): void {
   if (!skill.statusApplied) return
-  const status = buildStatus(skill.statusApplied, self.id)
+  const status = buildStatus(skill.statusApplied, self.id, skill.statusLevel ?? 1)
   if (!status) return
   addStatus(target, status)
   emit(state, { round: state.round, type: 'buff_apply', sourceId: self.id, targetId: target.id, skillId: skill.id, extra: { statusId: status.id } })

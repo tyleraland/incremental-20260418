@@ -490,6 +490,7 @@ function statusEffectLines(s: StatusEffect): string[] {
   if (m.def) out.push(signed(m.def, 'DEF'))
   if (m.int) out.push(signed(m.int, 'INT'))
   if (m.spd) out.push(signed(m.spd, 'SPD'))
+  if (m.acc) out.push(signed(m.acc, 'hit'))
   if (m.moveSpeed) out.push(signed(m.moveSpeed, 'move'))
   if (m.moveSpeedMult != null && m.moveSpeedMult !== 1) out.push(`${Math.round(m.moveSpeedMult * 100)}% move speed`)
   if (s.dotDamage) out.push(`${s.dotDamage} damage/round`)

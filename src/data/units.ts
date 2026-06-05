@@ -64,13 +64,13 @@ export const INITIAL_UNITS: Unit[] = [
     class: 'Cleric', proficiencies: ['Rods'], locationId: null,
     abilities: { strength: 3, agility: 4, dexterity: 5, constitution: 5, intelligence: 8 },
     abilityPoints: 30, skillPoints: 1,
-    learnedSkills: { 'arcane-knowledge': 2, 'heal': 3, 'aoe-heal': 2, 'boost-agility': 3, 'molasses': 1, 'dispel': 1, 'sight': 1 },
+    learnedSkills: { 'arcane-knowledge': 2, 'heal': 3, 'aoe-heal': 2, 'boost-agility': 3, 'bless': 3, 'molasses': 1, 'dispel': 1, 'sight': 1 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-rod', offHand: 'eq-shield-wood' }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
-    actionSlots: bar('heal', 'aoe-heal', 'boost-agility', 'molasses', 'dispel', 'sight'),
-    tactics: [t('retreater'), t('kiter'), t('nimble'), t('dodge-aoe')],
+    actionSlots: bar('boost-agility', 'bless', 'heal', 'aoe-heal', 'molasses', 'dispel'),
+    tactics: [t('chain-1-2'), t('kiter'), t('nimble'), t('dodge-aoe')],
   },
   // ── Fighter (defensive knight / tank) ───────────────────────────────────────
   {

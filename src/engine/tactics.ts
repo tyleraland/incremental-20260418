@@ -17,6 +17,7 @@ import {
   lockedTarget, nearestEnemyTo, isCaster, visibleEnemiesOf,
   squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
 } from './spatial'
+import { selectSkillTarget, skillActiveCap } from './skills'
 import type {
   BattleState, Combatant, ResolvedTactic, StatusEffect, TacticDef, TacticRef,
 } from './types'
@@ -71,6 +72,45 @@ function aoeThreatsAt(self: Combatant, state: BattleState): Circle[] {
   }
   return out
 }
+// §chain: is the previous cast's target still a good pick for the follow-up
+// skill `to`? (alive, in range, right side, and — for a buff/debuff — not already
+// carrying its status). If so the chain lands the follow-up on the SAME target.
+function chainTargetOk(self: Combatant, state: BattleState, to: import('./types').EngineSkill, id: string | null): boolean {
+  if (!id) return false
+  const t = state.combatants.find((c) => c.id === id)
+  if (!t || !t.alive) return false
+  if (distance(self.pos, t.pos) > (to.range || Infinity) + EPS) return false
+  const allyAimed = to.targeting === 'self' || to.targeting === 'single_ally' || to.targeting === 'aoe_ally'
+  if (allyAimed !== (t.team === self.team)) return false
+  if (to.statusApplied && t.statuses.some((s) => s.id === to.statusApplied)) return false
+  return true
+}
+// A Chain tactic: right after the unit casts the skill in slot `from`, follow up
+// with the skill in slot `to` (the next slot) on the same target if it's ready.
+// "slot" = position among the unit's equipped skills (in action-bar order). The
+// follow-up only fires the turn immediately after, so the two read as a combo;
+// equipping several chains (1-2, 2-3, …) links a longer sequence.
+const CHAIN_WINDOW = 1   // rounds after the source cast that the follow-up may fire
+function chainTactic(fromIdx: number, toIdx: number): TacticDef {
+  return {
+    id: `chain-${fromIdx + 1}-${toIdx + 1}`,
+    name: `Chain ${fromIdx + 1}–${toIdx + 1}`,
+    description: `After casting skill #${fromIdx + 1}, immediately follow up with skill #${toIdx + 1} on the same target (if it's off cooldown) — chains the two together.`,
+    scope: 'unit', channel: 'action',
+    action: (self, state) => {
+      const from = self.skills[fromIdx], to = self.skills[toIdx]
+      if (!from || !to) return null
+      if (self.lastCastSkillId !== from.id || state.round - self.lastCastRound > CHAIN_WINDOW) return null
+      if ((self.skillCooldowns[to.id] ?? 0) > 0) return null
+      const cap = skillActiveCap(state, self, to)
+      if (cap && cap.active >= cap.max) return null
+      const targetId = chainTargetOk(self, state, to, self.lastCastTargetId) ? self.lastCastTargetId! : selectSkillTarget(self, state, to)
+      if (!targetId) return null
+      return { castSkill: to, skillTarget: targetId }
+    },
+  }
+}
+
 // Fallback bail-out direction when we're standing right on a blast centre: away
 // from the nearest foe, else toward our own edge.
 function awayFromEnemies(self: Combatant, state: BattleState): { x: number; y: number } {
@@ -243,6 +283,9 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       return { toPoint: { x: worst.x + ox * out, y: worst.y + oy * out }, speedMult: 1.15 }
     },
   },
+  'chain-1-2': chainTactic(0, 1),
+  'chain-2-3': chainTactic(1, 2),
+  'chain-3-4': chainTactic(2, 3),
   'guardian': {
     id: 'guardian', name: 'Guardian', scope: 'unit', channel: 'movement', kind: 'floor',
     description: 'Body-block: stand between your squishiest ally and the nearest threat.',

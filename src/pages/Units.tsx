@@ -659,16 +659,27 @@ function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string 
     id: `skill:${unitId}:${skillId}`,
     data: { kind: 'skill' as const, id: skillId },
   })
+  const setActionSlot = useGameStore((s) => s.setActionSlot)
+  const slots = useGameStore((s) => s.units.find((u) => u.id === unitId)?.actionSlots) ?? []
   const sk = SKILL_REGISTRY[skillId]
   const label = sk?.name ?? skillId
+  const equipped = slots.some((e) => e?.kind === 'skill' && e.id === skillId)
+  const firstEmpty = slots.findIndex((e) => e == null)
+  // Tap → drop into the first empty action slot (no-op if already on the bar or
+  // the bar is full). Drag still works for placing in a specific slot.
+  const onClick = () => {
+    if (equipped || firstEmpty < 0) return
+    setActionSlot(unitId, firstEmpty, { kind: 'skill', id: skillId })
+  }
   return (
     <span
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      style={{ touchAction: 'none' as const, opacity: isDragging ? 0.4 : 1 }}
-      title={`Drag ${label} to an action slot`}
-      className="inline-flex w-10 h-10 rounded-md border border-game-border bg-game-surface text-[9px] font-medium text-game-text items-center justify-center text-center px-0.5 leading-tight overflow-hidden break-words cursor-grab active:cursor-grabbing select-none hover:border-game-primary/60"
+      onClick={onClick}
+      style={{ touchAction: 'none' as const, opacity: isDragging ? 0.4 : equipped ? 0.5 : 1 }}
+      title={equipped ? `${label} (on the bar)` : firstEmpty < 0 ? `${label} (bar full)` : `Tap to add ${label} to the bar (or drag to a slot)`}
+      className="inline-flex w-10 h-10 rounded-md border border-game-border bg-game-surface text-[9px] font-medium text-game-text items-center justify-center text-center px-0.5 leading-tight overflow-hidden break-words cursor-pointer active:cursor-grabbing select-none hover:border-game-primary/60"
     >{label}</span>
   )
 }
