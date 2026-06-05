@@ -67,6 +67,11 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // skill range) can actually land the storm from where it stands, instead of
   // hanging back at bolt range with the cloud just out of reach.
   'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 8, aoeRadius: 2.6, cooldown: cd(10), channelTime: 5, element: 'lightning', zone: { dotDamage: 1, duration: 24, element: 'lightning', maxActive: 1 } }),
+  // Molasses: a fast (2-round) AoE *slow* puddle — no damage, but everything
+  // standing in it crawls (½ move, much slower to act). A defensive kiting/peel
+  // tool: drop it on the chaser to open distance, or on the melee mauling your
+  // backline. Up to 3 puddles at once (zone.maxActive); the slow doesn't stack.
+  'molasses':      () =>   skill({ id: 'molasses', name: 'Molasses', type: 'aoe', targeting: 'aoe_point', range: 6, aoeRadius: 2.4, cooldown: 4, channelTime: 2, element: 'earth', zone: { dotDamage: 0, duration: 10, element: 'earth', statusApplied: 'slowed', maxActive: 3 } }),
   'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: cd(10), statusApplied: 'rooted' }),
 
   // Phase 3 — behavioural & combos: freeze→amplify, stealth, dispel/reveal.
@@ -296,7 +301,10 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
     }
   }
 
-  const gated = isChanneledAoe(sk)
+  // A long *damage* AoE channel is cluster-gated (only worth it on 2+ from safety).
+  // A utility-zone channel (Molasses slow) isn't — it's a fast defensive cast you
+  // want on even one approaching foe, so it fires on the nearest target in range.
+  const gated = isChanneledAoe(sk) && !sk.zone?.statusApplied
   const cloak = isStealthSkill(sk)
   return {
     ...base,

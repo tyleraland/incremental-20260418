@@ -326,7 +326,18 @@ function tickZones(state: BattleState): void {
   for (const z of state.zones) {
     for (const c of state.combatants) {
       if (!c.alive || c.team !== z.team) continue
-      if (distance(c.pos, z.pos) <= z.radius + EPS) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'fire')
+      if (distance(c.pos, z.pos) > z.radius + EPS) continue
+      if (z.dotDamage > 0) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'fire')
+      // Utility zone (Molasses): refresh a status on whoever's inside. addStatus
+      // replaces by id, so it never stacks — it just tops the duration back up.
+      if (z.statusApplied && c.alive) {
+        const had = c.statuses.some((s) => s.id === z.statusApplied)
+        const st = buildStatus(z.statusApplied, z.sourceId)
+        if (st) {
+          addStatus(c, st)
+          if (!had) emit(state, { round: state.round, type: 'buff_apply', sourceId: z.sourceId, targetId: c.id, extra: { statusId: st.id } })
+        }
+      }
     }
     z.roundsLeft -= 1
     if (z.roundsLeft > 0) kept.push(z)
@@ -553,6 +564,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
       roundsLeft: skill.zone.duration,
       skillId: skill.id,
       element: skill.zone.element ?? skill.element,
+      statusApplied: skill.zone.statusApplied,
     })
   }
 
@@ -596,11 +608,20 @@ function applySkillStatus(state: BattleState, self: Combatant, target: Combatant
 // that resolves on a later turn and can be disrupted; instant skills resolve now.
 function castSkill(state: BattleState, self: Combatant, skill: EngineSkill, targetId: string): void {
   if (skill.channelTime >= 1) {
-    // A ground-zone AoE (Lightning Storm) telegraphs a fixed spot: lock the
-    // target's position now so the cloud lands there even if it moves — that's
-    // what makes the storm dodgeable (you can step off the marked ground).
+    // A ground-zone AoE telegraphs a fixed spot, locked now so it can be dodged
+    // (step off the marked ground). We lead a *moving* target: lock the spot it'll
+    // reach as it advances on us through the channel, so a defensive slow/storm
+    // lands in an approacher's path — and naturally misses anyone juking or
+    // fleeing off the line. Capped short of the caster so it never lands behind us.
+    let targetPoint: Vec2 | undefined
     const lock = skill.zone ? findCombatant(state, targetId) : null
-    self.channel = { skillId: skill.id, targetId, roundsLeft: skill.channelTime, targetPoint: lock ? { ...lock.pos } : undefined }
+    if (lock) {
+      const dx = self.pos.x - lock.pos.x, dy = self.pos.y - lock.pos.y
+      const dd = Math.hypot(dx, dy)
+      const lead = Math.min(moveSpeedOf(lock) * skill.channelTime, dd * 0.8)
+      targetPoint = dd > EPS ? { x: lock.pos.x + (dx / dd) * lead, y: lock.pos.y + (dy / dd) * lead } : { ...lock.pos }
+    }
+    self.channel = { skillId: skill.id, targetId, roundsLeft: skill.channelTime, targetPoint }
     emit(state, { round: state.round, type: 'cast_start', sourceId: self.id, targetId, skillId: skill.id })
     return
   }

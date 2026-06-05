@@ -34,6 +34,34 @@ describe('dodge-aoe tactic', () => {
     expect(sitter.hp).toBeLessThan(300)                                                  // the one that couldn't leave got zapped
   })
 
+  it('steers off an enemy firewall instead of bumping into it', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', moveSpeed: 1.0, tactics: [{ id: 'dodge-aoe', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 1.2, moveSpeed: 0 })],
+    })
+    find(b, 'p').pos = { x: 7.5, y: 6.6 }     // just south of the wall
+    find(b, 'e').pos = { x: 7.5, y: 11 }       // north — so p's default urge is to advance into the wall
+    b.firewalls.push({ id: 'w', sourceId: 'e', blockTeam: 'player', pos: { x: 7.5, y: 7 }, normal: { x: 0, y: 1 }, half: 1.5, fireDamage: 10, maxBumps: 5, roundsLeft: 99, bumps: {} })
+    for (let i = 0; i < 6; i++) advanceRound(b)
+    const p = find(b, 'p')
+    expect(p.pos.y).toBeLessThan(6)        // stayed clear of the flame (didn't push north into it)
+    expect(p.hp).toBe(p.maxHp)             // never bumped/burned
+  })
+
+  it('steps out of an enemy Molasses puddle', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', moveSpeed: 1.5, rangedRange: 6, tactics: [{ id: 'dodge-aoe', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 1.2, moveSpeed: 0 })],
+    })
+    const center = { x: 7.5, y: 7.5 }
+    find(b, 'p').pos = { ...center }
+    find(b, 'e').pos = { x: 7.5, y: 12 }
+    b.zones.push({ id: 'z', sourceId: 'e', team: 'player', pos: { ...center }, radius: 2.4, dotDamage: 0, roundsLeft: 99, skillId: 'molasses', statusApplied: 'slowed' })
+    for (let i = 0; i < 10; i++) advanceRound(b)
+    const p = find(b, 'p'), z = b.zones[0]
+    expect(Math.hypot(p.pos.x - z.pos.x, p.pos.y - z.pos.y)).toBeGreaterThan(z.radius)   // crawled clear of the slow
+  })
+
   it('does nothing when no area spell threatens it (yields to other movement)', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'p', rangedRange: 6, tactics: [{ id: 'dodge-aoe', rank: 1 }] })],

@@ -25,6 +25,9 @@ export interface StatusSpec {
 export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   'stunned':   { id: 'stunned',   name: 'Stunned', duration: 2, flags: ['stunned'], category: 'control', icon: '💫', description: 'Skips its turn while stunned.' },
   'agi-up':    { id: 'agi-up',    name: 'Boosted Agility', duration: 25, statModifiers: { spd: 6 }, category: 'buff', icon: '🏃', description: 'Faster — acts earlier in the round.' },
+  // Molasses slow: sluggish move + attack speed. Short duration, refreshed each
+  // round a unit stands in the puddle, so it lingers a beat after it leaves.
+  'slowed':    { id: 'slowed',    name: 'Slowed', duration: 3, statModifiers: { spd: -8, moveSpeedMult: 0.5 }, category: 'debuff', icon: '🐌', description: 'Sluggish — half move speed and much slower to act.' },
   'poisoned':  { id: 'poisoned',  name: 'Poisoned', duration: 3, dotDamage: 4, category: 'debuff', icon: '☠️', description: 'Takes damage every round.' },
   'rooted':    { id: 'rooted',    name: 'Rooted', duration: 2, flags: ['rooted'], category: 'control', icon: '🪤', description: "Can't move — snared in place." },
   // §3 combo: frozen skips the turn and counts as water armor — so Lightning/Fire

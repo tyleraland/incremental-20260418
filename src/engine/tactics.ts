@@ -48,6 +48,7 @@ function isCloaked(c: Combatant): boolean { return c.statuses.some((s) => s.flag
 // cast start (`channel.targetPoint`), so you can step off the marked ground;
 // other aimed AoEs centre on the targeted unit's current spot.
 type Circle = { x: number; y: number; r: number }
+const FIREWALL_AVOID_R = 0.5   // keep this far off an enemy firewall (plus the dodge margin)
 function aoeThreatsAt(self: Combatant, state: BattleState): Circle[] {
   const out: Circle[] = []
   for (const z of state.zones) if (z.team === self.team) out.push({ x: z.pos.x, y: z.pos.y, r: z.radius })
@@ -58,6 +59,15 @@ function aoeThreatsAt(self: Combatant, state: BattleState): Circle[] {
     if (!sk || sk.aoeRadius <= 0 || (sk.targeting !== 'aoe_enemy' && sk.targeting !== 'aoe_point')) continue
     const center = ch.targetPoint ?? state.combatants.find((c) => c.id === ch.targetId)?.pos
     if (center) out.push({ x: center.x, y: center.y, r: sk.aoeRadius })
+  }
+  // §firewall: avoid an enemy wall that would bounce + burn us. Model it as a
+  // small circle on the point of the wall nearest us, so the escape steers us
+  // straight off it (we never path through a flame we haven't broken).
+  for (const w of state.firewalls) {
+    if (w.blockTeam !== self.team || (w.bumps[self.id] ?? 0) >= w.maxBumps) continue
+    const tx = -w.normal.y, ty = w.normal.x   // wall tangent
+    const proj = Math.max(-w.half, Math.min(w.half, (self.pos.x - w.pos.x) * tx + (self.pos.y - w.pos.y) * ty))
+    out.push({ x: w.pos.x + tx * proj, y: w.pos.y + ty * proj, r: FIREWALL_AVOID_R })
   }
   return out
 }
@@ -208,7 +218,7 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   },
   'dodge-aoe': {
     id: 'dodge-aoe', name: 'Dodge AoE', scope: 'unit', channel: 'movement',
-    description: 'Get out of incoming area spells: when a foe is channeling an AoE (or a hazard is already on the ground) whose blast would catch you, step clear of it — routing around terrain on the way out. Put it high so survival beats positioning.',
+    description: 'Get out of incoming area spells: when a foe is channeling an AoE — or a hazard (storm, slow puddle, enemy firewall) is already in your way — step clear of it, routing around terrain on the way out. Put it high so survival beats positioning.',
     movement: (self, state, rank) => {
       if (self.statuses.some((s) => s.flags.includes('rooted'))) return null   // can't move anyway
       // Keep a cushion *wider than one move step* outside the blast: a unit with

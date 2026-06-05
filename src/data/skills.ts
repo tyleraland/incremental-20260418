@@ -113,6 +113,12 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [{ skillId: 'arcane-knowledge', minLevel: 2 }],
     getBonuses: () => ({}),
   },
+  'molasses': {
+    id: 'molasses', name: 'Molasses', maxLevel: 10, type: 'active',
+    description: () => `A fast (2-round) AoE puddle that slows everything inside — half move speed, much slower to act (no damage). Defensive: drop it on a chaser to kite, or on the melee mauling your backline. Up to 3 at once; the slow doesn't stack.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
   'ankle-snare': {
     id: 'ankle-snare', name: 'Ankle Snare', maxLevel: 10, type: 'active',
     description: () => `Root a foe in place, then retreat.`,

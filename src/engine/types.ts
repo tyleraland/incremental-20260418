@@ -42,7 +42,7 @@ export interface EngineSkill {
   statusMaxActive?: number // cap on simultaneous instances of statusApplied across the caster's team (e.g. Agility = 1); at the cap the skill reads as not-ready
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
-  zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number }  // place a persistent ground hazard (aoe_point). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown).
+  zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number; statusApplied?: string }  // place a persistent ground hazard (aoe_point). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown). statusApplied → a utility zone (Molasses) that refreshes a status on units inside instead of damaging.
   wall?: { fireDamage: number; maxBumps: number; duration: number; halfWidth: number; maxActive: number }  // Firewall: an oriented line that bounces foes who cross it (knockback + burn) until they've bumped maxBumps times. halfWidth = half the line length (3-wide ⇒ 1.5).
   stealthBonus?: number  // damage multiplier when cast from stealth (Back Stab, §3)
   dispelCategory?: 'buff' | 'debuff'  // strip statuses of this category from affected targets
@@ -411,6 +411,7 @@ export interface BattleZone {
   roundsLeft: number
   skillId: string
   element?: Element       // flavour element for the tick (UI label); damage itself bypasses the matrix
+  statusApplied?: string  // status id refreshed on units inside each round (e.g. Molasses → 'slowed'); non-stacking
 }
 
 // A Firewall (§firewall): a short oriented line that bounces foes who try to
