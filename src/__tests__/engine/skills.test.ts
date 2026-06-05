@@ -246,20 +246,22 @@ describe('phase 2: spatial', () => {
 })
 
 describe('phase 3: combos & stealth', () => {
-  const fireValue = (frozen: boolean): number => {
-    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant for the assertion
+  // Freeze turns the target's armor to water; on the 4-element wheel that makes
+  // WIND the amplifier (wind 1.5× vs water), so Lightning Bolt (wind) is the nuke.
+  const windValue = (frozen: boolean): number => {
+    const lb = { ...buildEngineSkill('lightning-bolt', 1)!, channelTime: 0 }   // wind, instant for the assertion
     const b = createBattle({
-      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [fb] })],
-      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 500, hp: 500, meleeRange: 1.2 })],
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [lb] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, magicDef: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
     })
     find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // in spell range
     if (frozen) find(b, 'foe').statuses.push(buildStatus('frozen', 'x')!)
     advanceRound(b)
-    return b.events.find((e) => e.type === 'skill_use' && e.skillId === 'fire-bolt' && e.targetId === 'foe')!.value!
+    return b.events.find((e) => e.type === 'skill_use' && e.skillId === 'lightning-bolt' && e.targetId === 'foe')!.value!
   }
 
-  it('Freeze amplifies the next hit (freeze → nuke combo)', () => {
-    expect(fireValue(true)).toBeGreaterThan(fireValue(false) * 1.5)
+  it('Freeze amplifies the next Wind hit (freeze → water armor → wind nuke combo)', () => {
+    expect(windValue(true)).toBeGreaterThan(windValue(false))
   })
 
   it('Freeze applies the frozen status', () => {

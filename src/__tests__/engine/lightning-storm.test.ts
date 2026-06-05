@@ -14,12 +14,12 @@ describe('Lightning Storm catalog', () => {
   it('is a long-channel, lightning ground-zone AoE', () => {
     const ls = buildEngineSkill('lightning-storm', 1)!
     expect(ls.targeting).toBe('aoe_point')
-    expect(ls.element).toBe('lightning')
+    expect(ls.element).toBe('wind')
     expect(ls.channelTime).toBeGreaterThanOrEqual(4)   // "very long cast time"
     expect(ls.aoeRadius).toBeGreaterThan(2)            // a wide cloud
     expect(ls.zone?.dotDamage).toBe(1)                 // 1 lightning / round
     expect(ls.zone?.duration).toBeGreaterThan(0)
-    expect(ls.zone?.element).toBe('lightning')
+    expect(ls.zone?.element).toBe('wind')
   })
 })
 
@@ -34,7 +34,7 @@ describe('Lightning Storm zone', () => {
     expect(b.zones).toHaveLength(1)
     const hp = find(b, 'e').hp
     advanceRound(b)                       // cloud ticks
-    expect(hasEvent(b, (ev) => ev.type === 'dot' && ev.targetId === 'e' && ev.extra?.label === 'lightning')).toBe(true)
+    expect(hasEvent(b, (ev) => ev.type === 'dot' && ev.targetId === 'e' && ev.extra?.label === 'wind')).toBe(true)
     expect(find(b, 'e').hp).toBeLessThan(hp)
   })
 

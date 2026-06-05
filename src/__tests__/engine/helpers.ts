@@ -30,6 +30,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     def: 4,
     int: 0,
     spd: 10,
+    magicDef: 0,
     maxHp: 50,
     hp: 50,
     alive: true,

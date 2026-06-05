@@ -14,6 +14,7 @@ export interface StatusSpec {
   statModifiers?: StatModifiers
   flags?: string[]
   dotDamage?: number             // damage to the bearer each round (poison etc.)
+  element?: Element              // element of the DoT (runs through the matrix)
   damageTakenMult?: number       // element-agnostic incoming-damage multiplier
   armorOverride?: Element        // override effective armor element while active (§3 combos)
   removedByElement?: Element[]   // taking this element's damage clears the status
@@ -32,7 +33,7 @@ export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   // Bless: per-level offence buff (+lv attack/magic/speed, +2·lv hit), same
   // duration as Agility. statModifiers are per-level — scaled at apply time.
   'blessed':   { id: 'blessed',   name: 'Blessed', duration: 25, statModifiers: { str: 1, int: 1, spd: 1, acc: 2 }, perLevel: true, category: 'buff', icon: '✨', description: 'Empowered — more attack, magic, speed, and hit.' },
-  'poisoned':  { id: 'poisoned',  name: 'Poisoned', duration: 3, dotDamage: 4, category: 'debuff', icon: '☠️', description: 'Takes damage every round.' },
+  'poisoned':  { id: 'poisoned',  name: 'Poisoned', duration: 3, dotDamage: 4, element: 'poison', category: 'debuff', icon: '☠️', description: 'Takes damage every round.' },
   'rooted':    { id: 'rooted',    name: 'Rooted', duration: 2, flags: ['rooted'], category: 'control', icon: '🪤', description: "Can't move — snared in place." },
   // §3 combo: frozen skips the turn and counts as water armor — so Lightning/Fire
   // hit for 2x via the element table, while a fire hit also melts (clears) it.
@@ -59,6 +60,7 @@ export function buildStatus(specId: string, sourceId: string, level = 1): Status
     statModifiers,
     flags: [...(spec.flags ?? [])],
     dotDamage: spec.dotDamage,
+    element: spec.element,
     damageTakenMult: spec.damageTakenMult,
     armorOverride: spec.armorOverride,
     removedByElement: spec.removedByElement ? [...spec.removedByElement] : undefined,

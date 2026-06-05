@@ -68,6 +68,7 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     def: derived.defense,
     int: derived.magicAttack,
     spd: derived.attackSpeed,
+    magicDef: derived.magicDefense,
     maxHp: derived.maxHp,
     hp: Math.max(0, Math.min(unit.health, derived.maxHp)),
     preferredRank: ranged ? 'back' : 'front',
@@ -85,6 +86,7 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
   const rangedRange = gridRangeFromFeet(def.stats.attackRange ?? RANGED_FEET_THRESHOLD)
   const ranged = rangedRange > 0
   const defense = def.stats.defense[0] + def.stats.defense[1]   // ability + armor
+  const magicDefense = def.stats.magicDefense[0] + def.stats.magicDefense[1]
   // Optional skill kit — same merge as heroes: each becomes an action-channel
   // tactic via makeSkillTactic, so a monster with `skills` gets sensible
   // when-to-cast behavior for free.
@@ -101,6 +103,7 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     def: defense,
     int: def.stats.magicAttack,
     spd: def.stats.attackSpeed,
+    magicDef: magicDefense,
     maxHp: def.health,
     hp: def.health,
     preferredRank: ranged ? 'back' : 'front',

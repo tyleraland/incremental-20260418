@@ -4,8 +4,11 @@
 
 import type { Combatant, EngineSkill, StatModifiers } from './types'
 
+// Stats the formula grammar understands (str/def/int/spd). `magicDef` is a real
+// stat too but never appears in a damage formula — it's read directly for spell
+// mitigation — so it's effectiveStat-able but not part of the grammar.
 const STAT_KEYS = ['str', 'def', 'int', 'spd'] as const
-type StatKey = (typeof STAT_KEYS)[number]
+type StatKey = (typeof STAT_KEYS)[number] | 'magicDef'
 
 // Effective stat = base + sum of active status modifiers (§7).
 export function effectiveStat(c: Combatant, stat: StatKey): number {
@@ -49,10 +52,12 @@ export function defaultCalculateDamage(
   round: number,
 ): number {
   const formula = skill ? skill.damageFormula : 'str * 1'
+  // INT-scaling ⇒ a spell (mitigated by magic defense); otherwise physical (a
+  // basic attack or STR-scaling skill, mitigated by physical defense). §8.1/§8.2.
   const isMagic = /\bint\b/.test(formula)
   const raw = evalFormula(formula, attacker)
   const mitigation = isMagic
-    ? effectiveStat(defender, 'int') * 0.25
+    ? effectiveStat(defender, 'magicDef') * 0.5
     : effectiveStat(defender, 'def') * 0.5
   return Math.max(1, Math.floor(raw - mitigation + variation(round, attacker.index)))
 }

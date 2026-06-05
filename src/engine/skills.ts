@@ -45,7 +45,7 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // channeled-AoE cluster gate, so it fires on even a single target.
   'fireball':      (lv) => skill({ id: 'fireball', name: 'Fireball', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 2.0, cooldown: cd(10), channelTime: 0, element: 'fire', damageFormula: `int * ${coef(1.1, 0.25, lv)}` }),
   'frost-bolt':    (lv) => skill({ id: 'frost-bolt', name: 'Frost Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), element: 'water', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
-  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 8, cooldown: cd(5), channelTime: 3, element: 'lightning', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
+  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 8, cooldown: cd(5), channelTime: 3, element: 'wind', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
@@ -75,7 +75,7 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // Range matches Lightning Bolt's so a kiting mage (which holds its longest
   // skill range) can actually land the storm from where it stands, instead of
   // hanging back at bolt range with the cloud just out of reach.
-  'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 8, aoeRadius: 2.6, cooldown: cd(10), channelTime: 5, element: 'lightning', zone: { dotDamage: 1, duration: 24, element: 'lightning', maxActive: 1 } }),
+  'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 8, aoeRadius: 2.6, cooldown: cd(10), channelTime: 5, element: 'wind', zone: { dotDamage: 1, duration: 24, element: 'wind', maxActive: 1 } }),
   // Molasses: a fast (2-round) AoE *slow* puddle — no damage, but everything
   // standing in it crawls (½ move, much slower to act). A defensive kiting/peel
   // tool: drop it on the chaser to open distance, or on the melee mauling your

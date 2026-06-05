@@ -55,9 +55,10 @@ export interface EngineSkill {
 
 export interface StatModifiers {
   str?: number
-  def?: number
+  def?: number       // physical defense (mitigates melee/physical)
   int?: number
   spd?: number
+  magicDef?: number  // magic defense (mitigates spell damage)
   moveSpeed?: number  // grid units/round added to base (positive = faster, negative = slow)
   moveSpeedMult?: number  // multiplies final move speed after additive mods (e.g. 0.75 while cloaked)
   acc?: number  // accuracy/"hit" bonus — tracked & shown (e.g. Bless), but not yet rolled in combat (like the game's accuracy stat)
@@ -71,6 +72,7 @@ export interface StatusEffect {
   statModifiers: StatModifiers
   flags: string[]         // "stealthed", "rooted", "channeling", "shielded", "taunted", "frozen"
   dotDamage?: number      // damage dealt to the bearer each round (poison etc.)
+  element?: Element       // element of the DoT (runs through the matrix; e.g. poison vs undead = 0)
   damageTakenMult?: number // element-agnostic incoming-damage multiplier while active
   armorOverride?: Element  // override the bearer's effective armor element (Frozen → water, §3)
   removedByElement?: Element[]  // taking damage of these elements clears the status (fire melts Frozen)
@@ -167,9 +169,10 @@ export interface EngineUnitInput {
 
   // Core stats (the RPG resolves these; the engine only reads them, §3.1)
   str: number
-  def: number
+  def: number             // physical defense (mitigates melee/physical hits)
   int: number
   spd: number
+  magicDef?: number       // magic defense (mitigates spell damage); default 0
   maxHp: number
   hp: number
 
@@ -210,9 +213,10 @@ export interface Combatant {
   index: number           // stable index across both teams; seeds damage variation (§8.1)
 
   str: number
-  def: number
+  def: number             // physical defense
   int: number
   spd: number
+  magicDef: number        // magic defense (spell mitigation)
   maxHp: number
   hp: number
   alive: boolean

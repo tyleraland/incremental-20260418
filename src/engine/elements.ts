@@ -14,24 +14,27 @@ export type Element =
   | 'fire'
   | 'water'     // also covers ice
   | 'earth'
-  | 'lightning'
+  | 'wind'
   | 'poison'
   | 'radiant'
   | 'undead'
   | 'ghost'
 
 export const ALL_ELEMENTS: Element[] = [
-  'neutral', 'fire', 'water', 'earth', 'lightning',
+  'neutral', 'fire', 'water', 'earth', 'wind',
   'poison', 'radiant', 'undead', 'ghost',
 ]
 
-// Sparse attacker → defender table; missing entries = 1.
+// Core 4-element wheel: each is 1.5× the one it beats, 0.75× the one that beats
+// it, 0.25× itself, and 1× its opposite (omitted ⇒ 1×). The beats-chain is
+// fire → earth → wind → water → fire. Exotic elements keep their own
+// (radiant/undead/poison/ghost) matchups; any missing pair defaults to 1×.
 const TABLE: Record<Element, Partial<Record<Element, number>>> = {
   neutral:   { ghost: 0 },
-  fire:      { fire: 0.33, water: 2, earth: 2, poison: 2, undead: 2 },
-  water:     { fire: 2, water: 0.33, lightning: 2 },
-  earth:     { water: 2, earth: 0.33, lightning: 2, ghost: 0.33 },
-  lightning: { water: 2, earth: 0.33, lightning: 0.33 },
+  fire:      { earth: 1.5, water: 0.75, fire: 0.25 },
+  earth:     { wind: 1.5, fire: 0.75, earth: 0.25 },
+  wind:      { water: 1.5, earth: 0.75, wind: 0.25 },
+  water:     { fire: 1.5, wind: 0.75, water: 0.25 },
   poison:    { poison: 0.33, radiant: 0.33, undead: 0, ghost: 0 },
   radiant:   { poison: 2, radiant: 0.33, undead: 2, ghost: 2 },
   undead:    { poison: 2, radiant: 0, undead: 0.33 },

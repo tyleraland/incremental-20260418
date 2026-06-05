@@ -106,6 +106,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     def: input.def,
     int: input.int,
     spd: input.spd,
+    magicDef: input.magicDef ?? 0,
     moveSpeed: input.moveSpeed,
     maxHp: input.maxHp,
     hp: input.hp,
@@ -284,10 +285,16 @@ function applyDamageRaw(
   }
 }
 
-// Damage-over-time / zone tick: emits a 'dot' marker then applies the hit.
-function applyTickDamage(state: BattleState, sourceId: string, target: Combatant, amount: number, label: string): void {
+// Damage-over-time / zone tick: emits a 'dot' marker then applies the hit. DoT
+// runs through the element matrix vs the target's (status-aware) armor element
+// just like a direct hit — so a wind storm hits a frozen (→water) foe for 1.5×,
+// poison can't touch the undead, etc. (§3). `element` is the DoT's element;
+// `label` is the UI tag.
+function applyTickDamage(state: BattleState, sourceId: string, target: Combatant, amount: number, element: Element, label: string): void {
   if (!target.alive || amount <= 0) return
-  const dmg = Math.max(1, Math.floor(amount))
+  const mult = elementMultiplier(element, effectiveArmor(target))
+  if (mult === 0) return                                   // elementally immune
+  const dmg = Math.max(1, Math.floor(amount * mult * vulnerableFactor(target)))
   emit(state, { round: state.round, type: 'dot', sourceId, targetId: target.id, value: dmg, extra: { label } })
   applyDamageRaw(state, sourceId, target, dmg)
 }
@@ -330,7 +337,7 @@ function tickZones(state: BattleState): void {
     for (const c of state.combatants) {
       if (!c.alive || c.team !== z.team) continue
       if (distance(c.pos, z.pos) > z.radius + EPS) continue
-      if (z.dotDamage > 0) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'fire')
+      if (z.dotDamage > 0) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'neutral', z.element ?? 'zone')
       // Utility zone (Molasses): refresh a status on whoever's inside. addStatus
       // replaces by id, so it never stacks — it just tops the duration back up.
       if (z.statusApplied && c.alive) {
@@ -376,7 +383,7 @@ function applyFirewalls(state: BattleState, self: Combatant, fromPos: Vec2): voi
     self.pos = traceMove(fromPos, back, state.barriers)
     enforceSeparation(self, state.combatants, state.barriers)
     emit(state, { round: state.round, type: 'knockback', sourceId: w.sourceId, targetId: self.id, position: { ...self.pos } })
-    applyTickDamage(state, w.sourceId, self, w.fireDamage, 'fire')
+    applyTickDamage(state, w.sourceId, self, w.fireDamage, 'fire', 'fire')
     return   // one wall per move
   }
 }
@@ -1403,7 +1410,7 @@ export function advanceRound(state: BattleState): BattleState {
     if (c.statuses.length === 0) continue
     const kept = []
     for (const s of c.statuses) {
-      if (s.dotDamage && c.alive) applyTickDamage(state, s.source, c, s.dotDamage, s.id)
+      if (s.dotDamage && c.alive) applyTickDamage(state, s.source, c, s.dotDamage, s.element ?? 'neutral', s.id)
       s.duration -= 1
       if (s.duration > 0) kept.push(s)
       else emit(state, { round: state.round, type: 'status_expire', sourceId: c.id, extra: { statusId: s.id } })

@@ -94,6 +94,6 @@ describe('happy path: tank soaks, healer heals, mage AoEs', () => {
 
     // The storm landed and is zapping the cluster for lightning damage.
     expect(b.zones.length).toBeGreaterThanOrEqual(1)
-    expect(b.events.some((e) => e.type === 'dot' && e.extra?.label === 'lightning')).toBe(true)
+    expect(b.events.some((e) => e.type === 'dot' && e.extra?.label === 'wind')).toBe(true)
   })
 })

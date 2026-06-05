@@ -134,7 +134,8 @@ export function deserializeBattle(token: string): BattleState {
     // §aggression: legacy tokens predate `provoked` — those monsters were all
     // hostile, so a missing flag defaults to true (don't reload them as passive).
     const provoked = rest.provoked ?? true
-    return { ...rest, visionRange, provoked, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    const magicDef = rest.magicDef ?? 0   // legacy tokens predate magic defense
+    return { ...rest, visionRange, provoked, magicDef, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {

@@ -57,12 +57,12 @@ describe('damage: defaultCalculateDamage (§8.1/§8.2)', () => {
     expect(defaultCalculateDamage(attacker, defender, null, 1)).toBe(8)
   })
 
-  it('uses INT-based mitigation when the formula scales on int', () => {
+  it('a spell (int-scaling) is mitigated by magic defense, ignoring physical defense', () => {
     const attacker = combatant({ id: 'a', index: 0, int: 10 })
-    const defender = combatant({ id: 'd', index: 1, int: 8, def: 100 })
+    const defender = combatant({ id: 'd', index: 1, magicDef: 8, def: 100 })
     const magicSkill = attackSkill({ damageFormula: 'int * 2' })
-    // raw=20, magic mitigation=8*0.25=2, variation(1,0)=0 → 18 (def ignored)
-    expect(defaultCalculateDamage(attacker, defender, magicSkill, 1)).toBe(18)
+    // raw=20, magic mitigation = 8*0.5 = 4, variation(1,0)=0 → 16 (physical def ignored)
+    expect(defaultCalculateDamage(attacker, defender, magicSkill, 1)).toBe(16)
   })
 
   it('never returns less than 1', () => {
