@@ -107,6 +107,12 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [{ skillId: 'keen-eyes', minLevel: 1 }],
     getBonuses: () => ({}),
   },
+  'fireball': {
+    id: 'fireball', name: 'Fireball', maxLevel: 10, type: 'active',
+    description: (lv) => `Hurl a fireball that bursts on a foe for instant fire AoE (${(1.1 + 0.25 * (lv - 1)).toFixed(1)}× M.ATK to it and everything nearby). No lingering cloud — it can't be side-stepped like a ground hazard.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
   'firewall': {
     id: 'firewall', name: 'Firewall', maxLevel: 10, type: 'active',
     description: (lv) => `Raise a 3-wide wall of flame between you and a foe. Enemies bounce back and burn (${4 + lv}) each time they hit it — 5 bumps to break through. Allies pass. A kiting tool.`,
