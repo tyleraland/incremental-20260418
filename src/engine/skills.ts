@@ -44,7 +44,7 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
-  'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: cd(10), statusApplied: 'agi-up', statusMaxActive: 1 }),
+  'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: 5, statusApplied: 'agi-up', statusMaxActive: 1 }),
   'hammer-fall':   (lv) => skill({ id: 'hammer-fall', name: 'Hammer Fall', type: 'aoe', targeting: 'aoe_enemy', range: 2, aoeRadius: 1.8, cooldown: cd(10), damageFormula: `str * ${coef(0.8, 0.2, lv)}`, statusApplied: 'stunned' }),
 
   // Phase 2 — spatial: DoT, knockback, ground zones, root + retreat.

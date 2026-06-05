@@ -24,7 +24,7 @@ export interface StatusSpec {
 
 export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   'stunned':   { id: 'stunned',   name: 'Stunned', duration: 2, flags: ['stunned'], category: 'control', icon: '💫', description: 'Skips its turn while stunned.' },
-  'agi-up':    { id: 'agi-up',    name: 'Boosted Agility', duration: 4, statModifiers: { spd: 6 }, category: 'buff', icon: '🏃', description: 'Faster — acts earlier in the round.' },
+  'agi-up':    { id: 'agi-up',    name: 'Boosted Agility', duration: 25, statModifiers: { spd: 6 }, category: 'buff', icon: '🏃', description: 'Faster — acts earlier in the round.' },
   'poisoned':  { id: 'poisoned',  name: 'Poisoned', duration: 3, dotDamage: 4, category: 'debuff', icon: '☠️', description: 'Takes damage every round.' },
   'rooted':    { id: 'rooted',    name: 'Rooted', duration: 2, flags: ['rooted'], category: 'control', icon: '🪤', description: "Can't move — snared in place." },
   // §3 combo: frozen skips the turn and counts as water armor — so Lightning/Fire
