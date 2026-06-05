@@ -494,7 +494,7 @@ function affectedTargets(state: BattleState, self: Combatant, skill: EngineSkill
 
 // Apply a skill's effects now (damage / heal / status to every affected unit),
 // then put it on cooldown and record the single use.
-function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, targetId: string): void {
+function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, targetId: string, atPoint?: Vec2): void {
   recordSkillUse(state, self, skill)
   // Non-damage skills (heal, buff, status, zone) don't go through dealAttack,
   // so they never emit a skill_use otherwise — UI floating labels would miss
@@ -505,7 +505,6 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
     emit(state, { round: state.round, type: 'skill_use', sourceId: self.id, targetId, skillId: skill.id })
   }
   const primary = findCombatant(state, targetId)
-  if (!primary) return
 
   // §firewall: raise an oriented line of flame between us and the target foe.
   // Place it on the caster→foe line, set back toward the caster from the foe's
@@ -514,6 +513,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
   // from the caster so the wall never forms inside terrain. Allies pass; only
   // the foe team is blocked/burned (no friendly fire).
   if (skill.wall) {
+    if (!primary) return
     const dx = primary.pos.x - self.pos.x, dy = primary.pos.y - self.pos.y
     const d = Math.hypot(dx, dy) || 1
     const nx = dx / d, ny = dy / d
@@ -539,13 +539,15 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
     return
   }
 
-  // Persistent ground hazard (Lightning Storm): drop it on the target's position.
-  if (skill.zone) {
+  // Persistent ground hazard (Lightning Storm): drop it on the telegraphed spot
+  // (the locked point if this was a channel, else the target's current position).
+  const zoneAt = atPoint ?? primary?.pos
+  if (skill.zone && zoneAt) {
     state.zones.push({
       id: `z-${skill.id}-${state.round}-${self.id}`,
       sourceId: self.id,
       team: self.team === 'player' ? 'enemy' : 'player',
-      pos: { ...primary.pos },
+      pos: { ...zoneAt },
       radius: skill.aoeRadius || 1,
       dotDamage: skill.zone.dotDamage,
       roundsLeft: skill.zone.duration,
@@ -554,6 +556,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
     })
   }
 
+  if (!primary) return   // remaining effects (damage/heal/status) need a live target
   const targets = affectedTargets(state, self, skill, primary)
   const allyEffect = isAllyTargeting(skill)
 
@@ -593,7 +596,11 @@ function applySkillStatus(state: BattleState, self: Combatant, target: Combatant
 // that resolves on a later turn and can be disrupted; instant skills resolve now.
 function castSkill(state: BattleState, self: Combatant, skill: EngineSkill, targetId: string): void {
   if (skill.channelTime >= 1) {
-    self.channel = { skillId: skill.id, targetId, roundsLeft: skill.channelTime }
+    // A ground-zone AoE (Lightning Storm) telegraphs a fixed spot: lock the
+    // target's position now so the cloud lands there even if it moves — that's
+    // what makes the storm dodgeable (you can step off the marked ground).
+    const lock = skill.zone ? findCombatant(state, targetId) : null
+    self.channel = { skillId: skill.id, targetId, roundsLeft: skill.channelTime, targetPoint: lock ? { ...lock.pos } : undefined }
     emit(state, { round: state.round, type: 'cast_start', sourceId: self.id, targetId, skillId: skill.id })
     return
   }
@@ -1167,13 +1174,16 @@ function tickChannel(state: BattleState, self: Combatant): boolean {
   if (!self.channel) return false
   self.channel.roundsLeft -= 1
   if (self.channel.roundsLeft <= 0) {
-    const { skillId, targetId } = self.channel
+    const { skillId, targetId, targetPoint } = self.channel
     self.channel = null
     const skill = self.skills.find((s) => s.id === skillId)
     if (skill) {
       const tgt = findCombatant(state, targetId)
-      if (tgt && tgt.alive) resolveSkill(state, self, skill, targetId)
-      else self.skillCooldowns[skill.id] = skill.cooldown   // target gone: fizzle onto cooldown
+      // A locked-point AoE lands on its marked ground regardless; everything else
+      // fizzles onto cooldown if its target is gone.
+      if (targetPoint) resolveSkill(state, self, skill, targetId, targetPoint)
+      else if (tgt && tgt.alive) resolveSkill(state, self, skill, targetId)
+      else self.skillCooldowns[skill.id] = skill.cooldown
     }
   }
   return true   // a channel always consumes the turn (rooted while casting)

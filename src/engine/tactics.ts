@@ -41,6 +41,37 @@ function teamFocus(self: Combatant, state: BattleState): Combatant | null {
 function defOf(c: Combatant): number { return effectiveStat(c, 'def') }
 function hpRatio(c: Combatant): number { return c.hp / c.maxHp }
 function isCloaked(c: Combatant): boolean { return c.statuses.some((s) => s.flags.includes('stealthed')) }
+
+// §dodge: danger circles threatening `self` right now — ground hazards already
+// down that hit its team, plus enemies mid-channel of an area spell (the
+// telegraphed blast centre + radius). A ground-zone spell locks its point at
+// cast start (`channel.targetPoint`), so you can step off the marked ground;
+// other aimed AoEs centre on the targeted unit's current spot.
+type Circle = { x: number; y: number; r: number }
+function aoeThreatsAt(self: Combatant, state: BattleState): Circle[] {
+  const out: Circle[] = []
+  for (const z of state.zones) if (z.team === self.team) out.push({ x: z.pos.x, y: z.pos.y, r: z.radius })
+  for (const e of visibleEnemiesOf(state, self)) {
+    const ch = e.channel
+    if (!ch) continue
+    const sk = e.skills.find((s) => s.id === ch.skillId)
+    if (!sk || sk.aoeRadius <= 0 || (sk.targeting !== 'aoe_enemy' && sk.targeting !== 'aoe_point')) continue
+    const center = ch.targetPoint ?? state.combatants.find((c) => c.id === ch.targetId)?.pos
+    if (center) out.push({ x: center.x, y: center.y, r: sk.aoeRadius })
+  }
+  return out
+}
+// Fallback bail-out direction when we're standing right on a blast centre: away
+// from the nearest foe, else toward our own edge.
+function awayFromEnemies(self: Combatant, state: BattleState): { x: number; y: number } {
+  const e = nearestEnemyTo(self, state)
+  if (e) {
+    const dx = self.pos.x - e.pos.x, dy = self.pos.y - e.pos.y
+    const d = Math.hypot(dx, dy)
+    if (d > EPS) return { x: dx / d, y: dy / d }
+  }
+  return { x: 0, y: self.team === 'player' ? -1 : 1 }
+}
 // The widest blast radius among a unit's skills (0 if it has no AoE skill).
 function maxAoeRadius(c: Combatant): number {
   let r = 0
@@ -173,6 +204,33 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       const threat = nearestEnemyTo(self, state)
       if (!threat) return null
       return { desiredRange: kiteDistanceFor(self, threat) }
+    },
+  },
+  'dodge-aoe': {
+    id: 'dodge-aoe', name: 'Dodge AoE', scope: 'unit', channel: 'movement',
+    description: 'Get out of incoming area spells: when a foe is channeling an AoE (or a hazard is already on the ground) whose blast would catch you, step clear of it — routing around terrain on the way out. Put it high so survival beats positioning.',
+    movement: (self, state, rank) => {
+      if (self.statuses.some((s) => s.flags.includes('rooted'))) return null   // can't move anyway
+      // Keep a cushion *wider than one move step* outside the blast: a unit with
+      // no other movement tactic drifts back toward the foe between dodges, and a
+      // narrow margin would let that drift dip into the edge for a tick. With the
+      // cushion, dodge re-triggers and shoves it back out before that happens.
+      const margin = 1.3 + 0.4 * (rank - 1)
+      // The deepest ring we're inside (most urgent) — escape that one first.
+      let worst: Circle | null = null
+      let worstSlack = 0
+      for (const t of aoeThreatsAt(self, state)) {
+        const slack = Math.hypot(self.pos.x - t.x, self.pos.y - t.y) - (t.r + margin)
+        if (slack < 0 && (worst === null || slack < worstSlack)) { worst = t; worstSlack = slack }
+      }
+      if (!worst) return null
+      // Shortest exit: straight out from the blast centre to just past the cushion.
+      let ox = self.pos.x - worst.x, oy = self.pos.y - worst.y
+      const od = Math.hypot(ox, oy)
+      if (od > EPS) { ox /= od; oy /= od }
+      else { const a = awayFromEnemies(self, state); ox = a.x; oy = a.y }   // standing on the centre
+      const out = worst.r + margin + 0.5
+      return { toPoint: { x: worst.x + ox * out, y: worst.y + oy * out }, speedMult: 1.15 }
     },
   },
   'guardian': {

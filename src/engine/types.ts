@@ -194,6 +194,7 @@ export interface ChannelState {
   skillId: string
   targetId: string
   roundsLeft: number
+  targetPoint?: Vec2   // for a ground-zone AoE: the telegraphed spot, locked at cast start so it can be dodged (the storm lands here even if the target moves/dies)
 }
 
 // ── Internal mutable combat state ────────────────────────────────────────────--
