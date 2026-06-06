@@ -80,6 +80,31 @@ describe('Ambusher: stalks the flank while cloaked, then backstabs', () => {
   })
 })
 
+describe('Swoop: dives into melee then peels back out (hit-and-run)', () => {
+  it('lands a melee strike on the dive but never parks in melee', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'flyer', str: 12, spd: 16, moveSpeed: 1.3, maxHp: 200, hp: 200, meleeRange: 1.1, tactics: [{ id: 'swoop', rank: 1 }] })],
+      // a fat, harmless, immobile dummy so the fight runs long enough to watch the cycle
+      enemyUnits: [eu({ id: 'dummy', team: 'enemy', def: 0, str: 0, maxHp: 9999, hp: 9999, moveSpeed: 0 })],
+    })
+    find(b, 'flyer').pos = { x: 7.5, y: 5 }
+    find(b, 'dummy').pos = { x: 7.5, y: 9 }   // start out of reach
+
+    const dists: number[] = []
+    for (let i = 0; i < 24; i++) {
+      advanceRound(b)
+      dists.push(dist(find(b, 'flyer').pos, find(b, 'dummy').pos))
+    }
+
+    // Dived in: reached melee at some point AND actually bit the dummy.
+    expect(Math.min(...dists)).toBeLessThanOrEqual(1.2)
+    expect(b.events.some((e) => e.type === 'melee_attack' && e.targetId === 'dummy')).toBe(true)
+    // Hit-and-run: between dives it peeled back well out of melee (a plain melee
+    // attacker would have parked at ~reach and this max would stay ~1.1).
+    expect(Math.max(...dists)).toBeGreaterThan(2.5)
+  })
+})
+
 describe('Wary Caster: a real interrupt makes it hold wider next time', () => {
   it('earns an interrupt in combat, then its kite hold widens past the calm distance', () => {
     const zap = attackSkill({ id: 'zap', channelTime: 3, range: 6, damageFormula: 'int * 1' })

@@ -147,6 +147,15 @@ function status(id: string, name: string, source: string, duration: number, mods
   return { id, name, source, duration, statModifiers: mods, flags }
 }
 
+// §swoop (hit-and-run flyer). The dive/hover cycle is derived from the round
+// counter (no per-unit memory), staggered per unit by `index` so a swarm doesn't
+// dive in lockstep — deterministic, so it replays 1:1 like the rest of the engine.
+const SWOOP_PERIOD = 5        // rounds per dive→hover cycle at rank 1
+const SWOOP_PERIOD_MIN = 3    // floor on the cycle length (dives can't get more frequent than this)
+const SWOOP_DIVE_ROUNDS = 2   // rounds at the start of each cycle spent diving in (the rest is hover)
+const SWOOP_DIVE_SPEED = 2.5  // move-speed multiplier on the dive — it crashes in very fast
+const SWOOP_STANDOFF = 3.5    // gap (cells) to hover at between dives
+
 // ── catalog ─────────────────────────────────────────────────────────────────--
 
 export const TACTIC_REGISTRY: Record<string, TacticDef> = {
@@ -254,6 +263,22 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       const threat = nearestEnemyTo(self, state)
       if (!threat) return null
       return { desiredRange: kiteDistanceFor(self, threat) }
+    },
+  },
+  'swoop': {
+    id: 'swoop', name: 'Swoop', scope: 'unit', channel: 'movement',
+    description: 'Hit-and-run flyer: hover at range, then dive in fast to strike and peel straight back out of melee.',
+    // Dive phase: `toPoint` at the target (no reach-stop) so it actually crashes
+    // into melee and lands a basic hit. Hover phase: `desiredRange` (the kiter
+    // mechanism) backs it out past attack range again. The cycle is stateless —
+    // see SWOOP_* above — so a swarm staggers and the run replays deterministically.
+    movement: (self, state, rank) => {
+      const t = lockedTarget(self, state)
+      if (!t) return null
+      const period = Math.max(SWOOP_PERIOD_MIN, SWOOP_PERIOD - (rank - 1))   // dives more often at higher rank
+      const phase = (state.round + self.index) % period
+      if (phase < SWOOP_DIVE_ROUNDS) return { toPoint: { x: t.pos.x, y: t.pos.y }, speedMult: SWOOP_DIVE_SPEED }
+      return { desiredRange: SWOOP_STANDOFF }
     },
   },
   'dodge-aoe': {

@@ -19,11 +19,14 @@ interface PageDef {
   // Dungeon pages: which world location they were entered from. Up-arrow exits
   // back to the world page with that location selected.
   entryLocationId?: string
+  // Location this page first centres the camera on (its entry/first cell).
+  focusLocationId?: string
 }
 
 const PAGES: PageDef[] = [
-  { id: 'world',          name: 'World' },
-  { id: 'geffen-dungeon', name: 'Geffen Dungeon', isDungeon: true, entryLocationId: 'geffen-city' },
+  { id: 'world',          name: 'World', focusLocationId: 'geffen-city' },
+  { id: 'geffen-dungeon', name: 'Geffen Dungeon', isDungeon: true, entryLocationId: 'geffen-city', focusLocationId: 'geffen-dungeon-1' },
+  { id: 'aerie',          name: 'Sky Aerie',      isDungeon: true, entryLocationId: 'harpy-roost', focusLocationId: 'aerie-1' },
 ]
 
 const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
@@ -34,6 +37,7 @@ const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => 
 const PAGE_GRID: Record<string, { cols: number; rows: number }> = {
   'world':          { cols: 12, rows: 8 },
   'geffen-dungeon': { cols: 6,  rows: 5 },
+  'aerie':          { cols: 4,  rows: 4 },
 }
 
 // Grid coords for cells that ARE on the path. Adjacent path cells are also
@@ -73,6 +77,9 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'geffen-dungeon-3': [3, 1],
   'geffen-dungeon-4': [3, 2],
   'geffen-dungeon-5': [3, 3],
+
+  // Sky Aerie — a small page reached from the Harpy Roost.
+  'aerie-1': [1, 1],
 }
 
 const CELL_W   = 56
@@ -228,7 +235,7 @@ function PannableWorld({ pageId, locations, units }: { pageId: string; locations
     if (centered || !containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
     if (rect.width === 0 || rect.height === 0) return
-    const focusId = pageId === 'geffen-dungeon' ? 'geffen-dungeon-1' : 'geffen-city'
+    const focusId = PAGE_BY_ID[pageId]?.focusLocationId ?? 'geffen-city'
     const c = LOCATION_COORDS[focusId]
     if (!c) return
     setPan({

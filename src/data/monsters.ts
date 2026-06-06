@@ -19,6 +19,7 @@ export const DROP_ITEMS: Record<string, string> = {
   'drop-bone-arrow':    'Bone Arrow',    'drop-skull-fragment':'Skull Fragment',
   'drop-elite-mark':    'Elite Mark',    'drop-champions-seal':"Champion's Seal",
   'drop-boar-hide':     'Boar Hide',     'drop-tusk':          'Tusk',
+  'drop-rat-wing':      'Rat Wing',      'drop-rat-fang':      'Rat Fang',
 }
 
 // moveSpeed: ft/s (divide by TICKS_PER_SECOND in tick loop for ft/tick)
@@ -56,6 +57,10 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   'living-nightshade':{ id: 'living-nightshade',name: 'Living Nightshade',level: 3, health: 50, element: 'poison',  size: 'small',  attackName: 'Spores', stats: { attack: 10, defense: [2,1],   magicAttack: 8,  magicDefense: [4,3],  attackSpeed: 12, accuracy: 12, dodge: 2,  moveSpeed: 0,   attackRange: 20 }, drops: [{ itemId: 'drop-nightshade-berry',dropRate: 0.55, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-toxic-spore',   dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
   // Egg Sac — inert hazard. Doesn't attack, doesn't move; just sits there absorbing hits.
   'egg-sac':       { id: 'egg-sac',      name: 'Egg Sac',        level: 1, health:  55, element: 'neutral', size: 'medium', attackName: 'Burst',  stats: { attack: 0,  defense: [1,0],   magicAttack: 0,  magicDefense: [1,0],  attackSpeed: 0,  accuracy: 0,  dodge: 0,  moveSpeed: 0,   attackRange: 5  }, drops: [{ itemId: 'drop-larva',           dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-chitin',        dropRate: 0.40, quantityMin: 1, quantityMax: 2 }] },
+  // Rat Fly — a darting flying vermin. Glass cannon: low HP, twitchy dodge, fast
+  // flyer. Runs the Swoop tactic — hovers out of reach, then dives in fast to bite
+  // and peels straight back out (hit-and-run). Lives in the Sky Aerie.
+  'rat-fly':       { id: 'rat-fly',      name: 'Rat Fly',        level: 3, health:  28, element: 'wind',    size: 'small',  attackName: 'Dive Bite', stats: { attack: 9, defense: [2,1], magicAttack: 1, magicDefense: [2,1], attackSpeed: 16, accuracy: 16, dodge: 20, moveSpeed: 14, attackRange: 5 }, drops: [{ itemId: 'drop-rat-wing', dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-rat-fang', dropRate: 0.35, quantityMin: 1, quantityMax: 1 }], tactics: [{ id: 'swoop', rank: 1 }] },
   // Skeleton Archer — slow-firing ranged undead. 35 ft bow shot, modest HP, brittle.
   'skeleton-archer':{ id: 'skeleton-archer',name: 'Skeleton Archer',level: 4, health: 50, element: 'undead',  size: 'medium', attackName: 'Arrow',  stats: { attack: 14, defense: [3,2],   magicAttack: 1,  magicDefense: [2,2],  attackSpeed: 6,  accuracy: 14, dodge: 4,  moveSpeed: 3,   attackRange: 35 }, drops: [{ itemId: 'drop-bone-arrow',      dropRate: 0.70, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-skull-fragment',dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
   // ── Elite Four ─────────────────────────────────────────────────────────────

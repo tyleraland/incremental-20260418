@@ -62,11 +62,22 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
   {
     id: 'harpy-roost', region: 'world', name: 'Harpy Roost',
-    description: 'A wind-scoured crag east of Prontera, its every ledge boiling with harpies — a sky black with claws and screeching. A swarm, not a skirmish.',
+    description: 'A wind-scoured crag east of Prontera, its every ledge boiling with harpies — a sky black with claws and screeching. A swarm, not a skirmish. A switchback trail climbs from here into the Sky Aerie above.',
     traits: ['mountain', 'dangerous'], monsterIds: ['harpy'],
     // Deliberately dense: a small (25×25) field kept packed with 25 harpies —
     // a stress arena for AoE, body-blocking, and the open-world sim at scale.
     familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 25, openWorldSize: 25,
+    // Gateway to the Sky Aerie — its own map page (region), reached like the
+    // Geffen Dungeon is from Geffen City.
+    dungeonEntryRegion: 'aerie',
+  },
+
+  // ── Sky Aerie (separate sub-area / map page, climbed from the Harpy Roost) ──
+  {
+    id: 'aerie-1', region: 'aerie', name: 'Windward Aerie',
+    description: 'A ledge high in the updrafts where rat flies wheel and dart. They never hold still — hovering out of reach, then diving in to bite and peeling straight back out.',
+    traits: ['mountain', 'dangerous'], monsterIds: ['rat-fly', 'rat-fly', 'rat-fly'],
+    familiarityMax: 100, connections: [],
   },
   {
     id: 'boar-meadow', region: 'world', name: 'Boar Meadow',
