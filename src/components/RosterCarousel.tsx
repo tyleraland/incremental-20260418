@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
 
 // Horizontal hero roster strip, pinned at the top of the Map tab in both the
@@ -124,25 +124,57 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 
 export function RosterCarousel({ units }: { units: Unit[] }) {
   const [sortMode, setSortMode] = useState<SortMode>('roster')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const sorted = sortUnits(units, sortMode)
   const meta = SORT_META[sortMode]
 
-  function cycleSort() {
-    const next = SORT_ORDER[(SORT_ORDER.indexOf(sortMode) + 1) % SORT_ORDER.length]
-    setSortMode(next)
-  }
+  // Close the sort menu on any outside tap.
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDown(e: PointerEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [menuOpen])
 
   return (
     <div className="-mt-7 flex items-stretch">
-      {/* Sort toggle on the left — cycles roster → level → status. */}
-      <button
-        onClick={cycleSort}
-        title={`Sort: ${meta.label}`}
-        className="shrink-0 w-7 flex flex-col items-center justify-center gap-0.5 border-b border-r border-game-border bg-game-surface text-game-text-dim hover:bg-white/5 select-none transition-colors duration-100"
-      >
-        <span className="text-sm leading-none">{meta.icon}</span>
-        <span className="text-[7px] leading-none uppercase tracking-wide">{meta.label}</span>
-      </button>
+      {/* Sort button on the left — one tap opens a menu of sort options. */}
+      <div ref={menuRef} className="relative shrink-0">
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          title={`Sort: ${meta.label}`}
+          className="h-full w-7 flex flex-col items-center justify-center gap-0.5 border-b border-r border-game-border bg-game-surface text-game-text-dim hover:bg-white/5 select-none transition-colors duration-100"
+        >
+          <span className="text-sm leading-none">{meta.icon}</span>
+          <span className="text-[7px] leading-none uppercase tracking-wide">{meta.label}</span>
+        </button>
+        {menuOpen && (
+          <div className="absolute top-full left-0 z-20 mt-px min-w-[6rem] rounded-md border border-game-border bg-game-surface shadow-lg overflow-hidden">
+            <div className="px-2 py-1 text-[8px] uppercase tracking-wide text-game-muted border-b border-game-border">Sort by</div>
+            {SORT_ORDER.map((mode) => {
+              const m = SORT_META[mode]
+              const active = mode === sortMode
+              return (
+                <button
+                  key={mode}
+                  onClick={() => { setSortMode(mode); setMenuOpen(false) }}
+                  className={[
+                    'w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-left transition-colors duration-100',
+                    active ? 'bg-game-primary/25 text-white' : 'text-game-text hover:bg-white/5',
+                  ].join(' ')}
+                >
+                  <span className="w-3 text-center leading-none">{m.icon}</span>
+                  <span className="flex-1">{m.label}</span>
+                  {active && <span className="text-game-primary text-[10px]">✓</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
       <div className="overflow-x-auto flex-1">
         <div className="flex gap-px">
           {sorted.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
