@@ -82,8 +82,8 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'aerie-1': [1, 1],
 }
 
-const CELL_W   = 56
-const CELL_H   = 46
+const CELL_W   = 62
+const CELL_H   = 51
 const CELL_GAP = 4   // small grid gutter; adjacent cells visually butt together
 
 function cellOriginX(col: number): number { return col * (CELL_W + CELL_GAP) }
