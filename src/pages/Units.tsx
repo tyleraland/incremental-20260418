@@ -751,16 +751,14 @@ function UnitDetail({ unit }: { unit: Unit }) {
 // ── Unit row ──────────────────────────────────────────────────────────────────
 
 function UnitRow({ unit }: { unit: Unit }) {
-  const { selectedUnitIds, expandedUnitIds, toggleSelectUnit, toggleUnit, locations } = useGameStore((s) => ({
+  const { selectedUnitIds, expandedUnitIds, toggleSelectUnit, toggleUnit } = useGameStore((s) => ({
     selectedUnitIds: s.selectedUnitIds,
     expandedUnitIds: s.expandedUnitIds,
     toggleSelectUnit: s.toggleSelectUnit,
     toggleUnit:      s.toggleUnit,
-    locations:       s.locations,
   }))
   const isSelected = selectedUnitIds.includes(unit.id)
   const isExpanded = expandedUnitIds.includes(unit.id)
-  const location   = locations.find((l) => l.id === unit.locationId)
 
   return (
     <div className={['border rounded-xl overflow-hidden transition-colors duration-100', isSelected ? 'border-game-primary' : 'border-game-border'].join(' ')}>
@@ -779,9 +777,6 @@ function UnitRow({ unit }: { unit: Unit }) {
           <span className="font-semibold text-game-text">{unit.name}</span>
           <span className="text-xs text-game-text-dim shrink-0">Lv.{unit.level}</span>
           <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded shrink-0">{unit.class ?? 'Novice'}</span>
-          {location && (
-            <span className="text-xs text-game-accent bg-game-accent/10 px-1.5 py-0.5 rounded truncate max-w-[90px] shrink-0">{location.name}</span>
-          )}
           {(unit.abilityPoints > 0 || unit.skillPoints > 0) && (
             <span className="text-xs text-game-gold bg-game-gold/10 px-1.5 py-0.5 rounded shrink-0">!</span>
           )}

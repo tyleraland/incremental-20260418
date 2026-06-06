@@ -2,7 +2,7 @@ import { useGameStore, type TabId } from '@/stores/useGameStore'
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'map',       label: 'Map',    icon: '🗺' },
-  { id: 'units',     label: 'Units',  icon: '👤' },
+  { id: 'units',     label: 'Heroes', icon: '👤' },
   { id: 'inventory', label: 'Inv',    icon: '🎒' },
   { id: 'guild',     label: 'Guild',  icon: '⚜' },
   { id: 'time',      label: 'Time',   icon: '⏳' },
