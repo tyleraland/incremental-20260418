@@ -389,10 +389,6 @@ function WorldMap({ locations, units }: { locations: Location[]; units: Unit[] }
           </button>
         )}
       </div>
-      {/* hint — pan instruction, bottom-right */}
-      <div className="absolute bottom-1.5 right-1.5 text-[10px] text-game-text-dim italic pointer-events-none">
-        drag to pan
-      </div>
     </div>
   )
 }
