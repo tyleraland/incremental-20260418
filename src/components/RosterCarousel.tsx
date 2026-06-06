@@ -105,7 +105,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
         >
           {portraitGlyph(unit)}
         </span>
-        <span className="absolute -top-1 -left-1 px-1 rounded-full bg-game-bg/90 border border-game-border text-[8px] font-bold leading-tight text-game-text-dim">
+        <span className="absolute -top-1 -left-1 px-1 rounded-full bg-game-bg/90 border border-game-border text-[10px] font-bold leading-tight text-game-text-dim">
           {unit.level}
         </span>
         {statusBadge && (
