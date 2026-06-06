@@ -152,8 +152,8 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
           <span className="text-[7px] leading-none uppercase tracking-wide">{meta.label}</span>
         </button>
         {menuOpen && (
-          <div className="absolute top-full left-0 z-20 mt-px min-w-[6rem] rounded-md border border-game-border bg-game-surface shadow-lg overflow-hidden">
-            <div className="px-2 py-1 text-[8px] uppercase tracking-wide text-game-muted border-b border-game-border">Sort by</div>
+          <div className="absolute top-full left-0 z-20 mt-px min-w-[9rem] rounded-md border border-game-border bg-game-surface shadow-lg overflow-hidden">
+            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-game-muted border-b border-game-border">Sort by</div>
             {SORT_ORDER.map((mode) => {
               const m = SORT_META[mode]
               const active = mode === sortMode
@@ -162,13 +162,13 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
                   key={mode}
                   onClick={() => { setSortMode(mode); setMenuOpen(false) }}
                   className={[
-                    'w-full flex items-center gap-2 px-2 py-1.5 text-[11px] text-left transition-colors duration-100',
+                    'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] text-left transition-colors duration-100',
                     active ? 'bg-game-primary/25 text-white' : 'text-game-text hover:bg-white/5',
                   ].join(' ')}
                 >
-                  <span className="w-3 text-center leading-none">{m.icon}</span>
+                  <span className="w-4 text-center text-base leading-none">{m.icon}</span>
                   <span className="flex-1">{m.label}</span>
-                  {active && <span className="text-game-primary text-[10px]">✓</span>}
+                  {active && <span className="text-game-primary text-sm">✓</span>}
                 </button>
               )
             })}
