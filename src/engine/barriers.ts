@@ -55,7 +55,15 @@ export function traceMove(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_
 // four cardinal directions and taking the free one that ends nearest the goal.
 export function slideMove(from: Vec2, desired: Vec2, barriers: Barrier[], pad = UNIT_PAD): Vec2 {
   const direct = traceMove(from, desired, barriers, pad)
-  if (dist(from, direct) > 0.05) return direct        // made progress straight on
+  // Take the direct move when it either reached the goal — even a sub-0.05 or
+  // zero-length step — or made real straight-line progress. Only fall back to
+  // wall-sliding when terrain actually blocked us short of `desired`. Without the
+  // first clause, a legitimately tiny intended move (a melee attacker closing the
+  // last fraction of a cell, or a moveSpeed-0 unit holding) got mistaken for
+  // "blocked, slide" and kicked into a spurious 0.05 cardinal hop with no wall
+  // present — a stationary monster crept due east forever and its attacker
+  // shuffled around it at the rim of reach instead of stepping in to strike.
+  if (dist(direct, desired) <= 0.05 || dist(from, direct) > 0.05) return direct
   const step = Math.max(0.05, dist(from, desired))
   const cands = [
     { x: from.x + step, y: from.y }, { x: from.x - step, y: from.y },

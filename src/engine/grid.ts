@@ -88,6 +88,7 @@ export function moveToward(
   all: Combatant[],
   barriers: Barrier[] = [],
 ): boolean {
+  if (speed <= EPS) return false   // immobile (moveSpeed 0): hold — never reach slideMove
   const reach = attackReach(mover)
   const d = distance(mover.pos, target.pos)
   if (d <= reach + EPS) return false   // already in range; hold position
@@ -116,6 +117,7 @@ export function moveTowardPoint(
   all: Combatant[],
   barriers: Barrier[] = [],
 ): boolean {
+  if (speed <= EPS) return false   // immobile (moveSpeed 0): hold — never reach slideMove
   const d = distance(mover.pos, point)
   if (d <= EPS) return false
   const { point: wp, reachable } = steerAround(mover.pos, point, barriers)   // route around terrain

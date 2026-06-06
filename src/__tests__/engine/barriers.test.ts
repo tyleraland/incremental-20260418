@@ -29,6 +29,21 @@ describe('barrier collision helpers', () => {
     expect(Math.hypot(out.x - from.x, out.y - from.y)).toBeGreaterThan(0.1)   // it moved
     expect(pointBlocked(wall, out)).toBe(false)
   })
+
+  it('slideMove honors a tiny unobstructed step instead of a spurious cardinal hop', () => {
+    // No wall in the way: a sub-0.05 intended move must land exactly on `desired`,
+    // not get diverted into a fixed 0.05 cardinal "slide". Regression: that kick
+    // made a moveSpeed-0 unit (0-length move) creep due east 0.05/round and made a
+    // melee attacker shuffle sideways at the rim of its reach instead of stepping in.
+    const from = { x: 5, y: 5 }
+    const tiny = slideMove(from, { x: 5.03, y: 5.04 }, [])   // 0.05-long move, open ground
+    expect(tiny.x).toBeCloseTo(5.03, 5)
+    expect(tiny.y).toBeCloseTo(5.04, 5)
+
+    const hold = slideMove(from, { ...from }, [])            // 0-length move, open ground
+    expect(hold.x).toBeCloseTo(5, 5)                         // stays put — no eastward drift
+    expect(hold.y).toBeCloseTo(5, 5)
+  })
 })
 
 describe('barriers in combat', () => {

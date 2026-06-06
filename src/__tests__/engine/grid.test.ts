@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { distance, rankOf, rowsFromEdge, isPerimeter, startingPosition, createBattle, ROWS, COLS } from '@/engine'
-import { moveToward, enforceSeparation, attackReach } from '@/engine/grid'
+import { moveToward, moveTowardPoint, enforceSeparation, attackReach } from '@/engine/grid'
 import { combatant, eu } from './helpers'
 
 describe('grid: distance (§2.2)', () => {
@@ -90,6 +90,23 @@ describe('grid: movement (§2.5)', () => {
     const moved = moveToward(mover, target, 0.6, [mover, target])
     expect(moved).toBe(true)
     expect(mover.pos.y).toBeCloseTo(0.4)
+  })
+})
+
+describe('grid: immobile units hold (moveSpeed 0)', () => {
+  it('moveToward is a no-op at zero speed and never drifts', () => {
+    const mover = combatant({ id: 'm', pos: { x: 5, y: 5 }, moveSpeed: 0 })
+    const target = combatant({ id: 't', pos: { x: 5, y: 8 } })
+    const moved = moveToward(mover, target, 0, [mover, target])
+    expect(moved).toBe(false)
+    expect(mover.pos).toEqual({ x: 5, y: 5 })
+  })
+
+  it('moveTowardPoint is a no-op at zero speed', () => {
+    const mover = combatant({ id: 'm', pos: { x: 5, y: 5 }, moveSpeed: 0 })
+    const moved = moveTowardPoint(mover, { x: 5, y: 8 }, 0, [mover])
+    expect(moved).toBe(false)
+    expect(mover.pos).toEqual({ x: 5, y: 5 })
   })
 })
 
