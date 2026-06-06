@@ -129,6 +129,17 @@ same way" by penalising left-side detours.
 - **1v1 chase circling** — a lone chaser orbits a barrier after a fleeing
   target forever. Multi-unit fights converge so this rarely bites in
   practice; would need a "cut the corner" intercept.
+- **Gather-and-guard (open world)** — a tactic that peels a unit off to work a
+  nearby resource node (ore vein, lumber, forage) while the rest of the party
+  screens for it — or lets it solo the node outright when the area's clear of
+  threats. Needs: resource nodes as a new open-world entity (position + yield +
+  work-time), a "go work that node" behavior built on the **move-order**
+  primitive (path to the node, hold and gather on arrival), and a party-side
+  read so guardians interpose between the gatherer and known threats — the
+  **team blackboard** is the natural home (a gather assignment / `protectTargetId`
+  the screening tactic reads, alongside the existing shared `waypoint`). A
+  safety gate keys off vision/threat (no enemies in sight, or the escort
+  outnumbers the threats nearby) so the party only commits when it can afford to.
 
 ### Monster aggression & packs (extensions)
 
