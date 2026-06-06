@@ -140,7 +140,7 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
   }, [menuOpen])
 
   return (
-    <div className="-mt-7 flex items-stretch">
+    <div className="-mt-7 flex items-stretch min-w-0">
       {/* Sort button on the left — one tap opens a menu of sort options. */}
       <div ref={menuRef} className="relative shrink-0">
         <button
@@ -175,8 +175,8 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
           </div>
         )}
       </div>
-      <div className="overflow-x-auto flex-1">
-        <div className="flex gap-px">
+      <div className="overflow-x-auto flex-1 min-w-0">
+        <div className="flex gap-px w-max">
           {sorted.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
         </div>
       </div>
