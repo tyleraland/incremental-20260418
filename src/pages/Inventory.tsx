@@ -210,9 +210,25 @@ function EquipmentSection() {
   const primary = units.find((u) => u.id === selectedUnitIds[0]) ?? null
 
   const categories: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'tool', 'shield', 'armor', 'accessory']
+
+  // Which hero (if any) currently holds each item — actively worn or stashed in a
+  // weapon set / sideboard. Held items are sorted to the bottom of their group and
+  // labelled so they read as taken, not available.
+  const heldBy = new Map<string, string>()
+  for (const u of units) {
+    const refs = [
+      u.weaponSets[0].mainHand, u.weaponSets[0].offHand,
+      u.weaponSets[1].mainHand, u.weaponSets[1].offHand,
+      u.equipment.armor, u.equipment.accessory,
+      u.equipment.sideboard1, u.equipment.sideboard2,
+    ]
+    for (const id of refs) if (id) heldBy.set(id, u.name)
+  }
+
   const grouped = categories.reduce<Record<string, EquipmentItem[]>>((acc, cat) => {
     const items = equipment.filter((e) => e.category === cat)
-    if (items.length) acc[cat] = items
+    // Available first, held (equipped) last — stable within each partition.
+    if (items.length) acc[cat] = [...items].sort((a, b) => (heldBy.has(a.id) ? 1 : 0) - (heldBy.has(b.id) ? 1 : 0))
     return acc
   }, {})
 
@@ -231,23 +247,24 @@ function EquipmentSection() {
               </div>
               <div className="space-y-3">
                 {items.map((item) => {
-                  const restriction = primary ? equipRestrictionFor(item, primary) : null
+                  const heldByName  = heldBy.get(item.id) ?? null
+                  const isHeld      = heldByName !== null
+                  const restriction = !isHeld && primary ? equipRestrictionFor(item, primary) : null
                   const locked      = !!restriction
                   const slot        = CATEGORY_SLOT[item.category]
                   const currentId   = primary && slot ? getEquippedId(primary, slot) : null
                   const currentItem = currentId ? (equipment.find((e) => e.id === currentId) ?? null) : null
-                  const isEquipped  = !!currentId && item.id === currentId
                   return (
-                    <div key={item.id} className={locked ? 'opacity-50' : ''}>
+                    <div key={item.id} className={isHeld || locked ? 'opacity-50' : ''}>
                       <div className="flex items-center gap-2 mb-1.5">
                         <span className="text-sm font-medium text-game-text flex-1">{item.name}</span>
-                        {isEquipped && <span className="text-xs text-game-primary font-semibold shrink-0">Equipped</span>}
-                        {locked     && <span className="text-xs text-game-muted shrink-0">{restriction}</span>}
+                        {isHeld  && <span className="text-xs text-game-primary font-semibold shrink-0">Equipped · {heldByName}</span>}
+                        {locked  && <span className="text-xs text-game-muted shrink-0">{restriction}</span>}
                       </div>
                       <TraitRow traits={getItemTraits(item)} />
-                      {primary
-                        ? (!locked && !isEquipped && <StatDeltas item={item} current={currentItem} />)
-                        : <AbsoluteStats item={item} />}
+                      {!isHeld && (primary
+                        ? (!locked && <StatDeltas item={item} current={currentItem} />)
+                        : <AbsoluteStats item={item} />)}
                     </div>
                   )
                 })}
