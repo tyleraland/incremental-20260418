@@ -188,8 +188,12 @@ export interface MiscItem { id: string; name: string; quantity: number; descript
 
 export interface RecipeIngredient { itemId: string; quantity: number }
 
+// Crafting tab grouping for the output. Defaults to 'misc' when unset.
+export type RecipeCategory = 'consumable' | 'equipment' | 'misc'
+
 export interface CraftingRecipe {
   id: string; name: string; description: string
+  category?: RecipeCategory
   ingredients: RecipeIngredient[]
   outputItemId: string; outputName: string; outputQuantity: number
 }

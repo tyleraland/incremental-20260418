@@ -4,6 +4,7 @@ import {
   type EquipmentItem,
   type EquipSlot,
   type ItemCategory,
+  type RecipeCategory,
   SLOT_COMPATIBLE,
   SLOT_LABELS,
   CATEGORY_LABELS,
@@ -240,10 +241,17 @@ function MiscSection() {
 
 // ── Crafting section ──────────────────────────────────────────────────────────
 
+const CRAFT_TABS: { id: RecipeCategory; label: string }[] = [
+  { id: 'consumable', label: 'Consumables' },
+  { id: 'equipment',  label: 'Equipment' },
+  { id: 'misc',       label: 'Misc' },
+]
+
 function CraftingSection() {
   const expanded = useGameStore((s) => s.expandedInventorySections.includes('crafting'))
   const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
+  const [craftTab, setCraftTab] = useState<RecipeCategory>('consumable')
   const { miscItems, learnedRecipes, craft } = useGameStore((s) => ({
     miscItems: s.miscItems,
     learnedRecipes: s.learnedRecipes,
@@ -263,6 +271,9 @@ function CraftingSection() {
     })
   }
 
+  // Recipes for the active tab (category defaults to 'misc' when unset).
+  const tabRecipes = learnedRecipes.filter((id) => (RECIPE_REGISTRY[id]?.category ?? 'misc') === craftTab)
+
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
       <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => toggleInventorySection('crafting')}>
@@ -271,8 +282,33 @@ function CraftingSection() {
       </button>
 
       {expanded && (
-        <div className="border-t border-game-border divide-y divide-game-border/50">
-          {learnedRecipes.map((recipeId) => {
+        <div className="border-t border-game-border">
+          {/* Category tabs */}
+          <div className="flex border-b border-game-border">
+            {CRAFT_TABS.map((t) => {
+              const count = learnedRecipes.filter((id) => (RECIPE_REGISTRY[id]?.category ?? 'misc') === t.id).length
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setCraftTab(t.id)}
+                  className={[
+                    'flex-1 py-2.5 text-sm font-medium transition-colors',
+                    craftTab === t.id
+                      ? 'text-game-primary border-b-2 border-game-primary -mb-px'
+                      : 'text-game-text-dim hover:text-game-text',
+                  ].join(' ')}
+                >
+                  {t.label}{count > 0 && <span className="ml-1 text-xs text-game-text-dim">{count}</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="divide-y divide-game-border/50">
+          {tabRecipes.length === 0 && (
+            <p className="text-xs text-game-muted italic px-4 py-4">No {CRAFT_TABS.find((t) => t.id === craftTab)?.label.toLowerCase()} recipes known.</p>
+          )}
+          {tabRecipes.map((recipeId) => {
             const recipe = RECIPE_REGISTRY[recipeId]
             if (!recipe) return null
             const affordable  = canCraft(recipeId)
@@ -342,6 +378,7 @@ function CraftingSection() {
               </div>
             )
           })}
+          </div>
         </div>
       )}
     </div>
