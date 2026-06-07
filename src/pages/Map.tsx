@@ -710,7 +710,7 @@ function BattleDropIn() {
   const name = combatLocationId ? (locations.find((l) => l.id === combatLocationId)?.name ?? 'Battlefield') : 'Battlefield'
 
   return (
-    <div className="h-full flex flex-col pt-4 min-h-0">
+    <div className="h-full flex flex-col pt-1 min-h-0">
       {/* When a roster unit is selected, surface the same action bar as the
           overworld (Deploy/Here, View, Map, Drop in) so the controls are
           available without leaving the battlefield. Otherwise the battle
@@ -748,7 +748,7 @@ export function Map() {
   }
 
   return (
-    <div className="h-full grid grid-rows-[auto_32vh_minmax(0,1fr)] pt-4 min-h-0">
+    <div className="h-full grid grid-rows-[auto_32vh_minmax(0,1fr)] pt-1 min-h-0">
       <UnitActionBar />
       <WorldMap locations={locations} units={units} />
       <LocationDetailPanel />
