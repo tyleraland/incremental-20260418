@@ -4,7 +4,8 @@ import {
   type EquipmentItem,
   type EquipSlot,
   type ItemCategory,
-  type RecipeCategory,
+  type MiscItem,
+  type CraftingRecipe,
   type Unit,
   SLOT_COMPATIBLE,
   SLOT_LABELS,
@@ -67,6 +68,55 @@ function equipRestrictionFor(item: EquipmentItem, unit: Unit): string | null {
   if (item.requiredLevel && unit.level < item.requiredLevel) return `Requires Lv ${item.requiredLevel}`
   if (item.requiredClasses && !item.requiredClasses.includes(cls)) return `${item.requiredClasses.join(' / ')} only`
   return null
+}
+
+// ── Shared type filter ────────────────────────────────────────────────────────
+// The chips narrow *both* what you own and what you can craft, by item type.
+
+type InvFilter = 'all' | 'consumable' | 'weapon' | 'armor' | 'accessory' | 'misc'
+
+const FILTER_CHIPS: { id: InvFilter; label: string; icon: string }[] = [
+  { id: 'all',        label: 'All',         icon: '' },
+  { id: 'consumable', label: 'Consumables', icon: '🫙' },
+  { id: 'weapon',     label: 'Weapons',     icon: '🗡' },
+  { id: 'armor',      label: 'Armor',       icon: '🛡' },
+  { id: 'accessory',  label: 'Accessories', icon: '💍' },
+  { id: 'misc',       label: 'Misc',        icon: '📦' },
+]
+
+// Equipment categories fold into the gear chips: shields sit with Armor, tools
+// (utility gear) with Accessories.
+const CATEGORY_FILTER: Record<ItemCategory, InvFilter> = {
+  'weapon-1h': 'weapon', 'weapon-2h': 'weapon',
+  shield: 'armor', armor: 'armor',
+  accessory: 'accessory', tool: 'accessory',
+}
+
+const miscFilter   = (item: MiscItem): InvFilter => (item.kind === 'consumable' ? 'consumable' : 'misc')
+const recipeFilter = (r: CraftingRecipe): InvFilter =>
+  r.outputCategory ? CATEGORY_FILTER[r.outputCategory] : ((r.category ?? 'misc') === 'consumable' ? 'consumable' : 'misc')
+
+const matchesFilter = (itemFilter: InvFilter, active: InvFilter) => active === 'all' || itemFilter === active
+
+function FilterBar({ active, onChange }: { active: InvFilter; onChange: (f: InvFilter) => void }) {
+  return (
+    <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5">
+      {FILTER_CHIPS.map((c) => (
+        <button
+          key={c.id}
+          onClick={() => onChange(c.id)}
+          className={[
+            'shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
+            active === c.id
+              ? 'border-game-primary bg-game-primary/15 text-game-primary'
+              : 'border-game-border text-game-text-dim hover:text-game-text',
+          ].join(' ')}
+        >
+          {c.icon && <span className="mr-1">{c.icon}</span>}{c.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 // ── Equip context view ────────────────────────────────────────────────────────
@@ -199,7 +249,7 @@ function EquipContextView() {
 
 // ── Equipment section ─────────────────────────────────────────────────────────
 
-function EquipmentSection() {
+function EquipmentSection({ filter }: { filter: InvFilter }) {
   const expanded = useGameStore((s) => s.expandedInventorySections.includes('equipment'))
   const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const equipment = useGameStore((s) => s.equipment)
@@ -209,7 +259,11 @@ function EquipmentSection() {
   // selection we fall back to absolute stats.
   const primary = units.find((u) => u.id === selectedUnitIds[0]) ?? null
 
-  const categories: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'tool', 'shield', 'armor', 'accessory']
+  // No equipment categories survive a consumable/misc filter — hide the section.
+  if (!['all', 'weapon', 'armor', 'accessory'].includes(filter)) return null
+
+  const categories = (['weapon-1h', 'weapon-2h', 'tool', 'shield', 'armor', 'accessory'] as ItemCategory[])
+    .filter((cat) => matchesFilter(CATEGORY_FILTER[cat], filter))
 
   // Which hero (if any) currently holds each item — actively worn or stashed in a
   // weapon set / sideboard. Held items are sorted to the bottom of their group and
@@ -279,26 +333,46 @@ function EquipmentSection() {
 
 // ── Misc section ──────────────────────────────────────────────────────────────
 
-function MiscSection() {
+function ItemsSection({ filter }: { filter: InvFilter }) {
   const expanded = useGameStore((s) => s.expandedInventorySections.includes('misc'))
   const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const miscItems = useGameStore((s) => s.miscItems)
 
+  // Items live in two buckets keyed by `kind`. Show whichever the filter allows.
+  if (!['all', 'consumable', 'misc'].includes(filter)) return null
+  const visible = miscItems.filter((i) => matchesFilter(miscFilter(i), filter))
+  const consumables = visible.filter((i) => i.kind === 'consumable')
+  const materials   = visible.filter((i) => i.kind !== 'consumable')
+
+  const rows = (items: MiscItem[]) => items.map((item) => (
+    <div key={item.id} className="flex items-center gap-2 py-3">
+      <span className="text-sm text-game-text flex-1">{item.name}</span>
+      <span className="text-xs text-game-text-dim">{item.description}</span>
+      <span className="text-sm font-mono text-game-gold font-semibold ml-2">×{item.quantity}</span>
+    </div>
+  ))
+
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
       <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => toggleInventorySection('misc')}>
-        <span className="font-semibold">Misc</span>
+        <span className="font-semibold">Items</span>
         <span className="text-game-muted text-sm">{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && (
-        <div className="border-t border-game-border divide-y divide-game-border/50 px-4">
-          {miscItems.map((item) => (
-            <div key={item.id} className="flex items-center gap-2 py-3">
-              <span className="text-sm text-game-text flex-1">{item.name}</span>
-              <span className="text-xs text-game-text-dim">{item.description}</span>
-              <span className="text-sm font-mono text-game-gold font-semibold ml-2">×{item.quantity}</span>
+        <div className="border-t border-game-border">
+          {consumables.length > 0 && (
+            <div className="px-4">
+              <div className="text-xs uppercase tracking-widest text-game-text-dim pt-3">Consumables</div>
+              <div className="divide-y divide-game-border/50">{rows(consumables)}</div>
             </div>
-          ))}
+          )}
+          {materials.length > 0 && (
+            <div className="px-4">
+              <div className="text-xs uppercase tracking-widest text-game-text-dim pt-3">Materials</div>
+              <div className="divide-y divide-game-border/50">{rows(materials)}</div>
+            </div>
+          )}
+          {visible.length === 0 && <p className="text-xs text-game-muted italic px-4 py-4">Nothing here.</p>}
         </div>
       )}
     </div>
@@ -307,17 +381,10 @@ function MiscSection() {
 
 // ── Crafting section ──────────────────────────────────────────────────────────
 
-const CRAFT_TABS: { id: RecipeCategory; label: string }[] = [
-  { id: 'consumable', label: 'Consumables' },
-  { id: 'equipment',  label: 'Equipment' },
-  { id: 'misc',       label: 'Misc' },
-]
-
-function CraftingSection() {
+function CraftingSection({ filter }: { filter: InvFilter }) {
   const expanded = useGameStore((s) => s.expandedInventorySections.includes('crafting'))
   const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const [expandedRecipes, setExpandedRecipes] = useState<string[]>([])
-  const [craftTab, setCraftTab] = useState<RecipeCategory>('consumable')
   const { miscItems, learnedRecipes, craft } = useGameStore((s) => ({
     miscItems: s.miscItems,
     learnedRecipes: s.learnedRecipes,
@@ -337,8 +404,11 @@ function CraftingSection() {
     })
   }
 
-  // Recipes for the active tab (category defaults to 'misc' when unset).
-  const tabRecipes = learnedRecipes.filter((id) => (RECIPE_REGISTRY[id]?.category ?? 'misc') === craftTab)
+  // Recipes matching the shared type filter.
+  const tabRecipes = learnedRecipes.filter((id) => {
+    const recipe = RECIPE_REGISTRY[id]
+    return recipe && matchesFilter(recipeFilter(recipe), filter)
+  })
 
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
@@ -349,30 +419,9 @@ function CraftingSection() {
 
       {expanded && (
         <div className="border-t border-game-border">
-          {/* Category tabs */}
-          <div className="flex border-b border-game-border">
-            {CRAFT_TABS.map((t) => {
-              const count = learnedRecipes.filter((id) => (RECIPE_REGISTRY[id]?.category ?? 'misc') === t.id).length
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setCraftTab(t.id)}
-                  className={[
-                    'flex-1 py-2.5 text-sm font-medium transition-colors',
-                    craftTab === t.id
-                      ? 'text-game-primary border-b-2 border-game-primary -mb-px'
-                      : 'text-game-text-dim hover:text-game-text',
-                  ].join(' ')}
-                >
-                  {t.label}{count > 0 && <span className="ml-1 text-xs text-game-text-dim">{count}</span>}
-                </button>
-              )
-            })}
-          </div>
-
           <div className="divide-y divide-game-border/50">
           {tabRecipes.length === 0 && (
-            <p className="text-xs text-game-muted italic px-4 py-4">No {CRAFT_TABS.find((t) => t.id === craftTab)?.label.toLowerCase()} recipes known.</p>
+            <p className="text-xs text-game-muted italic px-4 py-4">No recipes known.</p>
           )}
           {tabRecipes.map((recipeId) => {
             const recipe = RECIPE_REGISTRY[recipeId]
@@ -474,13 +523,15 @@ function SelectedUnitBar() {
 
 export function Inventory() {
   const equipContext = useGameStore((s) => s.equipContext)
+  const [filter, setFilter] = useState<InvFilter>('all')
   if (equipContext) return <EquipContextView />
   return (
     <div className="p-4 space-y-3 pb-24">
       <SelectedUnitBar />
-      <CraftingSection />
-      <EquipmentSection />
-      <MiscSection />
+      <FilterBar active={filter} onChange={setFilter} />
+      <EquipmentSection filter={filter} />
+      <ItemsSection filter={filter} />
+      <CraftingSection filter={filter} />
     </div>
   )
 }

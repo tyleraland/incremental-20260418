@@ -184,7 +184,9 @@ export interface EquipmentItem {
 
 // ── Misc & crafting ───────────────────────────────────────────────────────────
 
-export interface MiscItem { id: string; name: string; quantity: number; description?: string }
+// `kind` lets the Inventory filter bar tell usable consumables (potions, food,
+// salves) apart from raw crafting materials. Unset is treated as 'material'.
+export interface MiscItem { id: string; name: string; quantity: number; description?: string; kind?: 'consumable' | 'material' }
 
 export interface RecipeIngredient { itemId: string; quantity: number }
 
@@ -194,6 +196,9 @@ export type RecipeCategory = 'consumable' | 'equipment' | 'misc'
 export interface CraftingRecipe {
   id: string; name: string; description: string
   category?: RecipeCategory
+  // For equipment recipes, the item category produced — lets the shared Inventory
+  // filter slot a craftable weapon/armor/accessory under the matching chip.
+  outputCategory?: ItemCategory
   ingredients: RecipeIngredient[]
   outputItemId: string; outputName: string; outputQuantity: number
 }

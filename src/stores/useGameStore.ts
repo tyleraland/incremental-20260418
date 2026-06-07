@@ -1020,7 +1020,7 @@ export const useGameStore = create<GameState>((set) => ({
     if (existing) {
       items = items.map((i) => i.id === recipe.outputItemId ? { ...i, quantity: i.quantity + recipe.outputQuantity } : i)
     } else {
-      items = [...items, { id: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity, description: recipe.description }]
+      items = [...items, { id: recipe.outputItemId, name: recipe.outputName, quantity: recipe.outputQuantity, description: recipe.description, kind: recipe.category === 'consumable' ? 'consumable' : 'material' }]
     }
     return { miscItems: items }
   }),
