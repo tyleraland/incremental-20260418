@@ -20,47 +20,51 @@ function portraitGlyph(unit: Unit): string {
   return getInitials(unit.name)
 }
 
-type SortMode = 'name' | 'class' | 'level' | 'status'
+type SortMode = 'name' | 'class' | 'level' | 'attention'
 type SortDir  = 'asc' | 'desc'
-const SORT_ORDER: SortMode[] = ['name', 'class', 'level', 'status']
+const SORT_ORDER: SortMode[] = ['attention', 'name', 'class', 'level']
 const SORT_META: Record<SortMode, { icon: string; label: string; defaultDir: SortDir }> = {
-  name:   { icon: 'A', label: 'Name',   defaultDir: 'asc'  },
-  class:  { icon: '◆', label: 'Class',  defaultDir: 'asc'  },
-  level:  { icon: '⬆', label: 'Level',  defaultDir: 'desc' },
-  status: { icon: '◐', label: 'Status', defaultDir: 'asc'  },
+  name:      { icon: 'A', label: 'Name',   defaultDir: 'asc'  },
+  class:     { icon: '◆', label: 'Class',  defaultDir: 'asc'  },
+  level:     { icon: '⬆', label: 'Level',  defaultDir: 'desc' },
+  attention: { icon: '!', label: 'To-do',  defaultDir: 'asc'  },
 }
 
 // Human-readable description of each mode's two directions, for the menu.
 function dirLabel(mode: SortMode, dir: SortDir): string {
   switch (mode) {
     case 'name':
-    case 'class':  return dir === 'asc' ? 'A→Z' : 'Z→A'
-    case 'level':  return dir === 'asc' ? 'Low→High' : 'High→Low'
-    case 'status': return dir === 'asc' ? 'Active first' : 'KO first'
+    case 'class':     return dir === 'asc' ? 'A→Z' : 'Z→A'
+    case 'level':     return dir === 'asc' ? 'Low→High' : 'High→Low'
+    case 'attention': return dir === 'asc' ? 'To-do first' : 'To-do last'
   }
 }
 
-// Lower rank sorts first: units in the field come before idle/resting/KO'd ones.
-function statusRank(unit: Unit): number {
-  if (unit.recoveryTicksLeft > 0) return 3 // KO, recovering
-  if (unit.isResting) return 2
-  if (unit.locationId) return 0            // deployed & ready
-  return 1                                 // unassigned but ready
+// A unit "needs attention" when it has a visible (!) dot: unspent ability/skill
+// points, or it leveled up since the player last opened its detail page.
+function needsAttention(unit: Unit, viewedLevels: Record<string, number>): boolean {
+  const viewed = viewedLevels[unit.id]
+  return unit.abilityPoints > 0 || unit.skillPoints > 0 || (viewed !== undefined && unit.level > viewed)
 }
 
 // Ascending comparator per mode; direction is applied by the caller.
-function ascCompare(mode: SortMode, a: Unit, b: Unit): number {
+function ascCompare(mode: SortMode, a: Unit, b: Unit, viewedLevels: Record<string, number>): number {
   switch (mode) {
     case 'name':   return a.name.localeCompare(b.name)
     case 'class':  return (a.class ?? '').localeCompare(b.class ?? '') || a.name.localeCompare(b.name)
     case 'level':  return a.level - b.level
-    case 'status': return statusRank(a) - statusRank(b)
+    case 'attention': {
+      // To-do units sort first (rank 0); name breaks ties.
+      const ra = needsAttention(a, viewedLevels) ? 0 : 1
+      const rb = needsAttention(b, viewedLevels) ? 0 : 1
+      return (ra - rb) || a.name.localeCompare(b.name)
+    }
   }
 }
 
-function sortUnits(units: Unit[], mode: SortMode, dir: SortDir): Unit[] {
+function sortUnits(units: Unit[], mode: SortMode, dir: SortDir, viewedLevels: Record<string, number>): Unit[] {
   const sign = dir === 'asc' ? 1 : -1
-  return [...units].sort((a, b) => sign * ascCompare(mode, a, b))
+  return [...units].sort((a, b) => sign * ascCompare(mode, a, b, viewedLevels))
 }
 
 function RosterUnitCard({ unit }: { unit: Unit }) {
@@ -70,11 +74,8 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
   const selOrder         = selectedUnitIds.indexOf(unit.id) // -1 if unselected
   const isSelected       = selOrder >= 0
   const isPrimary        = selOrder === 0                   // the 1st-selected drives detail panels
-  const viewedLevel      = useGameStore((s) => s.viewedUnitLevels[unit.id])
-  // Needs attention: unspent ability/skill points, or leveled up since the
-  // player last opened this hero's detail page.
-  const needsAttention   = unit.abilityPoints > 0 || unit.skillPoints > 0
-    || (viewedLevel !== undefined && unit.level > viewedLevel)
+  const viewedLevels     = useGameStore((s) => s.viewedUnitLevels)
+  const attention        = needsAttention(unit, viewedLevels)
   const lastTapRef       = useRef(0)
 
   // Single tap toggles selection; double-tap (within 300 ms) pops back to the
@@ -144,7 +145,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
         )}
         {/* Attention dot: unspent points or an unseen level-up — a gentle red
             corner dot rather than a pulsing badge. */}
-        {needsAttention && (
+        {attention && (
           <span className="absolute -bottom-0.5 -left-0.5 w-2 h-2 rounded-full bg-red-500/80 border border-game-bg" />
         )}
         {/* Selection-order badge; the 1st-selected (primary) is set apart. */}
@@ -170,11 +171,14 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 }
 
 export function RosterCarousel({ units }: { units: Unit[] }) {
-  const [sortMode, setSortMode] = useState<SortMode>('name')
-  const [sortDir, setSortDir]   = useState<SortDir>(SORT_META['name'].defaultDir)
+  // Default to the to-do sort so heroes with something to spend/review float to
+  // the front each time the player returns.
+  const [sortMode, setSortMode] = useState<SortMode>('attention')
+  const [sortDir, setSortDir]   = useState<SortDir>(SORT_META['attention'].defaultDir)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const sorted = sortUnits(units, sortMode, sortDir)
+  const viewedLevels = useGameStore((s) => s.viewedUnitLevels)
+  const sorted = sortUnits(units, sortMode, sortDir, viewedLevels)
   const meta = SORT_META[sortMode]
 
   // Tapping a new mode selects it (its default direction) and closes the menu;
