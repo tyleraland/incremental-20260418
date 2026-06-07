@@ -20,12 +20,24 @@ function portraitGlyph(unit: Unit): string {
   return getInitials(unit.name)
 }
 
-type SortMode = 'roster' | 'level' | 'status'
-const SORT_ORDER: SortMode[] = ['roster', 'level', 'status']
-const SORT_META: Record<SortMode, { icon: string; label: string }> = {
-  roster: { icon: '☰', label: 'Roster' },
-  level:  { icon: '⬆', label: 'Level' },
-  status: { icon: '◐', label: 'Status' },
+type SortMode = 'name' | 'class' | 'level' | 'status'
+type SortDir  = 'asc' | 'desc'
+const SORT_ORDER: SortMode[] = ['name', 'class', 'level', 'status']
+const SORT_META: Record<SortMode, { icon: string; label: string; defaultDir: SortDir }> = {
+  name:   { icon: 'A', label: 'Name',   defaultDir: 'asc'  },
+  class:  { icon: '◆', label: 'Class',  defaultDir: 'asc'  },
+  level:  { icon: '⬆', label: 'Level',  defaultDir: 'desc' },
+  status: { icon: '◐', label: 'Status', defaultDir: 'asc'  },
+}
+
+// Human-readable description of each mode's two directions, for the menu.
+function dirLabel(mode: SortMode, dir: SortDir): string {
+  switch (mode) {
+    case 'name':
+    case 'class':  return dir === 'asc' ? 'A→Z' : 'Z→A'
+    case 'level':  return dir === 'asc' ? 'Low→High' : 'High→Low'
+    case 'status': return dir === 'asc' ? 'Active first' : 'KO first'
+  }
 }
 
 // Lower rank sorts first: units in the field come before idle/resting/KO'd ones.
@@ -36,12 +48,19 @@ function statusRank(unit: Unit): number {
   return 1                                 // unassigned but ready
 }
 
-function sortUnits(units: Unit[], mode: SortMode): Unit[] {
-  if (mode === 'roster') return units
-  const copy = [...units]
-  if (mode === 'level') copy.sort((a, b) => b.level - a.level)
-  else copy.sort((a, b) => statusRank(a) - statusRank(b))
-  return copy
+// Ascending comparator per mode; direction is applied by the caller.
+function ascCompare(mode: SortMode, a: Unit, b: Unit): number {
+  switch (mode) {
+    case 'name':   return a.name.localeCompare(b.name)
+    case 'class':  return (a.class ?? '').localeCompare(b.class ?? '') || a.name.localeCompare(b.name)
+    case 'level':  return a.level - b.level
+    case 'status': return statusRank(a) - statusRank(b)
+  }
+}
+
+function sortUnits(units: Unit[], mode: SortMode, dir: SortDir): Unit[] {
+  const sign = dir === 'asc' ? 1 : -1
+  return [...units].sort((a, b) => sign * ascCompare(mode, a, b))
 }
 
 function RosterUnitCard({ unit }: { unit: Unit }) {
@@ -123,11 +142,24 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
 }
 
 export function RosterCarousel({ units }: { units: Unit[] }) {
-  const [sortMode, setSortMode] = useState<SortMode>('roster')
+  const [sortMode, setSortMode] = useState<SortMode>('name')
+  const [sortDir, setSortDir]   = useState<SortDir>(SORT_META['name'].defaultDir)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const sorted = sortUnits(units, sortMode)
+  const sorted = sortUnits(units, sortMode, sortDir)
   const meta = SORT_META[sortMode]
+
+  // Tapping a new mode selects it (its default direction) and closes the menu;
+  // tapping the already-active mode flips its direction in place.
+  function chooseMode(mode: SortMode) {
+    if (mode === sortMode) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortMode(mode)
+      setSortDir(SORT_META[mode].defaultDir)
+      setMenuOpen(false)
+    }
+  }
 
   // Close the sort menu on any outside tap.
   useEffect(() => {
@@ -145,22 +177,24 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
       <div ref={menuRef} className="relative shrink-0">
         <button
           onClick={() => setMenuOpen((o) => !o)}
-          title={`Sort: ${meta.label}`}
+          title={`Sort: ${meta.label} (${dirLabel(sortMode, sortDir)})`}
           className="h-full w-7 flex flex-col items-center justify-center gap-0.5 border-b border-r border-game-border bg-game-surface text-game-text-dim hover:bg-white/5 select-none transition-colors duration-100"
         >
-          <span className="text-sm leading-none">{meta.icon}</span>
+          <span className="text-sm leading-none">{sortDir === 'asc' ? '↑' : '↓'}</span>
           <span className="text-[7px] leading-none uppercase tracking-wide">{meta.label}</span>
         </button>
         {menuOpen && (
-          <div className="absolute top-full left-0 z-20 mt-px min-w-[9rem] rounded-md border border-game-border bg-game-surface shadow-lg overflow-hidden">
+          <div className="absolute top-full left-0 z-20 mt-px min-w-[11rem] rounded-md border border-game-border bg-game-surface shadow-lg overflow-hidden">
             <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-game-muted border-b border-game-border">Sort by</div>
             {SORT_ORDER.map((mode) => {
               const m = SORT_META[mode]
               const active = mode === sortMode
+              // Active row shows the live direction; others preview their default.
+              const rowDir = active ? sortDir : m.defaultDir
               return (
                 <button
                   key={mode}
-                  onClick={() => { setSortMode(mode); setMenuOpen(false) }}
+                  onClick={() => chooseMode(mode)}
                   className={[
                     'w-full flex items-center gap-2.5 px-3 py-2.5 text-[13px] text-left transition-colors duration-100',
                     active ? 'bg-game-primary/25 text-white' : 'text-game-text hover:bg-white/5',
@@ -168,7 +202,8 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
                 >
                   <span className="w-4 text-center text-base leading-none">{m.icon}</span>
                   <span className="flex-1">{m.label}</span>
-                  {active && <span className="text-game-primary text-sm">✓</span>}
+                  <span className={`text-[10px] tabular-nums ${active ? 'text-white/80' : 'text-game-muted'}`}>{dirLabel(mode, rowDir)}</span>
+                  {active && <span className="text-game-primary text-sm">{sortDir === 'asc' ? '↑' : '↓'}</span>}
                 </button>
               )
             })}
