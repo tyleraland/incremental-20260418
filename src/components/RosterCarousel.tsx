@@ -142,11 +142,10 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
             {statusBadge.text}
           </span>
         )}
-        {/* Attention badge: unspent points or an unseen level-up. */}
+        {/* Attention dot: unspent points or an unseen level-up — a gentle red
+            corner dot rather than a pulsing badge. */}
         {needsAttention && (
-          <span className="absolute -bottom-1 -left-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-game-gold text-black border border-game-gold animate-pulse">
-            !
-          </span>
+          <span className="absolute -bottom-0.5 -left-0.5 w-2 h-2 rounded-full bg-red-500/80 border border-game-bg" />
         )}
         {/* Selection-order badge; the 1st-selected (primary) is set apart. */}
         {isSelected && (
