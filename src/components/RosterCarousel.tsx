@@ -207,7 +207,7 @@ function GroupPortrait({ unit }: { unit: Unit }) {
     <button
       onClick={handleTap}
       title={`${unit.name} · Lv.${unit.level}`}
-      className={['shrink-0 w-12 flex flex-col items-center gap-0.5 select-none', unit.health <= 0 ? 'opacity-60' : ''].join(' ')}
+      className={['shrink-0 w-10 flex flex-col items-center gap-0.5 select-none', unit.health <= 0 ? 'opacity-60' : ''].join(' ')}
     >
       <div className="relative">
         <span
@@ -313,17 +313,19 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
         )}
       </div>
       {groups ? (
-        // Experimental "Area" view: heroes clustered under their location.
+        // Experimental "Area" view: heroes clustered under their location. Each
+        // area is a distinct panel with its members squished tight together, so
+        // the grouping reads at a glance.
         <div className="overflow-x-auto flex-1 min-w-0">
-          <div className="flex h-full w-max items-stretch">
+          <div className="flex h-full w-max items-stretch gap-1.5 px-1.5 py-1">
             {groups.map((g) => (
-              <div key={g.id} className="flex flex-col shrink-0 border-r border-game-border px-2 py-1">
+              <div key={g.id} className="flex flex-col shrink-0 rounded-md bg-game-surface/50 border border-game-border/70 px-1.5 py-1">
                 <div className="flex items-center gap-1 mb-1 max-w-[12rem]">
                   <span className="text-game-muted text-[10px] leading-none">{g.id === '__none__' ? '◌' : '⌖'}</span>
                   <span className="text-[10px] uppercase tracking-wide font-semibold text-game-text-dim truncate">{g.name}</span>
                   <span className="text-[9px] text-game-muted">{g.units.length}</span>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-0">
                   {g.units.map((u) => <GroupPortrait key={u.id} unit={u} />)}
                 </div>
               </div>
