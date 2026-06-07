@@ -20,14 +20,15 @@ function portraitGlyph(unit: Unit): string {
   return getInitials(unit.name)
 }
 
-type SortMode = 'name' | 'class' | 'level' | 'attention'
+type SortMode = 'name' | 'class' | 'level' | 'attention' | 'location'
 type SortDir  = 'asc' | 'desc'
-const SORT_ORDER: SortMode[] = ['attention', 'name', 'class', 'level']
+const SORT_ORDER: SortMode[] = ['attention', 'name', 'class', 'level', 'location']
 const SORT_META: Record<SortMode, { icon: string; label: string; defaultDir: SortDir }> = {
   name:      { icon: 'A', label: 'Name',   defaultDir: 'asc'  },
   class:     { icon: '◆', label: 'Class',  defaultDir: 'asc'  },
   level:     { icon: '⬆', label: 'Level',  defaultDir: 'desc' },
   attention: { icon: '!', label: 'To-do',  defaultDir: 'asc'  },
+  location:  { icon: '⌖', label: 'Area',   defaultDir: 'asc'  },
 }
 
 // Human-readable description of each mode's two directions, for the menu.
@@ -37,6 +38,7 @@ function dirLabel(mode: SortMode, dir: SortDir): string {
     case 'class':     return dir === 'asc' ? 'A→Z' : 'Z→A'
     case 'level':     return dir === 'asc' ? 'Low→High' : 'High→Low'
     case 'attention': return dir === 'asc' ? 'To-do first' : 'To-do last'
+    case 'location':  return dir === 'asc' ? 'Grouped' : 'Reversed'
   }
 }
 
@@ -59,6 +61,51 @@ function ascCompare(mode: SortMode, a: Unit, b: Unit, viewedLevels: Record<strin
       const rb = needsAttention(b, viewedLevels) ? 0 : 1
       return (ra - rb) || a.name.localeCompare(b.name)
     }
+    case 'location': return a.name.localeCompare(b.name) // grouped view renders separately
+  }
+}
+
+// Group heroes by their assigned location for the experimental "Area" view.
+// Groups follow the game's location order; unassigned heroes trail at the end.
+function buildLocationGroups(
+  units: Unit[], locations: { id: string; name: string }[], dir: SortDir,
+): { id: string; name: string; units: Unit[] }[] {
+  const byLoc = new Map<string, Unit[]>()
+  for (const u of units) {
+    const k = u.locationId ?? '__none__'
+    const arr = byLoc.get(k); if (arr) arr.push(u); else byLoc.set(k, [u])
+  }
+  const byName = (a: Unit, b: Unit) => a.name.localeCompare(b.name)
+  const groups = locations
+    .filter((l) => byLoc.has(l.id))
+    .map((l) => ({ id: l.id, name: l.name, units: byLoc.get(l.id)!.slice().sort(byName) }))
+  const none = byLoc.get('__none__')
+  if (none) groups.push({ id: '__none__', name: 'Unassigned', units: none.slice().sort(byName) })
+  if (dir === 'desc') groups.reverse()
+  return groups
+}
+
+// Portrait ring colour conveys status at a glance (selection wins). Shared by
+// the full roster card and the grouped portrait view.
+function portraitTone(unit: Unit, isSelected: boolean): string {
+  if (isSelected) return 'border-game-primary bg-game-primary/30 text-white'
+  if (unit.recoveryTicksLeft > 0) return 'border-purple-500/70 bg-purple-500/10 text-purple-300'
+  if (unit.isResting) return 'border-sky-500/70 bg-sky-500/10 text-sky-300'
+  if (unit.locationId) return 'border-game-green/60 bg-game-green/10 text-game-text'
+  return 'border-game-border bg-game-surface text-game-text'
+}
+
+// Single tap toggles selection; double-tap (within 300 ms) pops back to the
+// overworld framed on the unit's location — mirrors the location double-tap.
+function useUnitTap(unitId: string): () => void {
+  const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
+  const showUnitOnMap    = useGameStore((s) => s.showUnitOnMap)
+  const lastTapRef = useRef(0)
+  return () => {
+    const now = Date.now()
+    if (now - lastTapRef.current < 300) { lastTapRef.current = 0; showUnitOnMap(unitId); return }
+    lastTapRef.current = now
+    toggleSelectUnit(unitId)
   }
 }
 
@@ -69,28 +116,12 @@ function sortUnits(units: Unit[], mode: SortMode, dir: SortDir, viewedLevels: Re
 
 function RosterUnitCard({ unit }: { unit: Unit }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
-  const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
-  const showUnitOnMap    = useGameStore((s) => s.showUnitOnMap)
+  const viewedLevels     = useGameStore((s) => s.viewedUnitLevels)
   const selOrder         = selectedUnitIds.indexOf(unit.id) // -1 if unselected
   const isSelected       = selOrder >= 0
   const isPrimary        = selOrder === 0                   // the 1st-selected drives detail panels
-  const viewedLevels     = useGameStore((s) => s.viewedUnitLevels)
   const attention        = needsAttention(unit, viewedLevels)
-  const lastTapRef       = useRef(0)
-
-  // Single tap toggles selection; double-tap (within 300 ms) pops back to the
-  // overworld framed on this unit's location — mirrors the location double-tap
-  // that drops into battle.
-  function handleTap() {
-    const now = Date.now()
-    if (now - lastTapRef.current < 300) {
-      lastTapRef.current = 0
-      showUnitOnMap(unit.id)
-      return
-    }
-    lastTapRef.current = now
-    toggleSelectUnit(unit.id)
-  }
+  const handleTap        = useUnitTap(unit.id)
   const isRecovering = unit.recoveryTicksLeft > 0
   const isResting    = unit.isResting
   // Explicit status flag for the non-ready states; ready units stay uncluttered.
@@ -100,16 +131,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
       ? { text: 'Rest', tone: 'bg-sky-600 text-white' }
       : null
 
-  // Portrait ring colour conveys status at a glance (selection wins).
-  const portraitTone = isSelected
-    ? 'border-game-primary bg-game-primary/30 text-white'
-    : isRecovering
-      ? 'border-purple-500/70 bg-purple-500/10 text-purple-300'
-      : isResting
-        ? 'border-sky-500/70 bg-sky-500/10 text-sky-300'
-        : unit.locationId
-          ? 'border-game-green/60 bg-game-green/10 text-game-text'
-          : 'border-game-border bg-game-surface text-game-text'
+  const tone = portraitTone(unit, isSelected)
 
   return (
     <button
@@ -129,7 +151,7 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
         <span
           className={[
             'w-11 h-11 rounded-lg flex items-center justify-center text-xl border-2',
-            portraitTone,
+            tone,
           ].join(' ')}
         >
           {portraitGlyph(unit)}
@@ -170,6 +192,52 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
   )
 }
 
+// Compact portrait used by the grouped "Area" view — portrait-forward, with a
+// small name beneath, so the location grouping reads as the primary structure.
+function GroupPortrait({ unit }: { unit: Unit }) {
+  const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)
+  const viewedLevels    = useGameStore((s) => s.viewedUnitLevels)
+  const selOrder   = selectedUnitIds.indexOf(unit.id)
+  const isSelected = selOrder >= 0
+  const isPrimary  = selOrder === 0
+  const attention  = needsAttention(unit, viewedLevels)
+  const handleTap  = useUnitTap(unit.id)
+
+  return (
+    <button
+      onClick={handleTap}
+      title={`${unit.name} · Lv.${unit.level}`}
+      className={['shrink-0 w-12 flex flex-col items-center gap-0.5 select-none', unit.health <= 0 ? 'opacity-60' : ''].join(' ')}
+    >
+      <div className="relative">
+        <span
+          className={[
+            'w-10 h-10 rounded-lg flex items-center justify-center text-lg border-2',
+            portraitTone(unit, isSelected),
+            isPrimary ? 'ring-1 ring-inset ring-game-primary' : '',
+          ].join(' ')}
+        >
+          {portraitGlyph(unit)}
+        </span>
+        {attention && (
+          <span className="absolute -bottom-0.5 -left-0.5 w-2 h-2 rounded-full bg-red-500/80 border border-game-bg" />
+        )}
+        {isSelected && (
+          <span
+            className={[
+              'absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border',
+              isPrimary ? 'bg-game-gold text-black border-game-gold' : 'bg-game-primary text-white border-game-primary',
+            ].join(' ')}
+          >
+            {selOrder + 1}
+          </span>
+        )}
+      </div>
+      <span className="w-full text-[9px] leading-tight text-center truncate text-game-text">{unit.name}</span>
+    </button>
+  )
+}
+
 export function RosterCarousel({ units }: { units: Unit[] }) {
   // Default to the to-do sort so heroes with something to spend/review float to
   // the front each time the player returns.
@@ -178,7 +246,9 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const viewedLevels = useGameStore((s) => s.viewedUnitLevels)
+  const locations    = useGameStore((s) => s.locations)
   const sorted = sortUnits(units, sortMode, sortDir, viewedLevels)
+  const groups = sortMode === 'location' ? buildLocationGroups(units, locations, sortDir) : null
   const meta = SORT_META[sortMode]
 
   // Tapping a new mode selects it (its default direction) and closes the menu;
@@ -242,11 +312,32 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
           </div>
         )}
       </div>
-      <div className="overflow-x-auto flex-1 min-w-0">
-        <div className="flex gap-px w-max">
-          {sorted.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
+      {groups ? (
+        // Experimental "Area" view: heroes clustered under their location.
+        <div className="overflow-x-auto flex-1 min-w-0">
+          <div className="flex h-full w-max items-stretch">
+            {groups.map((g) => (
+              <div key={g.id} className="flex flex-col shrink-0 border-r border-game-border px-2 py-1">
+                <div className="flex items-center gap-1 mb-1 max-w-[12rem]">
+                  <span className="text-game-muted text-[10px] leading-none">{g.id === '__none__' ? '◌' : '⌖'}</span>
+                  <span className="text-[10px] uppercase tracking-wide font-semibold text-game-text-dim truncate">{g.name}</span>
+                  <span className="text-[9px] text-game-muted">{g.units.length}</span>
+                </div>
+                <div className="flex gap-1">
+                  {g.units.map((u) => <GroupPortrait key={u.id} unit={u} />)}
+                </div>
+              </div>
+            ))}
+            {groups.length === 0 && <div className="px-3 py-3 text-xs text-game-muted self-center">No heroes</div>}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="overflow-x-auto flex-1 min-w-0">
+          <div className="flex gap-px w-max">
+            {sorted.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
