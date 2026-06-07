@@ -105,6 +105,8 @@ function FilterBar({ active, onChange }: { active: InvFilter; onChange: (f: InvF
         <button
           key={c.id}
           onClick={() => onChange(c.id)}
+          aria-label={c.label}
+          title={c.label}
           className={[
             'shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
             active === c.id
@@ -112,7 +114,7 @@ function FilterBar({ active, onChange }: { active: InvFilter; onChange: (f: InvF
               : 'border-game-border text-game-text-dim hover:text-game-text',
           ].join(' ')}
         >
-          {c.icon && <span className="mr-1">{c.icon}</span>}{c.label}
+          {c.icon || c.label}
         </button>
       ))}
     </div>
