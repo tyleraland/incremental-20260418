@@ -2,13 +2,12 @@ import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } f
 import {
   useGameStore, type Unit, type EquipSlot, type Abilities, type ActionSlotEntry,
   type TacticDef, type TacticChannel,
-  SLOT_LABELS, getUnitTraits, getDerivedStats,
+  SLOT_LABELS, getDerivedStats,
   getAvailableSkills, getLearnedSkills, abilityPointCost, SKILL_REGISTRY,
   ACTION_SLOT_COUNT, TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS,
   SKILL_TACTICS, inheritedTacticIds,
 } from '@/stores/useGameStore'
 import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
-import { TraitRow } from '@/components/TraitBubble'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -96,7 +95,6 @@ const ABILITY_DEFS: { key: keyof Abilities; label: string; color: string }[] = [
 function StatsTab({ unit }: { unit: Unit }) {
   const equipment        = useGameStore((s) => s.equipment)
   const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
-  const traits           = getUnitTraits(unit)
   const derived          = getDerivedStats(unit, equipment)
 
   const defStat = derived.defense - derived.defenseEquip
@@ -143,9 +141,6 @@ function StatsTab({ unit }: { unit: Unit }) {
           <ProgressBar value={unit.exp} max={unit.expToNext} colorClass="bg-game-primary" />
         </div>
       </div>
-
-      {/* Traits */}
-      {traits.length > 0 && <TraitRow traits={traits} />}
 
       {/* Abilities + Derived stats side by side */}
       <div>

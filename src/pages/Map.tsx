@@ -443,37 +443,37 @@ function UnitActionBar() {
   }
 
   return (
-    <div className="h-12 px-3 flex items-center gap-1.5 border-b border-game-border bg-game-surface/40 overflow-hidden">
-      <span className="text-xs text-game-text-dim shrink-0 mr-auto">
+    <div className="h-12 px-3 py-1 flex items-stretch gap-1.5 border-b border-game-border bg-game-surface/40 overflow-hidden">
+      <span className="text-xs text-game-text-dim shrink-0 mr-auto flex items-center">
         {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''}
       </span>
       <button
         onClick={handleDeploy}
         disabled={!hasLoc || allAlreadyHere}
         className={[
-          'btn-primary text-xs py-1 px-2 shrink-0',
+          'btn-primary text-xs px-2 shrink-0 flex items-center',
           (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
         ].join(' ')}
       >
         {hasLoc ? (allAlreadyHere ? 'Here' : 'Deploy') : 'Deploy'}
       </button>
       {selectedUnits.length === 1 && (
-        <button onClick={handleViewUnit} className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+        <button onClick={handleViewUnit} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
           View
         </button>
       )}
       {selectedUnits.length === 1 && (
-        <button onClick={() => openReport(selectedUnits[0].id)} className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+        <button onClick={() => openReport(selectedUnits[0].id)} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
           Report
         </button>
       )}
       {sharedLocId && (
-        <button onClick={handleFindOnMap} className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+        <button onClick={handleFindOnMap} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
           Map
         </button>
       )}
       {combatTargetLocId && (
-        <button onClick={handleGoCombat} className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+        <button onClick={handleGoCombat} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
           Drop in
         </button>
       )}
