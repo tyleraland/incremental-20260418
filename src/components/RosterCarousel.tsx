@@ -70,6 +70,11 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
   const selOrder         = selectedUnitIds.indexOf(unit.id) // -1 if unselected
   const isSelected       = selOrder >= 0
   const isPrimary        = selOrder === 0                   // the 1st-selected drives detail panels
+  const viewedLevel      = useGameStore((s) => s.viewedUnitLevels[unit.id])
+  // Needs attention: unspent ability/skill points, or leveled up since the
+  // player last opened this hero's detail page.
+  const needsAttention   = unit.abilityPoints > 0 || unit.skillPoints > 0
+    || (viewedLevel !== undefined && unit.level > viewedLevel)
   const lastTapRef       = useRef(0)
 
   // Single tap toggles selection; double-tap (within 300 ms) pops back to the
@@ -135,6 +140,12 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
         {statusBadge && (
           <span className={`absolute -top-1 -right-1 px-1 rounded-full text-[7px] font-bold leading-tight ${statusBadge.tone}`}>
             {statusBadge.text}
+          </span>
+        )}
+        {/* Attention badge: unspent points or an unseen level-up. */}
+        {needsAttention && (
+          <span className="absolute -bottom-1 -left-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold bg-game-gold text-black border border-game-gold animate-pulse">
+            !
           </span>
         )}
         {/* Selection-order badge; the 1st-selected (primary) is set apart. */}

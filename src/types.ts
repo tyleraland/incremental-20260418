@@ -222,3 +222,14 @@ export interface LocationCombatStats {
   expDistributed: number                  // exp per unit (1 per kill at this location)
   goldEarned: number
 }
+
+// Per-unit lifetime combat tally (persisted), accumulated across every battle a
+// hero fights. `combatTicks` is the rate denominator — ticks the unit spent as a
+// live combatant — so DPS / items-per-minute are derivable. Kills and items are
+// credited to the unit that landed the killing blow.
+export interface UnitCombatStats {
+  damageDealt: number
+  monstersDefeated: number
+  itemsFound: number
+  combatTicks: number
+}

@@ -26,7 +26,8 @@ optional `migrate(data, fromVersion)`; a missing slice falls back to `empty()`
 and a corrupt envelope loads as `{}` (safe no-op). `App.tsx` loads once on mount,
 auto-saves every 60s + on tab-hide. **State tiers** (see the `GameState` comment
 block): *persistent* (units, inventory, recipes, location familiarity/seen,
-codex, locationStats, partyTactics, ticks, **battles**, **itemSockets**),
+codex, locationStats, **unitStats** (per-hero lifetime combat tally), partyTactics,
+ticks, **battles**, **itemSockets**),
 *runtime* (regenerated: `locations`, `eventLog`, `lastTickAt`), *ephemeral UI*
 (own localStorage keys: tabs, selections, expand state, camera nonces). **Live
 battles persist** via `battlesCodec`, which stores each as the engine's

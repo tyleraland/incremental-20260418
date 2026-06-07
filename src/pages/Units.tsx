@@ -1,4 +1,4 @@
-import { useState, useRef, type PointerEvent as ReactPointerEvent } from 'react'
+import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from 'react'
 import {
   useGameStore, type Unit, type EquipSlot, type Abilities, type ActionSlotEntry,
   type TacticDef, type TacticChannel,
@@ -753,9 +753,13 @@ function UnitDetail({ unit }: { unit: Unit }) {
 // The roster (pinned above every gameplay tab) drives selection; the Heroes tab
 // shows the detail for whoever is the primary (1st-selected) hero.
 function SelectedUnitPanel({ unit }: { unit: Unit }) {
-  const equipment = useGameStore((s) => s.equipment)
-  const derived   = getDerivedStats(unit, equipment)
-  const hpPct     = Math.round((unit.health / derived.maxHp) * 100)
+  const equipment      = useGameStore((s) => s.equipment)
+  const markUnitViewed = useGameStore((s) => s.markUnitViewed)
+  const derived        = getDerivedStats(unit, equipment)
+  const hpPct          = Math.round((unit.health / derived.maxHp) * 100)
+
+  // Opening a hero's detail clears its "needs attention" level-up flag.
+  useEffect(() => { markUnitViewed(unit.id) }, [unit.id, unit.level, markUnitViewed])
 
   return (
     <div className="border border-game-primary rounded-xl overflow-hidden">

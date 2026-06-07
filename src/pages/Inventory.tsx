@@ -436,11 +436,31 @@ function CraftingSection() {
 
 // ── Inventory page ────────────────────────────────────────────────────────────
 
+// When exactly one hero is selected in the shared roster, surface a Report
+// button (mirrors the Map action bar — Inventory has no action bar of its own).
+function SelectedUnitBar() {
+  const units      = useGameStore((s) => s.units)
+  const selectedIds = useGameStore((s) => s.selectedUnitIds)
+  const openReport = useGameStore((s) => s.openReport)
+  const unit = selectedIds.length === 1 ? units.find((u) => u.id === selectedIds[0]) : null
+  if (!unit) return null
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-game-border bg-game-surface/40 px-3 py-2">
+      <span className="text-sm font-medium text-game-text">{unit.name}</span>
+      <span className="text-xs text-game-text-dim">Lv.{unit.level}</span>
+      <button onClick={() => openReport(unit.id)} className="ml-auto text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors">
+        Report
+      </button>
+    </div>
+  )
+}
+
 export function Inventory() {
   const equipContext = useGameStore((s) => s.equipContext)
   if (equipContext) return <EquipContextView />
   return (
     <div className="p-4 space-y-3 pb-24">
+      <SelectedUnitBar />
       <CraftingSection />
       <EquipmentSection />
       <MiscSection />

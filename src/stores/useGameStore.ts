@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
-  LocationCombatStats, ActionSlotEntry, TacticSlot,
+  LocationCombatStats, UnitCombatStats, ActionSlotEntry, TacticSlot,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
@@ -60,6 +60,7 @@ export interface GameState {
   monsterSeen:            Record<string, number>      // monsterId → total global sighting count
   monsterDefeated:        Record<string, number>      // monsterId → total defeat count
   locationStats:          Record<string, LocationCombatStats>  // locationId → cumulative combat stats
+  unitStats:              Record<string, UnitCombatStats>      // unitId → lifetime combat tally (Report panel)
   partyTactics:           TacticSlot[]                 // team-wide tactics injected into every unit (§5.5)
   ticks: number
 
@@ -93,6 +94,12 @@ export interface GameState {
   expandedInventorySections: string[]
   expandedRegionIds: string[]
   equipContext: { unitId: string; slot: EquipSlot } | null
+  // Per-unit level at which the player last opened that hero's detail page. A
+  // unit whose current level exceeds this (or has unspent points) shows a
+  // "needs attention" badge in the roster until viewed.
+  viewedUnitLevels: Record<string, number>
+  // The unit whose lifetime-stats Report sheet is open (null = closed).
+  reportUnitId: string | null
 
   paused: boolean
 
@@ -118,6 +125,11 @@ export interface GameState {
   // Centre the overworld camera on the selected location (roster "Map" button).
   focusLocationOnMap: (locationId: string) => void
   setMapPage: (id: string) => void
+  // Mark a hero's detail page as viewed at its current level (clears its badge).
+  markUnitViewed: (unitId: string) => void
+  // Open / close the per-unit lifetime-stats Report sheet.
+  openReport: (unitId: string) => void
+  closeReport: () => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
   openEquipFor: (unitId: string, slot: EquipSlot) => void
@@ -363,6 +375,27 @@ function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): Misc
   return out
 }
 
+// Fold this tick's per-unit stat deltas into the persistent lifetime tally.
+function foldUnitStats(
+  prev: Record<string, UnitCombatStats>,
+  delta: Record<string, UnitCombatStats>,
+): Record<string, UnitCombatStats> {
+  const ids = Object.keys(delta)
+  if (ids.length === 0) return prev
+  const out = { ...prev }
+  for (const id of ids) {
+    const d = delta[id]
+    const c = out[id] ?? { damageDealt: 0, monstersDefeated: 0, itemsFound: 0, combatTicks: 0 }
+    out[id] = {
+      damageDealt:      c.damageDealt + d.damageDealt,
+      monstersDefeated: c.monstersDefeated + d.monstersDefeated,
+      itemsFound:       c.itemsFound + d.itemsFound,
+      combatTicks:      c.combatTicks + d.combatTicks,
+    }
+  }
+  return out
+}
+
 interface CombatStep {
   battles: Record<string, BattleState>
   battleCooldown: Record<string, number>
@@ -376,6 +409,7 @@ interface CombatStep {
   monsterSeen: Record<string, number>
   locationMonstersSeen: Record<string, string[]>
   locationStats: Record<string, LocationCombatStats>
+  unitStatsDelta: Record<string, UnitCombatStats>   // unitId → lifetime-stat deltas this tick
   logs: { category: LogCategory; message: string }[]
 }
 
@@ -397,6 +431,24 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   let goldEarned = 0
   const logs: { category: LogCategory; message: string }[] = []
 
+  // Per-unit lifetime-stat deltas accumulated this tick (Report panel).
+  const unitStatsDelta: Record<string, UnitCombatStats> = {}
+  const bumpUnit = (id: string, field: keyof UnitCombatStats, n: number) => {
+    const cur = unitStatsDelta[id] ?? (unitStatsDelta[id] = { damageDealt: 0, monstersDefeated: 0, itemsFound: 0, combatTicks: 0 })
+    cur[field] += n
+  }
+  // Damage-dealing event types (each hit emits exactly one). 'heal' / non-damage
+  // skill_use carry no `value`, so the value>0 guard filters them out.
+  const DAMAGE_EVENTS = new Set(['melee_attack', 'ranged_attack', 'dot', 'skill_use'])
+  const recordDamage = (battle: BattleState) => {
+    const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+    for (const e of battle.events) {
+      if (e.round !== battle.round || !e.value || e.value <= 0) continue
+      if (!DAMAGE_EVENTS.has(e.type) || !playerIds.has(e.sourceId)) continue
+      bumpUnit(e.sourceId, 'damageDealt', e.value)
+    }
+  }
+
   // ── Shared per-battle bookkeeping (used by both the encounter and open paths) ─
 
   // Count each given monster id as sighted, both globally and at this location.
@@ -414,6 +466,12 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
   // Award exp/gold/loot for every enemy that died this round (was alive before).
   const rewardKills = (loc: Location, battle: BattleState, enemiesBefore: Set<string>) => {
+    // Who landed the killing blow on each enemy this round (for per-unit credit).
+    const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+    const killerByEnemy: Record<string, string> = {}
+    for (const e of battle.events) {
+      if (e.round === battle.round && e.type === 'unit_death' && e.targetId) killerByEnemy[e.targetId] = e.sourceId
+    }
     let killsThisRound = 0
     for (const c of battle.combatants) {
       if (c.team !== 'enemy' || c.alive || !enemiesBefore.has(c.id)) continue
@@ -421,6 +479,9 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       const mid = monsterIdOf(c.id)
       monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + 1
       goldEarned++
+      const killer = killerByEnemy[c.id]
+      const credited = killer && playerIds.has(killer) ? killer : null
+      if (credited) bumpUnit(credited, 'monstersDefeated', 1)
       const def = MONSTER_REGISTRY[mid]
       const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
       const itemsDropped = { ...prev.itemsDropped }
@@ -430,6 +491,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
             const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
             lootDelta[d.itemId]    = (lootDelta[d.itemId] ?? 0) + qty
             itemsDropped[d.itemId] = (itemsDropped[d.itemId] ?? 0) + qty
+            if (credited) bumpUnit(credited, 'itemsFound', qty)
           }
         }
       }
@@ -469,7 +531,10 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   // Sync living player HP back to the game units every tick (engine is authoritative).
   const syncHp = (battle: BattleState) => {
     for (const c of battle.combatants) {
-      if (c.team === 'player' && c.alive) hpByUnit[c.id] = c.hp
+      if (c.team === 'player' && c.alive) {
+        hpByUnit[c.id] = c.hp
+        bumpUnit(c.id, 'combatTicks', 1)   // fighting time = the rate denominator
+      }
     }
   }
 
@@ -516,6 +581,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         advanceRound(battle)
         battles[locationId] = { ...battle }
         rewardKills(loc, battle, enemiesBefore)
+        recordDamage(battle)
         detectDeaths(battle)
       }
 
@@ -570,6 +636,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       advanceRound(battle)
       battles[locationId] = { ...battle }   // new identity so React re-renders
       rewardKills(loc, battle, enemiesBefore)
+      recordDamage(battle)
       detectDeaths(battle)
       if (battle.outcome !== 'ongoing') {
         battleCooldown[locationId] = BATTLE_RESPAWN_TICKS
@@ -582,7 +649,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
   return {
     battles, battleCooldown, monsterSpawnTimers, hpByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
-    monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, logs,
+    monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, logs,
   }
 }
 
@@ -613,6 +680,9 @@ export const useGameStore = create<GameState>((set) => ({
   ticks: 0,
   monsterDefeated: {},
   locationStats: {},
+  unitStats: {},
+  viewedUnitLevels: (() => { try { return JSON.parse(localStorage.getItem('viewedUnitLevels') ?? '{}') } catch { return {} } })(),
+  reportUnitId: null,
   partyTactics: [{ id: 'finish-them', rank: 1 }],
   lastTickAt: Date.now(),
   paused: false,
@@ -680,6 +750,7 @@ export const useGameStore = create<GameState>((set) => ({
       monsterSeen: combat.monsterSeen,
       locationMonstersSeen: combat.locationMonstersSeen,
       locationStats: combat.locationStats,
+      unitStats: foldUnitStats(s.unitStats, combat.unitStatsDelta),
       miscItems,
       lastTickAt: Date.now(),
       eventLog: newLog,
@@ -773,7 +844,9 @@ export const useGameStore = create<GameState>((set) => ({
   // Drop into a location's battlefield: focus it and switch the Map to battle
   // mode. Combat itself keeps running in the engine regardless — this is just
   // which view the Map tab renders.
-  enterBattleView: (locationId) => set({ combatLocationId: locationId, mapMode: 'battle', selectedUnitIds: [] }),
+  // Also mark the battlefield's location as selected so the UnitActionBar's
+  // Deploy targets it — in a battlefield the map cell is implicitly "selected".
+  enterBattleView: (locationId) => set({ combatLocationId: locationId, selectedLocationId: locationId, mapMode: 'battle', selectedUnitIds: [] }),
   // Zoom back out to the overworld, re-selecting the location we were watching
   // (paged to its region) so the player lands back where they dropped in.
   exitBattleView: () => set((s) => {
@@ -793,7 +866,7 @@ export const useGameStore = create<GameState>((set) => ({
       // Keep the current battlefield if the unit is unassigned; else jump to
       // theirs. Either way, ask the battle view to centre on this unit.
       return {
-        ...(loc ? { combatLocationId: loc.id } : {}),
+        ...(loc ? { combatLocationId: loc.id, selectedLocationId: loc.id } : {}),
         battleFocus: { unitId, nonce: (s.battleFocus?.nonce ?? 0) + 1 },
       }
     }
@@ -814,6 +887,15 @@ export const useGameStore = create<GameState>((set) => ({
     }
   }),
   setMapPage: (id) => set({ mapPageId: id }),
+  markUnitViewed: (unitId) => set((s) => {
+    const u = s.units.find((x) => x.id === unitId)
+    if (!u) return s
+    const next = { ...s.viewedUnitLevels, [unitId]: u.level }
+    localStorage.setItem('viewedUnitLevels', JSON.stringify(next))
+    return { viewedUnitLevels: next }
+  }),
+  openReport: (unitId) => set({ reportUnitId: unitId }),
+  closeReport: () => set({ reportUnitId: null }),
   assignUnits: (unitIds, locationId) => set((s) => ({
     units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u),
     selectedUnitIds: [],
@@ -1006,7 +1088,7 @@ export const useGameStore = create<GameState>((set) => ({
   })),
 
   resetSave: () => {
-    ;['expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds'].forEach((k) => localStorage.removeItem(k))
+    ;['expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds', 'viewedUnitLevels'].forEach((k) => localStorage.removeItem(k))
     set({
       units:    INITIAL_UNITS,
       equipment: INITIAL_EQUIPMENT,
@@ -1017,6 +1099,9 @@ export const useGameStore = create<GameState>((set) => ({
       monsterSeen:     { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
       monsterDefeated: {},
       locationStats:   {},
+      unitStats:       {},
+      viewedUnitLevels: {},
+      reportUnitId:    null,
       partyTactics:    [{ id: 'finish-them', rank: 1 }],
       battles:           {},
       battleCooldown:    {},

@@ -4,6 +4,7 @@ import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
 import { TabBar } from '@/components/TabBar'
 import { RosterCarousel } from '@/components/RosterCarousel'
+import { UnitReportSheet } from '@/components/UnitReportSheet'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
@@ -73,6 +74,7 @@ function App() {
         {activeTab === 'guild'     && <Guild />}
         {activeTab === 'time'      && <Time />}
       </main>
+      <UnitReportSheet />
     </div>
   )
 }

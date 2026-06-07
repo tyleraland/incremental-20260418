@@ -403,6 +403,7 @@ function UnitActionBar() {
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
   const enterBattleView     = useGameStore((s) => s.enterBattleView)
+  const openReport          = useGameStore((s) => s.openReport)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
 
@@ -459,6 +460,11 @@ function UnitActionBar() {
       {selectedUnits.length === 1 && (
         <button onClick={handleViewUnit} className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
           View
+        </button>
+      )}
+      {selectedUnits.length === 1 && (
+        <button onClick={() => openReport(selectedUnits[0].id)} className="text-xs py-1 px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0">
+          Report
         </button>
       )}
       {sharedLocId && (
