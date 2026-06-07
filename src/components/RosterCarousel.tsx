@@ -124,8 +124,9 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
         >
           {portraitGlyph(unit)}
         </span>
-        <span className="absolute -top-1 -left-1 px-1 rounded-full bg-game-bg/90 border border-game-border text-[10px] font-bold leading-tight text-game-text-dim">
-          {unit.level}
+        <span className="absolute -top-1 -left-1 flex items-center gap-1 max-w-[3.5rem] px-1 rounded-full bg-game-bg/90 border border-game-border leading-tight">
+          <span className="text-[10px] font-bold text-game-text-dim">{unit.level}</span>
+          {unit.class && <span className="text-[8px] text-game-text-dim truncate">{unit.class}</span>}
         </span>
         {statusBadge && (
           <span className={`absolute -top-1 -right-1 px-1 rounded-full text-[7px] font-bold leading-tight ${statusBadge.tone}`}>
