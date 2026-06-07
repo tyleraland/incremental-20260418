@@ -18,7 +18,8 @@ const tacticIds = () => (useGameStore.getState().units[0].tactics ?? []).map((t)
 describe('Tactics detail tab', () => {
   beforeEach(() => {
     resetStore({ units: [makeUnit({ id: 'u1', tactics: [] })], partyTactics: [] })
-    useGameStore.setState({ expandedUnitIds: ['u1'] })
+    // The Heroes tab shows the detail for the primary (1st-selected) unit.
+    useGameStore.setState({ selectedUnitIds: ['u1'] })
   })
 
   it('equips a tactic from the Available catalog', () => {

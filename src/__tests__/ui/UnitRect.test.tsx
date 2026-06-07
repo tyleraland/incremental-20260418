@@ -30,14 +30,13 @@ const TEST_LOCATION = {
   description: '', traits: [], monsterIds: ['wolf'], familiarityMax: 100, connections: [],
 }
 
-describe('UnitRect — KO state', () => {
+describe('Roster — KO state', () => {
   it('shows "KO" indicator when unit is in recovery countdown', async () => {
-    useGameStore.setState({
-      units: [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: 5, locationId: null })],
-      locations: [],
-      expandedRegionIds: [],
-    })
-    await renderMap()
+    const units = [makeUnit({ id: 'u1', health: 0, recoveryTicksLeft: 5, locationId: null })]
+    useGameStore.setState({ units, locations: [], expandedRegionIds: [] })
+    // The KO badge lives on the pinned roster strip (shared across tabs).
+    const { RosterCarousel } = await import('@/components/RosterCarousel')
+    render(React.createElement(RosterCarousel, { units }))
     expect(screen.getByText('KO')).toBeInTheDocument()
   })
 })

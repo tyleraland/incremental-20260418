@@ -3,6 +3,7 @@ import { useGameStore } from '@/stores/useGameStore'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
 import { TabBar } from '@/components/TabBar'
+import { RosterCarousel } from '@/components/RosterCarousel'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
@@ -24,6 +25,10 @@ function catchUp() {
 
 function App() {
   const activeTab = useGameStore((s) => s.activeTab)
+  const units     = useGameStore((s) => s.units)
+  // The hero roster stays pinned across the gameplay tabs so unit selection
+  // carries between Map, Heroes, and Inventory.
+  const showRoster = activeTab === 'map' || activeTab === 'units' || activeTab === 'inventory'
 
   // Interval fires every second. catchUp() computes how many real seconds
   // have elapsed and applies them all at once, so throttled background tabs
@@ -53,14 +58,21 @@ function App() {
 
   return (
     <div className="h-full flex flex-col">
-      <main className="flex-1 overflow-y-auto pt-16">
+      <TabBar />
+      {/* pt-16 clears the fixed TabBar; the roster sits below it, pinned (it
+          doesn't scroll with the page) on the gameplay tabs. */}
+      {showRoster && (
+        <div className="shrink-0 pt-16">
+          <RosterCarousel units={units} />
+        </div>
+      )}
+      <main className={['flex-1 overflow-y-auto min-h-0', showRoster ? '' : 'pt-16'].join(' ')}>
         {activeTab === 'map'       && <Map />}
         {activeTab === 'units'     && <Units />}
         {activeTab === 'inventory' && <Inventory />}
         {activeTab === 'guild'     && <Guild />}
         {activeTab === 'time'      && <Time />}
       </main>
-      <TabBar />
     </div>
   )
 }

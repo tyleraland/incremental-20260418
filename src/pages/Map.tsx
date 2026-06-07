@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useGameStore, MONSTER_REGISTRY, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
-import { RosterCarousel } from '@/components/RosterCarousel'
 import { BattleView } from '@/components/BattleView'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
 
@@ -404,8 +403,6 @@ function UnitActionBar() {
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
   const enterBattleView     = useGameStore((s) => s.enterBattleView)
-  const toggleUnit          = useGameStore((s) => s.toggleUnit)
-  const expandedUnitIds     = useGameStore((s) => s.expandedUnitIds)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
 
@@ -429,11 +426,10 @@ function UnitActionBar() {
     assignUnits(selectedUnitIds, selectedLocationId)
   }
   function handleViewUnit() {
-    const unitId = selectedUnits[0]?.id
-    if (!unitId) return
-    if (!expandedUnitIds.includes(unitId)) toggleUnit(unitId)
+    // The Heroes tab shows the primary (1st-selected) unit's detail, so keep the
+    // selection intact and just switch tabs.
+    if (!selectedUnitIds[0]) return
     setActiveTab('units')
-    clearSelection()
     setSelectedLocation(null)
   }
   function handleFindOnMap() {
@@ -699,7 +695,6 @@ function LocationDetailPanel() {
 // ── BattleDropIn (Map's battle mode) ───────────────────────────────────────────
 
 function BattleDropIn() {
-  const units            = useGameStore((s) => s.units)
   const locations        = useGameStore((s) => s.locations)
   const combatLocationId = useGameStore((s) => s.combatLocationId)
   const exitBattleView   = useGameStore((s) => s.exitBattleView)
@@ -710,7 +705,6 @@ function BattleDropIn() {
 
   return (
     <div className="h-full flex flex-col pt-4 min-h-0">
-      <RosterCarousel units={units} />
       {/* When a roster unit is selected, surface the same action bar as the
           overworld (Deploy/Here, View, Map, Drop in) so the controls are
           available without leaving the battlefield. Otherwise the battle
@@ -748,8 +742,7 @@ export function Map() {
   }
 
   return (
-    <div className="h-full grid grid-rows-[auto_auto_32vh_minmax(0,1fr)] pt-4 min-h-0">
-      <RosterCarousel units={units} />
+    <div className="h-full grid grid-rows-[auto_32vh_minmax(0,1fr)] pt-4 min-h-0">
       <UnitActionBar />
       <WorldMap locations={locations} units={units} />
       <LocationDetailPanel />

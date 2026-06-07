@@ -67,7 +67,9 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
   const showUnitOnMap    = useGameStore((s) => s.showUnitOnMap)
-  const isSelected       = selectedUnitIds.includes(unit.id)
+  const selOrder         = selectedUnitIds.indexOf(unit.id) // -1 if unselected
+  const isSelected       = selOrder >= 0
+  const isPrimary        = selOrder === 0                   // the 1st-selected drives detail panels
   const lastTapRef       = useRef(0)
 
   // Single tap toggles selection; double-tap (within 300 ms) pops back to the
@@ -107,11 +109,13 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
     <button
       onClick={handleTap}
       className={[
-        'shrink-0 w-[4.5rem] flex flex-col items-center gap-1 px-1 py-1.5 border-b select-none transition-colors duration-100',
+        'shrink-0 w-[4.5rem] flex flex-col items-center gap-1 px-1 py-1.5 border-b border-r select-none transition-colors duration-100',
         unit.health <= 0 ? 'opacity-60' : '',
-        isSelected
-          ? 'border-game-primary bg-game-primary/15'
-          : 'border-game-border bg-game-surface hover:bg-white/5',
+        isPrimary
+          ? 'border-game-primary bg-game-primary/25 ring-1 ring-inset ring-game-primary'
+          : isSelected
+            ? 'border-game-primary bg-game-primary/15'
+            : 'border-game-border bg-game-surface hover:bg-white/5',
       ].join(' ')}
     >
       {/* Portrait (class icon) with a level badge corner. */}
@@ -131,6 +135,19 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
         {statusBadge && (
           <span className={`absolute -top-1 -right-1 px-1 rounded-full text-[7px] font-bold leading-tight ${statusBadge.tone}`}>
             {statusBadge.text}
+          </span>
+        )}
+        {/* Selection-order badge; the 1st-selected (primary) is set apart. */}
+        {isSelected && (
+          <span
+            className={[
+              'absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border',
+              isPrimary
+                ? 'bg-game-gold text-black border-game-gold'
+                : 'bg-game-primary text-white border-game-primary',
+            ].join(' ')}
+          >
+            {selOrder + 1}
           </span>
         )}
       </div>
@@ -173,7 +190,7 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
   }, [menuOpen])
 
   return (
-    <div className="-mt-7 flex items-stretch min-w-0">
+    <div className="flex items-stretch min-w-0 border-b border-game-border">
       {/* Sort button on the left — one tap opens a menu of sort options. */}
       <div ref={menuRef} className="relative shrink-0">
         <button

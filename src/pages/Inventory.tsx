@@ -5,11 +5,13 @@ import {
   type EquipSlot,
   type ItemCategory,
   type RecipeCategory,
+  type Unit,
   SLOT_COMPATIBLE,
   SLOT_LABELS,
   CATEGORY_LABELS,
   RECIPE_REGISTRY,
   getItemTraits,
+  getEquippedId,
 } from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 
@@ -38,6 +40,33 @@ function StatDeltas({ item, current }: { item: EquipmentItem; current: Equipment
 
 function totalScore(item: EquipmentItem) {
   return STAT_KEYS.reduce((s, k) => s + (item.stats[k] ?? 0), 0)
+}
+
+// Absolute stat readout (used when no hero is selected — no comparison basis).
+function AbsoluteStats({ item }: { item: EquipmentItem }) {
+  const entries = STAT_KEYS.map((k) => ({ k, v: item.stats[k] ?? 0 })).filter((x) => x.v !== 0)
+  if (!entries.length) return null
+  return (
+    <div className="flex flex-wrap gap-2 mt-1">
+      {entries.map(({ k, v }) => (
+        <span key={k} className="text-xs font-mono text-game-text-dim">{v} {STAT_SHORT[k]}</span>
+      ))}
+    </div>
+  )
+}
+
+// The stat-bearing slot an item competes for, for delta comparison. Tools have
+// no stat slot (sideboards are stat-inactive), so they show absolute stats.
+const CATEGORY_SLOT: Record<ItemCategory, EquipSlot | null> = {
+  'weapon-1h': 'mainHand', 'weapon-2h': 'mainHand', shield: 'offHand',
+  armor: 'armor', accessory: 'accessory', tool: null,
+}
+
+function equipRestrictionFor(item: EquipmentItem, unit: Unit): string | null {
+  const cls = unit.class ?? 'Novice'
+  if (item.requiredLevel && unit.level < item.requiredLevel) return `Requires Lv ${item.requiredLevel}`
+  if (item.requiredClasses && !item.requiredClasses.includes(cls)) return `${item.requiredClasses.join(' / ')} only`
+  return null
 }
 
 // ── Equip context view ────────────────────────────────────────────────────────
@@ -174,6 +203,11 @@ function EquipmentSection() {
   const expanded = useGameStore((s) => s.expandedInventorySections.includes('equipment'))
   const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const equipment = useGameStore((s) => s.equipment)
+  const units     = useGameStore((s) => s.units)
+  const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)
+  // Deltas are shown relative to the primary (1st-selected) hero; with no
+  // selection we fall back to absolute stats.
+  const primary = units.find((u) => u.id === selectedUnitIds[0]) ?? null
 
   const categories: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'tool', 'shield', 'armor', 'accessory']
   const grouped = categories.reduce<Record<string, EquipmentItem[]>>((acc, cat) => {
@@ -185,7 +219,7 @@ function EquipmentSection() {
   return (
     <div className="border border-game-border rounded-xl overflow-hidden">
       <button className="w-full flex items-center justify-between px-4 py-4" onClick={() => toggleInventorySection('equipment')}>
-        <span className="font-semibold">Equipment</span>
+        <span className="font-semibold">Equipment{primary && <span className="ml-1.5 text-xs font-normal text-game-text-dim">vs {primary.name}</span>}</span>
         <span className="text-game-muted text-sm">{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && (
@@ -196,12 +230,27 @@ function EquipmentSection() {
                 {CATEGORY_LABELS[cat as ItemCategory]}
               </div>
               <div className="space-y-3">
-                {items.map((item) => (
-                  <div key={item.id}>
-                    <div className="text-sm font-medium text-game-text mb-1.5">{item.name}</div>
-                    <TraitRow traits={getItemTraits(item)} />
-                  </div>
-                ))}
+                {items.map((item) => {
+                  const restriction = primary ? equipRestrictionFor(item, primary) : null
+                  const locked      = !!restriction
+                  const slot        = CATEGORY_SLOT[item.category]
+                  const currentId   = primary && slot ? getEquippedId(primary, slot) : null
+                  const currentItem = currentId ? (equipment.find((e) => e.id === currentId) ?? null) : null
+                  const isEquipped  = !!currentId && item.id === currentId
+                  return (
+                    <div key={item.id} className={locked ? 'opacity-50' : ''}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-sm font-medium text-game-text flex-1">{item.name}</span>
+                        {isEquipped && <span className="text-xs text-game-primary font-semibold shrink-0">Equipped</span>}
+                        {locked     && <span className="text-xs text-game-muted shrink-0">{restriction}</span>}
+                      </div>
+                      <TraitRow traits={getItemTraits(item)} />
+                      {primary
+                        ? (!locked && !isEquipped && <StatDeltas item={item} current={currentItem} />)
+                        : <AbsoluteStats item={item} />}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}

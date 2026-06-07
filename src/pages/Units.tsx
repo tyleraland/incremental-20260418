@@ -748,43 +748,28 @@ function UnitDetail({ unit }: { unit: Unit }) {
   )
 }
 
-// ── Unit row ──────────────────────────────────────────────────────────────────
+// ── Selected unit panel ───────────────────────────────────────────────────────
 
-function UnitRow({ unit }: { unit: Unit }) {
-  const { selectedUnitIds, expandedUnitIds, toggleSelectUnit, toggleUnit } = useGameStore((s) => ({
-    selectedUnitIds: s.selectedUnitIds,
-    expandedUnitIds: s.expandedUnitIds,
-    toggleSelectUnit: s.toggleSelectUnit,
-    toggleUnit:      s.toggleUnit,
-  }))
-  const isSelected = selectedUnitIds.includes(unit.id)
-  const isExpanded = expandedUnitIds.includes(unit.id)
+// The roster (pinned above every gameplay tab) drives selection; the Heroes tab
+// shows the detail for whoever is the primary (1st-selected) hero.
+function SelectedUnitPanel({ unit }: { unit: Unit }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const derived   = getDerivedStats(unit, equipment)
+  const hpPct     = Math.round((unit.health / derived.maxHp) * 100)
 
   return (
-    <div className={['border rounded-xl overflow-hidden transition-colors duration-100', isSelected ? 'border-game-primary' : 'border-game-border'].join(' ')}>
-      <div className="flex items-center gap-3 px-3 py-3">
-        <button
-          className={['w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors', isSelected ? 'border-game-primary bg-game-primary' : 'border-game-muted'].join(' ')}
-          onClick={() => toggleSelectUnit(unit.id)}
-          aria-label={`Select ${unit.name}`}
-        >
-          {isSelected && <span className="text-white text-xs leading-none">✓</span>}
-        </button>
-
+    <div className="border border-game-primary rounded-xl overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-3">
         <span className={`w-2 h-2 rounded-full shrink-0 ${healthDot(unit.health)}`} />
-
-        <button className="flex-1 flex items-center gap-2 text-left min-w-0" onClick={() => toggleUnit(unit.id)}>
-          <span className="font-semibold text-game-text">{unit.name}</span>
-          <span className="text-xs text-game-text-dim shrink-0">Lv.{unit.level}</span>
-          <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded shrink-0">{unit.class ?? 'Novice'}</span>
-          {(unit.abilityPoints > 0 || unit.skillPoints > 0) && (
-            <span className="text-xs text-game-gold bg-game-gold/10 px-1.5 py-0.5 rounded shrink-0">!</span>
-          )}
-          <span className="ml-auto text-game-muted text-sm shrink-0">{isExpanded ? '▲' : '▼'}</span>
-        </button>
+        <span className="font-semibold text-game-text">{unit.name}</span>
+        <span className="text-xs text-game-text-dim shrink-0">Lv.{unit.level}</span>
+        <span className="text-xs text-game-secondary bg-game-secondary/10 px-1.5 py-0.5 rounded shrink-0">{unit.class ?? 'Novice'}</span>
+        {(unit.abilityPoints > 0 || unit.skillPoints > 0) && (
+          <span className="text-xs text-game-gold bg-game-gold/10 px-1.5 py-0.5 rounded shrink-0">!</span>
+        )}
+        <span className={`ml-auto text-xs font-mono shrink-0 ${healthColor(hpPct)}`}>{unit.health}/{derived.maxHp}</span>
       </div>
-
-      {isExpanded && <UnitDetail unit={unit} />}
+      <UnitDetail unit={unit} />
     </div>
   )
 }
@@ -792,22 +777,23 @@ function UnitRow({ unit }: { unit: Unit }) {
 // ── Units page ────────────────────────────────────────────────────────────────
 
 export function Units() {
-  const { units, selectedUnitIds, clearSelection } = useGameStore((s) => ({
+  const { units, selectedUnitIds } = useGameStore((s) => ({
     units: s.units,
     selectedUnitIds: s.selectedUnitIds,
-    clearSelection: s.clearSelection,
   }))
+  const primary = units.find((u) => u.id === selectedUnitIds[0]) ?? null
 
   return (
-    <div className="p-4 space-y-2 pb-24">
+    <div className="p-4 space-y-3 pb-24">
       <PartyTacticsPanel />
-      {selectedUnitIds.length > 0 && (
-        <div className="flex items-center gap-2 pb-1">
-          <span className="text-xs text-game-text-dim">{selectedUnitIds.length} selected</span>
-          <button className="text-xs text-game-primary hover:underline" onClick={clearSelection}>Clear</button>
+      {primary ? (
+        <SelectedUnitPanel unit={primary} />
+      ) : (
+        <div className="rounded-xl border border-dashed border-game-border px-4 py-10 text-center">
+          <div className="text-sm text-game-text-dim">No hero selected</div>
+          <div className="text-xs text-game-muted mt-1">Tap a hero in the roster above to view and edit their details.</div>
         </div>
       )}
-      {units.map((unit) => <UnitRow key={unit.id} unit={unit} />)}
     </div>
   )
 }
