@@ -59,6 +59,26 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
     "jitter next to an engaged fight" (separation crowding at the rally point) is
     cosmetic and separate.
 
+## Offline progression
+
+- **Sampled Offline Progression ("Warm Catch-up").** Today `batchTick`
+  (`useGameStore.ts:760`) only does regen/recovery/aging + banked level-ups —
+  **zero** offline exp/gold/loot — so the job is to *extrapolate* combat rewards
+  from realized rates, not re-simulate (a closed-form DPS model can't track the
+  spatial engine and would rot). The rates already exist and persist: per-location
+  `locationStats[id]` (`expDistributed`/`goldEarned`/`monstersDefeated`/
+  `itemsDropped`/`startTick`) + `unitStats[id].combatTicks` (the rate denominator),
+  already turned into per-window rates by `getLocationCombatReport`; multiply by
+  elapsed seconds per location in `batchTick` and surface a "while you were away"
+  summary. A *cold* location (deployed then idled with no sample) needs a budgeted
+  priming sim — cap it (~few hundred rounds / ~50ms) to settle the in-flight battle
+  and seed a sample, then extrapolate; if priming ever gets heavy run it in a Web
+  Worker behind a loading buffer (the `serializeBattle`/`deserializeBattle` BSNAP
+  tokens already make a battle worker-portable). Note: `ROUND_EVERY_TICKS=2` is not
+  a limiter — offline rounds are just `elapsedSec×2.5` (a conversion, not a
+  ceiling); a naive full fast-forward is what janks (~72k rounds for 8h *per heavy
+  battle*, main-thread-blocking), which is exactly what sampling avoids.
+
 ## Combat content
 
 - **Per-location quests & async choices.** Each location grows a small
