@@ -45,6 +45,7 @@ export function resetStore(overrides: object = {}) {
     itemSockets: {},
     ticks: 0,
     lastTickAt: Date.now(),
+    offlineSummary: null,
     ...overrides,
   })
 }

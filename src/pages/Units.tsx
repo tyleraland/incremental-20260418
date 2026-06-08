@@ -136,7 +136,7 @@ function StatsTab({ unit }: { unit: Unit }) {
         <div>
           <div className="flex justify-between text-xs mb-1">
             <span className="text-game-text-dim">EXP</span>
-            <span className="text-game-text-dim">{unit.exp} / {unit.expToNext}</span>
+            <span className="text-game-text-dim">{Math.floor(unit.exp)} / {unit.expToNext}</span>
           </div>
           <ProgressBar value={unit.exp} max={unit.expToNext} colorClass="bg-game-primary" />
         </div>

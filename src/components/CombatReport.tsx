@@ -50,7 +50,7 @@ export function CombatReport({ locationId, locationName, onClose }: {
             </div>
             <div className="bg-game-bg rounded-lg py-2.5 text-center">
               <div className="text-xl font-bold font-mono leading-none text-game-green">{report.expDistributed}</div>
-              <div className="text-xs text-game-text-dim mt-1">EXP / unit</div>
+              <div className="text-xs text-game-text-dim mt-1">EXP</div>
             </div>
             <div className="bg-game-bg rounded-lg py-2.5 text-center">
               <div className="text-xl font-bold font-mono leading-none text-game-gold">{report.goldEarned}</div>

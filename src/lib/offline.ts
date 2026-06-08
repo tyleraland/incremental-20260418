@@ -15,7 +15,7 @@ import { MONSTER_REGISTRY } from '@/data/monsters'
 // instead of being floored to zero by an EV model.
 
 export interface OfflineProjection {
-  expPerUnit: number                       // exp credited to each deployed hero
+  exp: number                              // total XP pool (split among the group by level)
   gold: number
   killsByMonster: Record<string, number>   // monsterId → projected kills
 }
@@ -28,7 +28,7 @@ export function projectOfflineRewards(
 ): OfflineProjection {
   const window = report.endTick - report.startTick
   if (!report.hasData || window <= 0 || offlineTicks <= 0) {
-    return { expPerUnit: 0, gold: 0, killsByMonster: {} }
+    return { exp: 0, gold: 0, killsByMonster: {} }
   }
   const scale = offlineTicks / window
   const killsByMonster: Record<string, number> = {}
@@ -37,10 +37,29 @@ export function projectOfflineRewards(
     if (k > 0) killsByMonster[mid] = k
   }
   return {
-    expPerUnit: Math.floor(report.expDistributed * scale),
-    gold:       Math.floor(report.goldEarned * scale),
+    exp:  Math.floor(report.expDistributed * scale),
+    gold: Math.floor(report.goldEarned * scale),
     killsByMonster,
   }
+}
+
+// Split an XP pool among a group proportional to each member's level. A level-1
+// beside a level-99 gets ~1% of the pool — deliberately throttling power-leveling
+// a low-level hero by parking it in a high-level party. Falls back to an even
+// split only when every level is 0. Shares are fractional (exp is floored at
+// display time, not at accrual, so tiny shares still slowly accumulate).
+export function splitExpByLevel(
+  pool: number,
+  members: { id: string; level: number }[],
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (pool <= 0 || members.length === 0) return out
+  const totalLevel = members.reduce((sum, m) => sum + Math.max(0, m.level), 0)
+  for (const m of members) {
+    const share = totalLevel > 0 ? Math.max(0, m.level) / totalLevel : 1 / members.length
+    if (share > 0) out[m.id] = pool * share
+  }
+  return out
 }
 
 // Roll loot for a pile of projected kills, mirroring the live engine's per-kill
@@ -73,7 +92,7 @@ export interface OfflineLocationReward {
   locationId: string
   locationName: string
   kills: number
-  expPerUnit: number
+  exp: number                    // total XP pool the location generated (level-split across the party)
   gold: number
   loot: Record<string, number>   // itemId → qty
   primed: boolean                // true if a cold location was primed (Phase 2)

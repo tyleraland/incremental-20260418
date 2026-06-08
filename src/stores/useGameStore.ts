@@ -8,7 +8,7 @@ import { ACTION_SLOT_COUNT } from '@/types'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
-import { projectOfflineRewards, rollOfflineLoot, type OfflineLocationReward, type OfflineSummary } from '@/lib/offline'
+import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, type OfflineLocationReward, type OfflineSummary } from '@/lib/offline'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
@@ -391,7 +391,7 @@ const OFFLINE_SUMMARY_MIN_SECS = 60
 interface PrimeResult {
   battle: BattleState
   primedTicks: number
-  expPerUnit: number
+  exp: number          // total XP pool generated while priming (split by level at credit time)
   gold: number
   killsByMonster: Record<string, number>
   loot: Record<string, number>
@@ -411,7 +411,7 @@ function primeColdLocation(
 
   const killsByMonster: Record<string, number> = {}
   const loot: Record<string, number> = {}
-  let expPerUnit = 0, gold = 0, rounds = 0
+  let exp = 0, gold = 0, rounds = 0
   const started = Date.now()
 
   while (rounds < PRIME_ROUND_CAP && Date.now() - started < PRIME_MS_BUDGET) {
@@ -434,10 +434,10 @@ function primeColdLocation(
         }
       }
     }
-    // exp/gold mirror the live model: +1 gold per kill, +killsThisRound exp per
-    // surviving unit (expDistributed in locationStats == total kills).
+    // exp/gold mirror the live model: +1 gold per kill, +1 XP per kill into the
+    // shared pool (expDistributed in locationStats == total kills == pool).
     gold += kills
-    expPerUnit += kills
+    exp += kills
 
     // Open world never resets: clear corpses and keep the field stocked so the
     // primed rate reflects sustained pressure, not a one-time clear.
@@ -449,7 +449,7 @@ function primeColdLocation(
     }
   }
 
-  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, expPerUnit, gold, killsByMonster, loot }
+  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp, gold, killsByMonster, loot }
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -512,6 +512,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const monsterSeen          = { ...s.monsterSeen }
   const locationMonstersSeen = { ...s.locationMonstersSeen }
   const locationStats        = { ...s.locationStats }
+  const unitLevel = new Map(s.units.map((u) => [u.id, u.level]))  // for level-weighted XP split
   const hpByUnit: Record<string, number> = {}
   const koUnitIds = new Set<string>()
   const expByUnit: Record<string, number> = {}
@@ -592,9 +593,14 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       }
     }
     if (killsThisRound > 0) {
-      for (const c of battle.combatants) {
-        if (c.team === 'player' && c.alive) expByUnit[c.id] = (expByUnit[c.id] ?? 0) + killsThisRound
-      }
+      // Each kill yields 1 XP into a pool shared by the surviving party and split
+      // proportional to level (a low-level hero in a high-level party earns only
+      // its tiny level-share — anti-power-leveling). Pool = killsThisRound.
+      const members = battle.combatants
+        .filter((c) => c.team === 'player' && c.alive)
+        .map((c) => ({ id: c.id, level: unitLevel.get(c.id) ?? 1 }))
+      const shares = splitExpByLevel(killsThisRound, members)
+      for (const [id, amt] of Object.entries(shares)) expByUnit[id] = (expByUnit[id] ?? 0) + amt
     }
   }
 
@@ -858,7 +864,9 @@ export const useGameStore = create<GameState>((set) => ({
     // offline span: WARM locations (with a `locationStats` sample) scale their
     // rate directly; COLD ones (deployed but never sampled) get a budgeted
     // priming sim first to seed a rate. exp/gold/kills are deterministic; loot is
-    // rolled per projected kill so rare drops aren't lost to the floor.
+    // rolled per projected kill so rare drops aren't lost to the floor. exp is a
+    // POOL split among the deployed group by level (anti-power-leveling), matching
+    // the live path.
     const expByUnit:       Record<string, number> = {}
     const lootDelta:       Record<string, number> = {}
     const monsterDefeated = { ...s.monsterDefeated }
@@ -873,7 +881,7 @@ export const useGameStore = create<GameState>((set) => ({
       if (assigned.length === 0) continue
       const roster = assigned.filter((u) => u.health > 0)   // bodies able to fight (priming)
 
-      let expPerUnit = 0, gold = 0, primed = false
+      let expPool = 0, gold = 0, primed = false
       const killsByMonster: Record<string, number> = {}
       let loot: Record<string, number> = {}
 
@@ -881,8 +889,8 @@ export const useGameStore = create<GameState>((set) => ({
       if (stats) {
         // Warm: extrapolate the realized rate over the whole offline span.
         const proj = projectOfflineRewards(getLocationCombatReport(stats, s.ticks), n)
-        expPerUnit = proj.expPerUnit
-        gold       = proj.gold
+        expPool = proj.exp
+        gold    = proj.gold
         Object.assign(killsByMonster, proj.killsByMonster)
         loot = rollOfflineLoot(killsByMonster)
       } else if (roster.length > 0) {
@@ -891,8 +899,8 @@ export const useGameStore = create<GameState>((set) => ({
         primed = true
         const r = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id])
         battles[loc.id] = r.battle
-        expPerUnit = r.expPerUnit
-        gold       = r.gold
+        expPool = r.exp
+        gold    = r.gold
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
         const remaining = n - r.primedTicks
@@ -903,8 +911,8 @@ export const useGameStore = create<GameState>((set) => ({
             const ek = Math.floor(k * scale)
             if (ek > 0) extraKills[mid] = ek
           }
-          expPerUnit += Math.floor(r.expPerUnit * scale)
-          gold       += Math.floor(r.gold * scale)
+          expPool += Math.floor(r.exp * scale)
+          gold    += Math.floor(r.gold * scale)
           for (const [mid, k] of Object.entries(extraKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
           const extraLoot = rollOfflineLoot(extraKills)
           for (const [id, q] of Object.entries(extraLoot)) loot[id] = (loot[id] ?? 0) + q
@@ -914,10 +922,12 @@ export const useGameStore = create<GameState>((set) => ({
       }
 
       const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
-      if (kills === 0 && gold === 0 && expPerUnit === 0) continue
+      if (kills === 0 && gold === 0 && expPool === 0) continue
 
-      // Credit exp to every deployed hero (offline they fight and fast-regen).
-      for (const u of assigned) expByUnit[u.id] = (expByUnit[u.id] ?? 0) + expPerUnit
+      // Credit the XP pool to deployed heroes, split proportional to level (a
+      // low-level hero parked in a high-level party earns only its level-share).
+      const shares = splitExpByLevel(expPool, assigned.map((u) => ({ id: u.id, level: u.level })))
+      for (const [id, amt] of Object.entries(shares)) expByUnit[id] = (expByUnit[id] ?? 0) + amt
       totalGold += gold
       for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
       for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
@@ -933,11 +943,11 @@ export const useGameStore = create<GameState>((set) => ({
         startTick: prev.startTick,
         monstersDefeated: nextDefeated,
         itemsDropped:     nextDropped,
-        expDistributed:   prev.expDistributed + expPerUnit,
+        expDistributed:   prev.expDistributed + expPool,
         goldEarned:       prev.goldEarned + gold,
       }
 
-      rewards.push({ locationId: loc.id, locationName: loc.name, kills, expPerUnit, gold, loot, primed })
+      rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot, primed })
     }
 
     if (totalGold > 0) lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) + totalGold

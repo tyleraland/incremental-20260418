@@ -4,7 +4,7 @@
 // deterministic; loot is rolled per projected kill.
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore, getLocationCombatReport } from '@/stores/useGameStore'
-import { projectOfflineRewards, rollOfflineLoot } from '@/lib/offline'
+import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel } from '@/lib/offline'
 import type { Location, LocationCombatStats } from '@/types'
 import { makeUnit, resetStore, batchTick } from '../helpers'
 
@@ -27,15 +27,39 @@ describe('projectOfflineRewards (pure)', () => {
   it('scales the realized rate by offline / window ticks', () => {
     const report = getLocationCombatReport(STATS(), 1000) // window = 1000 ticks
     const proj = projectOfflineRewards(report, 500)        // half the window
-    expect(proj.expPerUnit).toBe(50)
+    expect(proj.exp).toBe(50)
     expect(proj.gold).toBe(50)
     expect(proj.killsByMonster.slime).toBe(50)
   })
 
   it('returns zeros with no sample or a zero-length window', () => {
     expect(projectOfflineRewards(getLocationCombatReport(undefined, 100), 500))
-      .toEqual({ expPerUnit: 0, gold: 0, killsByMonster: {} })
-    expect(projectOfflineRewards(getLocationCombatReport(STATS(), 0), 500).expPerUnit).toBe(0)
+      .toEqual({ exp: 0, gold: 0, killsByMonster: {} })
+    expect(projectOfflineRewards(getLocationCombatReport(STATS(), 0), 500).exp).toBe(0)
+  })
+})
+
+describe('splitExpByLevel (pure) — anti-power-leveling', () => {
+  it('splits a pool proportional to level (1% / 99%)', () => {
+    const shares = splitExpByLevel(100, [{ id: 'low', level: 1 }, { id: 'high', level: 99 }])
+    expect(shares.low).toBeCloseTo(1)
+    expect(shares.high).toBeCloseTo(99)
+  })
+
+  it('an equal-level party splits the pool evenly', () => {
+    const shares = splitExpByLevel(10, [{ id: 'a', level: 5 }, { id: 'b', level: 5 }])
+    expect(shares.a).toBe(5)
+    expect(shares.b).toBe(5)
+  })
+
+  it('falls back to an even split when every level is 0', () => {
+    const shares = splitExpByLevel(8, [{ id: 'a', level: 0 }, { id: 'b', level: 0 }])
+    expect(shares).toEqual({ a: 4, b: 4 })
+  })
+
+  it('empty pool or empty group yields nothing', () => {
+    expect(splitExpByLevel(0, [{ id: 'a', level: 5 }])).toEqual({})
+    expect(splitExpByLevel(10, [])).toEqual({})
   })
 })
 
@@ -102,6 +126,28 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     const st = useGameStore.getState()
     expect(st.offlineSummary).toBeNull()             // no modal
     expect(st.monsterDefeated.slime).toBe(10)        // rewards still applied (rate ×0.1)
+  })
+
+  it('splits the offline XP pool across the party by level (anti-power-leveling)', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [FIELD()],
+      locationStats: { field: STATS() },             // pool = 100 over a 1000-tick window, ×1
+      units: [
+        makeUnit({ id: 'young', locationId: 'field', health: 100, level: 1,  exp: 0, expToNext: 999_999 }),
+        makeUnit({ id: 'vet',   locationId: 'field', health: 100, level: 99, exp: 0, expToNext: 999_999 }),
+      ],
+      miscItems: [],
+    })
+    batchTick(1000)
+
+    const st = useGameStore.getState()
+    const young = st.units.find((u) => u.id === 'young')!
+    const vet   = st.units.find((u) => u.id === 'vet')!
+    expect(young.exp).toBeCloseTo(1)    // 1 / (1+99) of the pool
+    expect(vet.exp).toBeCloseTo(99)     // 99 / 100 of the pool
+    // Pool total is conserved — same-total XP, just redistributed by level.
+    expect(young.exp + vet.exp).toBeCloseTo(100)
   })
 
   it('ignores locations with no deployed units', () => {

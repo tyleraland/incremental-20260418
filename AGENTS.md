@@ -193,9 +193,16 @@ determinism.)
   not resting) **and** at least one monster: spawn a fresh battle if none exists or
   the last one finished (after a `BATTLE_RESPAWN_TICKS` = 15 cooldown), otherwise
   advance one round.
-- After each round, kills award exp (to surviving player units), gold, and loot
-  (each defeated monster rolls its `drops` by `dropRate`). Live player HP is synced
-  back to the unit records every tick.
+- After each round, kills award exp, gold, and loot (each defeated monster rolls
+  its `drops` by `dropRate`). Live player HP is synced back to the unit records
+  every tick.
+- **Exp is a pool, split by level (`splitExpByLevel`, `src/lib/offline.ts`).**
+  Each kill drops 1 XP into a pool shared by the *surviving* party and divided
+  **proportional to level** — a level-1 hero beside a level-99 earns ~1% of the
+  pool. This is deliberate anti-power-leveling: parking a low-level hero in a
+  high-level party no longer fast-tracks it. An equal-level party splits evenly;
+  a solo hero takes the whole pool. Shares are fractional (exp is floored only at
+  display, so tiny shares still slowly accrue). The same split runs offline.
 - Player units that die in a round get `recoveryTicksLeft = RECOVERY_TICKS`.
 
 **A round** (`advanceRound`, `src/engine/engine.ts`): tick statuses (DoT, age-out) →
@@ -309,8 +316,9 @@ rates** (`src/lib/offline.ts`).
   (from `getLocationCombatReport`, window = `startTick`→`endTick`) by the offline
   ticks. exp/gold/kills are **deterministic** (floored EV); **loot is rolled**
   per projected kill (`rollOfflineLoot`, mirroring the live `rewardKills`) so
-  rare drops aren't lost to an EV floor. exp is credited to every deployed hero;
-  gold + loot fold into `miscItems`; `monsterDefeated` (codex) and `locationStats`
+  rare drops aren't lost to an EV floor. The exp **pool** is split across the
+  deployed party by level (`splitExpByLevel`, same anti-power-leveling rule as
+  live combat); gold + loot fold into `miscItems`; `monsterDefeated` (codex) and `locationStats`
   advance so the rate stays coherent for the next catch-up.
 - **Cold priming (Phase 2).** A location deployed but never sampled has no rate.
   `primeColdLocation` runs a **budgeted** slice of real combat (cap

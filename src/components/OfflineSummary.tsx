@@ -58,7 +58,7 @@ export function OfflineSummary() {
                     )}
                   </div>
                   <div className="text-xs text-game-text-dim font-mono mt-1">
-                    {r.kills} kills · +{r.expPerUnit} exp · {r.gold} gold
+                    {r.kills} kills · +{Math.floor(r.exp)} exp · {r.gold} gold
                   </div>
                 </div>
               ))}
