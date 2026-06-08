@@ -7,6 +7,8 @@ import type {
 import { ACTION_SLOT_COUNT } from '@/types'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
+import { getLocationCombatReport } from '@/lib/combatReport'
+import { projectOfflineRewards, rollOfflineLoot, type OfflineLocationReward, type OfflineSummary } from '@/lib/offline'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
@@ -24,6 +26,7 @@ export * from '@/lib/time'
 export * from '@/lib/stats'
 export * from '@/lib/names'
 export * from '@/lib/combatReport'
+export * from '@/lib/offline'
 export * from '@/lib/elements'
 export * from '@/data/traits'
 export * from '@/data/skills'
@@ -72,6 +75,9 @@ export interface GameState {
   itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
+  // "While you were away" summary produced by the last offline catch-up
+  // (batchTick). Null until one is produced / after it's dismissed. Not saved.
+  offlineSummary: OfflineSummary | null
 
   // EPHEMERAL_UI — stored in localStorage; not in save string
   activeTab: TabId
@@ -106,6 +112,7 @@ export interface GameState {
   // Actions
   tick: () => void
   batchTick: (n: number) => void
+  dismissOfflineSummary: () => void
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
   toggleRegion: (id: string) => void
@@ -362,6 +369,87 @@ function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: 
     changed = true
   }
   return changed
+}
+
+// ── Offline progression: cold-location priming (Phase 2) ─────────────────────
+//
+// A location deployed but never sampled (no `locationStats`) has no rate to
+// extrapolate. We prime it by running a *budgeted* slice of real combat —
+// settle the in-flight fight, collect the rewards it actually produces, and seed
+// a rate sample the warm path then extrapolates over the rest of the offline
+// span. Capped at PRIME_ROUND_CAP rounds AND PRIME_MS_BUDGET wall-ms so a heavy
+// fight can't block the main thread (a Web Worker offload stays deferred — the
+// BSNAP tokens already make a battle worker-portable). The engine is RNG-free;
+// loot rolls use Math.random (same as the live `rewardKills`).
+const PRIME_ROUND_CAP = 300
+const PRIME_MS_BUDGET  = 50
+
+// Don't pop the "while you were away" modal for a brief background blip — only
+// after a real absence (≥ this many real seconds away).
+const OFFLINE_SUMMARY_MIN_SECS = 60
+
+interface PrimeResult {
+  battle: BattleState
+  primedTicks: number
+  expPerUnit: number
+  gold: number
+  killsByMonster: Record<string, number>
+  loot: Record<string, number>
+}
+
+function primeColdLocation(
+  loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[],
+  existing: BattleState | undefined,
+): PrimeResult {
+  const wantOpen = !!loc.openWorld
+  let battle = existing
+  if (!battle || (wantOpen ? battle.mode !== 'open' : battle.mode === 'open')) {
+    battle = wantOpen
+      ? createOpenBattleFor(loc, party, equipment, partyTactics, openWorldCap(loc))
+      : createBattleFor(loc, party, equipment, partyTactics)
+  }
+
+  const killsByMonster: Record<string, number> = {}
+  const loot: Record<string, number> = {}
+  let expPerUnit = 0, gold = 0, rounds = 0
+  const started = Date.now()
+
+  while (rounds < PRIME_ROUND_CAP && Date.now() - started < PRIME_MS_BUDGET) {
+    if (!wantOpen && battle.outcome !== 'ongoing') break  // wave finished → sample complete
+    const before = new Set(battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => c.id))
+    advanceRound(battle)
+    rounds++
+
+    let kills = 0
+    for (const c of battle.combatants) {
+      if (c.team !== 'enemy' || c.alive || !before.has(c.id)) continue
+      kills++
+      const mid = monsterIdOf(c.id)
+      killsByMonster[mid] = (killsByMonster[mid] ?? 0) + 1
+      const def = MONSTER_REGISTRY[mid]
+      if (def) for (const d of def.drops) {
+        if (Math.random() < d.dropRate) {
+          const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
+          loot[d.itemId] = (loot[d.itemId] ?? 0) + qty
+        }
+      }
+    }
+    // exp/gold mirror the live model: +1 gold per kill, +killsThisRound exp per
+    // surviving unit (expDistributed in locationStats == total kills).
+    gold += kills
+    expPerUnit += kills
+
+    // Open world never resets: clear corpses and keep the field stocked so the
+    // primed rate reflects sustained pressure, not a one-time clear.
+    if (wantOpen) {
+      battle.combatants = battle.combatants.filter((c) => !(c.team === 'enemy' && !c.alive))
+      const size = openWorldSize(loc)
+      let living = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
+      while (living < openWorldCap(loc)) { if (!spawnMonsterInto(battle, loc, size)) break; living++ }
+    }
+  }
+
+  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, expPerUnit, gold, killsByMonster, loot }
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -685,6 +773,7 @@ export const useGameStore = create<GameState>((set) => ({
   reportUnitId: null,
   partyTactics: [{ id: 'finish-them', rank: 1 }],
   lastTickAt: Date.now(),
+  offlineSummary: null,
   paused: false,
   eventLog: [],
   itemSockets: {},
@@ -763,7 +852,97 @@ export const useGameStore = create<GameState>((set) => ({
     const newTicks    = s.ticks + n
     const yearsPassed = Math.floor(newTicks / TICKS_PER_YEAR) - Math.floor(s.ticks / TICKS_PER_YEAR)
 
-    // No combat driver yet (see tick()): collapse n ticks of recovery/regen.
+    // ── Sampled offline progression ("Warm Catch-up") ─────────────────────────
+    // batchTick doesn't re-simulate combat (a naive fast-forward janks). Instead
+    // it extrapolates each deployed location's realized reward rate over the
+    // offline span: WARM locations (with a `locationStats` sample) scale their
+    // rate directly; COLD ones (deployed but never sampled) get a budgeted
+    // priming sim first to seed a rate. exp/gold/kills are deterministic; loot is
+    // rolled per projected kill so rare drops aren't lost to the floor.
+    const expByUnit:       Record<string, number> = {}
+    const lootDelta:       Record<string, number> = {}
+    const monsterDefeated = { ...s.monsterDefeated }
+    const locationStats   = { ...s.locationStats }
+    const battles         = { ...s.battles }
+    const rewards: OfflineLocationReward[] = []
+    let totalGold = 0
+
+    for (const loc of s.locations) {
+      if (loc.monsterIds.length === 0) continue
+      const assigned = s.units.filter((u) => u.locationId === loc.id)
+      if (assigned.length === 0) continue
+      const roster = assigned.filter((u) => u.health > 0)   // bodies able to fight (priming)
+
+      let expPerUnit = 0, gold = 0, primed = false
+      const killsByMonster: Record<string, number> = {}
+      let loot: Record<string, number> = {}
+
+      const stats = s.locationStats[loc.id]
+      if (stats) {
+        // Warm: extrapolate the realized rate over the whole offline span.
+        const proj = projectOfflineRewards(getLocationCombatReport(stats, s.ticks), n)
+        expPerUnit = proj.expPerUnit
+        gold       = proj.gold
+        Object.assign(killsByMonster, proj.killsByMonster)
+        loot = rollOfflineLoot(killsByMonster)
+      } else if (roster.length > 0) {
+        // Cold: prime a budgeted slice of real combat, then extrapolate the
+        // remaining time on the freshly-measured rate.
+        primed = true
+        const r = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id])
+        battles[loc.id] = r.battle
+        expPerUnit = r.expPerUnit
+        gold       = r.gold
+        Object.assign(killsByMonster, r.killsByMonster)
+        loot = { ...r.loot }
+        const remaining = n - r.primedTicks
+        if (r.primedTicks > 0 && remaining > 0) {
+          const scale = remaining / r.primedTicks
+          const extraKills: Record<string, number> = {}
+          for (const [mid, k] of Object.entries(r.killsByMonster)) {
+            const ek = Math.floor(k * scale)
+            if (ek > 0) extraKills[mid] = ek
+          }
+          expPerUnit += Math.floor(r.expPerUnit * scale)
+          gold       += Math.floor(r.gold * scale)
+          for (const [mid, k] of Object.entries(extraKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
+          const extraLoot = rollOfflineLoot(extraKills)
+          for (const [id, q] of Object.entries(extraLoot)) loot[id] = (loot[id] ?? 0) + q
+        }
+      } else {
+        continue   // no sample and nobody able to fight → nothing to prime
+      }
+
+      const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
+      if (kills === 0 && gold === 0 && expPerUnit === 0) continue
+
+      // Credit exp to every deployed hero (offline they fight and fast-regen).
+      for (const u of assigned) expByUnit[u.id] = (expByUnit[u.id] ?? 0) + expPerUnit
+      totalGold += gold
+      for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
+      for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
+
+      // Advance the location's persisted stats so the rate stays coherent for the
+      // next catch-up (window grows by n, rewards grow proportionally).
+      const prev = locationStats[loc.id] ?? { startTick: s.ticks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+      const nextDefeated = { ...prev.monstersDefeated }
+      for (const [mid, k] of Object.entries(killsByMonster)) nextDefeated[mid] = (nextDefeated[mid] ?? 0) + k
+      const nextDropped = { ...prev.itemsDropped }
+      for (const [id, q] of Object.entries(loot)) nextDropped[id] = (nextDropped[id] ?? 0) + q
+      locationStats[loc.id] = {
+        startTick: prev.startTick,
+        monstersDefeated: nextDefeated,
+        itemsDropped:     nextDropped,
+        expDistributed:   prev.expDistributed + expPerUnit,
+        goldEarned:       prev.goldEarned + gold,
+      }
+
+      rewards.push({ locationId: loc.id, locationName: loc.name, kills, expPerUnit, gold, loot, primed })
+    }
+
+    if (totalGold > 0) lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) + totalGold
+
+    // Collapse n ticks of recovery/regen, folding in the offline exp above.
     const unitsPreLevel = s.units.map((u) => {
       let health = u.health
       let recoveryTicksLeft = Math.max(0, Math.round(u.recoveryTicksLeft ?? 0))
@@ -793,7 +972,8 @@ export const useGameStore = create<GameState>((set) => ({
 
       health = Math.max(0, health)
       const aged   = yearsPassed > 0 ? { age: u.age + yearsPassed } : {}
-      return { ...u, health, recoveryTicksLeft, isResting, ...aged }
+      const expAdd = expByUnit[u.id] ?? 0
+      return { ...u, health, recoveryTicksLeft, isResting, ...aged, exp: u.exp + expAdd }
     })
 
     let eventLog = s.eventLog
@@ -803,13 +983,34 @@ export const useGameStore = create<GameState>((set) => ({
       return leveled
     })
 
+    const offlineSecs = Math.round(n / TICKS_PER_SECOND)
     if (n >= 50) {
-      const offlineSecs = Math.round(n / TICKS_PER_SECOND)
       eventLog = appendLog(eventLog, 'offline', `Away ${formatDuration(offlineSecs)}`, newTicks)
     }
 
-    return { ticks: newTicks, units, lastTickAt: Date.now(), eventLog }
+    const miscItems = Object.keys(lootDelta).length > 0
+      ? applyMiscDeltas(s.miscItems, lootDelta)
+      : s.miscItems
+
+    // "While you were away" modal — only worth showing for a real absence with
+    // something to report. Otherwise keep whatever summary was already pending.
+    const mergedLoot: Record<string, number> = {}
+    for (const r of rewards) for (const [id, q] of Object.entries(r.loot)) mergedLoot[id] = (mergedLoot[id] ?? 0) + q
+    const offlineSummary: OfflineSummary | null = (rewards.length > 0 && offlineSecs >= OFFLINE_SUMMARY_MIN_SECS)
+      ? {
+          offlineSecs, startTick: s.ticks, endTick: newTicks, locations: rewards,
+          totalKills: rewards.reduce((a, r) => a + r.kills, 0),
+          totalGold, loot: mergedLoot,
+        }
+      : s.offlineSummary
+
+    return {
+      ticks: newTicks, units, lastTickAt: Date.now(), eventLog,
+      miscItems, monsterDefeated, locationStats, battles, offlineSummary,
+    }
   }),
+
+  dismissOfflineSummary: () => set({ offlineSummary: null }),
 
   togglePause: () => set((s) => s.paused
     ? { paused: false, lastTickAt: Date.now() }  // reset clock so no catch-up on unpause
@@ -1108,6 +1309,7 @@ export const useGameStore = create<GameState>((set) => ({
       monsterSpawnTimers: {},
       ticks:         0,
       lastTickAt:    Date.now(),
+      offlineSummary: null,
       paused:        false,
       eventLog:      [],
       itemSockets:   {},

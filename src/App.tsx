@@ -5,6 +5,7 @@ import { persistSave, loadPersistedSave } from '@/save'
 import { TabBar } from '@/components/TabBar'
 import { RosterCarousel } from '@/components/RosterCarousel'
 import { UnitReportSheet } from '@/components/UnitReportSheet'
+import { OfflineSummary } from '@/components/OfflineSummary'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
@@ -75,6 +76,7 @@ function App() {
         {activeTab === 'time'      && <Time />}
       </main>
       <UnitReportSheet />
+      <OfflineSummary />
     </div>
   )
 }

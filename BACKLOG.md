@@ -61,23 +61,32 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
 
 ## Offline progression
 
-- **Sampled Offline Progression ("Warm Catch-up").** Today `batchTick`
-  (`useGameStore.ts:760`) only does regen/recovery/aging + banked level-ups —
-  **zero** offline exp/gold/loot — so the job is to *extrapolate* combat rewards
-  from realized rates, not re-simulate (a closed-form DPS model can't track the
-  spatial engine and would rot). The rates already exist and persist: per-location
-  `locationStats[id]` (`expDistributed`/`goldEarned`/`monstersDefeated`/
-  `itemsDropped`/`startTick`) + `unitStats[id].combatTicks` (the rate denominator),
-  already turned into per-window rates by `getLocationCombatReport`; multiply by
-  elapsed seconds per location in `batchTick` and surface a "while you were away"
-  summary. A *cold* location (deployed then idled with no sample) needs a budgeted
-  priming sim — cap it (~few hundred rounds / ~50ms) to settle the in-flight battle
-  and seed a sample, then extrapolate; if priming ever gets heavy run it in a Web
-  Worker behind a loading buffer (the `serializeBattle`/`deserializeBattle` BSNAP
-  tokens already make a battle worker-portable). Note: `ROUND_EVERY_TICKS=2` is not
-  a limiter — offline rounds are just `elapsedSec×2.5` (a conversion, not a
-  ceiling); a naive full fast-forward is what janks (~72k rounds for 8h *per heavy
-  battle*, main-thread-blocking), which is exactly what sampling avoids.
+- **✅ Sampled Offline Progression ("Warm Catch-up") — Phases 1 & 2 shipped.**
+  `batchTick` no longer does *only* regen/recovery/aging — it now **extrapolates
+  offline combat rewards** instead of re-simulating (`src/lib/offline.ts`). See
+  `CLAUDE.md` → **Offline progression** for the implemented behavior. In short:
+  - *Phase 1 (warm).* `projectOfflineRewards` scales each deployed location's
+    realized rate (`getLocationCombatReport`, window = `startTick`→`endTick`) by
+    the offline ticks. exp/gold/kills are deterministic (floored EV); loot is
+    **rolled** per projected kill (`rollOfflineLoot`) so rare drops aren't lost to
+    the floor. Credits heroes' exp, folds gold/loot into `miscItems`, advances
+    `monsterDefeated` + `locationStats`.
+  - *Phase 2 (cold).* `primeColdLocation` runs a budgeted real-combat slice
+    (`PRIME_ROUND_CAP` = 300 rounds / `PRIME_MS_BUDGET` = 50ms) to settle the
+    in-flight fight and seed a sample, then extrapolates the rest on that rate.
+  - *Plumbing.* `worldCodec` now persists `savedAt`→`lastTickAt` so catch-up fires
+    across a real app restart; an `OfflineSummary` modal recaps the absence.
+  Still deferred:
+  - *Web Worker offload* — priming runs on the main thread within the 50ms budget.
+    If it ever gets heavy, move it behind a loading buffer in a worker (the
+    `serializeBattle`/`deserializeBattle` BSNAP tokens already make a battle
+    worker-portable).
+  - *Seeded RNG for exact loot* — offline loot rolls use `Math.random` in the
+    store (tests pin it), same as live loot. A seeded generator would make offline
+    replays exact (tracks the same backlog item under the open-world section).
+  - *Cold-priming HP fidelity* — priming settles the fight and seeds a rate but
+    the regen/recovery pass owns final unit HP (units fast-heal anyway); priming
+    doesn't separately model offline KO downtime.
 
 ## Combat content
 

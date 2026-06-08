@@ -251,6 +251,12 @@ describe('worldCodec', () => {
   })
 
   it('empty() seeds ticks 0 and the default party tactic', () => {
-    expect(worldCodec.empty()).toEqual({ ticks: 0, partyTactics: [{ id: 'finish-them', rank: 1 }] })
+    const { ticks, partyTactics } = worldCodec.empty()
+    expect({ ticks, partyTactics }).toEqual({ ticks: 0, partyTactics: [{ id: 'finish-them', rank: 1 }] })
+  })
+
+  it('restores lastTickAt from the saved wall-clock (drives offline catch-up)', () => {
+    const savedAt = Date.now() - 60_000
+    expect(worldCodec.deserialize({ ticks: 5, partyTactics: [], savedAt }).lastTickAt).toBe(savedAt)
   })
 })

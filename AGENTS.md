@@ -64,7 +64,7 @@ These are the implemented behaviors. Written so they can eventually become test 
 - KO'd units enter a recovery phase: `recoveryTicksLeft` counts down from `RECOVERY_TICKS` (5, ~1 real-sec) once per tick. **No regen during this phase.**
 - When recovery ends the unit enters *resting* (`isResting`), regenerating `RESTING_REGEN_RATE` (50 HP/tick — full in ~1s) until it reaches `maxHp`, at which point `isResting` clears.
 - Units not assigned to any location regen `REGEN_RATE` (50 HP/tick — full in ~1s) — idle recovery.
-- Health is capped at `maxHp` after regen. `batchTick` applies the same logic in bulk for offline catch-up (it does **not** simulate combat — only regen/recovery/leveling).
+- Health is capped at `maxHp` after regen. `batchTick` applies the same logic in bulk for offline catch-up (it does **not** re-simulate live combat for the regen/recovery/leveling pass — but it *does* extrapolate offline combat rewards; see **Offline progression** below).
 
 ### Map & Locations
 
@@ -291,6 +291,40 @@ stops at walls and the arena perimeter.
 - Tapping a token opens a **dismissable bottom-sheet overlay** (name, team, HP,
   stats, per-skill cooldowns, statuses, casting line) that floats over the arena
   so it never steals arena height.
+
+### Offline progression — Sampled "Warm Catch-up"
+
+When the player returns after an absence, `catchUp` (`App.tsx`) converts elapsed
+real time into ticks and calls `batchTick(n)` (`n > 10`). `batchTick` **does not
+re-simulate** `n` ticks of spatial combat (a naive fast-forward janks — ~72k
+rounds for an 8h heavy battle); it **extrapolates combat rewards from realized
+rates** (`src/lib/offline.ts`).
+
+- **Wall-clock persistence.** `worldCodec` persists `savedAt` (Date.now() at save
+  time) and restores it as `lastTickAt` on load — without it `lastTickAt` would
+  reset to page-load time and a full app restart would extrapolate ~zero offline
+  time. Old saves migrate to `savedAt = now` (no spurious catch-up).
+- **Warm extrapolation (Phase 1).** For each location with deployed units **and**
+  a `locationStats` sample, `projectOfflineRewards` scales the realized rate
+  (from `getLocationCombatReport`, window = `startTick`→`endTick`) by the offline
+  ticks. exp/gold/kills are **deterministic** (floored EV); **loot is rolled**
+  per projected kill (`rollOfflineLoot`, mirroring the live `rewardKills`) so
+  rare drops aren't lost to an EV floor. exp is credited to every deployed hero;
+  gold + loot fold into `miscItems`; `monsterDefeated` (codex) and `locationStats`
+  advance so the rate stays coherent for the next catch-up.
+- **Cold priming (Phase 2).** A location deployed but never sampled has no rate.
+  `primeColdLocation` runs a **budgeted** slice of real combat (cap
+  `PRIME_ROUND_CAP` = 300 rounds **and** `PRIME_MS_BUDGET` = 50 wall-ms) to
+  settle the in-flight fight, collect its actual rewards, and seed a sample; the
+  remaining offline time is then extrapolated on that fresh rate. The primed
+  battle is kept in `battles[locationId]`. A Web Worker offload stays deferred
+  (the BSNAP tokens already make a battle worker-portable).
+- **"While you were away" summary.** `batchTick` writes an `OfflineSummary`
+  (runtime-only, not saved) when the absence is ≥ `OFFLINE_SUMMARY_MIN_SECS`
+  (60s) and something happened; `OfflineSummary.tsx` shows it as a portal modal
+  (totals + per-location breakdown + loot; cold-primed locations tagged
+  "settled"), cleared via `dismissOfflineSummary`. Rewards still apply below the
+  gate — the gate only suppresses the modal for brief background blips.
 
 ### Unit Selection & Detail Card
 
