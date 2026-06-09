@@ -279,14 +279,18 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
   return initials(c.name)
 }
 
-// Fraction of a unit's current channel that's elapsed (0 → just started, 1 →
-// about to land). Total cast time comes from the skill catalog (channelTime is
-// level-independent); `roundsLeft` counts down on the live channel.
+// Fraction of a unit's current channel that's elapsed, for the cast bar. The
+// channel is rooted for `channelTime` rounds and renders at roundsLeft =
+// channelTime…1 (it's cleared the instant it resolves, so roundsLeft 0 never
+// shows). Mapping those frames over (channelTime − 1) makes the bar reach FULL
+// on the last frame before the spell lands — otherwise it caps at ~⅔ and just
+// vanishes mid-fill. Reads the caster's actual skill instance (not the catalog)
+// so overridden channel times are honoured.
 function castProgress(c: Combatant): number {
   if (!c.channel) return 0
-  const total = COMBAT_SKILLS[c.channel.skillId]?.(1)?.channelTime ?? 0
-  if (total <= 0) return 1
-  return Math.max(0, Math.min(1, (total - c.channel.roundsLeft) / total))
+  const total = c.skills.find((s) => s.id === c.channel!.skillId)?.channelTime ?? 0
+  if (total <= 1) return 1   // instant / single-round channel — show it full
+  return Math.max(0, Math.min(1, (total - c.channel.roundsLeft) / (total - 1)))
 }
 
 // Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
