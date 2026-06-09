@@ -427,6 +427,15 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     id: 'threatening-presence', name: 'Threatening Presence', scope: 'unit', channel: 'passive',
     description: 'Enemies are drawn to attack you.',
   },
+  'exploit-weakness': {
+    // Passive marker (no fn): the engine reads it in reorderAttacksForTarget to
+    // drop the attack-switch hysteresis. Every unit already prefers the harder-
+    // hitting attack vs its target by a conservative margin; this makes the unit
+    // always pick the absolute best — chasing every elemental weakness and soft
+    // defense, even small edges. Rank ≥2 = zero margin; rank 1 keeps a tiny guard.
+    id: 'exploit-weakness', name: 'Exploit Weakness', scope: 'unit', channel: 'passive',
+    description: 'Always strike with the attack that hits the current target hardest — exploiting elemental weaknesses and soft defenses, not just the biggest nuke. Higher rank reacts to even slim advantages.',
+  },
 
   // Party ----------------------------------------------------------------------
   'finish-them': {

@@ -147,6 +147,29 @@ same way" by penalising left-side detours.
   each entry expands to TacticRefs across channels + an optional planner.
   Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),
   *Lock & Focus* (Controller + Focus Fire), *Kite* (existing + maintain LoS).
+- **🟡 Offensive-option scoring — more scorers (`estimateDamageVs` shipped).**
+  Target-aware attack selection picks the hardest-hitting single-target *attack*
+  vs the locked enemy (`reorderAttacksForTarget` → `estimateDamageVs`, element
+  matrix + magic/physical mitigation; conservative-margin by default, the
+  **Exploit Weakness** tactic drops the margin). It's deliberately the one hook
+  every future "which option deals the most?" decision should route through.
+  Still open:
+  - *AoE spread value* — score an area skill by **expected total** damage across
+    everyone it'd catch (cluster size × per-target effective dmg), so a unit
+    favors a multi-hit AoE over a single bolt when the foes are bunched. Today
+    AoE/`type:'aoe'` skills are excluded from the re-rank and gated separately
+    (channeled-AoE worth-it gate); this folds them into the same comparison.
+  - *Sideboard / weapon-swap candidates* — the motivating future case: a unit
+    with a stowed loadout (e.g. a fire sword vs a frost sword) evaluates each
+    *basic-attack element* (and skill set) it could swap to via `estimateDamageVs`
+    and switches when the gain clears a swap cost. Needs a `Loadout`/sideboard on
+    the unit + a swap action; the scorer already takes `skill: null` (basic
+    attack) so it's swap-ready.
+  - *Status-synergy & on-hit value* — fold a skill's rider (freeze→amplify,
+    poison stacks, knockback peel) into its score, not just raw damage, so a
+    setup hit can out-rank a slightly bigger nuke. Also: include the stealth
+    bonus and `vulnerable/armored` factors in the estimate once it scores
+    cross-target (right now they're constant per target, so omitted).
 - **Ambush combo** — primitives exist (cloak, back-stab, flanker,
   focus-casters, **ambusher** — stalk-while-cloaked); needs an orchestrator
   that holds Cloak until in Back Stab range of the focus target.

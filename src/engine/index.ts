@@ -18,6 +18,7 @@ export {
 } from './spatial'
 export {
   variation, evalFormula, effectiveStat, defaultCalculateDamage, calculateHeal,
+  skillDamageEstimate, estimateDamageVs, effectiveArmor,
 } from './damage'
 export { selectTarget, chooseAction, livingEnemies, livingAllies, findCombatant } from './behavior'
 export { createBattle, addCombatant, issueMoveOrder, clearMoveOrder, advanceRound, resolve, finalize, defaultPlanner } from './engine'

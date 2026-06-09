@@ -3,6 +3,7 @@
 // seeded by round number and attacker index.
 
 import type { Combatant, EngineSkill, StatModifiers } from './types'
+import { elementMultiplier, type Element } from './elements'
 
 // Stats the formula grammar understands (str/def/int/spd). `magicDef` is a real
 // stat too but never appears in a damage formula — it's read directly for spell
@@ -73,4 +74,35 @@ export function calculateHeal(caster: Combatant, skill: EngineSkill): number {
 // burst tactics to pick a cast. Non-attack skills score 0.
 export function skillDamageEstimate(caster: Combatant, skill: EngineSkill): number {
   return skill.type === 'attack' ? evalFormula(skill.damageFormula, caster) : 0
+}
+
+// Effective armor element: a status may override it (Frozen → water), else base.
+export function effectiveArmor(target: Combatant): Element {
+  const ov = target.statuses.find((s) => s.armorOverride)
+  return ov?.armorOverride ?? target.armorElement
+}
+
+// Target-AWARE effective-damage estimate (§action policy): what `skill`
+// (null ⇒ basic attack) would land on `target` right now, after the right
+// mitigation (magic vs physical, mirroring defaultCalculateDamage) and the
+// element matrix (skill element, else the caster's attack element, vs the
+// target's effective armor). This is the single hook the AI scores its
+// offensive options through — a mage compares Fire Bolt vs Frost Bolt against
+// *this* enemy and leads with whichever exploits its weakness/soft defense.
+//
+// It deliberately omits the ±2 round variation and the armored/vulnerable
+// multipliers: those are the same constant for every candidate skill against a
+// given target on a given round, so they can't change which option is best.
+// Stealth bonus is likewise left out of the ranking (a minor edge); the real
+// hit still applies all of them in dealAttack. Non-attack skills score 0;
+// future scorers (AoE spread value, sideboard weapon swaps, status synergy)
+// extend this one function. See BACKLOG.md.
+export function estimateDamageVs(caster: Combatant, target: Combatant, skill: EngineSkill | null): number {
+  if (skill && skill.type !== 'attack') return 0
+  const formula = skill ? skill.damageFormula : 'str * 1'
+  const isMagic = /\bint\b/.test(formula)
+  const raw = evalFormula(formula, caster)
+  const mitigation = isMagic ? effectiveStat(target, 'magicDef') * 0.5 : effectiveStat(target, 'def') * 0.5
+  const element = skill?.element ?? caster.attackElement
+  return Math.max(0, raw - mitigation) * elementMultiplier(element, effectiveArmor(target))
 }

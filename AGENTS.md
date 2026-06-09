@@ -240,6 +240,22 @@ stops at walls and the arena perimeter.
   the **biggest ready nuke** (`orderAttacksByPower` + `skillDamageEstimate`,
   first-match over a power-sorted list); channeled-AoE keeps its first slot + worth-it
   gate, non-attack skills keep type priority.
+- **Target-aware attack selection** (`reorderAttacksForTarget`, called in `takeTurn`
+  after targeting resolves): the static biggest-nuke order above is target-*independent*,
+  so each turn the unit re-ranks its single-target `attack` skills against the **currently
+  locked enemy** and leads with whatever hits *that* foe hardest — a mage opens Frost Bolt
+  into a fire-armored enemy, Fire Bolt into an earth one. The scorer is the one extensible
+  hook `estimateDamageVs(caster, target, skill)` (`damage.ts`): raw formula − the *right*
+  mitigation (magic vs physical) × the **element matrix** vs the target's effective armor
+  (immunity ⇒ never picked). Future scorers (AoE spread value, sideboard weapon swaps,
+  status synergy) extend this one function — see BACKLOG. Only the single-target attack
+  slots permute; channeled-AoE and non-attack action tactics keep their position. Pure &
+  deterministic (id tiebreak), re-derived from the lock each turn, so it needs no snapshot
+  field and replays 1:1. **Hysteresis:** switching off the static lead requires the
+  target-aware best to beat it by `exploitMargin` — a conservative **15% by default** (big
+  elemental gaps clear it, near-ties don't thrash), which the opt-in **Exploit Weakness**
+  passive tactic drops toward 0 (rank-scaled) so the unit always takes the absolute best.
+  (`exploit-weakness.test.ts`.)
 - **Charger** is a *modifier*, not a movement plan: `chargerSpeedMult` folds its
   speed-up into whichever movement plan wins, so it never occupies (and starves) the
   movement channel; its first-hit damage bonus is `chargerBonus`.

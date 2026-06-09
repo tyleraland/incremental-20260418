@@ -12,7 +12,7 @@ import {
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
-import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate } from './damage'
+import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
 } from './behavior'
@@ -75,6 +75,56 @@ function orderAttacksByPower(input: EngineUnitInput, skills: EngineSkill[]): Eng
     .sort((a, b) => skillDamageEstimate(stub, b) - skillDamageEstimate(stub, a) || (a.id < b.id ? -1 : 1))
   let ai = 0
   return skills.map((s) => (s.type === 'attack' ? attacks[ai++] : s))
+}
+
+// §action policy — target-aware attack ranking. makeCombatant's static
+// biggest-nuke order is target-*independent*; this re-ranks the unit's
+// single-target attack skills against the *currently locked enemy* each turn
+// (element matrix + magic/physical mitigation, via estimateDamageVs) so the
+// action channel's first-match opens with whatever hits THIS foe hardest — a
+// mage leads with Frost Bolt into a fire-armored enemy, Fire Bolt into an
+// earth one. Only the single-target `attack` slots are permuted (channeled-AoE
+// and every non-attack action tactic keep their position, exactly like the
+// static order). Pure & deterministic (id tiebreak) so replays match; it's
+// re-derived from the lock each turn, so no snapshot field is needed.
+//
+// Hysteresis (§exploit-weakness): switching off the static biggest-nuke leader
+// requires the target-aware best to beat it by `exploitMargin` — out of the box
+// a conservative 15% (clear elemental weaknesses easily clear it; near-ties
+// don't thrash); the opt-in Exploit Weakness tactic drops the margin so the
+// unit always picks the absolute best vs the target. Returns a short note when
+// it actually switches the lead skill, for the turn trace; else null.
+const DEFAULT_EXPLOIT_MARGIN = 0.15
+
+function exploitMargin(self: Combatant): number {
+  const t = self.tactics.find((t) => t.def.id === 'exploit-weakness')
+  if (!t) return DEFAULT_EXPLOIT_MARGIN
+  return t.rank >= 2 ? 0 : 0.05   // rank ≥2 = always the absolute best; rank 1 keeps a tiny guard
+}
+
+function reorderAttacksForTarget(self: Combatant, target: Combatant): string | null {
+  const skillOf = (t: ResolvedTactic) => self.skills.find((s) => s.id === t.def.id.slice(6))
+  const isAtkSkillTactic = (t: ResolvedTactic) => {
+    if (!t.def.id.startsWith('skill:')) return false
+    const s = skillOf(t)
+    return !!s && s.type === 'attack' && !isChanneledAoe(s)
+  }
+  const slots = self.tactics.map((t, i) => ({ t, i })).filter((x) => isAtkSkillTactic(x.t))
+  if (slots.length < 2) return null
+
+  const byId = (a: ResolvedTactic, b: ResolvedTactic) => (skillOf(a)!.id < skillOf(b)!.id ? -1 : 1)
+  const targetEst = (t: ResolvedTactic) => estimateDamageVs(self, target, skillOf(t)!)
+  const byPower = [...slots].sort((a, b) => skillDamageEstimate(self, skillOf(b.t)!) - skillDamageEstimate(self, skillOf(a.t)!) || byId(a.t, b.t))
+  const byTarget = [...slots].sort((a, b) => targetEst(b.t) - targetEst(a.t) || byId(a.t, b.t))
+
+  const staticLead = byPower[0].t
+  const targetLead = byTarget[0].t
+  const switchLead = targetLead !== staticLead && targetEst(targetLead) > targetEst(staticLead) * (1 + exploitMargin(self))
+  const finalOrder = switchLead ? byTarget : byPower
+  slots.forEach((x, k) => { self.tactics[x.i] = finalOrder[k].t })
+  return switchLead
+    ? `${skillOf(targetLead)!.name} (${Math.round(targetEst(targetLead))}) > ${skillOf(staticLead)!.name} (${Math.round(targetEst(staticLead))})`
+    : null
 }
 
 // Sentinel for "this unit has never dealt or taken damage" — far enough in the
@@ -447,12 +497,6 @@ function recordSkillUse(state: BattleState, self: Combatant, skill: EngineSkill)
 // Product of every active element-agnostic incoming-damage multiplier on the target.
 function vulnerableFactor(target: Combatant): number {
   return target.statuses.reduce((m, s) => m * (s.damageTakenMult ?? 1), 1)
-}
-
-// Effective armor element: a status may override it (Frozen → water), else base.
-function effectiveArmor(target: Combatant): Element {
-  const ov = target.statuses.find((s) => s.armorOverride)
-  return ov?.armorOverride ?? target.armorElement
 }
 
 // Clear statuses that the incoming element dispels (fire melts Frozen, §3).
@@ -1349,6 +1393,12 @@ function takeTurn(state: BattleState, self: Combatant): void {
     ? `move (${posBefore.x.toFixed(1)},${posBefore.y.toFixed(1)})→(${self.pos.x.toFixed(1)},${self.pos.y.toFixed(1)})`
     : 'hold'
 
+  // (3.5) target-aware attack ranking — promote the hardest-hitting attack vs
+  // the locked enemy (element matrix + magic/physical mitigation) so the action
+  // channel's first-match opens with it. See reorderAttacksForTarget.
+  const lockedTarget = self.lockedTargetId ? findCombatant(state, self.lockedTargetId) : null
+  const exploitNote = lockedTarget ? reorderAttacksForTarget(self, lockedTarget) : null
+
   // (4) action — an action tactic owns the turn if it fires: Shield Wall (status)
   // or a skill cast (skills are action tactics). Else fall back to a basic attack.
   let actionText: string
@@ -1370,7 +1420,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
     executeNaiveAction(state, self)
   }
 
-  pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}`)
+  pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}${exploitNote ? ` · ⚡${exploitNote}` : ''}`)
   // consume "hit since last turn" so Counterattacker only fires on fresh hits
   self.lastHitById = null
 }
