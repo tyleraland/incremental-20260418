@@ -75,6 +75,12 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  'earth-bolt': {
+    id: 'earth-bolt', name: 'Earth Bolt', maxLevel: 10, type: 'active',
+    description: (lv) => `Earth spell. ${lv}× M.ATK. Cast 1.5s fixed + 3.5s variable (DEX-reducible).`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
   'lightning-bolt': {
     id: 'lightning-bolt', name: 'Lightning Bolt', maxLevel: 10, type: 'active',
     description: (lv) => `Lightning spell. ${lv}× M.ATK. Cast 1.5s fixed + 3.5s variable (DEX-reducible).`,

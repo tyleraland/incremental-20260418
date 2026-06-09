@@ -45,6 +45,10 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // channeled-AoE cluster gate, so it fires on even a single target.
   'fireball':      (lv) => skill({ id: 'fireball', name: 'Fireball', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 2.0, cooldown: cd(10), channelTime: 0, element: 'fire', damageFormula: `int * ${coef(1.1, 0.25, lv)}` }),
   'frost-bolt':    (lv) => skill({ id: 'frost-bolt', name: 'Frost Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), element: 'water', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
+  // Earth Bolt completes the four-element bolt set (fire/water/wind/earth). A
+  // hurled stone: same shape as Fire/Frost Bolt but earth-typed and, being heavy,
+  // a short channel like Fire Bolt's.
+  'earth-bolt':    (lv) => skill({ id: 'earth-bolt', name: 'Earth Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'earth', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
   'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 8, cooldown: cd(5), channelTime: 3, element: 'wind', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
