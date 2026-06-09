@@ -18,6 +18,7 @@ import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
 import { INITIAL_UNITS } from '@/data/units'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
+import { SAVE_KEY } from '@/lib/save'
 
 // ── Re-exports (keeps existing import paths working) ──────────────────────────
 
@@ -1299,7 +1300,11 @@ export const useGameStore = create<GameState>((set) => ({
   })),
 
   resetSave: () => {
-    ;['expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds', 'viewedUnitLevels'].forEach((k) => localStorage.removeItem(k))
+    // Wipe the persisted whole-game save too — not just the UI keys. Without this
+    // the reset only updated in-memory state; the stale (leveled) save survived in
+    // localStorage and the next page load (routine on mobile) restored it, so the
+    // reset silently didn't stick.
+    ;[SAVE_KEY, 'expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds', 'viewedUnitLevels'].forEach((k) => localStorage.removeItem(k))
     set({
       units:    INITIAL_UNITS,
       equipment: INITIAL_EQUIPMENT,
