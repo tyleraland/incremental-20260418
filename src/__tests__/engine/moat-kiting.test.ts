@@ -16,7 +16,9 @@ const dist = (a: { x: number; y: number }, c: { x: number; y: number }) => Math.
 const MOAT: Barrier[] = [{ x: 1.5, y: 7, w: 12, h: 1.6, kind: 'cliff' }]
 
 function moatBattle(): BattleState {
-  const bow = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0, range: 6 }   // instant, range 6
+  // Instant, range 6. Moderate cooldown so the foe survives the test window —
+  // this is a positioning test, not a DPS one (bolts now have a 1-round cooldown).
+  const bow = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0, range: 6, cooldown: 8 }
   const b = createBattle({
     playerUnits: [eu({
       id: 'archer', spd: 18, str: 25, int: 5, def: 3, maxHp: 100, hp: 100,

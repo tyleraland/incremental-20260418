@@ -38,18 +38,18 @@ function skill(s: Partial<EngineSkill> & Pick<EngineSkill, 'id' | 'name' | 'type
 
 // id → builder(level). Keep ids aligned with the game's SKILL_REGISTRY actives.
 export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
-  'fire-bolt':     (lv) => skill({ id: 'fire-bolt', name: 'Fire Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'fire', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
+  'fire-bolt':     (lv) => skill({ id: 'fire-bolt', name: 'Fire Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 1, channelTime: 3, element: 'fire', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
   // Fireball: an instant fire burst — it hits a foe and splashes everyone near
   // it for damage RIGHT NOW (no lingering zone, no cast to telegraph), so it
   // can't be side-stepped the way a ground hazard can. Instant ⇒ skips the
   // channeled-AoE cluster gate, so it fires on even a single target.
   'fireball':      (lv) => skill({ id: 'fireball', name: 'Fireball', type: 'aoe', targeting: 'aoe_enemy', range: 6, aoeRadius: 2.0, cooldown: cd(10), channelTime: 0, element: 'fire', damageFormula: `int * ${coef(1.1, 0.25, lv)}` }),
-  'frost-bolt':    (lv) => skill({ id: 'frost-bolt', name: 'Frost Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'water', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
-  // Earth Bolt completes the four-element bolt set (fire/water/wind/earth). A
-  // hurled stone: same shape as Fire/Frost Bolt but earth-typed and, being heavy,
-  // a short channel like Fire Bolt's.
-  'earth-bolt':    (lv) => skill({ id: 'earth-bolt', name: 'Earth Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'earth', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
-  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'wind', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
+  'frost-bolt':    (lv) => skill({ id: 'frost-bolt', name: 'Frost Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 1, channelTime: 3, element: 'water', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
+  // Earth Bolt completes the four-element bolt set (fire/water/wind/earth) — the
+  // four are identical (range 6, 3-round channel, 1-round cooldown, int×coef)
+  // apart from element, so the AI picks among them purely by matchup.
+  'earth-bolt':    (lv) => skill({ id: 'earth-bolt', name: 'Earth Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 1, channelTime: 3, element: 'earth', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
+  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 1, channelTime: 3, element: 'wind', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
