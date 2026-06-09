@@ -132,11 +132,18 @@ export function cohesionVec(self: Combatant, state: BattleState): Vec2 {
 // by chooseAction (skip the basic-ranged fallback) and by kite math (need
 // safe distance to finish a channeled cast). Applies to monsters too.
 export function isCaster(c: Combatant): boolean {
-  if (c.skills.length === 0) return false
-  // A unit with a channel-time spell is definitionally a caster.
-  if (c.skills.some((s) => s.channelTime >= 1)) return true
-  // Otherwise: magic-leaning stats with skills (Theron, Sera). Mostly catches
-  // instant-spell mages — they still don't want to throw weak basic shots.
+  // A "caster" wants to operate from range: hang back, kite, and not throw weak
+  // basic attacks. That only makes sense if it actually has a skill it uses *at
+  // range* — a melee kit, or a pure self-cast like Consecration (range 0), does
+  // not. So gate on "owns a skill that reaches past its own melee range"; without
+  // one the unit is a melee/bruiser even if its magic stat is high (the Mutant
+  // Lizard: a self-aura caster that should stand and bite, not kite).
+  const hasRangedSkill = c.skills.some((s) => s.targeting !== 'self' && s.range > c.meleeRange + EPS)
+  if (!hasRangedSkill) return false
+  // A unit with a channel-time ranged spell is definitionally a caster.
+  if (c.skills.some((s) => s.channelTime >= 1 && s.targeting !== 'self' && s.range > c.meleeRange + EPS)) return true
+  // Otherwise: magic-leaning stats with a ranged skill (Theron, Sera). Mostly
+  // catches instant-spell mages — they still don't want to throw weak basic shots.
   return c.int > c.str
 }
 

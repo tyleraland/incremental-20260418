@@ -200,7 +200,7 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
   {
     id: 'cinder-dunes', region: 'world', name: 'Cinder Dunes',
-    description: 'Black-glass dunes prowled by adderwallas — fire-snakes that lie coiled and still until you stray too close, then strike like a whip.',
+    description: 'Black-glass dunes prowled by adderwallas — fast fire-snakes that dart across the sand and strike like a whip.',
     traits: ['plains', 'desert'], monsterIds: ['adderwalla'],
     familiarityMax: 100, connections: ['ember-hollow', 'hollow-barrow'],
   },

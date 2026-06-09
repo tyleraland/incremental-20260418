@@ -3,8 +3,8 @@
 // `follow` flag re-centers it each round, searing enemies within 2 spaces for a
 // trickle of radiant damage (and ending when the caster dies).
 import { describe, it, expect } from 'vitest'
-import { createBattle, advanceRound, buildEngineSkill, type BattleState } from '@/engine'
-import { eu } from './helpers'
+import { createBattle, advanceRound, buildEngineSkill, isCaster, type BattleState } from '@/engine'
+import { eu, combatant } from './helpers'
 
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
 const radiantDot = (b: BattleState, id: string) =>
@@ -71,6 +71,16 @@ describe('Consecration aura', () => {
     advanceRound(b)                            // zone re-centers on the caster
     expect(find(b, 'far').hp).toBeLessThan(before.far)   // now bathed in the aura
     expect(find(b, 'near').hp).toBe(before.near)         // left behind, untouched
+  })
+
+  it('its carrier is not a "caster" — a self-aura is no reason to kite (regression)', () => {
+    // The Mutant Lizard has int > str and a skill, but its only spell is a range-0
+    // self-cast aura — it should stand and bite, not back away from melee.
+    const lizard = combatant({ int: 10, str: 8, meleeRange: 1.1, skills: [buildEngineSkill('consecration', 3)!] })
+    expect(isCaster(lizard)).toBe(false)
+    // A real ranged spellcaster still reads as a caster.
+    const mage = combatant({ int: 20, str: 3, meleeRange: 1.1, skills: [buildEngineSkill('fire-bolt', 1)!] })
+    expect(isCaster(mage)).toBe(true)
   })
 
   it('ends when the caster dies (an aura, not lingering ground)', () => {
