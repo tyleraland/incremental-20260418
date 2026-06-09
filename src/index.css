@@ -63,9 +63,3 @@
   100% { opacity: 0; }
 }
 .animate-cast-label { animation: cast-label 3s ease-out forwards; }
-
-/* Cast-progress bar: a smooth, continuous fill over the channel's duration
-   (animation-duration is set inline per cast). Linear so it tracks real time;
-   `forwards` holds it full for the beat before the spell resolves. */
-@keyframes cast-fill { from { width: 0%; } to { width: 100%; } }
-.animate-cast-fill { width: 0%; animation: cast-fill linear forwards; }

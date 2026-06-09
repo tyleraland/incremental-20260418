@@ -280,22 +280,21 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
 }
 
 // Wall-clock length of one engine round (ROUND_EVERY_TICKS=2 × 1000/TICKS_PER_SECOND=5).
-// Used only to size the cast-bar animation so it fills over the channel's real time.
 const ROUND_MS = 400
 
 // Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
 // and enemies alike) so health bars read consistently across the field.
-function FloatingLabel({ c, isPlayer, casting, round }: { c: Combatant; isPlayer: boolean; casting: boolean; round: number }) {
+function FloatingLabel({ c, isPlayer, casting }: { c: Combatant; isPlayer: boolean; casting: boolean }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
-  // Cast bar: rather than stepping the width on each round (choppy — a 3-round
-  // bolt only had 2 visible jumps), run a smooth wall-clock CSS animation over
-  // the channel's real duration (channelTime × ROUND_MS). Key it to the cast's
-  // *start round* (constant across the cast, distinct between back-to-back casts
-  // of the same skill) so the animation restarts cleanly on each new cast and
-  // otherwise runs uninterrupted across the per-tick re-renders.
+  // Cast bar driven by the live channel (roundsLeft), NOT wall-clock: a round is
+  // gated to game ticks, and under load they advance in jumps — a wall-clock
+  // animation then runs ahead and fills before the spell fires. Mapping
+  // roundsLeft total…1 → 0…1 keeps it locked to the real cast, so it finishes
+  // exactly as the spell lands. A round-long width transition ramps each step so
+  // it reads smoothly (it only ever looks "stepped" if rounds stall under load).
   const ch = casting ? c.channel : null
   const chTime = ch ? (c.skills.find((s) => s.id === ch.skillId)?.channelTime ?? 1) : 1
-  const castKey = ch ? `${c.id}:${ch.skillId}:${round - (chTime - ch.roundsLeft)}` : ''
+  const castFill = ch ? (chTime <= 1 ? 1 : Math.max(0, Math.min(1, (chTime - ch.roundsLeft) / (chTime - 1)))) : 0
   return (
     <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
       <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
@@ -309,9 +308,9 @@ function FloatingLabel({ c, isPlayer, casting, round }: { c: Combatant; isPlayer
           <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
             ✦ {skillName(ch.skillId)}
           </span>
-          {/* Cast-progress bar: a continuous blue fill over the channel's duration. */}
+          {/* Cast-progress bar: blue, ramps over each round, finishes as the spell lands. */}
           <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
-            <div key={castKey} className="h-full bg-sky-400 animate-cast-fill" style={{ animationDuration: `${Math.max(1, chTime) * ROUND_MS}ms` }} />
+            <div className="h-full bg-sky-400" style={{ width: `${castFill * 100}%`, transition: `width ${ROUND_MS}ms linear` }} />
           </div>
         </>
       )}
@@ -383,7 +382,7 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
   )
 }
 
-function BattleChip({ c, cam, selected, onSelect, glyph, round }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void; glyph: string; round: number }) {
+function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void; glyph: string }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
   return (
@@ -392,7 +391,7 @@ function BattleChip({ c, cam, selected, onSelect, glyph, round }: { c: Combatant
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
     >
-      <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} round={round} />
+      <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} />
       {c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
       {c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
       <div
@@ -1143,7 +1142,6 @@ function LiveBattle({ battle }: { battle: BattleState }) {
               selected={sameWave && c.id === selectedId}
               onSelect={() => handleSelect(c)}
               glyph={chipGlyph(c, classFor)}
-              round={battle.round}
             />
           ))}
 
