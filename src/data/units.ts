@@ -16,7 +16,7 @@ const bar = (...skillIds: string[]): (ActionSlotEntry | null)[] => {
 export const INITIAL_UNITS: Unit[] = [
   // ── Fighter (offensive 2H bruiser) ──────────────────────────────────────────
   {
-    id: 'u1', name: 'Aldric Thorne', level: 3, exp: 245, expToNext: 312, age: 24, health: 95, recoveryTicksLeft: 0, isResting: false,
+    id: 'u1', name: 'Aldric Thorne', level: 1, exp: 0, expToNext: 10, age: 24, health: 95, recoveryTicksLeft: 0, isResting: false,
     class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
     abilities: { strength: 9, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 },
     abilityPoints: 20, skillPoints: 1,
@@ -30,7 +30,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   // ── Ranger (kiting archer) ──────────────────────────────────────────────────
   {
-    id: 'u2', name: 'Mira Ashdown', level: 4, exp: 80, expToNext: 420, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
+    id: 'u2', name: 'Mira Ashdown', level: 1, exp: 0, expToNext: 10, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
     class: 'Ranger', proficiencies: ['Bows'], locationId: 'prontera-field-1',
     abilities: { strength: 6, agility: 7, dexterity: 8, constitution: 4, intelligence: 3 },
     abilityPoints: 15, skillPoints: 1,
@@ -44,7 +44,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   // ── Mage (burst nuker) ──────────────────────────────────────────────────────
   {
-    id: 'u3', name: 'Theron Vance', level: 4, exp: 420, expToNext: 520, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
+    id: 'u3', name: 'Theron Vance', level: 1, exp: 0, expToNext: 10, age: 31, health: 82, recoveryTicksLeft: 0, isResting: false,
     class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'prontera-city',
     abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 },
     abilityPoints: 25, skillPoints: 2,
@@ -61,7 +61,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   // ── Cleric (back-line healer / support) ─────────────────────────────────────
   {
-    id: 'u4', name: 'Sera Holloway', level: 3, exp: 20, expToNext: 312, age: 16, health: 80, recoveryTicksLeft: 0, isResting: false,
+    id: 'u4', name: 'Sera Holloway', level: 1, exp: 0, expToNext: 10, age: 16, health: 80, recoveryTicksLeft: 0, isResting: false,
     class: 'Cleric', proficiencies: ['Rods'], locationId: null,
     abilities: { strength: 3, agility: 4, dexterity: 5, constitution: 5, intelligence: 8 },
     abilityPoints: 30, skillPoints: 1,
@@ -75,7 +75,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   // ── Fighter (defensive knight / tank) ───────────────────────────────────────
   {
-    id: 'u5', name: 'Davan Cobble', level: 2, exp: 120, expToNext: 180, age: 28, health: 67, recoveryTicksLeft: 0, isResting: false,
+    id: 'u5', name: 'Davan Cobble', level: 1, exp: 0, expToNext: 10, age: 28, health: 67, recoveryTicksLeft: 0, isResting: false,
     class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
     abilities: { strength: 6, agility: 4, dexterity: 4, constitution: 8, intelligence: 2 },
     abilityPoints: 18, skillPoints: 1,
@@ -92,7 +92,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   // ── Rogue (stealth assassin) ────────────────────────────────────────────────
   {
-    id: 'u6', name: 'Lyra Briar', level: 5, exp: 750, expToNext: 800, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
+    id: 'u6', name: 'Lyra Briar', level: 1, exp: 0, expToNext: 10, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
     class: 'Rogue', proficiencies: ['Daggers', 'Lockpicks'], locationId: 'geffen-field-1',
     abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5, intelligence: 5 },
     abilityPoints: 22, skillPoints: 3,

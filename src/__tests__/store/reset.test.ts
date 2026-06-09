@@ -25,6 +25,8 @@ describe('store: resetSave', () => {
     const units = useGameStore.getState().units
     expect(units.length).toBeGreaterThan(0)
     for (const u of units) {
+      expect(u.level).toBe(1)            // heroes start at level 1
+      expect(u.exp).toBe(0)
       for (const lv of Object.values(u.learnedSkills)) expect(lv).toBeLessThanOrEqual(1)
     }
   })
