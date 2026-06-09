@@ -854,8 +854,12 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
     return
   }
-  // §open-world: nothing in sight → roam (heroes) / lurk-and-hop (monsters).
-  if (state.mode === 'open') executeWander(state, self)
+  // Nothing to do this turn (no target): wander. In open world everyone roams;
+  // in an encounter only a *non-provoked* unit wanders — i.e. a skittish monster
+  // milling about on its own (it never made the first move). Provoked/aggressive
+  // units that reach here (no foe in sight) just hold, so encounter tuning for
+  // ordinary fights is untouched.
+  if (state.mode === 'open' || !self.provoked) executeWander(state, self)
 }
 
 // ── Team blackboard (§coordination) ─────────────────────────────────────────--
@@ -1432,7 +1436,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   rallyPack(state, self)   // §pack tactics: call kin to this fight (see helper)
   const tgtText = self.lockedTargetId
     ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`
-    : (state.mode === 'open' ? 'no target · wander' : 'no target')
+    : (state.mode === 'open' || !self.provoked ? 'no target · wander' : 'no target')
 
   const posBefore = { ...self.pos }
   executeMovement(state, self, evalMovement(state, self))

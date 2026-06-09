@@ -31,6 +31,21 @@ describe('skittish — non-aggressive until hit', () => {
     expect(find(b, 'hero').hp).toBe(find(b, 'hero').maxHp)   // never attacked
   })
 
+  it('wanders on its own in an encounter (mills about, irrespective of heroes)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'hero', str: 20, moveSpeed: 0 })],   // far + immobile: never reaches it
+      enemyUnits: [mob({ id: 's', name: 'Slime', moveSpeed: 0.9, tactics: [{ id: 'skittish', rank: 1 }] })],
+    })
+    find(b, 'hero').pos = { x: 1, y: 1 }
+    const start = { x: 12, y: 12 }
+    find(b, 's').pos = { ...start }
+    for (let r = 0; r < 14; r++) advanceRound(b)
+    const s = find(b, 's')
+    expect(dist(s.pos, start)).toBeGreaterThan(0.5)          // it wandered off its spawn
+    expect(s.provoked).toBe(false)                            // still non-aggressive
+    expect(find(b, 'hero').hp).toBe(find(b, 'hero').maxHp)    // never made the first strike
+  })
+
   it('rouses and retaliates once a hero strikes it (aggro-on-hit)', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'hero', str: 24, moveSpeed: 1.2 })],

@@ -69,12 +69,14 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   // ── New-element fauna (Elemental Frontier) ──────────────────────────────────
   // Fill out the elements the bestiary was missing (fire / ghost / radiant).
   // Fire Slime — the slime template in a different element: a slow, feeble ooze
-  // that smolders instead of slamming. Aggressive (it creeps toward you) but
-  // genuinely slow; not skittish, so it actually engages.
-  'fire-slime':    { id: 'fire-slime',   name: 'Fire Slime',    level: 2, health:  30, element: 'fire',    size: 'small',  attackName: 'Smolder',stats: { attack: 2,  defense: [1,1],   magicAttack: 3,  magicDefense: [1,0],  attackSpeed: 8,  accuracy: 6,  dodge: 2,  moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-ember-gel',     dropRate: 0.90, quantityMin: 1, quantityMax: 2 }] },
-  // Adderwalla — a fast fire-snake that darts in and strikes like a whip: high
-  // attack, only medium HP, so it folds if you weather the rush.
-  'adderwalla':    { id: 'adderwalla',   name: 'Adderwalla',    level: 5, health:  70, element: 'fire',    size: 'medium', attackName: 'Lash',   stats: { attack: 22, defense: [4,3],   magicAttack: 3,  magicDefense: [3,2],  attackSpeed: 18, accuracy: 16, dodge: 15, moveSpeed: 12,  attackRange: 5  }, drops: [{ itemId: 'drop-adder-scale',   dropRate: 0.65, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ember-fang',    dropRate: 0.35, quantityMin: 1, quantityMax: 1 }] },
+  // that smolders instead of slamming. Non-aggressive (skittish): it mills about
+  // on its own and won't strike first, but retaliates once struck. moveSpeed kept
+  // high enough (5) that its wandering actually reads on screen.
+  'fire-slime':    { id: 'fire-slime',   name: 'Fire Slime',    level: 2, health:  30, element: 'fire',    size: 'small',  attackName: 'Smolder',stats: { attack: 2,  defense: [1,1],   magicAttack: 3,  magicDefense: [1,0],  attackSpeed: 8,  accuracy: 6,  dodge: 2,  moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-ember-gel',     dropRate: 0.90, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }] },
+  // Adderwalla — a fast fire-snake. Non-aggressive (skittish): it slithers the
+  // dunes and won't make the first move, but once you draw blood it darts in and
+  // strikes like a whip. Fast and hard-hitting, but only medium HP.
+  'adderwalla':    { id: 'adderwalla',   name: 'Adderwalla',    level: 5, health:  70, element: 'fire',    size: 'medium', attackName: 'Lash',   stats: { attack: 22, defense: [4,3],   magicAttack: 3,  magicDefense: [3,2],  attackSpeed: 18, accuracy: 16, dodge: 15, moveSpeed: 12,  attackRange: 5  }, drops: [{ itemId: 'drop-adder-scale',   dropRate: 0.65, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ember-fang',    dropRate: 0.35, quantityMin: 1, quantityMax: 1 }], tactics: [{ id: 'skittish', rank: 1 }] },
   // Wraith — a balanced ghost: medium attack, HP, defense, and a drifting
   // medium pace. A straightforward bruiser whose ghost armor is the wrinkle.
   'wraith':        { id: 'wraith',       name: 'Wraith',        level: 6, health:  85, element: 'ghost',   size: 'medium', attackName: 'Touch',  stats: { attack: 14, defense: [6,5],   magicAttack: 9,  magicDefense: [6,5],  attackSpeed: 12, accuracy: 13, dodge: 10, moveSpeed: 7,   attackRange: 5  }, drops: [{ itemId: 'drop-ectoplasm',     dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-wraith-shroud',  dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },

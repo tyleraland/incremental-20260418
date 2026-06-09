@@ -112,14 +112,19 @@ driven by **tactics** (below).
   dropped. Spawn/feed events surface in `BattleView` (a ring + name flash; a
   "⟳ Open world · persistent" badge). Per-location, party-independent.
 
-  **Vision & wander** (open-world only — encounters keep `visionRange: Infinity`
-  and never wander, so the 15×15 tuned feel is untouched). Each unit only
+  **Vision & wander** (mostly open-world — encounters keep `visionRange: Infinity`
+  so ordinary fights stay on the tuned 15×15 feel). Each unit only
   acquires targets within `visionRange` (heroes 10, monsters 8 cells;
   `targetableEnemies` filters on it). With nothing in sight a unit *wanders*
-  (`executeWander`, mode `'open'` only): **heroes** roam toward the team
+  (`executeWander`): **heroes** roam toward the team
   blackboard's shared `waypoint` (below); **monsters** lurk
   `MONSTER_WANDER_MIN..MAX` rounds then hop `NEAR..FAR` cells to a new local
-  spot. Wander/vision are deterministic (a `hash01` of round+index, no RNG). The
+  spot. Wandering runs in open world for everyone, **and in encounters for a
+  *non-provoked* unit** — i.e. a **skittish** monster milling about on its own
+  (`mode === 'open' || !provoked`); since only skittish monsters are ever
+  non-provoked, ordinary encounter units still just hold. So "non-aggressive"
+  means *both* "won't strike first" (the `provoked` gate) and "mills about every
+  few rounds" (`aggression.test.ts`). Wander/vision are deterministic (a `hash01` of round+index, no RNG). The
   shared `waypoint` is chosen genuinely *far* and **reachable** from the party
   (`pickRoamPoint`): re-picking a nearby point on arrival caused a corner
   "tiny-step" jitter, and picking a walled-off region would make them grind.
