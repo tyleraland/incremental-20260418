@@ -279,15 +279,12 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
   return initials(c.name)
 }
 
-// Floating label: enemies (top) get name/HP/cast BELOW the circle; players
-// (bottom) keep it above. Either way it points toward the arena centre.
+// Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
+// and enemies alike) so health bars read consistently across the field.
 function FloatingLabel({ c, isPlayer, casting }: { c: Combatant; isPlayer: boolean; casting: boolean }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
-  const side = isPlayer
-    ? (casting ? '-top-7' : '-top-5')
-    : 'top-full mt-1'
   return (
-    <div className={`absolute ${side} left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
+    <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
       <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
         {shortName(c.name)}
       </span>
@@ -1152,10 +1149,9 @@ function LiveBattle({ battle }: { battle: BattleState }) {
 // ── Static preview (no live battle: between waves / not yet started) ─────────────
 
 function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos: Vec2; label: string; name: string; title: string; isPlayer: boolean }) {
-  const labelSide = isPlayer ? '-top-5' : 'top-full mt-1'
   return (
     <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className="absolute -translate-x-1/2 -translate-y-1/2">
-      <div className={`absolute ${labelSide} left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
+      <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
         <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
           {shortName(name)}
         </span>
