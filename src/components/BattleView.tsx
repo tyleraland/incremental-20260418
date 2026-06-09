@@ -279,6 +279,16 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
   return initials(c.name)
 }
 
+// Fraction of a unit's current channel that's elapsed (0 → just started, 1 →
+// about to land). Total cast time comes from the skill catalog (channelTime is
+// level-independent); `roundsLeft` counts down on the live channel.
+function castProgress(c: Combatant): number {
+  if (!c.channel) return 0
+  const total = COMBAT_SKILLS[c.channel.skillId]?.(1)?.channelTime ?? 0
+  if (total <= 0) return 1
+  return Math.max(0, Math.min(1, (total - c.channel.roundsLeft) / total))
+}
+
 // Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
 // and enemies alike) so health bars read consistently across the field.
 function FloatingLabel({ c, isPlayer, casting }: { c: Combatant; isPlayer: boolean; casting: boolean }) {
@@ -292,9 +302,15 @@ function FloatingLabel({ c, isPlayer, casting }: { c: Combatant; isPlayer: boole
         <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
       </div>
       {casting && (
-        <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
-          ✦ {skillName(c.channel!.skillId)}
-        </span>
+        <>
+          <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
+            ✦ {skillName(c.channel!.skillId)}
+          </span>
+          {/* Cast-progress bar: fills (blue) toward the moment the spell lands. */}
+          <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+            <div className="h-full bg-sky-400" style={{ width: `${castProgress(c) * 100}%`, transition: 'width 380ms linear' }} />
+          </div>
+        </>
       )}
     </div>
   )
@@ -1017,17 +1033,17 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             return (
               <div key={`h-${battle.round}-${i}`}>
                 <div className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
-                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-red-300" text={`-${e.value}`} />
+                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[15px] text-red-300" text={`-${e.value}`} />
               </div>
             )
           })}
           {heals.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[12px] text-emerald-300" text={`+${e.value}`} /> : null
+            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[15px] text-emerald-300" text={`+${e.value}`} /> : null
           })}
           {dots.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[11px] text-fuchsia-300" text={`-${e.value}`} /> : null
+            return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[13px] text-fuchsia-300" text={`-${e.value}`} /> : null
           })}
           {interrupts.map((e, i) => {
             const tgt = byId(e.targetId)
