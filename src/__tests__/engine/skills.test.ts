@@ -16,9 +16,13 @@ describe('catalog', () => {
   it('scales power with level and keeps ids aligned with the game', () => {
     expect(buildEngineSkill('fire-bolt', 1)!.damageFormula).toBe('int * 1.00')
     expect(buildEngineSkill('fire-bolt', 3)!.damageFormula).toBe('int * 1.40')
-    expect(buildEngineSkill('lightning-bolt', 1)!.channelTime).toBeGreaterThan(0)
+    // The four bolts are a symmetric elemental set — same range/channel/cooldown
+    // and damage, differing only in element, so selection is purely by matchup.
+    for (const id of ['fire-bolt', 'frost-bolt', 'lightning-bolt', 'earth-bolt']) {
+      const s = buildEngineSkill(id, 3)!
+      expect([s.range, s.channelTime, s.cooldown, s.damageFormula]).toEqual([6, 2, buildEngineSkill('fire-bolt', 3)!.cooldown, 'int * 1.40'])
+    }
     expect(buildEngineSkill('earth-bolt', 1)!.element).toBe('earth')           // completes the bolt wheel
-    expect(buildEngineSkill('earth-bolt', 3)!.damageFormula).toBe('int * 1.40')
     expect(buildEngineSkill('hammer-fall', 1)!.statusApplied).toBe('stunned')
     expect(buildEngineSkill('arrow-shower', 1)!.knockback).toBeGreaterThan(0)
     expect(buildEngineSkill('firewall', 1)!.wall?.maxBumps).toBeGreaterThan(0)

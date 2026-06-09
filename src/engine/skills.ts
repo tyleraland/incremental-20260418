@@ -49,7 +49,7 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // hurled stone: same shape as Fire/Frost Bolt but earth-typed and, being heavy,
   // a short channel like Fire Bolt's.
   'earth-bolt':    (lv) => skill({ id: 'earth-bolt', name: 'Earth Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'earth', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
-  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'wind', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
+  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'wind', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
