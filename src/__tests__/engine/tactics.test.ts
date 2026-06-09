@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createBattle, advanceRound, resolveTactics, TACTIC_REGISTRY,
-  chargerBonus, armoredFactor, nimblePeriod, tauntBiasOf,
+  chargerBonus, armoredFactor, nimblePeriod,
   type BattleState, type Combatant, type ResolvedTactic,
 } from '@/engine'
 import { eu, combatant, attackSkill, healSkill } from './helpers'
@@ -61,14 +61,8 @@ describe('tactics: targeting', () => {
     expect(tactic(self, stateOf([self, fighter]), 1)).toBeNull()   // no casters → fall through
   })
 
-  it('Threatening Presence draws enemies to the taunter', () => {
-    const b = createBattle({
-      playerUnits: [eu({ id: 'A' }), eu({ id: 'B', tactics: [{ id: 'threatening-presence', rank: 1 }] })],
-      enemyUnits: [eu({ id: 'E', team: 'enemy' })],
-    })
-    advanceRound(b)
-    expect(find(b, 'E').lockedTargetId).toBe('B')
-  })
+  // (Threatening Presence's old distance-bias is gone — drawing aggro now runs
+  // through the §threat model: see threat.test.ts.)
 })
 
 describe('tactics: movement', () => {
@@ -153,28 +147,29 @@ describe('tactics: reaction', () => {
 })
 
 describe('tactics: passive helpers', () => {
-  it('reports rank-scaled parameters', () => {
+  it('reports skill-granted passive parameters (Armored/Nimble are now combatant fields)', () => {
     expect(chargerBonus(combatant({ tactics: [T('charger')] }))).toBeCloseTo(0.3)
-    expect(armoredFactor(combatant({ tactics: [T('armored')] }))).toBeCloseTo(0.9)
-    expect(nimblePeriod(combatant({ tactics: [T('nimble')] }))).toBe(7)
-    expect(nimblePeriod(combatant({ tactics: [T('nimble', 5)] }))).toBe(5)
-    expect(tauntBiasOf(combatant({ tactics: [T('threatening-presence')] }))).toBeCloseTo(1.5)
+    expect(armoredFactor(combatant({ armorReduction: 0.1 }))).toBeCloseTo(0.9)
+    expect(armoredFactor(combatant({ armorReduction: 0.9 }))).toBeCloseTo(0.5)   // capped
+    expect(nimblePeriod(combatant({ dodgePeriod: 7 }))).toBe(7)
+    expect(nimblePeriod(combatant({ dodgePeriod: 5 }))).toBe(5)
     expect(armoredFactor(combatant({}))).toBe(1)
+    expect(nimblePeriod(combatant({}))).toBeNull()
   })
 
-  it('Armored mitigates incoming damage vs an unarmored twin', () => {
-    const mk = (tactics: { id: string; rank: number }[]) => createBattle({
-      playerUnits: [eu({ id: 'p', tactics, maxHp: 300, hp: 300, meleeRange: 30 })],
+  it('Armored (armorReduction) mitigates incoming damage vs an unarmored twin', () => {
+    const mk = (armorReduction: number) => createBattle({
+      playerUnits: [eu({ id: 'p', armorReduction, maxHp: 300, hp: 300, meleeRange: 30 })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', str: 40, meleeRange: 30 })],
     })
-    const plain = mk([]); const arm = mk([{ id: 'armored', rank: 1 }])
+    const plain = mk(0); const arm = mk(0.1)
     advanceRound(plain); advanceRound(arm)
     expect(300 - find(arm, 'p').hp).toBeLessThan(300 - find(plain, 'p').hp)
   })
 
-  it('Nimble dodges every 7th incoming attack', () => {
+  it('Nimble (dodgePeriod) dodges every 7th incoming attack', () => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'p', tactics: [{ id: 'nimble', rank: 1 }], maxHp: 9999, hp: 9999, def: 9999, meleeRange: 30 })],
+      playerUnits: [eu({ id: 'p', dodgePeriod: 7, maxHp: 9999, hp: 9999, def: 9999, meleeRange: 30 })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', str: 5, def: 9999, maxHp: 9999, hp: 9999, meleeRange: 30 })],
     })
     for (let i = 0; i < 10; i++) advanceRound(b)

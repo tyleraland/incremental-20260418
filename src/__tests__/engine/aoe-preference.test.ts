@@ -55,7 +55,7 @@ describe('happy path: tank soaks, healer heals, mage AoEs', () => {
   function setup(): BattleState {
     const b = createBattle({
       playerUnits: [
-        eu({ id: 'tank', str: 6, def: 50, spd: 9, maxHp: 500, hp: 500, meleeRange: 1.2, tactics: [{ id: 'threatening-presence', rank: 1 }] }),
+        eu({ id: 'tank', str: 6, def: 50, spd: 9, maxHp: 500, hp: 500, meleeRange: 1.2, threatMult: 5 }),
         eu({ id: 'healer', int: 20, str: 2, spd: 11, rangedRange: 4, maxHp: 200, hp: 200, skills: [heal()] }),
         eu({ id: 'mage', int: 30, str: 2, spd: 10, rangedRange: 7, maxHp: 200, hp: 200, skills: [bolt(), storm()], tactics: [{ id: 'storm-caller', rank: 1 }] }),
       ],

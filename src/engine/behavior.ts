@@ -5,7 +5,6 @@
 
 import { distance, attackReach } from './grid'
 import { sightlineClear } from './barriers'
-import { tauntBiasOf } from './tactics'
 import { isCaster, visibleEnemiesOf } from './spatial'
 import type { BattleState, Combatant, EngineSkill } from './types'
 import { EPS } from './constants'
@@ -31,13 +30,25 @@ export function findCombatant(state: BattleState, id: string | null): Combatant 
   return state.combatants.find((c) => c.id === id) ?? null
 }
 
-// §5.4 target locking: keep the current target until it dies, then re-pick the
-// nearest living enemy (deterministic tiebreak by id). Returns the previous
-// target id when it changed, so the caller can emit `target_switch`.
-export function selectTarget(state: BattleState, self: Combatant): string | null {
-  const current = findCombatant(state, self.lockedTargetId)
-  if (current && current.alive && !isStealthed(current)) return null   // a target that cloaks is lost
+// §threat — the default targeting fallback (below the player's/monster's
+// targeting *tactics*, above nothing). It blends two optional inputs into one
+// score per visible foe and locks the best, with hysteresis so aggro is sticky:
+//   score = threat·THREAT_WEIGHT − distance·PROX_WEIGHT
+// • Accumulated threat (damage + healing) is the primary pull — a tank holding
+//   high threat keeps the mob even when the kiter is closer.
+// • Proximity is the secondary input, and the *only* one early on: before anyone
+//   has dealt damage every threat is 0, so the fight opens on the nearest foe
+//   (the old behaviour) and only becomes threat-driven once damage flows.
+// A still-valid current lock is kept unless another foe beats it by PULL_FRACTION
+// of the current target's threat (WoW's "exceed by X% to pull") — so the loser of
+// a close race doesn't thrash, and the kiter only steals aggro once it's clearly
+// out-threated the tank. Returns the previous target id when it changed.
+const THREAT_WEIGHT = 1
+const PROX_WEIGHT = 1
+const PULL_FRACTION = 0.25   // must beat the current target by 25% of its threat to pull
+const PULL_FLOOR = 1         // ...but always allow a small absolute swing (early game)
 
+export function selectTarget(state: BattleState, self: Combatant): string | null {
   const enemies = visibleEnemiesOf(state, self)
   if (enemies.length === 0) {
     const prev = self.lockedTargetId
@@ -45,18 +56,26 @@ export function selectTarget(state: BattleState, self: Combatant): string | null
     return prev
   }
 
-  // §6 Threatening Presence biases enemy targeting: a taunter reads as closer
-  // than it really is, without hard-overriding the choice.
-  const effDist = (e: Combatant) => distance(self.pos, e.pos) - tauntBiasOf(e)
+  const score = (e: Combatant) => (self.threat[e.id] ?? 0) * THREAT_WEIGHT - distance(self.pos, e.pos) * PROX_WEIGHT
   let best = enemies[0]
-  let bestD = effDist(best)
+  let bestS = score(best)
   for (const e of enemies) {
-    const d = effDist(e)
-    if (d < bestD - EPS || (Math.abs(d - bestD) <= EPS && e.id < best.id)) {
+    const s = score(e)
+    if (s > bestS + EPS || (Math.abs(s - bestS) <= EPS && e.id < best.id)) {
       best = e
-      bestD = d
+      bestS = s
     }
   }
+
+  // Hysteresis: keep a still-valid current lock unless `best` clears the pull
+  // margin (scaled by how much threat the current target holds). A cloaked target
+  // is lost (can't be seen), so it falls through to a fresh pick.
+  const cur = findCombatant(state, self.lockedTargetId)
+  if (cur && cur.alive && !isStealthed(cur) && cur !== best) {
+    const slack = PULL_FRACTION * Math.max(PULL_FLOOR, self.threat[cur.id] ?? 0)
+    if (bestS <= score(cur) + slack) best = cur
+  }
+
   const prev = self.lockedTargetId
   self.lockedTargetId = best.id
   return prev !== best.id ? prev : null

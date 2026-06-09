@@ -153,8 +153,8 @@ describe('unitsCodec', () => {
   })
 
   it('round-trips the tactics loadout', () => {
-    const u = makeUnit({ tactics: [{ id: 'charger', rank: 1 }, { id: 'armored', rank: 2 }] })
-    expect(unitsCodec.roundTrip({ units: [u] }).units![0].tactics).toEqual([{ id: 'charger', rank: 1 }, { id: 'armored', rank: 2 }])
+    const u = makeUnit({ tactics: [{ id: 'charger', rank: 1 }, { id: 'guardian', rank: 2 }] })
+    expect(unitsCodec.roundTrip({ units: [u] }).units![0].tactics).toEqual([{ id: 'charger', rank: 1 }, { id: 'guardian', rank: 2 }])
   })
 
   it('migration defaults a missing tactics field to an empty loadout', () => {

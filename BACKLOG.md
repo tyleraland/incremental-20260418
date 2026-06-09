@@ -147,6 +147,24 @@ same way" by penalising left-side detours.
   each entry expands to TacticRefs across channels + an optional planner.
   Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),
   *Lock & Focus* (Controller + Focus Fire), *Kite* (existing + maintain LoS).
+- **🟡 Threat model — extensions (core shipped).** A WoW-style threat table now
+  drives the default targeting fallback (`selectTarget`), with damage + healing
+  generating threat, hysteresis for the aggro wobble, and a hard **Taunt** skill +
+  **Defensive Stance** threat-multiplier passive (see the §threat section in
+  AGENTS.md; `threat.test.ts`; the Threat Trial showcase). Still open:
+  - *AoE / aura threat* — a tank generating threat on *all* nearby foes each round
+    (a Defensive Stance aura, or a cleave), so one tank can hold several mobs.
+    Today threat is single-target per hit, so a tank holds only what it's hitting
+    and the other mobs drift toward the highest-damage hero (which, against an
+    immobile mob, can read as it standing idle "wanting" an unreachable target).
+  - *Reachability-aware targeting* — fold "can I actually path to it?" (`canReach`)
+    into the threat score so a unit doesn't lock a high-threat foe it can never
+    engage; pairs with the AoE-threat fix above.
+  - *Threat decay / leashing* and *taunt diminishing returns* — WoW niceties for
+    longer fights; not needed for the current encounter lengths.
+  - *Tune the showcase* — the Stone Sentinel / kiter / tank numbers (threatMult,
+    sentinel DPS, Taunt cooldown) want a browser pass to make the wobble feel
+    right; the engine constants (`THREAT_WEIGHT`, `PULL_FRACTION`) are the knobs.
 - **🟡 Offensive-option scoring — more scorers (`estimateDamageVs` shipped).**
   Target-aware attack selection picks the hardest-hitting single-target *attack*
   vs the locked enemy (`reorderAttacksForTarget` → `estimateDamageVs`, element

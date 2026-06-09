@@ -87,7 +87,9 @@ describe('movement behaviours', () => {
     })
     find(b, 'front').pos = { x: 2.5, y: 7 }
     find(b, 'back').pos = { x: 2.5, y: 9 }
-    const p = find(b, 'p'); p.pos = { x: 2.5, y: 5 }; p.lockedTargetId = 'back'
+    // The backliner has aggroed p (built threat on it), so the §threat fallback
+    // locks 'back' over the nearer 'front' — then Flanker routes around to its rear.
+    const p = find(b, 'p'); p.pos = { x: 2.5, y: 5 }; p.lockedTargetId = 'back'; p.threat = { back: 100 }
     advanceRound(b)
     expect(find(b, 'p').pos.y).toBeGreaterThan(5)   // circling toward the backliner's far side
   })

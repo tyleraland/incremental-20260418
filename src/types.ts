@@ -69,6 +69,14 @@ export interface DerivedStats {
   attackRange: number // feet; gap ≤ this → attacks land (melee=5, bow=35)
   attackElement: Element // 'neutral' unless a weapon imbues otherwise
   armorElement:  Element // 'neutral' unless armor imbues otherwise
+  // §threat / §passive combat mechanics granted by passive skills (Toughness /
+  // Evasion / Defensive Stance). armorReduction: incoming-damage cut (0–0.5);
+  // dodgePeriod: dodge every Nth hit (0 = never); threatMult: threat-per-action
+  // multiplier (1 = baseline; a tank raises it to hold aggro). The adapter passes
+  // these straight into the engine combatant.
+  armorReduction: number
+  dodgePeriod: number
+  threatMult: number
 }
 
 // ── Tactics ─────────────────────────────────────────────────────────────────--
@@ -165,6 +173,12 @@ export interface MonsterDef {
   // door for skill/tactic-bearing humanoid encounters (the Elite Four, future
   // monsters with class-like kits).
   tactics?: TacticSlot[]
+  // §threat / §passive combat mechanics (engine combatant fields). armorReduction:
+  // incoming-damage cut (0–0.5); dodgePeriod: dodge every Nth hit; threatMult:
+  // threat-generation multiplier. The adapter passes these into the engine.
+  armorReduction?: number
+  dodgePeriod?: number
+  threatMult?: number
 }
 
 // ── Equipment item ────────────────────────────────────────────────────────────

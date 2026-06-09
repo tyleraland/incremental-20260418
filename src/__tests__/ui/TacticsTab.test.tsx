@@ -30,7 +30,7 @@ describe('Tactics detail tab', () => {
   })
 
   it('removes an equipped tactic', () => {
-    useGameStore.getState().equipTactic('u1', 'armored')
+    useGameStore.getState().equipTactic('u1', 'exploit-weakness')
     render(<Units />)
     fireEvent.click(screen.getByText('Tactics'))
     fireEvent.click(screen.getByLabelText('Remove'))
@@ -51,8 +51,8 @@ describe('Tactics detail tab', () => {
 
   it('keeps the up control disabled for a lone tactic in its channel', () => {
     const { equipTactic } = useGameStore.getState()
-    // charger (movement) + armored (passive): different channels, neither can move
-    equipTactic('u1', 'charger'); equipTactic('u1', 'armored')
+    // charger (movement) + exploit-weakness (passive): different channels, neither can move
+    equipTactic('u1', 'charger'); equipTactic('u1', 'exploit-weakness')
     render(<Units />)
     fireEvent.click(screen.getByText('Tactics'))
     for (const btn of screen.getAllByLabelText('Move up')) expect(btn).toBeDisabled()

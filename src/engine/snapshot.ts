@@ -135,7 +135,13 @@ export function deserializeBattle(token: string): BattleState {
     // hostile, so a missing flag defaults to true (don't reload them as passive).
     const provoked = rest.provoked ?? true
     const magicDef = rest.magicDef ?? 0   // legacy tokens predate magic defense
-    return { ...rest, visionRange, provoked, magicDef, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    // §threat / §passive — legacy tokens predate these; default to no threat
+    // table, neutral threat multiplier, and no armor/dodge passive.
+    const threat = rest.threat ?? {}
+    const threatMult = rest.threatMult ?? 1
+    const armorReduction = rest.armorReduction ?? 0
+    const dodgePeriod = rest.dodgePeriod ?? null
+    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {

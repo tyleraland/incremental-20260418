@@ -191,6 +191,11 @@ export interface EngineUnitInput {
   // Default Infinity (unlimited — what encounters use). Open-world sets finite
   // values (heroes see farther than monsters) so the party has to hunt.
   visionRange?: number
+  // §threat / §passive — see the Combatant fields of the same name. Default
+  // threatMult 1, armorReduction 0, dodgePeriod undefined (never dodge).
+  threatMult?: number
+  armorReduction?: number
+  dodgePeriod?: number
 }
 
 // An in-progress channeled cast (channelTime ≥ 1). Resolves when roundsLeft hits
@@ -272,6 +277,20 @@ export interface Combatant {
   // around known terrain, and gives up (holds) if it's unreachable. Used by the
   // game to send a unit somewhere and by tests to force pathing. null = no order.
   moveOrder: Vec2 | null
+
+  // §threat: per-enemy threat each opponent has built up against this unit (by
+  // id). Dealing damage to / healing against a unit raises the actor's threat on
+  // it; the default targeting fallback (selectTarget) attacks the highest-threat
+  // foe, with hysteresis (the "aggro wobble"). Symmetric — both teams accrue it.
+  threat: Record<string, number>
+  // §threat: this unit's threat-generation multiplier (tank passives raise it so
+  // a tank holds aggro by dealing modest damage). Default 1.
+  threatMult: number
+  // §passive (was the Armored/Nimble tactics, now skill-granted): incoming-damage
+  // reduction fraction (0 = none, capped 0.5 in armoredFactor) and dodge-every-Nth
+  // period (null = never). Sourced from skills (heroes) / MonsterDef (monsters).
+  armorReduction: number
+  dodgePeriod: number | null
 
   // §debug: a small ring buffer of one-line summaries of what this unit did each
   // turn (targeting / movement / action). Purely observational — the BattleView

@@ -48,15 +48,16 @@ export const INITIAL_UNITS: Unit[] = [
     class: 'Mage', proficiencies: ['Staves', 'Wands'], locationId: 'prontera-city',
     abilities: { strength: 3, agility: 5, dexterity: 6, constitution: 4, intelligence: 9 },
     abilityPoints: 25, skillPoints: 2,
-    learnedSkills: { 'arcane-knowledge': 3, 'fire-bolt': 3, 'fireball': 2, 'lightning-bolt': 2, 'frost-bolt': 2, 'freeze': 2, 'firewall': 1, 'lightning-storm': 1, 'dispel': 1 },
+    learnedSkills: { 'arcane-knowledge': 3, 'fire-bolt': 3, 'fireball': 2, 'lightning-bolt': 2, 'frost-bolt': 2, 'freeze': 2, 'firewall': 1, 'lightning-storm': 1, 'dispel': 1, 'evasion': 2 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-staff', offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('fire-bolt', 'fireball', 'lightning-bolt', 'lightning-storm', 'firewall', 'freeze'),
     // Storm Caller is inherited from the AoE skills (Lightning Storm / Firewall),
-    // so it isn't equipped manually here — see SKILL_TACTICS.
-    tactics: [t('retreater'), t('wary-caster'), t('nimble')],
+    // so it isn't equipped manually here — see SKILL_TACTICS. Evasion (dodge) is a
+    // passive skill now, not a tactic. Exploit Weakness fits a mage juggling elements.
+    tactics: [t('retreater'), t('wary-caster'), t('exploit-weakness')],
   },
   // ── Cleric (back-line healer / support) ─────────────────────────────────────
   {
@@ -64,13 +65,13 @@ export const INITIAL_UNITS: Unit[] = [
     class: 'Cleric', proficiencies: ['Rods'], locationId: null,
     abilities: { strength: 3, agility: 4, dexterity: 5, constitution: 5, intelligence: 8 },
     abilityPoints: 30, skillPoints: 1,
-    learnedSkills: { 'arcane-knowledge': 2, 'heal': 3, 'aoe-heal': 2, 'boost-agility': 3, 'bless': 3, 'molasses': 1, 'dispel': 1, 'sight': 1 },
+    learnedSkills: { 'arcane-knowledge': 2, 'heal': 3, 'aoe-heal': 2, 'boost-agility': 3, 'bless': 3, 'molasses': 1, 'dispel': 1, 'sight': 1, 'evasion': 1 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-rod', offHand: 'eq-shield-wood' }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('boost-agility', 'bless', 'heal', 'aoe-heal', 'molasses', 'dispel'),
-    tactics: [t('chain-1-2'), t('kiter'), t('nimble'), t('dodge-aoe')],
+    tactics: [t('chain-1-2'), t('kiter'), t('dodge-aoe')],
   },
   // ── Fighter (defensive knight / tank) ───────────────────────────────────────
   {
@@ -78,13 +79,16 @@ export const INITIAL_UNITS: Unit[] = [
     class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
     abilities: { strength: 6, agility: 4, dexterity: 4, constitution: 8, intelligence: 2 },
     abilityPoints: 18, skillPoints: 1,
-    learnedSkills: { 'sword-mastery-1h': 3, 'bash': 3, 'hammer-fall': 2 },
+    // The party's dedicated tank: Defensive Stance (high threat to hold aggro) +
+    // Toughness (damage cut) as passive skills, and Taunt on the bar to peel mobs
+    // off the back line. See the §threat model and the Threat Trial showcase.
+    learnedSkills: { 'sword-mastery-1h': 3, 'bash': 3, 'hammer-fall': 2, 'defensive-stance': 3, 'toughness': 2, 'taunt': 1 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-sword', offHand: 'eq-shield-iron' }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: 'eq-chainmail', sideboard1: null, sideboard2: null, accessory: null },
-    actionSlots: bar('bash', 'hammer-fall'),
-    tactics: [t('threatening-presence'), t('shield-wall'), t('guardian'), t('counterattacker')],
+    actionSlots: bar('taunt', 'bash', 'hammer-fall'),
+    tactics: [t('shield-wall'), t('guardian'), t('counterattacker')],
   },
   // ── Rogue (stealth assassin) ────────────────────────────────────────────────
   {

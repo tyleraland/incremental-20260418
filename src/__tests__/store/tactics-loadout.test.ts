@@ -23,24 +23,25 @@ describe('store: per-unit tactics', () => {
 
   it('caps the loadout at MAX_UNIT_TACTICS', () => {
     const { equipTactic } = useGameStore.getState()
-    for (const id of ['charger', 'armored', 'nimble', 'tank-buster', 'opportunist']) equipTactic('u1', id)
+    for (const id of ['charger', 'guardian', 'exploit-weakness', 'tank-buster', 'opportunist']) equipTactic('u1', id)
     expect(useGameStore.getState().units[0].tactics).toHaveLength(MAX_UNIT_TACTICS)
   })
 
   it('unequips by id', () => {
     const { equipTactic, unequipTactic } = useGameStore.getState()
-    equipTactic('u1', 'charger'); equipTactic('u1', 'armored')
+    equipTactic('u1', 'charger'); equipTactic('u1', 'exploit-weakness')
     unequipTactic('u1', 'charger')
-    expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['armored'])
+    expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['exploit-weakness'])
   })
 
   it('reorders priority with moveTactic, clamping at the ends', () => {
     const { equipTactic, moveTactic } = useGameStore.getState()
-    equipTactic('u1', 'charger'); equipTactic('u1', 'armored'); equipTactic('u1', 'nimble')
-    moveTactic('u1', 'nimble', -1)              // nimble up one
-    expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['charger', 'nimble', 'armored'])
+    // charger (movement) + two targeting tactics that share a channel and reorder
+    equipTactic('u1', 'charger'); equipTactic('u1', 'tank-buster'); equipTactic('u1', 'opportunist')
+    moveTactic('u1', 'opportunist', -1)         // opportunist up one (within targeting)
+    expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['charger', 'opportunist', 'tank-buster'])
     moveTactic('u1', 'charger', -1)             // already first → no-op
-    expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['charger', 'nimble', 'armored'])
+    expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['charger', 'opportunist', 'tank-buster'])
   })
 })
 

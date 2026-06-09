@@ -220,6 +220,35 @@ re-centers on its `sourceId` every round and ends when the caster dies —
 1` + long duration ⇒ cast once and it rides along). Carried by the Mutant Lizard.
 (`consecration.test.ts`.)
 
+**Threat & aggro (a WoW-style model).** Targeting is layered, top to bottom: (1) a
+**hard taunt** — the `taunted` status (`evalTargeting` top) hard-locks the bearer
+onto the taunter for ~3s, overriding *everything* including its own targeting
+tactics; (2) the unit's **targeting tactics** (Tank Buster, Focus Casters, …),
+first-match as before; (3) the **threat fallback** (`selectTarget`, `behavior.ts`).
+The fallback scores each visible foe `threat·1 − distance·1` and locks the best,
+with **hysteresis** (keep the current target unless another beats it by 25% of the
+current's threat) — that stickiness is the aggro *wobble*. Threat is per-combatant
+(`Combatant.threat: Record<id, number>`, symmetric across teams, snapshot-persisted):
+**all damage** accrues `dmg × attacker.threatMult` on the target (the single
+`applyDamageRaw` chokepoint, so basic/skill/DoT/zone all count) and **healing**
+accrues `heal × 0.5 × threatMult` split across the healer's foes (`generateHealThreat`)
+— so a healer can pull aggro. Before anyone's dealt damage every threat is 0, so a
+fight opens on the nearest foe (old behaviour), then becomes threat-driven. The
+**Taunt** skill (`taunt`, a `taunted`-applying debuff) is the tank's peel —
+`selectSkillTarget` prefers a foe that's on an *ally*, and landing it vaults the
+caster to the top of the target's threat table (+10%) so aggro doesn't slip the
+instant the forced lock ends. (`threat.test.ts`. Showcase: **The Threat Trial**
+location/scenario — three slow, tanky, low-damage **Stone Sentinels** vs a Taunt
+tank + a kiter. Deferred: AoE/aura threat so a tank holds *several* mobs, and
+reachability-aware targeting — see `BACKLOG.md`.)
+
+**Defensive passives are skills, not tactics.** The old **Armored** / **Nimble** /
+**Threatening Presence** tactics are gone; they're now passive skills — **Toughness**
+(damage cut), **Evasion** (periodic dodge), **Defensive Stance** (threat multiplier)
+— that set `Combatant.armorReduction` / `dodgePeriod` / `threatMult` via
+`getDerivedStats` → the adapter (and `MonsterDef` carries the same optional fields).
+`armoredFactor`/`nimblePeriod` read the combatant fields now.
+
 **Determinism:** the engine uses no RNG — damage variation is a pure function of
 round + combatant index. (Loot rolls use `Math.random` in the *store*, outside the
 engine.) The same roster + tactics replays identically.

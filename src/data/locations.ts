@@ -106,6 +106,12 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [], testScenarioId: 'pg-guardian-stand',
   },
   {
+    id: 'pg-threat-trial', region: 'world', name: 'The Threat Trial',
+    description: 'A bare arena for practising aggro control: three slow, sponge-tough Stone Sentinels that barely hit but chase whoever angers them most. Field a tank with Defensive Stance + Taunt beside a ranged kiter and watch the threat tug-of-war.',
+    traits: ['arena'], monsterIds: ['stone-sentinel'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-threat-trial',
+  },
+  {
     id: 'pg-veiled-approach', region: 'world', name: 'Veiled Approach',
     description: 'A screened caster begging to be ambushed — a stage for Cloak, Back Stab and the Ambusher flank.',
     traits: ['arena'], monsterIds: ['stone-golem', 'harpy'],

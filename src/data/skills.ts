@@ -38,6 +38,28 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     getBonuses: (lv) => ({ magicAttack: lv * 4 }),
   },
 
+  // ── Defensive / tank passives (was the Armored / Nimble / Threatening-Presence
+  // tactics). They don't grant additive stats — they set engine combat mechanics
+  // (see getDerivedStats → combatPassives), so getBonuses is empty. ───────────────
+  'toughness': {
+    id: 'toughness', name: 'Toughness', maxLevel: 10,
+    description: (lv) => `Take ${Math.round(Math.min(0.5, 0.1 + 0.02 * (lv - 1)) * 100)}% less incoming damage.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'evasion': {
+    id: 'evasion', name: 'Evasion', maxLevel: 10,
+    description: (lv) => `Dodge every ${lv >= 5 ? 5 : 7}th incoming attack.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'defensive-stance': {
+    id: 'defensive-stance', name: 'Defensive Stance', maxLevel: 10,
+    description: (lv) => `Generate ${(3 + 0.5 * (lv - 1)).toFixed(1)}× threat — hold aggro so the party's squishies don't get hit.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+
   // ── Active skills (cast/use; do not give passive stat bonuses) ───────────────
   // Casting / cooldown / mana semantics: not yet implemented. These exist as
   // action-slot draggables only; combat automation will read them later.
@@ -134,6 +156,12 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
   'ankle-snare': {
     id: 'ankle-snare', name: 'Ankle Snare', maxLevel: 10, type: 'active',
     description: () => `Root a foe in place, then retreat.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'taunt': {
+    id: 'taunt', name: 'Taunt', maxLevel: 10, type: 'active',
+    description: () => `Force an enemy to attack you for ~3s and vault to the top of its threat — peel it off your back line. Pairs with Defensive Stance.`,
     requires: [],
     getBonuses: () => ({}),
   },

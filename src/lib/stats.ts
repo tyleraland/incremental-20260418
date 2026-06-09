@@ -12,6 +12,19 @@ function skillBonusTotal(unit: Unit): SkillBonuses {
   return b
 }
 
+// §threat / §passive: the three defensive passives (Toughness / Evasion /
+// Defensive Stance) don't map to additive stat bonuses — they set engine combat
+// mechanics — so they're read from learned levels directly rather than summed.
+function combatPassives(unit: Unit): Pick<DerivedStats, 'armorReduction' | 'dodgePeriod' | 'threatMult'> {
+  const lv = (id: string) => unit.learnedSkills?.[id] ?? 0
+  const tough = lv('toughness'), evade = lv('evasion'), stance = lv('defensive-stance')
+  return {
+    armorReduction: tough ? Math.min(0.5, 0.1 + 0.02 * (tough - 1)) : 0,   // 10%→…→50%
+    dodgePeriod: evade ? (evade >= 5 ? 5 : 7) : 0,                          // dodge every Nth
+    threatMult: stance ? 3 + 0.5 * (stance - 1) : 1,                        // tank: 3×→7.5×
+  }
+}
+
 export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): DerivedStats {
   const sb  = skillBonusTotal(unit)
   const str = unit.abilities.strength     + (sb.strength     ?? 0)
@@ -60,6 +73,7 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
     attackRange:  Math.max(5, (eq.range || 5) + (sb.attackRange ?? 0)), // feet; melee=5, bow=35
     attackElement,
     armorElement,
+    ...combatPassives(unit),
   }
 }
 

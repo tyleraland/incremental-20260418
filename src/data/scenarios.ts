@@ -52,6 +52,12 @@ export const SCENARIO_REGISTRY: Record<string, ScenarioDef> = {
     description: 'One hard-hitting bruiser (Garrick) + a wolf, open field. Field a Guardian tank in front of a squishy back-liner and watch it body-block — the bruiser should eat the tank, not your mage.',
     wave: ['elite-fighter', 'wolf'],
   },
+  'pg-threat-trial': {
+    id: 'pg-threat-trial',
+    name: 'The Threat Trial',
+    description: 'Three Stone Sentinels — slow slabs with huge HP/DEF but a feeble Slam. Bring the tank (Davan: Defensive Stance + Taunt) and a ranged kiter (Mira/Theron). Watch the §threat wobble: the kiter out-damages the tank and the sentinels peel toward it, then Taunt yanks them back for ~3s. The tank holds; the back line lives.',
+    wave: ['stone-sentinel', 'stone-sentinel', 'stone-sentinel'],
+  },
   'pg-veiled-approach': {
     id: 'pg-veiled-approach',
     name: 'Veiled Approach',

@@ -35,6 +35,11 @@ export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   'blessed':   { id: 'blessed',   name: 'Blessed', duration: 25, statModifiers: { str: 1, int: 1, spd: 1, acc: 2 }, perLevel: true, category: 'buff', icon: '✨', description: 'Empowered — more attack, magic, speed, and hit.' },
   'poisoned':  { id: 'poisoned',  name: 'Poisoned', duration: 3, dotDamage: 4, element: 'poison', category: 'debuff', icon: '☠️', description: 'Takes damage every round.' },
   'rooted':    { id: 'rooted',    name: 'Rooted', duration: 2, flags: ['rooted'], category: 'control', icon: '🪤', description: "Can't move — snared in place." },
+  // §threat hard taunt (~3s at 2.5 rounds/s): forces the bearer to attack the
+  // taunter (status.source), overriding its threat fallback AND its own targeting
+  // tactics, for the duration. Applied by the Taunt skill, which also jumps the
+  // taunter to the top of the bearer's threat table so aggro doesn't instantly slip.
+  'taunted':   { id: 'taunted',   name: 'Taunted', duration: 8, flags: ['taunted'], category: 'control', icon: '🎯', description: 'Forced to attack the taunter.' },
   // §3 combo: frozen skips the turn and counts as water armor — so Lightning/Fire
   // hit for 2x via the element table, while a fire hit also melts (clears) it.
   'frozen':    { id: 'frozen',    name: 'Frozen', duration: 2, flags: ['frozen'], armorOverride: 'water', removedByElement: ['fire'], category: 'control', icon: '❄️', description: 'Skips its turn; counts as water armor (fire melts it).' },

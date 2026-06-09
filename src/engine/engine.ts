@@ -196,6 +196,10 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     // Monsters lurk a (deterministic) few rounds before their first hop; heroes
     // don't use the dwell timer (they roam toward the team waypoint).
     wanderDwell: input.team === 'enemy' ? monsterDwell(index + 1) : 0,
+    threat: {},
+    threatMult: input.threatMult ?? 1,
+    armorReduction: input.armorReduction ?? 0,
+    dodgePeriod: input.dodgePeriod ?? null,
     trace: [],
     lastResolution: [],
   }
@@ -311,6 +315,13 @@ function applyDamageRaw(
     target.lastDamageRound = state.round
     const dealer = findCombatant(state, attackerId)
     if (dealer) dealer.lastDamageRound = state.round
+    // §threat: damage builds the attacker's threat on its target, scaled by the
+    // attacker's threat multiplier (a tank's high mult lets it hold aggro on
+    // modest damage). This is the chokepoint for *all* damage — basic hits, skill
+    // hits, DoT, and zone ticks all flow through here, so they all generate threat.
+    if (dealer && dealer.team !== target.team) {
+      target.threat[attackerId] = (target.threat[attackerId] ?? 0) + amount * dealer.threatMult
+    }
     // §aggression: a hit from an enemy rouses a skittish monster — it turns
     // hostile and retaliates against whoever struck it.
     if (!target.provoked && dealer && dealer.team !== target.team) {
@@ -333,6 +344,17 @@ function applyDamageRaw(
       if (c.lockedTargetId === target.id) c.lockedTargetId = null
     }
   }
+}
+
+// §threat: healing generates threat on the healer's enemies (split evenly across
+// them), so a dedicated healer can pull aggro the way it does in WoW. Scaled by
+// the healer's own threat multiplier. HEAL_THREAT_FRAC keeps it below raw damage.
+const HEAL_THREAT_FRAC = 0.5
+function generateHealThreat(state: BattleState, healer: Combatant, healed: number): void {
+  const foes = state.combatants.filter((c) => c.alive && c.team !== healer.team)
+  if (!foes.length || healed <= 0) return
+  const share = (healed * HEAL_THREAT_FRAC * healer.threatMult) / foes.length
+  for (const f of foes) f.threat[healer.id] = (f.threat[healer.id] ?? 0) + share
 }
 
 // Damage-over-time / zone tick: emits a 'dot' marker then applies the hit. DoT
@@ -646,6 +668,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
           t.hp += healed
           addStat(state.stats.totalHealingByUnit, self.id, healed)
           emit(state, { round: state.round, type: 'heal', sourceId: self.id, targetId: t.id, value: healed, skillId: skill.id })
+          generateHealThreat(state, self, healed)   // §threat: healers draw aggro
         }
       }
       applySkillStatus(state, self, t, skill)
@@ -667,6 +690,13 @@ function applySkillStatus(state: BattleState, self: Combatant, target: Combatant
   const status = buildStatus(skill.statusApplied, self.id, skill.statusLevel ?? 1)
   if (!status) return
   addStatus(target, status)
+  // §threat: a landed taunt jumps the taunter to the top of the target's threat
+  // table (+10%) so when the forced lock expires the tank is still the most
+  // threatening — aggro doesn't snap straight back to the kiter.
+  if (status.flags.includes('taunted')) {
+    const top = Math.max(0, ...Object.values(target.threat))
+    target.threat[self.id] = top * 1.1
+  }
   emit(state, { round: state.round, type: 'buff_apply', sourceId: self.id, targetId: target.id, skillId: skill.id, extra: { statusId: status.id } })
 }
 
@@ -732,6 +762,18 @@ function evalTargeting(state: BattleState, self: Combatant): void {
   // called) ignores foes entirely — no lock, so it wanders/holds instead of
   // hunting. It flips provoked on a hit (applyDamageRaw) or a packmate's call.
   if (!self.provoked) { self.lockedTargetId = null; return }
+  // §threat hard taunt: a forced taunt overrides everything — even the unit's own
+  // targeting tactics — and hard-locks the taunter for the status's duration,
+  // provided it's still a living enemy. This is the player's "peel" button (and a
+  // monster's, symmetrically): it beats the threat fallback and any tactic.
+  const taunt = self.statuses.find((s) => s.flags.includes('taunted'))
+  if (taunt) {
+    const taunter = findCombatant(state, taunt.source)
+    if (taunter && taunter.alive && taunter.team !== self.team) {
+      setLock(state, self, taunter.id)
+      return
+    }
+  }
   let won = false
   for (const t of self.tactics) {
     if (t.def.channel !== 'targeting' || !t.def.targeting) continue

@@ -79,6 +79,10 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
     skills,                               // action-bar skills → casts (each injects its usage tactic)
     tactics: withInheritedTactics(unit.tactics ?? [], skills, unit.suppressedTactics),  // explicit + skill-inherited (§5)
+    // §threat / §passive — defensive passives the skills granted (see getDerivedStats)
+    threatMult: derived.threatMult,
+    armorReduction: derived.armorReduction,
+    dodgePeriod: derived.dodgePeriod || undefined,
   }
 }
 
@@ -114,5 +118,10 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     armorElement: def.element,
     skills,
     tactics: withInheritedTactics(def.tactics ?? [], skills),   // explicit + skill-inherited (§5)
+    // §threat / §passive — optional per-monster combat mechanics (a Stone Sentinel
+    // is armored; a future boss could carry a high threatMult).
+    threatMult: def.threatMult,
+    armorReduction: def.armorReduction,
+    dodgePeriod: def.dodgePeriod,
   }
 }

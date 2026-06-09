@@ -415,18 +415,10 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   },
 
   // Passive (effects read by damage/targeting via the helpers below) -----------
-  'armored': {
-    id: 'armored', name: 'Armored', scope: 'unit', channel: 'passive',
-    description: 'Take less physical damage.',
-  },
-  'nimble': {
-    id: 'nimble', name: 'Nimble', scope: 'unit', channel: 'passive',
-    description: 'Periodically dodge an incoming attack.',
-  },
-  'threatening-presence': {
-    id: 'threatening-presence', name: 'Threatening Presence', scope: 'unit', channel: 'passive',
-    description: 'Enemies are drawn to attack you.',
-  },
+  // Armored / Nimble / Threatening Presence used to live here; they're now
+  // skill-granted passives (Toughness / Evasion / Defensive Stance) that set
+  // combatant fields via the adapter — see armoredFactor/nimblePeriod and the
+  // §threat model. Removing them here drops them from the player's tactic picker.
   'exploit-weakness': {
     // Passive marker (no fn): the engine reads it in reorderAttacksForTarget to
     // drop the attack-switch hysteresis. Every unit already prefers the harder-
@@ -540,18 +532,13 @@ export function chargerBonus(c: Combatant): number {
 export function chargerSpeedMult(c: Combatant): number {
   return hasTactic(c, 'charger') ? 1.5 : 1
 }
-// Armored: outgoing→incoming multiplier (1 = no reduction).
+// Armored (skill-granted passive, was a tactic): incoming-damage multiplier from
+// the combatant's `armorReduction` fraction (1 = no reduction, capped at 0.5).
 export function armoredFactor(c: Combatant): number {
-  const t = getTactic(c, 'armored')
-  return t ? 1 - Math.min(0.5, 0.1 + 0.02 * (t.rank - 1)) : 1
+  return c.armorReduction ? 1 - Math.min(0.5, c.armorReduction) : 1
 }
-// Nimble: dodge every Nth incoming attack (null = no Nimble).
+// Nimble (skill-granted passive, was a tactic): dodge every Nth incoming attack
+// from the combatant's `dodgePeriod` (null = never dodge).
 export function nimblePeriod(c: Combatant): number | null {
-  const t = getTactic(c, 'nimble')
-  return t ? (t.rank >= 5 ? 5 : 7) : null
-}
-// Threatening Presence: virtual distance reduction so enemies prefer this unit.
-export function tauntBiasOf(c: Combatant): number {
-  const t = getTactic(c, 'threatening-presence')
-  return t ? 1.5 + 0.5 * (t.rank - 1) : 0
+  return c.dodgePeriod ?? null
 }

@@ -82,6 +82,11 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // backline. Up to 3 puddles at once (zone.maxActive); the slow doesn't stack.
   'molasses':      () =>   skill({ id: 'molasses', name: 'Molasses', type: 'aoe', targeting: 'aoe_point', range: 6, aoeRadius: 2.4, cooldown: 4, channelTime: 2, element: 'earth', zone: { dotDamage: 0, duration: 10, element: 'earth', statusApplied: 'slowed', maxActive: 3 } }),
   'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: cd(10), statusApplied: 'rooted' }),
+  // Taunt: the tank's peel. Instant, short range, ~8s cooldown. Forces the target
+  // to attack the caster for the Taunted duration (~3s) and jumps the caster to
+  // the top of the target's §threat table so aggro doesn't snap back the instant
+  // it expires. Targets a foe that's on an ally (see selectSkillTarget peel).
+  'taunt':         () =>   skill({ id: 'taunt', name: 'Taunt', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: cd(8), statusApplied: 'taunted' }),
   // Consecration: a radiant aura the caster *carries*. An instant self-cast that
   // drops hallowed ground centered on the caster; the zone's `follow` flag
   // re-centers it on the caster every round, searing every enemy within 2 spaces
@@ -176,6 +181,17 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
     (canSeeStealth || !isStealthed(e)) && sightlineClear(self.pos, e.pos, state.barriers)
   const redundant = (e: Combatant) =>
     !!sk.statusApplied && !sk.damageFormula && e.statuses.some((s) => s.id === sk.statusApplied)
+  // §threat: a taunt is a *peel*, not a nuke — prefer pulling a foe that's
+  // currently hitting an ally (locked onto someone other than the caster) so the
+  // tank yanks it off the back line; only fall back to nearest when all in-range
+  // foes are already on the tank (or untaunted-but-idle).
+  if (sk.statusApplied === 'taunted') {
+    const cands = (canSeeStealth ? livingEnemies(state, self) : visibleEnemiesOf(state, self))
+      .filter((e) => visible(e) && inRange(self, e, sk.range) && !redundant(e))
+    if (!cands.length) return null
+    const offMe = cands.filter((e) => e.lockedTargetId && e.lockedTargetId !== self.id)
+    return nearest(self, offMe.length ? offMe : cands).id
+  }
   const locked = findCombatant(state, self.lockedTargetId)
   if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(self, locked, sk.range) && !redundant(locked)) return locked.id
   const pool = (canSeeStealth ? livingEnemies(state, self) : visibleEnemiesOf(state, self))

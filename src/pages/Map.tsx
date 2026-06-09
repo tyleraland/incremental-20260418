@@ -59,6 +59,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'pg-guardian-stand': [8, 2],
   'pg-veiled-approach': [9, 2],
   'pg-wolf-pack':       [10, 2],
+  'pg-threat-trial':    [11, 2],   // §threat showcase (tank vs kiter aggro)
   'pg-divided-hall':    [8, 3],
   'pg-ravine':          [9, 3],
   'pg-slime-huddle':    [10, 3],
