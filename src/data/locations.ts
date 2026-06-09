@@ -170,6 +170,17 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [],
     openWorld: true, openWorldCap: 8, openWorldSize: 60, testScenarioId: 'pg-overgrown-maze',
   },
+  {
+    // One monster of each element the bestiary covers (neutral, water, earth,
+    // wind, poison, undead) formed up as a single wave — a clean testbed for
+    // target-aware attack selection: an elemental caster locks each foe in turn
+    // and leads with whatever bolt exploits that armor.
+    id: 'pg-elemental-circle', region: 'world', name: 'The Elemental Circle',
+    description: 'A ring of six wards, each binding a beast of a different element — wolf, frog, crab, harpy, hornet, and bat — a sampler arena for testing which attack bites hardest into which armor.',
+    traits: ['arena'],
+    monsterIds: ['wolf', 'giant-frog', 'rock-crab', 'harpy', 'hornet', 'bat'],
+    familiarityMax: 100, connections: [],
+  },
 
   // ── Geffen Dungeon (separate sub-area, 5 floors) ─────────────────────────
   // Floor-specific encounters: F2 stages the cross-wall scenario, F3 puts the

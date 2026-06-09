@@ -69,6 +69,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'pg-pillared-hall':   [10, 5],
   'pg-moat':            [8, 6],
   'pg-overgrown-maze':  [9, 6],
+  'pg-elemental-circle': [10, 6],
 
   // Geffen Dungeon — L-shape (top row + right column), Floor 1 → Floor 5.
   'geffen-dungeon-1': [1, 1],
