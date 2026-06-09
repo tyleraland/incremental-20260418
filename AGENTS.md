@@ -210,6 +210,16 @@ tick ground zones → tick cooldowns → sort turn order by SPD desc (determinis
 tiebreak) → each alive combatant takes a turn → evaluate `outcome`
 (`victory`/`defeat`/`draw`; draw at `MAX_ROUNDS` = 200).
 
+**Ground zones** (`BattleZone`, `state.zones`) are persistent areas dropped by a
+skill's `zone` config — Lightning Storm (damage cloud), Molasses (a no-damage
+`statusApplied` slow puddle). Tick damage runs through the **element matrix** vs
+the target's effective armor (radiant zones shred undead/ghost). A zone is
+normally fixed ground, but `zone.follow` makes it a **caster-anchored aura** that
+re-centers on its `sourceId` every round and ends when the caster dies —
+**Consecration** (instant self-cast, `targeting: 'self'`, radiant, r=2, `maxActive:
+1` + long duration ⇒ cast once and it rides along). Carried by the Mutant Lizard.
+(`consecration.test.ts`.)
+
 **Determinism:** the engine uses no RNG — damage variation is a pure function of
 round + combatant index. (Loot rolls use `Math.random` in the *store*, outside the
 engine.) The same roster + tactics replays identically.

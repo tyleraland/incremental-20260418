@@ -384,6 +384,13 @@ function tickZones(state: BattleState): void {
   if (state.zones.length === 0) return
   const kept = []
   for (const z of state.zones) {
+    // A following aura (Consecration) rides on its caster: re-center it each
+    // round, and let it die with the caster instead of lingering as ground.
+    if (z.follow) {
+      const src = findCombatant(state, z.sourceId)
+      if (!src || !src.alive) continue
+      z.pos = { x: src.pos.x, y: src.pos.y }
+    }
     for (const c of state.combatants) {
       if (!c.alive || c.team !== z.team) continue
       if (distance(c.pos, z.pos) > z.radius + EPS) continue
@@ -623,6 +630,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
       skillId: skill.id,
       element: skill.zone.element ?? skill.element,
       statusApplied: skill.zone.statusApplied,
+      follow: skill.zone.follow,
     })
   }
 

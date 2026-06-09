@@ -182,6 +182,35 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [],
   },
 
+  // ── Elemental Frontier (a connected line south of the sandbox rows) ──────────
+  // A chain west→east, one creature of a newly-introduced element per stop, so
+  // the new fire / ghost / radiant fauna have a home — and a place to watch the
+  // Mutant Lizard's radiant Consecration aura chew on the party.
+  {
+    id: 'ember-hollow', region: 'world', name: 'Emberpool Hollow',
+    description: 'A steaming hollow where fire slimes bubble up from cracks in the scorched rock.',
+    traits: ['mountain', 'volcanic'], monsterIds: ['fire-slime'],
+    familiarityMax: 100, connections: ['cinder-dunes'],
+  },
+  {
+    id: 'cinder-dunes', region: 'world', name: 'Cinder Dunes',
+    description: 'Black-glass dunes prowled by adderwallas — fire-snakes that lie coiled and still until you stray too close, then strike like a whip.',
+    traits: ['plains', 'desert'], monsterIds: ['adderwalla'],
+    familiarityMax: 100, connections: ['ember-hollow', 'hollow-barrow'],
+  },
+  {
+    id: 'hollow-barrow', region: 'world', name: 'Hollow Barrow',
+    description: 'A sunken graveyard mound where wraiths drift between the toppled headstones.',
+    traits: ['dungeon', 'haunted'], monsterIds: ['wraith'],
+    familiarityMax: 100, connections: ['cinder-dunes', 'irradiated-marsh'],
+  },
+  {
+    id: 'irradiated-marsh', region: 'world', name: 'Irradiated Marsh',
+    description: 'A glowing fen where mutant lizards bask in hallowed light — step into the radiance and it sears, round after round.',
+    traits: ['plains', 'arcane'], monsterIds: ['mutant-lizard'],
+    familiarityMax: 100, connections: ['hollow-barrow'],
+  },
+
   // ── Geffen Dungeon (separate sub-area, 5 floors) ─────────────────────────
   // Floor-specific encounters: F2 stages the cross-wall scenario, F3 puts the
   // dumb-tank Animated Armor on the floor (slow + heavy DEF — exercises kite

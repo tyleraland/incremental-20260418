@@ -20,6 +20,9 @@ export const DROP_ITEMS: Record<string, string> = {
   'drop-elite-mark':    'Elite Mark',    'drop-champions-seal':"Champion's Seal",
   'drop-boar-hide':     'Boar Hide',     'drop-tusk':          'Tusk',
   'drop-rat-wing':      'Rat Wing',      'drop-rat-fang':      'Rat Fang',
+  'drop-ember-gel':     'Ember Gel',     'drop-adder-scale':   'Adder Scale',
+  'drop-ember-fang':    'Ember Fang',    'drop-wraith-shroud': 'Wraith Shroud',
+  'drop-mutant-tail':   'Mutant Tail',   'drop-radiant-scale': 'Radiant Scale',
 }
 
 // moveSpeed: ft/s (divide by TICKS_PER_SECOND in tick loop for ft/tick)
@@ -63,6 +66,23 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   'rat-fly':       { id: 'rat-fly',      name: 'Rat Fly',        level: 3, health:  28, element: 'wind',    size: 'small',  attackName: 'Dive Bite', stats: { attack: 9, defense: [2,1], magicAttack: 1, magicDefense: [2,1], attackSpeed: 16, accuracy: 16, dodge: 20, moveSpeed: 14, attackRange: 5 }, drops: [{ itemId: 'drop-rat-wing', dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-rat-fang', dropRate: 0.35, quantityMin: 1, quantityMax: 1 }], tactics: [{ id: 'swoop', rank: 1 }] },
   // Skeleton Archer — slow-firing ranged undead. 35 ft bow shot, modest HP, brittle.
   'skeleton-archer':{ id: 'skeleton-archer',name: 'Skeleton Archer',level: 4, health: 50, element: 'undead',  size: 'medium', attackName: 'Arrow',  stats: { attack: 14, defense: [3,2],   magicAttack: 1,  magicDefense: [2,2],  attackSpeed: 6,  accuracy: 14, dodge: 4,  moveSpeed: 3,   attackRange: 35 }, drops: [{ itemId: 'drop-bone-arrow',      dropRate: 0.70, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-skull-fragment',dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
+  // ── New-element fauna (Elemental Frontier) ──────────────────────────────────
+  // Fill out the elements the bestiary was missing (fire / ghost / radiant).
+  // Fire Slime — the slime template in a different element: slow, feeble, and
+  // skittish (ignores you until struck), just smoldering instead of oozing.
+  'fire-slime':    { id: 'fire-slime',   name: 'Fire Slime',    level: 2, health:  30, element: 'fire',    size: 'small',  attackName: 'Smolder',stats: { attack: 2,  defense: [1,1],   magicAttack: 3,  magicDefense: [1,0],  attackSpeed: 8,  accuracy: 6,  dodge: 2,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-ember-gel',     dropRate: 0.90, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }] },
+  // Adderwalla — a fire-snake that lies coiled and non-aggressive (skittish)
+  // until you stray too close, then strikes like a whip: fast, hard-hitting,
+  // but only medium HP, so it folds if you weather the opener.
+  'adderwalla':    { id: 'adderwalla',   name: 'Adderwalla',    level: 5, health:  70, element: 'fire',    size: 'medium', attackName: 'Lash',   stats: { attack: 22, defense: [4,3],   magicAttack: 3,  magicDefense: [3,2],  attackSpeed: 18, accuracy: 16, dodge: 15, moveSpeed: 12,  attackRange: 5  }, drops: [{ itemId: 'drop-adder-scale',   dropRate: 0.65, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ember-fang',    dropRate: 0.35, quantityMin: 1, quantityMax: 1 }], tactics: [{ id: 'skittish', rank: 1 }] },
+  // Wraith — a balanced ghost: medium attack, HP, defense, and a drifting
+  // medium pace. A straightforward bruiser whose ghost armor is the wrinkle.
+  'wraith':        { id: 'wraith',       name: 'Wraith',        level: 6, health:  85, element: 'ghost',   size: 'medium', attackName: 'Touch',  stats: { attack: 14, defense: [6,5],   magicAttack: 9,  magicDefense: [6,5],  attackSpeed: 12, accuracy: 13, dodge: 10, moveSpeed: 7,   attackRange: 5  }, drops: [{ itemId: 'drop-ectoplasm',     dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-wraith-shroud',  dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },
+  // Mutant Lizard — a frail radiant beast that opens with Consecration, a
+  // hallowed aura it carries that chips every nearby hero each round (and tears
+  // into undead/ghost). Weak on its own; nasty in a pack or beside tankier kin.
+  'mutant-lizard': { id: 'mutant-lizard',name: 'Mutant Lizard', level: 4, health:  45, element: 'radiant', size: 'small',  attackName: 'Bite',   stats: { attack: 8,  defense: [3,2],   magicAttack: 10, magicDefense: [4,3],  attackSpeed: 10, accuracy: 11, dodge: 6,  moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-mutant-tail',   dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-radiant-scale',  dropRate: 0.30, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'consecration', level: 3 }] },
+
   // ── Elite Four ─────────────────────────────────────────────────────────────
   // Human encounters that carry skill + tactic kits instead of equipment. They
   // mirror the hero classes (Fighter / Rogue / Cleric / Ranger) and run the

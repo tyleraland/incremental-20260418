@@ -43,7 +43,7 @@ export interface EngineSkill {
   statusLevel?: number   // level to scale a per-level status by when applied (e.g. Bless)
   knockback?: number     // grid units to push affected enemies away from the caster (§2)
   retreatAfter?: number  // rows the caster falls back after the cast resolves
-  zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number; statusApplied?: string }  // place a persistent ground hazard (aoe_point). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown). statusApplied → a utility zone (Molasses) that refreshes a status on units inside instead of damaging.
+  zone?: { dotDamage: number; duration: number; element?: Element; maxActive?: number; statusApplied?: string; follow?: boolean }  // place a persistent ground hazard (aoe_point, or aoe centered on the caster). maxActive caps how many of this caster's zones can be live at once — at the cap the skill reads as not-ready (a soft cooldown). statusApplied → a utility zone (Molasses) that refreshes a status on units inside instead of damaging. follow → the zone re-centers on its caster each round (Consecration aura) and ends when the caster dies.
   wall?: { fireDamage: number; maxBumps: number; duration: number; halfWidth: number; maxActive: number }  // Firewall: an oriented line that bounces foes who cross it (knockback + burn) until they've bumped maxBumps times. halfWidth = half the line length (3-wide ⇒ 1.5).
   stealthBonus?: number  // damage multiplier when cast from stealth (Back Stab, §3)
   dispelCategory?: 'buff' | 'debuff'  // strip statuses of this category from affected targets
@@ -419,8 +419,9 @@ export interface BattleZone {
   dotDamage: number
   roundsLeft: number
   skillId: string
-  element?: Element       // flavour element for the tick (UI label); damage itself bypasses the matrix
+  element?: Element       // tick element — run through the element matrix vs the target's armor (radiant Consecration shreds undead/ghost), defaults neutral
   statusApplied?: string  // status id refreshed on units inside each round (e.g. Molasses → 'slowed'); non-stacking
+  follow?: boolean        // re-center on the caster (sourceId) each round; the zone ends when the caster falls (Consecration)
 }
 
 // A Firewall (§firewall): a short oriented line that bounces foes who try to

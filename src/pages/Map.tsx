@@ -71,6 +71,12 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'pg-overgrown-maze':  [9, 6],
   'pg-elemental-circle': [10, 6],
 
+  // Elemental Frontier — a connected line below the pathing grounds (new-element foes).
+  'ember-hollow':     [7, 7],
+  'cinder-dunes':     [8, 7],
+  'hollow-barrow':    [9, 7],
+  'irradiated-marsh': [10, 7],
+
   // Geffen Dungeon — L-shape (top row + right column), Floor 1 → Floor 5.
   'geffen-dungeon-1': [1, 1],
   'geffen-dungeon-2': [2, 1],

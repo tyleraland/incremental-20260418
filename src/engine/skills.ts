@@ -82,6 +82,13 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // backline. Up to 3 puddles at once (zone.maxActive); the slow doesn't stack.
   'molasses':      () =>   skill({ id: 'molasses', name: 'Molasses', type: 'aoe', targeting: 'aoe_point', range: 6, aoeRadius: 2.4, cooldown: 4, channelTime: 2, element: 'earth', zone: { dotDamage: 0, duration: 10, element: 'earth', statusApplied: 'slowed', maxActive: 3 } }),
   'ankle-snare':   () =>   skill({ id: 'ankle-snare', name: 'Ankle Snare', type: 'debuff', targeting: 'single_enemy', range: 5, cooldown: cd(10), statusApplied: 'rooted' }),
+  // Consecration: a radiant aura the caster *carries*. An instant self-cast that
+  // drops hallowed ground centered on the caster; the zone's `follow` flag
+  // re-centers it on the caster every round, searing every enemy within 2 spaces
+  // for a trickle of radiant damage (devastating to undead/ghost/poison via the
+  // §3 matrix). maxActive 1 + a long duration ⇒ cast once, then it just rides
+  // along until the caster falls.
+  'consecration':  (lv) => skill({ id: 'consecration', name: 'Consecration', type: 'aoe', targeting: 'self', range: 0, aoeRadius: 2, cooldown: cd(8), element: 'radiant', zone: { dotDamage: 1 + Math.floor((lv - 1) / 2), duration: 999, element: 'radiant', maxActive: 1, follow: true } }),
 
   // Phase 3 — behavioural & combos: freeze→amplify, stealth, dispel/reveal.
   'freeze':        (lv) => skill({ id: 'freeze', name: 'Freeze', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: cd(10), channelTime: 2, element: 'water', damageFormula: `int * ${coef(0.5, 0.1, lv)}`, statusApplied: 'frozen' }),
