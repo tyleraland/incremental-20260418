@@ -49,7 +49,7 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // hurled stone: same shape as Fire/Frost Bolt but earth-typed and, being heavy,
   // a short channel like Fire Bolt's.
   'earth-bolt':    (lv) => skill({ id: 'earth-bolt', name: 'Earth Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 2, element: 'earth', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
-  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 8, cooldown: cd(5), channelTime: 3, element: 'wind', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
+  'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: cd(5), channelTime: 3, element: 'wind', damageFormula: `int * ${coef(1.6, 0.3, lv)}` }),
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
@@ -76,9 +76,8 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   // lightning/round (§2 zones). The catch is a *very* long channel — easy to
   // interrupt — so it's a high-risk pre-positioned nuke, not a panic button.
   // ~10 real-seconds of storm at ~2.5 rounds/sec ⇒ ~24 rounds of duration.
-  // Range matches Lightning Bolt's so a kiting mage (which holds its longest
-  // skill range) can actually land the storm from where it stands, instead of
-  // hanging back at bolt range with the cloud just out of reach.
+  // Range 8 — a touch beyond the bolts (all 6) so a kiting mage can drop the cloud
+  // from where it holds rather than hanging back with it just out of reach.
   'lightning-storm':() => skill({ id: 'lightning-storm', name: 'Lightning Storm', type: 'aoe', targeting: 'aoe_point', range: 8, aoeRadius: 2.6, cooldown: cd(10), channelTime: 5, element: 'wind', zone: { dotDamage: 1, duration: 24, element: 'wind', maxActive: 1 } }),
   // Molasses: a fast (2-round) AoE *slow* puddle — no damage, but everything
   // standing in it crawls (½ move, much slower to act). A defensive kiting/peel
