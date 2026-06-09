@@ -261,7 +261,10 @@ engine.) The same roster + tactics replays identically.
 **Movement is spatial:** units move toward targets, kite at range, flank, and
 body-block; `moveSpeed` is decoupled from `attackSpeed`. Barriers block movement and
 line-of-sight; casters won't fire through walls (but will through cliffs); knockback
-stops at walls and the arena perimeter.
+stops at walls and the arena perimeter. A caster's default kite only backs away from a
+**provoked** (hostile) threat (`nearestProvokedEnemyTo`) — it won't flee a still-wandering
+non-provoked monster (that just jittered it back and forth); against a passive target it
+closes to cast range and opens fire (which provokes it).
 
 ### Tactics (the player's combat lever)
 
@@ -291,7 +294,12 @@ stops at walls and the arena perimeter.
   into a fire-armored enemy, Fire Bolt into an earth one. The scorer is the one extensible
   hook `estimateDamageVs(caster, target, skill)` (`damage.ts`): raw formula − the *right*
   mitigation (magic vs physical) × the **element matrix** vs the target's effective armor
-  (immunity ⇒ never picked). Future scorers (AoE spread value, sideboard weapon swaps,
+  (immunity ⇒ never picked), then **amortized over the cast cycle** (`channelTime +
+  cooldown`) so a fast instant that exploits a weakness (Frost Bolt) beats a bigger but
+  slow-channel nuke (Lightning Bolt) — element gaps still win, near-ties break toward the
+  faster spell. (Caveat: the action channel still fires the highest-priority *in-range*
+  ready attack, so a longer-range lower-throughput skill can open a fight before the unit
+  closes into the preferred skill's range — see BACKLOG.) Future scorers (AoE spread value, sideboard weapon swaps,
   status synergy) extend this one function — see BACKLOG. Only the single-target attack
   slots permute; channeled-AoE and non-attack action tactics keep their position. Pure &
   deterministic (id tiebreak), re-derived from the lock each turn, so it needs no snapshot

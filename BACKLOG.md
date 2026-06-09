@@ -177,6 +177,14 @@ same way" by penalising left-side detours.
     favors a multi-hit AoE over a single bolt when the foes are bunched. Today
     AoE/`type:'aoe'` skills are excluded from the re-rank and gated separately
     (channeled-AoE worth-it gate); this folds them into the same comparison.
+  - *Position for the preferred attack* — `estimateDamageVs` now amortizes channel
+    time (so Frost Bolt is preferred over a slow Lightning Bolt vs a fire foe), but
+    the action channel still fires the highest-priority *in-range* ready attack. A
+    longer-range lower-throughput skill (Lightning Bolt r8) therefore opens a fight
+    before the unit closes into the preferred shorter-range skill's band (Frost Bolt
+    r6). Fix options: have a caster hold/close to its *preferred* attack's range
+    rather than the longest skill range, or let a unit "hold fire" a beat while it
+    closes when the preferred attack is out of range but reachable.
   - *Sideboard / weapon-swap candidates* — the motivating future case: a unit
     with a stowed loadout (e.g. a fire sword vs a frost sword) evaluates each
     *basic-attack element* (and skill set) it could swap to via `estimateDamageVs`

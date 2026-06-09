@@ -97,6 +97,15 @@ export function effectiveArmor(target: Combatant): Element {
 // hit still applies all of them in dealAttack. Non-attack skills score 0;
 // future scorers (AoE spread value, sideboard weapon swaps, status synergy)
 // extend this one function. See BACKLOG.md.
+//
+// §throughput: the result is per-cast effective damage **amortized over the cast
+// cycle** (channel rounds + cooldown). Without this a slow, big-channel nuke
+// (Lightning Bolt: int×1.6, 3-round channel) out-scores a faster instant that
+// actually exploits the target's weakness (Frost Bolt: int×1.0 ×1.5 vs fire,
+// instant) — even though the instant lands sooner and can't be interrupted.
+// Dividing by the cycle keeps element exploitation intact (a big elemental gap
+// still wins) while breaking near-ties toward the faster spell. Basic attack
+// (skill null) has no channel/cooldown ⇒ cost 1.
 export function estimateDamageVs(caster: Combatant, target: Combatant, skill: EngineSkill | null): number {
   if (skill && skill.type !== 'attack') return 0
   const formula = skill ? skill.damageFormula : 'str * 1'
@@ -104,5 +113,7 @@ export function estimateDamageVs(caster: Combatant, target: Combatant, skill: En
   const raw = evalFormula(formula, caster)
   const mitigation = isMagic ? effectiveStat(target, 'magicDef') * 0.5 : effectiveStat(target, 'def') * 0.5
   const element = skill?.element ?? caster.attackElement
-  return Math.max(0, raw - mitigation) * elementMultiplier(element, effectiveArmor(target))
+  const eff = Math.max(0, raw - mitigation) * elementMultiplier(element, effectiveArmor(target))
+  const cycle = skill ? Math.max(1, skill.channelTime + skill.cooldown) : 1
+  return eff / cycle
 }

@@ -22,7 +22,7 @@ import {
 import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo, isCaster, kiteDistanceFor, cohesionVec, visibleEnemiesOf } from './spatial'
+import { nearestEnemyTo, nearestProvokedEnemyTo, isCaster, kiteDistanceFor, cohesionVec, visibleEnemiesOf } from './spatial'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -844,11 +844,13 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
     // Casters without an explicit movement tactic still need cast-aware
     // positioning — otherwise they walk into melee while their spell is
     // mid-channel. Treat them as kiters by default; this also makes monster
-    // casters work without any per-unit configuration.
+    // casters work without any per-unit configuration. But only kite away from a
+    // *hostile* (provoked) threat: a non-provoked monster still wandering isn't
+    // angry at us, so backing off it just jitters us back and forth — instead
+    // fall through and close to cast range to open fire (which provokes it).
     if (isCaster(self)) {
-      const threat = nearestEnemyTo(self, state) ?? target
-      kiteToward(state, self, kiteDistanceFor(self, threat))
-      return
+      const threat = nearestProvokedEnemyTo(self, state)
+      if (threat) { kiteToward(state, self, kiteDistanceFor(self, threat)); return }
     }
     const moved = moveToward(self, target, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })

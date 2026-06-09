@@ -5,7 +5,7 @@
 //   • pack-hunter   — a pack roams as a group (shared waypoint), not solo lurking
 //   • flee          — badly hurt, it runs from the nearest foe
 import { describe, it, expect } from 'vitest'
-import { createBattle, advanceRound, monsterToEngineInput, type BattleState } from '@/engine'
+import { createBattle, advanceRound, monsterToEngineInput, buildEngineSkill, type BattleState } from '@/engine'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { eu } from './helpers'
 
@@ -44,6 +44,22 @@ describe('skittish — non-aggressive until hit', () => {
     expect(dist(s.pos, start)).toBeGreaterThan(0.5)          // it wandered off its spawn
     expect(s.provoked).toBe(false)                            // still non-aggressive
     expect(find(b, 'hero').hp).toBe(find(b, 'hero').maxHp)    // never made the first strike
+  })
+
+  it('a caster closes on a non-provoked monster instead of kiting it (no pre-fight jitter)', () => {
+    // §kite: a caster used to back away from any nearest enemy — including a
+    // skittish monster still wandering (not angry at us) — causing a stutter as
+    // the monster milled about. It should close to cast range and open fire.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, str: 3, rangedRange: 6, skills: [buildEngineSkill('fire-bolt', 1)!], moveSpeed: 0.9 })],
+      enemyUnits: [mob({ id: 's', name: 'Slime', moveSpeed: 0, tactics: [{ id: 'skittish', rank: 1 }] })],
+    })
+    find(b, 'mage').pos = { x: 7, y: 2 }
+    find(b, 's').pos = { x: 7, y: 12 }          // far + non-provoked
+    const d0 = dist(find(b, 'mage').pos, find(b, 's').pos)
+    advanceRound(b)
+    expect(dist(find(b, 'mage').pos, find(b, 's').pos)).toBeLessThan(d0)   // closed, didn't flee
+    expect(find(b, 's').provoked).toBe(false)
   })
 
   it('rouses and retaliates once a hero strikes it (aggro-on-hit)', () => {

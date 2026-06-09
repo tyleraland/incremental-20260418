@@ -59,6 +59,15 @@ export function nearestEnemyTo(unit: Combatant, state: BattleState): Combatant |
   return nearestTo(unit.pos, visibleEnemiesOf(state, unit))
 }
 
+// Nearest visible enemy that is actually *hostile* — provoked (in combat). A
+// skittish monster still milling about (provoked === false) isn't chasing
+// anyone, so a kiter shouldn't back away from it. Returns null when no visible
+// enemy is provoked yet (the caster should just close to cast range and open
+// fire, which is what provokes them).
+export function nearestProvokedEnemyTo(unit: Combatant, state: BattleState): Combatant | null {
+  return nearestTo(unit.pos, visibleEnemiesOf(state, unit).filter((e) => e.provoked))
+}
+
 // The unit worth protecting: the squishiest living ally (lowest defense), id tiebreak.
 export function squishiestAlly(self: Combatant, state: BattleState): Combatant | null {
   let best: Combatant | null = null
