@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, within } from '@testing-library/react'
 import { useGameStore } from '@/stores/useGameStore'
 import { BattleView, isOnScreen } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
@@ -38,11 +38,18 @@ describe('isOnScreen', () => {
   })
 })
 
+// The arena square — scope token/marker assertions here so the follow strip
+// below it (which lists every party member by name) doesn't get matched.
+function arena(container: HTMLElement): HTMLElement {
+  return container.querySelector('.aspect-square') as HTMLElement
+}
+
 describe('open-world off-screen tokens', () => {
   it('renders on-screen heroes and monsters as chips', () => {
-    render(<BattleView locationId="L1" />)
-    expect(screen.getByText('Alpha')).toBeTruthy()    // on-screen hero chip
-    expect(screen.getByText('Nearby')).toBeTruthy()   // on-screen monster chip
+    const { container } = render(<BattleView locationId="L1" />)
+    const a = within(arena(container))
+    expect(a.getByText('Alpha')).toBeTruthy()    // on-screen hero chip
+    expect(a.getByText('Nearby')).toBeTruthy()   // on-screen monster chip
   })
 
   it('does NOT show off-screen monsters (no chip, no marker)', () => {
@@ -52,8 +59,9 @@ describe('open-world off-screen tokens', () => {
   })
 
   it('shows off-screen heroes as an edge marker, not a corner chip', () => {
-    render(<BattleView locationId="L1" />)
-    expect(screen.queryByText('Gamma')).toBeNull()                 // chip is clipped
-    expect(screen.getByTitle(/Gamma.*off-screen/i)).toBeTruthy()   // marker points to them
+    const { container } = render(<BattleView locationId="L1" />)
+    const a = within(arena(container))
+    expect(a.queryByText('Gamma')).toBeNull()                 // chip is clipped
+    expect(a.getByTitle(/Gamma.*off-screen/i)).toBeTruthy()   // marker points to them
   })
 })
