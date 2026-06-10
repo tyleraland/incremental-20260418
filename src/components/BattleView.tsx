@@ -93,6 +93,35 @@ function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
   return Math.max(OPEN_CAM_SIZE, Math.min(maxSize, spread))
 }
 
+// Combat advances in discrete rounds (~400 ms), so the follow target jumps each
+// round — both its centre (party moved) and its auto-fit size (the bounding box
+// "breathes"). Snapping the camera to it reads as jerky. This eases the rendered
+// camera toward the target every animation frame (a simple exponential lerp) and
+// parks itself once settled, so the frame glides and the auto-fit stops popping.
+// Encounters pass a static target, so it converges instantly and stays idle.
+function useSmoothCam(target: Cam, enabled: boolean): Cam {
+  const [disp, setDisp] = useState(target)
+  const dispRef = useRef(target)
+  const targetRef = useRef(target)
+  targetRef.current = target
+  const rafRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!enabled) { dispRef.current = targetRef.current; setDisp(targetRef.current); return }
+    const step = () => {
+      const t = targetRef.current, c = dispRef.current
+      const k = 0.25
+      const next = { x: c.x + (t.x - c.x) * k, y: c.y + (t.y - c.y) * k, size: c.size + (t.size - c.size) * k }
+      const settled = Math.abs(next.x - t.x) < 0.01 && Math.abs(next.y - t.y) < 0.01 && Math.abs(next.size - t.size) < 0.01
+      dispRef.current = settled ? t : next
+      setDisp(dispRef.current)
+      rafRef.current = settled ? null : requestAnimationFrame(step)
+    }
+    if (rafRef.current == null) rafRef.current = requestAnimationFrame(step)
+    return () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
+  }, [target.x, target.y, target.size, enabled])
+  return enabled ? disp : target
+}
+
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
 
@@ -207,8 +236,8 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: {
     >
       <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, willChange: 'transform' }}>
         {/* team-half tints, split at the arena's center line */}
-        <div className="absolute inset-x-0 top-0 bg-red-500/5 pointer-events-none" style={{ height: `${centerTop}%` }} />
-        <div className="absolute inset-x-0 bottom-0 bg-blue-500/5 pointer-events-none" style={{ top: `${centerTop}%` }} />
+        <div className="absolute inset-x-0 top-0 bg-red-500/10 pointer-events-none" style={{ height: `${centerTop}%` }} />
+        <div className="absolute inset-x-0 bottom-0 bg-blue-500/10 pointer-events-none" style={{ top: `${centerTop}%` }} />
         {/* faint grid that scales with the camera */}
         <div
           className="absolute inset-0 opacity-40 pointer-events-none"
@@ -806,7 +835,7 @@ type MinimapPick = { unitId: string } | { point: Vec2 }
 function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: Cam; followId: string | null; onPick: (hit: MinimapPick) => void }) {
   const cols = battle.cols ?? COLS
   const rows = battle.rows ?? ROWS
-  const BOX = 88                                        // px on the long side
+  const BOX = 64                                        // px on the long side
   const w = cols >= rows ? BOX : BOX * (cols / rows)
   const h = rows >= cols ? BOX : BOX * (rows / cols)
   const mx = (x: number) => (x / cols) * w
@@ -834,7 +863,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       ref={ref}
       onPointerDown={handlePick}
       title="Minimap — tap a hero to follow, elsewhere to look around"
-      className="absolute bottom-1 right-1 rounded-md border border-game-border bg-game-surface/85 backdrop-blur-sm overflow-hidden pointer-events-auto cursor-pointer"
+      className="absolute top-1 right-1 rounded-md border border-game-border bg-game-surface/85 backdrop-blur-sm overflow-hidden pointer-events-auto cursor-pointer"
       style={{ width: w, height: h, touchAction: 'none' }}
     >
       {battle.barriers.map((b, i) => (
@@ -905,7 +934,10 @@ function FollowStrip({ party, enemies, followId, onFollow, onAuto, classFor }: {
             </button>
           )
         })}
-        <span className="ml-auto self-center shrink-0 pl-2 pr-1 text-[10px] text-game-text-dim whitespace-nowrap">⚔ {enemies}</span>
+        <span className="ml-auto self-center shrink-0 flex items-center gap-2 pl-2 pr-1 whitespace-nowrap">
+          <span className="text-[10px] font-semibold text-emerald-300/90">⟳ Open world</span>
+          <span className="text-[10px] text-game-text-dim">⚔ {enemies}</span>
+        </span>
       </div>
     </div>
   )
@@ -1057,9 +1089,11 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const followPts = lookPts ?? (partyPts.length ? partyPts : allPts)
   const effSize = manualZoom ? camSize : autoFitSize(lookPts ?? partyPts, cols, rows)
   // Open-world follows the party; an encounter statically frames its whole arena.
-  const cam = isOpen
+  // The open-world target jumps each round, so ease the rendered camera toward it.
+  const targetCam = isOpen
     ? followCamera(followPts, cols, rows, effSize)
     : arenaCamera(cols, rows)
+  const cam = useSmoothCam(targetCam, isOpen)
 
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, c.pos)) : []
@@ -1097,9 +1131,11 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
 
   const maxSize = Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
+  // Base zoom maths on the *target* size, not the mid-glide displayed size, so
+  // taps/pinches stay crisp while the camera is still easing into place.
   const zoomBy = (factor: number) => {
     setManualZoom(true)
-    setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, cam.size * factor)))
+    setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, targetCam.size * factor)))
   }
 
   // Debug: copy a 1:1 snapshot token of this battle's state. A dev can reload it
@@ -1124,12 +1160,9 @@ function LiveBattle({ battle }: { battle: BattleState }) {
       </button>
       {isOpen && (
         <>
-          <div className="absolute top-1.5 left-1.5 z-20 px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-600/50 bg-emerald-950/70 text-emerald-200 backdrop-blur-sm pointer-events-none">
-            ⟳ Open world · persistent
-          </div>
-          {/* Zoom: pinch the arena, or use these (squeeze to resize the camera).
+          {/* Zoom (top-left; minimap owns the top-right). Pinch the arena too.
               ⊙ recentres / re-enables auto-fit on the party. */}
-          <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1">
+          <div className="absolute top-1.5 left-1.5 z-20 flex items-center gap-1">
             <button
               onClick={() => zoomBy(1 / 0.8)}
               aria-label="Zoom out"
@@ -1156,7 +1189,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           cam={cam}
           barriers={battle.barriers}
           centerY={rows / 2}
-          zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
+          zoom={isOpen ? { size: targetCam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={isOpen ? (
             <>
               {offscreen.map((c) => <EdgeMarker key={c.id} c={c} cam={cam} />)}

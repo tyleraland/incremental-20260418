@@ -234,6 +234,36 @@ export function locationBarriers(loc?: Location | null): Barrier[] {
   return scenarioOf(loc)?.barriers?.() ?? []
 }
 
+// Procedural "natural" terrain for an open-world field that has no scenario
+// barriers: a deterministic scatter of rock clusters (walls) and a few cliffs the
+// party threads around. Seeded by the location id so a map looks the same each
+// visit (and matches its persisted snapshot). A clear apron is kept around the
+// centre spawn knot so heroes never form up inside rock. These landmarks also give
+// the eye a fixed reference, so the party's movement across the field reads.
+function openWorldBarriers(loc: Location, size: number): Barrier[] {
+  let h = 2166136261
+  for (let i = 0; i < loc.id.length; i++) { h = Math.imul(h ^ loc.id.charCodeAt(i), 16777619) }
+  const rng = () => {
+    h += 0x6d2b79f5; let t = h
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+  const c = size / 2
+  const clear = Math.max(6, size * 0.14)           // uncluttered apron around spawn
+  const out: Barrier[] = []
+  const count = Math.round(size / 6)               // ~8 clusters on a 50-wide map
+  for (let guard = 0; out.length < count && guard < count * 12; guard++) {
+    const w = 2 + Math.floor(rng() * 4)
+    const hh = 2 + Math.floor(rng() * 4)
+    const x = 2 + rng() * (size - 4 - w)
+    const y = 2 + rng() * (size - 4 - hh)
+    if (Math.hypot(x + w / 2 - c, y + hh / 2 - c) < clear) continue
+    out.push({ x, y, w, h: hh, kind: rng() < 0.25 ? 'cliff' : 'wall' })
+  }
+  return out
+}
+
 // A location runs one fixed encounter — independent of party size — until we
 // have multiple encounter variants per location to randomise across. Scenarios
 // can still pin a multi-monster wave (the F2 cross-wall gang); otherwise all
@@ -338,7 +368,9 @@ function spawnMonsterInto(battle: BattleState, loc: Location, size: number): str
 // everyone with a limited sight radius. Marked `mode: 'open'` so it never ends.
 function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number): BattleState {
   const size = openWorldSize(loc)
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, mode: 'open', cols: size, rows: size })
+  const scenBarriers = locationBarriers(loc)
+  const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size })
   party.forEach((u, i) => {
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
   })
