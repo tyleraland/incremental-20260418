@@ -475,7 +475,7 @@ const DOT_CLS: Record<EffTier, string> = {
 }
 function dmgText(value: number, tier: EffTier): string {
   if (tier === 'immune') return 'immune'
-  return `-${value}${tier === 'super' ? ' !!' : ''}`
+  return `${value}${tier === 'super' ? ' !!' : ''}`
 }
 
 // Resolve a combatant id to a display name within a battle.
@@ -1074,7 +1074,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           })}
           {heals.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-heal-float" className="text-[16px] text-emerald-300" text={`+${e.value}`} /> : null
+            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-heal-float" className="text-[16px] text-emerald-300" text={`${e.value}`} /> : null
           })}
           {dots.map((e, i) => {
             const tgt = byId(e.targetId)
