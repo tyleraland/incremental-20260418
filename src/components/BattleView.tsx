@@ -450,6 +450,34 @@ function Float({ cam, pos, className, text, k, anim = 'animate-dmg-float' }: { c
   )
 }
 
+// §3 element-effectiveness clue on a damage number. `event.eff` is the matrix
+// multiplier: a super-effective hit (≥1.5×) pops bigger/hotter with a "!!", a
+// resisted hit (<1×) dims and shrinks, and an immune hit (0×) reads "immune"
+// instead of a meaningless 0 — conveying the matchup at a glance (the article's
+// "is the attack super-effective?" cue). Literal class strings so Tailwind sees them.
+type EffTier = 'normal' | 'super' | 'resist' | 'immune'
+function effTier(eff: number | undefined): EffTier {
+  if (eff === 0) return 'immune'
+  if (eff === undefined || eff === 1) return 'normal'
+  return eff >= 1.5 ? 'super' : 'resist'
+}
+const DMG_CLS: Record<EffTier, string> = {
+  normal: 'text-[17px] text-red-300',
+  super:  'text-[19px] font-black text-amber-300',
+  resist: 'text-[15px] text-red-300/55',
+  immune: 'text-[12px] italic text-slate-300/75',
+}
+const DOT_CLS: Record<EffTier, string> = {
+  normal: 'text-[15px] text-fuchsia-300',
+  super:  'text-[16px] font-black text-amber-300',
+  resist: 'text-[13px] text-fuchsia-300/55',
+  immune: 'text-[12px] italic text-slate-300/75',
+}
+function dmgText(value: number, tier: EffTier): string {
+  if (tier === 'immune') return 'immune'
+  return `-${value}${tier === 'super' ? ' !!' : ''}`
+}
+
 // Resolve a combatant id to a display name within a battle.
 function nameInBattle(battle: BattleState, id: string | null | undefined): string {
   if (!id) return '—'
@@ -1036,10 +1064,11 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           {hits.map((e, i) => {
             const tgt = byId(e.targetId)
             if (!tgt) return null
+            const tier = effTier(e.eff)
             return (
               <div key={`h-${battle.round}-${i}`}>
                 <div className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
-                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-dmg-arc" className="text-[17px] text-red-300" text={`-${e.value}`} />
+                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim={tier === 'immune' ? 'animate-dmg-float' : 'animate-dmg-arc'} className={DMG_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
               </div>
             )
           })}
@@ -1049,7 +1078,9 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           })}
           {dots.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-dmg-arc" className="text-[15px] text-fuchsia-300" text={`-${e.value}`} /> : null
+            if (!tgt) return null
+            const tier = effTier(e.eff)
+            return <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-dmg-arc" className={DOT_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
           })}
           {interrupts.map((e, i) => {
             const tgt = byId(e.targetId)

@@ -40,6 +40,21 @@ describe('elements in combat', () => {
     expect(fireBoltVs('fire')).toBeLessThan(fireBoltVs('water'))
   })
 
+  it('tags each damage event with its element multiplier (the UI effectiveness clue)', () => {
+    const effOf = (armor: Element) => {
+      const b = createBattle({
+        playerUnits: [eu({ id: 'mage', int: 30, rangedRange: 6, skills: [{ ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }] })],
+        enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, armorElement: armor, maxHp: 999, hp: 999, meleeRange: 1.2 })],
+      })
+      find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }
+      advanceRound(b)
+      return b.events.find((e) => e.type === 'skill_use' && e.skillId === 'fire-bolt')!.eff
+    }
+    expect(effOf('earth')).toBe(1.5)    // super-effective → UI shows "!!"
+    expect(effOf('fire')).toBe(0.25)    // resisted → dimmed
+    expect(effOf('wind')).toBe(1)       // neutral
+  })
+
   it('a neutral attack cannot hurt a ghost (immunity = 0)', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'p', str: 30, meleeRange: 99 })],

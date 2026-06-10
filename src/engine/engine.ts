@@ -367,7 +367,7 @@ function applyTickDamage(state: BattleState, sourceId: string, target: Combatant
   const mult = elementMultiplier(element, effectiveArmor(target))
   if (mult === 0) return                                   // elementally immune
   const dmg = Math.max(1, Math.floor(amount * mult * vulnerableFactor(target)))
-  emit(state, { round: state.round, type: 'dot', sourceId, targetId: target.id, value: dmg, extra: { label } })
+  emit(state, { round: state.round, type: 'dot', sourceId, targetId: target.id, value: dmg, eff: mult, extra: { label } })
   applyDamageRaw(state, sourceId, target, dmg)
 }
 
@@ -499,9 +499,9 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
   amount = elMult === 0 ? 0 : Math.max(1, Math.floor(amount))   // 0 = elementally immune
 
   if (skill) {
-    emit(state, { round: state.round, type: 'skill_use', sourceId: attacker.id, targetId: target.id, value: amount, skillId: skill.id })
+    emit(state, { round: state.round, type: 'skill_use', sourceId: attacker.id, targetId: target.id, value: amount, eff: elMult, skillId: skill.id })
   } else {
-    emit(state, { round: state.round, type: isMelee ? 'melee_attack' : 'ranged_attack', sourceId: attacker.id, targetId: target.id, value: amount })
+    emit(state, { round: state.round, type: isMelee ? 'melee_attack' : 'ranged_attack', sourceId: attacker.id, targetId: target.id, value: amount, eff: elMult })
   }
   applyDamageRaw(state, attacker.id, target, amount)
   if (target.alive) {

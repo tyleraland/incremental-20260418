@@ -357,6 +357,7 @@ export interface BattleEvent {
   sourceId: string
   targetId?: string
   value?: number
+  eff?: number          // §3 element multiplier for a damage event (1 = neutral, >1 super-effective, <1 resisted) — drives the UI's effectiveness clue
   position?: Vec2
   skillId?: string
   tacticId?: string
