@@ -93,68 +93,65 @@ function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
   return Math.max(OPEN_CAM_SIZE, Math.min(maxSize, spread))
 }
 
-// Combat advances in discrete rounds (~400 ms): every unit teleports a step and
-// the follow target jumps with them. Animating tokens with a CSS transition while
-// easing the camera on a *different* curve desyncs them — the frame and the units
-// bounce against each other each round. Instead, drive BOTH from one shared
-// exponential lerp here: every animation frame each unit's render position eases
-// toward its logical position, and the camera eases toward its target by the same
-// factor. Because the lerp is affine, the camera stays glued to the unit cloud —
-// no relative bounce. Tokens/FX read `rpos` (the eased position); the loop parks
-// when settled and re-kicks when `kick` changes (a new round, or a camera change).
-// Encounters pass enabled=false and just use logical positions + a static camera.
-function useSmoothScene(combatants: Combatant[], targetCam: Cam, enabled: boolean, kick: unknown[]) {
-  const renderRef = useRef<Map<string, Vec2>>(new Map())
-  const camRef = useRef<Cam>(targetCam)
+// Combat advances in discrete rounds (~400 ms): every unit teleports a step. An
+// exponential ease toward each new position decelerates into it and re-accelerates
+// out — that "settle-then-go" pulse is exactly what reads as feeling the rounds.
+// Instead, interpolate at CONSTANT velocity: on each round, open a fresh segment
+// from where a unit currently *appears* to its new logical position, spanning the
+// measured round interval (×1.2 so a unit never quite arrives before the next
+// round retargets it — no momentary stop). Position is continuous across rounds;
+// only heading changes at boundaries, which reads as natural walking. The camera
+// is derived by the caller from these same moving positions, so it stays glued and
+// continuous too. Tokens/FX read `rpos`; the loop parks once a settled segment
+// completes and re-arms on the next round. Encounters pass enabled=false (static).
+function useSmoothScene(combatants: Combatant[], enabled: boolean, round: number) {
+  const dispRef = useRef<Map<string, Vec2>>(new Map())
+  const segRef = useRef<Map<string, { fx: number; fy: number; tx: number; ty: number }>>(new Map())
+  const segStartRef = useRef(0)
+  const segDurRef = useRef(ROUND_MS)
+  const prevRoundTsRef = useRef(0)
   const combRef = useRef(combatants)
-  const targetRef = useRef(targetCam)
   const rafRef = useRef<number | null>(null)
-  const lastTsRef = useRef(0)
   const [, setFrame] = useState(0)
-
-  // Latest inputs for the rAF loop (set during render — idempotent).
   combRef.current = combatants
-  targetRef.current = targetCam
-  if (!enabled) camRef.current = targetCam
 
-  const TAU = 200   // ms time-constant: smooth glide that never fully stops between rounds
   useEffect(() => {
-    if (!enabled || rafRef.current != null) return
-    lastTsRef.current = 0
-    const loop = (ts: number) => {
-      const dt = lastTsRef.current ? Math.min(80, ts - lastTsRef.current) : 16
-      lastTsRef.current = ts
-      const f = 1 - Math.exp(-dt / TAU)
-      let moving = false
-      const rmap = renderRef.current
-      const present = new Set<string>()
-      for (const c of combRef.current) {
-        present.add(c.id)
-        const cur = rmap.get(c.id)
-        if (!cur) { rmap.set(c.id, { x: c.pos.x, y: c.pos.y }); continue }   // new unit: no glide-in
-        let nx = cur.x + (c.pos.x - cur.x) * f
-        let ny = cur.y + (c.pos.y - cur.y) * f
-        if (Math.abs(c.pos.x - nx) > 0.004 || Math.abs(c.pos.y - ny) > 0.004) moving = true
-        else { nx = c.pos.x; ny = c.pos.y }
-        rmap.set(c.id, { x: nx, y: ny })
-      }
-      for (const id of [...rmap.keys()]) if (!present.has(id)) rmap.delete(id)
-      const t = targetRef.current, cc = camRef.current
-      const cx = cc.x + (t.x - cc.x) * f, cy = cc.y + (t.y - cc.y) * f, cs = cc.size + (t.size - cc.size) * f
-      if (Math.abs(t.x - cx) > 0.004 || Math.abs(t.y - cy) > 0.004 || Math.abs(t.size - cs) > 0.004) moving = true
-      camRef.current = { x: cx, y: cy, size: cs }
-      setFrame((n) => (n + 1) & 0xffff)
-      if (moving) { rafRef.current = requestAnimationFrame(loop) }
-      else { rafRef.current = null; lastTsRef.current = 0 }
+    if (!enabled) return
+    const now = performance.now()
+    const interval = prevRoundTsRef.current ? now - prevRoundTsRef.current : ROUND_MS
+    prevRoundTsRef.current = now
+    segDurRef.current = Math.min(800, Math.max(150, interval * 1.2))
+    segStartRef.current = now
+    // Open a new constant-velocity segment for every unit: from its current
+    // on-screen spot to its new logical spot. New units appear in place (no glide).
+    const disp = dispRef.current, seg = segRef.current
+    const present = new Set<string>()
+    for (const c of combRef.current) {
+      present.add(c.id)
+      const d = disp.get(c.id) ?? { x: c.pos.x, y: c.pos.y }
+      disp.set(c.id, d)
+      seg.set(c.id, { fx: d.x, fy: d.y, tx: c.pos.x, ty: c.pos.y })
     }
-    rafRef.current = requestAnimationFrame(loop)
-    return () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, ...kick])
+    for (const id of [...disp.keys()]) if (!present.has(id)) { disp.delete(id); seg.delete(id) }
 
-  const rpos = (c: Combatant): Vec2 => (enabled ? renderRef.current.get(c.id) : undefined) ?? c.pos
-  const rposId = (id: string | null | undefined): Vec2 | null => (enabled && id ? renderRef.current.get(id) ?? null : null)
-  return { cam: enabled ? camRef.current : targetCam, rpos, rposId }
+    if (rafRef.current == null) {
+      const loop = () => {
+        const a = Math.min(1, (performance.now() - segStartRef.current) / segDurRef.current)
+        const d = dispRef.current
+        for (const [id, s] of segRef.current) d.set(id, { x: s.fx + (s.tx - s.fx) * a, y: s.fy + (s.ty - s.fy) * a })
+        setFrame((n) => (n + 1) & 0xffff)
+        rafRef.current = a < 1 ? requestAnimationFrame(loop) : null
+      }
+      rafRef.current = requestAnimationFrame(loop)
+    }
+  }, [enabled, round])
+
+  // Stop the loop on unmount.
+  useEffect(() => () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); rafRef.current = null }, [])
+
+  const rpos = (c: Combatant): Vec2 => (enabled ? dispRef.current.get(c.id) : undefined) ?? c.pos
+  const rposId = (id: string | null | undefined): Vec2 | null => (enabled && id ? dispRef.current.get(id) ?? null : null)
+  return { rpos, rposId }
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
@@ -1114,26 +1111,25 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   // Free-look target from a minimap tap on empty ground: the camera centres here
   // (instead of the party) until the player re-follows. Cleared by ⊙/follow.
   const [manualCenter, setManualCenter] = useState<Vec2 | null>(null)
+  // Units move at constant velocity between rounds (continuous, no per-round
+  // settle). `rpos` is a unit's smoothly-moving render position; the camera is
+  // derived from those same positions below, so it stays glued and continuous.
+  const { rpos, rposId } = useSmoothScene(battle.combatants, isOpen, battle.round)
+  const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
+
   const party = battle.combatants.filter((c) => c.team === 'player' && c.alive)
-  const partyPts = party.map((c) => c.pos)
-  const allPts = (alive.length ? alive : battle.combatants).map((c) => c.pos)
+  const partyPts = party.map(rpos)
+  const allPts = (alive.length ? alive : battle.combatants).map(rpos)
   // Camera target, in priority: a followed hero (single-hero "Diablo cam"), a
-  // free-look point (minimap tap), else the whole party (auto-fit).
+  // free-look point (minimap tap), else the whole party (auto-fit). All read the
+  // moving positions, so following is continuous frame-to-frame.
   const focusUnit = focusUnitId ? battle.combatants.find((c) => c.id === focusUnitId && c.alive) : null
-  const lookPts: Vec2[] | null = focusUnit ? [focusUnit.pos] : manualCenter ? [manualCenter] : null
+  const lookPts: Vec2[] | null = focusUnit ? [rpos(focusUnit)] : manualCenter ? [manualCenter] : null
   const followPts = lookPts ?? (partyPts.length ? partyPts : allPts)
   const effSize = manualZoom ? camSize : autoFitSize(lookPts ?? partyPts, cols, rows)
-  // Open-world follows the party; an encounter statically frames its whole arena.
-  // The open-world target jumps each round, so ease the whole scene toward it
-  // (units + camera in lockstep). `rpos` is a unit's eased render position.
-  const targetCam = isOpen
+  const cam = isOpen
     ? followCamera(followPts, cols, rows, effSize)
     : arenaCamera(cols, rows)
-  const { cam, rpos, rposId } = useSmoothScene(
-    battle.combatants, targetCam, isOpen,
-    [battle.round, focusUnitId, manualCenter, manualZoom, camSize],
-  )
-  const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
 
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
@@ -1171,11 +1167,9 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
 
   const maxSize = Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
-  // Base zoom maths on the *target* size, not the mid-glide displayed size, so
-  // taps/pinches stay crisp while the camera is still easing into place.
   const zoomBy = (factor: number) => {
     setManualZoom(true)
-    setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, targetCam.size * factor)))
+    setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, cam.size * factor)))
   }
 
   // Debug: copy a 1:1 snapshot token of this battle's state. A dev can reload it
@@ -1229,7 +1223,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           cam={cam}
           barriers={battle.barriers}
           centerY={rows / 2}
-          zoom={isOpen ? { size: targetCam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
+          zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={isOpen ? (
             <>
               {offscreen.map((c) => <EdgeMarker key={c.id} c={c} pos={rpos(c)} cam={cam} />)}
