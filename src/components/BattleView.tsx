@@ -438,9 +438,13 @@ function EdgeMarker({ c, cam }: { c: Combatant; cam: Cam }) {
   )
 }
 
-function Float({ cam, pos, className, text, k }: { cam: Cam; pos: Vec2; className: string; text: string; k: string }) {
+// Floating combat text. `anim` picks the motion: a parabolic "lob" for damage
+// (thrown up and to the right), a gentle straight rise for heals, the plain
+// float for labels (rally / tactic / aggro). The arc transform is baked into the
+// keyframes, so the Tailwind centering classes only matter before it kicks in.
+function Float({ cam, pos, className, text, k, anim = 'animate-dmg-float' }: { cam: Cam; pos: Vec2; className: string; text: string; k: string; anim?: string }) {
   return (
-    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow animate-dmg-float whitespace-nowrap ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }}>
+    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow whitespace-nowrap ${anim} ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }}>
       {text}
     </div>
   )
@@ -1035,17 +1039,17 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             return (
               <div key={`h-${battle.round}-${i}`}>
                 <div className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
-                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[15px] text-red-300" text={`-${e.value}`} />
+                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-dmg-arc" className="text-[17px] text-red-300" text={`-${e.value}`} />
               </div>
             )
           })}
           {heals.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[15px] text-emerald-300" text={`+${e.value}`} /> : null
+            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-heal-float" className="text-[16px] text-emerald-300" text={`+${e.value}`} /> : null
           })}
           {dots.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[13px] text-fuchsia-300" text={`-${e.value}`} /> : null
+            return tgt ? <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-dmg-arc" className="text-[15px] text-fuchsia-300" text={`-${e.value}`} /> : null
           })}
           {interrupts.map((e, i) => {
             const tgt = byId(e.targetId)

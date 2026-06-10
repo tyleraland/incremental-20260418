@@ -33,12 +33,35 @@
 }
 .animate-chip-spawn { animation: chip-spawn 0.35s ease-out; }
 
-/* Combat juice: floating damage/heal numbers rise and fade. */
+/* Combat juice: plain floating label — rises straight up and fades (rally / aggro
+   / tactic chatter). */
 @keyframes dmg-float {
   0%   { opacity: 1; transform: translate(-50%, -50%); }
   100% { opacity: 0; transform: translate(-50%, -190%); }
 }
 .animate-dmg-float { animation: dmg-float 0.6s ease-out forwards; }
+
+/* Damage number: a parabolic "lob" — popped up and to the right like it's been
+   thrown, arcing over before it falls back a little and fades. Scale pops then
+   settles (never below ~0.9, so it stays readable per RPG damage-number lore).
+   The -50% base keeps it centred on the unit; x drifts right, y rises to an apex
+   (~45%) then descends. */
+@keyframes dmg-arc {
+  0%   { opacity: 0; transform: translate(-50%, -50%)  scale(0.70); }
+  12%  { opacity: 1; transform: translate(-46%, -100%) scale(1.20); }
+  45%  { opacity: 1; transform: translate(-28%, -185%) scale(1.05); }
+  100% { opacity: 0; transform: translate(-6%,  -135%) scale(0.92); }
+}
+.animate-dmg-arc { animation: dmg-arc 0.85s ease-out forwards; }
+
+/* Heal number: a calmer counterpart — floats gently straight up, a touch slower,
+   no arc, so it reads as a relief rather than an impact. */
+@keyframes heal-float {
+  0%   { opacity: 0; transform: translate(-50%, -50%)  scale(0.85); }
+  15%  { opacity: 1; transform: translate(-50%, -75%)  scale(1.05); }
+  100% { opacity: 0; transform: translate(-50%, -165%) scale(1.0); }
+}
+.animate-heal-float { animation: heal-float 0.95s ease-out forwards; }
 
 /* A hit ring that flashes out from the struck combatant. */
 @keyframes hit-flash {
