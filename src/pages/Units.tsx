@@ -3,7 +3,7 @@ import {
   useGameStore, type Unit, type EquipSlot, type Abilities, type ActionSlotEntry,
   type TacticDef, type TacticChannel,
   SLOT_LABELS, getDerivedStats,
-  getAvailableSkills, getLearnedSkills, abilityPointCost, SKILL_REGISTRY,
+  getAvailableSkills, abilityPointCost, SKILL_REGISTRY,
   ACTION_SLOT_COUNT, TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS,
   SKILL_TACTICS, inheritedTacticIds,
 } from '@/stores/useGameStore'
@@ -201,29 +201,52 @@ function StatsTab({ unit }: { unit: Unit }) {
 // ── Skills tab ────────────────────────────────────────────────────────────────
 
 function SkillsTab({ unit }: { unit: Unit }) {
-  const [view, setView] = useState<'available' | 'learned'>('available')
+  // Two independent filter axes (no toggle = show everything):
+  //  • level: 'learnable' (can still level up) ⊻ 'mastered' (maxed out) — mutually exclusive
+  //  • actions: active skills only (action-bar eligible), whether learned or not
+  const [levelFilter, setLevelFilter] = useState<'learnable' | 'mastered' | null>(null)
+  const [actionsOnly, setActionsOnly] = useState(false)
   const learnSkill = useGameStore((s) => s.learnSkill)
   const available  = getAvailableSkills(unit)
-  const learned    = getLearnedSkills(unit)
+
+  const filtered = available.filter(({ skill, maxed }) => {
+    if (levelFilter === 'learnable' && maxed) return false
+    if (levelFilter === 'mastered' && !maxed) return false
+    if (actionsOnly && skill.type !== 'active') return false
+    return true
+  })
+
+  const toggleLevel = (f: 'learnable' | 'mastered') => setLevelFilter((cur) => (cur === f ? null : f))
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex gap-1">
-          {(['available', 'learned'] as const).map((t) => (
+          {(['learnable', 'mastered'] as const).map((f) => (
             <button
-              key={t}
-              onClick={() => setView(t)}
+              key={f}
+              onClick={() => toggleLevel(f)}
               className={[
                 'text-xs px-2.5 py-1 rounded-full border transition-colors capitalize',
-                view === t
+                levelFilter === f
                   ? 'border-game-primary bg-game-primary/20 text-game-primary'
                   : 'border-game-border text-game-text-dim hover:border-game-primary/40',
               ].join(' ')}
             >
-              {t}
+              {f}
             </button>
           ))}
+          <button
+            onClick={() => setActionsOnly((v) => !v)}
+            className={[
+              'text-xs px-2.5 py-1 rounded-full border transition-colors',
+              actionsOnly
+                ? 'border-game-gold bg-game-gold/20 text-game-gold'
+                : 'border-game-border text-game-text-dim hover:border-game-gold/40',
+            ].join(' ')}
+          >
+            Actions
+          </button>
         </div>
         {unit.skillPoints > 0 && (
           <span className="text-xs bg-game-secondary/20 text-game-secondary border border-game-secondary/40 rounded-full px-2 py-0.5">
@@ -232,72 +255,53 @@ function SkillsTab({ unit }: { unit: Unit }) {
         )}
       </div>
 
-      {view === 'available' && (
-        <div className="space-y-2">
-          {available.map(({ skill, current, prereqsMet, maxed }) => {
-            const canLearn = prereqsMet && !maxed && unit.skillPoints >= 1
-            return (
-              <div
-                key={skill.id}
-                className={['bg-game-bg rounded-lg px-3 py-2.5 flex items-start gap-2', !prereqsMet ? 'opacity-50' : ''].join(' ')}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    {skill.type === 'active' && current >= 1 && (
-                      <SkillDragHandle unitId={unit.id} skillId={skill.id} />
-                    )}
-                    <span className="text-sm font-medium text-game-text">{skill.name}</span>
-                    {current > 0 && <span className="text-xs text-game-text-dim">Lv.{current}/{skill.maxLevel}</span>}
-                    {maxed && <span className="text-xs text-game-green">Max</span>}
-                  </div>
-                  {prereqsMet ? (
-                    <div className="text-xs text-game-text-dim leading-snug">
-                      {maxed ? skill.description(current) : skill.description(current + 1)}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-game-muted italic leading-snug">
-                      Requires: {skill.requires.map((r) => `${SKILL_REGISTRY[r.skillId]?.name ?? r.skillId} Lv.${r.minLevel}`).join(', ')}
-                    </div>
+      <div className="space-y-2">
+        {filtered.length === 0 && (
+          <p className="text-xs text-game-muted italic px-1">No skills match this filter.</p>
+        )}
+        {filtered.map(({ skill, current, prereqsMet, maxed }) => {
+          const canLearn = prereqsMet && !maxed && unit.skillPoints >= 1
+          return (
+            <div
+              key={skill.id}
+              className={['bg-game-bg rounded-lg px-3 py-2.5 flex items-start gap-2', !prereqsMet ? 'opacity-50' : ''].join(' ')}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  {skill.type === 'active' && current >= 1 && (
+                    <SkillDragHandle unitId={unit.id} skillId={skill.id} />
                   )}
+                  <span className="text-sm font-medium text-game-text">{skill.name}</span>
+                  {current > 0 && <span className="text-xs text-game-text-dim">Lv.{current}/{skill.maxLevel}</span>}
+                  {maxed && <span className="text-xs text-game-green">Max</span>}
+                  {skill.type === 'active' && <span className="text-[10px] text-game-text-dim border border-game-border rounded px-1 py-0.5">Active</span>}
                 </div>
-                <button
-                  disabled={!canLearn}
-                  onClick={() => learnSkill(unit.id, skill.id)}
-                  className={[
-                    'shrink-0 w-7 h-7 rounded flex items-center justify-center text-sm font-bold transition-colors mt-0.5',
-                    canLearn
-                      ? 'bg-game-secondary text-white hover:bg-game-secondary/80 active:scale-95'
-                      : 'bg-game-border text-game-muted cursor-not-allowed opacity-40',
-                  ].join(' ')}
-                >
-                  +
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {view === 'learned' && (
-        <div className="space-y-2">
-          {learned.length === 0 && (
-            <p className="text-xs text-game-muted italic px-1">No skills learned yet.</p>
-          )}
-          {learned.map(({ skill, current }) => (
-            <div key={skill.id} className="bg-game-bg rounded-lg px-3 py-2.5">
-              <div className="flex items-center gap-2 mb-0.5">
-                {skill.type === 'active' && (
-                  <SkillDragHandle unitId={unit.id} skillId={skill.id} />
+                {prereqsMet ? (
+                  <div className="text-xs text-game-text-dim leading-snug">
+                    {maxed ? skill.description(current) : skill.description(current + 1)}
+                  </div>
+                ) : (
+                  <div className="text-xs text-game-muted italic leading-snug">
+                    Requires: {skill.requires.map((r) => `${SKILL_REGISTRY[r.skillId]?.name ?? r.skillId} Lv.${r.minLevel}`).join(', ')}
+                  </div>
                 )}
-                <span className="text-sm font-medium text-game-text">{skill.name}</span>
-                <span className="text-xs text-game-text-dim">Lv.{current}/{skill.maxLevel}</span>
-                {skill.type === 'active' && <span className="text-[10px] text-game-text-dim border border-game-border rounded px-1 py-0.5">Active</span>}
               </div>
-              <div className="text-xs text-game-text-dim leading-snug">{skill.description(current)}</div>
+              <button
+                disabled={!canLearn}
+                onClick={() => learnSkill(unit.id, skill.id)}
+                className={[
+                  'shrink-0 w-7 h-7 rounded flex items-center justify-center text-sm font-bold transition-colors mt-0.5',
+                  canLearn
+                    ? 'bg-game-secondary text-white hover:bg-game-secondary/80 active:scale-95'
+                    : 'bg-game-border text-game-muted cursor-not-allowed opacity-40',
+                ].join(' ')}
+              >
+                +
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+          )
+        })}
+      </div>
     </div>
   )
 }
