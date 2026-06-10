@@ -93,33 +93,68 @@ function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
   return Math.max(OPEN_CAM_SIZE, Math.min(maxSize, spread))
 }
 
-// Combat advances in discrete rounds (~400 ms), so the follow target jumps each
-// round — both its centre (party moved) and its auto-fit size (the bounding box
-// "breathes"). Snapping the camera to it reads as jerky. This eases the rendered
-// camera toward the target every animation frame (a simple exponential lerp) and
-// parks itself once settled, so the frame glides and the auto-fit stops popping.
-// Encounters pass a static target, so it converges instantly and stays idle.
-function useSmoothCam(target: Cam, enabled: boolean): Cam {
-  const [disp, setDisp] = useState(target)
-  const dispRef = useRef(target)
-  const targetRef = useRef(target)
-  targetRef.current = target
+// Combat advances in discrete rounds (~400 ms): every unit teleports a step and
+// the follow target jumps with them. Animating tokens with a CSS transition while
+// easing the camera on a *different* curve desyncs them — the frame and the units
+// bounce against each other each round. Instead, drive BOTH from one shared
+// exponential lerp here: every animation frame each unit's render position eases
+// toward its logical position, and the camera eases toward its target by the same
+// factor. Because the lerp is affine, the camera stays glued to the unit cloud —
+// no relative bounce. Tokens/FX read `rpos` (the eased position); the loop parks
+// when settled and re-kicks when `kick` changes (a new round, or a camera change).
+// Encounters pass enabled=false and just use logical positions + a static camera.
+function useSmoothScene(combatants: Combatant[], targetCam: Cam, enabled: boolean, kick: unknown[]) {
+  const renderRef = useRef<Map<string, Vec2>>(new Map())
+  const camRef = useRef<Cam>(targetCam)
+  const combRef = useRef(combatants)
+  const targetRef = useRef(targetCam)
   const rafRef = useRef<number | null>(null)
+  const lastTsRef = useRef(0)
+  const [, setFrame] = useState(0)
+
+  // Latest inputs for the rAF loop (set during render — idempotent).
+  combRef.current = combatants
+  targetRef.current = targetCam
+  if (!enabled) camRef.current = targetCam
+
+  const TAU = 200   // ms time-constant: smooth glide that never fully stops between rounds
   useEffect(() => {
-    if (!enabled) { dispRef.current = targetRef.current; setDisp(targetRef.current); return }
-    const step = () => {
-      const t = targetRef.current, c = dispRef.current
-      const k = 0.25
-      const next = { x: c.x + (t.x - c.x) * k, y: c.y + (t.y - c.y) * k, size: c.size + (t.size - c.size) * k }
-      const settled = Math.abs(next.x - t.x) < 0.01 && Math.abs(next.y - t.y) < 0.01 && Math.abs(next.size - t.size) < 0.01
-      dispRef.current = settled ? t : next
-      setDisp(dispRef.current)
-      rafRef.current = settled ? null : requestAnimationFrame(step)
+    if (!enabled || rafRef.current != null) return
+    lastTsRef.current = 0
+    const loop = (ts: number) => {
+      const dt = lastTsRef.current ? Math.min(80, ts - lastTsRef.current) : 16
+      lastTsRef.current = ts
+      const f = 1 - Math.exp(-dt / TAU)
+      let moving = false
+      const rmap = renderRef.current
+      const present = new Set<string>()
+      for (const c of combRef.current) {
+        present.add(c.id)
+        const cur = rmap.get(c.id)
+        if (!cur) { rmap.set(c.id, { x: c.pos.x, y: c.pos.y }); continue }   // new unit: no glide-in
+        let nx = cur.x + (c.pos.x - cur.x) * f
+        let ny = cur.y + (c.pos.y - cur.y) * f
+        if (Math.abs(c.pos.x - nx) > 0.004 || Math.abs(c.pos.y - ny) > 0.004) moving = true
+        else { nx = c.pos.x; ny = c.pos.y }
+        rmap.set(c.id, { x: nx, y: ny })
+      }
+      for (const id of [...rmap.keys()]) if (!present.has(id)) rmap.delete(id)
+      const t = targetRef.current, cc = camRef.current
+      const cx = cc.x + (t.x - cc.x) * f, cy = cc.y + (t.y - cc.y) * f, cs = cc.size + (t.size - cc.size) * f
+      if (Math.abs(t.x - cx) > 0.004 || Math.abs(t.y - cy) > 0.004 || Math.abs(t.size - cs) > 0.004) moving = true
+      camRef.current = { x: cx, y: cy, size: cs }
+      setFrame((n) => (n + 1) & 0xffff)
+      if (moving) { rafRef.current = requestAnimationFrame(loop) }
+      else { rafRef.current = null; lastTsRef.current = 0 }
     }
-    if (rafRef.current == null) rafRef.current = requestAnimationFrame(step)
+    rafRef.current = requestAnimationFrame(loop)
     return () => { if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
-  }, [target.x, target.y, target.size, enabled])
-  return enabled ? disp : target
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, ...kick])
+
+  const rpos = (c: Combatant): Vec2 => (enabled ? renderRef.current.get(c.id) : undefined) ?? c.pos
+  const rposId = (id: string | null | undefined): Vec2 | null => (enabled && id ? renderRef.current.get(id) ?? null : null)
+  return { cam: enabled ? camRef.current : targetCam, rpos, rposId }
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
@@ -411,14 +446,14 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
   )
 }
 
-function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: Cam; selected: boolean; onSelect: () => void; glyph: string }) {
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
   return (
     <div
       onClick={onSelect}
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
-      style={{ left: px(cam, insetX(cam, c.pos.x)), top: py(cam, insetY(cam, c.pos.y)), transition: 'left 380ms linear, top 380ms linear' }}
+      style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? 'left 380ms linear, top 380ms linear' : undefined }}
     >
       <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} />
       {c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
@@ -444,9 +479,9 @@ function BattleChip({ c, cam, selected, onSelect, glyph }: { c: Combatant; cam: 
 // An edge bubble pointing at an off-camera party member: a small initials chip
 // clamped to the arena rim plus an arrow rotated toward the unit. `cam` excludes
 // manual pan (rare in the follow view), so it tracks the camera, not the pan.
-function EdgeMarker({ c, cam }: { c: Combatant; cam: Cam }) {
-  const fx = (c.pos.x - cam.x) / cam.size            // 0..1 across the view
-  const fy = 1 - (c.pos.y - cam.y) / cam.size        // 0..1 top→bottom
+function EdgeMarker({ c, pos, cam }: { c: Combatant; pos: Vec2; cam: Cam }) {
+  const fx = (pos.x - cam.x) / cam.size              // 0..1 across the view
+  const fy = 1 - (pos.y - cam.y) / cam.size          // 0..1 top→bottom
   const dx = fx - 0.5, dy = fy - 0.5
   const m = Math.max(Math.abs(dx), Math.abs(dy)) || 1
   const pad = 0.05
@@ -1089,14 +1124,19 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const followPts = lookPts ?? (partyPts.length ? partyPts : allPts)
   const effSize = manualZoom ? camSize : autoFitSize(lookPts ?? partyPts, cols, rows)
   // Open-world follows the party; an encounter statically frames its whole arena.
-  // The open-world target jumps each round, so ease the rendered camera toward it.
+  // The open-world target jumps each round, so ease the whole scene toward it
+  // (units + camera in lockstep). `rpos` is a unit's eased render position.
   const targetCam = isOpen
     ? followCamera(followPts, cols, rows, effSize)
     : arenaCamera(cols, rows)
-  const cam = useSmoothCam(targetCam, isOpen)
+  const { cam, rpos, rposId } = useSmoothScene(
+    battle.combatants, targetCam, isOpen,
+    [battle.round, focusUnitId, manualCenter, manualZoom, camSize],
+  )
+  const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
 
   // Party members outside the current viewport → edge bubbles point to them.
-  const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, c.pos)) : []
+  const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
 
   const roundEvents = battle.events.filter((e) => e.round === battle.round)
   const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
@@ -1192,7 +1232,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           zoom={isOpen ? { size: targetCam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={isOpen ? (
             <>
-              {offscreen.map((c) => <EdgeMarker key={c.id} c={c} cam={cam} />)}
+              {offscreen.map((c) => <EdgeMarker key={c.id} c={c} pos={rpos(c)} cam={cam} />)}
               <Minimap battle={battle} cam={cam} followId={focusUnitId} onPick={onMinimapPick} />
             </>
           ) : undefined}
@@ -1227,8 +1267,9 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             {hits.map((e, i) => {
               const src = byId(e.sourceId), tgt = byId(e.targetId)
               if (!src || !tgt) return null
+              const sp = rpos(src), tp = rpos(tgt)
               const stroke = src.team === 'player' ? 'rgb(96,165,250)' : 'rgb(248,113,113)'
-              return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, src.pos.x)} y1={rows - insetY(cam, src.pos.y)} x2={insetX(cam, tgt.pos.x)} y2={rows - insetY(cam, tgt.pos.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
+              return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, sp.x)} y1={rows - insetY(cam, sp.y)} x2={insetX(cam, tp.x)} y2={rows - insetY(cam, tp.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
             })}
           </svg>
 
@@ -1236,39 +1277,42 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           {hits.map((e, i) => {
             const tgt = byId(e.targetId)
             if (!tgt) return null
+            const tp = rpos(tgt)
             const tier = effTier(e.eff)
             return (
               <div key={`h-${battle.round}-${i}`}>
-                <div className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tgt.pos.x)), top: py(cam, insetY(cam, tgt.pos.y)) }} />
-                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim={tier === 'immune' ? 'animate-dmg-float' : 'animate-dmg-arc'} className={DMG_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
+                <div className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tp.x)), top: py(cam, insetY(cam, tp.y)) }} />
+                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tp} anim={tier === 'immune' ? 'animate-dmg-float' : 'animate-dmg-arc'} className={DMG_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
               </div>
             )
           })}
           {heals.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-heal-float" className="text-[16px] text-emerald-300" text={`${e.value}`} /> : null
+            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={rpos(tgt)} anim="animate-heal-float" className="text-[16px] text-emerald-300" text={`${e.value}`} /> : null
           })}
           {dots.map((e, i) => {
             const tgt = byId(e.targetId)
             if (!tgt) return null
             const tier = effTier(e.eff)
-            return <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={tgt.pos} anim="animate-dmg-arc" className={DOT_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
+            return <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={rpos(tgt)} anim="animate-dmg-arc" className={DOT_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
           })}
           {interrupts.map((e, i) => {
             const tgt = byId(e.targetId)
-            return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={tgt.pos} className="text-[10px] text-amber-300" text="interrupted" /> : null
+            return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={rpos(tgt)} className="text-[10px] text-amber-300" text="interrupted" /> : null
           })}
 
           {/* lingering cast labels: each cast's name stays anchored to its
               caster for ~3s; multiple casts on one caster stack, newest on top. */}
           {castLabelGroups.map(({ sourceId, labels }) => {
             const src = byId(sourceId)
-            if (!src || !isOnScreen(cam, src.pos)) return null
+            if (!src) return null
+            const sp = rpos(src)
+            if (!isOnScreen(cam, sp)) return null
             return (
               <div
                 key={`cl-${sourceId}`}
                 className="absolute -translate-x-1/2 flex flex-col-reverse items-center gap-0.5 pointer-events-none"
-                style={{ left: px(cam, insetX(cam, src.pos.x)), top: py(cam, insetY(cam, src.pos.y)), transform: 'translate(-50%, -150%)' }}
+                style={{ left: px(cam, insetX(cam, sp.x)), top: py(cam, insetY(cam, sp.y)), transform: 'translate(-50%, -150%)' }}
               >
                 {labels.map((l) => (
                   <span key={l.id} className="px-1 rounded bg-black/45 text-amber-200 text-[10px] font-semibold leading-tight whitespace-nowrap drop-shadow animate-cast-label">
@@ -1282,13 +1326,13 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             const src = byId(e.sourceId)
             const label = (e.extra?.label as string | undefined)
             if (!src || !label) return null
-            return <Float key={`tu-${battle.round}-${i}`} k={`tu-${battle.round}-${i}`} cam={cam} pos={src.pos} className="text-[10px] text-violet-200" text={label} />
+            return <Float key={`tu-${battle.round}-${i}`} k={`tu-${battle.round}-${i}`} cam={cam} pos={rpos(src)} className="text-[10px] text-violet-200" text={label} />
           })}
 
           {/* spawn markers: a ring + name float where a combatant just entered */}
           {spawns.map((e, i) => {
             const c = byId(e.sourceId)
-            const pos = e.position ?? c?.pos
+            const pos = e.position ?? fxPos(e.sourceId)
             if (!pos || !isOnScreen(cam, pos)) return null   // don't flash off-screen spawns in the corner
             const isPlayer = c?.team === 'player'
             return (
@@ -1310,7 +1354,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
 
           {/* rally: a Pack Tactics call — a wide ring pulses out from the caller */}
           {rallies.map((e, i) => {
-            const pos = e.position ?? byId(e.sourceId)?.pos
+            const pos = e.position ?? fxPos(e.sourceId)
             if (!pos || !isOnScreen(cam, pos)) return null
             return (
               <div key={`ra-${battle.round}-${i}`}>
@@ -1325,7 +1369,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
 
           {/* aggro: a monster just turned hostile — a "!" pops over it */}
           {aggros.map((e, i) => {
-            const pos = e.position ?? byId(e.sourceId)?.pos
+            const pos = e.position ?? fxPos(e.sourceId)
             if (!pos || !isOnScreen(cam, pos)) return null
             return (
               <div key={`ag-${battle.round}-${i}`}>
@@ -1341,11 +1385,13 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           {/* Tokens. Open-world clips off-screen units (off-screen heroes show as
               EdgeMarkers instead); encounters render everyone (nothing is ever
               truly off the small arena). */}
-          {(isOpen ? battle.combatants.filter((c) => isOnScreen(cam, c.pos)) : battle.combatants).map((c) => (
+          {(isOpen ? battle.combatants.filter((c) => isOnScreen(cam, rpos(c))) : battle.combatants).map((c) => (
             <BattleChip
               key={c.id}
               c={c}
               cam={cam}
+              pos={rpos(c)}
+              animatePos={!isOpen}
               selected={sameWave && c.id === selectedId}
               onSelect={() => handleSelect(c)}
               glyph={chipGlyph(c, classFor)}
