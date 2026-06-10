@@ -146,4 +146,30 @@ describe('kiter: LoS-aware positioning', () => {
     // Threat never reached melee (would happen if the archer was pinned).
     expect(closestApproach).toBeGreaterThan(archer.meleeRange + 0.5)
   })
+
+  it('flees an open arena corner immediately instead of dithering until caught', () => {
+    // No barriers — just the arena edges. The archer is jammed in the bottom-right
+    // corner with a slow chaser closing from the open (left) side. "Away" points
+    // into the corner walls, and instantaneous clearance favours hugging the
+    // corner, so a naive kiter flip-flops up/down and gets caught. It should
+    // commit to fleeing up the open edge (dead-end penalty + heading hysteresis).
+    const bow = { ...buildEngineSkill('frost-bolt', 1)!, channelTime: 0, range: 6 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'archer', spd: 18, int: 20, str: 3, def: 2, maxHp: 200, hp: 200, preferredRank: 'back', meleeRange: 1.2, rangedRange: 6, moveSpeed: 0.9, skills: [bow], tactics: [{ id: 'kiter', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'slow', team: 'enemy', str: 20, def: 4, maxHp: 600, hp: 600, meleeRange: 1.2, moveSpeed: 0.4 })],
+    })
+    find(b, 'archer').pos = { x: 14.6, y: 0.6 }   // jammed in the bottom-right corner
+    find(b, 'slow').pos = { x: 11, y: 1.2 }         // slow chaser closing from the open side
+    const startY = find(b, 'archer').pos.y
+    let minGap = Infinity
+    for (let i = 0; i < 8; i++) {
+      advanceRound(b)
+      const a = find(b, 'archer'), s = find(b, 'slow')
+      minGap = Math.min(minGap, Math.hypot(a.pos.x - s.pos.x, a.pos.y - s.pos.y))
+    }
+    const archer = find(b, 'archer')
+    expect(archer.pos.y).toBeGreaterThan(startY + 3)            // fled up the open edge, not dithered
+    expect(minGap).toBeGreaterThan(archer.meleeRange + 1)       // the chaser never closed
+    expect(archer.hp).toBe(200)                                // never took a hit
+  })
 })

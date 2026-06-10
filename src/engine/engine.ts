@@ -193,6 +193,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     visionRange: input.visionRange ?? Infinity,
     moveOrder: null,
     wanderTarget: null,
+    escapeDir: null,
     // Monsters lurk a (deterministic) few rounds before their first hop; heroes
     // don't use the dwell timer (they roam toward the team waypoint).
     wanderDwell: input.team === 'enemy' ? monsterDwell(index + 1) : 0,
@@ -1090,6 +1091,8 @@ function executeWander(state: BattleState, self: Combatant): void {
 // retreats (awayOpen≈1) keep the bias and its tuned behaviour untouched.
 const ESCAPE_SAMPLES = 16
 const ESCAPE_REACH_W = 0.25
+const ESCAPE_DEADEND_W = 2.5   // penalty for a heading we can't even take a full step down (a near-wall) so a cornered kiter doesn't dither into the wall instead of fleeing the open lane
+const ESCAPE_STICKY_W = 0.5    // bonus for continuing last turn's flee heading — kills the up/down flip-flop of a kiter pinned against a wall
 const ESCAPE_AWAY_W = 0.3
 const ESCAPE_THREAT_BUBBLE = 11   // cells: only foes this close shape the escape
 const ESCAPE_MAX_THREATS = 6      // cap the cluster we score against (perf + signal)
@@ -1119,6 +1122,7 @@ function escapeHeading(state: BattleState, self: Combatant, nearest: Combatant, 
   const awayReach = distance(self.pos, traceMove(self.pos, { x: self.pos.x + ax * probe, y: self.pos.y + ay * probe }, state.barriers))
   const awayOpen = Math.max(0, Math.min(1, (awayReach - 0.4) / 1.0))
   const coh = cohesionVec(self, state)
+  const prev = self.escapeDir   // last turn's committed heading (null when not fleeing)
 
   let best: Vec2 = { x: ax, y: ay }
   let bestScore = -Infinity
@@ -1132,10 +1136,13 @@ function escapeHeading(state: BattleState, self: Combatant, nearest: Combatant, 
     for (const p of pred) clearance = Math.min(clearance, Math.hypot(lpx - p.x, lpy - p.y))
     const score = clearance
       + ESCAPE_REACH_W * reach
+      - ESCAPE_DEADEND_W * Math.max(0, step - reach)   // shun near-walls (can't even step a full move that way)
       + ESCAPE_AWAY_W * awayOpen * (dx * ax + dy * ay)
       + COHESION_WEIGHT * (dx * coh.x + dy * coh.y)
+      + (prev ? ESCAPE_STICKY_W * (dx * prev.x + dy * prev.y) : 0)   // commit to last turn's heading (anti flip-flop)
     if (score > bestScore + EPS) { bestScore = score; best = { x: dx, y: dy } }
   }
+  self.escapeDir = best   // remember for next turn's hysteresis
   return best
 }
 

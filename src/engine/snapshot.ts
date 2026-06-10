@@ -141,7 +141,8 @@ export function deserializeBattle(token: string): BattleState {
     const threatMult = rest.threatMult ?? 1
     const armorReduction = rest.armorReduction ?? 0
     const dodgePeriod = rest.dodgePeriod ?? null
-    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    const escapeDir = rest.escapeDir ?? null   // legacy tokens predate kite-heading hysteresis
+    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {

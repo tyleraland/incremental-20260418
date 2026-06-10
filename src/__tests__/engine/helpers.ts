@@ -65,6 +65,7 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     moveOrder: null,
     wanderTarget: null,
     wanderDwell: 0,
+    escapeDir: null,
     threat: {},
     threatMult: 1,
     armorReduction: 0,

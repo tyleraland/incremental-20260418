@@ -270,6 +270,11 @@ export interface Combatant {
   visionRange: number
   wanderTarget: Vec2 | null
   wanderDwell: number
+  // §kite: the heading a fleeing unit committed to last turn (unit vector, null
+  // when not retreating). escapeHeading favours continuing it so a cornered
+  // kiter doesn't flip-flop between two near-tied directions (up the open wall vs
+  // back into the corner) and dither in place until it's caught.
+  escapeDir: Vec2 | null
 
   // §move-order: an explicit "go here" command that overrides normal AI
   // (targeting/wander) until the unit arrives or the order is cleared. The host
