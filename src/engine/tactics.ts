@@ -11,6 +11,7 @@
 // with rank (§15).
 
 import { distance } from './grid'
+import { timeScale } from './timescale'
 import { SEPARATION, EPS, CHARGER_DIVE_RADIUS, CHARGER_LEASH, CHARGER_LEASH_PER_RANK } from './constants'
 import { effectiveStat, skillDamageEstimate } from './damage'
 import {
@@ -247,9 +248,10 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     movement: (self, state, rank) => {
       const t = lockedTarget(self, state)
       if (!t) return null
-      const period = Math.max(SWOOP_PERIOD_MIN, SWOOP_PERIOD - (rank - 1))   // dives more often at higher rank
+      const ts = timeScale()   // keep the dive/hover cadence the same in real seconds
+      const period = Math.max(SWOOP_PERIOD_MIN, SWOOP_PERIOD - (rank - 1)) * ts   // dives more often at higher rank
       const phase = (state.round + self.index) % period
-      if (phase < SWOOP_DIVE_ROUNDS) return { toPoint: { x: t.pos.x, y: t.pos.y } }
+      if (phase < SWOOP_DIVE_ROUNDS * ts) return { toPoint: { x: t.pos.x, y: t.pos.y } }
       return { desiredRange: SWOOP_STANDOFF }
     },
   },

@@ -348,7 +348,7 @@ const ROUND_MS = 400
 
 // Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
 // and enemies alike) so health bars read consistently across the field.
-function FloatingLabel({ c, isPlayer, casting }: { c: Combatant; isPlayer: boolean; casting: boolean }) {
+function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer: boolean; casting: boolean; scale: number }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   // Cast bar driven by the live channel (roundsLeft), NOT wall-clock: a round is
   // gated to game ticks, and under load they advance in jumps — a wall-clock
@@ -356,8 +356,10 @@ function FloatingLabel({ c, isPlayer, casting }: { c: Combatant; isPlayer: boole
   // roundsLeft total…1 → 0…1 keeps it locked to the real cast, so it finishes
   // exactly as the spell lands. A round-long width transition ramps each step so
   // it reads smoothly (it only ever looks "stepped" if rounds stall under load).
+  // The channel lasts channelTime × timeScale finer rounds (finer rounds), so the
+  // bar's total is scaled to match.
   const ch = casting ? c.channel : null
-  const chTime = ch ? (c.skills.find((s) => s.id === ch.skillId)?.channelTime ?? 1) : 1
+  const chTime = (ch ? (c.skills.find((s) => s.id === ch.skillId)?.channelTime ?? 1) : 1) * scale
   const castFill = ch ? (chTime <= 1 ? 1 : Math.max(0, Math.min(1, (chTime - ch.roundsLeft) / (chTime - 1)))) : 0
   return (
     <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
@@ -446,7 +448,7 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
   )
 }
 
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string }) {
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
   return (
@@ -455,7 +457,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph }: { c:
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? 'left 380ms linear, top 380ms linear' : undefined }}
     >
-      <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} />
+      <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />
       {c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
       {c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
       <div
@@ -1392,6 +1394,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
               selected={sameWave && c.id === selectedId}
               onSelect={() => handleSelect(c)}
               glyph={chipGlyph(c, classFor)}
+              scale={battle.timeScale}
             />
           ))}
 

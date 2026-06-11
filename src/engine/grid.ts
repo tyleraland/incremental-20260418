@@ -7,6 +7,7 @@ import {
 } from './constants'
 import { slideMove, steerAround } from './barriers'
 import { arenaClamp } from './arena'
+import { timeScale } from './timescale'
 import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -75,7 +76,9 @@ export function moveSpeedOf(c: Combatant): number {
     if (s.statModifiers.moveSpeed) speed += s.statModifiers.moveSpeed
     if (s.statModifiers.moveSpeedMult != null) mult *= s.statModifiers.moveSpeedMult   // e.g. Cloak → 0.75
   }
-  return Math.max(0, speed * mult)
+  // Finer rounds move proportionally less per round, so real-world speed is the
+  // same. (timeScale 1 = no change.)
+  return Math.max(0, speed * mult) / timeScale()
 }
 
 // Move `mover` toward `target`, stopping `reach` units short so melee attackers

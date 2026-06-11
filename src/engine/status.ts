@@ -5,6 +5,7 @@
 // modifiers stack additively into `effectiveStat`; flags are read by the turn
 // loop (e.g. 'stunned' skips a turn) and damage path.
 
+import { scaleRounds } from './timescale'
 import type { StatModifiers, StatusEffect, Element } from './types'
 
 export interface StatusSpec {
@@ -66,7 +67,7 @@ export function buildStatus(specId: string, sourceId: string, level = 1): Status
     id: spec.id,
     name: spec.name,
     source: sourceId,
-    duration: spec.duration,
+    duration: scaleRounds(spec.duration),   // finer rounds → age out over N× rounds (same real time)
     statModifiers,
     flags: [...(spec.flags ?? [])],
     dotDamage: spec.dotDamage,

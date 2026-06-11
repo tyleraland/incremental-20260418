@@ -74,6 +74,7 @@ interface BattleSnapshot {
   barriers: BattleState['barriers']
   cols: number
   rows: number
+  timeScale?: number
   mode: BattleState['mode']
   plans: BattleState['plans']
   round: number
@@ -96,6 +97,7 @@ export function serializeBattle(state: BattleState): string {
     barriers: state.barriers,
     cols: state.cols,
     rows: state.rows,
+    timeScale: state.timeScale,
     mode: state.mode,
     plans: state.plans,
     round: state.round,
@@ -152,6 +154,7 @@ export function deserializeBattle(token: string): BattleState {
     barriers: snap.barriers,
     cols: snap.cols,
     rows: snap.rows,
+    timeScale: snap.timeScale ?? 1,   // legacy tokens predate finer rounds
     mode: snap.mode,
     plans: snap.plans,
     planner: defaultPlanner,

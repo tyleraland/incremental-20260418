@@ -10,6 +10,7 @@
 // Numeric power scales with the unit's learned level.
 
 import { distance, moveSpeedOf } from './grid'
+import { scaleRounds } from './timescale'
 import { EPS } from './constants'
 import { livingEnemies, livingAllies, isStealthed, findCombatant, mostInjuredAllyInRange } from './behavior'
 import { visibleEnemiesOf } from './spatial'
@@ -258,7 +259,7 @@ const CLOAK_MIN_GAP = 6
 const CLOAK_CALM_ROUNDS = 5
 const isStealthSkill = (sk: EngineSkill): boolean => sk.targeting === 'self' && sk.statusApplied === 'stealthed'
 function canCloak(self: Combatant, state: BattleState): boolean {
-  if (state.round - self.lastDamageRound < CLOAK_CALM_ROUNDS) return false   // recently in combat → engaged
+  if (state.round - self.lastDamageRound < scaleRounds(CLOAK_CALM_ROUNDS)) return false   // recently in combat → engaged (finer-rounds aware)
   const foes = livingEnemies(state, self)
   if (foes.some((e) => distance(self.pos, e.pos) <= CLOAK_MIN_GAP)) return false   // someone's right on top of us
   return foes.some((e) => distance(self.pos, e.pos) <= self.visionRange)            // a foe in sight worth ambushing

@@ -193,7 +193,17 @@ determinism.)
 
 **Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
 - The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round
-  advances every `ROUND_EVERY_TICKS` (2) ticks → ~2.5 rounds/sec.
+  advances every `ROUND_EVERY_TICKS` (1) tick → 5 rounds/sec, but battles run at
+  **`timeScale` = `ROUND_TIME_SCALE` (2)** ("finer rounds"): 2 engine rounds == one
+  *logical* round, so the real-time pace is the unchanged ~2.5 logical rounds/sec
+  while motion is stepped finer and combat events spread out. `timeScale` lives on
+  `BattleState` (snapshot-serialized), defaults to **1** (no scaling) so the whole
+  engine suite + replays are byte-identical, and is applied via a per-battle ambient
+  (`engine/timescale.ts`, mirroring `arena.ts`): `moveSpeedOf` ÷ scale, cooldowns /
+  channel / zone / status durations / monster dwell / draw-timeout × scale, and the
+  *discrete* per-round events (basic attacks, DoT ticks) gated to once per logical
+  round via `onBeat`. Bump `ROUND_TIME_SCALE` to make the sim finer/smoother at the
+  same pace. (Equivalence proved in `timescale.test.ts`.)
 - For each location with eligible units (`health > 0`, `recoveryTicksLeft === 0`,
   not resting) **and** at least one monster: spawn a fresh battle if none exists or
   the last one finished (after a `BATTLE_RESPAWN_TICKS` = 15 cooldown), otherwise

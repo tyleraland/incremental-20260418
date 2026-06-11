@@ -193,7 +193,12 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 
 // ── Combat lifecycle (drives the engine from the tick loop) ────────────────────
 
-const ROUND_EVERY_TICKS   = 2    // advance one engine round every N ticks (~400ms/round)
+// Finer rounds: run the engine every tick at timeScale = ROUND_EVERY_TICKS, so the
+// real-time pace is unchanged (timeScale × rounds/sec is constant) but motion is
+// stepped finer and combat events spread out. Bumping ROUND_TIME_SCALE makes the
+// sim finer/smoother at the same pace (it's the lever to tune feel).
+const ROUND_TIME_SCALE    = 2    // engine rounds per logical round (finer = smoother)
+const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (~200ms/round at scale 2)
 const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
 
 // Open-world pacing (§open-world). A persistent battle keeps a FIXED number of
@@ -283,7 +288,7 @@ function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[
     const def = MONSTER_REGISTRY[wave[i]]
     if (def) enemyUnits.push(monsterToEngineInput(def, `${wave[i]}#${i}`, 'enemy'))
   }
-  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true })
+  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, timeScale: ROUND_TIME_SCALE })
 }
 
 // ── Open-world battle helpers (§open-world) ─────────────────────────────────--
@@ -370,7 +375,7 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   const size = openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
   const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size })
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: ROUND_TIME_SCALE })
   party.forEach((u, i) => {
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
   })

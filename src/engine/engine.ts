@@ -11,6 +11,7 @@ import {
   WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN,
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
+import { setTimeScale, timeScale, scaleRounds, onBeat } from './timescale'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
 import {
@@ -50,7 +51,7 @@ function hash01(n: number): number {
 
 function monsterDwell(seed: number): number {
   const span = MONSTER_WANDER_MAX - MONSTER_WANDER_MIN + 1
-  return MONSTER_WANDER_MIN + Math.floor(hash01(seed) * span)
+  return scaleRounds(MONSTER_WANDER_MIN + Math.floor(hash01(seed) * span))
 }
 
 function emptyStats(): BattleStats {
@@ -233,7 +234,9 @@ export function relinkCombatant(c: Combatant, input: EngineUnitInput, partyTacti
 export function createBattle(setup: CombatSetup): BattleState {
   const cols = setup.cols ?? COLS
   const rows = setup.rows ?? ROWS
+  const timeScale = Math.max(1, Math.floor(setup.timeScale ?? 1))
   setArenaBounds(cols, rows)   // so startingPosition/clamp use this battle's bounds
+  setTimeScale(timeScale)      // so per-round helpers (move/cooldown/status) scale
   const combatants: Combatant[] = []
   let index = 0
   const place = (units: EngineUnitInput[], team: Team, party?: TacticRef[]) => {
@@ -256,6 +259,7 @@ export function createBattle(setup: CombatSetup): BattleState {
     barriers: setup.barriers ?? [],
     cols,
     rows,
+    timeScale,
     mode: setup.mode ?? 'encounter',
     plans: {},
     planner: setup.planner ?? defaultPlanner,
@@ -283,6 +287,7 @@ export function addCombatant(
   at?: Vec2,                 // explicit spawn position (open-world scatter); else formation slot
 ): Combatant {
   setArenaBounds(state.cols, state.rows)
+  setTimeScale(state.timeScale)
   const index = state.combatants.reduce((m, c) => Math.max(m, c.index), -1) + 1
   const sameRank = state.combatants.filter(
     (c) => c.team === team && c.preferredRank === input.preferredRank,
@@ -441,7 +446,7 @@ function tickZones(state: BattleState): void {
     for (const c of state.combatants) {
       if (!c.alive || c.team !== z.team) continue
       if (distance(c.pos, z.pos) > z.radius + EPS) continue
-      if (z.dotDamage > 0) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'neutral', z.element ?? 'zone')
+      if (z.dotDamage > 0 && onBeat(state.round)) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'neutral', z.element ?? 'zone')
       // Utility zone (Molasses): refresh a status on whoever's inside. addStatus
       // replaces by id, so it never stacks — it just tops the duration back up.
       if (z.statusApplied && c.alive) {
@@ -538,7 +543,7 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
 function recordSkillUse(state: BattleState, self: Combatant, skill: EngineSkill): void {
   if (!state.stats.skillsUsedByUnit[self.id]) state.stats.skillsUsedByUnit[self.id] = []
   state.stats.skillsUsedByUnit[self.id].push(skill.id)
-  self.skillCooldowns[skill.id] = skill.cooldown
+  self.skillCooldowns[skill.id] = scaleRounds(skill.cooldown)
 }
 
 // ── §3 combo / stealth helpers ──────────────────────────────────────────────--
@@ -650,7 +655,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
       half: skill.wall.halfWidth,
       fireDamage: skill.wall.fireDamage,
       maxBumps: skill.wall.maxBumps,
-      roundsLeft: skill.wall.duration,
+      roundsLeft: scaleRounds(skill.wall.duration),
       bumps: {},
     })
     if (skill.retreatAfter) retreatCaster(state, self, skill.retreatAfter)
@@ -668,7 +673,7 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
       pos: { ...zoneAt },
       radius: skill.aoeRadius || 1,
       dotDamage: skill.zone.dotDamage,
-      roundsLeft: skill.zone.duration,
+      roundsLeft: scaleRounds(skill.zone.duration),
       skillId: skill.id,
       element: skill.zone.element ?? skill.element,
       statusApplied: skill.zone.statusApplied,
@@ -737,7 +742,7 @@ function castSkill(state: BattleState, self: Combatant, skill: EngineSkill, targ
       const lead = Math.min(moveSpeedOf(lock) * skill.channelTime, dd * 0.8)
       targetPoint = dd > EPS ? { x: lock.pos.x + (dx / dd) * lead, y: lock.pos.y + (dy / dd) * lead } : { ...lock.pos }
     }
-    self.channel = { skillId: skill.id, targetId, roundsLeft: skill.channelTime, targetPoint }
+    self.channel = { skillId: skill.id, targetId, roundsLeft: scaleRounds(skill.channelTime), targetPoint }
     emit(state, { round: state.round, type: 'cast_start', sourceId: self.id, targetId, skillId: skill.id })
     return
   }
@@ -756,7 +761,7 @@ function usedUp(self: Combatant, t: ResolvedTactic): boolean {
   return !!t.def.oncePerCombat && self.tacticsUsed.includes(t.def.id)
 }
 function markFired(self: Combatant, t: ResolvedTactic): void {
-  if (t.def.cooldown) self.tacticCooldowns[t.def.id] = t.def.cooldown
+  if (t.def.cooldown) self.tacticCooldowns[t.def.id] = scaleRounds(t.def.cooldown)
   if (t.def.oncePerCombat && !self.tacticsUsed.includes(t.def.id)) self.tacticsUsed.push(t.def.id)
 }
 // §debug: log how a tactic resolved this turn (drives BattleView's "active now").
@@ -1330,6 +1335,11 @@ function executeNaiveAction(state: BattleState, self: Combatant): void {
   const target = findCombatant(state, action.targetId)
   if (!target || !target.alive) return
   const skill = action.kind === 'skill' ? action.skill : null
+  // Basic attacks have no cooldown — they'd otherwise fire every round, so at a
+  // finer time scale they'd hit N× too often. Gate them to once per logical round
+  // (staggered by index so the party doesn't all swing on the same finer-round).
+  // Skill casts are paced by their own scaled cooldowns, so they're never gated.
+  if (!skill && !onBeat(state.round, self.index)) return
   dealAttack(state, self, target, state.calculateDamage(self, target, skill, state.round), skill)
   if (skill) recordSkillUse(state, self, skill)   // dealAttack no longer records skill use
   breakStealth(state, self)                        // a basic attack also reveals (§3)
@@ -1522,7 +1532,7 @@ function evalOutcome(state: BattleState): Outcome {
   const enemiesAlive = state.combatants.some((c) => c.alive && c.team === 'enemy')
   if (!enemiesAlive) return 'victory'
   if (!playersAlive) return 'defeat'
-  if (state.round >= state.maxRounds) return 'draw'  // §9.2 draw favors defender → loss for the player
+  if (state.round >= scaleRounds(state.maxRounds)) return 'draw'  // §9.2 draw favors defender → loss for the player
   return 'ongoing'
 }
 
@@ -1532,6 +1542,7 @@ const EVENT_CAP = 600   // open battles never reset; keep the event log bounded
 export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
   setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
+  setTimeScale(state.timeScale)            // per-round helpers scale to finer rounds
   // Open battles run forever — trim the event log so it can't grow unbounded
   // (only the current round's events are ever read for rendering).
   if (state.mode === 'open' && state.collectEvents && state.events.length > EVENT_CAP) {
@@ -1548,7 +1559,7 @@ export function advanceRound(state: BattleState): BattleState {
     if (c.statuses.length === 0) continue
     const kept = []
     for (const s of c.statuses) {
-      if (s.dotDamage && c.alive) applyTickDamage(state, s.source, c, s.dotDamage, s.element ?? 'neutral', s.id)
+      if (s.dotDamage && c.alive && onBeat(state.round)) applyTickDamage(state, s.source, c, s.dotDamage, s.element ?? 'neutral', s.id)
       s.duration -= 1
       if (s.duration > 0) kept.push(s)
       else emit(state, { round: state.round, type: 'status_expire', sourceId: c.id, extra: { statusId: s.id } })
