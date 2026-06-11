@@ -51,9 +51,44 @@ export function traceMove(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_
   return to
 }
 
+// Nearest free point when a unit has somehow ended up *inside* a barrier (a
+// crowded separation push or corner case can wedge one in). Without this, traceMove
+// samples from an interior point, finds the first step still blocked, and returns
+// `from` — so every direction reads as blocked and the unit freezes inside the
+// terrain forever. Pop it out to just past the nearest inflated edge of whichever
+// barrier holds it (preferring an exit that isn't inside another barrier).
+export function escapeBarrier(from: Vec2, barriers: Barrier[], pad = UNIT_PAD): Vec2 {
+  let cur = from
+  for (let iter = 0; iter < 4; iter++) {
+    const b = barriers.find((bb) => pointBlocked([bb], cur, pad))
+    if (!b) break
+    const e = 0.05
+    const cands = [
+      { x: b.x - pad - e, y: cur.y },
+      { x: b.x + b.w + pad + e, y: cur.y },
+      { x: cur.x, y: b.y - pad - e },
+      { x: cur.x, y: b.y + b.h + pad + e },
+    ].map(clamp)
+    // Prefer the nearest exit that's clear of every barrier; else the nearest edge.
+    let best: Vec2 | null = null, bd = Infinity
+    let nearest = cands[0], nd = Infinity
+    for (const c of cands) {
+      const dd = dist(cur, c)
+      if (dd < nd) { nd = dd; nearest = c }
+      if (!pointBlocked(barriers, c, pad) && dd < bd) { bd = dd; best = c }
+    }
+    cur = best ?? nearest
+    if (best) break
+  }
+  return cur
+}
+
 // Move toward `desired`; if blocked right away, slide along the wall by trying the
 // four cardinal directions and taking the free one that ends nearest the goal.
 export function slideMove(from: Vec2, desired: Vec2, barriers: Barrier[], pad = UNIT_PAD): Vec2 {
+  // Wedged inside terrain → escape it first (otherwise every trace reads blocked
+  // and the unit is stuck forever). Pop out this step; normal movement resumes next.
+  if (pointBlocked(barriers, from, pad)) return escapeBarrier(from, barriers, pad)
   const direct = traceMove(from, desired, barriers, pad)
   // Take the direct move when it either reached the goal — even a sub-0.05 or
   // zero-length step — or made real straight-line progress. Only fall back to

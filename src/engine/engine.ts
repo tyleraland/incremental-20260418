@@ -30,7 +30,7 @@ import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 // still dominates, cohesion just curves it toward the party so a healer doesn't
 // strand themselves behind the front line.
 const COHESION_WEIGHT = 0.35
-import { traceMove, slideMove, sightlineClear, lineClear, steerAround, canReach, pointBlocked } from './barriers'
+import { traceMove, slideMove, sightlineClear, lineClear, steerAround, canReach, pointBlocked, escapeBarrier } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
@@ -802,6 +802,17 @@ function evalMovement(state: BattleState, self: Combatant): MovementResult | nul
 
 function executeMovement(state: BattleState, self: Combatant, plan: MovementResult | null): void {
   if (plan?.clearLock) self.lockedTargetId = null
+  // Wedged inside terrain (a crowded separation push or corner case can leave a
+  // unit there)? Pop it out first — otherwise every trace starts blocked and the
+  // unit freezes inside the barrier no matter what its plan says.
+  if (pointBlocked(state.barriers, self.pos)) {
+    const freed = escapeBarrier(self.pos, state.barriers)
+    if (freed.x !== self.pos.x || freed.y !== self.pos.y) {
+      self.pos = freed
+      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+      return
+    }
+  }
   if (self.statuses.some((s) => s.flags.includes('rooted'))) return   // §2 rooted: can act, can't move
   if (plan?.hold) return
   if (plan?.awayFromNearestEnemy) {

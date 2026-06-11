@@ -30,6 +30,29 @@ describe('barrier collision helpers', () => {
     expect(pointBlocked(wall, out)).toBe(false)
   })
 
+  it('a unit wedged INSIDE a barrier escapes instead of freezing', () => {
+    // Regression (Lyra stuck on a cliff): a crowded push can leave a unit inside
+    // terrain; traceMove then samples from an interior point, reads every step as
+    // blocked, and returns `from` forever. slideMove must pop it back out.
+    const from = { x: 12, y: 12 }                 // dead inside the wall
+    expect(pointBlocked(wall, from)).toBe(true)
+    const out = slideMove(from, { x: 12, y: 11 }, wall)
+    expect(pointBlocked(wall, out)).toBe(false)   // popped out of the terrain
+  })
+
+  it('a combatant that ends up inside terrain walks out within a round', () => {
+    const cliff = [{ x: 10, y: 10, w: 4, h: 4, kind: 'cliff' as const }]
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', visionRange: 10 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', visionRange: 8 })],
+      mode: 'open', cols: 30, rows: 30, barriers: cliff,
+    })
+    find(b, 'p').pos = { x: 12, y: 12 }            // wedged inside the cliff
+    expect(pointBlocked(cliff, find(b, 'p').pos)).toBe(true)
+    advanceRound(b)
+    expect(pointBlocked(cliff, find(b, 'p').pos)).toBe(false)   // escaped, not frozen
+  })
+
   it('slideMove honors a tiny unobstructed step instead of a spurious cardinal hop', () => {
     // No wall in the way: a sub-0.05 intended move must land exactly on `desired`,
     // not get diverted into a fixed 0.05 cardinal "slide". Regression: that kick
