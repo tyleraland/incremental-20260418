@@ -136,6 +136,22 @@ describe('tactics: movement', () => {
     expect(p.lockedTargetId).toBeNull()
     expect(p.tacticsUsed).toContain('retreater')
   })
+
+  it('a retreat runs at move speed, not a fixed multi-cell hop', () => {
+    // Regression ("units speed up"): retreat/flee used to jump a fixed ~3 cells a
+    // round (~4× a normal step), reading as a sprint. It should run at move speed.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', hp: 5, maxHp: 100, moveSpeed: 0.6, tactics: [{ id: 'retreater', rank: 1 }], meleeRange: 30 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0, meleeRange: 30 })],   // harmless → p survives to retreat
+      cols: 40, rows: 40,
+    })
+    find(b, 'p').pos = { x: 20, y: 20 }; find(b, 'e').pos = { x: 20, y: 25 }
+    const before = { ...find(b, 'p').pos }
+    advanceRound(b)
+    const moved = Math.hypot(find(b, 'p').pos.x - before.x, find(b, 'p').pos.y - before.y)
+    expect(moved).toBeGreaterThan(0)            // it did retreat
+    expect(moved).toBeLessThan(0.6 * 1.5 + 0.2) // ~moveSpeed × 1.5, not a 3-cell hop
+  })
 })
 
 // Shield Wall / Last Stand are now SKILLS (only skills modify stats). Equipping

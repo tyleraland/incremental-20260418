@@ -31,6 +31,11 @@ import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 // still dominates, cohesion just curves it toward the party so a healer doesn't
 // strand themselves behind the front line.
 const COHESION_WEIGHT = 0.35
+// A retreat/flee runs at the unit's own move speed with a modest panic boost —
+// NOT a fixed `rows` teleport. The old fixed-distance fall-back made a retreating
+// or fleeing unit visibly sprint ~4× a normal step (the "units speed up" jank);
+// speed-limiting keeps motion consistent while still opening a gap on a chaser.
+const RETREAT_SPEED_MULT = 1.5
 import { traceMove, slideMove, sightlineClear, lineClear, steerAround, canReach, pointBlocked, escapeBarrier } from './barriers'
 import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
@@ -846,15 +851,17 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   if (plan?.hold) return
   if (plan?.awayFromNearestEnemy) {
     const dir = self.team === 'player' ? -1 : 1
-    const rows = plan.rows ?? 1
     const coh = cohesionVec(self, state)
-    // Pull-toward-team-edge as the dominant move; cohesion gives a sideways
-    // curve so a retreater drifts toward the surviving party instead of
-    // straight back into a corner.
-    const dx = coh.x * COHESION_WEIGHT * rows
-    const dy = dir * rows + coh.y * COHESION_WEIGHT * rows
+    // Direction: toward our own edge, with a cohesion sideways curve so a
+    // retreater drifts back toward the surviving party instead of into a corner.
+    const dx = coh.x * COHESION_WEIGHT
+    const dy = dir + coh.y * COHESION_WEIGHT
+    const len = Math.hypot(dx, dy) || 1
+    // Magnitude: (scaled) move speed × a panic boost — a consistent run, not a
+    // fixed multi-cell hop. `plan.rows` is now just the disengage intent.
+    const speed = moveSpeedOf(self) * RETREAT_SPEED_MULT
     const before = { ...self.pos }
-    self.pos = slideMove(self.pos, { x: self.pos.x + dx, y: self.pos.y + dy }, state.barriers)
+    self.pos = slideMove(self.pos, { x: self.pos.x + (dx / len) * speed, y: self.pos.y + (dy / len) * speed }, state.barriers)
     enforceSeparation(self, state.combatants, state.barriers)
     if (self.pos.x !== before.x || self.pos.y !== before.y) {
       emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })

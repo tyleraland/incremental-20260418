@@ -149,7 +149,9 @@ export function enforceSeparation(mover: Combatant, all: Combatant[], barriers: 
       dy = 0
       d = 1
     }
-    const overlap = (SEPARATION - d) / 2
+    // Resolve overlap gradually at a finer time scale (÷ scale), so a separation
+    // shove doesn't add a big fixed jump on top of the smaller per-round move.
+    const overlap = (SEPARATION - d) / 2 / timeScale()
     const ux = dx / d
     const uy = dy / d
     // Push apart, but slide the push along any wall so crowded units against
