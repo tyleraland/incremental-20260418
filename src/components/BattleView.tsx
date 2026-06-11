@@ -190,7 +190,6 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: {
   const suppressClickRef = useRef(false)
   const [pan, setPan] = useState<Vec2>({ x: 0, y: 0 })
 
-  const cell = `${100 / cam.size}%`
   const centerTop = Math.max(0, Math.min(100, (1 - (centerY - cam.y) / cam.size) * 100))
 
   const pointerGap = (): number => {
@@ -270,14 +269,18 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: {
         {/* team-half tints, split at the arena's center line */}
         <div className="absolute inset-x-0 top-0 bg-red-500/10 pointer-events-none" style={{ height: `${centerTop}%` }} />
         <div className="absolute inset-x-0 bottom-0 bg-blue-500/10 pointer-events-none" style={{ top: `${centerTop}%` }} />
-        {/* faint grid that scales with the camera */}
+        {/* faint grid — world-anchored: backgroundPosition tracks the camera so
+            the squares stay fixed to the ground and the party visibly moves
+            across them (lines land exactly on world-integer cell boundaries).
+            Sized in cqmin so it scales with the (square) size-container arena. */}
         <div
           className="absolute inset-0 opacity-40 pointer-events-none"
           style={{
             backgroundImage:
               'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
               'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
-            backgroundSize: `${cell} ${cell}`,
+            backgroundSize: `${100 / cam.size}cqmin ${100 / cam.size}cqmin`,
+            backgroundPosition: `${(-cam.x / cam.size) * 100}cqmin ${(cam.y / cam.size) * 100}cqmin`,
           }}
         />
         {/* terrain: walls solid (block movement + sight); cliffs translucent +
