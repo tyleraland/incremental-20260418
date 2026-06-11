@@ -17,7 +17,7 @@ import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
 } from './behavior'
 import {
-  resolveTactics, chargerBonus, chargerSpeedMult, armoredFactor, nimblePeriod, hasTactic,
+  resolveTactics, armoredFactor, nimblePeriod, hasTactic,
 } from './tactics'
 import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
@@ -477,11 +477,6 @@ function dealAttack(state: BattleState, attacker: Combatant, target: Combatant, 
   const isMelee = attacker.rangedRange <= 0
   let amount = baseAmount
 
-  if (!skill) {
-    const cb = chargerBonus(attacker)
-    if (isMelee && cb > 0 && !attacker.chargeUsed) { amount *= 1 + cb; attacker.chargeUsed = true }
-  }
-
   const period = nimblePeriod(target)
   if (period) {
     target.attacksReceived += 1
@@ -802,11 +797,6 @@ function evalMovement(state: BattleState, self: Combatant): MovementResult | nul
     if (p) { markFired(self, t); rec(self, t, 'fired'); plan = p; continue }
     rec(self, t, 'idle')
   }
-  // Charger is a modifier (no plan of its own): fold its speed-up into whichever
-  // movement wins — a fired tactic, or the default advance-on-lock (plan === null →
-  // executeMovement's chase). It never occupies the channel, so it can't starve.
-  const mult = chargerSpeedMult(self)
-  if (mult !== 1) plan = { ...(plan ?? {}), speedMult: (plan?.speedMult ?? 1) * mult }
   return plan
 }
 

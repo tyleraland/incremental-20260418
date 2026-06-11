@@ -25,7 +25,7 @@ export { createBattle, addCombatant, issueMoveOrder, clearMoveOrder, advanceRoun
 export { unitToEngineInput, monsterToEngineInput } from './adapter'
 export {
   TACTIC_REGISTRY, resolveTactics, getTactic, hasTactic,
-  chargerBonus, armoredFactor, nimblePeriod,
+  armoredFactor, nimblePeriod,
 } from './tactics'
 export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget, SKILL_TACTICS, inheritedTacticIds, isChanneledAoe, isOffensiveAoe, skillActiveCap } from './skills'
 export { STATUS_REGISTRY, buildStatus } from './status'

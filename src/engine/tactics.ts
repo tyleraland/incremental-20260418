@@ -11,10 +11,10 @@
 // with rank (§15).
 
 import { distance } from './grid'
-import { SEPARATION, EPS } from './constants'
+import { SEPARATION, EPS, CHARGER_DIVE_RADIUS, CHARGER_LEASH, CHARGER_LEASH_PER_RANK } from './constants'
 import { effectiveStat, skillDamageEstimate } from './damage'
 import {
-  lockedTarget, nearestEnemyTo, isCaster, visibleEnemiesOf,
+  lockedTarget, nearestEnemyTo, isCaster, visibleEnemiesOf, alliesOf, centroid,
   squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
 } from './spatial'
 import { selectSkillTarget, skillActiveCap } from './skills'
@@ -231,12 +231,28 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
 
   // Movement -------------------------------------------------------------------
   'charger': {
-    id: 'charger', name: 'Charger', scope: 'unit', channel: 'movement',
-    description: 'Sprint toward the target; the first hit lands harder.',
-    // No movement fn of its own: Charger is a *modifier* — its speed-up is folded
-    // into whatever movement plan wins (see chargerSpeedMult + evalMovement), and
-    // its first-hit damage bonus is read via chargerBonus. Producing its own plan
-    // used to short-circuit the movement channel and starve flanker/kiter/guardian.
+    id: 'charger', name: 'Charger', scope: 'unit', channel: 'movement', kind: 'floor',
+    description: 'Dive into melee on the target — crash into the thick of the pack (pairs with a melee AoE). Breaks off to regroup if a fleeing foe drags it too far from the party.',
+    // A pure positioning behaviour: no speed-up, no damage bonus. With a target it
+    // aims at the centroid of the enemy cluster around that target (so it ends up
+    // *inside* the group, not poking the nearest edge), and leashes back to the
+    // party when a runaway target pulls it past CHARGER_LEASH from the team centre.
+    movement: (self, state, rank) => {
+      const t = lockedTarget(self, state)
+      if (!t) return null   // nothing locked → fall through to default/wander
+      // Leash: party cohesion over chasing forever. If we've been dragged past the
+      // leash radius from the party centre, break off, drop the runaway lock, and
+      // head home instead of following a fleeing foe across the map.
+      const mates = alliesOf(state, self)
+      const home = centroid(mates)
+      const leash = CHARGER_LEASH + CHARGER_LEASH_PER_RANK * (rank - 1)
+      if (home && distance(self.pos, home) > leash) return { toPoint: home, clearLock: true }
+      // Dive point: centroid of the enemy pack within reach of the target (so a
+      // following melee AoE catches several), falling back to the target itself.
+      const pack = visibleEnemiesOf(state, self).filter((e) => distance(e.pos, t.pos) <= CHARGER_DIVE_RADIUS)
+      const dive = centroid(pack) ?? { x: t.pos.x, y: t.pos.y }
+      return { toPoint: dive }
+    },
   },
   'retreater': {
     id: 'retreater', name: 'Retreater', scope: 'unit', channel: 'movement', oncePerCombat: true,
@@ -522,16 +538,6 @@ export function hasTactic(c: Combatant, id: string): boolean {
   return c.tactics.some((t) => t.def.id === id)
 }
 
-// Charger first-hit bonus multiplier (0 if not equipped / already used).
-export function chargerBonus(c: Combatant): number {
-  const t = getTactic(c, 'charger')
-  return t ? 0.3 + 0.1 * (t.rank - 1) : 0
-}
-// Charger movement-speed multiplier — folded into whichever movement plan wins
-// (1 = not equipped). Charger has no plan of its own; this is the modifier half.
-export function chargerSpeedMult(c: Combatant): number {
-  return hasTactic(c, 'charger') ? 1.5 : 1
-}
 // Armored (skill-granted passive, was a tactic): incoming-damage multiplier from
 // the combatant's `armorReduction` fraction (1 = no reduction, capped at 0.5).
 export function armoredFactor(c: Combatant): number {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createBattle, advanceRound, resolveTactics, TACTIC_REGISTRY,
-  chargerBonus, armoredFactor, nimblePeriod,
+  armoredFactor, nimblePeriod,
   type BattleState, type Combatant, type ResolvedTactic,
 } from '@/engine'
 import { eu, combatant, attackSkill, healSkill } from './helpers'
@@ -66,17 +66,52 @@ describe('tactics: targeting', () => {
 })
 
 describe('tactics: movement', () => {
-  it('Charger advances faster than a plain unit', () => {
-    const base = createBattle({ playerUnits: [eu({ id: 'p' })], enemyUnits: [eu({ id: 'e', team: 'enemy' })] })
-    const chg = createBattle({ playerUnits: [eu({ id: 'p', tactics: [{ id: 'charger', rank: 1 }] })], enemyUnits: [eu({ id: 'e', team: 'enemy' })] })
-    advanceRound(base); advanceRound(chg)
-    expect(find(chg, 'p').pos.y).toBeGreaterThan(find(base, 'p').pos.y)
+  it('Charger dives at the enemy pack centroid, not just its single target', () => {
+    // p is locked on e1, but e1 sits at the edge of a 3-boar pack offset to +x.
+    // The charge aims at the *centroid* of that pack, so it crashes into the group
+    // (setting up a melee AoE) rather than poking its single target.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', tactics: [{ id: 'charger', rank: 1 }] })],
+      enemyUnits: [eu({ id: 'e1', team: 'enemy' }), eu({ id: 'e2', team: 'enemy' }), eu({ id: 'e3', team: 'enemy' })],
+      cols: 40, rows: 40,
+    })
+    find(b, 'p').pos = { x: 20, y: 5 }
+    find(b, 'p').lockedTargetId = 'e1'
+    find(b, 'e1').pos = { x: 20, y: 18 }   // the locked target
+    find(b, 'e2').pos = { x: 23, y: 18 }   // pack, off to +x (within dive radius)
+    find(b, 'e3').pos = { x: 25, y: 18 }
+    const plan = TACTIC_REGISTRY['charger'].movement!(find(b, 'p'), b, 1)!
+    expect(plan.toPoint!.x).toBeCloseTo((20 + 23 + 25) / 3)   // pack centroid, not e1's x=20
+    expect(plan.toPoint!.y).toBeCloseTo(18)
   })
 
-  it('Charger is a modifier — it no longer starves a movement tactic below it', () => {
-    // Charger sits above Retreater. As a plan-producer it used to win the
-    // movement channel every turn and the badly-hurt unit would never fall back.
-    // As a modifier it has no plan, so Retreater fires.
+  it('Charger leashes: a runaway target makes it break off and regroup', () => {
+    // p is dragged far from its two mates chasing a foe that keeps fleeing. Past the
+    // leash radius it drops the runaway lock and heads back toward the party centre.
+    const b = createBattle({
+      playerUnits: [
+        eu({ id: 'p', tactics: [{ id: 'charger', rank: 1 }], visionRange: Infinity }),
+        eu({ id: 'm1' }), eu({ id: 'm2' }),
+      ],
+      enemyUnits: [eu({ id: 'e', team: 'enemy' })],
+      mode: 'open', cols: 80, rows: 80,
+    })
+    find(b, 'm1').pos = { x: 10, y: 10 }
+    find(b, 'm2').pos = { x: 12, y: 10 }       // party centre ≈ (11,10)
+    find(b, 'p').pos = { x: 50, y: 50 }         // ~57 from the party — way past leash
+    find(b, 'p').lockedTargetId = 'e'
+    find(b, 'e').pos = { x: 60, y: 60 }         // fleeing further out
+    const home = { x: 11, y: 10 }
+    const before = Math.hypot(50 - home.x, 50 - home.y)
+    advanceRound(b)
+    const p = find(b, 'p')
+    expect(Math.hypot(p.pos.x - home.x, p.pos.y - home.y)).toBeLessThan(before)  // headed home
+    expect(p.lockedTargetId).toBeNull()                                          // dropped the runaway
+  })
+
+  it('Charger is a floor — it demotes below a trigger, so it does not starve Retreater', () => {
+    // Charger (floor) sits above Retreater (trigger); demoteFloors reorders it
+    // below, so a badly-hurt unit still falls back.
     const b = createBattle({
       playerUnits: [eu({ id: 'p', hp: 8, maxHp: 100, tactics: [{ id: 'charger', rank: 1 }, { id: 'retreater', rank: 1 }], meleeRange: 30 })],
       enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 30 })],
@@ -87,17 +122,6 @@ describe('tactics: movement', () => {
     expect(p.pos.y).toBeLessThan(before)        // retreated toward own edge
     expect(p.lockedTargetId).toBeNull()
     expect(p.tacticsUsed).toContain('retreater')
-  })
-
-  it('Charger first melee hit deals +30%', () => {
-    const mk = (tactics: { id: string; rank: number }[]) => createBattle({
-      playerUnits: [eu({ id: 'p', str: 20, tactics, meleeRange: 30 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, hp: 100, maxHp: 100, meleeRange: 30 })],
-    })
-    const base = mk([]); const chg = mk([{ id: 'charger', rank: 1 }])
-    advanceRound(base); advanceRound(chg)
-    const hitBy = (b: typeof base) => b.events.find((e) => e.type === 'melee_attack' && e.sourceId === 'p')!.value!
-    expect(hitBy(chg)).toBe(Math.floor(hitBy(base) * 1.3))
   })
 
   it('Retreater falls back and disengages once when badly hurt', () => {
@@ -148,7 +172,6 @@ describe('tactics: reaction', () => {
 
 describe('tactics: passive helpers', () => {
   it('reports skill-granted passive parameters (Armored/Nimble are now combatant fields)', () => {
-    expect(chargerBonus(combatant({ tactics: [T('charger')] }))).toBeCloseTo(0.3)
     expect(armoredFactor(combatant({ armorReduction: 0.1 }))).toBeCloseTo(0.9)
     expect(armoredFactor(combatant({ armorReduction: 0.9 }))).toBeCloseTo(0.5)   // capped
     expect(nimblePeriod(combatant({ dodgePeriod: 7 }))).toBe(7)

@@ -308,9 +308,12 @@ closes to cast range and opens fire (which provokes it).
   elemental gaps clear it, near-ties don't thrash), which the opt-in **Exploit Weakness**
   passive tactic drops toward 0 (rank-scaled) so the unit always takes the absolute best.
   (`exploit-weakness.test.ts`.)
-- **Charger** is a *modifier*, not a movement plan: `chargerSpeedMult` folds its
-  speed-up into whichever movement plan wins, so it never occupies (and starves) the
-  movement channel; its first-hit damage bonus is `chargerBonus`.
+- **Charger** is a movement-channel **floor** (no speed or damage modifier): with a
+  locked target it dives to the **centroid of the enemy pack** within
+  `CHARGER_DIVE_RADIUS` of that target (crash into the group to set up a melee AoE),
+  and it **leashes** — if a fleeing foe drags it past `CHARGER_LEASH` (+per-rank)
+  from the party centroid it drops the lock and regroups (cohesion over an endless
+  chase). As a floor it demotes below same-channel triggers, so it can't starve them.
 - **Team blackboard read side:** `teamFocus(self, state)` reads the planner's shared
   `focusTargetId` (lowest-HP visible enemy). `opportunist` (rank-scaled HP gate),
   `finish-them` (party, near-dead gate), and `focus-fire` (party, unconditional)

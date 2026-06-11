@@ -52,3 +52,12 @@ export const WANDER_SPEED_MULT = 1
 // and piling up in corners.
 export const WANDER_MARGIN = 12
 export const MONSTER_EDGE_MARGIN = 4
+
+// §Charger — a melee "dive" movement behaviour (no speed/damage modifier). It
+// aims at the centroid of the enemy pack within CHARGER_DIVE_RADIUS of its target
+// (crashing into the group to set up a melee AoE), and *leashes*: if a fleeing foe
+// drags it past CHARGER_LEASH from the party centroid it breaks off and regroups
+// (party cohesion over an endless chase). Leash grows a little per rank.
+export const CHARGER_DIVE_RADIUS = 6
+export const CHARGER_LEASH = 14
+export const CHARGER_LEASH_PER_RANK = 2

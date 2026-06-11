@@ -769,7 +769,7 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
               {list.map((t) => {
                 const outcome = resById.get(t.def.id)
                 const isPassive = t.def.channel === 'passive'
-                // movement channel w/o a movement fn = an always-on modifier (Charger)
+                // a channelled tactic with no fn of its own (e.g. a pure modifier) = always-on
                 const isModifier = !isPassive && !(t.def as unknown as Record<string, unknown>)[t.def.channel]
                 const meta = outcome ? OUTCOME_META[outcome]
                   : isPassive  ? { dot: '●', cls: 'text-violet-400', note: 'passive' }
