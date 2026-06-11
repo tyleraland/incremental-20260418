@@ -56,7 +56,9 @@ describe('open-world hunt routing', () => {
     find(b, 'e').pos = { x: 24, y: 20 }    // 'a' sees it (dist 4)
     find(b, 'far').pos = { x: 55, y: 20 }  // 26 away — sees nothing on its own
     const before = dist(find(b, 'far').pos, find(b, 'e').pos)
-    for (let r = 0; r < 10; r++) advanceRound(b)
+    // Roaming/routing now travels at combat pace (WANDER_SPEED_MULT = 1), so the
+    // far member needs a few more rounds to cover the same ground.
+    for (let r = 0; r < 14; r++) advanceRound(b)
     const after = dist(find(b, 'far').pos, find(b, 'e').pos)
     expect(after).toBeLessThan(before - 10)   // routed toward the shared objective, not roaming off
   })

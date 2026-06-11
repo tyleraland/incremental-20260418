@@ -61,7 +61,7 @@ describe('open-world wander — no corner jitter', () => {
     const tiny: Record<string, number> = {}
     const maxFrom: Record<string, number> = {}
     for (const id of ids) { start[id] = { ...find(b, id).pos }; prev[id] = { ...find(b, id).pos }; tiny[id] = 0; maxFrom[id] = 0 }
-    const fullStep = 0.9 * 2   // moveSpeed * WANDER_SPEED_MULT
+    const fullStep = 0.9 * 1   // moveSpeed * WANDER_SPEED_MULT
     const rounds = 60
     for (let r = 0; r < rounds; r++) {
       advanceRound(b)
