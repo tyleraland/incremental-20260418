@@ -42,10 +42,12 @@ export const MONSTER_WANDER_MIN = 5
 export const MONSTER_WANDER_MAX = 10
 export const MONSTER_WANDER_NEAR = 5
 export const MONSTER_WANDER_FAR = 8
-// Roaming is *travel*, not combat: heroes cross the (large) open-world map at a
-// brisk multiple of their combat move speed, so a 100-cell field isn't a crawl.
+// Roaming is *travel*, not combat: heroes cross the (large) open-world map a bit
+// faster than their combat move speed, so a 100-cell field isn't a crawl — but
+// kept close to combat pace so the party doesn't visibly "sprint" while wandering
+// and then "walk" once engaged (that speed flip reads as jarring).
 // Combat movement (once a target is locked) stays at the tuned base speed.
-export const WANDER_SPEED_MULT = 4
+export const WANDER_SPEED_MULT = 2
 // Keep wander targets (hero waypoints, monster hops, scatter) this far inside
 // the map edges, so units roam the interior instead of pinning to the perimeter
 // and piling up in corners.
