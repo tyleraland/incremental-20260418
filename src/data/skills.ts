@@ -99,6 +99,18 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  'shield-wall': {
+    id: 'shield-wall', name: 'Shield Wall', maxLevel: 10, type: 'active',
+    description: (lv) => `Turtle up: +${12 * lv} DEF for ~3s (you stop attacking while it holds). Auto-used only when under attack — 2+ foes on you, or one locked onto you.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
+  'last-stand': {
+    id: 'last-stand', name: 'Last Stand', maxLevel: 10, type: 'active',
+    description: (lv) => `A near-death surge: +${8 * lv} attack power and +${4 * lv} speed for ~3s. Auto-used only below 20% HP with a foe still up.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
   'aoe-heal': {
     id: 'aoe-heal', name: 'Sanctuary', maxLevel: 10, type: 'active',
     description: (lv) => `Heal all nearby allies for ${(1.0 + 0.3 * (lv - 1)).toFixed(1)}× INT.`,

@@ -254,6 +254,16 @@ reachability-aware targeting — see `BACKLOG.md`.)
 `getDerivedStats` → the adapter (and `MonsterDef` carries the same optional fields).
 `armoredFactor`/`nimblePeriod` read the combatant fields now.
 
+**Only skills modify stats/numbers; tactics are pure behaviour.** The stat-buff
+tactics are gone too: **Shield Wall** (DEF buff) and **Last Stand** (near-death
+STR/SPD surge) are now **self-cast skills** (`COMBAT_SKILLS`, applying the
+`shield-wall` / `last-stand` statuses, per-level). Each is "special" in that
+equipping it injects its own **gated cast tactic** (`makeSkillTactic` →
+`canShieldWall` / `canLastStand`): Shield Wall fires only under attack (2+ foes in
+reach, or one locked onto you), Last Stand only below 20% HP with a foe up — never
+while just roaming. **Swoop** is now pure positioning (no speed multiplier), and
+the **Dodge AoE** tactic was removed.
+
 **Determinism:** the engine uses no RNG — damage variation is a pure function of
 round + combatant index. (Loot rolls use `Math.random` in the *store*, outside the
 engine.) The same roster + tactics replays identically.

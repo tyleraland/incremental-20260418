@@ -46,6 +46,11 @@ export const STATUS_REGISTRY: Record<string, StatusSpec> = {
   // Cloak: ~10s of invisibility (≈25 rounds at 2.5 rounds/s) — or until the
   // bearer deals/takes damage (breakStealth). Sneaking is slower: 75% move speed.
   'stealthed': { id: 'stealthed', name: 'Stealthed', duration: 25, flags: ['stealthed'], statModifiers: { moveSpeedMult: 0.75 }, category: 'buff', icon: '🌫️', description: 'Hidden from enemies until it strikes or is hit; moves slower.' },
+  // Shield Wall (the skill): a big per-level DEF buff. The 'shielded' flag makes
+  // the unit forgo its own attack while it holds — fully turtled.
+  'shield-wall': { id: 'shield-wall', name: 'Shield Wall', duration: 8, statModifiers: { def: 12 }, perLevel: true, flags: ['shielded'], category: 'buff', icon: '🛡️', description: 'Turtled up — much higher defense (and not attacking).' },
+  // Last Stand (the skill): a near-death surge of attack power + speed (per level).
+  'last-stand': { id: 'last-stand', name: 'Last Stand', duration: 8, statModifiers: { str: 8, spd: 4 }, perLevel: true, category: 'buff', icon: '🔥', description: 'A surge of power near death — more attack and speed.' },
 }
 
 export function buildStatus(specId: string, sourceId: string, level = 1): StatusEffect | null {

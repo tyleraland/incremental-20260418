@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   createBattle, advanceRound, resolveTactics, TACTIC_REGISTRY,
-  armoredFactor, nimblePeriod,
+  makeSkillTactic, buildEngineSkill, armoredFactor, nimblePeriod,
   type BattleState, type Combatant, type ResolvedTactic,
 } from '@/engine'
 import { eu, combatant, attackSkill, healSkill } from './helpers'
@@ -138,29 +138,35 @@ describe('tactics: movement', () => {
   })
 })
 
-describe('tactics: action', () => {
-  it('Shield Wall turtles when 3+ enemies are within radius 3', () => {
+// Shield Wall / Last Stand are now SKILLS (only skills modify stats). Equipping
+// one injects a gated cast tactic (makeSkillTactic) — these test that gate.
+describe('stat-skill usage gates', () => {
+  it('Shield Wall casts only when under attack (2+ foes, or one locked onto you)', () => {
+    const tac = makeSkillTactic(buildEngineSkill('shield-wall', 1)!)
     const self = combatant({ id: 'p', pos: { x: 2.5, y: 5 } })
-    const es = [0, 1, 2].map((i) => combatant({ id: 'e' + i, team: 'enemy', pos: { x: 2.5 + i * 0.5, y: 5.2 } }))
-    const res = TACTIC_REGISTRY['shield-wall'].action!(self, stateOf([self, ...es]), 1)
-    expect(res?.skipAttack).toBe(true)
-    expect(res?.applyStatusToSelf?.flags).toContain('shielded')
-    expect(TACTIC_REGISTRY['shield-wall'].action!(self, stateOf([self, es[0]]), 1)).toBeNull()
+    // roaming past a lone foe that isn't on us → hold fire
+    const lone = combatant({ id: 'e0', team: 'enemy', pos: { x: 2.5, y: 5.2 }, lockedTargetId: 'other' })
+    expect(tac.action!(self, stateOf([self, lone]), 1)).toBeNull()
+    // a single foe locked onto us (a real attacker) → cast
+    const onMe = combatant({ id: 'e1', team: 'enemy', pos: { x: 2.5, y: 5.2 }, lockedTargetId: 'p' })
+    expect(tac.action!(self, stateOf([self, onMe]), 1)?.castSkill?.id).toBe('shield-wall')
+    // 2+ foes in reach → cast
+    const two = [0, 1].map((i) => combatant({ id: 'f' + i, team: 'enemy', pos: { x: 2.5 + i * 0.5, y: 5.2 } }))
+    expect(tac.action!(self, stateOf([self, ...two]), 1)?.castSkill?.id).toBe('shield-wall')
+  })
+
+  it('Last Stand casts only when near death with a foe still up', () => {
+    const tac = makeSkillTactic(buildEngineSkill('last-stand', 1)!)
+    const foe = combatant({ id: 'e', team: 'enemy', pos: { x: 3, y: 5 } })
+    const healthy = combatant({ id: 'p', hp: 100, maxHp: 100, pos: { x: 2, y: 5 } })
+    expect(tac.action!(healthy, stateOf([healthy, foe]), 1)).toBeNull()
+    const dying = combatant({ id: 'p', hp: 10, maxHp: 100, pos: { x: 2, y: 5 } })
+    expect(tac.action!(dying, stateOf([dying, foe]), 1)?.castSkill?.id).toBe('last-stand')
+    expect(tac.action!(dying, stateOf([dying]), 1)).toBeNull()   // no foe → no point
   })
 })
 
 describe('tactics: reaction', () => {
-  it('Last Stand buffs STR/SPD when near death (once)', () => {
-    const b = createBattle({
-      playerUnits: [eu({ id: 'p', hp: 5, maxHp: 100, str: 20, spd: 10, tactics: [{ id: 'last-stand', rank: 1 }], meleeRange: 30 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 1, meleeRange: 30 })],
-    })
-    advanceRound(b)
-    const p = find(b, 'p')
-    expect(p.statuses.some((s) => s.id === 'last-stand')).toBe(true)
-    expect(p.tacticsUsed).toContain('last-stand')
-  })
-
   it('Counterattacker counters whoever hit it', () => {
     const e = combatant({ id: 'e', team: 'enemy' })
     const self = combatant({ id: 'p', tactics: [T('counterattacker')], lastHitById: 'e' })

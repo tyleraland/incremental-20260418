@@ -350,8 +350,8 @@ export type BattleEventType =
   // rally: a monster with Pack Tactics called same-named kin into the fight. UI
   // pulses a "call ring" out from the caller.
   | 'rally'
-  // tactic_use: a non-skill tactic fired (Counterattacker, Shield Wall, Last
-  // Stand…). UI floats the tactic name above the source so the player can see
+  // tactic_use: a non-skill tactic fired (Counterattacker, Burst…). UI floats the
+  // tactic name above the source so the player can see
   // why a unit just acted. Skill tactics already emit `skill_use` and don't
   // need this marker.
   | 'tactic_use'

@@ -24,8 +24,12 @@ describe('starting party classes', () => {
 
   it('gives each hero a deep, usable kit (equipped skills + tactics)', () => {
     for (const u of INITIAL_UNITS) {
-      expect(u.actionSlots.filter((s) => s?.kind === 'skill').length).toBeGreaterThanOrEqual(2)
-      expect(u.tactics.length).toBeGreaterThanOrEqual(3)
+      const skills = u.actionSlots.filter((s) => s?.kind === 'skill').length
+      expect(skills).toBeGreaterThanOrEqual(2)
+      expect(u.tactics.length).toBeGreaterThanOrEqual(2)
+      // Combined kit is deep — some stat-skills (Shield Wall, Last Stand) live in
+      // the action bar and bring their own behaviour, so count both.
+      expect(skills + u.tactics.length).toBeGreaterThanOrEqual(6)
     }
   })
 

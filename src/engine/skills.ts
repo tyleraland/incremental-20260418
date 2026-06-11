@@ -51,6 +51,13 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'earth-bolt':    (lv) => skill({ id: 'earth-bolt', name: 'Earth Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 1, channelTime: 3, element: 'earth', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
   'lightning-bolt':(lv) => skill({ id: 'lightning-bolt', name: 'Lightning Bolt', type: 'attack', targeting: 'single_enemy', range: 6, cooldown: 1, channelTime: 3, element: 'wind', damageFormula: `int * ${coef(1.0, 0.2, lv)}` }),
   'bash':          (lv) => skill({ id: 'bash', name: 'Bash', type: 'attack', targeting: 'single_enemy', range: 1.2, cooldown: cd(10), damageFormula: `str * ${coef(1.2, 0.3, lv)}` }),
+  // Shield Wall: a self-cast defensive cooldown — a big per-level DEF buff (and
+  // the unit stops attacking while it holds). The usage gate (canShieldWall, in
+  // makeSkillTactic) only fires it when actually under attack, never while roaming.
+  'shield-wall':   (lv) => skill({ id: 'shield-wall', name: 'Shield Wall', type: 'buff', targeting: 'self', cooldown: cd(8), statusApplied: 'shield-wall', statusLevel: lv }),
+  // Last Stand: a self-cast near-death surge (per-level STR + SPD). Gated to only
+  // fire below 20% HP with a foe still up (canLastStand), ~once a fight (long cd).
+  'last-stand':    (lv) => skill({ id: 'last-stand', name: 'Last Stand', type: 'buff', targeting: 'self', cooldown: cd(20), statusApplied: 'last-stand', statusLevel: lv }),
   'heal':          (lv) => skill({ id: 'heal', name: 'Heal', type: 'heal', targeting: 'single_ally', range: 5, cooldown: cd(5), healFormula: `int * ${coef(1.5, 0.5, lv)}` }),
   'aoe-heal':      (lv) => skill({ id: 'aoe-heal', name: 'Sanctuary', type: 'heal', targeting: 'aoe_ally', range: 0, aoeRadius: 2.5, cooldown: cd(10), healFormula: `int * ${coef(1.0, 0.3, lv)}` }),
   'boost-agility': () =>   skill({ id: 'boost-agility', name: 'Boost Agility', type: 'buff', targeting: 'single_ally', range: 5, cooldown: 5, statusApplied: 'agi-up', statusMaxActive: 1 }),
@@ -257,6 +264,23 @@ function canCloak(self: Combatant, state: BattleState): boolean {
   return foes.some((e) => distance(self.pos, e.pos) <= self.visionRange)            // a foe in sight worth ambushing
 }
 
+// §shield-wall (defensive cooldown) gate. Only worth blowing when actually under
+// pressure — never while strolling: fire when 2+ hostile foes are in melee reach,
+// or a single one that's locked onto us (a real attacker, possibly a dangerous one).
+const SHIELD_WALL_RADIUS = 3
+const isShieldWall = (sk: EngineSkill): boolean => sk.targeting === 'self' && sk.statusApplied === 'shield-wall'
+function canShieldWall(self: Combatant, state: BattleState): boolean {
+  const near = visibleEnemiesOf(state, self).filter((e) => e.provoked && distance(self.pos, e.pos) <= SHIELD_WALL_RADIUS)
+  return near.length >= 2 || near.some((e) => e.lockedTargetId === self.id)
+}
+
+// §last-stand (near-death surge) gate. Only when actually near death AND a foe is
+// still up (no point surging on an empty field).
+const isLastStand = (sk: EngineSkill): boolean => sk.targeting === 'self' && sk.statusApplied === 'last-stand'
+function canLastStand(self: Combatant, state: BattleState): boolean {
+  return self.hp / self.maxHp < 0.2 && visibleEnemiesOf(state, self).length > 0
+}
+
 // The action-channel tactic that a skill brings with it (the merge). Fires when
 // the skill is off cooldown and a valid target exists; otherwise yields to the
 // next tactic / basic attack. A long AoE channel additionally yields unless it'd
@@ -318,7 +342,14 @@ function firewallThreat(self: Combatant, state: BattleState, sk: EngineSkill): C
 }
 
 export function makeSkillTactic(sk: EngineSkill): TacticDef {
-  const base = { id: `skill:${sk.id}`, name: sk.name, description: `Use ${sk.name} when ready.`, scope: 'unit' as const, channel: 'action' as const }
+  // The injected action tactic doubles as the skill's "when to use it" guidance —
+  // gated skills carry a usage note so the player sees why it holds fire.
+  const usageNote = isShieldWall(sk)
+    ? 'Turtle up only when under attack — 2+ foes on you (or one locked onto you). Never while just roaming.'
+    : isLastStand(sk)
+      ? 'Trigger the surge only when near death (below 20% HP) with a foe still up.'
+      : `Use ${sk.name} when ready.`
+  const base = { id: `skill:${sk.id}`, name: sk.name, description: usageNote, scope: 'unit' as const, channel: 'action' as const }
 
   // Firewall is a placement tool, not a target nuke: raise it between us and the
   // nearest approaching foe (resolveSkill computes the exact spot). Soft-capped
@@ -341,6 +372,8 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
   // want on even one approaching foe, so it fires on the nearest target in range.
   const gated = isChanneledAoe(sk) && !sk.zone?.statusApplied
   const cloak = isStealthSkill(sk)
+  const shieldWall = isShieldWall(sk)
+  const lastStand = isLastStand(sk)
   return {
     ...base,
     action: (self, state) => {
@@ -353,6 +386,8 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
       const cap = skillActiveCap(state, self, sk)
       if (cap && cap.active >= cap.max) return null
       if (cloak && !canCloak(self, state)) return null
+      if (shieldWall && !canShieldWall(self, state)) return null
+      if (lastStand && !canLastStand(self, state)) return null
       const targetId = selectSkillTarget(self, state, sk)
       if (!targetId) return null
       if (gated) {

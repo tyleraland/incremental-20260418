@@ -43,35 +43,6 @@ function defOf(c: Combatant): number { return effectiveStat(c, 'def') }
 function hpRatio(c: Combatant): number { return c.hp / c.maxHp }
 function isCloaked(c: Combatant): boolean { return c.statuses.some((s) => s.flags.includes('stealthed')) }
 
-// §dodge: danger circles threatening `self` right now — ground hazards already
-// down that hit its team, plus enemies mid-channel of an area spell (the
-// telegraphed blast centre + radius). A ground-zone spell locks its point at
-// cast start (`channel.targetPoint`), so you can step off the marked ground;
-// other aimed AoEs centre on the targeted unit's current spot.
-type Circle = { x: number; y: number; r: number }
-const FIREWALL_AVOID_R = 0.5   // keep this far off an enemy firewall (plus the dodge margin)
-function aoeThreatsAt(self: Combatant, state: BattleState): Circle[] {
-  const out: Circle[] = []
-  for (const z of state.zones) if (z.team === self.team) out.push({ x: z.pos.x, y: z.pos.y, r: z.radius })
-  for (const e of visibleEnemiesOf(state, self)) {
-    const ch = e.channel
-    if (!ch) continue
-    const sk = e.skills.find((s) => s.id === ch.skillId)
-    if (!sk || sk.aoeRadius <= 0 || (sk.targeting !== 'aoe_enemy' && sk.targeting !== 'aoe_point')) continue
-    const center = ch.targetPoint ?? state.combatants.find((c) => c.id === ch.targetId)?.pos
-    if (center) out.push({ x: center.x, y: center.y, r: sk.aoeRadius })
-  }
-  // §firewall: avoid an enemy wall that would bounce + burn us. Model it as a
-  // small circle on the point of the wall nearest us, so the escape steers us
-  // straight off it (we never path through a flame we haven't broken).
-  for (const w of state.firewalls) {
-    if (w.blockTeam !== self.team || (w.bumps[self.id] ?? 0) >= w.maxBumps) continue
-    const tx = -w.normal.y, ty = w.normal.x   // wall tangent
-    const proj = Math.max(-w.half, Math.min(w.half, (self.pos.x - w.pos.x) * tx + (self.pos.y - w.pos.y) * ty))
-    out.push({ x: w.pos.x + tx * proj, y: w.pos.y + ty * proj, r: FIREWALL_AVOID_R })
-  }
-  return out
-}
 // §chain: is the previous cast's target still a good pick for the follow-up
 // skill `to`? (alive, in range, right side, and — for a buff/debuff — not already
 // carrying its status). If so the chain lands the follow-up on the SAME target.
@@ -111,17 +82,6 @@ function chainTactic(fromIdx: number, toIdx: number): TacticDef {
   }
 }
 
-// Fallback bail-out direction when we're standing right on a blast centre: away
-// from the nearest foe, else toward our own edge.
-function awayFromEnemies(self: Combatant, state: BattleState): { x: number; y: number } {
-  const e = nearestEnemyTo(self, state)
-  if (e) {
-    const dx = self.pos.x - e.pos.x, dy = self.pos.y - e.pos.y
-    const d = Math.hypot(dx, dy)
-    if (d > EPS) return { x: dx / d, y: dy / d }
-  }
-  return { x: 0, y: self.team === 'player' ? -1 : 1 }
-}
 // The widest blast radius among a unit's skills (0 if it has no AoE skill).
 function maxAoeRadius(c: Combatant): number {
   let r = 0
@@ -143,17 +103,12 @@ function pickBy(list: Combatant[], score: (c: Combatant) => number, prefer: 'min
   return best
 }
 
-function status(id: string, name: string, source: string, duration: number, mods: StatusEffect['statModifiers'], flags: string[] = []): StatusEffect {
-  return { id, name, source, duration, statModifiers: mods, flags }
-}
-
 // §swoop (hit-and-run flyer). The dive/hover cycle is derived from the round
 // counter (no per-unit memory), staggered per unit by `index` so a swarm doesn't
 // dive in lockstep — deterministic, so it replays 1:1 like the rest of the engine.
 const SWOOP_PERIOD = 5        // rounds per dive→hover cycle at rank 1
 const SWOOP_PERIOD_MIN = 3    // floor on the cycle length (dives can't get more frequent than this)
 const SWOOP_DIVE_ROUNDS = 2   // rounds at the start of each cycle spent diving in (the rest is hover)
-const SWOOP_DIVE_SPEED = 2.5  // move-speed multiplier on the dive — it crashes in very fast
 const SWOOP_STANDOFF = 3.5    // gap (cells) to hover at between dives
 
 // ── catalog ─────────────────────────────────────────────────────────────────--
@@ -283,45 +238,19 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   },
   'swoop': {
     id: 'swoop', name: 'Swoop', scope: 'unit', channel: 'movement',
-    description: 'Hit-and-run flyer: hover at range, then dive in fast to strike and peel straight back out of melee.',
-    // Dive phase: `toPoint` at the target (no reach-stop) so it actually crashes
-    // into melee and lands a basic hit. Hover phase: `desiredRange` (the kiter
-    // mechanism) backs it out past attack range again. The cycle is stateless —
-    // see SWOOP_* above — so a swarm staggers and the run replays deterministically.
+    description: 'Hit-and-run flyer: hover at range, then dive in to strike and peel straight back out of melee.',
+    // Pure positioning (no speed modifier). Dive phase: `toPoint` at the target
+    // (no reach-stop) so it closes into melee and lands a basic hit. Hover phase:
+    // `desiredRange` (the kiter mechanism) backs it out past attack range again.
+    // The cycle is stateless — see SWOOP_* above — so a swarm staggers and the run
+    // replays deterministically.
     movement: (self, state, rank) => {
       const t = lockedTarget(self, state)
       if (!t) return null
       const period = Math.max(SWOOP_PERIOD_MIN, SWOOP_PERIOD - (rank - 1))   // dives more often at higher rank
       const phase = (state.round + self.index) % period
-      if (phase < SWOOP_DIVE_ROUNDS) return { toPoint: { x: t.pos.x, y: t.pos.y }, speedMult: SWOOP_DIVE_SPEED }
+      if (phase < SWOOP_DIVE_ROUNDS) return { toPoint: { x: t.pos.x, y: t.pos.y } }
       return { desiredRange: SWOOP_STANDOFF }
-    },
-  },
-  'dodge-aoe': {
-    id: 'dodge-aoe', name: 'Dodge AoE', scope: 'unit', channel: 'movement',
-    description: 'Get out of incoming area spells: when a foe is channeling an AoE — or a hazard (storm, slow puddle, enemy firewall) is already in your way — step clear of it, routing around terrain on the way out. Put it high so survival beats positioning.',
-    movement: (self, state, rank) => {
-      if (self.statuses.some((s) => s.flags.includes('rooted'))) return null   // can't move anyway
-      // Keep a cushion *wider than one move step* outside the blast: a unit with
-      // no other movement tactic drifts back toward the foe between dodges, and a
-      // narrow margin would let that drift dip into the edge for a tick. With the
-      // cushion, dodge re-triggers and shoves it back out before that happens.
-      const margin = 1.3 + 0.4 * (rank - 1)
-      // The deepest ring we're inside (most urgent) — escape that one first.
-      let worst: Circle | null = null
-      let worstSlack = 0
-      for (const t of aoeThreatsAt(self, state)) {
-        const slack = Math.hypot(self.pos.x - t.x, self.pos.y - t.y) - (t.r + margin)
-        if (slack < 0 && (worst === null || slack < worstSlack)) { worst = t; worstSlack = slack }
-      }
-      if (!worst) return null
-      // Shortest exit: straight out from the blast centre to just past the cushion.
-      let ox = self.pos.x - worst.x, oy = self.pos.y - worst.y
-      const od = Math.hypot(ox, oy)
-      if (od > EPS) { ox /= od; oy /= od }
-      else { const a = awayFromEnemies(self, state); ox = a.x; oy = a.y }   // standing on the centre
-      const out = worst.r + margin + 0.5
-      return { toPoint: { x: worst.x + ox * out, y: worst.y + oy * out }, speedMult: 1.15 }
     },
   },
   'chain-1-2': chainTactic(0, 1),
@@ -368,17 +297,8 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   // tank advanced — see `cohesionVec` in spatial.ts.
 
   // Action ---------------------------------------------------------------------
-  'shield-wall': {
-    id: 'shield-wall', name: 'Shield Wall', scope: 'unit', channel: 'action', cooldown: 6,
-    description: 'Turtle up with a big defense buff when surrounded.',
-    action: (self, state, rank) => {
-      const near = enemiesOf(state, self).filter((e) => distance(self.pos, e.pos) <= 3).length
-      if (near < 3) return null
-      const def = 15 + 5 * (rank - 1)
-      return { skipAttack: true, applyStatusToSelf: status('shield-wall', 'Shield Wall', self.id, 3, { def }, ['shielded']) }
-    },
-  },
-
+  // (Shield Wall moved to a skill — only skills modify stats. Equipping the skill
+  // grants its own gated cast tactic via makeSkillTactic; see canShieldWall.)
   'burst': {
     id: 'burst', name: 'Burst', scope: 'unit', channel: 'action',
     description: 'Bank a small skill while your heavy hitter is about to come off cooldown, then chain big → small.',
@@ -411,16 +331,8 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   },
 
   // Reaction -------------------------------------------------------------------
-  'last-stand': {
-    id: 'last-stand', name: 'Last Stand', scope: 'unit', channel: 'reaction', oncePerCombat: true,
-    description: 'Surge with power when near death.',
-    reaction: (self, _state, rank) => {
-      if (hpRatio(self) >= 0.2) return null
-      const strBonus = Math.round(self.str * (0.5 + 0.1 * (rank - 1)))
-      const spdBonus = Math.round(self.spd * 0.3)
-      return { applyStatusToSelf: status('last-stand', 'Last Stand', self.id, 3, { str: strBonus, spd: spdBonus }) }
-    },
-  },
+  // (Last Stand moved to a skill — only skills modify stats. Equipping the skill
+  // grants its own gated cast tactic via makeSkillTactic; see canLastStand.)
   'counterattacker': {
     id: 'counterattacker', name: 'Counterattacker', scope: 'unit', channel: 'reaction', cooldown: 3,
     description: 'Strike back the moment you are hit.',

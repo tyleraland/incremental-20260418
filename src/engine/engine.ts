@@ -1231,7 +1231,7 @@ function evalActionTactics(state: BattleState, self: Combatant): ActionResult | 
       markFired(self, t)
       rec(self, t, 'fired')
       // Skill tactics already emit `skill_use` when their cast lands — only
-      // surface non-skill action tactics (Shield Wall, etc.) here.
+      // surface non-skill action tactics (Burst, Chain, …) here.
       if (!t.def.id.startsWith('skill:')) {
         emit(state, { round: state.round, type: 'tactic_use', sourceId: self.id, tacticId: t.def.id, extra: { label: t.def.name } })
       }
@@ -1452,8 +1452,8 @@ function takeTurn(state: BattleState, self: Combatant): void {
   const lockedTarget = self.lockedTargetId ? findCombatant(state, self.lockedTargetId) : null
   const exploitNote = lockedTarget ? reorderAttacksForTarget(self, lockedTarget) : null
 
-  // (4) action — an action tactic owns the turn if it fires: Shield Wall (status)
-  // or a skill cast (skills are action tactics). Else fall back to a basic attack.
+  // (4) action — an action tactic owns the turn if it fires: a skill cast (skills
+  // are action tactics) or a Burst/Chain. Else fall back to a basic attack.
   let actionText: string
   const act = evalActionTactics(state, self)
   if (act) {

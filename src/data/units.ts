@@ -20,13 +20,15 @@ export const INITIAL_UNITS: Unit[] = [
     class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
     abilities: { strength: 9, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 },
     abilityPoints: 20, skillPoints: 1,
-    learnedSkills: { 'sword-mastery-1h': 1, 'sword-mastery-2h': 1, 'bash': 1, 'hammer-fall': 1, 'boost-agility': 1 },
+    learnedSkills: { 'sword-mastery-1h': 1, 'sword-mastery-2h': 1, 'bash': 1, 'hammer-fall': 1, 'boost-agility': 1, 'last-stand': 1 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-greatsword', offHand: null }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: 'eq-chainmail', sideboard1: null, sideboard2: null, accessory: null },
-    actionSlots: bar('bash', 'hammer-fall', 'boost-agility'),
-    tactics: [t('opportunist'), t('charger'), t('last-stand'), t('tank-buster')],
+    // Last Stand is now a skill (it buffs stats); it brings its own "use near
+    // death" tactic, so the manual slots are pure behaviour.
+    actionSlots: bar('bash', 'hammer-fall', 'boost-agility', 'last-stand'),
+    tactics: [t('opportunist'), t('charger'), t('tank-buster')],
   },
   // ── Ranger (kiting archer) ──────────────────────────────────────────────────
   {
@@ -71,7 +73,7 @@ export const INITIAL_UNITS: Unit[] = [
     activeWeaponSet: 0,
     equipment: { armor: 'eq-leather', sideboard1: null, sideboard2: null, accessory: null },
     actionSlots: bar('boost-agility', 'bless', 'heal', 'aoe-heal', 'molasses', 'dispel'),
-    tactics: [t('chain-1-2'), t('kiter'), t('dodge-aoe')],
+    tactics: [t('chain-1-2'), t('kiter')],
   },
   // ── Fighter (defensive knight / tank) ───────────────────────────────────────
   {
@@ -82,13 +84,15 @@ export const INITIAL_UNITS: Unit[] = [
     // The party's dedicated tank: Defensive Stance (high threat to hold aggro) +
     // Toughness (damage cut) as passive skills, and Taunt on the bar to peel mobs
     // off the back line. See the §threat model and the Threat Trial showcase.
-    learnedSkills: { 'sword-mastery-1h': 1, 'bash': 1, 'hammer-fall': 1, 'defensive-stance': 1, 'toughness': 1, 'taunt': 1 },
+    learnedSkills: { 'sword-mastery-1h': 1, 'bash': 1, 'hammer-fall': 1, 'shield-wall': 1, 'defensive-stance': 1, 'toughness': 1, 'taunt': 1 },
     travelPath: null,
     weaponSets: [{ mainHand: 'eq-sword', offHand: 'eq-shield-iron' }, { mainHand: null, offHand: null }],
     activeWeaponSet: 0,
     equipment: { armor: 'eq-chainmail', sideboard1: null, sideboard2: null, accessory: null },
-    actionSlots: bar('taunt', 'bash', 'hammer-fall'),
-    tactics: [t('shield-wall'), t('guardian'), t('counterattacker')],
+    // Shield Wall is now a skill (it buffs DEF); it brings its own "use when under
+    // attack" tactic, so the manual slots stay pure behaviour.
+    actionSlots: bar('taunt', 'bash', 'hammer-fall', 'shield-wall'),
+    tactics: [t('guardian'), t('counterattacker')],
   },
   // ── Rogue (stealth assassin) ────────────────────────────────────────────────
   {

@@ -1,6 +1,6 @@
 // Fireball: an instant fire AoE burst — hits a foe and splashes everyone near it
-// for damage right now. No lingering zone (unlike Lightning Storm / Firewall), so
-// nothing to side-step the way the Dodge AoE tactic leaves a ground hazard.
+// for damage right now. No lingering zone (unlike Lightning Storm / Firewall) and
+// no channel telegraph — there's nothing to side-step out of.
 import { describe, it, expect } from 'vitest'
 import { createBattle, advanceRound, buildEngineSkill, type BattleState } from '@/engine'
 import { eu } from './helpers'
@@ -29,7 +29,7 @@ describe('fireball', () => {
     expect(find(b, 'far').hp).toBe(400)          // out of range → untouched
   })
 
-  it('is an instant, undodgeable AoE: no channel telegraph for Dodge AoE to read', () => {
+  it('is an instant, undodgeable AoE: no channel telegraph to step out of', () => {
     const fb = buildEngineSkill('fireball', 1)!
     expect(fb.channelTime).toBe(0)        // instant — nothing to dodge mid-cast
     expect(fb.zone).toBeUndefined()       // and no ground hazard to step out of
