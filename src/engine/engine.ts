@@ -206,6 +206,30 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
   }
 }
 
+// Re-apply a unit's CURRENT loadout (stats, skills, tactics, vision) to a live
+// combatant *in place*, keeping all runtime state — position, hp, cooldowns,
+// statuses, threat, locks, channel. This is what lets a player's gear / skill /
+// tactic edits take effect in an ongoing battle without re-spawning the unit. hp
+// is preserved (capped to the possibly-new maxHp); a channel for a skill that's no
+// longer equipped is dropped. Idempotent: re-applying an unchanged loadout yields
+// an equivalent combatant, so calling it every tick is a no-op when nothing changed.
+export function relinkCombatant(c: Combatant, input: EngineUnitInput, partyTactics: TacticRef[] = []): void {
+  const fresh = makeCombatant(input, c.index, c.pos, resolveTactics(input.tactics ?? [], partyTactics))
+  c.name = fresh.name
+  c.str = fresh.str; c.def = fresh.def; c.int = fresh.int; c.spd = fresh.spd; c.magicDef = fresh.magicDef
+  c.moveSpeed = fresh.moveSpeed; c.meleeRange = fresh.meleeRange; c.rangedRange = fresh.rangedRange
+  c.attackElement = fresh.attackElement; c.armorElement = fresh.armorElement
+  c.threatMult = fresh.threatMult; c.armorReduction = fresh.armorReduction; c.dodgePeriod = fresh.dodgePeriod
+  c.preferredRank = fresh.preferredRank
+  // NB: visionRange is a per-battle-mode property (open-world fog vs encounter
+  // ∞), set at spawn — not part of the editable loadout — so it's left untouched.
+  c.maxHp = fresh.maxHp
+  if (c.hp > fresh.maxHp) c.hp = fresh.maxHp
+  c.skills = fresh.skills
+  c.tactics = fresh.tactics
+  if (c.channel && !c.skills.some((s) => s.id === c.channel!.skillId)) c.channel = null
+}
+
 export function createBattle(setup: CombatSetup): BattleState {
   const cols = setup.cols ?? COLS
   const rows = setup.rows ?? ROWS

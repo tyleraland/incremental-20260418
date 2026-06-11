@@ -12,7 +12,7 @@ import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, type OfflineLo
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, addCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, relinkCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -404,6 +404,22 @@ function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: 
   return changed
 }
 
+// Re-apply each deployed hero's CURRENT loadout (gear, skills, tactics) to its live
+// combatant in place, so equipment/skill/tactic edits take effect in an ongoing
+// fight within a tick — no need to re-deploy or wait for a respawn. Runtime state
+// (position, hp, cooldowns, statuses) is preserved; it's a no-op when nothing
+// changed. Cheap (party-sized), and players only — monsters have no editable kit.
+function syncPlayerLoadouts(battle: BattleState, units: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): void {
+  const byId = new Map(units.map((u) => [u.id, u]))
+  for (const c of battle.combatants) {
+    if (c.team !== 'player') continue
+    const u = byId.get(c.id)
+    if (!u) continue
+    // Vision is left as-is by relink (it's a per-battle property), so no withVision.
+    relinkCombatant(c, unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), partyTactics)
+  }
+}
+
 // ── Offline progression: cold-location priming (Phase 2) ─────────────────────
 //
 // A location deployed but never sampled (no `locationStats`) has no rate to
@@ -694,6 +710,8 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       if (reconcileOpenPlayers(battle, eligible, s.equipment, s.partyTactics ?? [])) {
         battles[locationId] = { ...battle }
       }
+      // Live-edit: push any loadout changes onto the heroes already fighting.
+      syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
 
       if (advance) {
         // Clear out enemy corpses from prior rounds before this one resolves —
@@ -754,6 +772,9 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       delete battleCooldown[locationId]
       markSeen(loc, enemyMonsterIds(battle))
     }
+
+    // Live-edit: push any loadout changes onto the heroes already in the wave.
+    syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
 
     // Advance one round on the cadence and reward kills.
     if (advance && battle.outcome === 'ongoing') {
