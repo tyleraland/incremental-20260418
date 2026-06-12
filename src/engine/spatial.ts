@@ -173,10 +173,25 @@ export function isCaster(c: Combatant): boolean {
 // If `minSafe` exceeds our range, we keep the safe distance and just don't
 // shoot that round — preferable to dying mid-channel.
 export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
-  const maxRange = maxSkillRange(self)
   // Match maxSkillRange's filter: casters consider all skills (positioning for
   // next cast); non-casters only need cast room for skills currently ready.
   const includeAll = isCaster(self)
+  // Anchor the kite on the range we can actually *shoot a single target* from — our
+  // single-target `attack` skills (+ basic ranged), NOT a situational AoE. A mage's
+  // Lightning Storm reaches farther but is gated on a cluster (it won't fire on one
+  // foe), so anchoring the kite on it stranded the mage at AoE range — out of reach
+  // of its bread-and-butter bolts — casting nothing (the "won't take a shot" bug).
+  let shootRange = self.rangedRange
+  let hasAttack = self.rangedRange > self.meleeRange + EPS
+  for (const s of self.skills) {
+    if (s.type !== 'attack' || s.range <= self.meleeRange + EPS) continue
+    if (!includeAll && (self.skillCooldowns[s.id] ?? 0) > 0) continue
+    hasAttack = true
+    if (s.range > shootRange) shootRange = s.range
+  }
+  // Pure AoE/debuff caster (no single-target poke): fall back to the longest skill
+  // range so it still kites to where *something* can land.
+  const maxRange = hasAttack ? shootRange : maxSkillRange(self)
   const maxChannel = self.skills.reduce(
     (m, s) => (!includeAll && (self.skillCooldowns[s.id] ?? 0) > 0 ? m : Math.max(m, s.channelTime)),
     0,
@@ -189,7 +204,7 @@ export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
   // sentinel; we don't want those to push the caster to retreat off the map.
   const effectiveMelee = Math.min(threat.meleeRange, 3)
   const minSafe = effectiveMelee + threatClose + 0.5
-  // Prefer just inside max range so the cast comfortably lands, but never
+  // Prefer just inside shooting range so the cast comfortably lands, but never
   // below minSafe.
   return Math.max(minSafe, maxRange - 0.5)
 }

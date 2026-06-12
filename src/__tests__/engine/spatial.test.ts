@@ -66,6 +66,21 @@ describe('spatial queries', () => {
     const threat = combatant({ id: 'e', team: 'enemy', moveSpeed: 1.26, meleeRange: 1.2 })
     expect(kiteDistanceFor(chan, threat)).toBeGreaterThan(kiteDistanceFor(inst, threat))
   })
+
+  it('kiteDistanceFor anchors on the single-target attack range, not a longer gated AoE', () => {
+    // A mage with a range-6 bolt and a range-8 cluster AoE (Lightning Storm) must
+    // kite to *bolt* range so its bolts land. Anchoring on the longer AoE range
+    // stranded it at AoE range — out of reach of its bolts — while the AoE itself
+    // won't fire on a lone foe, so it cast nothing (the "won't take a shot" bug).
+    // A stationary threat keeps the safe-distance term out of the way so the test
+    // isolates the range anchor.
+    const mage = combatant({ int: 24, str: 4, rangedRange: 6, meleeRange: 1.1, skills: [
+      attackSkill({ id: 'bolt', channelTime: 0, range: 6 }),
+      buildEngineSkill('lightning-storm', 1)!,   // type 'aoe', range 8
+    ] })
+    const sitting = combatant({ id: 'e', team: 'enemy', moveSpeed: 0, meleeRange: 1.2 })
+    expect(kiteDistanceFor(mage, sitting)).toBeCloseTo(5.5)   // 6 (bolt) − 0.5, NOT 7.5 (AoE)
+  })
 })
 
 describe('movement behaviours', () => {
