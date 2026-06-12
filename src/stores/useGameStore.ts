@@ -8,7 +8,8 @@ import { ACTION_SLOT_COUNT } from '@/types'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
-import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, type OfflineLocationReward, type OfflineSummary } from '@/lib/offline'
+import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
+import { SAMPLING } from '@/lib/sampling'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
@@ -79,6 +80,11 @@ export interface GameState {
   // "While you were away" summary produced by the last offline catch-up
   // (batchTick). Null until one is produced / after it's dismissed. Not saved.
   offlineSummary: OfflineSummary | null
+  // Debug instrumentation for the most recent offline catch-up (batchTick): when it
+  // ran, how big the jump was, the sim cost (wall-ms / rounds), and the per-location
+  // breakdown. Surfaced on the report screen so you can see if/when catch-up happens
+  // and weigh sampling cost vs output. Runtime-only, not saved.
+  lastCatchUp: CatchUpDebug | null
 
   // EPHEMERAL_UI — stored in localStorage; not in save string
   activeTab: TabId
@@ -199,11 +205,9 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 // sim finer/smoother at the same pace (it's the lever to tune feel).
 const ROUND_TIME_SCALE    = 2    // engine rounds per logical round (finer = smoother)
 const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (~200ms/round at scale 2)
-// Off-screen locations (the player is watching a *different* battle drop-in) don't
-// need a full per-tick spatial sim — they advance cheaply by extrapolating their
-// realized rate every this-many ticks. Only ever active in battle mode; in world
-// mode / tests there's no watched location, so every location full-sims as before.
-const OFFSCREEN_CREDIT_TICKS = 25  // ~5s; credit unwatched locations in cheap chunks
+// Off-screen / offline simulation budgets are centralized in `@/lib/sampling`
+// (SAMPLING) — the one place to tune cost-vs-fidelity. SAMPLING.offscreenCreditTicks
+// is how often an unwatched location credits rate-extrapolated rewards.
 const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
 
 // Open-world pacing (§open-world). A persistent battle keeps a FIXED number of
@@ -436,12 +440,10 @@ function syncPlayerLoadouts(battle: BattleState, units: Unit[], equipment: Equip
 // extrapolate. We prime it by running a *budgeted* slice of real combat —
 // settle the in-flight fight, collect the rewards it actually produces, and seed
 // a rate sample the warm path then extrapolates over the rest of the offline
-// span. Capped at PRIME_ROUND_CAP rounds AND PRIME_MS_BUDGET wall-ms so a heavy
-// fight can't block the main thread (a Web Worker offload stays deferred — the
-// BSNAP tokens already make a battle worker-portable). The engine is RNG-free;
+// span. Capped at SAMPLING.primeRoundCap rounds AND SAMPLING.primeMsBudget wall-ms
+// so a heavy fight can't block the main thread (a Web Worker offload stays deferred
+// — the BSNAP tokens already make a battle worker-portable). The engine is RNG-free;
 // loot rolls use Math.random (same as the live `rewardKills`).
-const PRIME_ROUND_CAP = 300
-const PRIME_MS_BUDGET  = 50
 
 // Don't pop the "while you were away" modal for a brief background blip — only
 // after a real absence (≥ this many real seconds away).
@@ -521,7 +523,7 @@ function primeColdLocation(
   existing: BattleState | undefined,
 ): PrimeResult {
   const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
-  const { killsByMonster, loot, rounds } = runCombatSlice(battle, loc, PRIME_ROUND_CAP, PRIME_MS_BUDGET)
+  const { killsByMonster, loot, rounds } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
   const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
   return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot }
 }
@@ -538,11 +540,7 @@ function primeColdLocation(
 // at — so a future scheduled-event system can inject a periodic boss (via
 // `spawnMonsterAt`) into the windows it should appear in, and have it actually
 // fought + rewarded. Today nothing passes it; the sampling is composition variance.
-const SAMPLE_WINDOW_TICKS = 9000   // ~30 min real time per sample window (1 window below this)
-const SAMPLE_MAX_WINDOWS  = 12     // cap windows so even an 8h absence stays bounded
-const SAMPLE_ROUND_CAP    = 80     // per-window sim budget (rounds)
-const SAMPLE_MS_BUDGET    = 25     // per-window sim budget (wall-ms); total ≤ MAX_WINDOWS × this
-
+// Budgets (window count, per-window round/ms caps) live in SAMPLING (@/lib/sampling).
 export interface SampledOptions {
   samples: number
   startTick: number
@@ -559,8 +557,8 @@ export function projectOfflineSampled(
   const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
   const K = Math.max(1, opts.samples)
   const windowTicks = offlineTicks / K
-  const roundCap = opts.roundCap ?? SAMPLE_ROUND_CAP
-  const msBudget = opts.msBudget ?? SAMPLE_MS_BUDGET
+  const roundCap = opts.roundCap ?? SAMPLING.windowRoundCap
+  const msBudget = opts.msBudget ?? SAMPLING.windowMsBudget
 
   const killsByMonster: Record<string, number> = {}
   let simTicks = 0
@@ -772,7 +770,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   // then extrapolates. Mirrors the offline warm/cold crediting. (Off-screen parties
   // earn but don't take casualties — a known simplification; deaths resume on drop-in.)
   const creditOffscreen = (loc: Location, eligible: Unit[]) => {
-    const ticks = OFFSCREEN_CREDIT_TICKS
+    const ticks = SAMPLING.offscreenCreditTicks
     const stats = locationStats[loc.id]
     let killsByMonster: Record<string, number>
     let exp: number, gold: number
@@ -824,7 +822,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     // credit rate-extrapolated rewards on a throttle, keep the (frozen) battle for
     // drop-in. Falls through to the full sim when nothing is watched.
     if (watchedId !== null && locationId !== watchedId) {
-      if (newTicks % OFFSCREEN_CREDIT_TICKS === 0) creditOffscreen(loc, eligible)
+      if (newTicks % SAMPLING.offscreenCreditTicks === 0) creditOffscreen(loc, eligible)
       for (const u of eligible) bumpUnit(u.id, 'combatTicks', 1)
       continue
     }
@@ -968,6 +966,7 @@ export const useGameStore = create<GameState>((set) => ({
   partyTactics: [{ id: 'finish-them', rank: 1 }],
   lastTickAt: Date.now(),
   offlineSummary: null,
+  lastCatchUp: null,
   paused: false,
   eventLog: [],
   itemSockets: {},
@@ -1061,6 +1060,8 @@ export const useGameStore = create<GameState>((set) => ({
     const locationStats   = { ...s.locationStats }
     const battles         = { ...s.battles }
     const rewards: OfflineLocationReward[] = []
+    const catchUpDebug: CatchUpLocation[] = []   // per-location sim cost/output (debug)
+    const catchUpStart = Date.now()
     let totalGold = 0
 
     for (const loc of s.locations) {
@@ -1069,12 +1070,12 @@ export const useGameStore = create<GameState>((set) => ({
       if (assigned.length === 0) continue
       const roster = assigned.filter((u) => u.health > 0)   // bodies able to fight (priming)
 
-      let expPool = 0, gold = 0, primed = false
+      let expPool = 0, gold = 0, primed = false, simRounds = 0
       const killsByMonster: Record<string, number> = {}
       let loot: Record<string, number> = {}
 
       const stats = s.locationStats[loc.id]
-      const windows = offlineWindowCount(n, SAMPLE_WINDOW_TICKS, SAMPLE_MAX_WINDOWS)
+      const windows = offlineWindowCount(n, SAMPLING.windowTicks, SAMPLING.maxWindows)
       if (windows >= 2 && roster.length > 0) {
         // Long absence: sample several independent windows across the span so the
         // projection carries variance/clumps (and is where a scheduled boss would
@@ -1084,6 +1085,7 @@ export const useGameStore = create<GameState>((set) => ({
         battles[loc.id] = r.battle
         expPool = r.exp
         gold    = r.gold
+        simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
       } else if (stats) {
@@ -1101,6 +1103,7 @@ export const useGameStore = create<GameState>((set) => ({
         battles[loc.id] = r.battle
         expPool = r.exp
         gold    = r.gold
+        simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
         const remaining = n - r.primedTicks
@@ -1122,6 +1125,9 @@ export const useGameStore = create<GameState>((set) => ({
       }
 
       const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
+      // Record cost/output for the debug readout (even a zero-output prime — its
+      // sim rounds still cost something worth seeing).
+      catchUpDebug.push({ locationId: loc.id, locationName: loc.name, windows, rounds: simRounds, kills, exp: expPool, gold })
       if (kills === 0 && gold === 0 && expPool === 0) continue
 
       // Credit the XP pool to deployed heroes, split proportional to level (a
@@ -1214,9 +1220,16 @@ export const useGameStore = create<GameState>((set) => ({
         }
       : s.offlineSummary
 
+    // Debug instrumentation: when this catch-up ran, its size, sim cost, and the
+    // per-location cost/output. Surfaced on the report screen.
+    const lastCatchUp: CatchUpDebug = {
+      at: Date.now(), ticks: n, secs: offlineSecs,
+      wallMs: Date.now() - catchUpStart, locations: catchUpDebug,
+    }
+
     return {
       ticks: newTicks, units, lastTickAt: Date.now(), eventLog,
-      miscItems, monsterDefeated, locationStats, battles, offlineSummary,
+      miscItems, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
     }
   }),
 

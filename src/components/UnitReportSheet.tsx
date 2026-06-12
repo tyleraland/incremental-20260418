@@ -26,6 +26,48 @@ function Rate({ label, perS, perM, perH }: { label: string; perS?: string; perM:
   )
 }
 
+function relAgo(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s}s ago`
+  const m = Math.round(s / 60)
+  return m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`
+}
+
+// Debug readout: if/when the last OFFLINE catch-up (batchTick) ran, its size, the
+// sim cost (wall-ms / rounds), and the per-location cost/output — so you can see
+// catch-up happening and weigh sampling cost vs. fidelity. Catch-up fires whenever
+// ≥2s of real time elapses between ticks: returning to the tab, a reload, or a
+// throttled background interval (live ticks ≤2s don't count as catch-up).
+function CatchUpDebugTip() {
+  const cu = useGameStore((s) => s.lastCatchUp)
+  return (
+    <div className="mt-4 pt-3 border-t border-game-border/50 text-[10px] leading-snug">
+      <div className="uppercase tracking-widest text-game-muted">Debug · offline catch-up</div>
+      {!cu ? (
+        <div className="mt-1 text-game-muted">
+          None this session. Runs on tab-return, reload, or background throttle (≥2s between ticks).
+        </div>
+      ) : (
+        <>
+          <div className="mt-1 font-mono text-game-text-dim">
+            {relAgo(Date.now() - cu.at)} · batched {fmt(cu.secs)}s ({fmt(cu.ticks)} ticks) · sim {cu.wallMs}ms · {fmt(cu.locations.reduce((a, l) => a + l.rounds, 0))} rounds
+          </div>
+          {cu.locations.length > 0 && (
+            <div className="mt-1 space-y-0.5 font-mono text-game-text-dim">
+              {cu.locations.map((l) => (
+                <div key={l.locationId} className="flex justify-between gap-2">
+                  <span className="truncate">{l.locationName}</span>
+                  <span className="text-game-muted shrink-0">{l.windows}w · {l.rounds}r · {fmt(l.kills)}k · {fmt(l.gold)}g</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // Per-unit lifetime combat Report (bottom-sheet). Opened from the roster-selected
 // unit on the Map / Inventory tabs. Rates use the unit's accumulated fighting
 // time (combatTicks) as the denominator.
@@ -73,6 +115,8 @@ export function UnitReportSheet() {
             </div>
           </>
         )}
+
+        <CatchUpDebugTip />
       </div>
     </div>,
     document.body,

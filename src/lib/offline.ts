@@ -137,3 +137,25 @@ export interface OfflineSummary {
   totalGold: number
   loot: Record<string, number>   // merged item loot across all locations (no gold)
 }
+
+// ── Catch-up instrumentation (debug) ─────────────────────────────────────────--
+// Recorded on every offline catch-up so the report screen can show if/when it ran
+// and you can weigh sampling COST (wall-ms, rounds simulated) against OUTPUT.
+
+export interface CatchUpLocation {
+  locationId: string
+  locationName: string
+  windows: number   // sample windows used (1 = single slice; warm-cheap path = 1, no sim)
+  rounds: number    // engine rounds actually simulated (0 = pure rate extrapolation)
+  kills: number
+  exp: number
+  gold: number
+}
+
+export interface CatchUpDebug {
+  at: number         // Date.now() when the catch-up ran
+  ticks: number      // ticks batched in this jump
+  secs: number       // ticks / TICKS_PER_SECOND
+  wallMs: number     // wall-time the batchTick sim+projection took (the cost)
+  locations: CatchUpLocation[]
+}

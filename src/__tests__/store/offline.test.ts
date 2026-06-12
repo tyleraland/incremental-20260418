@@ -164,6 +164,23 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     expect(young.exp + vet.exp).toBeCloseTo(100)
   })
 
+  it('records catch-up debug instrumentation (cost/output per location)', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [FIELD()],
+      locationStats: { field: STATS() },
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [],
+    })
+    batchTick(1000)
+    const cu = useGameStore.getState().lastCatchUp
+    expect(cu?.ticks).toBe(1000)
+    expect(cu?.secs).toBe(200)                                   // 1000 / TICKS_PER_SECOND
+    const field = cu?.locations.find((l) => l.locationId === 'field')
+    expect(field).toMatchObject({ windows: 1, rounds: 0 })      // warm path: no simulation
+    expect(field!.kills).toBeGreaterThan(0)
+  })
+
   it('ignores locations with no deployed units', () => {
     resetStore({
       ticks: 1000,
