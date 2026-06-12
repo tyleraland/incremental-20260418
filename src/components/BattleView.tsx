@@ -24,6 +24,11 @@ const CENTER_Y = ROWS / 2
 // a beat after the cast lands). Newest cast stacks on top of older ones.
 const CAST_LABEL_MS = 3000
 
+// Floating combat numbers (damage/heal/DoT) are harvested into a buffer so they
+// live their full lob-and-fade animation instead of unmounting when the next round
+// arrives (rounds are ~200ms, the arc is ~1.35s). Matches the CSS animation length.
+const FLOAT_NUM_MS = 1350
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
   return parts.length === 1
@@ -1012,6 +1017,11 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const [castLabels, setCastLabels] = useState<{ id: string; sourceId: string; skillId: string; born: number; seq: number }[]>([])
   const castSeqRef = useRef(0)
   const lastRoundRef = useRef(-1)
+  // Lingering floating numbers (damage/heal/DoT/interrupt). Harvested per round into
+  // a buffer keyed independently of the round so each plays its full lob+fade.
+  const [floatNums, setFloatNums] = useState<{ id: string; pos: Vec2; text: string; className: string; anim: string; born: number }[]>([])
+  const floatSeqRef = useRef(0)
+  const lastFloatRoundRef = useRef(-1)
 
   // Harvest this round's cast events into lingering labels. cast_start (channel
   // begins) and skill_use (instant cast / channel resolves) both count. Keyed by
@@ -1129,6 +1139,50 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const { rpos, rposId } = useSmoothScene(battle.combatants, isOpen, battle.round)
   const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
 
+  // Harvest this round's damage/heal/DoT/interrupt numbers into the lingering
+  // buffer (anchored at the struck unit's spot when it lands), so each plays its
+  // full lob+fade rather than being cut off when the next round renders. Guarded by
+  // round so a re-render doesn't double-harvest.
+  useEffect(() => {
+    if (battle.round === lastFloatRoundRef.current) return
+    lastFloatRoundRef.current = battle.round
+    const now = Date.now()
+    const fresh: typeof floatNums = []
+    const at = (id: string | null | undefined): Vec2 | null => { const c = id ? battle.combatants.find((x) => x.id === id) : null; return c ? rpos(c) : null }
+    for (const e of battle.events) {
+      if (e.round !== battle.round) continue
+      if ((e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null) {
+        const p = at(e.targetId); if (!p) continue
+        const tier = effTier(e.eff)
+        fresh.push({ id: `dn${floatSeqRef.current++}`, pos: p, text: dmgText(e.value, tier), className: DMG_CLS[tier], anim: tier === 'immune' ? 'animate-dmg-float' : 'animate-dmg-arc', born: now })
+      } else if (e.type === 'heal' && e.value != null) {
+        const p = at(e.targetId); if (!p) continue
+        fresh.push({ id: `dn${floatSeqRef.current++}`, pos: p, text: `${e.value}`, className: 'text-[16px] text-emerald-300', anim: 'animate-heal-float', born: now })
+      } else if (e.type === 'dot' && e.value != null) {
+        const p = at(e.targetId); if (!p) continue
+        const tier = effTier(e.eff)
+        fresh.push({ id: `dn${floatSeqRef.current++}`, pos: p, text: dmgText(e.value, tier), className: DOT_CLS[tier], anim: 'animate-dmg-arc', born: now })
+      } else if (e.type === 'interrupt') {
+        const p = at(e.targetId); if (!p) continue
+        fresh.push({ id: `dn${floatSeqRef.current++}`, pos: p, text: 'interrupted', className: 'text-[10px] text-amber-300', anim: 'animate-dmg-float', born: now })
+      }
+    }
+    setFloatNums((prev) => {
+      const kept = prev.filter((f) => now - f.born < FLOAT_NUM_MS)
+      return fresh.length === 0 ? (kept.length === prev.length ? prev : kept) : [...kept, ...fresh]
+    })
+  }, [battle])
+
+  // Sweep expired numbers even if no new round arrives.
+  useEffect(() => {
+    if (floatNums.length === 0) return
+    const t = setInterval(() => {
+      const now = Date.now()
+      setFloatNums((prev) => (prev.some((f) => now - f.born >= FLOAT_NUM_MS) ? prev.filter((f) => now - f.born < FLOAT_NUM_MS) : prev))
+    }, 300)
+    return () => clearInterval(t)
+  }, [floatNums.length])
+
   const party = battle.combatants.filter((c) => c.team === 'player' && c.alive)
   const partyPts = party.map(rpos)
   const allPts = (alive.length ? alive : battle.combatants).map(rpos)
@@ -1147,10 +1201,9 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
 
   const roundEvents = battle.events.filter((e) => e.round === battle.round)
+  // `hits` still drives the per-round flash rings + attack lines; the damage/heal/
+  // DoT/interrupt NUMBERS are harvested into the lingering `floatNums` buffer above.
   const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
-  const heals = roundEvents.filter((e) => e.type === 'heal' && e.value != null)
-  const dots  = roundEvents.filter((e) => e.type === 'dot' && e.value != null)
-  const interrupts = roundEvents.filter((e) => e.type === 'interrupt')
   const tacticUses = roundEvents.filter((e) => e.type === 'tactic_use')
 
   // Active (non-expired) cast labels, grouped by caster and ordered oldest →
@@ -1279,33 +1332,20 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             })}
           </svg>
 
-          {/* hit flashes + floating numbers */}
+          {/* hit flashes — a quick ring on the struck unit (the numbers themselves
+              come from the lingering buffer below, so they outlive the round). */}
           {hits.map((e, i) => {
             const tgt = byId(e.targetId)
             if (!tgt) return null
             const tp = rpos(tgt)
-            const tier = effTier(e.eff)
-            return (
-              <div key={`h-${battle.round}-${i}`}>
-                <div className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tp.x)), top: py(cam, insetY(cam, tp.y)) }} />
-                <Float k={`d-${battle.round}-${i}`} cam={cam} pos={tp} anim={tier === 'immune' ? 'animate-dmg-float' : 'animate-dmg-arc'} className={DMG_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
-              </div>
-            )
+            return <div key={`h-${battle.round}-${i}`} className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tp.x)), top: py(cam, insetY(cam, tp.y)) }} />
           })}
-          {heals.map((e, i) => {
-            const tgt = byId(e.targetId)
-            return tgt && e.value ? <Float key={`hl-${battle.round}-${i}`} k={`hl-${battle.round}-${i}`} cam={cam} pos={rpos(tgt)} anim="animate-heal-float" className="text-[16px] text-emerald-300" text={`${e.value}`} /> : null
-          })}
-          {dots.map((e, i) => {
-            const tgt = byId(e.targetId)
-            if (!tgt) return null
-            const tier = effTier(e.eff)
-            return <Float key={`dt-${battle.round}-${i}`} k={`dt-${battle.round}-${i}`} cam={cam} pos={rpos(tgt)} anim="animate-dmg-arc" className={DOT_CLS[tier]} text={dmgText(e.value ?? 0, tier)} />
-          })}
-          {interrupts.map((e, i) => {
-            const tgt = byId(e.targetId)
-            return tgt ? <Float key={`in-${battle.round}-${i}`} k={`in-${battle.round}-${i}`} cam={cam} pos={rpos(tgt)} className="text-[10px] text-amber-300" text="interrupted" /> : null
-          })}
+
+          {/* lingering floating numbers (damage/heal/DoT): each plays its full
+              lob+fade from where it landed, independent of the round cadence. */}
+          {floatNums.map((f) => (
+            <Float key={f.id} k={f.id} cam={cam} pos={f.pos} anim={f.anim} className={f.className} text={f.text} />
+          ))}
 
           {/* lingering cast labels: each cast's name stays anchored to its
               caster for ~3s; multiple casts on one caster stack, newest on top. */}
