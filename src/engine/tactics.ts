@@ -190,9 +190,10 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     id: 'charger', name: 'Charger', scope: 'unit', channel: 'movement', kind: 'floor',
     description: 'Dive into melee on the target — crash into the thick of the pack (pairs with a melee AoE). Breaks off to regroup if a fleeing foe drags it too far from the party.',
     // A pure positioning behaviour: no speed-up, no damage bonus. With a target it
-    // aims at the centroid of the enemy cluster around that target (so it ends up
-    // *inside* the group, not poking the nearest edge), and leashes back to the
-    // party when a runaway target pulls it past CHARGER_LEASH from the team centre.
+    // dives to melee contact on the target's pack-facing side (so it ends up *inside*
+    // the group, not poking the nearest edge, while always closing to strike range),
+    // and leashes back to the party when a runaway target pulls it past CHARGER_LEASH
+    // from the team centre.
     movement: (self, state, rank) => {
       const t = lockedTarget(self, state)
       if (!t) return null   // nothing locked → fall through to default/wander
