@@ -8,6 +8,7 @@
 // import cycle: tactics.ts → spatial.ts.
 
 import { distance, moveSpeedOf } from './grid'
+import { spatialHashFor, SPATIAL_MARGIN } from './spatialhash'
 import { EPS } from './constants'
 import type { BattleState, Combatant, Vec2 } from './types'
 
@@ -31,7 +32,14 @@ export function alliesOf(state: BattleState, self: Combatant): Combatant[] {
 // splash hits whoever's in the blast, the win-check counts all survivors. Don't
 // add a vision/stealth filter there.
 export function visibleEnemiesOf(state: BattleState, self: Combatant): Combatant[] {
-  return state.combatants.filter((c) => c.alive && c.team !== self.team && !isHidden(c) && distance(self.pos, c.pos) <= self.visionRange)
+  const r = self.visionRange
+  // Finite vision (open-world fog): query the spatial hash for nearby buckets and
+  // re-filter by live distance — same set/order as the scan, but O(local). ∞ vision
+  // (encounters) scans the whole roster (small N) — and so does the fallback when no
+  // hash is active (tests, between-round spawns). All three are byte-identical.
+  const grid = r === Infinity ? null : spatialHashFor(state.combatants)
+  const pool = grid ? grid.near(self.pos, r + SPATIAL_MARGIN) : state.combatants
+  return pool.filter((c) => c.alive && c.team !== self.team && !isHidden(c) && distance(self.pos, c.pos) <= r)
 }
 export function lockedTarget(self: Combatant, state: BattleState): Combatant | null {
   if (!self.lockedTargetId) return null

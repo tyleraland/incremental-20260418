@@ -12,6 +12,7 @@ import {
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat } from './timescale'
+import { SpatialHash, setSpatialHash } from './spatialhash'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
 import {
@@ -1550,6 +1551,10 @@ export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
   setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
   setTimeScale(state.timeScale)            // per-round helpers scale to finer rounds
+  // Bucket combatants once (round-start positions) so separation / target-acquisition
+  // do O(local) neighbour queries this round instead of O(N²). Cleared at the end so
+  // between-round work (spawns) and other call paths fall back to a brute scan.
+  setSpatialHash(new SpatialHash(state.combatants))
   // Open battles run forever — trim the event log so it can't grow unbounded
   // (only the current round's events are ever read for rendering).
   if (state.mode === 'open' && state.collectEvents && state.events.length > EVENT_CAP) {
@@ -1606,6 +1611,7 @@ export function advanceRound(state: BattleState): BattleState {
 
   // §9.1.5 win condition
   state.outcome = evalOutcome(state)
+  setSpatialHash(null)   // live only during the round; between rounds → brute scan
   return state
 }
 

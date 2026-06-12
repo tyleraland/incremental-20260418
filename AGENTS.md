@@ -160,6 +160,18 @@ driven by **tactics** (below).
   for the still-deferred pieces (overworld travel between locations, weighted
   spawn distributions, seeded RNG for exact replays).
 
+  **Spatial hash** (`engine/spatialhash.ts`) keeps the per-round neighbour scans —
+  separation (every unit vs every other) and target acquisition (`visibleEnemiesOf`,
+  called many times per unit) — from being O(N²) at hundreds of combatants. A
+  uniform grid buckets combatants once at `advanceRound` start (another per-round
+  ambient, set then cleared); `enforceSeparation`/`visibleEnemiesOf` query only the
+  buckets overlapping their radius. It's a **pure optimisation**: `near` over-scans
+  by `SPATIAL_MARGIN` (≥ the most a unit moves in a round) and the caller re-filters
+  by *live* distance, and returns candidates in array-index order, so the set AND
+  order match a brute scan exactly — replay stays 1:1 and the whole suite is
+  unchanged. Foreign/cleared hash (tests, between-round spawns) falls back to the
+  brute scan, which is byte-identical. (`spatialhash.test.ts`.)
+
 **Team blackboard** (`BattleState.plans: Partial<Record<Team, TeamPlan>>`). A
 per-team scratchpad recomputed each round at the top of `advanceRound` by a
 pluggable `planner` (`CombatSetup.planner`, default `defaultPlanner`). A

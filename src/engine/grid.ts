@@ -8,6 +8,7 @@ import {
 import { slideMove, steerAround } from './barriers'
 import { arenaClamp } from './arena'
 import { timeScale } from './timescale'
+import { spatialHashFor, SPATIAL_MARGIN } from './spatialhash'
 import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
 
 export function distance(a: Vec2, b: Vec2): number {
@@ -137,7 +138,14 @@ export function moveTowardPoint(
 // §2.4 when a move would put two units closer than SEPARATION, push both apart
 // along the axis between them. Deterministic: `all` is iterated in stable order.
 export function enforceSeparation(mover: Combatant, all: Combatant[], barriers: Barrier[] = []): void {
-  for (const other of all) {
+  // Only units within ~SEPARATION can push us — query the spatial hash for those
+  // (O(local)) instead of scanning everyone. `near` returns them in array-index
+  // order, so the sequence of pushes is identical to iterating `all`; the over-scan
+  // margin + the `d >= SEPARATION` skip below make the set identical too. No hash
+  // (tests / between-round spawns) → scan `all`, same result.
+  const grid = spatialHashFor(all)
+  const others = grid ? grid.near(mover.pos, SEPARATION + SPATIAL_MARGIN) : all
+  for (const other of others) {
     if (other === mover || !other.alive) continue
     let dx = mover.pos.x - other.pos.x
     let dy = mover.pos.y - other.pos.y
