@@ -430,6 +430,21 @@ rates** (`src/lib/offline.ts`).
   remaining offline time is then extrapolated on that fresh rate. The primed
   battle is kept in `battles[locationId]`. A Web Worker offload stays deferred
   (the BSNAP tokens already make a battle worker-portable).
+- **Sampled windows (Phase 3, long absences).** A single linear extrapolation is
+  smooth — it can't show a clump of monsters or a lucky/unlucky stretch. For an
+  absence long enough to span ≥2 windows (`offlineWindowCount`, ~one per
+  `SAMPLE_WINDOW_TICKS` = 30 min, capped at `SAMPLE_MAX_WINDOWS` = 12),
+  `projectOfflineSampled` splits the span into **independent windows**: each
+  simulates a short budgeted slice (`runCombatSlice`, shared with priming),
+  extrapolates that slice's rate over the window, and the windows are **summed** —
+  re-stocking the field (`restockField`, fresh random draws) between them so each
+  is a fresh composition sample, so the total carries real variance (a varied
+  monster pool → clumps; loot rolled per projected kill). It subsumes warm + cold
+  for long spans (it simulates either way). **Extension seam:** `SampledOptions.
+  prepareWindow(battle, windowIndex, windowStartTick)` is called before each
+  window's slice — a future scheduled-event system injects a periodic boss there
+  (`spawnMonsterAt`) so it's actually fought + rewarded in the windows it belongs
+  to. (`offline.test.ts`.)
 - **"While you were away" summary.** `batchTick` writes an `OfflineSummary`
   (runtime-only, not saved) when the absence is ≥ `OFFLINE_SUMMARY_MIN_SECS`
   (60s) and something happened; `OfflineSummary.tsx` shows it as a portal modal

@@ -8,7 +8,7 @@ import { ACTION_SLOT_COUNT } from '@/types'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
-import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, type OfflineLocationReward, type OfflineSummary } from '@/lib/offline'
+import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, type OfflineLocationReward, type OfflineSummary } from '@/lib/offline'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
@@ -451,59 +451,127 @@ interface PrimeResult {
   loot: Record<string, number>
 }
 
-function primeColdLocation(
-  loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[],
-  existing: BattleState | undefined,
-): PrimeResult {
+// Stand up (or reuse) the right battle for a location's offline simulation.
+function offlineBattleFor(
+  loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], existing: BattleState | undefined,
+): BattleState {
   const wantOpen = !!loc.openWorld
-  let battle = existing
-  if (!battle || (wantOpen ? battle.mode !== 'open' : battle.mode === 'open')) {
-    battle = wantOpen
-      ? createOpenBattleFor(loc, party, equipment, partyTactics, openWorldCap(loc))
-      : createBattleFor(loc, party, equipment, partyTactics)
-  }
+  if (existing && (wantOpen ? existing.mode === 'open' : existing.mode !== 'open')) return existing
+  return wantOpen
+    ? createOpenBattleFor(loc, party, equipment, partyTactics, openWorldCap(loc))
+    : createBattleFor(loc, party, equipment, partyTactics)
+}
 
+// Top up an open-world field back to its monster cap with fresh (random) draws —
+// the corpse-clear + restock both the live tick and the offline sim use.
+function restockField(battle: BattleState, loc: Location): void {
+  battle.combatants = battle.combatants.filter((c) => !(c.team === 'enemy' && !c.alive))
+  const size = openWorldSize(loc)
+  let living = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
+  while (living < openWorldCap(loc)) { if (!spawnMonsterInto(battle, loc, size)) break; living++ }
+}
+
+// Run a budgeted slice of REAL combat on `battle`, in place, returning the kills it
+// produced (per monster), the loot rolled per kill, and how many rounds it ran.
+// exp/gold mirror the live model (+1 each per kill), so the caller derives them
+// from the kill count. `rng` is injectable (tests pin it). Used by both the cold
+// prime (one slice) and the sampled projection (one per window).
+function runCombatSlice(
+  battle: BattleState, loc: Location, roundCap: number, msBudget: number, rng: () => number = Math.random,
+): { killsByMonster: Record<string, number>; loot: Record<string, number>; rounds: number } {
+  const wantOpen = !!loc.openWorld
   const killsByMonster: Record<string, number> = {}
   const loot: Record<string, number> = {}
-  let exp = 0, gold = 0, rounds = 0
+  let rounds = 0
   const started = Date.now()
 
-  while (rounds < PRIME_ROUND_CAP && Date.now() - started < PRIME_MS_BUDGET) {
-    if (!wantOpen && battle.outcome !== 'ongoing') break  // wave finished → sample complete
+  while (rounds < roundCap && Date.now() - started < msBudget) {
+    if (!wantOpen && battle.outcome !== 'ongoing') break  // wave finished → slice complete
     const before = new Set(battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => c.id))
     advanceRound(battle)
     rounds++
 
-    let kills = 0
     for (const c of battle.combatants) {
       if (c.team !== 'enemy' || c.alive || !before.has(c.id)) continue
-      kills++
       const mid = monsterIdOf(c.id)
       killsByMonster[mid] = (killsByMonster[mid] ?? 0) + 1
       const def = MONSTER_REGISTRY[mid]
       if (def) for (const d of def.drops) {
-        if (Math.random() < d.dropRate) {
-          const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
+        if (rng() < d.dropRate) {
+          const qty = d.quantityMin + Math.floor(rng() * (d.quantityMax - d.quantityMin + 1))
           loot[d.itemId] = (loot[d.itemId] ?? 0) + qty
         }
       }
     }
-    // exp/gold mirror the live model: +1 gold per kill, +1 XP per kill into the
-    // shared pool (expDistributed in locationStats == total kills == pool).
-    gold += kills
-    exp += kills
-
     // Open world never resets: clear corpses and keep the field stocked so the
-    // primed rate reflects sustained pressure, not a one-time clear.
-    if (wantOpen) {
-      battle.combatants = battle.combatants.filter((c) => !(c.team === 'enemy' && !c.alive))
-      const size = openWorldSize(loc)
-      let living = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
-      while (living < openWorldCap(loc)) { if (!spawnMonsterInto(battle, loc, size)) break; living++ }
-    }
+    // measured rate reflects sustained pressure, not a one-time clear.
+    if (wantOpen) restockField(battle, loc)
   }
 
-  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp, gold, killsByMonster, loot }
+  return { killsByMonster, loot, rounds }
+}
+
+function primeColdLocation(
+  loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[],
+  existing: BattleState | undefined,
+): PrimeResult {
+  const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
+  const { killsByMonster, loot, rounds } = runCombatSlice(battle, loc, PRIME_ROUND_CAP, PRIME_MS_BUDGET)
+  const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
+  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot }
+}
+
+// ── Sampled-window offline projection ────────────────────────────────────────--
+// Split a long absence into `samples` independent windows. For each: simulate a
+// short budgeted slice, extrapolate its rate over the window's duration, and add
+// it in — re-stocking the field between windows so each is a fresh composition
+// sample. The result carries variance (clumps, lucky/unlucky stretches, a varied
+// monster pool) that the single linear extrapolation flattens away.
+//
+// `prepareWindow` is the extension seam: it's called before each window's slice
+// with the live battle, the window index, and the absolute tick the window begins
+// at — so a future scheduled-event system can inject a periodic boss (via
+// `spawnMonsterAt`) into the windows it should appear in, and have it actually
+// fought + rewarded. Today nothing passes it; the sampling is composition variance.
+const SAMPLE_WINDOW_TICKS = 9000   // ~30 min real time per sample window (1 window below this)
+const SAMPLE_MAX_WINDOWS  = 12     // cap windows so even an 8h absence stays bounded
+const SAMPLE_ROUND_CAP    = 80     // per-window sim budget (rounds)
+const SAMPLE_MS_BUDGET    = 25     // per-window sim budget (wall-ms); total ≤ MAX_WINDOWS × this
+
+export interface SampledOptions {
+  samples: number
+  startTick: number
+  roundCap?: number
+  msBudget?: number
+  prepareWindow?: (battle: BattleState, windowIndex: number, windowStartTick: number) => void
+}
+
+export function projectOfflineSampled(
+  loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[],
+  existing: BattleState | undefined, offlineTicks: number, opts: SampledOptions, rng: () => number = Math.random,
+): PrimeResult {
+  const wantOpen = !!loc.openWorld
+  const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
+  const K = Math.max(1, opts.samples)
+  const windowTicks = offlineTicks / K
+  const roundCap = opts.roundCap ?? SAMPLE_ROUND_CAP
+  const msBudget = opts.msBudget ?? SAMPLE_MS_BUDGET
+
+  const killsByMonster: Record<string, number> = {}
+  let simTicks = 0
+  for (let w = 0; w < K; w++) {
+    opts.prepareWindow?.(battle, w, Math.round(opts.startTick + w * windowTicks))
+    const slice = runCombatSlice(battle, loc, roundCap, msBudget, rng)
+    const sliceTicks = Math.max(1, slice.rounds * ROUND_EVERY_TICKS)
+    simTicks += sliceTicks
+    const windowKills = scaleKills(slice.killsByMonster, windowTicks / sliceTicks)
+    for (const [mid, k] of Object.entries(windowKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
+    // Fresh field for the next window → an independent composition sample.
+    if (w < K - 1 && wantOpen) restockField(battle, loc)
+  }
+
+  const totalKills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
+  return { battle, primedTicks: simTicks, exp: totalKills, gold: totalKills, killsByMonster, loot: rollOfflineLoot(killsByMonster, rng) }
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -945,8 +1013,20 @@ export const useGameStore = create<GameState>((set) => ({
       let loot: Record<string, number> = {}
 
       const stats = s.locationStats[loc.id]
-      if (stats) {
-        // Warm: extrapolate the realized rate over the whole offline span.
+      const windows = offlineWindowCount(n, SAMPLE_WINDOW_TICKS, SAMPLE_MAX_WINDOWS)
+      if (windows >= 2 && roster.length > 0) {
+        // Long absence: sample several independent windows across the span so the
+        // projection carries variance/clumps (and is where a scheduled boss would
+        // be injected). Covers both warm and cold — it simulates either way.
+        primed = true
+        const r = projectOfflineSampled(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id], n, { samples: windows, startTick: s.ticks })
+        battles[loc.id] = r.battle
+        expPool = r.exp
+        gold    = r.gold
+        Object.assign(killsByMonster, r.killsByMonster)
+        loot = { ...r.loot }
+      } else if (stats) {
+        // Warm, short absence: cheap single linear extrapolation of the realized rate.
         const proj = projectOfflineRewards(getLocationCombatReport(stats, s.ticks), n)
         expPool = proj.exp
         gold    = proj.gold

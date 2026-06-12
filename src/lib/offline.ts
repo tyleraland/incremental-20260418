@@ -43,6 +43,36 @@ export function projectOfflineRewards(
   }
 }
 
+// ── Sampled-window projection (variance / clumps) ────────────────────────────--
+//
+// The single linear extrapolation above is smooth — it can't represent a clump of
+// monsters or a lucky/unlucky stretch. Instead split a long absence into several
+// INDEPENDENT sample windows: simulate a short real-combat slice for each (from a
+// freshly re-stocked field), extrapolate that slice's rate over the window, and
+// SUM. Because each window samples whatever composition happened to spawn, the
+// total carries real variance (a varied monster pool produces clumps; rare/tough
+// spawns land in some windows and not others). This file holds the pure windowing
+// maths; the slice simulation + combine lives in the store (it needs the engine).
+
+// Number of independent windows to split an offline span into — roughly one per
+// `windowTicks` of real time, clamped to [1, maxWindows]. 1 = the single-slice
+// path (short absence); more windows capture more variance at more compute.
+export function offlineWindowCount(offlineTicks: number, windowTicks: number, maxWindows: number): number {
+  if (offlineTicks <= 0 || windowTicks <= 0) return 1
+  return Math.max(1, Math.min(maxWindows, Math.round(offlineTicks / windowTicks)))
+}
+
+// Floored-EV scaling of a per-monster kill tally (a window's measured slice rate →
+// its full duration). Floors so it never invents a fractional kill.
+export function scaleKills(killsByMonster: Record<string, number>, scale: number): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [mid, k] of Object.entries(killsByMonster)) {
+    const v = Math.floor(k * scale)
+    if (v > 0) out[mid] = v
+  }
+  return out
+}
+
 // Split an XP pool among a group proportional to each member's level. A level-1
 // beside a level-99 gets ~1% of the pool — deliberately throttling power-leveling
 // a low-level hero by parking it in a high-level party. Falls back to an even
