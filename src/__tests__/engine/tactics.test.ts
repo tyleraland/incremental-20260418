@@ -66,10 +66,11 @@ describe('tactics: targeting', () => {
 })
 
 describe('tactics: movement', () => {
-  it('Charger dives at the enemy pack centroid, not just its single target', () => {
-    // p is locked on e1, but e1 sits at the edge of a 3-boar pack offset to +x.
-    // The charge aims at the *centroid* of that pack, so it crashes into the group
-    // (setting up a melee AoE) rather than poking its single target.
+  it('Charger dives to melee contact on the pack-facing side of its target', () => {
+    // p is locked on e1, which sits at the near edge of a 3-boar pack offset to +x.
+    // The charge aims at melee contact with e1 *on the side toward the pack centre*,
+    // so it crashes into the group (setting up a melee AoE) and always closes to
+    // striking range — never stranded on an empty centre-of-mass between spread foes.
     const b = createBattle({
       playerUnits: [eu({ id: 'p', tactics: [{ id: 'charger', rank: 1 }] })],
       enemyUnits: [eu({ id: 'e1', team: 'enemy' }), eu({ id: 'e2', team: 'enemy' }), eu({ id: 'e3', team: 'enemy' })],
@@ -80,9 +81,12 @@ describe('tactics: movement', () => {
     find(b, 'e1').pos = { x: 20, y: 18 }   // the locked target
     find(b, 'e2').pos = { x: 23, y: 18 }   // pack, off to +x (within dive radius)
     find(b, 'e3').pos = { x: 25, y: 18 }
-    const plan = TACTIC_REGISTRY['charger'].movement!(find(b, 'p'), b, 1)!
-    expect(plan.toPoint!.x).toBeCloseTo((20 + 23 + 25) / 3)   // pack centroid, not e1's x=20
-    expect(plan.toPoint!.y).toBeCloseTo(18)
+    const p = find(b, 'p')
+    const plan = TACTIC_REGISTRY['charger'].movement!(p, b, 1)!
+    const e1 = find(b, 'e1').pos
+    const d = Math.hypot(plan.toPoint!.x - e1.x, plan.toPoint!.y - e1.y)
+    expect(plan.toPoint!.x).toBeGreaterThan(20)               // biased toward the +x pack, not e1's own x
+    expect(d).toBeLessThanOrEqual(p.meleeRange + 1e-9)        // but in striking range of the target
   })
 
   it('Charger leashes: a runaway target makes it break off and regroup', () => {

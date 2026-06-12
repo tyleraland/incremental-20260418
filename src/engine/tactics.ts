@@ -203,11 +203,21 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       const home = centroid(mates)
       const leash = CHARGER_LEASH + CHARGER_LEASH_PER_RANK * (rank - 1)
       if (home && distance(self.pos, home) > leash) return { toPoint: home, clearLock: true }
-      // Dive point: centroid of the enemy pack within reach of the target (so a
-      // following melee AoE catches several), falling back to the target itself.
+      // Dive point: melee contact with the locked target, on the side facing the
+      // enemy pack's centre of mass (within CHARGER_DIVE_RADIUS) — so the charger
+      // ends up *inside* the cluster (a following melee AoE catches several) yet
+      // always closes to striking range of its target. Aiming at the raw centroid
+      // stranded it on an empty centre-of-mass between spread-out foes, micro-stepping
+      // in range of no one (the "creep, never hit" bug). No pack / a centroid sitting
+      // on the target ⇒ just charge the target directly.
       const pack = visibleEnemiesOf(state, self).filter((e) => distance(e.pos, t.pos) <= CHARGER_DIVE_RADIUS)
-      const dive = centroid(pack) ?? { x: t.pos.x, y: t.pos.y }
-      return { toPoint: dive }
+      const c = centroid(pack)
+      if (!c) return { toPoint: { x: t.pos.x, y: t.pos.y } }
+      const dx = c.x - t.pos.x, dy = c.y - t.pos.y
+      const len = Math.hypot(dx, dy)
+      if (len <= EPS) return { toPoint: { x: t.pos.x, y: t.pos.y } }
+      const reach = self.meleeRange * 0.9
+      return { toPoint: { x: t.pos.x + (dx / len) * reach, y: t.pos.y + (dy / len) * reach } }
     },
   },
   'retreater': {
