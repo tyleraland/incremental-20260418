@@ -55,6 +55,9 @@ function gridRangeFromFeet(feet: number): number {
 // 10 ft/s maps to 0.9 grid/round — the baseline for heroes and medium-speed
 // monsters. 0 ft/s stays 0 so stationary monsters never drift from their spawn.
 const MOVE_SCALE = 0.09
+// Heroes move a flat multiple faster than their raw stat — a uniform party-speed
+// dial (monsters are unaffected). Bump this to make the whole party brisker.
+const HERO_MOVE_MULT = 1.5
 
 export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team): EngineUnitInput {
   const rangedRange = gridRangeFromFeet(derived.attackRange)
@@ -74,7 +77,7 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     preferredRank: ranged ? 'back' : 'front',
     meleeRange: MELEE_GRID_RANGE,
     rangedRange,
-    moveSpeed: derived.moveSpeed * MOVE_SCALE,
+    moveSpeed: derived.moveSpeed * MOVE_SCALE * HERO_MOVE_MULT,
     attackElement: derived.attackElement,   // §3 weapon-imbued attack element
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
     skills,                               // action-bar skills → casts (each injects its usage tactic)
