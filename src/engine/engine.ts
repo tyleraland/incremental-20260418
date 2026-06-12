@@ -42,7 +42,7 @@ import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
-  TeamPlan, Planner, Barrier, TacticResolution, TacticOutcome, FireWall,
+  TeamPlan, Planner, Barrier, TacticResolution, TacticOutcome, FireWall, BattleZone,
 } from './types'
 
 // Deterministic [0,1) hash of an integer — seeds open-world wander choices
@@ -437,22 +437,88 @@ function retreatCaster(state: BattleState, self: Combatant, rows: number): void 
   }
 }
 
-// Tick ground hazards (§2): damage affected units inside, then age out.
-function tickZones(state: BattleState): void {
+// Ground hazards (§2) follow a D&D-style "aura turn" model so a zone can't miss a
+// unit that only brushes it between position snapshots. The work is split across a
+// round into three phases (all called from advanceRound):
+//
+//   1. seedZones    — at round start: re-center following auras onto their caster
+//                     (dropping the aura if the caster fell), AGE the zone out, and
+//                     seed each survivor's eligibility set with whoever is already
+//                     standing in it ("begins their turn in the aura"). A zone cast
+//                     *this* round isn't seeded, so it first bites next round.
+//   2. trackZones   — after each unit acts: a following aura re-centers immediately
+//                     onto its just-moved caster, and anyone now inside is added to
+//                     the eligibility set ("enters the aura during its turn", and an
+//                     aura sweeping onto a unit when its caster strides over).
+//   3. applyZoneEffects — at round end: also catch whoever's standing in it now
+//                     ("ends their turn in the aura"), then deal the zone's effect
+//                     ONCE to every eligible unit, simultaneously (iterating in
+//                     combatant order for determinism). DoT is gated to once per
+//                     logical round (onBeat) so finer sub-rounds don't double-tick.
+//
+// Eligibility lives in a per-round Map (not on the zone) so nothing extra has to be
+// snapshot-serialized — it's recomputed from positions every round, so replay is 1:1.
+type ZoneElig = Map<BattleZone, Set<string>>
+
+// Re-center a following aura (Consecration) on its caster. Returns false if the
+// caster is gone — the aura ends rather than lingering as ground.
+function recenterFollowZone(state: BattleState, z: BattleZone): boolean {
+  if (!z.follow) return true
+  const src = findCombatant(state, z.sourceId)
+  if (!src || !src.alive) return false
+  z.pos = { x: src.pos.x, y: src.pos.y }
+  return true
+}
+
+// Affected, living members of a zone's team currently inside its radius.
+function zoneMembers(state: BattleState, z: BattleZone, into: Set<string>): void {
+  for (const c of state.combatants) {
+    if (!c.alive || c.team !== z.team) continue
+    if (distance(c.pos, z.pos) <= z.radius + EPS) into.add(c.id)
+  }
+}
+
+// Phase 1 — start of round: re-center/expire auras, age zones, seed eligibility.
+function seedZones(state: BattleState, elig: ZoneElig): void {
   if (state.zones.length === 0) return
-  const kept = []
+  const kept: BattleZone[] = []
   for (const z of state.zones) {
-    // A following aura (Consecration) rides on its caster: re-center it each
-    // round, and let it die with the caster instead of lingering as ground.
-    if (z.follow) {
-      const src = findCombatant(state, z.sourceId)
-      if (!src || !src.alive) continue
-      z.pos = { x: src.pos.x, y: src.pos.y }
-    }
-    for (const c of state.combatants) {
-      if (!c.alive || c.team !== z.team) continue
-      if (distance(c.pos, z.pos) > z.radius + EPS) continue
-      if (z.dotDamage > 0 && onBeat(state.round)) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'neutral', z.element ?? 'zone')
+    if (!recenterFollowZone(state, z)) continue   // caster fell → aura ends
+    z.roundsLeft -= 1
+    if (z.roundsLeft <= 0) continue               // aged out
+    const ids = new Set<string>()
+    zoneMembers(state, z, ids)                     // "begins their turn in the aura"
+    elig.set(z, ids)
+    kept.push(z)
+  }
+  state.zones = kept
+}
+
+// Phase 2 — after a unit acts: auras track their caster, and anyone now inside an
+// active (seeded) zone becomes eligible. A zone cast this round (not in `elig`) is
+// skipped, so it stays dormant until its first seed next round.
+function trackZones(state: BattleState, elig: ZoneElig): void {
+  if (state.zones.length === 0) return
+  for (const z of state.zones) {
+    const ids = elig.get(z)
+    if (!ids) continue
+    recenterFollowZone(state, z)
+    zoneMembers(state, z, ids)
+  }
+}
+
+// Phase 3 — end of round: deal each seeded zone's effect once to every eligible
+// unit (incl. those standing in it now), all at once.
+function applyZoneEffects(state: BattleState, elig: ZoneElig): void {
+  if (state.zones.length === 0) return
+  const beat = onBeat(state.round)
+  for (const z of state.zones) {
+    const ids = elig.get(z)
+    if (!ids) continue                             // cast this round → first tick next round
+    zoneMembers(state, z, ids)                     // "ends their turn in the aura"
+    for (const c of state.combatants) {            // combatant order ⇒ deterministic
+      if (!ids.has(c.id) || !c.alive || c.team !== z.team) continue
+      if (z.dotDamage > 0 && beat) applyTickDamage(state, z.sourceId, c, z.dotDamage, z.element ?? 'neutral', z.element ?? 'zone')
       // Utility zone (Molasses): refresh a status on whoever's inside. addStatus
       // replaces by id, so it never stacks — it just tops the duration back up.
       if (z.statusApplied && c.alive) {
@@ -464,10 +530,7 @@ function tickZones(state: BattleState): void {
         }
       }
     }
-    z.roundsLeft -= 1
-    if (z.roundsLeft > 0) kept.push(z)
   }
-  state.zones = kept
 }
 
 // Age out firewalls (§firewall). They burn on *contact* (applyFirewalls), not
@@ -1579,8 +1642,11 @@ export function advanceRound(state: BattleState): BattleState {
     c.statuses = kept
   }
 
-  // §2 tick ground hazards (Lightning Storm zones) and age out firewalls.
-  tickZones(state)
+  // §2 ground hazards (Lightning Storm / Consecration zones): re-center auras, age
+  // them out, and seed eligibility (begins-turn-in-aura). Effects land at round end
+  // (applyZoneEffects) after units have moved. Firewalls just age here.
+  const zoneElig: ZoneElig = new Map()
+  seedZones(state, zoneElig)
   tickFirewalls(state)
 
   // §9.1.2 tick cooldowns (skills + tactics)
@@ -1603,11 +1669,17 @@ export function advanceRound(state: BattleState): BattleState {
       return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
     })
 
-  // §9.1.4 each living unit acts once (dead-mid-round units are skipped)
+  // §9.1.4 each living unit acts once (dead-mid-round units are skipped). After
+  // each turn, auras track their just-moved caster and pick up anyone who stepped
+  // into a zone (enters-during-turn).
   for (const c of order) {
     if (!c.alive) continue
     takeTurn(state, c)
+    trackZones(state, zoneElig)
   }
+
+  // §2 zone effects land now, once, on everyone who began/entered/ends inside.
+  applyZoneEffects(state, zoneElig)
 
   // §9.1.5 win condition
   state.outcome = evalOutcome(state)

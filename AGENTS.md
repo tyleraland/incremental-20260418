@@ -242,10 +242,26 @@ skill's `zone` config — Lightning Storm (damage cloud), Molasses (a no-damage
 `statusApplied` slow puddle). Tick damage runs through the **element matrix** vs
 the target's effective armor (radiant zones shred undead/ghost). A zone is
 normally fixed ground, but `zone.follow` makes it a **caster-anchored aura** that
-re-centers on its `sourceId` every round and ends when the caster dies —
-**Consecration** (instant self-cast, `targeting: 'self'`, radiant, r=2, `maxActive:
-1` + long duration ⇒ cast once and it rides along). Carried by the Mutant Lizard.
+re-centers on its `sourceId` and ends when the caster dies — **Consecration**
+(instant self-cast, `targeting: 'self'`, radiant, r=2, `maxActive: 1` + long
+duration ⇒ cast once and it rides along). Carried by the Mutant Lizard.
 (`consecration.test.ts`.)
+
+**Zone resolution is a D&D-style "aura turn"** (three phases across a round, so a
+zone can't miss a unit that only brushes it between position snapshots —
+`engine.ts` `seedZones`/`trackZones`/`applyZoneEffects`): (1) at round **start**
+auras re-center on their caster, zones age out, and each survivor seeds an
+*eligibility set* with whoever's already inside (*begins their turn in the aura*);
+(2) after **each unit acts** a following aura re-centers immediately onto its
+just-moved caster and anyone now inside is added (*enters the aura during its
+turn* — and an aura sweeping over a unit when its caster strides past); (3) at
+round **end** whoever's standing in it now is added (*ends their turn in the
+aura*) and the effect lands **once on every eligible unit, simultaneously**
+(iterated in combatant order for determinism). DoT is still gated to **once per
+logical round** (`onBeat`) so finer sub-rounds don't double-tick, and a zone cast
+*this* round isn't seeded, so it first bites next round. Eligibility lives in a
+per-round Map (not on the zone), recomputed from positions each round, so nothing
+extra is snapshot-serialized and replay stays 1:1.
 
 **Threat & aggro (a WoW-style model).** Targeting is layered, top to bottom: (1) a
 **hard taunt** — the `taunted` status (`evalTargeting` top) hard-locks the bearer

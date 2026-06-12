@@ -1,6 +1,6 @@
 // The starting party: one hero per class (Fighter doubled) with role-correct
-// deploy shapes — casters/archer fight at range, melee close in, the knight is
-// the sturdiest front-liner.
+// deploy shapes — the mage/archer fight at range, melee (incl. the rod-swinging
+// cleric) close in, the knight is the sturdiest front-liner.
 import { describe, it, expect } from 'vitest'
 import { INITIAL_UNITS } from '@/data/units'
 import { INITIAL_EQUIPMENT } from '@/data/equipment'
@@ -33,9 +33,9 @@ describe('starting party classes', () => {
     }
   })
 
-  it('deploys casters and the archer at range, melee up front', () => {
-    for (const id of ['u2', 'u3', 'u4']) expect(engine(id).rangedRange).toBeGreaterThan(0) // Ranger/Mage/Cleric
-    for (const id of ['u1', 'u5', 'u6']) expect(engine(id).rangedRange).toBe(0)             // Fighters/Rogue
+  it('deploys the mage and archer at range, melee (incl. the rod cleric) up front', () => {
+    for (const id of ['u2', 'u3']) expect(engine(id).rangedRange).toBeGreaterThan(0)        // Ranger/Mage
+    for (const id of ['u1', 'u4', 'u5', 'u6']) expect(engine(id).rangedRange).toBe(0)        // Fighters/Cleric (melee rod)/Rogue
   })
 
   it('makes the knight the sturdiest front-liner', () => {

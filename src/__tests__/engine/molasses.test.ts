@@ -55,6 +55,6 @@ describe('molasses', () => {
     for (let i = 0; i < 25; i++) { advanceRound(b); if (find(b, 'e').statuses.some((s) => s.id === 'slowed')) slowed = true }
     expect(slowed).toBe(true)                       // the chaser ate the puddle
     expect(find(b, 'm').alive).toBe(true)           // and the kiter's still standing
-    expect(find(b, 'm').hp).toBeGreaterThan(130)    // comfortably alive (exact value shifts a little with kite-escape tuning)
+    expect(find(b, 'm').hp).toBeGreaterThan(110)    // comfortably alive (exact value shifts a little with kite-escape tuning; the slow now lands at end-of-turn, so the chaser gets one un-slowed step before it bites)
   })
 })

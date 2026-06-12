@@ -35,16 +35,17 @@ function equippedCombatSkills(unit: Unit): EngineSkill[] {
 
 // The engine grid is 5×10 abstract units; the game's "feet" don't map 1:1.
 // Melee stops ~1.1 away (just shy of contact). Ranged is tiered: long-range
-// weapons (bows, staves) reach 6 cells; medium-range (rods, wands, monster
-// spitters like Living Nightshade or Giant Frog) reach 4. Melee reach must
-// stay above SEPARATION (0.7) so an attacker isn't pushed back out of range
-// by the spacing rule.
+// weapons (bows, staves) reach 6 cells; medium-range (wands, monster
+// spitters like Living Nightshade or Giant Frog) reach 4. The cleric's Rod is
+// a melee focus (≤5 ft ⇒ melee), so a cleric fights at contact and heals from
+// there. Melee reach must stay above SEPARATION (0.7) so an attacker isn't
+// pushed back out of range by the spacing rule.
 const MELEE_GRID_RANGE = 1.1
 const RANGED_FEET_THRESHOLD = 5   // game attackRange > this ⇒ ranged
 
 // Map a game-feet attack range to an engine grid range. The threshold at 25 ft
 // separates "true bowman / mage" (35 ft bow, 28 ft staff) from "medium ranged"
-// (20 ft rod/nightshade, 18 ft wand, 15 ft poacher). Returning 0 means melee.
+// (20 ft nightshade, 18 ft wand, 15 ft poacher). Returning 0 means melee.
 function gridRangeFromFeet(feet: number): number {
   if (feet <= RANGED_FEET_THRESHOLD) return 0   // melee
   if (feet >= 25) return 6                       // long-range (bow, staff, skeleton archer, ruins specter)
