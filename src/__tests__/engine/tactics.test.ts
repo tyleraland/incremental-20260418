@@ -113,6 +113,31 @@ describe('tactics: movement', () => {
     expect(p.lockedTargetId).toBeNull()                                          // dropped the runaway
   })
 
+  it('Flanker leashes too: a fleeing target makes it give up the flank and regroup', () => {
+    // Same shape as the Charger leash — a flanker shouldn't circle a runaway forever.
+    // Dragged past its leash from the party, it drops the lock and heads home so the
+    // next targeting pass picks a nearer foe.
+    const b = createBattle({
+      playerUnits: [
+        eu({ id: 'p', tactics: [{ id: 'flanker', rank: 1 }], visionRange: Infinity }),
+        eu({ id: 'm1' }), eu({ id: 'm2' }),
+      ],
+      enemyUnits: [eu({ id: 'e', team: 'enemy' })],
+      mode: 'open', cols: 80, rows: 80,
+    })
+    find(b, 'm1').pos = { x: 10, y: 10 }
+    find(b, 'm2').pos = { x: 12, y: 10 }       // party centre ≈ (11,10)
+    find(b, 'p').pos = { x: 50, y: 50 }         // way past the flanker leash
+    find(b, 'p').lockedTargetId = 'e'
+    find(b, 'e').pos = { x: 60, y: 60 }
+    const home = { x: 11, y: 10 }
+    const before = Math.hypot(50 - home.x, 50 - home.y)
+    advanceRound(b)
+    const p = find(b, 'p')
+    expect(Math.hypot(p.pos.x - home.x, p.pos.y - home.y)).toBeLessThan(before)  // headed home
+    expect(p.lockedTargetId).toBeNull()                                          // dropped the runaway
+  })
+
   it('Charger is a floor — it demotes below a trigger, so it does not starve Retreater', () => {
     // Charger (floor) sits above Retreater (trigger); demoteFloors reorders it
     // below, so a badly-hurt unit still falls back.

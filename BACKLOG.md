@@ -140,9 +140,22 @@ same way" by penalising left-side detours.
   - `defaultPlanner` also computes an advisory `focusTargetId` (lowest-HP
     visible enemy) and a per-enemy `threat` score; both are exposed in the
     BattleView **Debug tab** and asserted in `blackboard.test.ts`.
-  Still open: actually *consume* focus in a targeting tactic (focus-fire), add
-  `disableTargetId`, and use the blackboard to replace the `HERD_BIAS` path
-  detour (flanker pulling a rogue the long way around).
+  - *Targeting reads the plan* — `focus-fire` (party floor), `finish-them`
+    (party, near-dead gate) and `opportunist` (unit) all pile onto the shared
+    `focusTargetId` now, so an equipped party can already coordinate fire.
+  Still open: add `disableTargetId` (an "avoid"/ignore channel), and use the
+  blackboard to replace the `HERD_BIAS` path detour (flanker pulling a rogue the
+  long way around).
+- **Smart-party baseline (beyond opt-in tactics).** Focus-fire/finish-them are
+  *opt-in* party tactics today — a player has to equip them. A group of competent
+  humans would coordinate by default: softly converge fire on one foe, **avoid
+  over-pulling** (not wake mobs outside the engagement radius into a fight already
+  in progress), **hold ground / a chokepoint** (zone control), and **stay grouped**
+  rather than each peeling off after a different target. Future blackboard
+  iterations: a planner-chosen *party focus* the team biases toward without an
+  equipped tactic; a pull/aggro-radius model so wanderers aren't dragged in; and a
+  "formation/anchor" plan field for zone control + cohesion. (Raised 2026-06; the
+  Charger/Flanker leashes are the first cohesion-over-chase step.)
 - **Strategies = multi-channel tactic bundles.** A `STRATEGY_REGISTRY` where
   each entry expands to TacticRefs across channels + an optional planner.
   Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),

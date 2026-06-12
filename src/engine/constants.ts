@@ -61,3 +61,11 @@ export const MONSTER_EDGE_MARGIN = 4
 export const CHARGER_DIVE_RADIUS = 6
 export const CHARGER_LEASH = 14
 export const CHARGER_LEASH_PER_RANK = 2
+
+// §Flanker leash — like the Charger, a flanker won't circle a fleeing target
+// forever: once it's dragged past FLANKER_LEASH from the party centroid it drops
+// the lock and regroups, so the next targeting pass re-acquires a nearer foe
+// ("give up, hit someone closer"). A touch shorter than the Charger's reach since
+// a skirmisher shouldn't over-commit. Grows a little per rank.
+export const FLANKER_LEASH = 12
+export const FLANKER_LEASH_PER_RANK = 2

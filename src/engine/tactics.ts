@@ -12,7 +12,7 @@
 
 import { distance } from './grid'
 import { timeScale } from './timescale'
-import { SEPARATION, EPS, CHARGER_DIVE_RADIUS, CHARGER_LEASH, CHARGER_LEASH_PER_RANK } from './constants'
+import { SEPARATION, EPS, CHARGER_DIVE_RADIUS, CHARGER_LEASH, CHARGER_LEASH_PER_RANK, FLANKER_LEASH, FLANKER_LEASH_PER_RANK } from './constants'
 import { effectiveStat, skillDamageEstimate } from './damage'
 import {
   lockedTarget, nearestEnemyTo, isCaster, visibleEnemiesOf, alliesOf, centroid,
@@ -231,10 +231,16 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
   },
   'flanker': {
     id: 'flanker', name: 'Flanker', scope: 'unit', channel: 'movement', kind: 'floor',
-    description: "Circle to the locked target's least-guarded side before striking.",
-    movement: (self, state) => {
+    description: "Circle to the locked target's least-guarded side before striking — but give up and regroup if a fleeing target drags you too far from the party (hit someone closer instead).",
+    movement: (self, state, rank) => {
       const t = lockedTarget(self, state)
       if (!t) return null
+      // Leash (mirrors Charger): don't circle a fleeing target forever. Past the
+      // leash from the party centre, drop the lock and head home — the next
+      // targeting pass re-acquires a nearer foe rather than chasing across the map.
+      const home = centroid(alliesOf(state, self))
+      const leash = FLANKER_LEASH + FLANKER_LEASH_PER_RANK * (rank - 1)
+      if (home && distance(self.pos, home) > leash) return { toPoint: home, clearLock: true }
       return { toPoint: flankPoint(self, t, state, Math.max(self.meleeRange, SEPARATION)) }
     },
   },

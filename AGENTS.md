@@ -365,6 +365,12 @@ closes to cast range and opens fire (which provokes it).
   hit" bug.) It **leashes** — if a fleeing foe drags it past `CHARGER_LEASH` (+per-rank)
   from the party centroid it drops the lock and regroups (cohesion over an endless
   chase). As a floor it demotes below same-channel triggers, so it can't starve them.
+- **Flanker** (movement floor) circles to the locked target's least-guarded side
+  (`flankPoint`, at strike range so arriving lands a hit) and **shares the Charger's
+  leash** (`FLANKER_LEASH`, +per-rank): a fleeing target that drags it too far from
+  the party makes it drop the lock and regroup, so the next targeting pass picks a
+  nearer foe instead of chasing forever. (Guardian deliberately has *no* leash —
+  body-blocking a retreating ally is the point.)
 - **Team blackboard read side:** `teamFocus(self, state)` reads the planner's shared
   `focusTargetId` (lowest-HP visible enemy). `opportunist` (rank-scaled HP gate),
   `finish-them` (party, near-dead gate), and `focus-fire` (party, unconditional)
