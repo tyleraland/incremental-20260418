@@ -32,3 +32,6 @@ export const SAMPLING: SamplingConfig = {
   primeMsBudget: 50,
   offscreenCreditTicks: 25, // ~5 s
 }
+
+// Pristine copy of the shipped values, for a debug "reset" after live tuning.
+export const SAMPLING_DEFAULTS: Readonly<SamplingConfig> = Object.freeze({ ...SAMPLING })
