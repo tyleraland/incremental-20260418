@@ -57,7 +57,7 @@ function gridRangeFromFeet(feet: number): number {
 const MOVE_SCALE = 0.09
 // Heroes move a flat multiple faster than their raw stat — a uniform party-speed
 // dial (monsters are unaffected). Bump this to make the whole party brisker.
-const HERO_MOVE_MULT = 2
+const HERO_MOVE_MULT = 2.5
 
 export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team): EngineUnitInput {
   const rangedRange = gridRangeFromFeet(derived.attackRange)
