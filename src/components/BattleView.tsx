@@ -127,12 +127,12 @@ function useSmoothScene(combatants: Combatant[], enabled: boolean, round: number
     // Engine motion is constant per round, so any visible jerk comes from the
     // *timing*: the wall-clock gap between rounds jitters under per-tick load. Drive
     // the segment off an EMA of the interval (not the raw last one), and give it a
-    // little extra runway (×1.4) so a momentarily-late round doesn't leave a unit
+    // little extra runway (×1.7) so a momentarily-late round doesn't leave a unit
     // parked at its target for a beat before the next one arrives.
     const raw = prevRoundTsRef.current ? now - prevRoundTsRef.current : ROUND_MS
     prevRoundTsRef.current = now
     avgIntervalRef.current = avgIntervalRef.current ? avgIntervalRef.current * 0.8 + raw * 0.2 : raw
-    segDurRef.current = Math.min(800, Math.max(120, avgIntervalRef.current * 1.4))
+    segDurRef.current = Math.min(800, Math.max(120, avgIntervalRef.current * 1.7))
     segStartRef.current = now
     // Open a new constant-velocity segment for every unit: from its current
     // on-screen spot to its new logical spot. New units appear in place (no glide).
