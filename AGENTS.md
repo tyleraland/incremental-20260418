@@ -382,8 +382,17 @@ closes to cast range and opens fire (which provokes it).
   unit's battlefield and centres the camera on them (`battleFocus`). The
   battle-view ⊙/auto control re-fits the whole party (clears the unit focus).
   Single-tap still toggles selection.
-- **Combat keeps running for every location regardless of view** — the engine
-  ticks all battles each tick; the drop-in is purely which one you're watching.
+- **Combat keeps running for every location regardless of view** — but only the
+  one you're *watching* runs the full per-tick spatial sim. When you've dropped
+  into a battle (`mapMode === 'battle'`, `combatLocationId`), the **other**
+  locations advance **off-screen**: `advanceBattles` skips their sim and credits
+  rate-extrapolated rewards every `OFFSCREEN_CREDIT_TICKS` (25) via `creditOffscreen`
+  (warm: `projectOfflineRewards`; cold: a one-time budgeted prime to seed the rate,
+  keeping the frozen battle for drop-in) — reusing the offline machinery. In **world
+  mode** (and tests) there's no watched battle, so every location full-sims as
+  before. Off-screen parties earn but take no casualties (a simplification; deaths
+  resume the moment you drop back in). This is the scaling lever: watch one party
+  hunt while many others progress cheaply. (`offline.test.ts`.)
 - The viewer is `src/components/BattleView.tsx` (`<BattleView locationId>`): live
   battle if one is running, otherwise the static form-up `Preview`. The pannable
   arena fills its space (square, centred); tokens are circles sized to ~0.9 of a

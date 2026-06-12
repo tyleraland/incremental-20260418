@@ -222,6 +222,46 @@ describe('batchTick — sampled windows (long absence)', () => {
   })
 })
 
+describe('off-screen location simulation', () => {
+  beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
+  afterEach(() => vi.restoreAllMocks())
+
+  const strong = (id: string, locationId: string) => makeUnit({
+    id, locationId, health: 100,
+    abilities: { strength: 100, agility: 5, dexterity: 5, constitution: 30, intelligence: 5 },
+  })
+
+  it('extrapolates an unwatched location (no full sim) while another is watched', () => {
+    resetStore({
+      ticks: 0,
+      mapMode: 'battle', combatLocationId: 'watched',     // player is watching `watched`
+      locations: [FIELD({ id: 'watched' }), FIELD({ id: 'far', monsterIds: ['bat'] })],
+      locationStats: { far: STATS({ monstersDefeated: { bat: 100 } }) },  // far has a realized rate
+      units: [strong('w0', 'watched'), makeUnit({ id: 'f0', locationId: 'far', health: 100 })],
+      miscItems: [],
+    })
+    for (let i = 0; i < 30; i++) useGameStore.getState().tick()   // > OFFSCREEN_CREDIT_TICKS (25)
+
+    const st = useGameStore.getState()
+    expect(st.battles.far).toBeUndefined()                  // off-screen → never full-simmed
+    expect(st.battles.watched).toBeDefined()                // watched → real spatial sim
+    expect(st.monsterDefeated.bat ?? 0).toBeGreaterThan(0)  // far credited via its rate (≈ 25/1000 × 100)
+  })
+
+  it('world mode (no watched battle) full-sims every location', () => {
+    resetStore({
+      ticks: 0,
+      mapMode: 'world', combatLocationId: null,
+      locations: [FIELD({ id: 'far' })],
+      locationStats: { far: STATS() },
+      units: [strong('f0', 'far')],
+      miscItems: [],
+    })
+    for (let i = 0; i < 5; i++) useGameStore.getState().tick()
+    expect(useGameStore.getState().battles.far).toBeDefined()  // full-simmed, not extrapolated
+  })
+})
+
 describe('batchTick — cold priming (Phase 2)', () => {
   beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
   afterEach(() => vi.restoreAllMocks())

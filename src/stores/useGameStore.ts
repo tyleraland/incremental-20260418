@@ -199,6 +199,11 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 // sim finer/smoother at the same pace (it's the lever to tune feel).
 const ROUND_TIME_SCALE    = 2    // engine rounds per logical round (finer = smoother)
 const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (~200ms/round at scale 2)
+// Off-screen locations (the player is watching a *different* battle drop-in) don't
+// need a full per-tick spatial sim — they advance cheaply by extrapolating their
+// realized rate every this-many ticks. Only ever active in battle mode; in world
+// mode / tests there's no watched location, so every location full-sims as before.
+const OFFSCREEN_CREDIT_TICKS = 25  // ~5s; credit unwatched locations in cheap chunks
 const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
 
 // Open-world pacing (§open-world). A persistent battle keeps a FIXED number of
@@ -754,6 +759,53 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     }
   }
 
+  // Which location (if any) the player is actively watching — its battle drop-in is
+  // on screen. Only that one runs the full per-tick spatial sim; the rest advance
+  // off-screen via cheap rate-extrapolation. In world mode (and tests) there's no
+  // watched battle, so this is null and every location full-sims as before.
+  const watchedId = s.mapMode === 'battle' && s.combatLocationId && s.locations.some((l) => l.id === s.combatLocationId)
+    ? s.combatLocationId : null
+
+  // Credit one off-screen interval's rewards by extrapolating the location's realized
+  // rate — no spatial sim. A never-sampled (cold) location runs one budgeted prime
+  // to seed a rate (and keeps the primed battle for when the player drops back in),
+  // then extrapolates. Mirrors the offline warm/cold crediting. (Off-screen parties
+  // earn but don't take casualties — a known simplification; deaths resume on drop-in.)
+  const creditOffscreen = (loc: Location, eligible: Unit[]) => {
+    const ticks = OFFSCREEN_CREDIT_TICKS
+    const stats = locationStats[loc.id]
+    let killsByMonster: Record<string, number>
+    let exp: number, gold: number
+    if (stats) {
+      const p = projectOfflineRewards(getLocationCombatReport(stats, newTicks), ticks)
+      killsByMonster = p.killsByMonster; exp = p.exp; gold = p.gold
+    } else {
+      const r = primeColdLocation(loc, eligible, s.equipment, s.partyTactics ?? [], battles[loc.id])
+      battles[loc.id] = r.battle
+      const scale = ticks / Math.max(1, r.primedTicks)
+      killsByMonster = scaleKills(r.killsByMonster, scale)
+      exp = Math.floor(r.exp * scale); gold = Math.floor(r.gold * scale)
+    }
+    const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
+    if (kills === 0 && exp === 0 && gold === 0) return
+    const loot = rollOfflineLoot(killsByMonster)
+    const members = eligible.map((u) => ({ id: u.id, level: unitLevel.get(u.id) ?? 1 }))
+    for (const [id, amt] of Object.entries(splitExpByLevel(exp, members))) expByUnit[id] = (expByUnit[id] ?? 0) + amt
+    goldEarned += gold
+    for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
+    for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
+    // Advance the persisted stats so the rate stays coherent for the next interval.
+    const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+    const nextDefeated = { ...prev.monstersDefeated }
+    for (const [mid, k] of Object.entries(killsByMonster)) nextDefeated[mid] = (nextDefeated[mid] ?? 0) + k
+    const nextDropped = { ...prev.itemsDropped }
+    for (const [id, q] of Object.entries(loot)) nextDropped[id] = (nextDropped[id] ?? 0) + q
+    locationStats[loc.id] = {
+      startTick: prev.startTick, monstersDefeated: nextDefeated, itemsDropped: nextDropped,
+      expDistributed: prev.expDistributed + exp, goldEarned: prev.goldEarned + gold,
+    }
+  }
+
   for (const loc of s.locations) {
     const locationId = loc.id
     const eligible = s.units.filter(
@@ -765,6 +817,15 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       if (battles[locationId]) delete battles[locationId]
       if (battleCooldown[locationId]) delete battleCooldown[locationId]
       if (monsterSpawnTimers[locationId]) delete monsterSpawnTimers[locationId]
+      continue
+    }
+
+    // Off-screen (player is watching a different battle): skip the full spatial sim,
+    // credit rate-extrapolated rewards on a throttle, keep the (frozen) battle for
+    // drop-in. Falls through to the full sim when nothing is watched.
+    if (watchedId !== null && locationId !== watchedId) {
+      if (newTicks % OFFSCREEN_CREDIT_TICKS === 0) creditOffscreen(loc, eligible)
+      for (const u of eligible) bumpUnit(u.id, 'combatTicks', 1)
       continue
     }
 
