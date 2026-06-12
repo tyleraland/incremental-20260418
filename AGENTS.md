@@ -309,16 +309,22 @@ engine.) The same roster + tactics replays identically.
 **Movement is spatial:** units move toward targets, kite at range, flank, and
 body-block; `moveSpeed` is decoupled from `attackSpeed`. Barriers block movement and
 line-of-sight; casters won't fire through walls (but will through cliffs); knockback
-stops at walls and the arena perimeter. A caster's default kite only backs away from a
-**provoked** (hostile) threat (`nearestProvokedEnemyTo`) — it won't flee a still-wandering
-non-provoked monster (that just jittered it back and forth); against a passive target it
-closes to cast range and opens fire (which provokes it). The kite hold distance
-(`kiteDistanceFor`) is anchored on the caster's **single-target `attack` range** (its
-bolts) plus a safety buffer, **not** its longest-range *gated* AoE — anchoring on a
-Lightning Storm (range 8, but it won't fire on a lone foe) stranded a mage at AoE range,
-out of reach of its range-6 bolts, casting nothing. A pure-AoE/debuff caster (no
-single-target poke) falls back to its longest skill range so it still kites to where
-*something* lands.
+stops at walls and the arena perimeter.
+
+**Default positioning is "close to range and HOLD," not kite.** With a locked target
+and no movement tactic, a unit advances to attack range and stands — a caster stops at
+its **cast range** (`castRange`: longest single-target `attack`/basic-ranged range, so a
+melee-weapon mage doesn't march into melee mid-channel) rather than its basic reach, then
+holds and fires while the enemy *approaches* (trust the front line to peel). It does **not**
+back off. Active **kiting** (keeping a gap by retreating) is deliberately **opt-in** via
+the **Kiter** / **Wary Caster** tactics (the `desiredRange` → `kiteToward` path) while we
+tune what the right default should be — it used to be the caster default, which made
+mages skittish without the player asking. The kite hold distance (`kiteDistanceFor`, used
+by those tactics) is anchored on the same `castRange` (single-target shooting range) plus
+a safety buffer, **not** the longest-range *gated* AoE — anchoring on a Lightning Storm
+(range 8, but it won't fire on a lone foe) stranded a mage at AoE range, out of reach of
+its range-6 bolts, casting nothing. A pure-AoE/debuff caster (no single-target poke) falls
+back to its longest skill range so it still reaches where *something* lands.
 
 ### Tactics (the player's combat lever)
 

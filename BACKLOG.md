@@ -160,6 +160,18 @@ same way" by penalising left-side detours.
   each entry expands to TacticRefs across channels + an optional planner.
   Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),
   *Lock & Focus* (Controller + Focus Fire), *Kite* (existing + maintain LoS).
+- **🟡 Robust range selection / positioning (kite vs. hold-and-let-approach).**
+  Kiting is now **opt-in** (Kiter / Wary Caster tactics) and the default is
+  "close to `castRange` and hold, letting the enemy approach" — a deliberate
+  *tune-it* state while we decide what the default should be (2026-06). Open
+  threads: (a) decide the default per role (squishy caster behind a tank may want
+  hold; a solo kiter wants kite) — the **team blackboard** could pick it from the
+  party composition (is there a front line to trust?); (b) make the kite itself
+  *really* robust (the recurring edge cases — anchor on the right skill range,
+  cliffs/LoS, not stranding) argue for the movement layer asking the action layer
+  "what will I actually cast here, and from how far?" instead of inferring from raw
+  skill ranges; (c) a placement/anchor plan field (hold a line / chokepoint) so
+  "let them approach" can mean "to *this* spot," not just "wherever I stopped."
 - **🟡 Threat model — extensions (core shipped).** A WoW-style threat table now
   drives the default targeting fallback (`selectTarget`), with damage + healing
   generating threat, hysteresis for the aggro wobble, and a hard **Taunt** skill +

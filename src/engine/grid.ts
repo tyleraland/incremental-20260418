@@ -91,9 +91,10 @@ export function moveToward(
   speed: number,
   all: Combatant[],
   barriers: Barrier[] = [],
+  reachOverride?: number,
 ): boolean {
   if (speed <= EPS) return false   // immobile (moveSpeed 0): hold — never reach slideMove
-  const reach = attackReach(mover)
+  const reach = reachOverride ?? attackReach(mover)
   const d = distance(mover.pos, target.pos)
   if (d <= reach + EPS) return false   // already in range; hold position
 

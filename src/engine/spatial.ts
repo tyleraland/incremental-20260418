@@ -171,16 +171,15 @@ export function isCaster(c: Combatant): boolean {
 //   * the threat's melee reach + a safety buffer,
 //   * our longest skill range (the cast still has to land).
 // If `minSafe` exceeds our range, we keep the safe distance and just don't
-// shoot that round — preferable to dying mid-channel.
-export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
-  // Match maxSkillRange's filter: casters consider all skills (positioning for
-  // next cast); non-casters only need cast room for skills currently ready.
+// The range a unit can actually fire on a SINGLE target from — the longest range
+// among its single-target `attack` skills (+ its basic ranged attack), respecting
+// the caster/cooldown filter. A pure-AoE/debuff caster (no single-target poke)
+// falls back to its longest skill range. This is the "stand here and you can shoot"
+// distance: used to position a caster at cast range (default) and to anchor the
+// kite hold. NOT a longer *gated* AoE range (a Lightning Storm won't fire on a lone
+// foe, so anchoring on it strands the caster out of reach of its bolts).
+export function castRange(self: Combatant): number {
   const includeAll = isCaster(self)
-  // Anchor the kite on the range we can actually *shoot a single target* from — our
-  // single-target `attack` skills (+ basic ranged), NOT a situational AoE. A mage's
-  // Lightning Storm reaches farther but is gated on a cluster (it won't fire on one
-  // foe), so anchoring the kite on it stranded the mage at AoE range — out of reach
-  // of its bread-and-butter bolts — casting nothing (the "won't take a shot" bug).
   let shootRange = self.rangedRange
   let hasAttack = self.rangedRange > self.meleeRange + EPS
   for (const s of self.skills) {
@@ -189,9 +188,17 @@ export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
     hasAttack = true
     if (s.range > shootRange) shootRange = s.range
   }
-  // Pure AoE/debuff caster (no single-target poke): fall back to the longest skill
-  // range so it still kites to where *something* can land.
-  const maxRange = hasAttack ? shootRange : maxSkillRange(self)
+  return hasAttack ? shootRange : maxSkillRange(self)
+}
+
+// shoot that round — preferable to dying mid-channel.
+export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
+  // Match maxSkillRange's filter: casters consider all skills (positioning for
+  // next cast); non-casters only need cast room for skills currently ready.
+  const includeAll = isCaster(self)
+  // Anchor the kite on the range we can actually *shoot a single target* from (see
+  // castRange) — NOT a longer situational AoE.
+  const maxRange = castRange(self)
   const maxChannel = self.skills.reduce(
     (m, s) => (!includeAll && (self.skillCooldowns[s.id] ?? 0) > 0 ? m : Math.max(m, s.channelTime)),
     0,

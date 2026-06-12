@@ -24,7 +24,7 @@ import {
 import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo, nearestProvokedEnemyTo, isCaster, kiteDistanceFor, cohesionVec, visibleEnemiesOf } from './spatial'
+import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf } from './spatial'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -943,18 +943,15 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   }
   const target = findCombatant(state, self.lockedTargetId)
   if (target && target.alive) {
-    // Casters without an explicit movement tactic still need cast-aware
-    // positioning — otherwise they walk into melee while their spell is
-    // mid-channel. Treat them as kiters by default; this also makes monster
-    // casters work without any per-unit configuration. But only kite away from a
-    // *hostile* (provoked) threat: a non-provoked monster still wandering isn't
-    // angry at us, so backing off it just jitters us back and forth — instead
-    // fall through and close to cast range to open fire (which provokes it).
-    if (isCaster(self)) {
-      const threat = nearestProvokedEnemyTo(self, state)
-      if (threat) { kiteToward(state, self, kiteDistanceFor(self, threat)); return }
-    }
-    const moved = moveToward(self, target, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)
+    // Default positioning: close to attack range and HOLD — stand and fire, letting
+    // the enemy approach (trust the front line to peel). A caster stops at its *cast*
+    // range (castRange) rather than its basic-attack reach, so a mage with a melee
+    // weapon but ranged spells doesn't march into melee mid-channel — but it does
+    // NOT back off. Active **kiting** (keeping a gap by retreating) is deliberately
+    // opt-in via the Kiter / Wary Caster tactics (the `desiredRange` path above), not
+    // a caster default, while we tune what the right default is.
+    const reach = isCaster(self) ? castRange(self) : undefined
+    const moved = moveToward(self, target, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers, reach)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
     return
   }

@@ -109,19 +109,35 @@ describe('movement behaviours', () => {
     expect(find(b, 'p').pos.y).toBeGreaterThan(5)   // circling toward the backliner's far side
   })
 
-  it('a caster without a Kiter tactic still backs off when a threat closes', () => {
-    // No movement tactic equipped — the engine's caster-aware default movement
-    // should still keep distance instead of marching into melee mid-channel.
+  it('a caster without a Kiter tactic holds and fires instead of kiting (kiting is opt-in)', () => {
+    // No movement tactic equipped — the default caster closes to cast range and
+    // HOLDS, letting the enemy approach (trust the front line). It does NOT back off;
+    // active kiting is opt-in via the Kiter / Wary Caster tactics. It still stops at
+    // cast range (not melee) so a melee-weapon mage never marches in mid-channel.
     const channel = buildEngineSkill('lightning-bolt', 1)!
     const b = createBattle({
       playerUnits: [eu({ id: 'mage', int: 20, str: 3, rangedRange: 6, maxHp: 200, hp: 200, skills: [channel] })],
       enemyUnits: [eu({ id: 'goon', team: 'enemy', spd: 10, str: 5, meleeRange: 1.2 })],
     })
-    find(b, 'mage').pos = { x: 5, y: 5 }   // too close — within the threat's catch-up window
+    find(b, 'mage').pos = { x: 5, y: 5 }    // already within cast range of the goon
     find(b, 'goon').pos = { x: 5, y: 6.2 }
     const startY = find(b, 'mage').pos.y
     advanceRound(b)
-    expect(find(b, 'mage').pos.y).toBeLessThan(startY)   // backed off toward own edge
+    expect(find(b, 'mage').pos.y).toBeCloseTo(startY)   // held its ground (no kite back-off)
+  })
+
+  it('a caster without a Kiter tactic still closes to cast range if it is too far', () => {
+    // The non-kiting default still ADVANCES to firing range — it just won't retreat.
+    const channel = buildEngineSkill('lightning-bolt', 1)!
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, str: 3, rangedRange: 6, maxHp: 200, hp: 200, skills: [channel] })],
+      enemyUnits: [eu({ id: 'goon', team: 'enemy', str: 5, moveSpeed: 0, meleeRange: 1.2 })],
+    })
+    find(b, 'mage').pos = { x: 2.5, y: 2 }
+    find(b, 'goon').pos = { x: 2.5, y: 13 }   // far — well out of cast range
+    const startD = distance(find(b, 'mage').pos, find(b, 'goon').pos)
+    advanceRound(b)
+    expect(distance(find(b, 'mage').pos, find(b, 'goon').pos)).toBeLessThan(startD)  // closed in
   })
 
   it('Guardian steps toward the threat side of its squishy ally', () => {
