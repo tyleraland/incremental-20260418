@@ -60,6 +60,46 @@ const MOVE_SCALE = 0.09
 // dial (monsters are unaffected). Bump this to make the whole party brisker.
 const HERO_MOVE_MULT = 2.5
 
+// §minions: how far a beast companion may roam from its hero before the leash
+// pulls it back (cells). Roomier than a summon's tether so the pet can flank.
+export const COMPANION_LEASH = 9
+
+// Build the engine input for a hero's beast companion, owned by (and leashed to)
+// the hero's combatant. A balanced melee bruiser whose stats scale with the
+// owner's level — so it "levels with the unit" — and whose behaviour is the
+// player's `companion.tactics` loadout. Permanent (no TTL) while the hero is
+// deployed. Returns null when the hero has no companion. (A dedicated companion
+// XP/level track is deferred — see BACKLOG.)
+export function companionToEngineInput(owner: Unit): EngineUnitInput | null {
+  const comp = owner.companion
+  if (!comp) return null
+  const lv = Math.max(1, owner.level)
+  const maxHp = 50 + 14 * lv
+  return {
+    id: `${owner.id}~pet`,
+    name: comp.name,
+    team: 'player',
+    str: 7 + 2 * lv,
+    def: 3 + lv,
+    int: 0,
+    spd: 14,                  // brisk initiative
+    magicDef: lv,
+    maxHp, hp: maxHp,         // arrives at full HP each time it's fielded
+    preferredRank: 'front',
+    meleeRange: MELEE_GRID_RANGE,
+    rangedRange: 0,
+    moveSpeed: 11 * MOVE_SCALE * HERO_MOVE_MULT,   // a touch faster than a hero — a wolf keeps up and flanks
+    attackElement: 'neutral',
+    armorElement: 'neutral',
+    skills: [],
+    tactics: comp.tactics,
+    ownerId: owner.id,
+    leashRange: COMPANION_LEASH,
+    summonTtl: null,          // permanent while the owner is fielded
+    summonTag: 'companion',
+  }
+}
+
 export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team): EngineUnitInput {
   const rangedRange = gridRangeFromFeet(derived.attackRange)
   const ranged = rangedRange > 0

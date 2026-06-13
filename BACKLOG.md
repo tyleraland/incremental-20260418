@@ -98,12 +98,29 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
   player to answer when convenient. Folds into the open-world shape
   (above) and the location codex, so each cell is more than "the wave
   it spawns."
-- **Ranger Beast Master pets** — a Ranger subclass / kit that fields a
-  combat companion (wolf, hawk, bear?) that fights alongside the party.
-  Needs: a pet as an extra player combatant with its own stats / tactics,
-  an "owner" link for follow-the-ranger movement, summon / dismiss flow,
-  and probably an action-bar pet command (sic / heel / guard) before the
-  AI is interesting on its own.
+- **🟡 Minions — first iteration shipped.** The engine now supports owned,
+  leashed combatants: `Combatant.ownerId` / `leashRange` / `summonTtl` / `summonTag`,
+  a baseline owner-leash in `takeTurn` (`applyLeash` — strays return to the owner,
+  mirroring the Charger/Flanker leash but owner-anchored), per-round despawn (TTL
+  expiry + crumble when the owner dies, in `advanceRound`), and a `type: 'summon'`
+  skill effect (`EngineSkill.summon` → `spawnSummons`, capped by `summon.maxActive`).
+  All four fields round-trip in the snapshot. Two features ride on it:
+  - **Beast Companion** (passive skill `beast-companion`): a permanent melee pet
+    (`Unit.companion`, `companionToEngineInput`) that fields beside its hero in
+    both battle modes (`createBattleFor` / `createOpenBattleFor` / `reconcileOpenPlayers`),
+    scales its stats off the owner's level, and has its own tactic loadout edited
+    on the Units **Pet** tab (`equip/unequip/moveCompanionTactic`). Excluded from
+    the per-hero analytics, XP split, and HP-sync (it isn't a game unit).
+  - **Summon Skeletons** (active skill): two low-stat melee bodies, Guardian +
+    short leash, ~12s TTL, cap 2.
+  Deferred follow-ups:
+  - *Companion XP / independent level* — it currently tracks the owner's level
+    ("levels with you"); a real per-pet XP bar + growth is the named next step.
+  - *Companion revive* — a fallen pet only returns when its hero next deploys
+    (open-world) or on the next wave (encounter); add an in-fight revive timer/cooldown.
+  - *Multiple beasts / species* (`speciesId` is stored but only 'wolf' exists),
+    pet gear/abilities, and an action-bar pet command (sic / heel / guard).
+  - *Summon variety* — ranged/caster summons, summon-on-death, dismiss flow.
 - **Pneuma / protective zones** — friendly zone that blocks (or halves) ranged
   damage to allies inside. Needs `blocksRanged` on `BattleZone`.
 - **Reaction-channel skills** — Counter and Pneuma as equippable skills (we

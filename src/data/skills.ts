@@ -213,6 +213,15 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  // §minions: a passive that grants a permanent beast companion — a melee pet
+  // that fights alongside you, scales with your level, and whose tactics you tune
+  // on its own sub-tab (tank, dps, …). No stat bonus to the hero itself.
+  'beast-companion': {
+    id: 'beast-companion', name: 'Beast Companion', maxLevel: 1, type: 'passive',
+    description: () => `Gain a loyal beast that fights at your side and levels with you. Customise its tactics on the Pet tab.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
   // §minions: raise two skeletal warriors that guard and follow you on a short
   // leash, then crumble after ~12s (or when you fall). Two stand at once.
   'summon-skeletons': {

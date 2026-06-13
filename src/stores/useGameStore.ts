@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
-  LocationCombatStats, UnitCombatStats, CombatTally, StatBucket, ActionSlotEntry, TacticSlot,
+  LocationCombatStats, UnitCombatStats, CombatTally, StatBucket, ActionSlotEntry, TacticSlot, CompanionInstance,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
@@ -14,7 +14,7 @@ import { SAMPLING } from '@/lib/sampling'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, addCombatant, relinkCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, relinkCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -46,6 +46,12 @@ export type { TacticDef, TacticChannel }
 
 export const MAX_UNIT_TACTICS = 4
 export const MAX_PARTY_TACTICS = 2
+
+// §minions: a fresh beast companion's default — a tankish front-line pet (body-
+// block + bite the beefiest foe). The player retunes these on the Pet tab.
+function DEFAULT_COMPANION(): CompanionInstance {
+  return { speciesId: 'wolf', name: 'Wolf', tactics: [{ id: 'guardian', rank: 1 }, { id: 'tank-buster', rank: 1 }] }
+}
 
 // Catalog entries of a given scope, in registry (declaration) order. Monster
 // dispositions (skittish, pack-tactics, …) are monsterOnly — never offered to the
@@ -160,6 +166,11 @@ export interface GameState {
   moveTactic: (unitId: string, tacticId: string, dir: -1 | 1) => void
   // Decouple/recouple a tactic a unit inherits from one of its skills (debug/tuning).
   toggleInheritedTactic: (unitId: string, tacticId: string) => void
+  // §minions: edit a hero's beast companion's tactic loadout (same per-channel
+  // priority rules as a unit's; capped at MAX_UNIT_TACTICS).
+  equipCompanionTactic: (unitId: string, tacticId: string) => void
+  unequipCompanionTactic: (unitId: string, tacticId: string) => void
+  moveCompanionTactic: (unitId: string, tacticId: string, dir: -1 | 1) => void
   equipPartyTactic: (tacticId: string) => void
   unequipPartyTactic: (tacticId: string) => void
   recruitUnit: () => void
@@ -291,9 +302,21 @@ export function waveComposition(loc: Location, _partySize: number): string[] {
   return loc.monsterIds
 }
 
+// §minions: the beast-companion inputs for every hero in `party` that has one
+// (optionally stamped with a sight radius for open-world fog). They join the
+// player team owned by + leashed to their hero.
+function companionInputsFor(party: Unit[], vision?: number): EngineUnitInput[] {
+  const out: EngineUnitInput[] = []
+  for (const u of party) {
+    const inp = companionToEngineInput(u)
+    if (inp) out.push(vision != null ? withVision(inp, vision) : inp)
+  }
+  return out
+}
+
 function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): BattleState {
   const roster = party
-  const playerUnits = roster.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player'))
+  const playerUnits = [...roster.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player')), ...companionInputsFor(roster)]
   const enemyUnits = []
   const wave = waveComposition(loc, roster.length)
   for (let i = 0; i < wave.length; i++) {
@@ -390,6 +413,11 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: ROUND_TIME_SCALE })
   party.forEach((u, i) => {
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
+    const cinp = companionToEngineInput(u)
+    if (cinp) {
+      const owner = battle.combatants.find((c) => c.id === u.id)
+      addCombatant(battle, withVision(cinp, HERO_VISION), 'player', partyTactics, owner ? { x: owner.pos.x + 1, y: owner.pos.y } : heroSpawnPos(size, i))
+    }
   })
   for (let i = 0; i < cap; i++) spawnMonsterInto(battle, loc, size)
   return battle
@@ -403,19 +431,40 @@ function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: 
   const eligibleIds = new Set(eligible.map((u) => u.id))
   let changed = false
 
-  const remove = new Set(
-    battle.combatants.filter((c) => c.team === 'player' && (!c.alive || !eligibleIds.has(c.id))).map((c) => c.id),
+  // §minions: a player combatant with an ownerId is a pet/summon, not a hero.
+  const isMinion = (c: Combatant) => c.team === 'player' && c.ownerId != null
+  // Heroes that should stand right now (alive + eligible) — a minion is kept only
+  // while its owner is one of these (so a hero's pet leaves with its hero).
+  const liveHeroIds = new Set(
+    battle.combatants.filter((c) => c.team === 'player' && c.ownerId == null && c.alive && eligibleIds.has(c.id)).map((c) => c.id),
   )
+  const remove = new Set<string>()
+  for (const c of battle.combatants) {
+    if (c.team !== 'player') continue
+    if (isMinion(c)) {
+      // Drop a dead minion, or one whose owner is no longer standing (the engine's
+      // owner-gone sweep already kills it; this reclaims the corpse). A live pet
+      // with a live owner stays — and is NOT re-added if it dies, so a fallen pet
+      // returns only when its hero next re-deploys.
+      if (!c.alive || c.ownerId == null || !liveHeroIds.has(c.ownerId)) remove.add(c.id)
+    } else if (!c.alive || !eligibleIds.has(c.id)) {
+      remove.add(c.id)
+    }
+  }
   if (remove.size) {
     battle.combatants = battle.combatants.filter((c) => !remove.has(c.id))
     for (const c of battle.combatants) if (c.lockedTargetId && remove.has(c.lockedTargetId)) c.lockedTargetId = null
     changed = true
   }
 
-  const present = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+  // Field any eligible hero not present — and its companion alongside it.
+  const present = new Set(battle.combatants.filter((c) => c.team === 'player' && c.ownerId == null).map((c) => c.id))
   for (const u of eligible) {
     if (present.has(u.id)) continue
-    addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, partyAnchor(battle, battle.cols))
+    const at = partyAnchor(battle, battle.cols)
+    addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, at)
+    const cinp = companionToEngineInput(u)
+    if (cinp) addCombatant(battle, withVision(cinp, HERO_VISION), 'player', partyTactics, { x: at.x + 1, y: at.y })
     changed = true
   }
   return changed
@@ -720,7 +769,9 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   // dealt/taken, hits/misses/dodges, healing, and the element + effectiveness
   // breakdowns). Kills/items/ticks are credited separately via bumpUnit.
   const recordDamage = (battle: BattleState) => {
-    const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+    // Real heroes only — summons/companions (ownerId set) aren't tracked in the
+    // per-hero analytics, and their ids aren't game units.
+    const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player' && c.ownerId == null).map((c) => c.id))
     foldRoundEvents(unitStatsDelta, battle.events, battle.round, playerIds)
   }
 
@@ -742,7 +793,9 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   // Award exp/gold/loot for every enemy that died this round (was alive before).
   const rewardKills = (loc: Location, battle: BattleState, enemiesBefore: Set<string>) => {
     // Who landed the killing blow on each enemy this round (for per-unit credit).
-    const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+    // Only real heroes earn credit/XP — a minion's kill counts for the location
+    // tally but isn't credited to a (non-existent) unit or fed the XP split.
+    const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player' && c.ownerId == null).map((c) => c.id))
     const killerByEnemy: Record<string, string> = {}
     for (const e of battle.events) {
       if (e.round === battle.round && e.type === 'unit_death' && e.targetId) killerByEnemy[e.targetId] = e.sourceId
@@ -783,7 +836,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // proportional to level (a low-level hero in a high-level party earns only
       // its tiny level-share — anti-power-leveling). Pool = killsThisRound.
       const members = battle.combatants
-        .filter((c) => c.team === 'player' && c.alive)
+        .filter((c) => c.team === 'player' && c.alive && c.ownerId == null)
         .map((c) => ({ id: c.id, level: unitLevel.get(c.id) ?? 1 }))
       const shares = splitExpByLevel(killsThisRound, members)
       for (const [id, amt] of Object.entries(shares)) expByUnit[id] = (expByUnit[id] ?? 0) + amt
@@ -795,7 +848,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     for (const e of battle.events) {
       if (e.round !== battle.round || e.type !== 'unit_death' || !e.targetId) continue
       const dead = battle.combatants.find((c) => c.id === e.targetId)
-      if (dead && dead.team === 'player') koUnitIds.add(dead.id)
+      if (dead && dead.team === 'player' && dead.ownerId == null) koUnitIds.add(dead.id)
     }
   }
 
@@ -811,7 +864,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   // Sync living player HP back to the game units every tick (engine is authoritative).
   const syncHp = (battle: BattleState) => {
     for (const c of battle.combatants) {
-      if (c.team === 'player' && c.alive) {
+      if (c.team === 'player' && c.alive && c.ownerId == null) {   // real heroes only (not minions)
         hpByUnit[c.id] = c.hp
         bumpUnit(c.id, 'combatTicks', 1)   // fighting time = the rate denominator
       }
@@ -1567,7 +1620,13 @@ export const useGameStore = create<GameState>((set) => ({
     if (current >= skill.maxLevel) return s
     const prereqsMet = skill.requires.every((r) => (unit.learnedSkills[r.skillId] ?? 0) >= r.minLevel)
     if (!prereqsMet) return s
-    return { units: s.units.map((u) => u.id === unitId ? { ...u, skillPoints: u.skillPoints - 1, learnedSkills: { ...u.learnedSkills, [skillId]: current + 1 } } : u) }
+    return { units: s.units.map((u) => {
+      if (u.id !== unitId) return u
+      // §minions: learning Beast Companion grants the pet (a tankish default
+      // loadout the player can retune on the Pet tab).
+      const companion = skillId === 'beast-companion' && !u.companion ? DEFAULT_COMPANION() : u.companion
+      return { ...u, skillPoints: u.skillPoints - 1, learnedSkills: { ...u.learnedSkills, [skillId]: current + 1 }, companion }
+    }) }
   }),
 
   equipTactic: (unitId, tacticId) => set((s) => {
@@ -1610,6 +1669,38 @@ export const useGameStore = create<GameState>((set) => ({
       return { ...u, suppressedTactics: next }
     }),
   })),
+
+  // §minions: companion tactic editing — mirrors the unit tactic actions but
+  // operates on `unit.companion.tactics` (same cap + per-channel reorder rules).
+  equipCompanionTactic: (unitId, tacticId) => set((s) => {
+    const def = TACTIC_REGISTRY[tacticId]
+    if (!def || def.scope !== 'unit') return s
+    return { units: s.units.map((u) => {
+      if (u.id !== unitId || !u.companion) return u
+      const cur = u.companion.tactics
+      if (cur.some((t) => t.id === tacticId) || cur.length >= MAX_UNIT_TACTICS) return u
+      return { ...u, companion: { ...u.companion, tactics: [...cur, { id: tacticId, rank: 1 }] } }
+    }) }
+  }),
+  unequipCompanionTactic: (unitId, tacticId) => set((s) => ({
+    units: s.units.map((u) => u.id === unitId && u.companion
+      ? { ...u, companion: { ...u.companion, tactics: u.companion.tactics.filter((t) => t.id !== tacticId) } } : u),
+  })),
+  moveCompanionTactic: (unitId, tacticId, dir) => set((s) => ({
+    units: s.units.map((u) => {
+      if (u.id !== unitId || !u.companion) return u
+      const cur = [...u.companion.tactics]
+      const i = cur.findIndex((t) => t.id === tacticId)
+      if (i < 0) return u
+      const ch = TACTIC_REGISTRY[cur[i].id]?.channel
+      let j = i + dir
+      while (j >= 0 && j < cur.length && TACTIC_REGISTRY[cur[j].id]?.channel !== ch) j += dir
+      if (j < 0 || j >= cur.length) return u
+      ;[cur[i], cur[j]] = [cur[j], cur[i]]
+      return { ...u, companion: { ...u.companion, tactics: cur } }
+    }),
+  })),
+
   equipPartyTactic: (tacticId) => set((s) => {
     const def = TACTIC_REGISTRY[tacticId]
     if (!def || def.scope !== 'party') return s

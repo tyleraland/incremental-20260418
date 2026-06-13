@@ -86,6 +86,18 @@ export interface DerivedStats {
 // engine's TacticRef so it passes straight through the adapter.
 export interface TacticSlot { id: string; rank: number }
 
+// §minions: a hero's persistent beast companion, granted by the Beast Companion
+// passive skill. It fights alongside the hero as an owned, leashed combatant; its
+// behaviour is the player's to tune via its own `tactics` loadout (tank, dps, …).
+// Stats scale with the owner's level (it "levels with the unit"); a dedicated
+// companion XP track is deferred (see BACKLOG). `tactics` reuses the same engine
+// catalog as heroes.
+export interface CompanionInstance {
+  speciesId: string        // future: multiple beasts; 'wolf' for now
+  name: string
+  tactics: TacticSlot[]
+}
+
 // ── Unit ──────────────────────────────────────────────────────────────────────
 
 export interface Unit {
@@ -103,6 +115,7 @@ export interface Unit {
   actionSlots: (ActionSlotEntry | null)[] // length ACTION_SLOT_COUNT; tap/drag-to-fill
   tactics: TacticSlot[]                    // combat tactics in priority order (first = highest)
   suppressedTactics?: string[]             // skill-inherited tactic ids the player has decoupled (debug/tuning)
+  companion?: CompanionInstance            // §minions: beast pet (granted by the Beast Companion passive)
   recoveryTicksLeft: number               // >0: KO countdown; 0: active, resting, or idle
   isResting: boolean                      // true after KO countdown ends, until health reaches maxHp
 }

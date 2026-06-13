@@ -26,7 +26,7 @@ function healthDot(hp: number)   { return hp >= 75 ? 'bg-game-green' : hp >= 40 
 
 // ── Detail tab bar ────────────────────────────────────────────────────────────
 
-type DetailTab = 'stats' | 'skills' | 'gear' | 'tactics'
+type DetailTab = 'stats' | 'skills' | 'gear' | 'tactics' | 'companion'
 
 function DetailTabBar({ active, onChange, unit }: { active: DetailTab; onChange: (t: DetailTab) => void; unit: Unit }) {
   const tabs: { id: DetailTab; label: string; alert?: boolean }[] = [
@@ -34,6 +34,7 @@ function DetailTabBar({ active, onChange, unit }: { active: DetailTab; onChange:
     { id: 'skills',  label: 'Skills',  alert: unit.skillPoints > 0   },
     { id: 'gear',    label: 'Gear'   },
     { id: 'tactics', label: 'Tactics' },
+    ...(unit.companion ? [{ id: 'companion' as const, label: 'Pet' }] : []),
   ]
   return (
     <div className="flex border-b border-game-border">
@@ -712,6 +713,120 @@ function SkillDragHandle({ unitId, skillId }: { unitId: string; skillId: string 
 
 // ── Expanded unit detail ──────────────────────────────────────────────────────
 
+// §minions: the Pet sub-tab — the hero's beast companion's statline (scaled with
+// the hero's level) and its own tactic loadout (same per-channel priority rules as
+// a hero's). Mirrors TacticsTab, minus the skill-inherited section (pets have no
+// skills). Kept in sync with companionToEngineInput's stat formula.
+function CompanionTab({ unit }: { unit: Unit }) {
+  const { equipCompanionTactic, unequipCompanionTactic, moveCompanionTactic } = useGameStore((s) => ({
+    equipCompanionTactic: s.equipCompanionTactic,
+    unequipCompanionTactic: s.unequipCompanionTactic,
+    moveCompanionTactic: s.moveCompanionTactic,
+  }))
+  const comp = unit.companion
+  if (!comp) return null
+  const lv = Math.max(1, unit.level)
+  const stats = { HP: 50 + 14 * lv, ATK: 7 + 2 * lv, DEF: 3 + lv }
+  const equipped = comp.tactics
+  const equippedIds = new Set(equipped.map((t) => t.id))
+  const available = listTactics('unit').filter((d) => !equippedIds.has(d.id))
+  const atMax = equipped.length >= MAX_UNIT_TACTICS
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-xl leading-none">🐺</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-game-text">{comp.name}</div>
+          <div className="text-[11px] text-game-text-dim">Beast companion · scales with you (Lv.{lv})</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {Object.entries(stats).map(([k, v]) => (
+          <div key={k} className="rounded-lg border border-game-border bg-game-bg/40 px-2 py-2 text-center">
+            <div className="font-mono text-base text-game-text leading-none">{v}</div>
+            <div className="text-[10px] text-game-text-dim mt-1">{k}</div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-game-muted leading-snug">
+        Fights at your side and follows on a short leash; rejoins when you next deploy. Levels with you (a dedicated pet XP track is coming).
+      </p>
+
+      {/* Equipped tactics — grouped by channel, priority within a channel */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs uppercase tracking-widest text-game-text-dim">Tactics</div>
+          <span className="text-[10px] text-game-text-dim">{equipped.length}/{MAX_UNIT_TACTICS} · by channel</span>
+        </div>
+        {equipped.length === 0 ? (
+          <p className="text-xs text-game-muted italic px-1">No tactics — the pet will just hold and bite the nearest foe.</p>
+        ) : (
+          <div className="space-y-3">
+            {CHANNEL_ORDER.filter((ch) => equipped.some((t) => TACTIC_REGISTRY[t.id]?.channel === ch)).map((ch) => {
+              const group = equipped.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch)
+              return (
+                <div key={ch}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <ChannelBadge channel={ch} />
+                    {group.length > 1 && <span className="text-[10px] text-game-text-dim">priority order</span>}
+                  </div>
+                  <div className="space-y-1.5">
+                    {group.map((slot, gi) => {
+                      const def = TACTIC_REGISTRY[slot.id]
+                      if (!def) return null
+                      return (
+                        <div key={slot.id} className="bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2">
+                          <span className="text-xs font-mono text-game-muted w-4 text-center shrink-0 mt-0.5">{gi + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-game-text truncate">{def.name}</div>
+                            <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button disabled={gi === 0} onClick={() => moveCompanionTactic(unit.id, slot.id, -1)} className="w-6 h-6 rounded border border-game-border text-game-text-dim disabled:opacity-30 hover:bg-white/5">▲</button>
+                            <button disabled={gi === group.length - 1} onClick={() => moveCompanionTactic(unit.id, slot.id, 1)} className="w-6 h-6 rounded border border-game-border text-game-text-dim disabled:opacity-30 hover:bg-white/5">▼</button>
+                            <button onClick={() => unequipCompanionTactic(unit.id, slot.id)} className="w-6 h-6 rounded border border-game-border text-game-text-dim hover:bg-white/5">✕</button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Available catalog */}
+      {available.length > 0 && (
+        <div>
+          <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Available</div>
+          <div className="space-y-1.5">
+            {available.map((def) => (
+              <div key={def.id} className={['bg-game-bg rounded-lg px-2.5 py-2 flex items-start gap-2', atMax ? 'opacity-50' : ''].join(' ')}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <ChannelBadge channel={def.channel} />
+                    <span className="text-sm font-medium text-game-text truncate">{def.name}</span>
+                  </div>
+                  <div className="text-xs text-game-text-dim leading-snug">{def.description}</div>
+                </div>
+                <button disabled={atMax} onClick={() => equipCompanionTactic(unit.id, def.id)}
+                  title={atMax ? `Max ${MAX_UNIT_TACTICS} tactics` : `Equip ${def.name}`}
+                  className="text-xs px-2 py-1 rounded border border-game-primary/50 text-game-primary disabled:opacity-40 hover:bg-game-primary/10 shrink-0">
+                  + Equip
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function UnitDetail({ unit }: { unit: Unit }) {
   const [tab, setTab] = useState<DetailTab>('stats')
   const setActionSlot = useGameStore((s) => s.setActionSlot)
@@ -741,6 +856,7 @@ function UnitDetail({ unit }: { unit: Unit }) {
           {tab === 'skills'  && <SkillsTab  unit={unit} />}
           {tab === 'gear'    && <GearTab    unit={unit} />}
           {tab === 'tactics' && <TacticsTab unit={unit} />}
+          {tab === 'companion' && <CompanionTab unit={unit} />}
         </div>
       </div>
     </DndContext>

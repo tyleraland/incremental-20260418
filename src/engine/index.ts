@@ -22,7 +22,7 @@ export {
 } from './damage'
 export { selectTarget, chooseAction, livingEnemies, livingAllies, findCombatant } from './behavior'
 export { createBattle, addCombatant, relinkCombatant, issueMoveOrder, clearMoveOrder, advanceRound, resolve, finalize, defaultPlanner } from './engine'
-export { unitToEngineInput, monsterToEngineInput } from './adapter'
+export { unitToEngineInput, monsterToEngineInput, companionToEngineInput, COMPANION_LEASH } from './adapter'
 export {
   TACTIC_REGISTRY, resolveTactics, getTactic, hasTactic,
   armoredFactor, nimblePeriod,
