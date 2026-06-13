@@ -94,6 +94,32 @@ describe('battle snapshot', () => {
     expect(() => deserializeBattle('not-a-snapshot')).toThrow()
   })
 
+  it('integrity guard: a truncated paste fails loudly with "re-copy"', () => {
+    const token = serializeBattle(richBattle())
+    // Lop characters out of the middle of the base64 body (what a clipped paste does).
+    const dot = token.indexOf('.')
+    const lastDot = token.lastIndexOf('.')
+    const clipped = token.slice(0, dot + 1) + token.slice(dot + 1, lastDot - 40) + token.slice(lastDot)
+    expect(() => deserializeBattle(clipped)).toThrow(/truncated/i)
+  })
+
+  it('integrity guard: a same-length corruption is caught as a checksum mismatch', () => {
+    const token = serializeBattle(richBattle())
+    const lastDot = token.lastIndexOf('.')
+    const i = lastDot - 5
+    const swap = token[i] === 'A' ? 'B' : 'A'
+    const corrupted = token.slice(0, i) + swap + token.slice(i + 1)
+    expect(() => deserializeBattle(corrupted)).toThrow(/corrupted|checksum|not a valid/i)
+  })
+
+  it('integrity guard: still loads a token line-wrapped with whitespace', () => {
+    const token = serializeBattle(richBattle())
+    const lastDot = token.lastIndexOf('.')
+    const wrapped = token.slice(0, 60) + '\n  ' + token.slice(60, lastDot) + '\n' + token.slice(lastDot)
+    const b = deserializeBattle(wrapped)
+    expect(b.combatants.length).toBeGreaterThan(0)
+  })
+
   it('compresses the token (much smaller than the raw JSON)', () => {
     const b = richBattle()
     const token = serializeBattle(b)

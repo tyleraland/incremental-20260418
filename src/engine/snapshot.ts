@@ -38,6 +38,17 @@ function b64ToU8(b64: string): Uint8Array {
   return u8
 }
 
+// FNV-1a 32-bit over the base64 body — a tiny, dependency-free integrity tag.
+// Appended to the token (`…<body>.<len>x<hash>`) so a truncated/mangled paste —
+// the #1 way these long strings break in transit — fails LOUDLY with "re-copy it"
+// instead of a vague decode error. Outside the compressed payload (truncation
+// kills the deflate stream before it can be read).
+function bodyTag(body: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < body.length; i++) { h ^= body.charCodeAt(i); h = Math.imul(h, 0x01000193) }
+  return h >>> 0
+}
+
 // A combatant minus its resolved-tactic objects (functions); tactics travel as
 // {id, rank} refs and are re-resolved on load.
 type CombatantSnap = Omit<Combatant, 'tactics' | 'trace' | 'lastResolution'> & { tacticRefs: TacticRef[] }
@@ -106,14 +117,34 @@ export function serializeBattle(state: BattleState): string {
     maxRounds: state.maxRounds,
     collectEvents: state.collectEvents,
   }
-  return `${MAGIC}.${u8ToB64(zlibSync(strToU8(JSON.stringify(snap))))}`
+  const body = u8ToB64(zlibSync(strToU8(JSON.stringify(snap))))
+  // …<body>.<len>x<hash> — the trailing guard lets deserialize detect a clipped
+  // or mangled paste. Base64 never contains '.', so the suffix parses cleanly.
+  return `${MAGIC}.${body}.${body.length.toString(36)}x${bodyTag(body).toString(36)}`
 }
 
 // Rebuild a BattleState from a token produced by serializeBattle. Throws on a
 // malformed/incompatible token. The result is ready to `advanceRound`.
 export function deserializeBattle(token: string): BattleState {
   const trimmed = token.trim()
-  const body = (trimmed.startsWith(`${MAGIC}.`) ? trimmed.slice(MAGIC.length + 1) : trimmed).trim()
+  let rest = trimmed.startsWith(`${MAGIC}.`) ? trimmed.slice(MAGIC.length + 1) : trimmed
+  // Pull off the integrity guard (`…<body>.<len>x<hash>`) if present, then strip
+  // any whitespace a paste may have line-wrapped in (the base64 body has none).
+  let guard: { len: number; hash: string } | null = null
+  const lastDot = rest.lastIndexOf('.')
+  if (lastDot > 0) {
+    const m = /^([0-9a-z]+)x([0-9a-z]+)$/.exec(rest.slice(lastDot + 1))
+    if (m) { guard = { len: parseInt(m[1], 36), hash: m[2] }; rest = rest.slice(0, lastDot) }
+  }
+  const body = rest.replace(/\s+/g, '')
+  if (guard) {
+    if (body.length < guard.len) {
+      throw new Error(`Battle snapshot: token looks truncated (${body.length} of ${guard.len} chars) — re-copy the whole string`)
+    }
+    if (body.length === guard.len && bodyTag(body).toString(36) !== guard.hash) {
+      throw new Error('Battle snapshot: token looks corrupted (checksum mismatch) — re-copy it')
+    }
+  }
   let snap: BattleSnapshot
   try {
     const bytes = b64ToU8(body)

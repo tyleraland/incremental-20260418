@@ -200,8 +200,19 @@ the `events`/`trace` logs). `deserializeBattle(token)` rebuilds a ready-to-step
 `calculateDamage`) are restored to the defaults. Since the engine is RNG-free,
 reload + advance replays **1:1**. The BattleView has a **⎘ state** button
 (bottom-left, any live battle) so a player can copy a fight's exact state for a
-dev to reproduce. (`snapshot.test.ts` proves the round-trip and replay
-determinism.)
+dev to reproduce. The token ends with a `.<len>x<hash>` integrity guard, so a
+clipped/mangled paste throws a clear "truncated/corrupted — re-copy it" instead
+of a vague decode error (whitespace/line-wraps are tolerated). (`snapshot.test.ts`
+proves the round-trip, replay determinism, and the guard.)
+
+**Bug-repro workflow (saw something weird → reproduce it in a test).** For a
+movement/tactics/AI bug: hit **⎘ state**, paste the `BSNAP.…` token **inside a
+triple-backtick code block** (raw, un-wrapped — keeps the long string verbatim so
+the guard passes). A dev `deserializeBattle(token)`s it and steps `advanceRound`
+to watch the misbehaviour recur — full fidelity, so don't trim it (positions,
+threat, cooldowns, wander state ARE the bug). Don't paste giant whole-game
+`exportSave` strings in chat — drop those in a file. If the guard ever reports
+"truncated", the paste lost characters in transit — re-copy.
 
 **Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
 - The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round
