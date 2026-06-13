@@ -9,15 +9,16 @@ import { codexCodec }       from './codexCodec'
 import { worldCodec }       from './worldCodec'
 import { combatStatsCodec } from './combatStatsCodec'
 import { unitStatsCodec }   from './unitStatsCodec'
+import { unitHistoryCodec } from './unitHistoryCodec'
 import { battlesCodec }     from './battlesCodec'
 import { socketsCodec }     from './socketsCodec'
 
-export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec, unitStatsCodec, battlesCodec, socketsCodec }
+export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec, unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ALL_CODECS: SliceCodec<any>[] = [
   unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec,
-  unitStatsCodec, battlesCodec, socketsCodec,
+  unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec,
 ]
 
 export function persistSave(): void {

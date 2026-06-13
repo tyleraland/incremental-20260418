@@ -1,4 +1,5 @@
 import type { LocationCombatReport } from './combatReport'
+import type { CombatTally } from '@/types'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 
 // ── Sampled Offline Progression ("Warm Catch-up") ────────────────────────────
@@ -126,6 +127,10 @@ export interface OfflineLocationReward {
   gold: number
   loot: Record<string, number>   // itemId → qty
   primed: boolean                // true if a cold location was primed (Phase 2)
+  // Per-hero combat breakdown for the away span (battle-report AFK detail):
+  // damage, hits/misses, element & effectiveness maps, etc. Estimated from the
+  // simulated slices, scaled over the absence. Empty for sub-minute blips.
+  tally?: Record<string, CombatTally>
 }
 
 export interface OfflineSummary {

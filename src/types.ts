@@ -240,15 +240,56 @@ export interface LocationCombatStats {
   itemsDropped:     Record<string, number> // itemId → count (loot system stub)
   expDistributed: number                  // exp per unit (1 per kill at this location)
   goldEarned: number
+  // Per-hero combat breakdown at this location (battle-report "per character"
+  // table). Keyed by unitId; each is the same rich tally as the per-unit lifetime
+  // stats, but scoped to fights *here*. Optional for back-compat (migrates to {}).
+  byUnit?: Record<string, UnitCombatStats>
+}
+
+// Effectiveness buckets for damage a unit *dealt*: how the element matrix landed
+// (§3). `effective` = >1× (super-effective), `neutral` = 1×, `resisted` = <1×,
+// `immune` = 0× (no damage). Counts are per landed hit.
+export interface EffectivenessTally {
+  effective: number
+  neutral: number
+  resisted: number
+  immune: number
 }
 
 // Per-unit lifetime combat tally (persisted), accumulated across every battle a
-// hero fights. `combatTicks` is the rate denominator — ticks the unit spent as a
-// live combatant — so DPS / items-per-minute are derivable. Kills and items are
-// credited to the unit that landed the killing blow.
+// hero fights — and the shared shape for the rolling-window history buckets and
+// the per-location `byUnit` breakdown. `combatTicks` is the rate denominator —
+// ticks the unit spent as a live combatant — so DPS / items-per-minute are
+// derivable. Kills and items are credited to the unit that landed the final blow.
+// The richer fields (taken / hits / element & effectiveness maps) power the
+// battle-report analytics; older saves migrate the missing fields to 0 / {}.
 export interface UnitCombatStats {
   damageDealt: number
   monstersDefeated: number
   itemsFound: number
   combatTicks: number
+  // ── battle-report analytics (added) ──────────────────────────────────────────
+  spellDamageDealt: number                 // damage dealt via skills/spells (subset of damageDealt)
+  hits: number                             // attacks/skills this unit landed (value > 0)
+  misses: number                           // this unit's attacks the target dodged
+  damageTaken: number                      // incoming damage this unit absorbed
+  dodges: number                           // incoming attacks this unit dodged
+  healingDone: number                      // HP this unit restored to allies
+  expGained: number                        // XP credited (floored at display)
+  levelsGained: number                     // level-ups while tracked
+  dmgDealtByElement: Record<string, number> // element → damage dealt with it
+  dmgTakenByElement: Record<string, number> // element → damage taken from it
+  effDealt: EffectivenessTally             // how the unit's outgoing damage landed
+}
+
+// Alias: the same shape is used for lifetime stats, rolling-window buckets, and
+// the per-location per-hero breakdown — they all accumulate the same combat tally.
+export type CombatTally = UnitCombatStats
+
+// One bucket of the per-unit rolling history. `bucket` is an absolute index
+// (floor(tick / HISTORY_BUCKET_TICKS)); summing the last K buckets answers
+// "last K minutes". Buckets are pruned to a bounded window (see combatTally.ts).
+export interface StatBucket {
+  bucket: number
+  tally: UnitCombatStats
 }

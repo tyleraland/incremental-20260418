@@ -2,9 +2,10 @@ import { create } from 'zustand'
 import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
-  LocationCombatStats, UnitCombatStats, ActionSlotEntry, TacticSlot,
+  LocationCombatStats, UnitCombatStats, CombatTally, StatBucket, ActionSlotEntry, TacticSlot,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
+import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
@@ -28,6 +29,7 @@ export * from '@/lib/time'
 export * from '@/lib/stats'
 export * from '@/lib/names'
 export * from '@/lib/combatReport'
+export * from '@/lib/combatTally'
 export * from '@/lib/offline'
 export * from '@/lib/elements'
 export * from '@/data/traits'
@@ -66,6 +68,7 @@ export interface GameState {
   monsterDefeated:        Record<string, number>      // monsterId → total defeat count
   locationStats:          Record<string, LocationCombatStats>  // locationId → cumulative combat stats
   unitStats:              Record<string, UnitCombatStats>      // unitId → lifetime combat tally (Report panel)
+  unitStatHistory:        Record<string, StatBucket[]>         // unitId → rolling minute-buckets (battle-report 5m/1h windows)
   partyTactics:           TacticSlot[]                 // team-wide tactics injected into every unit (§5.5)
   ticks: number
 
@@ -456,6 +459,10 @@ interface PrimeResult {
   gold: number
   killsByMonster: Record<string, number>
   loot: Record<string, number>
+  // Rich per-hero combat breakdown harvested from the simulated rounds (damage,
+  // hits, element/effectiveness, etc.) — already scaled to the projection span by
+  // the sampled path; the cold path returns its raw slice for the caller to scale.
+  tally: Record<string, CombatTally>
 }
 
 // Stand up (or reuse) the right battle for a location's offline simulation.
@@ -485,10 +492,12 @@ function restockField(battle: BattleState, loc: Location): void {
 // prime (one slice) and the sampled projection (one per window).
 function runCombatSlice(
   battle: BattleState, loc: Location, roundCap: number, msBudget: number, rng: () => number = Math.random,
-): { killsByMonster: Record<string, number>; loot: Record<string, number>; rounds: number } {
+): { killsByMonster: Record<string, number>; loot: Record<string, number>; rounds: number; tally: Record<string, CombatTally> } {
   const wantOpen = !!loc.openWorld
   const killsByMonster: Record<string, number> = {}
   const loot: Record<string, number> = {}
+  const tally: Record<string, CombatTally> = {}
+  const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
   let rounds = 0
   const started = Date.now()
 
@@ -497,6 +506,10 @@ function runCombatSlice(
     const before = new Set(battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => c.id))
     advanceRound(battle)
     rounds++
+    // Harvest this round's rich per-hero breakdown (open-world heroes can join
+    // mid-slice via respawn reconciliation, so re-derive ids defensively).
+    for (const c of battle.combatants) if (c.team === 'player') playerIds.add(c.id)
+    foldRoundEvents(tally, battle.events, battle.round, playerIds)
 
     for (const c of battle.combatants) {
       if (c.team !== 'enemy' || c.alive || !before.has(c.id)) continue
@@ -515,7 +528,7 @@ function runCombatSlice(
     if (wantOpen) restockField(battle, loc)
   }
 
-  return { killsByMonster, loot, rounds }
+  return { killsByMonster, loot, rounds, tally }
 }
 
 function primeColdLocation(
@@ -523,9 +536,21 @@ function primeColdLocation(
   existing: BattleState | undefined,
 ): PrimeResult {
   const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
-  const { killsByMonster, loot, rounds } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
+  const { killsByMonster, loot, rounds, tally } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
   const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
-  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot }
+  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot, tally }
+}
+
+// Sum per-hero tally deltas across many slices (each pre-scaled to its window).
+function mergeTally(dst: Record<string, CombatTally>, src: Record<string, CombatTally>): void {
+  for (const [id, t] of Object.entries(src)) addInto(dst[id] ?? (dst[id] = emptyTally()), t)
+}
+
+// Scale every hero's tally by the same factor (a measured slice → its full span).
+function scaleTallyMap(src: Record<string, CombatTally>, factor: number): Record<string, CombatTally> {
+  const out: Record<string, CombatTally> = {}
+  for (const [id, t] of Object.entries(src)) out[id] = scaleTally(t, factor)
+  return out
 }
 
 // ── Sampled-window offline projection ────────────────────────────────────────--
@@ -561,20 +586,24 @@ export function projectOfflineSampled(
   const msBudget = opts.msBudget ?? SAMPLING.windowMsBudget
 
   const killsByMonster: Record<string, number> = {}
+  const tally: Record<string, CombatTally> = {}
   let simTicks = 0
   for (let w = 0; w < K; w++) {
     opts.prepareWindow?.(battle, w, Math.round(opts.startTick + w * windowTicks))
     const slice = runCombatSlice(battle, loc, roundCap, msBudget, rng)
     const sliceTicks = Math.max(1, slice.rounds * ROUND_EVERY_TICKS)
     simTicks += sliceTicks
-    const windowKills = scaleKills(slice.killsByMonster, windowTicks / sliceTicks)
+    const factor = windowTicks / sliceTicks
+    const windowKills = scaleKills(slice.killsByMonster, factor)
     for (const [mid, k] of Object.entries(windowKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
+    // Extrapolate this window's breakdown over its full duration, same factor.
+    mergeTally(tally, scaleTallyMap(slice.tally, factor))
     // Fresh field for the next window → an independent composition sample.
     if (w < K - 1 && wantOpen) restockField(battle, loc)
   }
 
   const totalKills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
-  return { battle, primedTicks: simTicks, exp: totalKills, gold: totalKills, killsByMonster, loot: rollOfflineLoot(killsByMonster, rng) }
+  return { battle, primedTicks: simTicks, exp: totalKills, gold: totalKills, killsByMonster, loot: rollOfflineLoot(killsByMonster, rng), tally }
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -591,20 +620,44 @@ function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): Misc
 // Fold this tick's per-unit stat deltas into the persistent lifetime tally.
 function foldUnitStats(
   prev: Record<string, UnitCombatStats>,
-  delta: Record<string, UnitCombatStats>,
+  delta: Record<string, CombatTally>,
 ): Record<string, UnitCombatStats> {
   const ids = Object.keys(delta)
   if (ids.length === 0) return prev
   const out = { ...prev }
   for (const id of ids) {
-    const d = delta[id]
-    const c = out[id] ?? { damageDealt: 0, monstersDefeated: 0, itemsFound: 0, combatTicks: 0 }
-    out[id] = {
-      damageDealt:      c.damageDealt + d.damageDealt,
-      monstersDefeated: c.monstersDefeated + d.monstersDefeated,
-      itemsFound:       c.itemsFound + d.itemsFound,
-      combatTicks:      c.combatTicks + d.combatTicks,
-    }
+    const c = addInto2(out[id], delta[id])
+    out[id] = c
+  }
+  return out
+}
+
+// prev (possibly undefined / old shape) + delta → a fresh full tally.
+function addInto2(prev: UnitCombatStats | undefined, delta: CombatTally): CombatTally {
+  const out = emptyTally()
+  if (prev) addInto(out, prev)
+  addInto(out, delta)
+  return out
+}
+
+// Route each unit's tick delta into its current location's per-hero breakdown
+// (`locationStats[loc].byUnit`). A unit fights at exactly one location, so its
+// whole delta belongs there. Returns a new locationStats with byUnit merged in.
+function foldLocationByUnit(
+  locationStats: Record<string, LocationCombatStats>,
+  delta: Record<string, CombatTally>,
+  locationOf: Map<string, string | null>,
+): Record<string, LocationCombatStats> {
+  let out = locationStats
+  for (const [unitId, d] of Object.entries(delta)) {
+    const locId = locationOf.get(unitId)
+    if (!locId) continue
+    const loc = out[locId]
+    if (!loc) continue
+    if (out === locationStats) out = { ...locationStats }
+    const byUnit = { ...(loc.byUnit ?? {}) }
+    byUnit[unitId] = addInto2(byUnit[unitId], d)
+    out[locId] = { ...loc, byUnit }
   }
   return out
 }
@@ -622,7 +675,7 @@ interface CombatStep {
   monsterSeen: Record<string, number>
   locationMonstersSeen: Record<string, string[]>
   locationStats: Record<string, LocationCombatStats>
-  unitStatsDelta: Record<string, UnitCombatStats>   // unitId → lifetime-stat deltas this tick
+  unitStatsDelta: Record<string, CombatTally>   // unitId → lifetime-stat deltas this tick
   logs: { category: LogCategory; message: string }[]
 }
 
@@ -645,22 +698,18 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   let goldEarned = 0
   const logs: { category: LogCategory; message: string }[] = []
 
-  // Per-unit lifetime-stat deltas accumulated this tick (Report panel).
-  const unitStatsDelta: Record<string, UnitCombatStats> = {}
-  const bumpUnit = (id: string, field: keyof UnitCombatStats, n: number) => {
-    const cur = unitStatsDelta[id] ?? (unitStatsDelta[id] = { damageDealt: 0, monstersDefeated: 0, itemsFound: 0, combatTicks: 0 })
+  // Per-unit lifetime-stat deltas accumulated this tick (Report panel + analytics).
+  const unitStatsDelta: Record<string, CombatTally> = {}
+  const bumpUnit = (id: string, field: 'monstersDefeated' | 'itemsFound' | 'combatTicks', n: number) => {
+    const cur = unitStatsDelta[id] ?? (unitStatsDelta[id] = emptyTally())
     cur[field] += n
   }
-  // Damage-dealing event types (each hit emits exactly one). 'heal' / non-damage
-  // skill_use carry no `value`, so the value>0 guard filters them out.
-  const DAMAGE_EVENTS = new Set(['melee_attack', 'ranged_attack', 'dot', 'skill_use'])
+  // Fold the round's hit/heal/dodge events into the rich per-unit tally (damage
+  // dealt/taken, hits/misses/dodges, healing, and the element + effectiveness
+  // breakdowns). Kills/items/ticks are credited separately via bumpUnit.
   const recordDamage = (battle: BattleState) => {
     const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
-    for (const e of battle.events) {
-      if (e.round !== battle.round || !e.value || e.value <= 0) continue
-      if (!DAMAGE_EVENTS.has(e.type) || !playerIds.has(e.sourceId)) continue
-      bumpUnit(e.sourceId, 'damageDealt', e.value)
-    }
+    foldRoundEvents(unitStatsDelta, battle.events, battle.round, playerIds)
   }
 
   // ── Shared per-battle bookkeeping (used by both the encounter and open paths) ─
@@ -927,6 +976,13 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     syncHp(battle)
   }
 
+  // Credit this tick's XP into the per-unit tally (a hero fights at one location,
+  // so its whole share belongs to that location's breakdown too). levelsGained is
+  // folded in the reducer, where the level-up pass runs.
+  for (const [id, amt] of Object.entries(expByUnit)) {
+    (unitStatsDelta[id] ?? (unitStatsDelta[id] = emptyTally())).expGained += amt
+  }
+
   return {
     battles, battleCooldown, monsterSpawnTimers, hpByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
     monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, logs,
@@ -961,6 +1017,7 @@ export const useGameStore = create<GameState>((set) => ({
   monsterDefeated: {},
   locationStats: {},
   unitStats: {},
+  unitStatHistory: {},
   viewedUnitLevels: (() => { try { return JSON.parse(localStorage.getItem('viewedUnitLevels') ?? '{}') } catch { return {} } })(),
   reportUnitId: null,
   partyTactics: [{ id: 'finish-them', rank: 1 }],
@@ -982,6 +1039,10 @@ export const useGameStore = create<GameState>((set) => ({
     // Drive the engine: one round per ROUND_EVERY_TICKS ticks, live per location.
     const combat = advanceBattles(s, newTicks, newTicks % ROUND_EVERY_TICKS === 0)
     for (const l of combat.logs) newLog = appendLog(newLog, l.category, l.message, newTicks)
+
+    // Where each unit fought this tick (1:1) — routes its tally delta into the
+    // location's per-hero breakdown.
+    const locationOf = new Map(s.units.map((u) => [u.id, u.locationId]))
 
     const units = s.units.map((u) => {
       let health = u.health
@@ -1015,6 +1076,9 @@ export const useGameStore = create<GameState>((set) => ({
       const withExp = { ...u, health, recoveryTicksLeft, isResting, ...aged, exp: u.exp + expAdd }
       const { unit: leveled, log: nextLog } = applyLevelUps(withExp, newTicks, newLog)
       newLog = nextLog
+      // Record any level-ups into the unit's tally delta for this tick.
+      const gained = leveled.level - u.level
+      if (gained > 0) (combat.unitStatsDelta[u.id] ?? (combat.unitStatsDelta[u.id] = emptyTally())).levelsGained += gained
       return leveled
     })
 
@@ -1031,8 +1095,9 @@ export const useGameStore = create<GameState>((set) => ({
       monsterDefeated: combat.monsterDefeated,
       monsterSeen: combat.monsterSeen,
       locationMonstersSeen: combat.locationMonstersSeen,
-      locationStats: combat.locationStats,
+      locationStats: foldLocationByUnit(combat.locationStats, combat.unitStatsDelta, locationOf),
       unitStats: foldUnitStats(s.unitStats, combat.unitStatsDelta),
+      unitStatHistory: foldHistory(s.unitStatHistory, combat.unitStatsDelta, newTicks),
       miscItems,
       lastTickAt: Date.now(),
       eventLog: newLog,
@@ -1063,6 +1128,11 @@ export const useGameStore = create<GameState>((set) => ({
     const catchUpDebug: CatchUpLocation[] = []   // per-location sim cost/output (debug)
     const catchUpStart = Date.now()
     let totalGold = 0
+    // Per-hero rich breakdown accumulated across the away span → folded into the
+    // lifetime stats + rolling history at the end. Only harvested for real
+    // absences (≥ the summary gate) so sub-minute background blips stay cheap.
+    const detailByUnit: Record<string, CombatTally> = {}
+    const wantBreakdown = Math.round(n / TICKS_PER_SECOND) >= OFFLINE_SUMMARY_MIN_SECS
 
     for (const loc of s.locations) {
       if (loc.monsterIds.length === 0) continue
@@ -1073,6 +1143,8 @@ export const useGameStore = create<GameState>((set) => ({
       let expPool = 0, gold = 0, primed = false, simRounds = 0
       const killsByMonster: Record<string, number> = {}
       let loot: Record<string, number> = {}
+      // Rich per-hero breakdown for this location's away span (estimated, scaled).
+      let locTally: Record<string, CombatTally> = {}
 
       const stats = s.locationStats[loc.id]
       const windows = offlineWindowCount(n, SAMPLING.windowTicks, SAMPLING.maxWindows)
@@ -1088,6 +1160,7 @@ export const useGameStore = create<GameState>((set) => ({
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
+        locTally = r.tally   // already scaled across windows
       } else if (stats) {
         // Warm, short absence: cheap single linear extrapolation of the realized rate.
         const proj = projectOfflineRewards(getLocationCombatReport(stats, s.ticks), n)
@@ -1095,6 +1168,12 @@ export const useGameStore = create<GameState>((set) => ({
         gold    = proj.gold
         Object.assign(killsByMonster, proj.killsByMonster)
         loot = rollOfflineLoot(killsByMonster)
+        // The cheap path runs no sim, so harvest a breakdown sample only when the
+        // absence is worth it (≥ the summary gate); scale it over the full span.
+        if (wantBreakdown && roster.length > 0) {
+          const h = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], undefined)
+          locTally = scaleTallyMap(h.tally, n / Math.max(1, h.primedTicks))
+        }
       } else if (roster.length > 0) {
         // Cold: prime a budgeted slice of real combat, then extrapolate the
         // remaining time on the freshly-measured rate.
@@ -1106,6 +1185,7 @@ export const useGameStore = create<GameState>((set) => ({
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
+        locTally = scaleTallyMap(r.tally, n / Math.max(1, r.primedTicks))   // prime slice → full span
         const remaining = n - r.primedTicks
         if (r.primedTicks > 0 && remaining > 0) {
           const scale = remaining / r.primedTicks
@@ -1138,22 +1218,33 @@ export const useGameStore = create<GameState>((set) => ({
       for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
       for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
 
+      // Reconcile the estimated breakdown with the actually-credited numbers:
+      // exp is exactly known (the level-share), and each deployed body was on the
+      // field for the whole absence (combatTicks = n keeps lifetime DPS sane).
+      for (const [id, amt] of Object.entries(shares)) (locTally[id] ?? (locTally[id] = emptyTally())).expGained = amt
+      for (const u of roster) (locTally[u.id] ?? (locTally[u.id] = emptyTally())).combatTicks += n
+
       // Advance the location's persisted stats so the rate stays coherent for the
-      // next catch-up (window grows by n, rewards grow proportionally).
+      // next catch-up (window grows by n, rewards grow proportionally), and fold
+      // the per-hero breakdown into the location's byUnit table.
       const prev = locationStats[loc.id] ?? { startTick: s.ticks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
       const nextDefeated = { ...prev.monstersDefeated }
       for (const [mid, k] of Object.entries(killsByMonster)) nextDefeated[mid] = (nextDefeated[mid] ?? 0) + k
       const nextDropped = { ...prev.itemsDropped }
       for (const [id, q] of Object.entries(loot)) nextDropped[id] = (nextDropped[id] ?? 0) + q
+      const nextByUnit = { ...(prev.byUnit ?? {}) }
+      for (const [id, t] of Object.entries(locTally)) nextByUnit[id] = addInto2(nextByUnit[id], t)
       locationStats[loc.id] = {
         startTick: prev.startTick,
         monstersDefeated: nextDefeated,
         itemsDropped:     nextDropped,
         expDistributed:   prev.expDistributed + expPool,
         goldEarned:       prev.goldEarned + gold,
+        byUnit:           nextByUnit,
       }
+      mergeTally(detailByUnit, locTally)
 
-      rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot, primed })
+      rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot, primed, tally: locTally })
     }
 
     if (totalGold > 0) lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) + totalGold
@@ -1193,9 +1284,17 @@ export const useGameStore = create<GameState>((set) => ({
     })
 
     let eventLog = s.eventLog
+    const locOf = new Map(s.units.map((u) => [u.id, u.locationId]))
     const units = unitsPreLevel.map((u) => {
       const { unit: leveled, log: nextLog } = applyLevelUps(u, newTicks, eventLog)
       eventLog = nextLog
+      // Credit any offline level-ups into the breakdown (global + AFK per-hero).
+      const gained = leveled.level - u.level
+      if (gained > 0) {
+        (detailByUnit[u.id] ?? (detailByUnit[u.id] = emptyTally())).levelsGained += gained
+        const rew = rewards.find((r) => r.locationId === locOf.get(u.id))
+        if (rew?.tally) (rew.tally[u.id] ?? (rew.tally[u.id] = emptyTally())).levelsGained += gained
+      }
       return leveled
     })
 
@@ -1230,6 +1329,8 @@ export const useGameStore = create<GameState>((set) => ({
     return {
       ticks: newTicks, units, lastTickAt: Date.now(), eventLog,
       miscItems, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
+      unitStats: foldUnitStats(s.unitStats, detailByUnit),
+      unitStatHistory: foldHistory(s.unitStatHistory, detailByUnit, newTicks),
     }
   }),
 
