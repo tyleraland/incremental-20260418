@@ -92,27 +92,38 @@ function LocationRow({ r }: { r: OfflineLocationReward }) {
   const heroes = Object.entries(r.tally ?? {})
     .map(([id, tally]) => ({ id, name: nameOf(id), tally }))
     .sort((a, b) => b.tally.damageDealt - a.tally.damageDealt)
+  const expandable = heroes.length > 0
 
-  return (
-    <div className="bg-game-bg rounded-lg px-3 py-2">
+  // The headline (name + kills/exp/gold) — the whole thing is the hit target when
+  // there's a per-hero breakdown to reveal.
+  const head = (
+    <>
       <div className="flex items-center gap-2">
+        {expandable && <span className="text-game-muted text-xs w-3 shrink-0 transition-transform">{open ? '▾' : '▸'}</span>}
         <span className="text-sm text-game-text flex-1">{r.locationName}</span>
         {r.primed && (
           <span className="text-[10px] uppercase tracking-wider text-game-muted border border-game-border rounded px-1 py-0.5">
             settled
           </span>
         )}
-        {heroes.length > 0 && (
-          <button className="text-game-muted text-xs hover:text-game-text" onClick={() => setOpen((o) => !o)}>
-            {open ? 'hide' : 'detail'}
-          </button>
-        )}
       </div>
-      <div className="text-xs text-game-text-dim font-mono mt-1">
+      <div className={`text-xs text-game-text-dim font-mono mt-1 ${expandable ? 'pl-5' : ''}`}>
         {r.kills} kills · +{Math.floor(r.exp)} exp · {r.gold} gold
       </div>
-      {open && heroes.length > 0 && (
-        <div className="mt-2 space-y-2 border-t border-game-border/50 pt-2">
+    </>
+  )
+
+  return (
+    <div className="bg-game-bg rounded-lg overflow-hidden">
+      {expandable ? (
+        <button className="w-full text-left px-3 py-2 hover:bg-white/5" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {head}
+        </button>
+      ) : (
+        <div className="px-3 py-2">{head}</div>
+      )}
+      {open && expandable && (
+        <div className="px-3 pb-3 space-y-2 border-t border-game-border/50 pt-2">
           {heroes.map((h) => (
             <div key={h.id}>
               <div className="flex items-baseline gap-2 mb-1">
