@@ -319,7 +319,12 @@ holds and fires while the enemy *approaches* (trust the front line to peel). It 
 back off. Active **kiting** (keeping a gap by retreating) is deliberately **opt-in** via
 the **Kiter** / **Wary Caster** tactics (the `desiredRange` → `kiteToward` path) while we
 tune what the right default should be — it used to be the caster default, which made
-mages skittish without the player asking. The kite hold distance (`kiteDistanceFor`, used
+mages skittish without the player asking. **Wary Caster** reads `interruptedCount` (a
+caster backs off further the more its casts get broken), and that "wariness" **decays**
+(`WARY_INTERRUPT_DECAY`, in `advanceRound`) when no fresh interrupt lands — otherwise a
+couple of early disruptions pinned a mage in permanent kite mode, never closing again
+(the "afraid to engage" stalemate, esp. paired with a Guardian dutifully following the
+fleeing mage). The kite hold distance (`kiteDistanceFor`, used
 by those tactics) is anchored on the same `castRange` (single-target shooting range) plus
 a safety buffer, **not** the longest-range *gated* AoE — anchoring on a Lightning Storm
 (range 8, but it won't fire on a lone foe) stranded a mage at AoE range, out of reach of

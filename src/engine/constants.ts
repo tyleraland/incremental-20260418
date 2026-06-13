@@ -69,3 +69,10 @@ export const CHARGER_LEASH_PER_RANK = 2
 // a skirmisher shouldn't over-commit. Grows a little per rank.
 export const FLANKER_LEASH = 12
 export const FLANKER_LEASH_PER_RANK = 2
+
+// §Wary Caster — a caster's "wariness" (interruptedCount, the back-off it reads)
+// FADES when it's left alone: decay it by 1 every WARY_INTERRUPT_DECAY logical
+// rounds with no fresh interrupt. Otherwise a couple of early disruptions make a
+// mage kite for the entire rest of a fight (it never closes again). A new interrupt
+// re-arms it. (Logical rounds; scaled by timeScale at the call site.)
+export const WARY_INTERRUPT_DECAY = 10

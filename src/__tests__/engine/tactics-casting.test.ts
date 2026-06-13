@@ -3,10 +3,10 @@
 // Ambusher (stalk a flank while cloaked).
 import { describe, it, expect } from 'vitest'
 import {
-  TACTIC_REGISTRY, buildStatus, kiteDistanceFor,
+  TACTIC_REGISTRY, buildStatus, kiteDistanceFor, createBattle, advanceRound,
   type BattleState, type Combatant,
 } from '@/engine'
-import { combatant, attackSkill } from './helpers'
+import { combatant, attackSkill, eu } from './helpers'
 
 const stateOf = (combatants: Combatant[]) => ({ combatants } as unknown as BattleState)
 const aoeSkill = () => attackSkill({ id: 'blast', targeting: 'aoe_enemy', aoeRadius: 2 })
@@ -72,6 +72,22 @@ describe('Wary Caster (movement)', () => {
     const self = combatant({ id: 'p', rangedRange: 0, str: 20, int: 0, interruptedCount: 2 })
     const foe = combatant({ id: 'e', team: 'enemy', pos: { x: 0.5, y: 6 } })
     expect(tactic(self, stateOf([self, foe]), 1)).toBeNull()
+  })
+
+  it('wariness decays when the caster is left alone (so it stops kiting forever)', () => {
+    // A couple of old interrupts must not pin a mage in kite mode for the whole
+    // fight: interruptedCount decays on a cadence when no fresh interrupt lands, so
+    // the caster eventually returns to close-and-hold and re-engages.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, str: 3, rangedRange: 6, maxHp: 200, hp: 200, skills: [attackSkill({ id: 'bolt', range: 6 })] })],
+      enemyUnits: [eu({ id: 'far', team: 'enemy', str: 0, moveSpeed: 0, meleeRange: 1.1 })],
+    })
+    const mage = b.combatants.find((c) => c.id === 'mage')!
+    mage.pos = { x: 2.5, y: 2 }
+    b.combatants.find((c) => c.id === 'far')!.pos = { x: 2.5, y: 13 }   // way out of reach — no new interrupts
+    mage.interruptedCount = 2
+    for (let i = 0; i < 40; i++) advanceRound(b)
+    expect(b.combatants.find((c) => c.id === 'mage')!.interruptedCount).toBe(0)   // faded back to calm
   })
 })
 

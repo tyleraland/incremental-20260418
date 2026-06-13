@@ -301,7 +301,7 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     description: "A caster who keeps getting their spell interrupted assumes the enemy is hunting the cast — backs off further from assailants after each disruption so they can channel from a safer distance.",
     movement: (self, state, rank) => {
       if (self.rangedRange <= 0 && !isCaster(self)) return null   // melee can't kite-cast
-      if (self.interruptedCount <= 0) return null                 // unbothered → leave positioning to the default caster kite
+      if (self.interruptedCount <= 0) return null                 // unbothered (or wariness has decayed) → fall through to the default close-and-hold
       const threat = nearestEnemyTo(self, state)
       if (!threat) return null
       // Widen the kite gap the more we've been denied (capped) so a chaser can't

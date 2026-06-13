@@ -8,7 +8,7 @@
 import {
   COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
   WANDER_REPATH, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
-  WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN,
+  WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN, WARY_INTERRUPT_DECAY,
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat } from './timescale'
@@ -1654,6 +1654,11 @@ export function advanceRound(state: BattleState): BattleState {
     for (const id of Object.keys(c.tacticCooldowns)) {
       if (c.tacticCooldowns[id] > 0) c.tacticCooldowns[id] -= 1
     }
+    // §wary-caster: a caster's "wariness" fades when it's left alone — decay
+    // interruptedCount on a cadence so a couple of old disruptions don't make a
+    // mage kite for the rest of the fight. A fresh interrupt (applyDamageRaw /
+    // channel break) re-arms it. Deterministic (round-driven), so replay is 1:1.
+    if (c.interruptedCount > 0 && state.round % scaleRounds(WARY_INTERRUPT_DECAY) === 0) c.interruptedCount -= 1
   }
 
   // §9.1.3 turn order: SPD desc, tiebreak by id (§10, §16)
