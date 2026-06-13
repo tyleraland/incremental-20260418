@@ -112,6 +112,19 @@ export const COMBAT_SKILLS: Record<string, (level: number) => EngineSkill> = {
   'back-stab':     (lv) => skill({ id: 'back-stab', name: 'Back Stab', type: 'attack', targeting: 'single_enemy', range: 1.6, cooldown: cd(10), damageFormula: `str * ${coef(1.0, 0.2, lv)}`, stealthBonus: 2.5 }),
   'sight':         () =>   skill({ id: 'sight', name: 'Sight', type: 'debuff', targeting: 'aoe_enemy', range: 6, aoeRadius: 2.5, cooldown: cd(10), removesStatusId: 'stealthed' }),
   'dispel':        () =>   skill({ id: 'dispel', name: 'Dispel', type: 'debuff', targeting: 'single_enemy', range: 6, cooldown: cd(10), dispelCategory: 'buff' }),
+  // §minions: Summon Skeletons — a self-cast that raises two low-HP, low-damage
+  // melee skeletons that follow on a short leash and body-block (Guardian). They
+  // crumble after ~ttl rounds or when the caster falls; capped at 2 live, so a
+  // recast while both stand is a no-op until one expires (gated in makeSkillTactic).
+  'summon-skeletons': (lv) => skill({
+    id: 'summon-skeletons', name: 'Summon Skeletons', type: 'summon', targeting: 'self', cooldown: cd(15),
+    summon: {
+      name: 'Skeleton', count: 2, maxActive: 2,
+      hp: 24 + 6 * lv, str: 5 + 2 * lv, spd: 8, meleeRange: 1,
+      ttl: 30, leash: 6,
+      tactics: [{ id: 'guardian', rank: 1 }],
+    },
+  }),
 }
 
 export function buildEngineSkill(id: string, level: number): EngineSkill | null {
@@ -364,6 +377,22 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
         if (cap && cap.active >= cap.max) return null   // at the simultaneous-wall cap
         const foe = firewallThreat(self, state, sk)
         return foe ? { castSkill: sk, skillTarget: foe.id } : null
+      },
+    }
+  }
+
+  // §minions: a summon skill is a self-cast that spawns owned minions. It reads as
+  // not-ready while at its active cap (count this caster's living minions from this
+  // skill) so re-casting at the cap is a no-op until some expire/die.
+  if (sk.summon) {
+    return {
+      ...base,
+      description: `Summon ${sk.summon.count} ${sk.summon.name}s to guard and follow you.`,
+      action: (self, state) => {
+        if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
+        const live = state.combatants.filter((c) => c.alive && c.ownerId === self.id && c.summonTag === sk.id).length
+        if (live >= sk.summon!.maxActive) return null
+        return { castSkill: sk, skillTarget: self.id }
       },
     }
   }

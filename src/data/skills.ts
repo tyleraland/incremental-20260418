@@ -213,6 +213,14 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  // §minions: raise two skeletal warriors that guard and follow you on a short
+  // leash, then crumble after ~12s (or when you fall). Two stand at once.
+  'summon-skeletons': {
+    id: 'summon-skeletons', name: 'Summon Skeletons', maxLevel: 5, type: 'active',
+    description: (lv) => `Raise 2 skeletons (${24 + 6 * lv} HP) that body-block and follow you for ~12s. Up to 2 at once.`,
+    requires: [],
+    getBonuses: () => ({}),
+  },
 }
 
 export function getAvailableSkills(unit: Unit) {

@@ -208,6 +208,10 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     threatMult: input.threatMult ?? 1,
     armorReduction: input.armorReduction ?? 0,
     dodgePeriod: input.dodgePeriod ?? null,
+    ownerId: input.ownerId ?? null,
+    leashRange: input.leashRange ?? null,
+    summonTtl: input.summonTtl ?? null,
+    summonTag: input.summonTag ?? null,
     trace: [],
     lastResolution: [],
   }
@@ -682,6 +686,54 @@ function affectedTargets(state: BattleState, self: Combatant, skill: EngineSkill
 
 // Apply a skill's effects now (damage / heal / status to every affected unit),
 // then put it on cooldown and record the single use.
+// §minions: spawn a summon skill's minions around the caster — owned (ownerId),
+// leashed, and time-limited (summonTtl). Low-stat melee bodies whose behaviour is
+// driven entirely by the config's tactics (e.g. Guardian). Capped per skill+caster
+// by summon.maxActive so re-casting at the cap is a no-op (gated in makeSkillTactic).
+function spawnSummons(state: BattleState, self: Combatant, skill: EngineSkill): void {
+  const cfg = skill.summon!
+  const tag = skill.id
+  const live = state.combatants.filter((c) => c.alive && c.ownerId === self.id && c.summonTag === tag).length
+  const n = Math.min(cfg.count, Math.max(0, cfg.maxActive - live))
+  for (let i = 0; i < n; i++) {
+    // Fan them out just in front of the caster (toward the enemy side).
+    const spread = (i - (n - 1) / 2) * 1.3
+    const at = { x: self.pos.x + spread, y: self.pos.y + (self.team === 'player' ? 1.2 : -1.2) }
+    const input: EngineUnitInput = {
+      id: `${self.id}~${tag}~${state.round}~${i}`,
+      name: cfg.name,
+      team: self.team,
+      str: cfg.str, def: 0, int: 0, spd: cfg.spd ?? self.spd, magicDef: 0,
+      maxHp: cfg.hp, hp: cfg.hp,
+      preferredRank: 'front',
+      meleeRange: cfg.meleeRange ?? 1,
+      rangedRange: 0,
+      moveSpeed: cfg.moveSpeed ?? self.moveSpeed,
+      attackElement: 'neutral', armorElement: 'neutral',
+      skills: [],
+      tactics: cfg.tactics,
+      visionRange: self.visionRange,
+      ownerId: self.id,
+      leashRange: cfg.leash,
+      summonTtl: scaleRounds(cfg.ttl),
+      summonTag: tag,
+    }
+    addCombatant(state, input, self.team, undefined, at)
+  }
+}
+
+// §minions: a leashed minion (ownerId + leashRange) that has strayed too far from
+// its master drops its tactic's movement and returns to the owner — mirroring the
+// Charger/Flanker leash, but anchored on the owner rather than the party centroid,
+// so summons/companions "follow" while still free to engage within the tether.
+function applyLeash(state: BattleState, self: Combatant, mv: ReturnType<typeof evalMovement>): ReturnType<typeof evalMovement> {
+  if (self.ownerId == null || self.leashRange == null) return mv
+  const owner = findCombatant(state, self.ownerId)
+  if (!owner || !owner.alive) return mv
+  if (distance(self.pos, owner.pos) > self.leashRange) return { toPoint: { ...owner.pos }, clearLock: true }
+  return mv
+}
+
 function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, targetId: string, atPoint?: Vec2): void {
   recordSkillUse(state, self, skill)
   // Remember this cast so a Chain tactic can follow up next turn on the same target.
@@ -696,6 +748,9 @@ function resolveSkill(state: BattleState, self: Combatant, skill: EngineSkill, t
   if (!skill.damageFormula) {
     emit(state, { round: state.round, type: 'skill_use', sourceId: self.id, targetId, skillId: skill.id })
   }
+  // §minions: a summon skill spawns owned, leashed, time-limited bodies near the
+  // caster and is done (no target effects).
+  if (skill.summon) { spawnSummons(state, self, skill); return }
   const primary = findCombatant(state, targetId)
 
   // §firewall: raise an oriented line of flame between us and the target foe.
@@ -1551,7 +1606,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
     : (state.mode === 'open' || !self.provoked ? 'no target · wander' : 'no target')
 
   const posBefore = { ...self.pos }
-  executeMovement(state, self, evalMovement(state, self))
+  executeMovement(state, self, applyLeash(state, self, evalMovement(state, self)))
   applyFirewalls(state, self, posBefore)   // §firewall: bounce a foe that tried to cross
   const moved = self.pos.x !== posBefore.x || self.pos.y !== posBefore.y
   updateFacing(state, self, posBefore, moved)
@@ -1637,6 +1692,22 @@ export function advanceRound(state: BattleState): BattleState {
       else emit(state, { round: state.round, type: 'status_expire', sourceId: c.id, extra: { statusId: s.id } })
     }
     c.statuses = kept
+  }
+
+  // §minions: age summoned lifetimes and crumble minions whose master is gone.
+  // A timed summon (summonTtl) counts down once per engine round and dies at 0; a
+  // minion whose owner is dead/absent (a slain caster, a recalled companion's
+  // hero) crumbles too. Emits unit_death so the UI clears the token.
+  for (const c of state.combatants) {
+    if (!c.alive || c.ownerId == null) continue
+    const owner = findCombatant(state, c.ownerId)
+    const ownerGone = !owner || !owner.alive
+    if (c.summonTtl != null && !ownerGone) c.summonTtl -= 1
+    if (ownerGone || (c.summonTtl != null && c.summonTtl <= 0)) {
+      c.alive = false
+      for (const o of state.combatants) if (o.lockedTargetId === c.id) o.lockedTargetId = null
+      emit(state, { round: state.round, type: 'unit_death', sourceId: c.ownerId, targetId: c.id })
+    }
   }
 
   // §2 ground hazards (Lightning Storm / Consecration zones): re-center auras, age

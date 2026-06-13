@@ -48,7 +48,25 @@ export interface EngineSkill {
   stealthBonus?: number  // damage multiplier when cast from stealth (Back Stab, §3)
   dispelCategory?: 'buff' | 'debuff'  // strip statuses of this category from affected targets
   removesStatusId?: string            // strip a specific status from affected targets (Sight → stealthed)
+  summon?: SummonConfig  // §minions: a self-cast that spawns N owned minions (Summon Skeletons)
   slot: SkillSlot
+}
+
+// §minions: what a `type: 'summon'` skill spawns. The minions join the caster's
+// team as owned, leashed, time-limited combatants (low-stat melee bodies by
+// default). Behaviour comes from `tactics` (e.g. Guardian to body-block).
+export interface SummonConfig {
+  name: string
+  count: number          // how many to spawn per cast
+  hp: number
+  str: number            // drives their basic-attack damage (keep low)
+  spd?: number           // initiative; defaults to the caster's
+  moveSpeed?: number     // grid units/round; defaults to the caster's ("normal")
+  meleeRange?: number    // default 1
+  ttl: number            // logical rounds before they crumble (scaled at spawn)
+  leash: number          // cells from the owner before they're pulled back
+  maxActive: number      // cap on simultaneous live minions from this skill/caster
+  tactics?: TacticRef[]  // their behaviour loadout (e.g. [{ id: 'guardian', rank: 1 }])
 }
 
 // ── Status effects (§7) ─────────────────────────────────────────────────────--
@@ -196,6 +214,12 @@ export interface EngineUnitInput {
   threatMult?: number
   armorReduction?: number
   dodgePeriod?: number
+  // §minions: set on summoned/companion inputs so makeCombatant wires the owner
+  // link, leash, lifetime, and active-cap tag (see the Combatant fields).
+  ownerId?: string | null
+  leashRange?: number | null
+  summonTtl?: number | null
+  summonTag?: string | null
 }
 
 // An in-progress channeled cast (channelTime ≥ 1). Resolves when roundsLeft hits
@@ -296,6 +320,17 @@ export interface Combatant {
   // period (null = never). Sourced from skills (heroes) / MonsterDef (monsters).
   armorReduction: number
   dodgePeriod: number | null
+
+  // §minions: a summoned/companion unit's link to its master (a hero or caster).
+  // `ownerId` is the master's combatant id (null = not a minion). `leashRange`
+  // pulls it back when it strays farther than this many cells from the owner
+  // (null = no leash). `summonTtl` counts engine rounds until it crumbles (null =
+  // permanent, e.g. a beast companion). `summonTag` is the skill id that spawned
+  // it, for per-skill active caps. All four round-trip in the snapshot.
+  ownerId: string | null
+  leashRange: number | null
+  summonTtl: number | null
+  summonTag: string | null
 
   // §debug: a small ring buffer of one-line summaries of what this unit did each
   // turn (targeting / movement / action). Purely observational — the BattleView

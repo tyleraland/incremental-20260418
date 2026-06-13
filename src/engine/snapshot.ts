@@ -144,7 +144,12 @@ export function deserializeBattle(token: string): BattleState {
     const armorReduction = rest.armorReduction ?? 0
     const dodgePeriod = rest.dodgePeriod ?? null
     const escapeDir = rest.escapeDir ?? null   // legacy tokens predate kite-heading hysteresis
-    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    // §minions — legacy tokens predate owned/summoned units; default to "not a minion".
+    const ownerId = rest.ownerId ?? null
+    const leashRange = rest.leashRange ?? null
+    const summonTtl = rest.summonTtl ?? null
+    const summonTag = rest.summonTag ?? null
+    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, ownerId, leashRange, summonTtl, summonTag, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {
