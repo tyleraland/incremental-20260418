@@ -275,6 +275,79 @@ a codex disposition note. Deferred:
 - **Pack roles.** Leader/follower — kill the leader and the pack scatters/flees;
   or coordinated flank/surround driven by the team blackboard.
 
+## Proposed tactics & counter-enemies (raised 2026-06)
+
+A design pass on new player tactics — each either unlocks a hunting strategy
+(solo or party) or counters an enemy archetype we haven't built yet (the enemy
+is listed so the tactic and its foil ship together). Inspirations: Ragnarok
+Online, WoW, botting, Kittens Game, Guild Wars, RimWorld, Dwarf Fortress, LoL.
+Grouped by how much engine plumbing they need. None are built yet.
+
+Cross-refs: several overlap themes already noted under **AI & coordination →
+Smart-party baseline** (chokepoint / over-pull / formation) and **Gather-and-
+guard** — these are the *equippable-tactic* expression of those.
+
+**Cheap — pure tactics on existing hooks:**
+
+- **Spread Out** (movement · floor · unit/party). Hold a minimum gap from allies
+  so one enemy AoE / cleave / ground zone can't catch the whole party. Reads ally
+  `centroid` + the existing separation system. *Counter-enemy:* **Bombardier**
+  (lobs a `zone`) or **Cleaver** (large `aoeRadius` melee). The stack-vs-spread
+  decision the roster currently can't express.
+- **Conserve / Don't Overkill** (action · unit). Basic-attack trash; bank big
+  cooldowns for elites/bosses, and never spend an expensive nuke on a target a
+  basic will finish. Reads target HP, `skillDamageEstimate` / `estimateDamageVs`,
+  `isBoss`. *Unlocks:* higher sustained throughput on long AFK runs — and it
+  shows up directly in the new battle-report DPS/efficiency numbers.
+- **Last Hit (Secure)** (targeting · trigger · unit). Snap to an enemy a single
+  swing can kill, to secure the killing blow. Because kills credit the killer for
+  `monstersDefeated` / `itemsFound` and seed the level-split, this lets a player
+  steer XP/loot to a chosen hero — LoL last-hitting meets our credit model, and
+  now legible in the per-hero reports. Reads `estimateDamageVs`.
+- **Decapitate (Kill the Summoner)** (targeting · trigger · unit). Focus enemies
+  carrying `summon` / buff skills before the adds snowball (Assassinate covers
+  healers; this covers force-multipliers). *Counter-enemy:* **Necromancer /
+  Shaman** using the existing `SkillType: 'summon'`.
+- **Bodyguard / Peel-the-carry** (movement · trigger · unit). Like Guardian but
+  body-blocks for the *highest-damage* ally, not the squishiest. *Counter-enemy:*
+  an **Assassin** that dives the back line. Reads ally damage / `guardPoint`.
+
+**Needs engine plumbing:**
+
+- **Sidestep (Hazard Dance)** (movement · trigger · unit). If standing in a
+  damaging ground zone, step to the nearest safe cell instead of holding. *Needs:*
+  expose `state.zones` cells to tactics + a "nearest cell not in a damaging zone"
+  helper. *Counter-enemy:* hazard-layers (Molasses/Lightning-Storm casters, a
+  future **Lava Drake** / **Plague Toad**). Today units happily stand in fire.
+- **Break Line of Sight (Juke)** (movement · trigger · unit). A focused squishy
+  ducks behind the nearest wall to break a ranged/caster's LoS (we already block
+  caster fire through walls). *Needs:* an LoS-aware "find cover cell vs threat"
+  helper over `barriers` (`canReach` / `steerAround` exist). *Counter-enemy:*
+  **Sniper / Artillery** (long range, slow channel). Pairs with the open
+  "channeled spells don't recheck LoS at resolve" gap below.
+- **Cleanser / Triage** (targeting + action · unit). Dispel the worst control
+  (`taunted` / `rooted` / `frozen` / `slowed` / `poisoned`) off the ally nearest
+  death. `EngineSkill.dispelCategory` already exists; *needs:* the dispel skill +
+  a "worst-afflicted ally" selector. *Counter-enemy:* a **Hexer** that stacks
+  debuffs.
+
+**Party positioning (overlaps Smart-party baseline — promote to equippable):**
+
+- **Puller** (movement + targeting · trigger · unit). One hero tags a distant mob
+  and retreats toward the party `waypoint`, dragging it back rather than diving
+  the pack — controlled aggro via `moveOrder` + threat. *Unlocks:* the classic
+  "pull to the party" solo/duo loop; *counters* dense packs (avoids over-pull
+  wipes). Wants the aggro-radius model already noted under Smart-party baseline.
+- **Hold the Line / Chokepoint** (movement · party). Form up on a barrier gap so
+  melee enemies funnel in one or two at a time (`barriers` + `guardPoint` +
+  holds). *Counter-enemy:* a **Swarm** (many weak, high `openWorldCap`). The
+  equippable version of the "hold ground / a chokepoint" zone-control idea above.
+
+Other archetype counters worth a tactic when the enemy lands: **anti-stealth /
+Detector** (reveal + strike cloaked foes via `removesStatusId`, vs an **Assassin
+/ Phantom**), and an **Executioner** (execute-range damage surge, vs high-HP
+**Bruisers**) — both lower-priority than the cheap set above.
+
 ## Engine inconsistencies & gaps
 
 - **Channeled spells don't recheck LoS at resolve time** — a target can step
