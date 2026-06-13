@@ -5,6 +5,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: 'units',     label: 'Heroes', icon: '👤' },
   { id: 'inventory', label: 'Inv',    icon: '🎒' },
   { id: 'guild',     label: 'Guild',  icon: '⚜' },
+  { id: 'reports',   label: 'Reports', icon: '📊' },
   { id: 'time',      label: 'Time',   icon: '⏳' },
 ]
 

@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, DROP_ITEMS, formatDuration } from '@/stores/useGameStore'
+import type { OfflineLocationReward } from '@/lib/offline'
+import { TallyBreakdown, fmt } from './TallyBreakdown'
 
 // "While you were away" recap, shown once after an offline catch-up (batchTick).
 // Reads the summary the store produced and clears it on dismiss. Mirrors the
@@ -47,21 +50,7 @@ export function OfflineSummary() {
           <div>
             <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">By location</div>
             <div className="space-y-1.5">
-              {summary.locations.map((r) => (
-                <div key={r.locationId} className="bg-game-bg rounded-lg px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-game-text flex-1">{r.locationName}</span>
-                    {r.primed && (
-                      <span className="text-[10px] uppercase tracking-wider text-game-muted border border-game-border rounded px-1 py-0.5">
-                        settled
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-game-text-dim font-mono mt-1">
-                    {r.kills} kills · +{Math.floor(r.exp)} exp · {r.gold} gold
-                  </div>
-                </div>
-              ))}
+              {summary.locations.map((r) => <LocationRow key={r.locationId} r={r} />)}
             </div>
           </div>
 
@@ -91,5 +80,50 @@ export function OfflineSummary() {
       </div>
     </div>,
     document.body
+  )
+}
+
+// One location's away-span recap — the headline numbers, plus an expandable
+// per-hero combat breakdown (estimated over the absence).
+function LocationRow({ r }: { r: OfflineLocationReward }) {
+  const [open, setOpen] = useState(false)
+  const units = useGameStore((s) => s.units)
+  const nameOf = (id: string) => units.find((u) => u.id === id)?.name ?? id
+  const heroes = Object.entries(r.tally ?? {})
+    .map(([id, tally]) => ({ id, name: nameOf(id), tally }))
+    .sort((a, b) => b.tally.damageDealt - a.tally.damageDealt)
+
+  return (
+    <div className="bg-game-bg rounded-lg px-3 py-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-game-text flex-1">{r.locationName}</span>
+        {r.primed && (
+          <span className="text-[10px] uppercase tracking-wider text-game-muted border border-game-border rounded px-1 py-0.5">
+            settled
+          </span>
+        )}
+        {heroes.length > 0 && (
+          <button className="text-game-muted text-xs hover:text-game-text" onClick={() => setOpen((o) => !o)}>
+            {open ? 'hide' : 'detail'}
+          </button>
+        )}
+      </div>
+      <div className="text-xs text-game-text-dim font-mono mt-1">
+        {r.kills} kills · +{Math.floor(r.exp)} exp · {r.gold} gold
+      </div>
+      {open && heroes.length > 0 && (
+        <div className="mt-2 space-y-2 border-t border-game-border/50 pt-2">
+          {heroes.map((h) => (
+            <div key={h.id}>
+              <div className="flex items-baseline gap-2 mb-1">
+                <span className="text-xs text-game-text">{h.name}</span>
+                <span className="text-[10px] text-game-muted font-mono">{fmt(h.tally.damageDealt)} dmg</span>
+              </div>
+              <TallyBreakdown tally={h.tally} dense />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

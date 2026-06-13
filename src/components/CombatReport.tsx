@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, MONSTER_REGISTRY, formatDuration, getLocationCombatReport, TICKS_PER_SECOND } from '@/stores/useGameStore'
+import { TallyBreakdown, fmt } from './TallyBreakdown'
+import type { CombatTally } from '@/types'
 
 export function CombatReport({ locationId, locationName, onClose }: {
   locationId: string
@@ -8,9 +11,15 @@ export function CombatReport({ locationId, locationName, onClose }: {
 }) {
   const stats       = useGameStore((s) => s.locationStats[locationId])
   const currentTick = useGameStore((s) => s.ticks)
+  const units       = useGameStore((s) => s.units)
 
   const report = getLocationCombatReport(stats, currentTick)
   const elapsedSecs = Math.max(0, Math.round((report.endTick - report.startTick) / TICKS_PER_SECOND))
+
+  const nameOf = (id: string) => units.find((u) => u.id === id)?.name ?? id
+  const heroes = Object.entries(stats?.byUnit ?? {})
+    .map(([id, tally]) => ({ id, name: nameOf(id), tally }))
+    .sort((a, b) => b.tally.damageDealt - a.tally.damageDealt)
 
   const defeats = Object.entries(report.monstersDefeated)
     .map(([id, count]) => ({ id, name: MONSTER_REGISTRY[id]?.name ?? id, count }))
@@ -87,9 +96,33 @@ export function CombatReport({ locationId, locationName, onClose }: {
               </div>
             </div>
           )}
+
+          {heroes.length > 0 && (
+            <div>
+              <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">By Hero</div>
+              <div className="space-y-1.5">
+                {heroes.map((h) => <HeroRow key={h.id} name={h.name} tally={h.tally} />)}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>,
     document.body
+  )
+}
+
+// One collapsible hero row in a location's "By Hero" breakdown.
+function HeroRow({ name, tally }: { name: string; tally: CombatTally }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="bg-game-bg rounded-lg overflow-hidden">
+      <button className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/5" onClick={() => setOpen((o) => !o)}>
+        <span className="text-game-muted text-xs w-3 shrink-0">{open ? '▾' : '▸'}</span>
+        <span className="text-sm text-game-text flex-1">{name}</span>
+        <span className="text-xs text-game-text-dim font-mono">{fmt(tally.monstersDefeated)} K · {fmt(tally.damageDealt)} dmg</span>
+      </button>
+      {open && <div className="px-3 pb-3 pt-1"><TallyBreakdown tally={tally} dense /></div>}
+    </div>
   )
 }

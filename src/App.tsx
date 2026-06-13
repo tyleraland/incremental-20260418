@@ -10,6 +10,7 @@ import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
 import { Guild } from '@/pages/Guild'
+import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
@@ -73,6 +74,7 @@ function App() {
         {activeTab === 'units'     && <Units />}
         {activeTab === 'inventory' && <Inventory />}
         {activeTab === 'guild'     && <Guild />}
+        {activeTab === 'reports'   && <Reports />}
         {activeTab === 'time'      && <Time />}
       </main>
       <UnitReportSheet />
