@@ -41,6 +41,44 @@ describe('per-unit combat stats', () => {
     expect(totalKills).toBeLessThanOrEqual(useGameStore.getState().monsterDefeated['slime'] ?? 0)
   })
 
+  it('folds the rich battle-report breakdown: taken, hits, elements, history, per-location', () => {
+    resetStore({
+      unitStats: {}, unitStatHistory: {}, locationStats: {},
+      // Tougher foe + squishy heroes → a contested fight that lands hits both ways.
+      locations: [OPEN(['shadow-wolf'], 6, 8)],
+      units: [0, 1].map((i) => makeUnit({
+        id: `u${i}`, locationId: 'field', health: 120,
+        abilities: { strength: 6, agility: 5, dexterity: 5, constitution: 12, intelligence: 5 },
+      })),
+    })
+    for (let i = 0; i < 800; i++) tick()
+
+    const st = useGameStore.getState()
+    // Aggregate across the party — combat is deterministic but who-hit-what isn't
+    // pinned, so assert on the team totals.
+    const ids = ['u0', 'u1']
+    const sum = (f: (t: NonNullable<typeof st.unitStats[string]>) => number) =>
+      ids.reduce((n, id) => n + (st.unitStats[id] ? f(st.unitStats[id]) : 0), 0)
+
+    expect(sum((t) => t.hits)).toBeGreaterThan(0)
+    expect(sum((t) => t.damageDealt)).toBeGreaterThan(0)
+    expect(sum((t) => t.damageTaken)).toBeGreaterThan(0)       // the wolves bite back
+    // Element breakdowns are populated on both sides (neutral at minimum).
+    expect(ids.flatMap((id) => Object.keys(st.unitStats[id]?.dmgDealtByElement ?? {})).length).toBeGreaterThan(0)
+    expect(ids.flatMap((id) => Object.keys(st.unitStats[id]?.dmgTakenByElement ?? {})).length).toBeGreaterThan(0)
+    // Effectiveness buckets account for the damaging hits dealt.
+    expect(sum((t) => t.effDealt.effective + t.effDealt.neutral + t.effDealt.resisted)).toBe(sum((t) => t.hits))
+
+    // Rolling history exists and its sum reconciles with the lifetime damage.
+    const histDmg = ids.reduce((n, id) => n + (st.unitStatHistory[id]?.reduce((a, b) => a + b.tally.damageDealt, 0) ?? 0), 0)
+    expect(histDmg).toBe(sum((t) => t.damageDealt))
+
+    // Per-location byUnit table mirrors the lifetime damage for this single loc.
+    const byUnit = st.locationStats['field']?.byUnit ?? {}
+    const locDmg = ids.reduce((n, id) => n + (byUnit[id]?.damageDealt ?? 0), 0)
+    expect(locDmg).toBe(sum((t) => t.damageDealt))
+  })
+
   it('starts empty and only tracks units that actually fight', () => {
     resetStore({
       unitStats: {},

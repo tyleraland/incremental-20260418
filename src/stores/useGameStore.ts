@@ -643,18 +643,20 @@ function addInto2(prev: UnitCombatStats | undefined, delta: CombatTally): Combat
 // Route each unit's tick delta into its current location's per-hero breakdown
 // (`locationStats[loc].byUnit`). A unit fights at exactly one location, so its
 // whole delta belongs there. Returns a new locationStats with byUnit merged in.
+// Creates the location's stats entry if combat started here before any kill, so
+// the breakdown captures the whole fight (not just post-first-kill damage).
 function foldLocationByUnit(
   locationStats: Record<string, LocationCombatStats>,
   delta: Record<string, CombatTally>,
   locationOf: Map<string, string | null>,
+  tick: number,
 ): Record<string, LocationCombatStats> {
   let out = locationStats
   for (const [unitId, d] of Object.entries(delta)) {
     const locId = locationOf.get(unitId)
     if (!locId) continue
-    const loc = out[locId]
-    if (!loc) continue
     if (out === locationStats) out = { ...locationStats }
+    const loc = out[locId] ?? { startTick: tick, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
     const byUnit = { ...(loc.byUnit ?? {}) }
     byUnit[unitId] = addInto2(byUnit[unitId], d)
     out[locId] = { ...loc, byUnit }
@@ -1095,7 +1097,7 @@ export const useGameStore = create<GameState>((set) => ({
       monsterDefeated: combat.monsterDefeated,
       monsterSeen: combat.monsterSeen,
       locationMonstersSeen: combat.locationMonstersSeen,
-      locationStats: foldLocationByUnit(combat.locationStats, combat.unitStatsDelta, locationOf),
+      locationStats: foldLocationByUnit(combat.locationStats, combat.unitStatsDelta, locationOf, newTicks),
       unitStats: foldUnitStats(s.unitStats, combat.unitStatsDelta),
       unitStatHistory: foldHistory(s.unitStatHistory, combat.unitStatsDelta, newTicks),
       miscItems,
