@@ -127,6 +127,25 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     expect(sum?.locations[0]).toMatchObject({ locationId: 'field', primed: false })
   })
 
+  it('keeps the report consistent: per-location gold == kills, and per-hero kills are credited', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [FIELD()],
+      locationStats: { field: STATS() },
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [], unitStats: {},
+    })
+    batchTick(1000)                                  // 200s away ≥ gate → breakdown harvested
+    const st = useGameStore.getState()
+    const loc = st.offlineSummary!.locations[0]
+    // 1 gold + 1 exp per kill, so the headline numbers all agree (no flooring drift).
+    expect(loc.gold).toBe(loc.kills)
+    expect(Math.floor(loc.exp)).toBe(loc.kills)
+    // The per-hero AFK breakdown credits kills (not just damage) to the killer.
+    expect((loc.tally?.['u0']?.monstersDefeated ?? 0)).toBeGreaterThan(0)
+    expect(st.unitStats['u0']?.monstersDefeated ?? 0).toBeGreaterThan(0)
+  })
+
   it('applies rewards but suppresses the modal for a brief blip (< 60s)', () => {
     resetStore({
       ticks: 1000,

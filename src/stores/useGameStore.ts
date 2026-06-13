@@ -510,16 +510,26 @@ function runCombatSlice(
     // mid-slice via respawn reconciliation, so re-derive ids defensively).
     for (const c of battle.combatants) if (c.team === 'player') playerIds.add(c.id)
     foldRoundEvents(tally, battle.events, battle.round, playerIds)
+    // Who landed each killing blow this round (the live path credits kills via
+    // rewardKills; the offline slice has to read them off the death events).
+    const killerByEnemy: Record<string, string> = {}
+    for (const e of battle.events) {
+      if (e.round === battle.round && e.type === 'unit_death' && e.targetId) killerByEnemy[e.targetId] = e.sourceId
+    }
 
     for (const c of battle.combatants) {
       if (c.team !== 'enemy' || c.alive || !before.has(c.id)) continue
       const mid = monsterIdOf(c.id)
       killsByMonster[mid] = (killsByMonster[mid] ?? 0) + 1
+      const killer = killerByEnemy[c.id]
+      const credited = killer && playerIds.has(killer) ? killer : null
+      if (credited) (tally[credited] ?? (tally[credited] = emptyTally())).monstersDefeated += 1
       const def = MONSTER_REGISTRY[mid]
       if (def) for (const d of def.drops) {
         if (rng() < d.dropRate) {
           const qty = d.quantityMin + Math.floor(rng() * (d.quantityMax - d.quantityMin + 1))
           loot[d.itemId] = (loot[d.itemId] ?? 0) + qty
+          if (credited) (tally[credited] ?? (tally[credited] = emptyTally())).itemsFound += qty
         }
       }
     }
@@ -1157,8 +1167,6 @@ export const useGameStore = create<GameState>((set) => ({
         primed = true
         const r = projectOfflineSampled(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id], n, { samples: windows, startTick: s.ticks })
         battles[loc.id] = r.battle
-        expPool = r.exp
-        gold    = r.gold
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
@@ -1166,8 +1174,6 @@ export const useGameStore = create<GameState>((set) => ({
       } else if (stats) {
         // Warm, short absence: cheap single linear extrapolation of the realized rate.
         const proj = projectOfflineRewards(getLocationCombatReport(stats, s.ticks), n)
-        expPool = proj.exp
-        gold    = proj.gold
         Object.assign(killsByMonster, proj.killsByMonster)
         loot = rollOfflineLoot(killsByMonster)
         // The cheap path runs no sim, so harvest a breakdown sample only when the
@@ -1182,8 +1188,6 @@ export const useGameStore = create<GameState>((set) => ({
         primed = true
         const r = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id])
         battles[loc.id] = r.battle
-        expPool = r.exp
-        gold    = r.gold
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
@@ -1196,8 +1200,6 @@ export const useGameStore = create<GameState>((set) => ({
             const ek = Math.floor(k * scale)
             if (ek > 0) extraKills[mid] = ek
           }
-          expPool += Math.floor(r.exp * scale)
-          gold    += Math.floor(r.gold * scale)
           for (const [mid, k] of Object.entries(extraKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
           const extraLoot = rollOfflineLoot(extraKills)
           for (const [id, q] of Object.entries(extraLoot)) loot[id] = (loot[id] ?? 0) + q
@@ -1206,11 +1208,16 @@ export const useGameStore = create<GameState>((set) => ({
         continue   // no sample and nobody able to fight → nothing to prime
       }
 
+      // Every kill yields exactly 1 gold + 1 exp, so the headline numbers are the
+      // kill total — derived here so independent per-path flooring (per-monster
+      // kills vs aggregate gold/exp) can't drift them apart in the report.
       const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
+      expPool = kills
+      gold    = kills
       // Record cost/output for the debug readout (even a zero-output prime — its
       // sim rounds still cost something worth seeing).
       catchUpDebug.push({ locationId: loc.id, locationName: loc.name, windows, rounds: simRounds, kills, exp: expPool, gold })
-      if (kills === 0 && gold === 0 && expPool === 0) continue
+      if (kills === 0) continue
 
       // Credit the XP pool to deployed heroes, split proportional to level (a
       // low-level hero parked in a high-level party earns only its level-share).
