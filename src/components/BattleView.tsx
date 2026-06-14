@@ -105,73 +105,21 @@ function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
   return Math.max(OPEN_CAM_SIZE, Math.min(maxSize, spread))
 }
 
-// Combat advances in discrete rounds (~400 ms): every unit teleports a step. An
-// exponential ease toward each new position decelerates into it and re-accelerates
-// out — that "settle-then-go" pulse is exactly what reads as feeling the rounds.
-// Instead, interpolate at CONSTANT velocity: on each round, open a fresh segment
-// from where a unit currently *appears* to its new logical position, spanning the
-// measured round interval (×1.2 so a unit never quite arrives before the next
-// round retargets it — no momentary stop). Position is continuous across rounds;
-// only heading changes at boundaries, which reads as natural walking. The camera
-// is derived by the caller from these same moving positions, so it stays glued and
-// continuous too. Tokens/FX read `rpos`; the loop parks once a settled segment
-// completes and re-arms on the next round. Encounters pass enabled=false (static).
-function useSmoothScene(combatants: Combatant[], enabled: boolean, round: number) {
-  const dispRef = useRef<Map<string, Vec2>>(new Map())
-  const segRef = useRef<Map<string, { fx: number; fy: number; tx: number; ty: number }>>(new Map())
-  const segStartRef = useRef(0)
-  const segDurRef = useRef(ROUND_MS)
-  const prevRoundTsRef = useRef(0)
-  const avgIntervalRef = useRef(0)   // EMA of the round interval (smooths timing jitter)
-  const combRef = useRef(combatants)
-  const rafRef = useRef<number | null>(null)
-  const [, setFrame] = useState(0)
-  combRef.current = combatants
-
-  useEffect(() => {
-    if (!enabled) return
-    const now = performance.now()
-    // Engine motion is constant per round, so any visible jerk comes from the
-    // *timing*: the wall-clock gap between rounds jitters under per-tick load. Drive
-    // the segment off an EMA of the interval (not the raw last one), and give it a
-    // little extra runway (×1.7) so a momentarily-late round doesn't leave a unit
-    // parked at its target for a beat before the next one arrives.
-    const raw = prevRoundTsRef.current ? now - prevRoundTsRef.current : ROUND_MS
-    prevRoundTsRef.current = now
-    avgIntervalRef.current = avgIntervalRef.current ? avgIntervalRef.current * 0.8 + raw * 0.2 : raw
-    segDurRef.current = Math.min(800, Math.max(120, avgIntervalRef.current * 1.7))
-    segStartRef.current = now
-    // Open a new constant-velocity segment for every unit: from its current
-    // on-screen spot to its new logical spot. New units appear in place (no glide).
-    const disp = dispRef.current, seg = segRef.current
-    const present = new Set<string>()
-    for (const c of combRef.current) {
-      present.add(c.id)
-      const d = disp.get(c.id) ?? { x: c.pos.x, y: c.pos.y }
-      disp.set(c.id, d)
-      seg.set(c.id, { fx: d.x, fy: d.y, tx: c.pos.x, ty: c.pos.y })
-    }
-    for (const id of [...disp.keys()]) if (!present.has(id)) { disp.delete(id); seg.delete(id) }
-
-    if (rafRef.current == null) {
-      const loop = () => {
-        const a = Math.min(1, (performance.now() - segStartRef.current) / segDurRef.current)
-        const d = dispRef.current
-        for (const [id, s] of segRef.current) d.set(id, { x: s.fx + (s.tx - s.fx) * a, y: s.fy + (s.ty - s.fy) * a })
-        setFrame((n) => (n + 1) & 0xffff)
-        rafRef.current = a < 1 ? requestAnimationFrame(loop) : null
-      }
-      rafRef.current = requestAnimationFrame(loop)
-    }
-  }, [enabled, round])
-
-  // Stop the loop on unmount.
-  useEffect(() => () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); rafRef.current = null }, [])
-
-  const rpos = (c: Combatant): Vec2 => (enabled ? dispRef.current.get(c.id) : undefined) ?? c.pos
-  const rposId = (id: string | null | undefined): Vec2 | null => (enabled && id ? dispRef.current.get(id) ?? null : null)
-  return { rpos, rposId }
-}
+// Motion is CSS-transition-driven, not React-driven. The store advances one engine
+// round per tick (~5×/s), producing a fresh `battle` → BattleView re-renders → each
+// token's `left/top` (BattleChip `animatePos`) and every camera-following world
+// element (grid, barriers, zones, floats, … via CAM_TRANSITION) ease to their new
+// positions through a CSS `transition`. So a unit's render position IS its engine
+// round position — there's no per-frame rAF that re-renders the whole subtree just
+// to interpolate (the old hot path: ~60 renders/s on top of the ~5/s real ones).
+// Encounters always worked this way (static camera + animatePos); open-world now
+// matches, dropping the per-frame React churn that dominated the mobile profile.
+//
+// A linear transition longer than the ~200 ms round interval means a token is still
+// gliding toward its last target when the next round retargets it — continuous
+// motion, no "settle-then-go" parking, even when a round lands late under load.
+const CAM_MS = 400
+const CAM_TRANSITION = `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear, width ${CAM_MS}ms linear, height ${CAM_MS}ms linear`
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
@@ -296,9 +244,11 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
       onPointerCancel={onPointerUp}
     >
       <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, willChange: 'transform' }}>
-        {/* team-half tints, split at the arena's center line */}
-        <div className="absolute inset-x-0 top-0 bg-red-500/10 pointer-events-none" style={{ height: `${centerTop}%` }} />
-        <div className="absolute inset-x-0 bottom-0 bg-blue-500/10 pointer-events-none" style={{ top: `${centerTop}%` }} />
+        {/* team-half tints, split at the arena's center line. The split eases with
+            the camera (CSS) so it pans in sync with the tokens — the divs stay
+            anchored to the viewport edges, so only the split line moves (no gap). */}
+        <div className="absolute inset-x-0 top-0 bg-red-500/10 pointer-events-none" style={{ height: `${centerTop}%`, transition: `height ${CAM_MS}ms linear` }} />
+        <div className="absolute inset-x-0 bottom-0 bg-blue-500/10 pointer-events-none" style={{ top: `${centerTop}%`, transition: `top ${CAM_MS}ms linear` }} />
         {/* faint grid — world-anchored: backgroundPosition tracks the camera so
             the squares stay fixed to the ground and the party visibly moves
             across them (lines land exactly on world-integer cell boundaries).
@@ -311,6 +261,9 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
               'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
             backgroundSize: `${100 / cam.size}cqmin ${100 / cam.size}cqmin`,
             backgroundPosition: `${(-cam.x / cam.size) * 100}cqmin ${(cam.y / cam.size) * 100}cqmin`,
+            // Ease the background scroll/zoom with the camera so the ground pans
+            // smoothly between rounds (the pattern repeats, so no edge gap).
+            transition: `background-position ${CAM_MS}ms linear, background-size ${CAM_MS}ms linear`,
           }}
         />
         {/* terrain: walls solid (block movement + sight); cliffs translucent +
@@ -323,7 +276,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
               className={isCliff
                 ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
                 : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
-              style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%` }}
+              style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%`, transition: CAM_TRANSITION }}
             />
           )
         })}
@@ -526,7 +479,7 @@ function EdgeMarker({ c, pos, cam }: { c: Combatant; pos: Vec2; cam: Cam }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI
   return (
-    <div className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-0.5" style={{ left: `${bx * 100}%`, top: `${by * 100}%` }}>
+    <div className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-0.5" style={{ left: `${bx * 100}%`, top: `${by * 100}%`, transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear` }}>
       <div
         title={`${c.name} — ${Math.ceil(c.hp)}/${c.maxHp} (off-screen)`}
         className={`w-6 h-6 rounded-full bg-blue-900/90 border-2 flex items-center justify-center text-[8px] font-bold text-blue-50 shadow ${ratio >= 0.75 ? 'border-emerald-300/80' : ratio >= 0.4 ? 'border-amber-300/80' : 'border-red-300/80'}`}
@@ -544,7 +497,7 @@ function EdgeMarker({ c, pos, cam }: { c: Combatant; pos: Vec2; cam: Cam }) {
 // keyframes, so the Tailwind centering classes only matter before it kicks in.
 function Float({ cam, pos, className, text, k, anim = 'animate-dmg-float' }: { cam: Cam; pos: Vec2; className: string; text: string; k: string; anim?: string }) {
   return (
-    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow whitespace-nowrap ${anim} ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }}>
+    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow whitespace-nowrap ${anim} ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear` }}>
       {text}
     </div>
   )
@@ -941,8 +894,9 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       {battle.barriers.map((b, i) => (
         <div key={i} className="absolute bg-stone-500/40" style={{ left: mx(b.x), top: my(b.y + b.h), width: (b.w / cols) * w, height: (b.h / rows) * h }} />
       ))}
-      {/* current camera window */}
-      <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: mx(cam.x), top: my(cam.y + cam.size), width: (cam.size / cols) * w, height: (cam.size / rows) * h }} />
+      {/* current camera window — eases with the camera so the radar box tracks the
+          smooth pan instead of stepping per round */}
+      <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: mx(cam.x), top: my(cam.y + cam.size), width: (cam.size / cols) * w, height: (cam.size / rows) * h, transition: CAM_TRANSITION }} />
       {battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => (
         <div key={c.id} className="absolute w-1 h-1 rounded-full bg-red-400/90 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: mx(c.pos.x), top: my(c.pos.y) }} />
       ))}
@@ -1110,10 +1064,13 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   // Free-look target from a minimap tap on empty ground: the camera centres here
   // (instead of the party) until the player re-follows. Cleared by ⊙/follow.
   const [manualCenter, setManualCenter] = useState<Vec2 | null>(null)
-  // Units move at constant velocity between rounds (continuous, no per-round
-  // settle). `rpos` is a unit's smoothly-moving render position; the camera is
-  // derived from those same positions below, so it stays glued and continuous.
-  const { rpos, rposId } = useSmoothScene(battle.combatants, isOpen, battle.round)
+  // A unit's render position IS its engine round position; the CSS transitions on
+  // the tokens and the camera-following world elements ease the per-round steps, so
+  // the camera (derived from these positions below) stays glued — without a
+  // per-frame React re-render. (rpos/rposId kept as the read seam the FX/camera code
+  // already uses, so the rest of the view is unchanged.)
+  const rpos = (c: Combatant): Vec2 => c.pos
+  const rposId = (id: string | null | undefined): Vec2 | null => (id ? byId(id)?.pos ?? null : null)
   const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
 
   // Round-scoped derivations — recomputed only when the battle advances (its
@@ -1310,7 +1267,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             <div
               key={z.id}
               className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
-              style={{ left: px(cam, z.pos.x), top: py(cam, z.pos.y), width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%` }}
+              style={{ left: px(cam, z.pos.x), top: py(cam, z.pos.y), width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%`, transition: CAM_TRANSITION }}
             />
           ))}
 
@@ -1326,6 +1283,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
                 width: `${(2 * w.half / cam.size) * 100}%`,
                 height: `${(0.5 / cam.size) * 100}%`,
                 transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
+                transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear`,
               }}
             />
           ))}
@@ -1367,7 +1325,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
               <div
                 key={`cl-${sourceId}`}
                 className="absolute -translate-x-1/2 flex flex-col-reverse items-center gap-0.5 pointer-events-none"
-                style={{ left: px(cam, insetX(cam, sp.x)), top: py(cam, insetY(cam, sp.y)), transform: 'translate(-50%, -150%)' }}
+                style={{ left: px(cam, insetX(cam, sp.x)), top: py(cam, insetY(cam, sp.y)), transform: 'translate(-50%, -150%)', transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear` }}
               >
                 {labels.map((l) => (
                   <span key={l.id} className="px-1 rounded bg-black/45 text-amber-200 text-[10px] font-semibold leading-tight whitespace-nowrap drop-shadow animate-cast-label">
@@ -1444,7 +1402,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
               c={c}
               cam={cam}
               pos={rpos(c)}
-              animatePos={!isOpen}
+              animatePos
               selected={sameWave && c.id === selectedId}
               onSelect={() => handleSelect(c)}
               glyph={chipGlyph(c, classFor)}

@@ -31,14 +31,36 @@ the per-token `classFor` / per-event `byId` `.find()` scans became O(1) Map
 lookups (they were an O(N²) scan each frame). `castLabelGroups` is memoized on
 `[castLabels]`.
 
-**Remaining (the headline ~95% win, deferred — needs browser QA):** stop the rAF
-loop from `setFrame`-re-rendering the whole subtree; instead write the
-interpolated token `transform` and the camera/world pan straight to DOM nodes via
-refs, so React only re-renders on real rounds (~2.5/sec). This restructures the
-coordinate system (camera baked per-element today), so it can regress FX anchoring
-if shipped blind — verify motion/FX/minimap in a real large open-world battle.
-`React.memo` on `BattleChip` only pays off once this lands (today `cam`/`pos`
-change every frame and defeat it).
+**Done (the headline win):** the rAF `setFrame` loop is gone. The realization
+that unlocked a *much* simpler approach than the originally-planned imperative
+ref rewrite: the store already advances one engine round per tick (~5×/sec), so
+`battle`'s identity changes and React **already** re-renders the subtree ~5×/sec
+— the rAF loop was piling ~60 *more* renders/sec on top purely to interpolate
+between those. And encounters already animate smoothly with **no** rAF, via a CSS
+`transition` on each token's `left/top` (`animatePos`). So `useSmoothScene` was
+deleted and open-world motion now rides the same declarative path: tokens
+transition their `left/top`, and every camera-following world element (grid via
+`background-position`, team tints, barriers, zones, firewalls, floats, cast
+labels, edge markers, the minimap camera box) carries a matching `CAM_TRANSITION`
+so the camera pans smoothly *in sync* — all with the screen-space coordinate
+system **completely unchanged** (no transform/scale restructure, so a static
+frame is pixel-identical; verified by harness screenshot). `rpos(c)` is now just
+`c.pos`. A 400 ms linear transition (≈2 round intervals) keeps tokens gliding
+into the next round with no "settle-then-go" parking even under load.
+
+Measured (Playwright harness, `?perf=1` Harpy Roost, CPU-throttled mobile
+profile): **~20–28 → ~43–47 fps on mobile** (≈2×), desktop ~50 → ~57 (near
+vsync), with long-task time sharply down. React now renders the battle subtree
+~5×/sec instead of ~65×/sec.
+
+A residual: `cam` (and thus the LOD detail flag, on-screen clipping, and EdgeMarker
+vs token choice) now steps per round rather than per frame, so a token crossing the
+viewport edge pops in/out at the round boundary instead of clipping mid-glide. Minor
+and only at the rim. If a finer camera is ever wanted, a *single* rAF that writes
+just the world-layer transform (not a React re-render) would smooth it without
+bringing back the per-frame subtree render. `React.memo` on `BattleChip` is also
+now viable (cam/pos change ~5×/sec, not per frame) if profiling a full-detail,
+moderate-count scene still shows reconciliation cost.
 
 ## Phase 2 — Level-of-detail (LOD) tokens (scales to higher counts)
 
