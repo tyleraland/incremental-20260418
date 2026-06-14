@@ -432,13 +432,18 @@ back to its longest skill range so it still reaches where *something* lands.
   is selected — in **both** the overworld and the battle drop-in (battle mode
   swaps the Overworld/round context bar for it while units are selected). The
   **Map** button (`focusLocationOnMap`) recentres the overworld camera on the
-  unit's location.
+  unit's location. In the **battle** drop-in the selected heroes are already on
+  the watched field, so Deploy/Here, Map, and Drop in are **hidden** (no-ops
+  there); the bar instead carries the **⤢ Overworld** exit (selecting a hero
+  replaces the context bar that normally holds it), leaving View · Report · exit.
 - **Roster single-tap:** toggles selection. In **battle** mode it *also* locks
   the camera onto that hero (`battleFollowId` in the store — the lifted
   "Diablo cam"; tapping the followed hero off releases to the whole-party
   auto-fit), so the one roster doubles as the follow control the bottom strip
-  used to be. The followed hero gets an emerald ring; every card carries a live
-  HP bar in battle mode.
+  used to be. Battle-mode cards read as a party HUD: a live HP bar that eases
+  down with each hit, a pulsing red ring on any alive hero ≤30% HP (bleeding out
+  — *not* KO/resting), and the followed hero gets an emerald glow + a ⊙
+  "watching" corner badge (in place of its selection-order number).
 - **Roster double-tap:** mirrors the location double-tap and is mode-aware
   (`showUnitOnMap`). In the **overworld** it frames *and recentres the camera* on
   the unit's location (`mapFocusNonce`); in **battle** mode it jumps to that

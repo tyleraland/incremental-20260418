@@ -411,9 +411,18 @@ function UnitActionBar() {
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const setActiveTab        = useGameStore((s) => s.setActiveTab)
   const enterBattleView     = useGameStore((s) => s.enterBattleView)
+  const exitBattleView      = useGameStore((s) => s.exitBattleView)
   const openReport          = useGameStore((s) => s.openReport)
+  const mapMode             = useGameStore((s) => s.mapMode)
+  const combatLocationId    = useGameStore((s) => s.combatLocationId)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
+
+  // In the battle drop-in the selected heroes are — by definition — already on
+  // the field we're watching, so Deploy/Here, Map, and Drop in are all no-ops
+  // here. Hide them; offer the one action that isn't reachable otherwise (the
+  // ⤢ Overworld exit, since selecting a hero replaces the context bar).
+  const battleMode = mapMode === 'battle' && !!combatLocationId
 
   const hasUnits = selectedUnitIds.length > 0
 
@@ -455,16 +464,18 @@ function UnitActionBar() {
       <span className="text-xs text-game-text-dim shrink-0 mr-auto flex items-center">
         {selectedUnits.length} unit{selectedUnits.length !== 1 ? 's' : ''}
       </span>
-      <button
-        onClick={handleDeploy}
-        disabled={!hasLoc || allAlreadyHere}
-        className={[
-          'btn-primary text-xs px-2 shrink-0 flex items-center',
-          (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
-        ].join(' ')}
-      >
-        {hasLoc ? (allAlreadyHere ? 'Here' : 'Deploy') : 'Deploy'}
-      </button>
+      {!battleMode && (
+        <button
+          onClick={handleDeploy}
+          disabled={!hasLoc || allAlreadyHere}
+          className={[
+            'btn-primary text-xs px-2 shrink-0 flex items-center',
+            (!hasLoc || allAlreadyHere) ? 'opacity-40 cursor-not-allowed' : '',
+          ].join(' ')}
+        >
+          {hasLoc ? (allAlreadyHere ? 'Here' : 'Deploy') : 'Deploy'}
+        </button>
+      )}
       {selectedUnits.length === 1 && (
         <button onClick={handleViewUnit} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
           View
@@ -475,14 +486,19 @@ function UnitActionBar() {
           Report
         </button>
       )}
-      {sharedLocId && (
+      {!battleMode && sharedLocId && (
         <button onClick={handleFindOnMap} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
           Map
         </button>
       )}
-      {combatTargetLocId && (
+      {!battleMode && combatTargetLocId && (
         <button onClick={handleGoCombat} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
           Drop in
+        </button>
+      )}
+      {battleMode && (
+        <button onClick={exitBattleView} className="text-xs px-2 rounded-lg border border-game-border text-game-text hover:bg-white/5 transition-colors shrink-0 flex items-center">
+          ⤢ Overworld
         </button>
       )}
       <button onClick={() => clearSelection()} aria-label="Clear unit selection" className="w-7 h-7 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors shrink-0">

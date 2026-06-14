@@ -148,6 +148,9 @@ function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean 
   // Battle mode shows a live HP bar so the roster reads as the party readout the
   // old bottom strip provided. health is synced back from the engine each tick.
   const hpRatio = Math.max(0, Math.min(1, unit.health / getDerivedStats(unit, equipment).maxHp))
+  // An alive hero bleeding out mid-fight gets a pulsing red ring so your eye
+  // snaps to whoever needs help — only while actually in the fight (not KO/rest).
+  const inDanger = battleMode && unit.health > 0 && !isRecovering && !isResting && hpRatio <= 0.3
   // Explicit status flag for the non-ready states; ready units stay uncluttered.
   const statusBadge = isRecovering
     ? { text: 'KO', tone: 'bg-purple-600 text-white' }
@@ -164,7 +167,7 @@ function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean 
         'shrink-0 w-[4.5rem] flex flex-col items-center gap-1 px-1 py-1.5 border-b border-r select-none transition-colors duration-100',
         unit.health <= 0 ? 'opacity-60' : '',
         isFollowed
-          ? 'border-emerald-400/70 bg-emerald-950/30 ring-1 ring-inset ring-emerald-400'
+          ? 'border-emerald-400/70 bg-emerald-950/30 ring-1 ring-inset ring-emerald-400 shadow-lg shadow-emerald-500/20'
           : isPrimary
             ? 'border-game-primary bg-game-primary/25 ring-1 ring-inset ring-game-primary'
             : isSelected
@@ -182,6 +185,11 @@ function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean 
         >
           {portraitGlyph(unit)}
         </span>
+        {/* Critical-HP pulse: a red ring riding the portrait while a hero is
+            bleeding out in the live fight. */}
+        {inDanger && (
+          <span className="absolute -inset-0.5 rounded-lg ring-2 ring-red-500/80 animate-pulse pointer-events-none" />
+        )}
         <span className="absolute -top-1 -left-1 flex items-center gap-1 max-w-[3.5rem] px-1 rounded-full bg-game-bg/90 border border-game-border leading-tight">
           <span className="text-[10px] font-bold text-game-text-dim">{unit.level}</span>
           {unit.class && <span className="text-[8px] text-game-text-dim truncate">{unit.class}</span>}
@@ -196,17 +204,21 @@ function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean 
         {attention && (
           <span className="absolute -bottom-0.5 -left-0.5 w-2 h-2 rounded-full bg-red-500/80 border border-game-bg" />
         )}
-        {/* Selection-order badge; the 1st-selected (primary) is set apart. */}
+        {/* Selection-order badge; the 1st-selected (primary) is set apart. In
+            battle, the hero the camera is locked onto shows a ⊙ "watching"
+            marker instead of its order number. */}
         {isSelected && (
           <span
             className={[
               'absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold border',
-              isPrimary
-                ? 'bg-game-gold text-black border-game-gold'
-                : 'bg-game-primary text-white border-game-primary',
+              isFollowed
+                ? 'bg-emerald-400 text-black border-emerald-200'
+                : isPrimary
+                  ? 'bg-game-gold text-black border-game-gold'
+                  : 'bg-game-primary text-white border-game-primary',
             ].join(' ')}
           >
-            {selOrder + 1}
+            {isFollowed ? '⊙' : selOrder + 1}
           </span>
         )}
       </div>
@@ -214,12 +226,13 @@ function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean 
       <div className="w-full text-[10px] font-semibold leading-tight text-center truncate text-game-text">
         {unit.name}
       </div>
-      {/* Battle mode: a live HP bar so the strip reads as a party readout. */}
+      {/* Battle mode: a live HP bar so the strip reads as a party readout; it
+          eases down with the hit (matching the arena bars) rather than snapping. */}
       {battleMode && (
         <span className="block w-full h-1 rounded-sm bg-black/50 overflow-hidden">
           <span
             className={`block h-full ${hpRatio >= 0.75 ? 'bg-game-green' : hpRatio >= 0.4 ? 'bg-game-gold' : 'bg-red-500'}`}
-            style={{ width: `${hpRatio * 100}%` }}
+            style={{ width: `${hpRatio * 100}%`, transition: 'width 380ms linear' }}
           />
         </span>
       )}
