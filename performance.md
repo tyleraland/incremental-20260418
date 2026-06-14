@@ -77,8 +77,16 @@ Phases 1–3 aren't enough.
 
 ## Validation
 
-After each phase: `npm run ci` (tsc + the full vitest suite, currently 524 tests)
-must stay green, and engine changes (Phase 3) must keep snapshot replays
-byte-identical. Sanity-check on a real large open-world battle (e.g. a deployed
-party at a dense `openWorld` location) that motion stays smooth and the round
-counter, follow camera, and minimap still behave.
+After each phase: `npm run ci` (tsc + the full vitest suite) must stay green, and
+engine changes (Phase 3) must keep snapshot replays byte-identical. The battle
+view's FX paths (attack lines, spawn/aggro/rally floats, tactic labels) are
+covered by `src/__tests__/ui/BattleFx.test.tsx`.
+
+For the things jsdom can't measure — actual frame rate and visual equivalence —
+use the Playwright harness in `e2e/` (`npm run e2e:install` then `npm run e2e`).
+It drives the dev-only `?perf` seed (`src/dev/perfSeed.ts`) into a ~37-entity
+Harpy Roost battle and reports sustained fps, long-task time, and a screenshot,
+on both a mobile (Pixel 5) and desktop profile. Run it **before/after** the
+deferred Phase 1 motion-decouple to confirm the fps jump and an unchanged
+screenshot; you can also just open `http://localhost:5173/?perf=1` to profile in
+DevTools by hand.

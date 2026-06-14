@@ -33,6 +33,11 @@ function App() {
   // carries between Map, Heroes, and Inventory.
   const showRoster = activeTab === 'map' || activeTab === 'units' || activeTab === 'inventory'
 
+  // Dev-only perf harness: `?perf` deterministically drops into a heavy
+  // open-world battle for a Playwright/profiler run (see src/dev/perfSeed.ts).
+  // The import.meta.env.DEV gate dead-code-strips it from production bundles.
+  const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
+
   // Interval fires every second. catchUp() computes how many real seconds
   // have elapsed and applies them all at once, so throttled background tabs
   // and returning from sleep both catch up correctly.
@@ -48,16 +53,22 @@ function App() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
-  // Load persisted save once on mount.
-  useEffect(() => { loadPersistedSave() }, [])
-
-  // Auto-save every 60 s, foreground only.
+  // Load persisted save once on mount — unless the perf harness is seeding a
+  // synthetic scene, in which case start from its clean roster instead.
   useEffect(() => {
+    if (perfMode) { import('@/dev/perfSeed').then((m) => m.seedPerfBattle()) }
+    else { loadPersistedSave() }
+  }, [perfMode])
+
+  // Auto-save every 60 s, foreground only. Skipped in perf mode so the synthetic
+  // scene never overwrites a real save.
+  useEffect(() => {
+    if (perfMode) return
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') persistSave()
     }, 60_000)
     return () => clearInterval(id)
-  }, [])
+  }, [perfMode])
 
   return (
     <div className="h-full flex flex-col">

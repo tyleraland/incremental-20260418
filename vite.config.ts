@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite'
+import { defaultExclude } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { execSync } from 'child_process'
 
@@ -34,6 +35,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test-setup.ts'],
     globals: true,
+    // e2e/ holds Playwright specs (also *.spec.ts) — keep them out of vitest.
+    exclude: [...defaultExclude, 'e2e/**'],
     alias: {
       '@/': '/src/',
     },
