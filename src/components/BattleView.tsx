@@ -864,11 +864,12 @@ function UnitDetailOverlay({ c, battle, onClose }: { c: Combatant; battle: Battl
   )
 }
 
-function Legend({ players, enemies }: { players: number; enemies: number }) {
+function Legend({ players, enemies, openWorld = false }: { players: number; enemies: number; openWorld?: boolean }) {
   return (
     <div className="flex items-center justify-center gap-4 text-[11px] text-game-text-dim py-1.5 shrink-0">
       <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-900 border border-blue-300/80 inline-block" /> Party ({players})</span>
       <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-900 border border-red-300/80 inline-block" /> Enemies ({enemies})</span>
+      {openWorld && <span className="text-emerald-300/90 font-semibold">⟳ Open world</span>}
     </div>
   )
 }
@@ -934,73 +935,14 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-// ── Follow strip ─────────────────────────────────────────────────────────────--
-// Open-world "who am I watching" selector, shown below the arena in place of the
-// legend. Tap a hero → the camera locks onto them (single-hero "Diablo cam"); ⊙
-// returns to the whole-party auto-fit. Doubles as an at-a-glance party HP readout
-// and a roster you can flip through without leaving the battlefield.
-function FollowStrip({ party, enemies, followId, onFollow, onAuto, classFor }: {
-  party: Combatant[]; enemies: number; followId: string | null;
-  onFollow: (id: string) => void; onAuto: () => void; classFor: (id: string) => string | null
-}) {
-  return (
-    <div className="shrink-0 border-t border-game-border bg-game-surface/40">
-      <div className="flex items-stretch gap-1 px-1.5 py-1 overflow-x-auto">
-        <button
-          onClick={onAuto}
-          title="Follow the whole party (auto-fit)"
-          className={[
-            'shrink-0 w-12 flex flex-col items-center justify-center gap-0.5 rounded-md border text-[9px] leading-none',
-            !followId ? 'border-emerald-500/60 bg-emerald-950/60 text-emerald-200' : 'border-game-border text-game-text-dim hover:bg-white/5',
-          ].join(' ')}
-        >
-          <span className="text-base leading-none">⊙</span>
-          <span>Party</span>
-        </button>
-        {party.map((c) => {
-          const ratio = Math.max(0, c.hp / c.maxHp)
-          const on = c.id === followId
-          return (
-            <button
-              key={c.id}
-              onClick={() => onFollow(c.id)}
-              title={`Follow ${c.name}`}
-              className={[
-                'shrink-0 w-12 flex flex-col items-center gap-0.5 rounded-md border px-0.5 py-0.5',
-                on ? 'border-emerald-300 bg-emerald-950/40' : 'border-game-border hover:bg-white/5',
-              ].join(' ')}
-            >
-              <span className={[
-                'w-7 h-7 rounded-full border-2 flex items-center justify-center text-[11px] font-bold bg-blue-900 text-blue-50',
-                on ? 'border-emerald-300' : 'border-blue-300/70',
-              ].join(' ')}>
-                {chipGlyph(c, classFor)}
-              </span>
-              <span className="w-full truncate text-center text-[8px] leading-none text-game-text">{shortName(c.name)}</span>
-              <span className="block w-full h-1 rounded-sm bg-black/50 overflow-hidden">
-                <span className={`block h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%` }} />
-              </span>
-            </button>
-          )
-        })}
-        <span className="ml-auto self-center shrink-0 flex items-center gap-2 pl-2 pr-1 whitespace-nowrap">
-          <span className="text-[10px] font-semibold text-emerald-300/90">⟳ Open world</span>
-          <span className="text-[10px] text-game-text-dim">⚔ {enemies}</span>
-        </span>
-      </div>
-    </div>
-  )
-}
-
 function LiveBattle({ battle }: { battle: BattleState }) {
   const units = useGameStore((s) => s.units)
-  const battleFocus = useGameStore((s) => s.battleFocus)
+  // The camera-follow lock lives in the store now (driven by the single top
+  // roster — tap a hero there to lock onto them), so this view just reads it.
+  const focusUnitId   = useGameStore((s) => s.battleFollowId)
+  const setBattleFollow = useGameStore((s) => s.setBattleFollow)
   const classFor = (id: string) => units.find((u) => u.id === id)?.class ?? null
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // Roster double-tap in battle mode asks to centre on a specific unit
-  // (battleFocus). While set, the camera frames that unit instead of the whole
-  // party; cleared once the player interacts (tap a chip / zoom / pan-reset).
-  const [focusUnitId, setFocusUnitId] = useState<string | null>(null)
   const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
   // Frozen-able snapshot of the selected combatant — refreshed each round while
   // we're in the same wave (same combatants array reference). When a new wave
@@ -1074,24 +1016,25 @@ function LiveBattle({ battle }: { battle: BattleState }) {
     if (live) setSnapshot(live)
   }, [battle, selectedId])
 
-  // Roster double-tap → follow that unit (nonce so the same unit re-fires).
+  // A fresh follow lock (roster tap, roster double-tap, or minimap) cancels any
+  // free-look point so the camera snaps to the chosen hero.
   useEffect(() => {
-    if (battleFocus) { setFocusUnitId(battleFocus.unitId); setManualCenter(null) }
+    if (focusUnitId) setManualCenter(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [battleFocus?.nonce])
+  }, [focusUnitId])
 
   // Drop a stale follow when the followed hero dies / leaves the field, so the
   // camera falls back to the party instead of locking onto nothing.
   useEffect(() => {
-    if (focusUnitId && !battle.combatants.some((c) => c.id === focusUnitId && c.alive)) setFocusUnitId(null)
-  }, [battle, focusUnitId])
+    if (focusUnitId && !battle.combatants.some((c) => c.id === focusUnitId && c.alive)) setBattleFollow(null)
+  }, [battle, focusUnitId, setBattleFollow])
 
-  // Camera target controls (shared by the follow strip + minimap).
-  const followUnit = (id: string) => { setFocusUnitId(id); setManualCenter(null) }
-  const resetToAuto = () => { setFocusUnitId(null); setManualCenter(null); setManualZoom(false) }
+  // Camera target controls (shared by the roster follow + minimap).
+  const followUnit = (id: string) => { setBattleFollow(id); setManualCenter(null) }
+  const resetToAuto = () => { setBattleFollow(null); setManualCenter(null); setManualZoom(false) }
   const onMinimapPick = (hit: MinimapPick) => {
     if ('unitId' in hit) followUnit(hit.unitId)
-    else { setManualCenter(hit.point); setFocusUnitId(null) }
+    else { setManualCenter(hit.point); setBattleFollow(null) }
   }
 
   const handleSelect = (c: Combatant) => {
@@ -1458,9 +1401,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
         </Arena>
       </div>
 
-      {isOpen
-        ? <FollowStrip party={party} enemies={enemiesAlive} followId={focusUnitId} onFollow={followUnit} onAuto={resetToAuto} classFor={classFor} />
-        : <Legend players={playersAlive} enemies={enemiesAlive} />}
+      <Legend players={playersAlive} enemies={enemiesAlive} openWorld={isOpen} />
       {selected && <UnitDetailOverlay c={selected} battle={battle} onClose={closeDetail} />}
     </div>
   )

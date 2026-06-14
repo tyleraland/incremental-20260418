@@ -111,6 +111,10 @@ export interface GameState {
   // Bumped to ask the battle view to centre on a roster-selected unit, with the
   // unit id so the camera knows which combatant to frame.
   battleFocus: { unitId: string; nonce: number } | null
+  // The battlefield hero the open-world camera is locked onto ("Diablo cam");
+  // null = auto-fit the whole party. Lifted to the store (from the old in-battle
+  // FollowStrip) so the single top roster can drive + reflect the follow lock.
+  battleFollowId: string | null
   expandedLocationIds: string[]
   expandedUnitIds: string[]
   expandedInventorySections: string[]
@@ -145,6 +149,8 @@ export interface GameState {
   // Jump the overworld to a unit's deployed location (roster double-tap), or
   // (in battle mode) drop into that unit's battlefield centred on them.
   showUnitOnMap: (unitId: string) => void
+  // Lock the battlefield camera onto a hero (null = auto-fit the whole party).
+  setBattleFollow: (id: string | null) => void
   // Centre the overworld camera on the selected location (roster "Map" button).
   focusLocationOnMap: (locationId: string) => void
   setMapPage: (id: string) => void
@@ -1069,6 +1075,7 @@ export const useGameStore = create<GameState>((set) => ({
   mapPageId: 'world',
   mapFocusNonce: 0,
   battleFocus: null,
+  battleFollowId: null,
   expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
   expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
@@ -1433,13 +1440,14 @@ export const useGameStore = create<GameState>((set) => ({
   // which view the Map tab renders.
   // Also mark the battlefield's location as selected so the UnitActionBar's
   // Deploy targets it — in a battlefield the map cell is implicitly "selected".
-  enterBattleView: (locationId) => set({ combatLocationId: locationId, selectedLocationId: locationId, mapMode: 'battle', selectedUnitIds: [] }),
+  enterBattleView: (locationId) => set({ combatLocationId: locationId, selectedLocationId: locationId, mapMode: 'battle', selectedUnitIds: [], battleFollowId: null }),
   // Zoom back out to the overworld, re-selecting the location we were watching
   // (paged to its region) so the player lands back where they dropped in.
   exitBattleView: () => set((s) => {
     const loc = s.combatLocationId ? s.locations.find((l) => l.id === s.combatLocationId) : null
     return {
       mapMode: 'world',
+      battleFollowId: null,
       ...(loc ? { mapPageId: loc.region, selectedLocationId: loc.id } : {}),
     }
   }),
@@ -1455,6 +1463,7 @@ export const useGameStore = create<GameState>((set) => ({
       return {
         ...(loc ? { combatLocationId: loc.id, selectedLocationId: loc.id } : {}),
         battleFocus: { unitId, nonce: (s.battleFocus?.nonce ?? 0) + 1 },
+        battleFollowId: unitId,   // lock the camera onto this hero
       }
     }
     return {
@@ -1463,6 +1472,7 @@ export const useGameStore = create<GameState>((set) => ({
       ...(loc ? { mapPageId: loc.region, selectedLocationId: loc.id } : { selectedLocationId: null }),
     }
   }),
+  setBattleFollow: (id) => set({ battleFollowId: id }),
   // Centre the overworld camera on a location (roster "Map" button / find).
   focusLocationOnMap: (locationId) => set((s) => {
     const loc = s.locations.find((l) => l.id === locationId)
@@ -1749,6 +1759,7 @@ export const useGameStore = create<GameState>((set) => ({
       mapPageId: 'world',
       mapFocusNonce: 0,
       battleFocus: null,
+      battleFollowId: null,
       expandedLocationIds: [],
       expandedUnitIds: [],
       expandedInventorySections: ['equipment', 'misc', 'crafting'],

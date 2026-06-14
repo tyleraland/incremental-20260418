@@ -419,7 +419,11 @@ back to its longest skill range so it still reaches where *something* lands.
   tab: `mapMode` is `'world'` (pannable overworld + location details) or
   `'battle'` (the drop-in viewer for `combatLocationId`). The roster carousel
   (`src/components/RosterCarousel.tsx`) stays pinned across both so the
-  transition is seamless.
+  transition is seamless. It's the **only** roster: in the overworld it lists
+  *everyone*; dropped into a battle it **scopes to the heroes on that
+  battlefield** (`locationId === combatLocationId`, the same location filter the
+  "Area" sort uses) and **takes over the camera-follow job** — the old
+  below-the-arena follow strip is gone.
 - **Drop in:** single-tap a map location to select it; **double-tap** a location,
   or hit the **Drop in ›** button (location detail panel / unit action bar), to
   enter battle mode (`enterBattleView`). A **⤢ Overworld** chip zooms back out
@@ -429,12 +433,19 @@ back to its longest skill range so it still reaches where *something* lands.
   swaps the Overworld/round context bar for it while units are selected). The
   **Map** button (`focusLocationOnMap`) recentres the overworld camera on the
   unit's location.
+- **Roster single-tap:** toggles selection. In **battle** mode it *also* locks
+  the camera onto that hero (`battleFollowId` in the store — the lifted
+  "Diablo cam"; tapping the followed hero off releases to the whole-party
+  auto-fit), so the one roster doubles as the follow control the bottom strip
+  used to be. The followed hero gets an emerald ring; every card carries a live
+  HP bar in battle mode.
 - **Roster double-tap:** mirrors the location double-tap and is mode-aware
   (`showUnitOnMap`). In the **overworld** it frames *and recentres the camera* on
   the unit's location (`mapFocusNonce`); in **battle** mode it jumps to that
-  unit's battlefield and centres the camera on them (`battleFocus`). The
-  battle-view ⊙/auto control re-fits the whole party (clears the unit focus).
-  Single-tap still toggles selection.
+  unit's battlefield and centres the camera on them (`battleFocus`, which also
+  sets `battleFollowId`). The battle-view ⊙/auto control (top-left zoom cluster)
+  and the minimap also drive the follow; ⊙ re-fits the whole party
+  (`setBattleFollow(null)`).
 - **Combat keeps running for every location regardless of view** — but only the
   one you're *watching* runs the full per-tick spatial sim. When you've dropped
   into a battle (`mapMode === 'battle'`, `combatLocationId`), the **other**

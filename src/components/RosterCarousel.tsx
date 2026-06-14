@@ -3,7 +3,10 @@ import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/
 
 // Horizontal hero roster strip, pinned at the top of the Map tab in both the
 // overworld and battle drop-in views so unit selection stays available and the
-// transition between the two feels seamless.
+// transition between the two feels seamless. It's the *only* roster: in the
+// overworld it shows everyone; dropped into a battle it scopes itself to the
+// heroes on that battlefield and takes over the camera-follow job (tap a hero to
+// lock the "Diablo cam" onto them) — there's no separate in-battle strip.
 
 // Class → portrait glyph (mirrors BattleView's chip glyphs). Falls back to the
 // unit's initials when the class has no icon.
@@ -97,14 +100,29 @@ function portraitTone(unit: Unit, isSelected: boolean): string {
 
 // Single tap toggles selection; double-tap (within 300 ms) pops back to the
 // overworld framed on the unit's location — mirrors the location double-tap.
+// In battle mode a single tap *also* locks the camera onto that hero (and
+// tapping the followed hero again releases back to the whole-party auto-fit),
+// so the roster doubles as the follow control the old bottom strip used to be.
 function useUnitTap(unitId: string): () => void {
   const toggleSelectUnit = useGameStore((s) => s.toggleSelectUnit)
   const showUnitOnMap    = useGameStore((s) => s.showUnitOnMap)
+  const setBattleFollow  = useGameStore((s) => s.setBattleFollow)
   const lastTapRef = useRef(0)
   return () => {
     const now = Date.now()
     if (now - lastTapRef.current < 300) { lastTapRef.current = 0; showUnitOnMap(unitId); return }
     lastTapRef.current = now
+    const s = useGameStore.getState()
+    const inBattle = s.mapMode === 'battle' && !!s.combatLocationId
+    if (inBattle) {
+      // Lock the camera onto a hero as it's selected; tapping the followed hero
+      // back off releases to the whole-party auto-fit.
+      if (s.selectedUnitIds.includes(unitId)) {
+        if (s.battleFollowId === unitId) setBattleFollow(null)
+      } else {
+        setBattleFollow(unitId)
+      }
+    }
     toggleSelectUnit(unitId)
   }
 }
@@ -114,16 +132,22 @@ function sortUnits(units: Unit[], mode: SortMode, dir: SortDir, viewedLevels: Re
   return [...units].sort((a, b) => sign * ascCompare(mode, a, b, viewedLevels))
 }
 
-function RosterUnitCard({ unit }: { unit: Unit }) {
+function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean }) {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const viewedLevels     = useGameStore((s) => s.viewedUnitLevels)
+  const equipment        = useGameStore((s) => s.equipment)
+  const battleFollowId   = useGameStore((s) => s.battleFollowId)
   const selOrder         = selectedUnitIds.indexOf(unit.id) // -1 if unselected
   const isSelected       = selOrder >= 0
   const isPrimary        = selOrder === 0                   // the 1st-selected drives detail panels
+  const isFollowed       = battleMode && battleFollowId === unit.id
   const attention        = needsAttention(unit, viewedLevels)
   const handleTap        = useUnitTap(unit.id)
   const isRecovering = unit.recoveryTicksLeft > 0
   const isResting    = unit.isResting
+  // Battle mode shows a live HP bar so the roster reads as the party readout the
+  // old bottom strip provided. health is synced back from the engine each tick.
+  const hpRatio = Math.max(0, Math.min(1, unit.health / getDerivedStats(unit, equipment).maxHp))
   // Explicit status flag for the non-ready states; ready units stay uncluttered.
   const statusBadge = isRecovering
     ? { text: 'KO', tone: 'bg-purple-600 text-white' }
@@ -139,11 +163,13 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
       className={[
         'shrink-0 w-[4.5rem] flex flex-col items-center gap-1 px-1 py-1.5 border-b border-r select-none transition-colors duration-100',
         unit.health <= 0 ? 'opacity-60' : '',
-        isPrimary
-          ? 'border-game-primary bg-game-primary/25 ring-1 ring-inset ring-game-primary'
-          : isSelected
-            ? 'border-game-primary bg-game-primary/15'
-            : 'border-game-border bg-game-surface hover:bg-white/5',
+        isFollowed
+          ? 'border-emerald-400/70 bg-emerald-950/30 ring-1 ring-inset ring-emerald-400'
+          : isPrimary
+            ? 'border-game-primary bg-game-primary/25 ring-1 ring-inset ring-game-primary'
+            : isSelected
+              ? 'border-game-primary bg-game-primary/15'
+              : 'border-game-border bg-game-surface hover:bg-white/5',
       ].join(' ')}
     >
       {/* Portrait (class icon) with a level badge corner. */}
@@ -188,6 +214,15 @@ function RosterUnitCard({ unit }: { unit: Unit }) {
       <div className="w-full text-[10px] font-semibold leading-tight text-center truncate text-game-text">
         {unit.name}
       </div>
+      {/* Battle mode: a live HP bar so the strip reads as a party readout. */}
+      {battleMode && (
+        <span className="block w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+          <span
+            className={`block h-full ${hpRatio >= 0.75 ? 'bg-game-green' : hpRatio >= 0.4 ? 'bg-game-gold' : 'bg-red-500'}`}
+            style={{ width: `${hpRatio * 100}%` }}
+          />
+        </span>
+      )}
     </button>
   )
 }
@@ -247,8 +282,16 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
   const menuRef = useRef<HTMLDivElement>(null)
   const viewedLevels = useGameStore((s) => s.viewedUnitLevels)
   const locations    = useGameStore((s) => s.locations)
-  const sorted = sortUnits(units, sortMode, sortDir, viewedLevels)
-  const groups = sortMode === 'location' ? buildLocationGroups(units, locations, sortDir) : null
+  const mapMode      = useGameStore((s) => s.mapMode)
+  const combatLocationId = useGameStore((s) => s.combatLocationId)
+
+  // Dropped into a battle: scope the roster to the heroes on that battlefield —
+  // the same location filter the "Area" sort uses, just applied as a hard scope.
+  // The whole-party "Area" grouping is moot here (one location), so render flat.
+  const battleMode = mapMode === 'battle' && !!combatLocationId
+  const shown = battleMode ? units.filter((u) => u.locationId === combatLocationId) : units
+  const sorted = sortUnits(shown, sortMode, sortDir, viewedLevels)
+  const groups = !battleMode && sortMode === 'location' ? buildLocationGroups(shown, locations, sortDir) : null
   const meta = SORT_META[sortMode]
 
   // Tapping a new mode selects it (its default direction) and closes the menu;
@@ -335,9 +378,13 @@ export function RosterCarousel({ units }: { units: Unit[] }) {
         </div>
       ) : (
         <div className="overflow-x-auto flex-1 min-w-0">
-          <div className="flex gap-px w-max">
-            {sorted.map((u) => <RosterUnitCard key={u.id} unit={u} />)}
-          </div>
+          {battleMode && sorted.length === 0 ? (
+            <div className="px-3 py-3 text-xs text-game-muted italic">No heroes on this battlefield.</div>
+          ) : (
+            <div className="flex gap-px w-max">
+              {sorted.map((u) => <RosterUnitCard key={u.id} unit={u} battleMode={battleMode} />)}
+            </div>
+          )}
         </div>
       )}
     </div>
