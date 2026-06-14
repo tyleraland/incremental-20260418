@@ -13,6 +13,7 @@ import {
   RECIPE_REGISTRY,
   getItemTraits,
   getEquippedId,
+  type Trait,
 } from '@/stores/useGameStore'
 import { TraitRow } from '@/components/TraitBubble'
 
@@ -20,37 +21,55 @@ import { TraitRow } from '@/components/TraitBubble'
 
 const STAT_KEYS = ['attack', 'defense', 'specialAttack', 'specialDefense'] as const
 const STAT_SHORT: Record<(typeof STAT_KEYS)[number], string> = {
-  attack: 'ATK', defense: 'DEF', specialAttack: 'SP.ATK', specialDefense: 'SP.DEF',
+  attack: 'ATK', defense: 'DEF', specialAttack: 'M.ATK', specialDefense: 'M.DEF',
 }
 
 // ── Weapon range ──────────────────────────────────────────────────────────────
 // Weapons carry an attack range (feet). A weapon at or under MELEE_RANGE_FT reads
 // as "melee" (mirrors the engine's RANGED_FEET_THRESHOLD), so the Rod (range 5) is
-// clearly melee rather than looking like it might shoot. Only weapons have range;
-// other gear shows nothing.
+// clearly melee rather than looking like it might shoot. Only weapons have range.
 const MELEE_RANGE_FT = 5
 const isWeapon = (cat: ItemCategory) => cat === 'weapon-1h' || cat === 'weapon-2h'
 const weaponRange = (item: EquipmentItem) => item.stats.range ?? MELEE_RANGE_FT
 
-// The range chip for a weapon: a signed delta vs the current weapon (nothing when
-// equal — "0 diff say nothing"), or a standalone readout ("melee" / "12 RNG") when
-// there's no current weapon to compare against. Null for non-weapons.
-function rangeChip(item: EquipmentItem, current: EquipmentItem | null): { text: string; cls: string } | null {
+// Absolute range as a chip (gold 'stat' bubble, alongside ATK/DEF): every weapon
+// shows "melee" or "N RNG" so its reach is legible at a glance. Null for non-weapons.
+function rangeTrait(item: EquipmentItem): Trait | null {
   if (!isWeapon(item.category)) return null
   const r = weaponRange(item)
-  if (current && isWeapon(current.category)) {
-    const d = r - weaponRange(current)
-    if (d === 0) return null
-    return { text: `${d > 0 ? '+' : ''}${d} RNG`, cls: d > 0 ? 'text-game-green' : 'text-red-400' }
+  const ranged = r > MELEE_RANGE_FT
+  return {
+    id: `range-${item.id}`,
+    label: ranged ? `${r} RNG` : 'melee',
+    category: 'stat',
+    description: ranged ? `Attacks from up to ${r} ft away.` : 'Melee weapon — strikes in contact.',
   }
-  return { text: r <= MELEE_RANGE_FT ? 'melee' : `${r} RNG`, cls: 'text-game-text-dim' }
 }
 
+// All display chips for an item: its traits + synthetic stat chips (getItemTraits,
+// absolute, unsigned) + its absolute range. The chips show *absolutes*; relative
+// "vs current" deltas live in StatDeltas below.
+const itemChips = (item: EquipmentItem): Trait[] => {
+  const r = rangeTrait(item)
+  return r ? [...getItemTraits(item), r] : getItemTraits(item)
+}
+
+// Relative range delta (signed, red/green) vs the current weapon — nothing when
+// equal ("0 diff say nothing") or when not comparing two weapons.
+function rangeDeltaChip(item: EquipmentItem, current: EquipmentItem | null): { text: string; cls: string } | null {
+  if (!isWeapon(item.category) || !current || !isWeapon(current.category)) return null
+  const d = weaponRange(item) - weaponRange(current)
+  if (d === 0) return null
+  return { text: `${d > 0 ? '+' : ''}${d} RNG`, cls: d > 0 ? 'text-game-green' : 'text-red-400' }
+}
+
+// Relative stat deltas vs the currently-equipped item, signed and coloured
+// (green up / red down). Absolute values live in the chips (itemChips) above.
 function StatDeltas({ item, current }: { item: EquipmentItem; current: EquipmentItem | null }) {
   const deltas = STAT_KEYS
     .map((k) => ({ k, d: (item.stats[k] ?? 0) - (current?.stats[k] ?? 0) }))
     .filter((x) => x.d !== 0)
-  const range = rangeChip(item, current)
+  const range = rangeDeltaChip(item, current)
   if (!deltas.length && !range) return null
   return (
     <div className="flex flex-wrap gap-2 mt-1">
@@ -68,20 +87,6 @@ function totalScore(item: EquipmentItem) {
   return STAT_KEYS.reduce((s, k) => s + (item.stats[k] ?? 0), 0)
 }
 
-// Absolute stat readout (used when no hero is selected — no comparison basis).
-function AbsoluteStats({ item }: { item: EquipmentItem }) {
-  const entries = STAT_KEYS.map((k) => ({ k, v: item.stats[k] ?? 0 })).filter((x) => x.v !== 0)
-  const range = rangeChip(item, null)
-  if (!entries.length && !range) return null
-  return (
-    <div className="flex flex-wrap gap-2 mt-1">
-      {entries.map(({ k, v }) => (
-        <span key={k} className="text-xs font-mono text-game-text-dim">{v} {STAT_SHORT[k]}</span>
-      ))}
-      {range && <span className={`text-xs font-mono ${range.cls}`}>{range.text}</span>}
-    </div>
-  )
-}
 
 // The stat-bearing slot an item competes for, for delta comparison. Tools have
 // no stat slot (sideboards are stat-inactive), so they show absolute stats.
@@ -270,7 +275,7 @@ function EquipContextView() {
                   const restriction  = equipRestriction(item)
                   const isLocked     = !isEquipped && !!restriction
                   const isUpgrade    = !isEquipped && !isLocked && totalScore(item) > totalScore(currentItem ?? { id: '', name: '', category: 'accessory', traits: [], stats: {} })
-                  const traits       = getItemTraits(item)
+                  const traits       = itemChips(item)
 
                   return (
                     <button
@@ -378,10 +383,8 @@ function EquipmentSection({ filter, equipFilter }: { filter: InvFilter; equipFil
                         {isHeld  && <span className="text-xs text-game-primary font-semibold shrink-0">Equipped · {heldByName}</span>}
                         {locked  && <span className="text-xs text-game-muted shrink-0">{restriction}</span>}
                       </div>
-                      <TraitRow traits={getItemTraits(item)} />
-                      {!isHeld && (primary
-                        ? (!locked && <StatDeltas item={item} current={currentItem} />)
-                        : <AbsoluteStats item={item} />)}
+                      <TraitRow traits={itemChips(item)} />
+                      {!isHeld && primary && !locked && <StatDeltas item={item} current={currentItem} />}
                     </div>
                   )
                 })}
