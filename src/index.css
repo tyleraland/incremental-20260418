@@ -113,3 +113,12 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 .animate-war-rise { animation: war-rise 0.4s ease-out both; }
+
+/* Deploy "landing": a node a squad was just sent to pops + flashes a green ring
+   so the order reads as confirmed and satisfying. */
+@keyframes war-land {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); transform: scale(1); }
+  35%  { transform: scale(1.35); }
+  100% { box-shadow: 0 0 0 14px rgba(16, 185, 129, 0); transform: scale(1); }
+}
+.animate-war-land { animation: war-land 0.7s ease-out; }
