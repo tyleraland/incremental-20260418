@@ -14,7 +14,9 @@ npm run e2e              # starts vite, runs the specs (mobile + desktop)
 
 `playwright.config.ts` auto-starts `npm run dev` (port 5173) and tests two
 profiles — **`mobile-chrome` (Pixel 5)** and `desktop-chrome`. The mobile one is
-the profile that matters for the "lag on mobile" concern.
+the profile that matters for the "lag on mobile" concern, and the spec throttles
+its CPU 4× (Pixel 5 emulation alone is viewport-only) so its fps approximates a
+mid-range phone — watch that number as the perf work lands.
 
 ## The perf seed
 

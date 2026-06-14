@@ -42,8 +42,16 @@ async function sampleRuntime(page: import('@playwright/test').Page, durationMs: 
   )
 }
 
-test('heavy open-world battle: frame rate + visual', async ({ page }, testInfo) => {
+test('heavy open-world battle: frame rate + visual', async ({ page, browserName }, testInfo) => {
   await page.goto('/?perf=1')
+
+  // The Pixel 5 profile emulates viewport/touch but NOT CPU — so without this the
+  // "mobile" fps reads as desktop. Throttle the CPU 4× to approximate a mid-range
+  // phone, which is the case the whole perf effort is about.
+  if (testInfo.project.name.startsWith('mobile') && browserName === 'chromium') {
+    const cdp = await page.context().newCDPSession(page)
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+  }
 
   // Wait for the seeded battle to stand up and render its arena + tokens.
   await page.locator('.aspect-square').first().waitFor({ state: 'visible', timeout: 30_000 })
@@ -62,6 +70,8 @@ test('heavy open-world battle: frame rate + visual', async ({ page }, testInfo) 
     `longtasks ${m.longTaskCount} (${m.longTaskMs.toFixed(0)}ms) · arena DOM nodes ${m.arenaNodes}`)
   await testInfo.attach('metrics.json', { body: JSON.stringify(m, null, 2), contentType: 'application/json' })
 
-  // Soft regression gate — generous so it flags a real cliff, not normal jitter.
-  expect(m.fps, 'sustained frame rate under a heavy battle').toBeGreaterThan(20)
+  // Very generous floor — this only catches a total collapse, not the known
+  // mobile slowness. The LOGGED fps is the real before/after comparison signal;
+  // the CPU-throttled mobile number is the one to watch as the perf work lands.
+  expect(m.fps, 'sustained frame rate under a heavy battle').toBeGreaterThan(10)
 })
