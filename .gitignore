@@ -7,3 +7,4 @@ dist-ssr
 # Playwright e2e output (perf harness)
 playwright-report
 test-results
+e2e/__shots__

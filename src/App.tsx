@@ -13,6 +13,14 @@ import { Guild } from '@/pages/Guild'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
 
+// Dev-only: expose the store on `window.__game` so a Playwright (or devtools)
+// session can read and drive live game state — `page.evaluate(() => __game.getState())`
+// to assert on it, or `__game.getState().enterBattleView(id)` to poke it. The DEV
+// gate dead-code-strips this from production bundles.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as { __game?: typeof useGameStore }).__game = useGameStore
+}
+
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
 const TICK_MS = 1000 / TICKS_PER_SECOND  // 200 ms per tick

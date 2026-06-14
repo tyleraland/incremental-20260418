@@ -45,6 +45,25 @@ both are surfaced on the Time tab's Debug section.
 - Tests and refactoring come later
 - No error boundaries, no abstractions the current features don't need
 
+## Browser testing & manual verification
+
+**Use Playwright, not the chrome-devtools MCP** — the managed devtools browser is
+flaky in this environment ("Target closed" on every call). Skip it; go straight to
+Playwright. Beyond the automated suites, that's how you *verify work by eye*:
+
+- **Perf/visual harness:** `npm run e2e:install` once, then `npm run e2e` (mobile is
+  CPU-throttled 4× — the logged fps is the before/after signal). Each run writes a
+  screenshot to `e2e/__shots__/<project>.png` (predictable path — open it directly,
+  no digging through the HTML report).
+- **Drive a scene:** `?perf=1` deterministically drops into the heavy open-world
+  battle (`src/dev/perfSeed.ts`); add more seeds there as scenes are needed.
+- **Inspect/drive live state:** in DEV the store is on `window.__game`, so a Playwright
+  `page.evaluate(() => __game.getState())` can assert on real game state or poke it
+  (e.g. `__game.getState().enterBattleView(id)`).
+- **One-off probe:** for an interactive check (taps, camera, minimap), drop a throwaway
+  `e2e/*.probe.spec.ts` that screenshots before/after to `/tmp`, read the PNGs, then
+  delete it.
+
 ## Branching & Merging
 
 - Develop on a feature branch, but **merge to `main` when the feature is complete** — main is what gets tested in the browser. Do not wait to be asked.

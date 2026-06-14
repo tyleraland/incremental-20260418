@@ -62,7 +62,11 @@ test('heavy open-world battle: frame rate + visual', async ({ page, browserName 
   await page.waitForTimeout(1000) // let the sim settle into steady state
 
   // Visual artifact for manual / diff review (the refactor should change nothing).
-  await testInfo.attach('battle.png', { body: await page.screenshot(), contentType: 'image/png' })
+  // Also write it to a predictable repo path (`e2e/__shots__/<project>.png`,
+  // gitignored) so a reviewer can just open that file instead of digging through
+  // the HTML report's hashed attachments.
+  const body = await page.screenshot({ path: `e2e/__shots__/${testInfo.project.name}.png` })
+  await testInfo.attach('battle.png', { body, contentType: 'image/png' })
 
   const m = await sampleRuntime(page, SAMPLE_MS)
   // eslint-disable-next-line no-console
