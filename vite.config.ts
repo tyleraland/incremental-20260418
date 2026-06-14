@@ -20,7 +20,9 @@ const gitLog = (() => {
 })()
 
 export default defineConfig({
-  base: '/incremental-20260418/',
+  // Served from a repo subpath on GitHub Pages. CI overrides this per build so
+  // PR previews can live under /incremental-20260418/pr-preview/pr-<N>/.
+  base: process.env.BASE_PATH ?? '/incremental-20260418/',
   define: {
     __GIT_HASH__: JSON.stringify(gitHash),
     __GIT_LOG__:  JSON.stringify(gitLog),

@@ -1,0 +1,45 @@
+name: PR Preview
+
+# Builds a throwaway preview for every open PR and publishes it under
+# gh-pages:/pr-preview/pr-<N>/. The preview is updated on each push and
+# automatically torn down when the PR closes (rossjrw/pr-preview-action).
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write       # push the preview to the gh-pages branch
+  pull-requests: write  # post/update the "preview is live" PR comment
+
+# Share the gh-pages writer lock with the main deploy so pushes don't collide.
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # On a 'closed' event we only need to remove the preview, so skip the build.
+      - uses: actions/setup-node@v4
+        if: github.event.action != 'closed'
+        with:
+          node-version: 20
+
+      - run: npm install
+        if: github.event.action != 'closed'
+
+      - run: npm run build
+        if: github.event.action != 'closed'
+        env:
+          # Must match where the preview is served from, or asset URLs 404.
+          BASE_PATH: /incremental-20260418/pr-preview/pr-${{ github.event.number }}/
+
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ./dist
+          umbrella-dir: pr-preview
