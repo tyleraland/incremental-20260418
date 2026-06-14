@@ -103,11 +103,13 @@ driven by **tactics** (below).
   Off-screen tokens are **clipped, not clamped** to the
   rim (`isOnScreen`): off-screen monsters aren't drawn, and each off-screen
   **party member** gets an `EdgeMarker` rim bubble with an arrow pointing toward
-  them. One-finger pan too — but the finger-pan is a pixel nudge *layered on top
-  of* the camera, so it **zeroes itself whenever the camera retargets**
-  (`Arena.panResetKey`: follow a new hero / minimap free-look / auto-fit);
-  otherwise a leftover pan dragged the whole freshly-centred board off-screen
-  after a minimap tap. It
+  them. Open-world navigation is follow + minimap re-center + pinch/zoom only:
+  the single-finger **pixel pan is disabled** there (`Arena.panEnabled=false`).
+  It's a nudge layered *on top of* the camera, so against an auto-following view
+  it fought the camera and shoved the whole board into a corner — and even a
+  pinch left a tiny pan residue before the second finger landed. (Encounters,
+  whose camera is static, keep the pixel pan; `Arena.panResetKey` still zeroes it
+  on a retarget.) It
   never
   self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
   **fixed** `openWorldCap` of monsters **scattered** across the field (off the

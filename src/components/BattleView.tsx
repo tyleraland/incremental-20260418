@@ -193,7 +193,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, panResetKey }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; panResetKey?: string | number }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, panResetKey, panEnabled = true }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -223,7 +223,12 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
       dragRef.current = null
       pinchRef.current = { startDist: pointerGap(), startSize: zoom.size }
       suppressClickRef.current = true
-    } else if (pointersRef.current.size === 1) {
+    } else if (panEnabled && pointersRef.current.size === 1) {
+      // Single-finger pan is a pixel nudge layered on the camera. In an
+      // auto-following open-world view it FIGHTS the camera (and even a pinch
+      // leaves a tiny residue before the 2nd finger lands), shoving the whole
+      // board into a corner — so the open-world caller disables it and navigates
+      // via follow + minimap re-center + pinch/zoom instead.
       dragRef.current = { startX: e.clientX, startY: e.clientY, basePan: pan, moved: false, pointerId: e.pointerId, target: e.currentTarget }
     }
   }
@@ -1273,6 +1278,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           cam={cam}
           barriers={battle.barriers}
           centerY={rows / 2}
+          panEnabled={!isOpen}
           panResetKey={isOpen ? camTargetKey : undefined}
           zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={isOpen ? (
