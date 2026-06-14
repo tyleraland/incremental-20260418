@@ -3,3 +3,7 @@ dist
 dist-ssr
 *.local
 .DS_Store
+
+# Playwright e2e output (perf harness)
+playwright-report
+test-results
