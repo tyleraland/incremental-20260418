@@ -729,7 +729,13 @@ function BattleDropIn() {
   const combatLocationId = useGameStore((s) => s.combatLocationId)
   const exitBattleView   = useGameStore((s) => s.exitBattleView)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
-  const round            = useGameStore((s) => (combatLocationId ? s.battles[combatLocationId]?.round : undefined))
+  // Show the *logical* round, not the raw engine round. Battles run at
+  // timeScale ("finer rounds") = 2 engine rounds per logical round, so the raw
+  // counter ticks twice as fast as a "round" actually means — dividing it back
+  // out gives the human-meaningful pace (~2.5/s instead of ~5/s).
+  const engineRound = useGameStore((s) => (combatLocationId ? s.battles[combatLocationId]?.round : undefined))
+  const timeScale   = useGameStore((s) => (combatLocationId ? s.battles[combatLocationId]?.timeScale ?? 1 : 1))
+  const round = engineRound != null ? Math.floor(engineRound / Math.max(1, timeScale)) : undefined
 
   const name = combatLocationId ? (locations.find((l) => l.id === combatLocationId)?.name ?? 'Battlefield') : 'Battlefield'
 

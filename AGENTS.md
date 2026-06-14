@@ -99,7 +99,11 @@ driven by **tactics** (below).
   (⊙ re-enables auto-fit). Off-screen tokens are **clipped, not clamped** to the
   rim (`isOnScreen`): off-screen monsters aren't drawn, and each off-screen
   **party member** gets an `EdgeMarker` rim bubble with an arrow pointing toward
-  them. One-finger pan too). It
+  them. One-finger pan too — but the finger-pan is a pixel nudge *layered on top
+  of* the camera, so it **zeroes itself whenever the camera retargets**
+  (`Arena.panResetKey`: follow a new hero / minimap free-look / auto-fit);
+  otherwise a leftover pan dragged the whole freshly-centred board off-screen
+  after a minimap tap. It
   never
   self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
   **fixed** `openWorldCap` of monsters **scattered** across the field (off the
@@ -219,7 +223,9 @@ threat, cooldowns, wander state ARE the bug). Don't paste giant whole-game
   advances every `ROUND_EVERY_TICKS` (1) tick → 5 rounds/sec, but battles run at
   **`timeScale` = `ROUND_TIME_SCALE` (2)** ("finer rounds"): 2 engine rounds == one
   *logical* round, so the real-time pace is the unchanged ~2.5 logical rounds/sec
-  while motion is stepped finer and combat events spread out. `timeScale` lives on
+  while motion is stepped finer and combat events spread out. The drop-in header
+  shows the **logical** round (`floor(battle.round / timeScale)`) so the counter
+  reads at the human pace, not the doubled raw-engine rate. `timeScale` lives on
   `BattleState` (snapshot-serialized), defaults to **1** (no scaling) so the whole
   engine suite + replays are byte-identical, and is applied via a per-battle ambient
   (`engine/timescale.ts`, mirroring `arena.ts`): `moveSpeedOf` ÷ scale, cooldowns /

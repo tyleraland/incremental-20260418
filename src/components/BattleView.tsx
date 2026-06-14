@@ -193,7 +193,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, panResetKey }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; panResetKey?: string | number }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -201,6 +201,12 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay }: {
   const pinchRef = useRef<{ startDist: number; startSize: number } | null>(null)
   const suppressClickRef = useRef(false)
   const [pan, setPan] = useState<Vec2>({ x: 0, y: 0 })
+
+  // The pixel pan is a finger-drag nudge layered on top of the camera. When the
+  // camera *retargets* (follow a hero / minimap free-look / auto-fit) a leftover
+  // pan would offset the freshly-centred view, dragging the whole board (grid +
+  // tokens) off-screen — so zero it out on every camera-target change.
+  useEffect(() => { setPan({ x: 0, y: 0 }) }, [panResetKey])
 
   const centerTop = Math.max(0, Math.min(100, (1 - (centerY - cam.y) / cam.size) * 100))
 
@@ -1140,6 +1146,11 @@ function LiveBattle({ battle }: { battle: BattleState }) {
     ? followCamera(followPts, cols, rows, effSize)
     : arenaCamera(cols, rows)
 
+  // Identity of the current camera target — changes when we follow a new hero,
+  // free-look to a new spot, or fall back to auto-fit. The Arena zeroes its
+  // finger-pan whenever this flips, so a retarget always recentres cleanly.
+  const camTargetKey = focusUnitId ?? (manualCenter ? `pt:${manualCenter.x.toFixed(1)},${manualCenter.y.toFixed(1)}` : 'auto')
+
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
 
@@ -1231,6 +1242,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
           cam={cam}
           barriers={battle.barriers}
           centerY={rows / 2}
+          panResetKey={isOpen ? camTargetKey : undefined}
           zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={isOpen ? (
             <>

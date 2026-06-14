@@ -148,9 +148,6 @@ function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean 
   // Battle mode shows a live HP bar so the roster reads as the party readout the
   // old bottom strip provided. health is synced back from the engine each tick.
   const hpRatio = Math.max(0, Math.min(1, unit.health / getDerivedStats(unit, equipment).maxHp))
-  // An alive hero bleeding out mid-fight gets a pulsing red ring so your eye
-  // snaps to whoever needs help — only while actually in the fight (not KO/rest).
-  const inDanger = battleMode && unit.health > 0 && !isRecovering && !isResting && hpRatio <= 0.3
   // Explicit status flag for the non-ready states; ready units stay uncluttered.
   const statusBadge = isRecovering
     ? { text: 'KO', tone: 'bg-purple-600 text-white' }
@@ -185,11 +182,6 @@ function RosterUnitCard({ unit, battleMode }: { unit: Unit; battleMode: boolean 
         >
           {portraitGlyph(unit)}
         </span>
-        {/* Critical-HP pulse: a red ring riding the portrait while a hero is
-            bleeding out in the live fight. */}
-        {inDanger && (
-          <span className="absolute -inset-0.5 rounded-lg ring-2 ring-red-500/80 animate-pulse pointer-events-none" />
-        )}
         <span className="absolute -top-1 -left-1 flex items-center gap-1 max-w-[3.5rem] px-1 rounded-full bg-game-bg/90 border border-game-border leading-tight">
           <span className="text-[10px] font-bold text-game-text-dim">{unit.level}</span>
           {unit.class && <span className="text-[8px] text-game-text-dim truncate">{unit.class}</span>}
