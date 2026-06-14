@@ -45,12 +45,14 @@ change every frame and defeat it).
 Key files: `src/components/BattleView.tsx` (`BattleChip`, `FloatingLabel`,
 `FacingNub`, `MovingChevron`, the token `.map`).
 
-**Done:** `BattleChip` takes a `detail` flag driven by zoom — when the open-world
-camera shows more than `LOD_CAM_SIZE` (18) cells the tokens are too small to read
-their labels, so it drops the floating name/HP/cast plate and the facing/moving
-nubs (most of the 7–14 DOM nodes per token) and renders just the circle; full
-detail returns when you zoom/follow in below the threshold. Encounters (static
-15-cell camera) are always full detail. (`Lod.test.tsx`.)
+**Done:** `BattleChip` takes a `detail` flag that drops the floating name/HP/cast
+plate and the facing/moving nubs (most of the 7–14 DOM nodes per token), rendering
+just the circle, when the view is **either** zoomed out past `LOD_CAM_SIZE` (18
+cells — tokens too small to read) **or** packed with more than `LOD_TOKEN_COUNT`
+(16) on-screen tokens (a harpy swarm around a tight party view — dense even though
+the zoom is fine). Full detail returns when you zoom/follow in or the crowd thins.
+Encounters (static 15-cell camera, small party) are always full detail.
+(`Lod.test.tsx` covers both triggers.)
 
 **Still available if needed:** cap the total number of rendered tokens, and a
 frame-rate cap (e.g. 30fps) on the interpolation for very large battles or

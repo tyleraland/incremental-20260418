@@ -46,4 +46,18 @@ describe('level-of-detail tokens', () => {
     expect(a.queryByText('Hero')).toBeNull()         // label dropped (LOD)
     expect(a.getByTitle(/Hero —/)).toBeTruthy()      // bare circle still there
   })
+
+  it('drops labels when many tokens are on-screen, even zoomed in (dense swarm)', () => {
+    // One hero (tight 15-cell zoom) but 18 foes packed around them → on-screen
+    // token count trips LOD despite the zoom being well within the cell threshold.
+    const b = createBattle({ playerUnits: [], enemyUnits: [], mode: 'open', cols: 16, rows: 16 })
+    addCombatant(b, eu({ id: 'h1', name: 'Hero', team: 'player', visionRange: 10 }), 'player', undefined, { x: 8, y: 8 })
+    for (let i = 0; i < 18; i++) {
+      addCombatant(b, eu({ id: `e${i}`, name: `Foe${i}`, team: 'enemy' }), 'enemy', undefined, { x: 6 + (i % 4), y: 6 + Math.floor(i / 4) })
+    }
+    b.events = []
+    const a = within(arena(show(b).container))
+    expect(a.queryByText('Hero')).toBeNull()         // LOD by on-screen count
+    expect(a.getByTitle(/Hero —/)).toBeTruthy()
+  })
 })

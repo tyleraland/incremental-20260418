@@ -50,11 +50,13 @@ function hpColor(ratio: number): string {
 const OPEN_CAM_SIZE     = 15  // open-world: default cells shown (pinch to resize)
 const OPEN_CAM_MIN_SIZE = 8   // most zoomed-in
 const OPEN_CAM_MAX_SIZE = 60  // most zoomed-out (still less than the whole map)
-// Level-of-detail: above this many cells shown the tokens are too small for
-// their floating labels/nubs to read, so BattleChip drops them (perf: that plate
-// is most of the per-token DOM). Below it — a tight group or a followed hero —
-// full detail returns. Sized just above the default/single-hero view (15).
-const LOD_CAM_SIZE      = 18
+// Level-of-detail: BattleChip drops its floating label/nubs (most of the
+// per-token DOM) when the view is either zoomed far out (tokens too small to
+// read) OR packed with many on-screen tokens (labels overlap into noise and the
+// render cost spikes — e.g. a harpy swarm fitting a tight party view). Either
+// condition trips it; zoom/follow in or thin the crowd and full detail returns.
+const LOD_CAM_SIZE      = 18   // cells shown above which tokens are too small to label
+const LOD_TOKEN_COUNT   = 16   // on-screen tokens above which labels are dropped
 
 interface Cam { x: number; y: number; size: number }
 
@@ -1213,6 +1215,12 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
 
+  // Tokens to draw. Open-world clips off-screen units (off-screen heroes show as
+  // EdgeMarkers instead); encounters render everyone. LOD (drop labels/nubs) when
+  // zoomed far out OR many tokens are on-screen — computed once from this list.
+  const visibleTokens = isOpen ? battle.combatants.filter((c) => isOnScreen(cam, rpos(c))) : battle.combatants
+  const tokenDetail = cam.size <= LOD_CAM_SIZE && visibleTokens.length <= LOD_TOKEN_COUNT
+
   // Active (non-expired) cast labels, grouped by caster and ordered oldest →
   // newest so the newest renders on top (the stack uses flex-col-reverse).
   // Recomputed only when the labels change (harvest / 300ms sweep), not per frame.
@@ -1429,10 +1437,8 @@ function LiveBattle({ battle }: { battle: BattleState }) {
             )
           })}
 
-          {/* Tokens. Open-world clips off-screen units (off-screen heroes show as
-              EdgeMarkers instead); encounters render everyone (nothing is ever
-              truly off the small arena). */}
-          {(isOpen ? battle.combatants.filter((c) => isOnScreen(cam, rpos(c))) : battle.combatants).map((c) => (
+          {/* Tokens (see visibleTokens / tokenDetail above). */}
+          {visibleTokens.map((c) => (
             <BattleChip
               key={c.id}
               c={c}
@@ -1443,7 +1449,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
               onSelect={() => handleSelect(c)}
               glyph={chipGlyph(c, classFor)}
               scale={battle.timeScale}
-              detail={cam.size <= LOD_CAM_SIZE}
+              detail={tokenDetail}
             />
           ))}
 
