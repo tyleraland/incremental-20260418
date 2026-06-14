@@ -45,11 +45,16 @@ change every frame and defeat it).
 Key files: `src/components/BattleView.tsx` (`BattleChip`, `FloatingLabel`,
 `FacingNub`, `MovingChevron`, the token `.map`).
 
-Above a threshold (many entities or zoomed-out), render a bare dot and drop the
-floating name/HP/cast labels and facing/moving chevrons, which is where most of
-the 7–14 DOM nodes per token live. Optionally cap the total number of rendered
-tokens. Add a frame-rate cap (e.g. 30fps) on the interpolation for large battles
-or low-end devices — a trivial guard in `useSmoothScene`'s loop.
+**Done:** `BattleChip` takes a `detail` flag driven by zoom — when the open-world
+camera shows more than `LOD_CAM_SIZE` (18) cells the tokens are too small to read
+their labels, so it drops the floating name/HP/cast plate and the facing/moving
+nubs (most of the 7–14 DOM nodes per token) and renders just the circle; full
+detail returns when you zoom/follow in below the threshold. Encounters (static
+15-cell camera) are always full detail. (`Lod.test.tsx`.)
+
+**Still available if needed:** cap the total number of rendered tokens, and a
+frame-rate cap (e.g. 30fps) on the interpolation for very large battles or
+low-end devices — a trivial guard in `useSmoothScene`'s loop.
 
 ## Phase 3 — Cheap engine wins
 

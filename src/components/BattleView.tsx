@@ -50,6 +50,11 @@ function hpColor(ratio: number): string {
 const OPEN_CAM_SIZE     = 15  // open-world: default cells shown (pinch to resize)
 const OPEN_CAM_MIN_SIZE = 8   // most zoomed-in
 const OPEN_CAM_MAX_SIZE = 60  // most zoomed-out (still less than the whole map)
+// Level-of-detail: above this many cells shown the tokens are too small for
+// their floating labels/nubs to read, so BattleChip drops them (perf: that plate
+// is most of the per-token DOM). Below it — a tight group or a followed hero —
+// full detail returns. Sized just above the default/single-hero view (15).
+const LOD_CAM_SIZE      = 18
 
 interface Cam { x: number; y: number; size: number }
 
@@ -471,7 +476,11 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
   )
 }
 
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number }) {
+// `detail=false` is the level-of-detail path: when the camera is zoomed far out
+// (many tiny tokens, open-world), the floating name/HP/cast plate and the
+// facing/moving nubs are unreadable noise *and* the bulk of the per-token DOM —
+// drop them and render just the circle. Full detail returns as you zoom/follow in.
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale, detail }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number; detail: boolean }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
   return (
@@ -480,9 +489,9 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale 
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? 'left 380ms linear, top 380ms linear' : undefined }}
     >
-      <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />
-      {c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
-      {c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
+      {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
+      {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
+      {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
       <div
         title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         style={chipDims(cam)}
@@ -1434,6 +1443,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
               onSelect={() => handleSelect(c)}
               glyph={chipGlyph(c, classFor)}
               scale={battle.timeScale}
+              detail={cam.size <= LOD_CAM_SIZE}
             />
           ))}
 

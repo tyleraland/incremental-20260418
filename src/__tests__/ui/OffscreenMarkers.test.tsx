@@ -38,8 +38,8 @@ describe('isOnScreen', () => {
   })
 })
 
-// The arena square — scope token/marker assertions here so the follow strip
-// below it (which lists every party member by name) doesn't get matched.
+// The arena square — scope token/marker assertions here so the Legend below it
+// doesn't get matched.
 function arena(container: HTMLElement): HTMLElement {
   return container.querySelector('.aspect-square') as HTMLElement
 }
@@ -48,8 +48,11 @@ describe('open-world off-screen tokens', () => {
   it('renders on-screen heroes and monsters as chips', () => {
     const { container } = render(<BattleView locationId="L1" />)
     const a = within(arena(container))
-    expect(a.getByText('Alpha')).toBeTruthy()    // on-screen hero chip
-    expect(a.getByText('Nearby')).toBeTruthy()   // on-screen monster chip
+    // The party is spread across a 100-cell field, so the camera is zoomed out
+    // and tokens are LOD'd (no floating name) — identify chips by their title,
+    // which the bare circle keeps.
+    expect(a.getByTitle(/Alpha —/)).toBeTruthy()    // on-screen hero chip
+    expect(a.getByTitle(/Nearby —/)).toBeTruthy()   // on-screen monster chip
   })
 
   it('does NOT show off-screen monsters (no chip, no marker)', () => {

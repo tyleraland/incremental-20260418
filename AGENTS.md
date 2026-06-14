@@ -486,6 +486,12 @@ back to its longest skill range so it still reaches where *something* lands.
   (3s, covering the channel + a beat after it lands), keyed by caster+skill so a
   channel's start/resolve and rapid re-casts collapse to one label; multiple
   distinct casts stack newest-on-top (`animate-cast-label`).
+- **Level-of-detail (perf):** `BattleChip` takes a `detail` flag from the zoom —
+  when the open-world camera shows more than `LOD_CAM_SIZE` (18) cells the tokens
+  are too small to read, so it drops the floating name/HP/cast plate and the
+  facing/moving nubs (the bulk of the per-token DOM) and draws just the circle;
+  full detail returns as you zoom/follow in. Encounters (static 15-cell camera)
+  are always full detail. The chip's `title` is kept either way. (`Lod.test.tsx`.)
 - Monster HP bars animate down during combat and **snap to full** on respawn (no
   upward animation).
 - Tapping a token opens a **dismissable bottom-sheet overlay** (name, team, HP,
