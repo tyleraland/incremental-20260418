@@ -154,7 +154,7 @@ function FilterBar({ active, onChange }: { active: InvFilter; onChange: (f: InvF
 // colour says which way it's filtering (green = keep equipped, red = keep
 // not-equipped, neutral = no filter).
 type EquipFilter = 'both' | 'equipped' | 'unequipped'
-const EQUIP_FILTER_ICON = '🦺'
+const EQUIP_FILTER_ICON = '🤺'
 const EQUIP_FILTER_NEXT: Record<EquipFilter, EquipFilter> = {
   both: 'equipped', equipped: 'unequipped', unequipped: 'both',
 }
