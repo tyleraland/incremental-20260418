@@ -11,7 +11,7 @@ import {
   WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN, WARY_INTERRUPT_DECAY,
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
-import { setTimeScale, timeScale, scaleRounds, onBeat } from './timescale'
+import { setTimeScale, timeScale, scaleRounds, onBeat, onAttackBeat } from './timescale'
 import { SpatialHash, setSpatialHash } from './spatialhash'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
@@ -1459,10 +1459,12 @@ function executeNaiveAction(state: BattleState, self: Combatant): void {
   if (!target || !target.alive) return
   const skill = action.kind === 'skill' ? action.skill : null
   // Basic attacks have no cooldown — they'd otherwise fire every round, so at a
-  // finer time scale they'd hit N× too often. Gate them to once per logical round
-  // (staggered by index so the party doesn't all swing on the same finer-round).
-  // Skill casts are paced by their own scaled cooldowns, so they're never gated.
-  if (!skill && !onBeat(state.round, self.index)) return
+  // finer time scale they'd hit N× too often. Pace them by the unit's attackSpeed
+  // (§basic-attack cadence): a normal/fast attacker swings once per logical round
+  // (staggered by index so the party doesn't all swing on the same finer-round), a
+  // slow one less often. Skill casts are paced by their own scaled cooldowns, so
+  // they're never gated.
+  if (!skill && !onAttackBeat(state.round, self.index, self.spd)) return
   dealAttack(state, self, target, state.calculateDamage(self, target, skill, state.round), skill)
   if (skill) recordSkillUse(state, self, skill)   // dealAttack no longer records skill use
   breakStealth(state, self)                        // a basic attack also reveals (§3)

@@ -17,6 +17,8 @@
 // Defaults to 1 (no scaling) so any path that forgets to set it behaves exactly
 // as before — keeping the whole engine suite and snapshot replays unaffected.
 
+import { REF_ATTACK_SPD, MAX_ATTACK_INTERVAL } from './constants'
+
 let activeScale = 1
 
 export function setTimeScale(scale: number): void {
@@ -32,9 +34,26 @@ export function scaleRounds(rounds: number): number {
   return rounds * activeScale
 }
 
-// True on the round where a per-logical-round *discrete* event should fire (a basic
-// attack, a DoT tick), spread by `phase` so staggered actors don't all fire on the
+// True on the round where a per-logical-round *discrete* event should fire (a DoT
+// tick, a zone pulse), spread by `phase` so staggered actors don't all fire on the
 // same finer-round. At scale 1 this is every round (unchanged).
 export function onBeat(round: number, phase = 0): boolean {
   return ((round + phase) % activeScale) === 0
+}
+
+// How many *logical* rounds between a unit's basic attacks, from its attackSpeed
+// (engine `spd`). REF_ATTACK_SPD swings every logical round (the once-per-round
+// cap); slower attackers wait proportionally longer. See constants.ts.
+export function basicAttackInterval(spd: number): number {
+  const i = Math.round(REF_ATTACK_SPD / Math.max(1, spd))
+  return Math.min(MAX_ATTACK_INTERVAL, Math.max(1, i))
+}
+
+// True on the round where a unit may throw a basic attack, given its attackSpeed.
+// Generalises onBeat: an interval-1 (normal/fast) unit swings once per logical
+// round exactly as before; a slower unit swings every `interval` logical rounds.
+// Stateless & deterministic (no per-unit cooldown to serialize), and preserves the
+// timeScale equivalence (the period scales with activeScale just like onBeat).
+export function onAttackBeat(round: number, phase: number, spd: number): boolean {
+  return ((round + phase) % (basicAttackInterval(spd) * activeScale)) === 0
 }

@@ -374,6 +374,21 @@ body-block; `moveSpeed` is decoupled from `attackSpeed`. Barriers block movement
 line-of-sight; casters won't fire through walls (but will through cliffs); knockback
 stops at walls and the arena perimeter.
 
+**Basic-attack cadence (`attackSpeed` → swing rate).** Basic (non-skill) attacks are
+paced by the unit's `attackSpeed` (the engine's `spd`), as an interval in *logical
+rounds* between swings: `basicAttackInterval(spd) = clamp(round(REF_ATTACK_SPD /
+spd), 1, MAX_ATTACK_INTERVAL)` (`REF_ATTACK_SPD` = 10, `MAX` = 4; `timescale.ts`/
+`constants.ts`). `REF_ATTACK_SPD` swings **every logical round** — the historical
+once-per-logical-round cap, so a basic never goes *faster* than that (finer
+time-scaling can't multiply hits); at `spd ≥ ~7` the interval is 1, so heroes
+(attackSpeed 8–18) and fast monsters are unchanged, and only genuinely slow attackers
+(e.g. the **Mutant Lizard**, attackSpeed 4 ⇒ a swing every 3rd logical round — its
+threat is the Consecration aura, not the bite) swing less often. The gate
+(`onAttackBeat`, generalising `onBeat`) is **stateless & deterministic** — a pure
+function of round + combatant index + spd — so it adds no snapshot field and replays
+1:1, and the period scales with `timeScale` so the equivalence holds. **Skills** are
+paced by their own scaled cooldowns and are **not** gated by this. (`attack-speed.test.ts`.)
+
 **Default positioning is "close to range and HOLD," not kite.** With a locked target
 and no movement tactic, a unit advances to attack range and stands — a caster stops at
 its **cast range** (`castRange`: longest single-target `attack`/basic-ranged range, so a

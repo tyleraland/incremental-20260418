@@ -33,6 +33,19 @@ export const FORMATION_ROW_STEP = 0.8
 
 export const EPS = 1e-6
 
+// §basic-attack cadence. Basic attacks are paced by the unit's attackSpeed (the
+// engine's `spd`), expressed as an interval in *logical rounds* between swings.
+// REF_ATTACK_SPD is the "normal" speed that swings every logical round — the
+// historical once-per-logical-round cap, so a basic attack never goes *faster*
+// than that (finer time-scaling can't multiply hits). A slower attacker waits
+// proportionally longer: interval = round(REF / spd), clamped to [1, MAX]. At
+// spd ≥ ~7 this is 1 (every logical round) so heroes (attackSpeed 8–18) and fast
+// monsters are unchanged; only genuinely slow attackers swing less often. Skills
+// are paced by their own cooldowns and are NOT gated by this. Stateless & pure
+// (a function of round + index + spd), so it adds no snapshot field and replays 1:1.
+export const REF_ATTACK_SPD = 10
+export const MAX_ATTACK_INTERVAL = 4
+
 // §open-world wander (only consulted when BattleState.mode === 'open'). Heroes
 // roam toward a shared team waypoint, re-picking it when they get within
 // WANDER_REPATH of it. Idle monsters lurk MONSTER_WANDER_MIN..MAX rounds, then

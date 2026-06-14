@@ -83,7 +83,9 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   // Mutant Lizard — a frail radiant beast that opens with Consecration, a
   // hallowed aura it carries that chips every nearby hero each round (and tears
   // into undead/ghost). Weak on its own; nasty in a pack or beside tankier kin.
-  'mutant-lizard': { id: 'mutant-lizard',name: 'Mutant Lizard', level: 4, health:  45, element: 'radiant', size: 'small',  attackName: 'Bite',   stats: { attack: 8,  defense: [3,2],   magicAttack: 10, magicDefense: [4,3],  attackSpeed: 10, accuracy: 11, dodge: 6,  moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-mutant-tail',   dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-radiant-scale',  dropRate: 0.30, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'consecration', level: 3 }] },
+  // Its Bite is *slow* (low attackSpeed ⇒ a longer basic-attack interval): the
+  // threat is the aura, not the melee, so it shouldn't out-DPS a hero up close.
+  'mutant-lizard': { id: 'mutant-lizard',name: 'Mutant Lizard', level: 4, health:  45, element: 'radiant', size: 'small',  attackName: 'Bite',   stats: { attack: 8,  defense: [3,2],   magicAttack: 10, magicDefense: [4,3],  attackSpeed: 4,  accuracy: 11, dodge: 6,  moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-mutant-tail',   dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-radiant-scale',  dropRate: 0.30, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'consecration', level: 3 }] },
 
   // Stone Sentinel — a §threat-model showcase enemy: a slow, mobile slab with
   // huge HP/DEF but a feeble Slam. It out-lives everything and chases whoever it's
