@@ -63,6 +63,23 @@ Playwright. Beyond the automated suites, that's how you *verify work by eye*:
 - **One-off probe:** for an interactive check (taps, camera, minimap), drop a throwaway
   `e2e/*.probe.spec.ts` that screenshots before/after to `/tmp`, read the PNGs, then
   delete it.
+- **Replay a battle snapshot (`BSNAP.…`) headlessly:** `npm run bsnap -- <source>` —
+  the CLI version of the "⎘ state → paste BSNAP → watch it recur" bug-repro loop, so a
+  reported fight becomes one command instead of a hand-rolled throwaway test. `<source>`
+  is a **gist URL** (`https://gist.github.com/<user>/<id>` — auto-resolved to `/raw`), a
+  raw URL, a local file, a literal `BSNAP.…` token, or `-` for stdin; it caches the
+  pulled token to `.bsnap/last.txt` (gitignored) so you can re-run offline. It runs the
+  engine straight from TS source (Vite `ssrLoadModule`, no build), prints the opening
+  roster + zones, then steps the deterministic sim printing per-round HP/Δ/position for
+  the watched units. Options: `-n/--rounds <N>` (default 24), `-w/--watch <id,id>`
+  (default: all player-team), `-e/--events` (per-round events touching a watched unit),
+  `--all-events`, `--no-step` (roster only), `--no-save`, `-h`. Output is clean stdout
+  (no vitest console-swallowing). Examples:
+  ```
+  npm run bsnap -- https://gist.github.com/tyleraland/<id> -w u4 -e
+  npm run bsnap -- .bsnap/last.txt -n 40        # replay the cached token, 40 rounds
+  npm run bsnap -- - --no-step < token.txt      # roster/zones only, from stdin
+  ```
 
 ## Branching & Merging
 
@@ -240,7 +257,10 @@ movement/tactics/AI bug: hit **⎘ state**, paste the `BSNAP.…` token **inside
 triple-backtick code block** (raw, un-wrapped — keeps the long string verbatim so
 the guard passes). A dev `deserializeBattle(token)`s it and steps `advanceRound`
 to watch the misbehaviour recur — full fidelity, so don't trim it (positions,
-threat, cooldowns, wander state ARE the bug). Don't paste giant whole-game
+threat, cooldowns, wander state ARE the bug). The fastest way to do that is
+`npm run bsnap -- <gist-url-or-file-or-token>` (see *Browser testing & manual
+verification* for options) — it pulls/caches the token and steps the sim with
+per-round HP/position/events, no throwaway test needed. Don't paste giant whole-game
 `exportSave` strings in chat — drop those in a file. If the guard ever reports
 "truncated", the paste lost characters in transit — re-copy.
 

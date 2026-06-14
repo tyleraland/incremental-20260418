@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "bsnap": "node scripts/bsnap.mjs",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "ci": "tsc --noEmit && vitest run",

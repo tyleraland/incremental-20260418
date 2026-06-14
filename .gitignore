@@ -8,3 +8,6 @@ dist-ssr
 playwright-report
 test-results
 e2e/__shots__
+
+# Cached battle-snapshot tokens (scripts/bsnap.mjs)
+.bsnap
