@@ -597,8 +597,14 @@ export function Inventory() {
         <EquipFilterToggle value={equipFilter} onChange={setEquipFilter} />
       </div>
       <EquipmentSection filter={filter} equipFilter={equipFilter} />
-      <ItemsSection filter={filter} />
-      <CraftingSection filter={filter} />
+      {/* The equipped-state filter only applies to equipment, so when it's active
+          (equipped / not-equipped) the non-equipment sections are hidden. */}
+      {equipFilter === 'both' && (
+        <>
+          <ItemsSection filter={filter} />
+          <CraftingSection filter={filter} />
+        </>
+      )}
     </div>
   )
 }
