@@ -69,6 +69,7 @@ Playwright. Beyond the automated suites, that's how you *verify work by eye*:
 - Develop on a feature branch, but **merge to `main` when the feature is complete** — main is what gets tested in the browser. Do not wait to be asked.
 - Fast-forward merge when possible: `git merge --ff-only <branch> && git push origin main`.
 - **After pushing to `main`, include the commit hash in the chat reply** (e.g. "Shipped to `main` (commit `abc1234`)") so I can match it to what I'm seeing in the debug UI.
+- **When you open a PR, share its live preview link in the chat reply so there's no guessing — I just open the link.** Every open PR auto-deploys to `https://tyleraland.github.io/incremental-20260418/pr-preview/pr-<N>/` (the `pr-preview.yml` workflow; torn down on close). Give the exact URL with the PR's number filled in, not the pattern.
 
 ---
 
