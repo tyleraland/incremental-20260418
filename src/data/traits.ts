@@ -17,7 +17,6 @@ export const TRAIT_REGISTRY: Record<string, Trait> = {
   sword:       { id: 'sword',       label: 'Sword',       category: 'item-type', description: 'A balanced bladed weapon. Reliable damage.' },
   staff:       { id: 'staff',       label: 'Staff',       category: 'item-type', description: 'A magical focus. Enhances spell power.' },
   bow:         { id: 'bow',         label: 'Bow',         category: 'item-type', description: 'A two-handed ranged weapon. Attacks at distance.' },
-  light:       { id: 'light',       label: 'Light',       category: 'general',   description: 'Lightweight. Minimal speed penalty.' },
   heavy:       { id: 'heavy',       label: 'Heavy',       category: 'general',   description: 'Heavy. Better protection, possible speed penalty.' },
   versatile:   { id: 'versatile',   label: 'Versatile',   category: 'general',   description: 'Effective in multiple contexts.' },
   forest:      { id: 'forest',      label: 'Forest',      category: 'environment', description: 'Dense woodland. Good for timber, herbs, and hunting.' },

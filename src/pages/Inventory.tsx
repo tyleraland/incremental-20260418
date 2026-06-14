@@ -23,11 +23,35 @@ const STAT_SHORT: Record<(typeof STAT_KEYS)[number], string> = {
   attack: 'ATK', defense: 'DEF', specialAttack: 'SP.ATK', specialDefense: 'SP.DEF',
 }
 
+// ── Weapon range ──────────────────────────────────────────────────────────────
+// Weapons carry an attack range (feet). A weapon at or under MELEE_RANGE_FT reads
+// as "melee" (mirrors the engine's RANGED_FEET_THRESHOLD), so the Rod (range 5) is
+// clearly melee rather than looking like it might shoot. Only weapons have range;
+// other gear shows nothing.
+const MELEE_RANGE_FT = 5
+const isWeapon = (cat: ItemCategory) => cat === 'weapon-1h' || cat === 'weapon-2h'
+const weaponRange = (item: EquipmentItem) => item.stats.range ?? MELEE_RANGE_FT
+
+// The range chip for a weapon: a signed delta vs the current weapon (nothing when
+// equal — "0 diff say nothing"), or a standalone readout ("melee" / "12 RNG") when
+// there's no current weapon to compare against. Null for non-weapons.
+function rangeChip(item: EquipmentItem, current: EquipmentItem | null): { text: string; cls: string } | null {
+  if (!isWeapon(item.category)) return null
+  const r = weaponRange(item)
+  if (current && isWeapon(current.category)) {
+    const d = r - weaponRange(current)
+    if (d === 0) return null
+    return { text: `${d > 0 ? '+' : ''}${d} RNG`, cls: d > 0 ? 'text-game-green' : 'text-red-400' }
+  }
+  return { text: r <= MELEE_RANGE_FT ? 'melee' : `${r} RNG`, cls: 'text-game-text-dim' }
+}
+
 function StatDeltas({ item, current }: { item: EquipmentItem; current: EquipmentItem | null }) {
   const deltas = STAT_KEYS
     .map((k) => ({ k, d: (item.stats[k] ?? 0) - (current?.stats[k] ?? 0) }))
     .filter((x) => x.d !== 0)
-  if (!deltas.length) return null
+  const range = rangeChip(item, current)
+  if (!deltas.length && !range) return null
   return (
     <div className="flex flex-wrap gap-2 mt-1">
       {deltas.map(({ k, d }) => (
@@ -35,6 +59,7 @@ function StatDeltas({ item, current }: { item: EquipmentItem; current: Equipment
           {d > 0 ? '+' : ''}{d} {STAT_SHORT[k]}
         </span>
       ))}
+      {range && <span className={`text-xs font-mono ${range.cls}`}>{range.text}</span>}
     </div>
   )
 }
@@ -46,12 +71,14 @@ function totalScore(item: EquipmentItem) {
 // Absolute stat readout (used when no hero is selected — no comparison basis).
 function AbsoluteStats({ item }: { item: EquipmentItem }) {
   const entries = STAT_KEYS.map((k) => ({ k, v: item.stats[k] ?? 0 })).filter((x) => x.v !== 0)
-  if (!entries.length) return null
+  const range = rangeChip(item, null)
+  if (!entries.length && !range) return null
   return (
     <div className="flex flex-wrap gap-2 mt-1">
       {entries.map(({ k, v }) => (
         <span key={k} className="text-xs font-mono text-game-text-dim">{v} {STAT_SHORT[k]}</span>
       ))}
+      {range && <span className={`text-xs font-mono ${range.cls}`}>{range.text}</span>}
     </div>
   )
 }
@@ -100,7 +127,7 @@ const matchesFilter = (itemFilter: InvFilter, active: InvFilter) => active === '
 
 function FilterBar({ active, onChange }: { active: InvFilter; onChange: (f: InvFilter) => void }) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5">
+    <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5 flex-1 min-w-0">
       {FILTER_CHIPS.map((c) => (
         <button
           key={c.id}
@@ -120,6 +147,40 @@ function FilterBar({ active, onChange }: { active: InvFilter; onChange: (f: InvF
     </div>
   )
 }
+
+// ── Equipped-state filter (3-state toggle) ────────────────────────────────────
+// Cycles equipment by whether a hero is currently holding it: both → equipped
+// only (green) → not-equipped only (red) → both. The icon hints at gear; the
+// colour says which way it's filtering (green = keep equipped, red = keep
+// not-equipped, neutral = no filter).
+type EquipFilter = 'both' | 'equipped' | 'unequipped'
+const EQUIP_FILTER_ICON = '🦺'
+const EQUIP_FILTER_NEXT: Record<EquipFilter, EquipFilter> = {
+  both: 'equipped', equipped: 'unequipped', unequipped: 'both',
+}
+const EQUIP_FILTER_META: Record<EquipFilter, { label: string; cls: string }> = {
+  both:       { label: 'Equipped & not equipped', cls: 'border-game-border text-game-text-dim hover:text-game-text' },
+  equipped:   { label: 'Equipped only',           cls: 'border-game-green bg-game-green/15 text-game-green' },
+  unequipped: { label: 'Not equipped only',       cls: 'border-red-400 bg-red-400/15 text-red-400' },
+}
+
+function EquipFilterToggle({ value, onChange }: { value: EquipFilter; onChange: (f: EquipFilter) => void }) {
+  const meta = EQUIP_FILTER_META[value]
+  return (
+    <button
+      onClick={() => onChange(EQUIP_FILTER_NEXT[value])}
+      aria-label={meta.label}
+      title={meta.label}
+      className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${meta.cls}`}
+    >
+      {EQUIP_FILTER_ICON}
+    </button>
+  )
+}
+
+// Does an item pass the equipped-state filter, given whether a hero holds it?
+const passesEquipFilter = (held: boolean, f: EquipFilter) =>
+  f === 'both' || (f === 'equipped' ? held : !held)
 
 // ── Equip context view ────────────────────────────────────────────────────────
 
@@ -251,7 +312,7 @@ function EquipContextView() {
 
 // ── Equipment section ─────────────────────────────────────────────────────────
 
-function EquipmentSection({ filter }: { filter: InvFilter }) {
+function EquipmentSection({ filter, equipFilter }: { filter: InvFilter; equipFilter: EquipFilter }) {
   const expanded = useGameStore((s) => s.expandedInventorySections.includes('equipment'))
   const toggleInventorySection = useGameStore((s) => s.toggleInventorySection)
   const equipment = useGameStore((s) => s.equipment)
@@ -282,7 +343,7 @@ function EquipmentSection({ filter }: { filter: InvFilter }) {
   }
 
   const grouped = categories.reduce<Record<string, EquipmentItem[]>>((acc, cat) => {
-    const items = equipment.filter((e) => e.category === cat)
+    const items = equipment.filter((e) => e.category === cat && passesEquipFilter(heldBy.has(e.id), equipFilter))
     // Available first, held (equipped) last — stable within each partition.
     if (items.length) acc[cat] = [...items].sort((a, b) => (heldBy.has(a.id) ? 1 : 0) - (heldBy.has(b.id) ? 1 : 0))
     return acc
@@ -526,12 +587,16 @@ function SelectedUnitBar() {
 export function Inventory() {
   const equipContext = useGameStore((s) => s.equipContext)
   const [filter, setFilter] = useState<InvFilter>('all')
+  const [equipFilter, setEquipFilter] = useState<EquipFilter>('both')
   if (equipContext) return <EquipContextView />
   return (
     <div className="p-4 space-y-3 pb-24">
       <SelectedUnitBar />
-      <FilterBar active={filter} onChange={setFilter} />
-      <EquipmentSection filter={filter} />
+      <div className="flex items-center gap-1.5">
+        <FilterBar active={filter} onChange={setFilter} />
+        <EquipFilterToggle value={equipFilter} onChange={setEquipFilter} />
+      </div>
+      <EquipmentSection filter={filter} equipFilter={equipFilter} />
       <ItemsSection filter={filter} />
       <CraftingSection filter={filter} />
     </div>
