@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
@@ -947,9 +947,22 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   // roster — tap a hero there to lock onto them), so this view just reads it.
   const focusUnitId   = useGameStore((s) => s.battleFollowId)
   const setBattleFollow = useGameStore((s) => s.setBattleFollow)
-  const classFor = (id: string) => units.find((u) => u.id === id)?.class ?? null
+  // O(1) id → class / combatant lookups, rebuilt only when the roster or the
+  // battle advances. These are hit per-token (glyph) and per-event (byId) on
+  // every render, so a `.find()` here was an O(N²) scan each animation frame.
+  const classById = useMemo(() => {
+    const m = new Map<string, string | null>()
+    for (const u of units) m.set(u.id, u.class ?? null)
+    return m
+  }, [units])
+  const classFor = (id: string) => classById.get(id) ?? null
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const byId = (id?: string) => (id ? battle.combatants.find((c) => c.id === id) : undefined)
+  const combatantById = useMemo(() => {
+    const m = new Map<string, Combatant>()
+    for (const c of battle.combatants) m.set(c.id, c)
+    return m
+  }, [battle])
+  const byId = (id?: string) => (id ? combatantById.get(id) : undefined)
   // Frozen-able snapshot of the selected combatant — refreshed each round while
   // we're in the same wave (same combatants array reference). When a new wave
   // starts the snapshot freezes, so a respawned same-id monster isn't confused
@@ -1070,7 +1083,6 @@ function LiveBattle({ battle }: { battle: BattleState }) {
     }
     return snapshot
   })()
-  const alive = battle.combatants.filter((c) => c.alive)
   const cols = battle.cols ?? COLS
   const rows = battle.rows ?? ROWS
   const isOpen = battle.mode === 'open'
@@ -1087,6 +1099,35 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   // derived from those same positions below, so it stays glued and continuous.
   const { rpos, rposId } = useSmoothScene(battle.combatants, isOpen, battle.round)
   const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
+
+  // Round-scoped derivations — recomputed only when the battle advances (its
+  // identity changes each round), NOT on the 60fps motion re-renders. One pass
+  // buckets this round's events by type instead of six separate `.filter()`s,
+  // and tallies alive/party/counts in the same sweep.
+  const { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies } = useMemo(() => {
+    const alive: Combatant[] = []
+    const party: Combatant[] = []
+    let playersAlive = 0, enemiesAlive = 0
+    for (const c of battle.combatants) {
+      if (!c.alive) continue
+      alive.push(c)
+      if (c.team === 'player') { party.push(c); playersAlive++ }
+      else if (c.team === 'enemy') enemiesAlive++
+    }
+    type Ev = typeof battle.events
+    const hits: Ev = [], tacticUses: Ev = [], spawns: Ev = [], aggros: Ev = [], rallies: Ev = []
+    for (const e of battle.events) {
+      if (e.round !== battle.round) continue
+      switch (e.type) {
+        case 'melee_attack': case 'ranged_attack': case 'skill_use': if (e.value != null) hits.push(e); break
+        case 'tactic_use': tacticUses.push(e); break
+        case 'spawn': spawns.push(e); break
+        case 'aggro': aggros.push(e); break
+        case 'rally': rallies.push(e); break
+      }
+    }
+    return { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies }
+  }, [battle])
 
   // Harvest this round's damage/heal/DoT/interrupt numbers into the lingering
   // buffer (anchored at the struck unit's spot when it lands), so each plays its
@@ -1132,7 +1173,6 @@ function LiveBattle({ battle }: { battle: BattleState }) {
     return () => clearInterval(t)
   }, [floatNums.length])
 
-  const party = battle.combatants.filter((c) => c.team === 'player' && c.alive)
   const partyPts = party.map(rpos)
   const allPts = (alive.length ? alive : battle.combatants).map(rpos)
   // Camera target, in priority: a followed hero (single-hero "Diablo cam"), a
@@ -1154,19 +1194,14 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
 
-  const roundEvents = battle.events.filter((e) => e.round === battle.round)
-  // `hits` still drives the per-round flash rings + attack lines; the damage/heal/
-  // DoT/interrupt NUMBERS are harvested into the lingering `floatNums` buffer above.
-  const hits  = roundEvents.filter((e) => (e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null)
-  const tacticUses = roundEvents.filter((e) => e.type === 'tactic_use')
-
   // Active (non-expired) cast labels, grouped by caster and ordered oldest →
   // newest so the newest renders on top (the stack uses flex-col-reverse).
-  const nowMs = Date.now()
-  const castLabelGroups = (() => {
+  // Recomputed only when the labels change (harvest / 300ms sweep), not per frame.
+  const castLabelGroups = useMemo(() => {
+    const now = Date.now()
     const bySource = new Map<string, typeof castLabels>()
     for (const l of castLabels) {
-      if (nowMs - l.born >= CAST_LABEL_MS) continue
+      if (now - l.born >= CAST_LABEL_MS) continue
       const arr = bySource.get(l.sourceId) ?? []
       arr.push(l); bySource.set(l.sourceId, arr)
     }
@@ -1174,16 +1209,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
       sourceId,
       labels: labels.sort((a, b) => a.seq - b.seq),
     }))
-  })()
-  // Open-world reinforcements / returnees entering a live battle this round.
-  const spawns = roundEvents.filter((e) => e.type === 'spawn')
-  // §aggression feedback: a monster turned hostile (hit/called) → "!" flash; a
-  // Pack Tactics call → a ring pulsing out from the caller.
-  const aggros  = roundEvents.filter((e) => e.type === 'aggro')
-  const rallies = roundEvents.filter((e) => e.type === 'rally')
-
-  const playersAlive = battle.combatants.filter((c) => c.team === 'player' && c.alive).length
-  const enemiesAlive = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
+  }, [castLabels])
 
   const maxSize = Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
   const zoomBy = (factor: number) => {

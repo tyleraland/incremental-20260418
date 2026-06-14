@@ -23,13 +23,22 @@ each round).
 Key files: `src/components/BattleView.tsx` (`useSmoothScene`, `LiveBattle`,
 `BattleChip`, `Arena`).
 
-Drive the per-frame interpolated token positions (and the camera/world pan) by
-writing `transform` straight to DOM nodes via refs inside the rAF loop, instead
-of `setFrame` re-rendering the whole subtree. React then only re-renders on real
-rounds (~2.5/sec), removing ~95% of the open-world render cost. Pair this with
-`React.memo` on `BattleChip` plus stabilized props (`useCallback` select handler
-keyed by id, precomputed glyph) and `useMemo` on the derived arrays (one bucketed
-pass over `roundEvents` instead of six `.filter()`s).
+**Done (the non-controversial, zero-pixel-change subset):** `LiveBattle` now
+memoizes its round-scoped derivations behind `useMemo([battle])` — one pass
+buckets the round's events by type (instead of six `.filter()`s) and tallies
+alive/party/counts — so they no longer recompute on the 60fps motion renders, and
+the per-token `classFor` / per-event `byId` `.find()` scans became O(1) Map
+lookups (they were an O(N²) scan each frame). `castLabelGroups` is memoized on
+`[castLabels]`.
+
+**Remaining (the headline ~95% win, deferred — needs browser QA):** stop the rAF
+loop from `setFrame`-re-rendering the whole subtree; instead write the
+interpolated token `transform` and the camera/world pan straight to DOM nodes via
+refs, so React only re-renders on real rounds (~2.5/sec). This restructures the
+coordinate system (camera baked per-element today), so it can regress FX anchoring
+if shipped blind — verify motion/FX/minimap in a real large open-world battle.
+`React.memo` on `BattleChip` only pays off once this lands (today `cam`/`pos`
+change every frame and defeat it).
 
 ## Phase 2 — Level-of-detail (LOD) tokens (scales to higher counts)
 
