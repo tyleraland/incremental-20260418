@@ -1181,7 +1181,12 @@ function LiveBattle({ battle }: { battle: BattleState }) {
   const focusUnit = focusUnitId ? battle.combatants.find((c) => c.id === focusUnitId && c.alive) : null
   const lookPts: Vec2[] | null = focusUnit ? [rpos(focusUnit)] : manualCenter ? [manualCenter] : null
   const followPts = lookPts ?? (partyPts.length ? partyPts : allPts)
-  const effSize = manualZoom ? camSize : autoFitSize(lookPts ?? partyPts, cols, rows)
+  // Zoom is sized on the followed hero (single-hero "Diablo cam") or the whole
+  // party — NEVER on a free-look point. A minimap tap only re-centers the camera;
+  // letting it drive the zoom too collapsed the view to a tight 15-cell window on
+  // the tapped (often empty) spot, leaving every unit clipped off-screen.
+  const sizePts = focusUnit ? [rpos(focusUnit)] : (partyPts.length ? partyPts : allPts)
+  const effSize = manualZoom ? camSize : autoFitSize(sizePts, cols, rows)
   const cam = isOpen
     ? followCamera(followPts, cols, rows, effSize)
     : arenaCamera(cols, rows)

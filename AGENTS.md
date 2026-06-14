@@ -96,7 +96,11 @@ driven by **tactics** (below).
   `openWorldSize` = 50×50; the camera can't fit it, so `BattleView` uses a
   `followCamera` centred on the **party** that **auto-fits** to keep them all in
   view — until the player takes manual control via pinch-to-zoom / −,+ buttons
-  (⊙ re-enables auto-fit). Off-screen tokens are **clipped, not clamped** to the
+  (⊙ re-enables auto-fit). A minimap free-look only **re-centres** the camera on
+  the tapped point; the zoom is always sized on the followed hero or the whole
+  party, never on the free-look point (sizing on a single point collapsed the
+  view to the 15-cell minimum on an empty spot, clipping every unit off-screen).
+  Off-screen tokens are **clipped, not clamped** to the
   rim (`isOnScreen`): off-screen monsters aren't drawn, and each off-screen
   **party member** gets an `EdgeMarker` rim bubble with an arrow pointing toward
   them. One-finger pan too — but the finger-pan is a pixel nudge *layered on top
