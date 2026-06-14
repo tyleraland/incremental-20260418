@@ -72,7 +72,10 @@ export function getItemTraits(item: EquipmentItem): Trait[] {
   ]
   for (const [k, short, desc] of statMap) {
     const v = item.stats[k]
-    if (v) out.push({ id: `stat-${k}-${v}`, label: `+${v} ${short}`, category: 'stat', description: `Increases ${desc} by ${v}.` })
+    // Absolute (objective) stat chip: no sign — it's the item's own value, not a
+    // delta. The signed +/- form is reserved for the relative "vs current" deltas
+    // (StatDeltas), so the two read as clearly different things.
+    if (v) out.push({ id: `stat-${k}-${v}`, label: `${v} ${short}`, category: 'stat', description: `Increases ${desc} by ${v}.` })
   }
   return out
 }
