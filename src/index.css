@@ -88,3 +88,28 @@
   100% { opacity: 0; }
 }
 .animate-cast-label { animation: cast-label 3s ease-out forwards; }
+
+/* ── War Table (Tactician overhaul prototype) ──────────────────────────────── */
+
+/* Active-front node: a slow red breathing pulse so live battles read at a glance
+   across the overworld board. */
+@keyframes war-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55), 0 0 10px 1px rgba(239,68,68,0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.0),  0 0 16px 3px rgba(239,68,68,0.55); }
+}
+.animate-war-pulse { animation: war-pulse 1.6s ease-in-out infinite; }
+
+/* Landing-zone hint: when a squad is selected, deployable nodes get a soft cyan
+   beacon so the player sees where they can send them. */
+@keyframes war-beacon {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.0); }
+  50%      { box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.30); }
+}
+.animate-war-beacon { animation: war-beacon 1.8s ease-in-out infinite; }
+
+/* The whole table fades/rises in on mount — a little theatrical entrance. */
+@keyframes war-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-war-rise { animation: war-rise 0.4s ease-out both; }

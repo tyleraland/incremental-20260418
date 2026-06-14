@@ -6,6 +6,7 @@ import { TabBar } from '@/components/TabBar'
 import { RosterCarousel } from '@/components/RosterCarousel'
 import { UnitReportSheet } from '@/components/UnitReportSheet'
 import { OfflineSummary } from '@/components/OfflineSummary'
+import { WarTable } from '@/pages/WarTable'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
@@ -89,6 +90,7 @@ function App() {
         </div>
       )}
       <main className={['flex-1 overflow-y-auto min-h-0', showRoster ? '' : 'pt-16'].join(' ')}>
+        {activeTab === 'war'       && <WarTable />}
         {activeTab === 'map'       && <Map />}
         {activeTab === 'units'     && <Units />}
         {activeTab === 'inventory' && <Inventory />}
