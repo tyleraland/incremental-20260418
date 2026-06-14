@@ -10,7 +10,7 @@
 import { distance, moveSpeedOf } from './grid'
 import { spatialHashFor, SPATIAL_MARGIN } from './spatialhash'
 import { EPS } from './constants'
-import type { BattleState, Combatant, Vec2 } from './types'
+import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
 
 const isHidden = (c: Combatant) => c.statuses.some((s) => s.flags.includes('stealthed'))
 
@@ -151,14 +151,21 @@ export function cohesionVec(self: Combatant, state: BattleState): Vec2 {
 export function isCaster(c: Combatant): boolean {
   // A "caster" wants to operate from range: hang back, kite, and not throw weak
   // basic attacks. That only makes sense if it actually has a skill it uses *at
-  // range* — a melee kit, or a pure self-cast like Consecration (range 0), does
-  // not. So gate on "owns a skill that reaches past its own melee range"; without
-  // one the unit is a melee/bruiser even if its magic stat is high (the Mutant
-  // Lizard: a self-aura caster that should stand and bite, not kite).
-  const hasRangedSkill = c.skills.some((s) => s.targeting !== 'self' && s.range > c.meleeRange + EPS)
+  // range against the enemy* — a melee kit, a pure self-cast like Consecration
+  // (range 0), or an ally-only ranged skill (Heal, Bless) does NOT make a unit
+  // hang back from a foe it's locked onto. So gate on "owns a ranged skill that
+  // can hit an enemy"; without one the unit is a melee/bruiser even if its magic
+  // stat is high (the Mutant Lizard: a self-aura caster that should stand and
+  // bite, not kite — and a melee striker who *also* carries Heal: it still charges
+  // in, then heals from up close, rather than standing off at heal range with no
+  // way to touch the enemy).
+  const isOffensiveRanged = (s: EngineSkill) =>
+    s.targeting !== 'self' && s.targeting !== 'single_ally' && s.targeting !== 'aoe_ally' &&
+    s.range > c.meleeRange + EPS
+  const hasRangedSkill = c.skills.some(isOffensiveRanged)
   if (!hasRangedSkill) return false
   // A unit with a channel-time ranged spell is definitionally a caster.
-  if (c.skills.some((s) => s.channelTime >= 1 && s.targeting !== 'self' && s.range > c.meleeRange + EPS)) return true
+  if (c.skills.some((s) => s.channelTime >= 1 && isOffensiveRanged(s))) return true
   // Otherwise: magic-leaning stats with a ranged skill (Theron, Sera). Mostly
   // catches instant-spell mages — they still don't want to throw weak basic shots.
   return c.int > c.str
