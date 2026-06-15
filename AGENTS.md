@@ -18,7 +18,7 @@ keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 - `src/components/` (BattleView, RosterCarousel, …) and `src/pages/` (Map, Units, Inventory, Guild, Time, Reports).
 
 ## Core patterns
-- **Derived stats computed at render** (`getDerivedStats`), never stored. Same for `getUnitTraits`/`getAvailableSkills`.
+- **Derived stats computed at render** (`getDerivedStats`, `src/lib/stats.ts`), never stored. Same for `getUnitTraits` (`src/data/traits.ts`) / `getAvailableSkills` (`src/data/skills.ts`).
 - **Registries are plain exported objects**: `TRAIT/MONSTER/SKILL/RECIPE/TACTIC_REGISTRY`. Add entries there.
 - **Collapsible rows**: `expandedXxxIds: string[]` in the store.
 - **Portal modals** (`createPortal`) for popups escaping an overflow container.
