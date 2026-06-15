@@ -376,6 +376,59 @@ Detector** (reveal + strike cloaked foes via `removesStatusId`, vs an **Assassin
 - **Visibility graph rebuilt per nav call** — fine at this scale; cache
   corner-corner edges per battle if terrain grows.
 
+## Performance (large-battle render & engine)
+
+Target: ~25+ entity open-world battles smooth on mobile. **Phases 1–3 of the
+old `performance.md` plan are done** (that file was folded in here and deleted):
+
+- **✅ Phase 1 — motion decoupled from React.** The per-frame rAF `setFrame`
+  loop is gone; open-world tokens + every camera-following element ride CSS
+  transitions, so the battle subtree renders ~5×/sec (one per engine round)
+  instead of ~65×/sec. Measured ~2× mobile fps. Screen-space coords unchanged
+  (a static frame is pixel-identical).
+- **✅ Phase 2 — LOD tokens.** `BattleChip` drops its floating plate + facing/
+  moving nubs (most per-token DOM) when zoomed past `LOD_CAM_SIZE` or with more
+  than `LOD_TOKEN_COUNT` on-screen tokens (`Lod.test.tsx`).
+- **✅ Phase 3 — cheap engine wins (the safe subset).**
+  - *Vision cache* — `visibleEnemiesOf` (the hottest read, 3–5× per unit/turn)
+    is memoized per combatant, keyed on a per-`takeTurn` generation + the
+    querier's live position, gated on the spatial-hash ambient so it's active
+    only inside a live round (`src/engine/spatial.ts`). Byte-identical: only
+    `self` moves during its turn; direct test calls bypass it.
+  - *Minion lock-clear* — the crumble pass batches dead-minion ids and clears
+    locks in one roster pass instead of one-per-crumble (was O(minions × N),
+    `advanceRound`). Non-spatial, so the hash doesn't apply.
+
+Deferred / not worth it:
+
+- **Spatial hash for zone-membership & spawn-separation — intentionally NOT
+  done.** The hash is a **round-start snapshot**; `addCombatant`/`spawnSummons`
+  add combatants **mid-round**, which are deliberately invisible to it (that's
+  the established deterministic baseline — later units don't see same-round
+  summons via the hash). `zoneMembers` and the spawn `enforceSeparation`
+  currently **brute-scan precisely so they catch those mid-round additions** —
+  routing them through the round-start hash would silently drop summons from
+  zones / let spawns stack, breaking byte-identical replay. A safe version needs
+  an incrementally-maintained hash (insert on `addCombatant`), which would *also*
+  change mid-round-summon vision/targeting — a bigger change than the win
+  justifies (zone scans are guarded by `state.zones.length === 0`; open-world
+  spawns are ~1 per 30 ticks).
+- **`React.memo` on `BattleChip` — not viable as a wrap; skipped.** The engine
+  **mutates combatant objects in place** (the `battle.combatants` array reuses
+  the same object refs; the store only shallow-clones the battle wrapper for
+  identity). So in `memo`, `prevProps.c` and `nextProps.c` are the *same object*
+  — comparing `c.hp`/`c.pos` can never see the old value, and a naive memo would
+  freeze tokens. A correct memo needs every displayed mutable field (hp, alive,
+  moving, facing, channel progress) passed as **primitive mirror props** plus a
+  value-comparing custom comparator (cam/pos are fresh objects each render) — a
+  fragile coupling to three child components for marginal gain now that the
+  subtree only renders ~5×/sec and most tokens change every round anyway.
+- **Phase 4 — run the sim in a Web Worker.** The highest ceiling, the most work.
+  BSNAP tokens already make a battle worker-portable, so the engine compute can
+  move off the main thread (or, lighter: throttle the *watched* battle's sim rate
+  when entity count is high — off-screen battles are already rate-extrapolated).
+  Only reach for it if Phases 1–3 aren't enough.
+
 ## Heuristic shortcuts
 
 - `HERD_BIAS = 4` — numeric fudge for path side-picking. The team blackboard

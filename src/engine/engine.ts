@@ -24,7 +24,7 @@ import {
 import { makeSkillTactic, isChanneledAoe } from './skills'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf } from './spatial'
+import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -1544,6 +1544,7 @@ function rallyPack(state: BattleState, self: Combatant): void {
 
 function takeTurn(state: BattleState, self: Combatant): void {
   const round = state.round
+  bumpVisionGen()   // start a fresh per-turn vision-cache generation (only `self` moves this turn)
   self.moving = false   // set true only if this turn produces a position change
   self.lastResolution = []   // §debug: rebuilt by the eval loops below (see rec)
   // (0) hard control — lose the turn. Stun is consumed on the skipped turn;
@@ -1672,6 +1673,7 @@ export function advanceRound(state: BattleState): BattleState {
   // do O(local) neighbour queries this round instead of O(N²). Cleared at the end so
   // between-round work (spawns) and other call paths fall back to a brute scan.
   setSpatialHash(new SpatialHash(state.combatants))
+  clearVisionCache()   // drop last round's per-turn vision memos (bounds memory across battles)
   // Open battles run forever — trim the event log so it can't grow unbounded
   // (only the current round's events are ever read for rendering).
   if (state.mode === 'open' && state.collectEvents && state.events.length > EVENT_CAP) {
@@ -1700,6 +1702,7 @@ export function advanceRound(state: BattleState): BattleState {
   // A timed summon (summonTtl) counts down once per engine round and dies at 0; a
   // minion whose owner is dead/absent (a slain caster, a recalled companion's
   // hero) crumbles too. Emits unit_death so the UI clears the token.
+  let crumbled: Set<string> | null = null
   for (const c of state.combatants) {
     if (!c.alive || c.ownerId == null) continue
     const owner = findCombatant(state, c.ownerId)
@@ -1707,9 +1710,16 @@ export function advanceRound(state: BattleState): BattleState {
     if (c.summonTtl != null && !ownerGone) c.summonTtl -= 1
     if (ownerGone || (c.summonTtl != null && c.summonTtl <= 0)) {
       c.alive = false
-      for (const o of state.combatants) if (o.lockedTargetId === c.id) o.lockedTargetId = null
+      ;(crumbled ??= new Set()).add(c.id)
       emit(state, { round: state.round, type: 'unit_death', sourceId: c.ownerId, targetId: c.id })
     }
+  }
+  // Clear locks pointing at a crumbled minion in ONE pass over the roster rather
+  // than one pass per crumble (was O(minions × N)). Lock-clears are commutative and
+  // nothing in the crumble loop above reads lockedTargetId, so deferring them here
+  // is byte-identical. (Non-spatial — keyed on lockedTargetId, so the hash can't help.)
+  if (crumbled) {
+    for (const o of state.combatants) if (o.lockedTargetId && crumbled.has(o.lockedTargetId)) o.lockedTargetId = null
   }
 
   // §2 ground hazards (Lightning Storm / Consecration zones): re-center auras, age

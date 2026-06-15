@@ -31,15 +31,49 @@ export function alliesOf(state: BattleState, self: Combatant): Combatant[] {
 // UNFILTERED (everyone alive on the other team) for the physical questions: AoE
 // splash hits whoever's in the blast, the win-check counts all survivors. Don't
 // add a vision/stealth filter there.
+// ---- Per-turn vision cache (pure perf, byte-identical) ---------------------
+// visibleEnemiesOf is the engine's hottest read: every targeting/movement/skill
+// tactic re-asks "what can I see?", so it runs 3–5× per unit per turn with
+// identical inputs. We memoize the scan per combatant, keyed on a generation
+// counter (`bumpVisionGen` at the top of every takeTurn) AND the querier's *live*
+// position.
+//
+// Replay stays 1:1 because within a single takeTurn only `self` moves: the fresh
+// gen drops every cross-turn entry, and the position key forces a re-scan the
+// instant `self` steps (its enemy set changed) while repeated same-spot asks reuse
+// one scan. Other units queried mid-turn — Guardian/Wary-Caster reading a
+// *same-team* ally's nearest threat — stay valid: self isn't that ally's enemy, so
+// self moving can't change the ally's visible set. (Querying an *enemy's* vision
+// mid-turn would violate the invariant; nothing does.) Callers treat the result as
+// read-only (they `.filter()`/iterate, never sort/splice it in place).
+//
+// Caching is GATED on the spatial-hash ambient being active for *this* combatants
+// array (`spatialHashFor`) — the same "are we inside a live round?" signal the hash
+// itself uses. That's the only place the two invariants hold (gen bumped per turn,
+// stable combatants array); direct helper calls in tests have no active hash, so
+// they bypass the cache and scan fresh (distinct per-call states never collide).
+// The map is cleared each round in advanceRound so it can't grow across battles.
+let visionGen = 0
+const visionCache = new Map<string, { gen: number; x: number; y: number; result: Combatant[] }>()
+export function bumpVisionGen(): void { visionGen++ }
+export function clearVisionCache(): void { visionCache.clear() }
+
 export function visibleEnemiesOf(state: BattleState, self: Combatant): Combatant[] {
+  const hash = spatialHashFor(state.combatants)   // non-null ⇒ inside a live round for this state
+  if (hash) {
+    const hit = visionCache.get(self.id)
+    if (hit && hit.gen === visionGen && hit.x === self.pos.x && hit.y === self.pos.y) return hit.result
+  }
   const r = self.visionRange
   // Finite vision (open-world fog): query the spatial hash for nearby buckets and
   // re-filter by live distance — same set/order as the scan, but O(local). ∞ vision
   // (encounters) scans the whole roster (small N) — and so does the fallback when no
   // hash is active (tests, between-round spawns). All three are byte-identical.
-  const grid = r === Infinity ? null : spatialHashFor(state.combatants)
+  const grid = r === Infinity ? null : hash
   const pool = grid ? grid.near(self.pos, r + SPATIAL_MARGIN) : state.combatants
-  return pool.filter((c) => c.alive && c.team !== self.team && !isHidden(c) && distance(self.pos, c.pos) <= r)
+  const result = pool.filter((c) => c.alive && c.team !== self.team && !isHidden(c) && distance(self.pos, c.pos) <= r)
+  if (hash) visionCache.set(self.id, { gen: visionGen, x: self.pos.x, y: self.pos.y, result })
+  return result
 }
 export function lockedTarget(self: Combatant, state: BattleState): Combatant | null {
   if (!self.lockedTargetId) return null
