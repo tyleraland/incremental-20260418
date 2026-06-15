@@ -88,6 +88,19 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
     the regen/recovery pass owns final unit HP (units fast-heal anyway); priming
     doesn't separately model offline KO downtime.
 
+## Economy & resources
+
+- **Passive resource generation from assigned units.** The original prototype
+  direction (from the now-deleted `features.md`): a unit stationed at a location
+  passively produces resources over time (Wood, Iron Ore, Fish, Herbs — the
+  `miscItems` the crafting loop wants) with no combat. Superseded by the combat /
+  open-world direction, where locations spawn fights that drop loot instead.
+  If revived it overlaps the **Gather-and-guard** tactic below (resource nodes +
+  a "go work that node" move-order behaviour) — the difference is *passive*
+  (just-assigned, ticks yield) vs *active* (a hero peels off to a node while the
+  party screens). Wiring either into crafting would also close the "crafting loop
+  is disconnected at the joints" gap under **Data / spec drift**.
+
 ## Combat content
 
 - **Per-location quests & async choices.** Each location grows a small
