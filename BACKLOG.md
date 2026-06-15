@@ -41,7 +41,10 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
     a point / holds if blocked, instantaneous in grid steps) is the building
     block; this would make it non-instantaneous and cross-location, and likely
     add a teleport-style movement ability that satisfies an otherwise-impossible
-    path (the move-order tests already model the impossible case).
+    path (the move-order tests already model the impossible case). *En-route
+    hunting* (roadmap Tier 4): a unit in transit fights/loots/earns at each
+    waypoint location it passes through, dwelling a few ticks before advancing —
+    needs a location graph (`connections`) + BFS routing to populate `travelPath`.
   - *Smarter spawns* — per-location monster *distributions* (weights, level
     bands, time-of-day) and non-uniform spawn timers. Today it's an equal-weight
     random pick on a fixed timer, scattered uniformly across the map.
@@ -100,6 +103,12 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
   (just-assigned, ticks yield) vs *active* (a hero peels off to a node while the
   party screens). Wiring either into crafting would also close the "crafting loop
   is disconnected at the joints" gap under **Data / spec drift**.
+- **Shop / merchant economy (gold sink).** Gold is *earned* (combat + offline
+  rewards) but there's nowhere to spend it — no shop, no sell. Add a vendor to
+  buy gear/consumables and **sell** surplus loot (pairs with the inventory
+  *sell mode* below), and a **Merchant** class passive that grants a
+  `goldDiscount` (the skill can exist in the tree with no effect until the shop
+  lands). Closes the loot → gold → power loop. (Mined from the old roadmap Tier 6.)
 
 ## Combat content
 
@@ -111,6 +120,22 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
   player to answer when convenient. Folds into the open-world shape
   (above) and the location codex, so each cell is more than "the wave
   it spawns."
+- **Boss monsters with phase / trigger skills.** The **Elite Four**
+  (`data/monsters.ts`) are just high-stat monsters with ordinary skills+tactics
+  today — there's no boss *system*. Add an `isBoss` flag (+ stat/HP multipliers,
+  distinct token/border in `BattleView`) and **trigger-driven** skills that fire
+  on events rather than the normal cooldown cadence: on-spawn, on-low-health
+  (**phase transitions** — enrage / new ability set below a HP threshold),
+  on-ally-KO, periodic. The engine already has per-monster `skills`/`tactics` and
+  statuses; this needs a trigger hook in `advanceRound`/`takeTurn` and a place to
+  declare a monster's private (not-in-`SKILL_REGISTRY`) boss kit. (Roadmap Tier 2.)
+- **Consumable combat items (auto-use).** Engine scaffolding exists
+  (`EngineUnitInput.potions` → `potionsLeft`/`potionsConsumed`) but isn't wired to
+  inventory or any use logic. Let a unit be configured with a `combatItem` (points
+  at a `miscItems` consumable — Fish Stew / Herb Salve already craftable) that's
+  auto-consumed in combat on a trigger (e.g. self-heal below a HP threshold, or
+  per-N-rounds), decrementing inventory and firing the effect; degrade gracefully
+  when it runs out. Gives crafted consumables a combat purpose. (Roadmap Tier 6.)
 - **🟡 Minions — first iteration shipped.** The engine now supports owned,
   leashed combatants: `Combatant.ownerId` / `leashRange` / `summonTtl` / `summonTag`,
   a baseline owner-leash in `takeTurn` (`applyLeash` — strays return to the owner,
@@ -153,6 +178,33 @@ Implemented behavior is in `CLAUDE.md` → Feature Specifications.
 - **Combat log UI** — event stream is rich (every hit, heal, status,
   interrupt); only floating numbers render. No history of "Aldric hit Slime
   for 24."
+
+## Items, cards & sockets
+
+- **Monster cards + socketing (the upgrade layer).** Only the *persistence*
+  scaffolding exists — `EquipmentItem.slots` (0–4) and `itemSockets` (`itemInstanceId
+  → card itemIds`, persisted via `socketsCodec`). The actual system isn't built:
+  - *Card definitions + drops* — one `CardDef` per monster type (a `MiscItem` with
+    a `cardEffect`), dropping at a very low rate (~0.5–2%) from that monster. Folds
+    into the existing loot-roll path (`rewardKills` / `rollOfflineLoot`) and the codex.
+  - *Card effects* — a typed union (`stat-bonus` / `elemental-bonus` / `regen-bonus`
+    / `drop-rate-bonus` to start, extended as cards are designed) folded into
+    `getDerivedStats` the same additive way skill/equipment bonuses already are.
+  - *Socketing UI* — select item → select socket → pick a card from inventory →
+    consume it into `itemSockets[instanceId]` (mobile: tap-through, mirrors the
+    equip-picker flow). Stat deltas shown like the equip picker.
+  (Mined from roadmap Tier 5 — the data fields were laid in for it but it's inert.)
+
+## Inventory UX (at scale)
+
+- **Search / pagination / sell / recipe-plan.** Inventory already has **category
+  filter pills** (`InvFilter`: all / consumable / weapon / armor / accessory /
+  misc) and an equipped-state filter (`Inventory.tsx`). Once cards + more gear land
+  the list gets long; still missing: a **name search**, **sort** (stat score / slot
+  count / name), **pagination / virtual list** for cheap mobile render, a **sell
+  mode** (bulk-mark → gold preview → confirm; needs the shop/merchant economy
+  above), and a recipe **"plan"** button that highlights missing ingredients in
+  Misc. (Roadmap Tier 8.)
 
 ## AI & coordination
 
