@@ -1,642 +1,99 @@
-# Collaborator Guide
+# Collaborator Guide (CLAUDE.md ⇄ AGENTS.md — same file; CLAUDE.md is a symlink)
 
-We're iterating fast on UI. No tests yet. Don't over-engineer toward future features — three similar lines beats a premature abstraction.
-
-## Architecture patterns
-
-**Single Zustand store** (`src/stores/useGameStore.ts`) holds all game and UI state — units, equipment, inventory, plus UI bits (expanded rows, active tab, equip context, etc.). The one exception is live combat: per-location `BattleState` objects live in `battles[locationId]` (runtime-only, not persisted) and are produced by the combat engine, not hand-written by the store.
-
-**The combat engine is a separate, pure module** (`src/engine/`). It is a deterministic, round-based *spatial* simulation on a 15×15 grid — units have positions, move, kite, flank, and body-block. It imports no game state, time, or stats; `src/engine/adapter.ts` is the only translation layer between game `Unit`/`MonsterDef` + `DerivedStats` and the engine's `EngineUnitInput`. The engine never mutates its inputs. See the Combat spec below and `BACKLOG.md` for deferred engine work.
-
-**Derived stats are computed at render time**, never stored. `getDerivedStats(unit, equipment)` reads abilities + equipment bonuses + skill bonuses each time. Same for `getUnitTraits`, `getAvailableSkills`, etc.
-
-**Registries are plain exported objects** — `TRAIT_REGISTRY`, `MONSTER_REGISTRY`, `SKILL_REGISTRY`, `RECIPE_REGISTRY`, `TACTIC_REGISTRY`. Add entries there; the UI and engine read them.
-
-**Collapsible row pattern** throughout: header always visible, body toggled via `expandedXxxIds: string[]` in the store.
-
-**Portal modals** (`createPortal`) for any popup that needs to escape an overflow container — see `TraitBubble`, `MonsterCodex`.
-
-**Drag-and-drop**: PointerSensor only (no TouchSensor). Apply `touchAction: 'none' as const` in the draggable element's style object — not just during drag — so mobile browsers don't intercept the gesture before it starts.
-
-**Save = composable sliced codecs** (`src/lib/save.ts`, `src/save/*`). A save is a
-`v1:<base64>` envelope of independently-versioned **slices**, one `SliceCodec`
-per concern (`units`, `inventory`, `locations`, `codex`, `world`, `combatStats`,
-`battles`, `sockets`). Each codec owns `serialize`/`deserialize`/`empty` and an
-optional `migrate(data, fromVersion)`; a missing slice falls back to `empty()`
-and a corrupt envelope loads as `{}` (safe no-op). `App.tsx` loads once on mount,
-auto-saves every 60s + on tab-hide. **State tiers** (see the `GameState` comment
-block): *persistent* (units, inventory, recipes, location familiarity/seen,
-codex, locationStats, **unitStats** (per-hero lifetime combat tally), partyTactics,
-ticks, **battles**, **itemSockets**),
-*runtime* (regenerated: `locations`, `eventLog`, `lastTickAt`), *ephemeral UI*
-(own localStorage keys: tabs, selections, expand state, camera nonces). **Live
-battles persist** via `battlesCodec`, which stores each as the engine's
-`BSNAP.<base64>` token (`serializeBattle`) — so battle serialization lives in one
-place and the whole-game save *composes* it. That makes the battlefield-repro
-token simply `exportBattle(locationId)` (one battle through the same serializer
-the BattleView ⎘-state button uses). `exportSave`/`importSave` round-trip the
-whole envelope (player backup + highest-fidelity bug repro, incl. live fights);
-both are surfaced on the Time tab's Debug section.
+Mobile-first incremental auto-battler. Vite + React 18 + TS + Tailwind + Zustand +
+@dnd-kit. Deploys to GitHub Pages on push to `main`. This file is a map/reference —
+keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 
 ## Priorities
+- Playable feel on mobile first; visual iteration speed over correctness.
+- Tests/refactoring come later. No error boundaries, no abstraction the current code doesn't need.
+- Three similar lines beat a premature abstraction.
 
-- Playable feel on mobile first
-- Visual iteration speed over correctness
-- Tests and refactoring come later
-- No error boundaries, no abstractions the current features don't need
+## Where things live
+- `src/stores/useGameStore.ts` — single Zustand store: all game + UI state, the tick loop, combat/offline orchestration. Exception: live battles in `battles[locationId]` (produced by the engine, not hand-written).
+- `src/engine/` — pure, deterministic, RNG-free spatial combat sim. Imports no game state/time/stats. `adapter.ts` is the only `Unit`/`MonsterDef`+`DerivedStats` → `EngineUnitInput` translation. Never mutates inputs.
+- `src/lib/` — `stats.ts` (`getDerivedStats` etc.), `offline.ts` (reward extrapolation + `splitExpByLevel`), `save.ts` (codec framework), `time.ts`, combat-report helpers.
+- `src/save/*Codec.ts` — one save slice per concern.
+- `src/data/` — registries + content: monsters, skills, recipes, equipment, traits, locations, scenarios, units.
+- `src/components/` (BattleView, RosterCarousel, …) and `src/pages/` (Map, Units, Inventory, Guild, Time, Reports).
 
-## Browser testing & manual verification
+## Core patterns
+- **Derived stats computed at render** (`getDerivedStats`), never stored. Same for `getUnitTraits`/`getAvailableSkills`.
+- **Registries are plain exported objects**: `TRAIT/MONSTER/SKILL/RECIPE/TACTIC_REGISTRY`. Add entries there.
+- **Collapsible rows**: `expandedXxxIds: string[]` in the store.
+- **Portal modals** (`createPortal`) for popups escaping an overflow container.
+- **Drag-and-drop**: PointerSensor only (no TouchSensor); set `touchAction: 'none'` on the draggable's style always (not just while dragging).
 
-**Use Playwright, not the chrome-devtools MCP** — the managed devtools browser is
-flaky in this environment ("Target closed" on every call). Skip it; go straight to
-Playwright. Beyond the automated suites, that's how you *verify work by eye*:
+## Save & state tiers
+- A save is a `v1:<base64>` envelope of independently-versioned **slices** (`src/lib/save.ts`). Each `SliceCodec` owns `serialize`/`deserialize`/`empty` + optional `migrate`. Missing slice → `empty()`; corrupt envelope → `{}` (safe no-op). `App.tsx` loads on mount, autosaves every 60s + on tab-hide.
+- 10 codecs (`ALL_CODECS`, `src/save/index.ts`): units, inventory, locations, codex, world, combatStats, unitStats, unitHistory, battles, sockets.
+- **Tiers** — *persistent*: units, inventory, learnedRecipes, location familiarity/seen, codex, locationStats, unitStats, unitHistory, partyTactics, ticks, **battles + battleCooldown + monsterSpawnTimers** (battlesCodec), **itemSockets** (socketsCodec), savedAt. *runtime*: locations, eventLog, lastTickAt, OfflineSummary. *ephemeral UI*: own localStorage keys (tabs, selections, expand state, camera nonces).
+- Battles persist via `battlesCodec` as the engine's `BSNAP.<base64>` token (`serializeBattle`) — serialization lives in one place; the save composes it. `exportSave`/`importSave` round-trip the whole envelope (Time tab → Debug).
 
-- **Perf/visual harness:** `npm run e2e:install` once, then `npm run e2e` (mobile is
-  CPU-throttled 4× — the logged fps is the before/after signal). Each run writes a
-  screenshot to `e2e/__shots__/<project>.png` (predictable path — open it directly,
-  no digging through the HTML report).
-- **Drive a scene:** `?perf=1` deterministically drops into the heavy open-world
-  battle (`src/dev/perfSeed.ts`); add more seeds there as scenes are needed.
-- **Inspect/drive live state:** in DEV the store is on `window.__game`, so a Playwright
-  `page.evaluate(() => __game.getState())` can assert on real game state or poke it
-  (e.g. `__game.getState().enterBattleView(id)`).
-- **One-off probe:** for an interactive check (taps, camera, minimap), drop a throwaway
-  `e2e/*.probe.spec.ts` that screenshots before/after to `/tmp`, read the PNGs, then
-  delete it.
-- **Replay a battle snapshot (`BSNAP.…`) headlessly:** `npm run bsnap -- <source>` —
-  the CLI version of the "⎘ state → paste BSNAP → watch it recur" bug-repro loop, so a
-  reported fight becomes one command instead of a hand-rolled throwaway test. `<source>`
-  is a **gist URL** (`https://gist.github.com/<user>/<id>` — auto-resolved to `/raw`), a
-  raw URL, a local file, a literal `BSNAP.…` token, or `-` for stdin; it caches the
-  pulled token to `.bsnap/last.txt` (gitignored) so you can re-run offline. It runs the
-  engine straight from TS source (Vite `ssrLoadModule`, no build), prints the opening
-  roster + zones, then steps the deterministic sim printing per-round HP/Δ/position for
-  the watched units. Options: `-n/--rounds <N>` (default 24), `-w/--watch <id,id>`
-  (default: all player-team), `-e/--events` (per-round events touching a watched unit),
-  `--all-events`, `--no-step` (roster only), `--no-save`, `-h`. Output is clean stdout
-  (no vitest console-swallowing). Examples:
-  ```
-  npm run bsnap -- https://gist.github.com/tyleraland/<id> -w u4 -e
-  npm run bsnap -- .bsnap/last.txt -n 40        # replay the cached token, 40 rounds
-  npm run bsnap -- - --no-step < token.txt      # roster/zones only, from stdin
-  ```
+## Combat engine (`src/engine/`)
+Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounters; open-world default 50×50). One battle per location: `BattleState { combatants[], zones[], barriers[], mode, round, outcome, events[], plans, stats, cols/rows, timeScale }`. Combatants are cloned from inputs and **mutated in place** each round.
 
-## Branching & Merging
+- **Determinism**: no RNG; damage variation is a pure fn(round, combatant index). Loot/spawn RNG lives in the *store*, not the engine. Same roster+tactics replays 1:1. Engine changes MUST keep snapshot replays byte-identical.
+- **Modes**: `'encounter'` (discrete wave; ends victory/defeat/draw; fresh wave after `BATTLE_RESPAWN_TICKS`=15) and `'open'` (persistent open-world, `openWorld: true`; never self-terminates; store keeps `openWorldCap` (default 8) monsters scattered, trickling one in every `OPEN_WORLD_SPAWN_TICKS`=30; heroes join/leave via `reconcileOpenPlayers`; store owns teardown).
+- **A round** (`advanceRound`): tick statuses (DoT/age-out) → tick zones → tick cooldowns → turn order (SPD desc, id tiebreak) → each alive combatant `takeTurn` → `evalOutcome` (draw at `MAX_ROUNDS`=200).
+- **Cadence**: store ticks `TICKS_PER_SECOND`=5; one engine round per tick (`ROUND_EVERY_TICKS`=1). Battles run `timeScale`=`ROUND_TIME_SCALE`=2 (finer rounds, ~2.5 *logical* rounds/sec). `timeScale` defaults to **1** on `BattleState` (engine suite/replays byte-identical) and is applied via the `engine/timescale.ts` ambient.
+- **Vision & wander**: `visionRange` gates targeting (open-world fog; heroes 10, monsters 8 cells; `Infinity` in encounters). No target in sight → wander (heroes roam the team `waypoint`; monsters lurk then hop). Deterministic (`hash01`, no RNG).
+- **Terrain**: barriers block movement + LoS (casters won't fire through walls; will through cliffs). `steerAround` = Dijkstra over the barrier set; unreachable → hold (`canReach` exposes it). Arena bounds read from the `engine/arena.ts` ambient — no size hardcoded in movement clamps.
+- **Spatial hash** (`spatialhash.ts`) + **per-turn vision cache** (`spatial.ts`): O(local) neighbour scans / memoized `visibleEnemiesOf`. Both are pure optimizations gated to the live round and byte-identical to a brute scan (fall back to brute when no active hash). The vision cache is process-global and assumes one battle is stepped at a time.
+- **Threat & aggro** (WoW-style): targeting = hard taunt (`taunted` status) > targeting tactics > threat fallback (`selectTarget`: `threat − distance`, 25% hysteresis). Threat accrues from all damage ×`threatMult` and from healing; the **Taunt** skill peels.
+- **Zones** (`BattleZone`): persistent ground areas (Lightning Storm damage, Molasses slow, Consecration follow-aura). Damage runs the **element matrix** vs effective armor; three-phase "aura turn" eligibility; DoT once per logical round.
+- **Snapshots** (`snapshot.ts`): `serializeBattle` → `BSNAP.<base64>` (everything the sim reads; not events/trace). `deserializeBattle` replays 1:1; `.<len>x<hash>` integrity guard. ⎘-state button in BattleView; replay via `npm run bsnap`.
+- **Adapter**: defensive passives (Toughness/Evasion/Defensive Stance) set `Combatant.armorReduction`/`dodgePeriod`/`threatMult` here (MonsterDef carries the same fields).
 
-- Develop on a feature branch, but **merge to `main` when the feature is complete** — main is what gets tested in the browser. Do not wait to be asked.
-- Fast-forward merge when possible: `git merge --ff-only <branch> && git push origin main`.
-- **After pushing to `main`, include the commit hash in the chat reply** (e.g. "Shipped to `main` (commit `abc1234`)") so I can match it to what I'm seeing in the debug UI.
-- **When you open a PR, share its live preview link in the chat reply so there's no guessing — I just open the link.** Every open PR auto-deploys to `https://tyleraland.github.io/incremental-20260418/pr-preview/pr-<N>/` (the `pr-preview.yml` workflow; torn down on close). Give the exact URL with the PR's number filled in, not the pattern.
+## Tactics (the player's combat lever)
+- `TACTIC_REGISTRY`; each tactic on exactly one **channel**: movement/targeting/action/reaction/passive. Evaluated per channel in priority order each turn.
+- Unit equips ≤ `MAX_UNIT_TACTICS`=4 (`unit.tactics`); party shares ≤ `MAX_PARTY_TACTICS`=2 (`partyTactics`). Scope enforced by `TacticDef.scope`. Reorder within a channel only.
+- `kind`: `floor` (fires on a basic precondition; `demoteFloors` sorts floors below triggers in their channel) | `trigger` (default).
+- **Skills are injected as action-channel tactics** via the adapter. The biggest ready nuke leads; each turn `reorderAttacksForTarget` re-ranks single-target attacks vs the locked enemy via `estimateDamageVs` (`damage.ts`: element matrix + magic/physical mitigation, amortized over the cast cycle). **Exploit Weakness** lowers the switch margin (default 15%).
+- **Only skills change numbers; tactics are pure behaviour.** Shield Wall / Last Stand are self-cast skills with gated cast tactics.
+- Per-turn resolution recorded in `Combatant.lastResolution` (BattleView Debug tab); `Combatant.trace` is a 20-entry ring buffer.
 
----
+## Combat view (a mode of the Map tab)
+- No standalone Combat tab: `mapMode` is `'world'` | `'battle'`. `BattleView` is the drop-in viewer for `combatLocationId`. `RosterCarousel` stays pinned across both (scopes to the battlefield's heroes in battle mode and drives camera follow via `battleFollowId`).
+- Drop in: double-tap a location or the **Drop in ›** button (`enterBattleView`); **⤢ Overworld** exits (`exitBattleView`).
+- Only the *watched* battle full-sims per tick; others advance off-screen via `creditOffscreen` (rate extrapolation every `OFFSCREEN_CREDIT_TICKS`=25). World mode + tests full-sim every location.
+- Motion rides CSS transitions (no rAF loop). Combatants mutate in place, so `BattleChip` is **not** `React.memo`'d. **LOD**: `BattleChip` drops its label/nubs past `LOD_CAM_SIZE`=18 cells or >`LOD_TOKEN_COUNT`=16 on-screen tokens.
 
-## Feature Specifications
+## Offline progression (`src/lib/offline.ts`)
+`catchUp` (`App.tsx`) → `batchTick(n)` for `n>10`. Does **not** re-simulate combat; **extrapolates rewards from realized rates**.
+- `worldCodec` persists `savedAt` → `lastTickAt` so catch-up survives a full restart.
+- *Warm* (`projectOfflineRewards`): scale a location's realized rate; exp/gold deterministic (floored EV), loot rolled per projected kill; exp pool split by level.
+- *Cold* (`primeColdLocation`): budgeted real-combat slice (`PRIME_ROUND_CAP`=300, `PRIME_MS_BUDGET`=50ms) to seed a rate.
+- *Sampled* (`projectOfflineSampled`): long absences split into independent windows (~`SAMPLE_WINDOW_TICKS`=30min, ≤`SAMPLE_MAX_WINDOWS`=12), re-stocked between, summed for variance.
+- `OfflineSummary` modal shown when absence ≥ `OFFLINE_SUMMARY_MIN_SECS`=60s (rewards still apply below the gate).
 
-These are the implemented behaviors. Written so they can eventually become test cases.
+## Health (covered by `health.test.ts`; `src/lib/stats.ts`)
+- `health` is an integer ≤ `maxHp` = `floor(50 + con*10)`; `Math.floor` applied at the moment damage is written.
+- `health ≤ 0` → KO; KO'd/recovering units don't fight.
+- KO → recovery (`recoveryTicksLeft` from `RECOVERY_TICKS`=5, **no regen**) → resting (`isResting`, `RESTING_REGEN_RATE`=50 HP/tick to `maxHp`).
+- Unassigned units regen `REGEN_RATE`=50 HP/tick. `batchTick` applies the same in bulk offline (no live-combat re-sim).
 
-### Health
+## Exp & leveling
+- 1 XP per kill into a pool, split across the *surviving* party **proportional to level** (`splitExpByLevel`) — anti-power-leveling. Fractional shares; floored only at display. Same rule offline.
 
-- Unit health is a whole integer capped at `maxHp` (derived: `floor(50 + con * 10)`, see `src/lib/stats.ts`). `Math.floor` is applied at the moment damage is written, never at display time.
-- A unit with `health <= 0` is KO'd. KO'd units (and units still in recovery) do not participate in combat.
-- KO'd units enter a recovery phase: `recoveryTicksLeft` counts down from `RECOVERY_TICKS` (5, ~1 real-sec) once per tick. **No regen during this phase.**
-- When recovery ends the unit enters *resting* (`isResting`), regenerating `RESTING_REGEN_RATE` (50 HP/tick — full in ~1s) until it reaches `maxHp`, at which point `isResting` clears.
-- Units not assigned to any location regen `REGEN_RATE` (50 HP/tick — full in ~1s) — idle recovery.
-- Health is capped at `maxHp` after regen. `batchTick` applies the same logic in bulk for offline catch-up (it does **not** re-simulate live combat for the regen/recovery/leveling pass — but it *does* extrapolate offline combat rewards; see **Offline progression** below).
+## Map & locations
+- Map tab is a pannable overworld (`LOCATION_COORDS` in `Map.tsx`), not a list. `region` names the map page (`'world'`, `'geffen-dungeon'`); `mapPageId` selects it. Dungeons (`isDungeon`) are entered from `entryLocationId`.
+- Tap a location → select + detail panel (units present, monsters, Familiarity = `locationFamiliarity[id]/familiarityMax`, deploy).
 
-### Map & Locations
+## Equipment & crafting
+- Equip slots: `mainHand`, `offHand`, `sideboard1`, `sideboard2`, `armor`, `accessory`. Sideboard slots hold *reserved, stat-inactive* gear. A 2H weapon (`category 'weapon-2h'`) in `mainHand` locks `offHand`.
+- Equip flow: tap a slot in Units → Inventory opens in equip-context → pick an item (shows stat deltas + `↑ Upgrade`) → back to Units.
+- Crafting: `learnedRecipes[]` + `RECIPE_REGISTRY`; Craft enabled when `miscItems` hold every ingredient; consumes them, produces the output. **Known gap**: the crafting loop is disconnected (drops are `drop-*` with no item defs; recipe outputs are `craft-*` not in `equipment.ts`) — see BACKLOG.
 
-- The Map tab is a **pannable overworld**, not a list. Each location's `region` field names the map *page* it lives on (`'world'`, `'geffen-dungeon'`); `mapPageId` selects the visible page. Region-grouped collapsible headers are gone.
-- Locations sit on a fixed grid (`LOCATION_COORDS` in `Map.tsx`); adjacent path cells are adjacent on the grid so the route reads as a connected chain. The world is larger than a phone screen — the player drags the camera to navigate (mobile-first, no scroll-wheel assumed).
-- Dungeon pages (`isDungeon`) are entered from a world location (`entryLocationId`) and exit back to it.
-- Tapping a location selects it and opens a detail panel (units present, monsters, **Familiarity** meter = `locationFamiliarity[id] / familiarityMax`, deploy button).
-- `expandedLocationIds` / `expandedRegionIds` localStorage keys persist (the latter defaults to `["world","geffen-dungeon"]`) but drive collapse state within panels, not the old region list.
+## Expand/collapse persistence (localStorage)
+`expandedLocationIds` `[]`, `expandedUnitIds` `[]`, `expandedInventorySections` (all expanded), `expandedRegionIds` `["world","geffen-dungeon"]`.
 
-### Combat — spatial tactic engine
+## Testing & verification
+- `npm run ci` = `tsc --noEmit` + full vitest suite. Keep green; engine changes must keep snapshot replays byte-identical.
+- Browser: use **Playwright, not the chrome-devtools MCP** (flaky here). `npm run e2e:install` once, then `npm run e2e` (mobile CPU-throttled 4×; logged fps is the signal; screenshot at `e2e/__shots__/<project>.png`). `?perf=1` drops into the heavy open-world scene (`src/dev/perfSeed.ts`). In DEV the store is on `window.__game`.
+- `npm run bsnap -- <gist-url|raw-url|file|token|->` replays a `BSNAP` headlessly from TS source (`-n` rounds, `-w` watch ids, `-e` events). Caches to `.bsnap/last.txt`.
 
-Combat is a deterministic, round-based **spatial** simulation in `src/engine/`. The
-old per-slot model (`encounterProgress`, `locationStrategy`, `focusSlots`, the
-`normal`/`prioritize`/`ignore`/`avoid` dropdowns, the flee state machine) is **gone** —
-it was fully replaced. Per-monster behavior dropdowns no longer exist; behaviour is
-driven by **tactics** (below).
-
-**One battle per location.** `battles[locationId]` holds a `BattleState` with
-`combatants[]` (cloned from inputs, never mutated), positions on a 15×15 grid
-(`COLS = ROWS = 15`, grid units — *not* the game's feet), ground `zones[]`,
-`barriers[]`, a `mode`, `round`, `outcome`, `events[]`, and accumulating `stats`.
-
-**Two battle modes** (`BattleState.mode`):
-- `'encounter'` (default) — a discrete wave. `evalOutcome` ends it on a wipe
-  (`victory`/`defeat`/`draw`), then a `BATTLE_RESPAWN_TICKS` (15) cooldown and a
-  fresh identical wave. This is what scenarios/tests rely on; it's deterministic.
-- `'open'` — a *persistent* open-world battle for a location with `openWorld:
-  true`, fought on a **large per-battle map** (`BattleState.cols/rows`, default
-  `openWorldSize` = 50×50; the camera can't fit it, so `BattleView` uses a
-  `followCamera` centred on the **party** that **auto-fits** to keep them all in
-  view — until the player takes manual control via pinch-to-zoom / −,+ buttons
-  (⊙ re-enables auto-fit). A minimap free-look only **re-centres** the camera on
-  the tapped point; the zoom is always sized on the followed hero or the whole
-  party, never on the free-look point (sizing on a single point collapsed the
-  view to the 15-cell minimum on an empty spot, clipping every unit off-screen).
-  Off-screen tokens are **clipped, not clamped** to the
-  rim (`isOnScreen`): off-screen monsters aren't drawn, and each off-screen
-  **party member** gets an `EdgeMarker` rim bubble with an arrow pointing toward
-  them. Open-world navigation is follow + minimap re-center + pinch/zoom only:
-  the single-finger **pixel pan is disabled** there (`Arena.panEnabled=false`).
-  It's a nudge layered *on top of* the camera, so against an auto-following view
-  it fought the camera and shoved the whole board into a corner — and even a
-  pinch left a tiny pan residue before the second finger landed. (Encounters,
-  whose camera is static, keep the pixel pan; `Arena.panResetKey` still zeroes it
-  on a retarget.) It
-  never
-  self-terminates (`evalOutcome` returns `'ongoing'`); the store keeps a
-  **fixed** `openWorldCap` of monsters **scattered** across the field (off the
-  edges, and never inside a barrier — `scatterPos` retries against
-  `pointBlocked`), trickling one back in every `OPEN_WORLD_SPAWN_TICKS` (30) via
-  the engine's `addCombatant` (which takes an explicit spawn position), drawn at
-  random from `monsterIds`.
-  Heroes join/leave the live fight as they deploy or recover
-  (`reconcileOpenPlayers`). The store owns teardown: no eligible heroes → battle
-  dropped. Spawn/feed events surface in `BattleView` (a ring + name flash; a
-  "⟳ Open world · persistent" badge). Per-location, party-independent.
-
-  **Vision & wander** (mostly open-world — encounters keep `visionRange: Infinity`
-  so ordinary fights stay on the tuned 15×15 feel). Each unit only
-  acquires targets within `visionRange` (heroes 10, monsters 8 cells;
-  `targetableEnemies` filters on it). With nothing in sight a unit *wanders*
-  (`executeWander`): **heroes** roam toward the team
-  blackboard's shared `waypoint` (below); **monsters** lurk
-  `MONSTER_WANDER_MIN..MAX` rounds then hop `NEAR..FAR` cells to a new local
-  spot. Wandering runs in open world for everyone, **and in encounters for a
-  *non-provoked* unit** — i.e. a **skittish** monster milling about on its own
-  (`mode === 'open' || !provoked`); since only skittish monsters are ever
-  non-provoked, ordinary encounter units still just hold. So "non-aggressive"
-  means *both* "won't strike first" (the `provoked` gate) and "mills about every
-  few rounds" (`aggression.test.ts`). Wander/vision are deterministic (a `hash01` of round+index, no RNG). The
-  shared `waypoint` is chosen genuinely *far* and **reachable** from the party
-  (`pickRoamPoint`): re-picking a nearby point on arrival caused a corner
-  "tiny-step" jitter, and picking a walled-off region would make them grind.
-
-  **Terrain is fully known** — line-of-sight (`visionRange`) is fog-of-war for
-  *units only*, never for walls. `steerAround` runs Dijkstra over the *entire*
-  passed barrier set, so pathing threads arbitrary mazes/spirals to a target.
-  When no route exists it reports `reachable: false`; `moveToward`/
-  `moveTowardPoint` then **hold** instead of grinding into the wall, and
-  `canReach(from, to, barriers)` exposes the same check. Reachability is
-  **dynamic in the barrier set**: a future "walk on lava" party buff that passes
-  a reduced set flips impossible targets to reachable with no special-casing.
-  (`wander-jitter.test.ts` covers jitter, ring + two-ring-spiral threading, and
-  give-up-on-impossible + dynamic reachability.)
-
-  **Spawn & move primitives** (used by the game and tests). `addCombatant(state,
-  input, team, partyTactics?, at?)` drops a combatant at an explicit position —
-  the primitive behind all spawns. The store wraps it: `spawnMonsterAt(battle,
-  monsterId, at)` / `deployUnitAt(battle, unit, …, at)` place a specific
-  monster/hero at a specific spot; the open-world **timed respawn is the special
-  case** (`spawnMonsterInto` → random monster + `scatterPos`). A **move order**
-  (`issueMoveOrder(state, id, to)` / `clearMoveOrder`) is an explicit "go here"
-  on `Combatant.moveOrder` that overrides AI (targeting/wander) in `takeTurn`:
-  the unit paths toward it (routing known terrain), clears on arrival, and
-  **holds** if it's unreachable. Movement is instantaneous in grid steps —
-  overworld travel *between* locations is deferred (BACKLOG), but the move-order
-  primitive is what it'll build on. (`move-orders.test.ts`: clear path arrives,
-  blocked path can't, the order beats AI targeting.)
-
-  Bigger arenas work because spatial bounds are read from a per-battle ambient
-  (`engine/arena.ts` `setArenaBounds`/`arenaClamp`), set at each engine entry
-  point — no size constant is hardcoded in the movement clamps. See `BACKLOG.md`
-  for the still-deferred pieces (overworld travel between locations, weighted
-  spawn distributions, seeded RNG for exact replays).
-
-  **Spatial hash** (`engine/spatialhash.ts`) keeps the per-round neighbour scans —
-  separation (every unit vs every other) and target acquisition (`visibleEnemiesOf`,
-  called many times per unit) — from being O(N²) at hundreds of combatants. A
-  uniform grid buckets combatants once at `advanceRound` start (another per-round
-  ambient, set then cleared); `enforceSeparation`/`visibleEnemiesOf` query only the
-  buckets overlapping their radius. It's a **pure optimisation**: `near` over-scans
-  by `SPATIAL_MARGIN` (≥ the most a unit moves in a round) and the caller re-filters
-  by *live* distance, and returns candidates in array-index order, so the set AND
-  order match a brute scan exactly — replay stays 1:1 and the whole suite is
-  unchanged. Foreign/cleared hash (tests, between-round spawns) falls back to the
-  brute scan, which is byte-identical. (`spatialhash.test.ts`.)
-
-**Team blackboard** (`BattleState.plans: Partial<Record<Team, TeamPlan>>`). A
-per-team scratchpad recomputed each round at the top of `advanceRound` by a
-pluggable `planner` (`CombatSetup.planner`, default `defaultPlanner`). A
-`TeamPlan` is `{ waypoint, focusTargetId, threat }`: the shared roam `waypoint`
-(centroid of an engaged fight so roamers regroup, else a fresh interior point)
-is what makes the party wander *together*; `focusTargetId` (lowest-HP visible
-enemy) + `threat` are advisory today (exposed for debugging, available to a
-future focus-fire tactic). Tactics **read** the plan rather than recompute.
-
-**Combat debugging.** Every combatant keeps a `trace: TraceEntry[]` ring buffer
-(last 20) of one-line per-turn summaries (targeting · movement · action),
-appended in `takeTurn`. The BattleView unit detail overlay has a **Debug** tab
-(blackboard snapshot, tactic resolution with competing-channel ⚠ flags, the
-recent trace) and a **copy-last-15** button that dumps a shareable text block
-(`buildDebugText`). `plans` and `trace` are also handy in tests
-(`blackboard.test.ts`). Open battles trim `events` to `EVENT_CAP` so the
-never-resetting log stays bounded.
-
-**Battle snapshots** (`engine/snapshot.ts`). `serializeBattle(state)` →
-`BSNAP.<base64>` token that captures everything the deterministic sim reads
-(combatants, positions, cooldowns, statuses, channels, move-orders, wander
-state, grid size, mode, barriers, zones, team plans, round, outcome — but not
-the `events`/`trace` logs). `deserializeBattle(token)` rebuilds a ready-to-step
-`BattleState`: tactics are re-resolved from their `{id,rank}` refs
-(`skill:`-tactics via `makeSkillTactic`) and the function fields (`planner`,
-`calculateDamage`) are restored to the defaults. Since the engine is RNG-free,
-reload + advance replays **1:1**. The BattleView has a **⎘ state** button
-(bottom-left, any live battle) so a player can copy a fight's exact state for a
-dev to reproduce. The token ends with a `.<len>x<hash>` integrity guard, so a
-clipped/mangled paste throws a clear "truncated/corrupted — re-copy it" instead
-of a vague decode error (whitespace/line-wraps are tolerated). (`snapshot.test.ts`
-proves the round-trip, replay determinism, and the guard.)
-
-**Bug-repro workflow (saw something weird → reproduce it in a test).** For a
-movement/tactics/AI bug: hit **⎘ state**, paste the `BSNAP.…` token **inside a
-triple-backtick code block** (raw, un-wrapped — keeps the long string verbatim so
-the guard passes). A dev `deserializeBattle(token)`s it and steps `advanceRound`
-to watch the misbehaviour recur — full fidelity, so don't trim it (positions,
-threat, cooldowns, wander state ARE the bug). The fastest way to do that is
-`npm run bsnap -- <gist-url-or-file-or-token>` (see *Browser testing & manual
-verification* for options) — it pulls/caches the token and steps the sim with
-per-round HP/position/events, no throwaway test needed. Don't paste giant whole-game
-`exportSave` strings in chat — drop those in a file. If the guard ever reports
-"truncated", the paste lost characters in transit — re-copy.
-
-**Tick → round cadence** (`useGameStore.tick` → `advanceBattles`):
-- The app ticks `TICKS_PER_SECOND` (5) times/sec (200 ms/tick). One engine round
-  advances every `ROUND_EVERY_TICKS` (1) tick → 5 rounds/sec, but battles run at
-  **`timeScale` = `ROUND_TIME_SCALE` (2)** ("finer rounds"): 2 engine rounds == one
-  *logical* round, so the real-time pace is the unchanged ~2.5 logical rounds/sec
-  while motion is stepped finer and combat events spread out. The drop-in header
-  shows the **logical** round (`floor(battle.round / timeScale)`) so the counter
-  reads at the human pace, not the doubled raw-engine rate. `timeScale` lives on
-  `BattleState` (snapshot-serialized), defaults to **1** (no scaling) so the whole
-  engine suite + replays are byte-identical, and is applied via a per-battle ambient
-  (`engine/timescale.ts`, mirroring `arena.ts`): `moveSpeedOf` ÷ scale, cooldowns /
-  channel / zone / status durations / monster dwell / draw-timeout × scale, and the
-  *discrete* per-round events (basic attacks, DoT ticks) gated to once per logical
-  round via `onBeat`. Bump `ROUND_TIME_SCALE` to make the sim finer/smoother at the
-  same pace. (Equivalence proved in `timescale.test.ts`.)
-- For each location with eligible units (`health > 0`, `recoveryTicksLeft === 0`,
-  not resting) **and** at least one monster: spawn a fresh battle if none exists or
-  the last one finished (after a `BATTLE_RESPAWN_TICKS` = 15 cooldown), otherwise
-  advance one round.
-- After each round, kills award exp, gold, and loot (each defeated monster rolls
-  its `drops` by `dropRate`). Live player HP is synced back to the unit records
-  every tick.
-- **Exp is a pool, split by level (`splitExpByLevel`, `src/lib/offline.ts`).**
-  Each kill drops 1 XP into a pool shared by the *surviving* party and divided
-  **proportional to level** — a level-1 hero beside a level-99 earns ~1% of the
-  pool. This is deliberate anti-power-leveling: parking a low-level hero in a
-  high-level party no longer fast-tracks it. An equal-level party splits evenly;
-  a solo hero takes the whole pool. Shares are fractional (exp is floored only at
-  display, so tiny shares still slowly accrue). The same split runs offline.
-- Player units that die in a round get `recoveryTicksLeft = RECOVERY_TICKS`.
-
-**A round** (`advanceRound`, `src/engine/engine.ts`): tick statuses (DoT, age-out) →
-tick ground zones → tick cooldowns → sort turn order by SPD desc (deterministic id
-tiebreak) → each alive combatant takes a turn → evaluate `outcome`
-(`victory`/`defeat`/`draw`; draw at `MAX_ROUNDS` = 200).
-
-**Ground zones** (`BattleZone`, `state.zones`) are persistent areas dropped by a
-skill's `zone` config — Lightning Storm (damage cloud), Molasses (a no-damage
-`statusApplied` slow puddle). Tick damage runs through the **element matrix** vs
-the target's effective armor (radiant zones shred undead/ghost). A zone is
-normally fixed ground, but `zone.follow` makes it a **caster-anchored aura** that
-re-centers on its `sourceId` and ends when the caster dies — **Consecration**
-(instant self-cast, `targeting: 'self'`, radiant, r=2, `maxActive: 1` + long
-duration ⇒ cast once and it rides along). Carried by the Mutant Lizard.
-(`consecration.test.ts`.)
-
-**Zone resolution is a D&D-style "aura turn"** (three phases across a round, so a
-zone can't miss a unit that only brushes it between position snapshots —
-`engine.ts` `seedZones`/`trackZones`/`applyZoneEffects`): (1) at round **start**
-auras re-center on their caster, zones age out, and each survivor seeds an
-*eligibility set* with whoever's already inside (*begins their turn in the aura*);
-(2) after **each unit acts** a following aura re-centers immediately onto its
-just-moved caster and anyone now inside is added (*enters the aura during its
-turn* — and an aura sweeping over a unit when its caster strides past); (3) at
-round **end** whoever's standing in it now is added (*ends their turn in the
-aura*) and the effect lands **once on every eligible unit, simultaneously**
-(iterated in combatant order for determinism). DoT is still gated to **once per
-logical round** (`onBeat`) so finer sub-rounds don't double-tick, and a zone cast
-*this* round isn't seeded, so it first bites next round. Eligibility lives in a
-per-round Map (not on the zone), recomputed from positions each round, so nothing
-extra is snapshot-serialized and replay stays 1:1.
-
-**Threat & aggro (a WoW-style model).** Targeting is layered, top to bottom: (1) a
-**hard taunt** — the `taunted` status (`evalTargeting` top) hard-locks the bearer
-onto the taunter for ~3s, overriding *everything* including its own targeting
-tactics; (2) the unit's **targeting tactics** (Tank Buster, Focus Casters, …),
-first-match as before; (3) the **threat fallback** (`selectTarget`, `behavior.ts`).
-The fallback scores each visible foe `threat·1 − distance·1` and locks the best,
-with **hysteresis** (keep the current target unless another beats it by 25% of the
-current's threat) — that stickiness is the aggro *wobble*. Threat is per-combatant
-(`Combatant.threat: Record<id, number>`, symmetric across teams, snapshot-persisted):
-**all damage** accrues `dmg × attacker.threatMult` on the target (the single
-`applyDamageRaw` chokepoint, so basic/skill/DoT/zone all count) and **healing**
-accrues `heal × 0.5 × threatMult` split across the healer's foes (`generateHealThreat`)
-— so a healer can pull aggro. Before anyone's dealt damage every threat is 0, so a
-fight opens on the nearest foe (old behaviour), then becomes threat-driven. The
-**Taunt** skill (`taunt`, a `taunted`-applying debuff) is the tank's peel —
-`selectSkillTarget` prefers a foe that's on an *ally*, and landing it vaults the
-caster to the top of the target's threat table (+10%) so aggro doesn't slip the
-instant the forced lock ends. (`threat.test.ts`. Showcase: **The Threat Trial**
-location/scenario — three slow, tanky, low-damage **Stone Sentinels** vs a Taunt
-tank + a kiter. Deferred: AoE/aura threat so a tank holds *several* mobs, and
-reachability-aware targeting — see `BACKLOG.md`.)
-
-**Defensive passives are skills, not tactics.** The old **Armored** / **Nimble** /
-**Threatening Presence** tactics are gone; they're now passive skills — **Toughness**
-(damage cut), **Evasion** (periodic dodge), **Defensive Stance** (threat multiplier)
-— that set `Combatant.armorReduction` / `dodgePeriod` / `threatMult` via
-`getDerivedStats` → the adapter (and `MonsterDef` carries the same optional fields).
-`armoredFactor`/`nimblePeriod` read the combatant fields now.
-
-**Only skills modify stats/numbers; tactics are pure behaviour.** The stat-buff
-tactics are gone too: **Shield Wall** (DEF buff) and **Last Stand** (near-death
-STR/SPD surge) are now **self-cast skills** (`COMBAT_SKILLS`, applying the
-`shield-wall` / `last-stand` statuses, per-level). Each is "special" in that
-equipping it injects its own **gated cast tactic** (`makeSkillTactic` →
-`canShieldWall` / `canLastStand`): Shield Wall fires only under attack (2+ foes in
-reach, or one locked onto you), Last Stand only below 20% HP with a foe up — never
-while just roaming. **Swoop** is now pure positioning (no speed multiplier), and
-the **Dodge AoE** tactic was removed.
-
-**Determinism:** the engine uses no RNG — damage variation is a pure function of
-round + combatant index. (Loot rolls use `Math.random` in the *store*, outside the
-engine.) The same roster + tactics replays identically.
-
-**Movement is spatial:** units move toward targets, kite at range, flank, and
-body-block; `moveSpeed` is decoupled from `attackSpeed`. Barriers block movement and
-line-of-sight; casters won't fire through walls (but will through cliffs); knockback
-stops at walls and the arena perimeter.
-
-**Basic-attack cadence (`attackSpeed` → swing rate).** Basic (non-skill) attacks are
-paced by the unit's `attackSpeed` (the engine's `spd`), as an interval in *logical
-rounds* between swings: `basicAttackInterval(spd) = clamp(round(REF_ATTACK_SPD /
-spd), 1, MAX_ATTACK_INTERVAL)` (`REF_ATTACK_SPD` = 10, `MAX` = 4; `timescale.ts`/
-`constants.ts`). `REF_ATTACK_SPD` swings **every logical round** — the historical
-once-per-logical-round cap, so a basic never goes *faster* than that (finer
-time-scaling can't multiply hits); at `spd ≥ ~7` the interval is 1, so heroes
-(attackSpeed 8–18) and fast monsters are unchanged, and only genuinely slow attackers
-(e.g. the **Mutant Lizard**, attackSpeed 4 ⇒ a swing every 3rd logical round — its
-threat is the Consecration aura, not the bite) swing less often. The gate
-(`onAttackBeat`, generalising `onBeat`) is **stateless & deterministic** — a pure
-function of round + combatant index + spd — so it adds no snapshot field and replays
-1:1, and the period scales with `timeScale` so the equivalence holds. **Skills** are
-paced by their own scaled cooldowns and are **not** gated by this. (`attack-speed.test.ts`.)
-
-**Default positioning is "close to range and HOLD," not kite.** With a locked target
-and no movement tactic, a unit advances to attack range and stands — a caster stops at
-its **cast range** (`castRange`: longest single-target `attack`/basic-ranged range, so a
-melee-weapon mage doesn't march into melee mid-channel) rather than its basic reach, then
-holds and fires while the enemy *approaches* (trust the front line to peel). It does **not**
-back off. Active **kiting** (keeping a gap by retreating) is deliberately **opt-in** via
-the **Kiter** / **Wary Caster** tactics (the `desiredRange` → `kiteToward` path) while we
-tune what the right default should be — it used to be the caster default, which made
-mages skittish without the player asking. **Wary Caster** reads `interruptedCount` (a
-caster backs off further the more its casts get broken), and that "wariness" **decays**
-(`WARY_INTERRUPT_DECAY`, in `advanceRound`) when no fresh interrupt lands — otherwise a
-couple of early disruptions pinned a mage in permanent kite mode, never closing again
-(the "afraid to engage" stalemate, esp. paired with a Guardian dutifully following the
-fleeing mage). The kite hold distance (`kiteDistanceFor`, used
-by those tactics) is anchored on the same `castRange` (single-target shooting range) plus
-a safety buffer, **not** the longest-range *gated* AoE — anchoring on a Lightning Storm
-(range 8, but it won't fire on a lone foe) stranded a mage at AoE range, out of reach of
-its range-6 bolts, casting nothing. A pure-AoE/debuff caster (no single-target poke) falls
-back to its longest skill range so it still reaches where *something* lands.
-
-### Tactics (the player's combat lever)
-
-- Tactics are named behaviours in `TACTIC_REGISTRY`, each on exactly one **channel**:
-  `movement`, `targeting`, `action`, `reaction`, or `passive`. The engine evaluates
-  the equipped tactics per channel in priority order each turn.
-- Each unit equips up to `MAX_UNIT_TACTICS` (4) tactics (`unit.tactics`); the party
-  shares up to `MAX_PARTY_TACTICS` (2) party-scope tactics (`partyTactics`). Scope is
-  enforced against `TacticDef.scope`. Priority competes **per channel** (channels are
-  evaluated independently); the Units `TacticsTab` groups equipped tactics by channel
-  and the ▲/▼ arrows reorder *within* a channel only.
-- **Floor vs trigger** (`TacticDef.kind`, default `'trigger'`). *Floors* fire whenever
-  a basic precondition holds (`tank-buster`, `flanker`, `kiter`, `guardian`); a floor
-  above a trigger in the same channel would starve it, so `resolveTactics`
-  (`demoteFloors`) stable-sorts floors to the bottom of their channel and the UI warns
-  on a manual floor-above-trigger ordering.
-- **Skills granted as tactics:** action-bar skills are injected as action-channel
-  tactics via the adapter, so equipping a skill gives a unit a combat action without a
-  separate tactic slot. Among the injected attack skills the action channel leads with
-  the **biggest ready nuke** (`orderAttacksByPower` + `skillDamageEstimate`,
-  first-match over a power-sorted list); channeled-AoE keeps its first slot + worth-it
-  gate, non-attack skills keep type priority.
-- **Target-aware attack selection** (`reorderAttacksForTarget`, called in `takeTurn`
-  after targeting resolves): the static biggest-nuke order above is target-*independent*,
-  so each turn the unit re-ranks its single-target `attack` skills against the **currently
-  locked enemy** and leads with whatever hits *that* foe hardest — a mage opens Frost Bolt
-  into a fire-armored enemy, Fire Bolt into an earth one. The scorer is the one extensible
-  hook `estimateDamageVs(caster, target, skill)` (`damage.ts`): raw formula − the *right*
-  mitigation (magic vs physical) × the **element matrix** vs the target's effective armor
-  (immunity ⇒ never picked), then **amortized over the cast cycle** (`channelTime +
-  cooldown`) so a fast instant that exploits a weakness (Frost Bolt) beats a bigger but
-  slow-channel nuke (Lightning Bolt) — element gaps still win, near-ties break toward the
-  faster spell. (Caveat: the action channel still fires the highest-priority *in-range*
-  ready attack, so a longer-range lower-throughput skill can open a fight before the unit
-  closes into the preferred skill's range — see BACKLOG.) Future scorers (AoE spread value, sideboard weapon swaps,
-  status synergy) extend this one function — see BACKLOG. Only the single-target attack
-  slots permute; channeled-AoE and non-attack action tactics keep their position. Pure &
-  deterministic (id tiebreak), re-derived from the lock each turn, so it needs no snapshot
-  field and replays 1:1. **Hysteresis:** switching off the static lead requires the
-  target-aware best to beat it by `exploitMargin` — a conservative **15% by default** (big
-  elemental gaps clear it, near-ties don't thrash), which the opt-in **Exploit Weakness**
-  passive tactic drops toward 0 (rank-scaled) so the unit always takes the absolute best.
-  (`exploit-weakness.test.ts`.)
-- **Charger** is a movement-channel **floor** (no speed or damage modifier): with a
-  locked target it dives to **melee contact with that target, on the side facing the
-  enemy pack's centroid** (the pack = foes within `CHARGER_DIVE_RADIUS` of the target)
-  — so it ends up *inside* the group to set up a melee AoE *and* always closes to
-  striking range. (Aiming at the raw pack centroid stranded it on an empty centre-of-
-  mass between spread-out foes, micro-stepping in range of no one — the "creep, never
-  hit" bug.) It **leashes** — if a fleeing foe drags it past `CHARGER_LEASH` (+per-rank)
-  from the party centroid it drops the lock and regroups (cohesion over an endless
-  chase). As a floor it demotes below same-channel triggers, so it can't starve them.
-- **Flanker** (movement floor) circles to the locked target's least-guarded side
-  (`flankPoint`, at strike range so arriving lands a hit) and **shares the Charger's
-  leash** (`FLANKER_LEASH`, +per-rank): a fleeing target that drags it too far from
-  the party makes it drop the lock and regroup, so the next targeting pass picks a
-  nearer foe instead of chasing forever. (Guardian deliberately has *no* leash —
-  body-blocking a retreating ally is the point.)
-- **Team blackboard read side:** `teamFocus(self, state)` reads the planner's shared
-  `focusTargetId` (lowest-HP visible enemy). `opportunist` (rank-scaled HP gate),
-  `finish-them` (party, near-dead gate), and `focus-fire` (party, unconditional)
-  read it instead of each re-scanning — the "who's hurt" + vision/stealth filtering
-  lives once in `defaultPlanner`.
-- **Burst kit** (opt-in, role-specific): `assassinate` (hunt the enemy healer/top
-  caster), `burst` (bank a ready small skill while the heavy hitter is ≤window rounds
-  out, then chain — stateless **cooldown-lookahead**, no per-unit memory bag), and the
-  party-scope `focus-fire`.
-- **Per-turn resolution** (`Combatant.lastResolution`, runtime-only): the eval loops
-  record what fired vs why the rest were dormant (`fired`/`idle`/`starved`/`cooldown`),
-  surfaced live in the BattleView DebugTab.
-- Monsters may carry their own skills and tactics (see `monsterToEngineInput`).
-
-### Combat view (a drop-in mode of the Map tab)
-
-- There is **no standalone Combat tab.** The battlefield is a *mode* of the Map
-  tab: `mapMode` is `'world'` (pannable overworld + location details) or
-  `'battle'` (the drop-in viewer for `combatLocationId`). The roster carousel
-  (`src/components/RosterCarousel.tsx`) stays pinned across both so the
-  transition is seamless. It's the **only** roster: in the overworld it lists
-  *everyone*; dropped into a battle it **scopes to the heroes on that
-  battlefield** (`locationId === combatLocationId`, the same location filter the
-  "Area" sort uses) and **takes over the camera-follow job** — the old
-  below-the-arena follow strip is gone.
-- **Drop in:** single-tap a map location to select it; **double-tap** a location,
-  or hit the **Drop in ›** button (location detail panel / unit action bar), to
-  enter battle mode (`enterBattleView`). A **⤢ Overworld** chip zooms back out
-  (`exitBattleView`), re-selecting the location you were watching.
-- **`UnitActionBar`** (Deploy/Here · View · Map · Drop in) shows whenever a unit
-  is selected — in **both** the overworld and the battle drop-in (battle mode
-  swaps the Overworld/round context bar for it while units are selected). The
-  **Map** button (`focusLocationOnMap`) recentres the overworld camera on the
-  unit's location. In the **battle** drop-in the selected heroes are already on
-  the watched field, so Deploy/Here, Map, and Drop in are **hidden** (no-ops
-  there); the bar instead carries the **⤢ Overworld** exit (selecting a hero
-  replaces the context bar that normally holds it), leaving View · Report · exit.
-- **Roster single-tap:** toggles selection. In **battle** mode it *also* locks
-  the camera onto that hero (`battleFollowId` in the store — the lifted
-  "Diablo cam"; tapping the followed hero off releases to the whole-party
-  auto-fit), so the one roster doubles as the follow control the bottom strip
-  used to be. Battle-mode cards read as a party HUD: a live HP bar that eases
-  down with each hit, a pulsing red ring on any alive hero ≤30% HP (bleeding out
-  — *not* KO/resting), and the followed hero gets an emerald glow + a ⊙
-  "watching" corner badge (in place of its selection-order number).
-- **Roster double-tap:** mirrors the location double-tap and is mode-aware
-  (`showUnitOnMap`). In the **overworld** it frames *and recentres the camera* on
-  the unit's location (`mapFocusNonce`); in **battle** mode it jumps to that
-  unit's battlefield and centres the camera on them (`battleFocus`, which also
-  sets `battleFollowId`). The battle-view ⊙/auto control (top-left zoom cluster)
-  and the minimap also drive the follow; ⊙ re-fits the whole party
-  (`setBattleFollow(null)`).
-- **Combat keeps running for every location regardless of view** — but only the
-  one you're *watching* runs the full per-tick spatial sim. When you've dropped
-  into a battle (`mapMode === 'battle'`, `combatLocationId`), the **other**
-  locations advance **off-screen**: `advanceBattles` skips their sim and credits
-  rate-extrapolated rewards every `OFFSCREEN_CREDIT_TICKS` (25) via `creditOffscreen`
-  (warm: `projectOfflineRewards`; cold: a one-time budgeted prime to seed the rate,
-  keeping the frozen battle for drop-in) — reusing the offline machinery. In **world
-  mode** (and tests) there's no watched battle, so every location full-sims as
-  before. Off-screen parties earn but take no casualties (a simplification; deaths
-  resume the moment you drop back in). This is the scaling lever: watch one party
-  hunt while many others progress cheaply. (`offline.test.ts`.)
-- The viewer is `src/components/BattleView.tsx` (`<BattleView locationId>`): live
-  battle if one is running, otherwise the static form-up `Preview`. The pannable
-  arena fills its space (square, centred); tokens are circles sized to ~0.9 of a
-  grid cell so they scale with zoom (`chipDims` in `cqmin`, the arena is a CSS
-  size-container), with a subtle front-facing arrow (`Combatant.facing`, set in
-  `takeTurn`: move direction, else toward the locked target) plus a second
-  chevron just ahead of it while `Combatant.moving`, floating name + HP, attack
-  lines, hit flashes, floating damage/heal/DoT numbers, and **lingering cast
-  labels** — a skill's name stays anchored above its caster for `CAST_LABEL_MS`
-  (3s, covering the channel + a beat after it lands), keyed by caster+skill so a
-  channel's start/resolve and rapid re-casts collapse to one label; multiple
-  distinct casts stack newest-on-top (`animate-cast-label`).
-- **Level-of-detail (perf):** `BattleChip` takes a `detail` flag and drops the
-  floating name/HP/cast plate + facing/moving nubs (the bulk of the per-token
-  DOM), drawing just the circle, when the view is **either** zoomed out past
-  `LOD_CAM_SIZE` (18 cells) **or** has more than `LOD_TOKEN_COUNT` (16) on-screen
-  tokens (a dense swarm at a tight zoom). Full detail returns as you zoom/follow
-  in or the crowd thins. Encounters (static 15-cell camera) are full detail. The
-  chip's `title` is kept either way. (`Lod.test.tsx`.)
-- Monster HP bars animate down during combat and **snap to full** on respawn (no
-  upward animation).
-- Tapping a token opens a **dismissable bottom-sheet overlay** (name, team, HP,
-  stats, per-skill cooldowns, statuses, casting line) that floats over the arena
-  so it never steals arena height.
-
-### Offline progression — Sampled "Warm Catch-up"
-
-When the player returns after an absence, `catchUp` (`App.tsx`) converts elapsed
-real time into ticks and calls `batchTick(n)` (`n > 10`). `batchTick` **does not
-re-simulate** `n` ticks of spatial combat (a naive fast-forward janks — ~72k
-rounds for an 8h heavy battle); it **extrapolates combat rewards from realized
-rates** (`src/lib/offline.ts`).
-
-- **Wall-clock persistence.** `worldCodec` persists `savedAt` (Date.now() at save
-  time) and restores it as `lastTickAt` on load — without it `lastTickAt` would
-  reset to page-load time and a full app restart would extrapolate ~zero offline
-  time. Old saves migrate to `savedAt = now` (no spurious catch-up).
-- **Warm extrapolation (Phase 1).** For each location with deployed units **and**
-  a `locationStats` sample, `projectOfflineRewards` scales the realized rate
-  (from `getLocationCombatReport`, window = `startTick`→`endTick`) by the offline
-  ticks. exp/gold/kills are **deterministic** (floored EV); **loot is rolled**
-  per projected kill (`rollOfflineLoot`, mirroring the live `rewardKills`) so
-  rare drops aren't lost to an EV floor. The exp **pool** is split across the
-  deployed party by level (`splitExpByLevel`, same anti-power-leveling rule as
-  live combat); gold + loot fold into `miscItems`; `monsterDefeated` (codex) and `locationStats`
-  advance so the rate stays coherent for the next catch-up.
-- **Cold priming (Phase 2).** A location deployed but never sampled has no rate.
-  `primeColdLocation` runs a **budgeted** slice of real combat (cap
-  `PRIME_ROUND_CAP` = 300 rounds **and** `PRIME_MS_BUDGET` = 50 wall-ms) to
-  settle the in-flight fight, collect its actual rewards, and seed a sample; the
-  remaining offline time is then extrapolated on that fresh rate. The primed
-  battle is kept in `battles[locationId]`. A Web Worker offload stays deferred
-  (the BSNAP tokens already make a battle worker-portable).
-- **Sampled windows (Phase 3, long absences).** A single linear extrapolation is
-  smooth — it can't show a clump of monsters or a lucky/unlucky stretch. For an
-  absence long enough to span ≥2 windows (`offlineWindowCount`, ~one per
-  `SAMPLE_WINDOW_TICKS` = 30 min, capped at `SAMPLE_MAX_WINDOWS` = 12),
-  `projectOfflineSampled` splits the span into **independent windows**: each
-  simulates a short budgeted slice (`runCombatSlice`, shared with priming),
-  extrapolates that slice's rate over the window, and the windows are **summed** —
-  re-stocking the field (`restockField`, fresh random draws) between them so each
-  is a fresh composition sample, so the total carries real variance (a varied
-  monster pool → clumps; loot rolled per projected kill). It subsumes warm + cold
-  for long spans (it simulates either way). **Extension seam:** `SampledOptions.
-  prepareWindow(battle, windowIndex, windowStartTick)` is called before each
-  window's slice — a future scheduled-event system injects a periodic boss there
-  (`spawnMonsterAt`) so it's actually fought + rewarded in the windows it belongs
-  to. (`offline.test.ts`.)
-- **"While you were away" summary.** `batchTick` writes an `OfflineSummary`
-  (runtime-only, not saved) when the absence is ≥ `OFFLINE_SUMMARY_MIN_SECS`
-  (60s) and something happened; `OfflineSummary.tsx` shows it as a portal modal
-  (totals + per-location breakdown + loot; cold-primed locations tagged
-  "settled"), cleared via `dismissOfflineSummary`. Rewards still apply below the
-  gate — the gate only suppresses the modal for brief background blips.
-
-### Unit Selection & Detail Card
-
-- Tapping a unit card toggles its selection. Multiple units can be selected.
-- When **exactly 1 unit** is selected on the Map tab, a detail card is shown above the action bar containing:
-  - Unit name and class badge.
-  - Exact integer HP (color-coded: green ≥75, gold ≥40, red <40) and an HP bar.
-  - Element trait badges (filtered from `getUnitTraits`).
-  - Four derived stats in a grid: ATK, DEF, SPD, ACC (from `getDerivedStats`).
-  - A `View ›` button that navigates to the Units tab with that unit's row expanded.
-- The action bar always shows a `Move to ▾` dropdown for assigning selected units to any location or back to Unassigned.
-
-### Expand/Collapse Persistence
-
-All collapsible sections remember their state across tab switches via localStorage:
-
-| Section | Store field | localStorage key | Default |
-|---|---|---|---|
-| Location rows | `expandedLocationIds` | `expandedLocationIds` | `[]` (all collapsed) |
-| Unit rows | `expandedUnitIds` | `expandedUnitIds` | `[]` (all collapsed) |
-| Inventory sections | `expandedInventorySections` | `expandedInventorySections` | all three expanded |
-| Map pages | `expandedRegionIds` | `expandedRegionIds` | `["world","geffen-dungeon"]` |
-
-### Crafting
-
-- Learned recipes are listed in `learnedRecipes[]`; definitions live in `RECIPE_REGISTRY`.
-- The Craft button is enabled only when every ingredient has sufficient quantity in `miscItems`.
-- Crafting consumes the listed ingredients and produces the output item (adds to `equipment` or `miscItems`).
-
-### Equipment
-
-- Equipment slots per unit: `mainHand`, `offHand`, `tool`, `armor`, `accessory`.
-- Equipping a 2H weapon in `mainHand` locks the `offHand` slot (cannot equip anything there).
-- Equip flow: tap a slot in the Units tab → Inventory tab opens in equip-context mode → select an item → returns to Units tab with item equipped.
-- Items in the equip picker show stat deltas vs the currently equipped item in that slot.
-- An `↑ Upgrade` badge appears when an item's total stat score exceeds the currently equipped one.
-
+## Branching & merging
+- Develop on a feature branch; **merge to `main` when a feature is complete** (`git merge --ff-only <branch> && git push origin main`) — `main` is what gets browser-tested. Don't wait to be asked.
+- After pushing to `main`, include the commit hash in the chat reply.
+- Open PRs auto-deploy to `https://tyleraland.github.io/incremental-20260418/pr-preview/pr-<N>/` (`pr-preview.yml`); share the exact URL.
