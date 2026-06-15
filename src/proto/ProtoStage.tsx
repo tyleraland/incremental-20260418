@@ -4,17 +4,16 @@ import { BattleView } from '@/components/BattleView'
 
 // ── Prototype Stage ────────────────────────────────────────────────────────────
 //
-// The always-on left half: a single viewport that ZOOMS between scales —
-//   0  World    — the whole overworld, locations + travel routes + hero clusters
-//   1  Locale   — flown in onto one location and its neighbours
-//   2  Battle   — drops into the live battlefield (reuses the real BattleView)
+// The always-on left half: ONE viewport with a continuous zoom axis (0 → 2).
+//   0   World    — the whole overworld, locations + travel routes + hero clusters
+//   1   Locale   — flown in onto one location and its neighbours
+//   2   Battle   — the live battlefield (the real BattleView)
 //
-// Selecting a hero (roster) flies the camera to their location; the zoom slider
-// (right edge) or the breadcrumb step in/out. Mock-grade: coordinates are copied
-// from the real Map so the world reads familiar, but pan/zoom is its own thing.
+// There is no hard cut between locale and battle: as zoom climbs past ~1.3 the
+// map keeps scaling up while the battlefield crossfades in over it, so the node
+// "opens" into the fight. Wheel (desktop) and pinch (touch) drive the axis
+// continuously; the zoom rail / breadcrumb tween to the named stops.
 
-// Copied from src/pages/Map.tsx — a prototype is allowed to duplicate (CLAUDE.md:
-// three similar lines beat a premature abstraction). Only the world page is shown.
 const LOCATION_COORDS: Record<string, [number, number]> = {
   'geffen-city': [2, 3], 'elite-four': [2, 2], 'geffen-field-1': [3, 3],
   'prontera-field-1': [4, 3], 'prontera-city': [5, 3], 'prontera-field-3': [6, 3],
@@ -48,7 +47,6 @@ function kindOf(traits: string[]) {
 function worldX(c: [number, number]) { return c[0] * CELL + CELL / 2 }
 function worldY(c: [number, number]) { return c[1] * CELL + CELL / 2 }
 
-// HP-coloured status dot for a hero, mirroring the real map's convention.
 function heroDot(u: Unit, maxHp: number): string {
   if (u.recoveryTicksLeft > 0) return 'bg-purple-500'
   if (u.isResting) return 'bg-sky-500'
@@ -56,8 +54,16 @@ function heroDot(u: Unit, maxHp: number): string {
   return pct > 60 ? 'bg-game-green' : pct > 30 ? 'bg-game-gold' : 'bg-red-500'
 }
 
-type Zoom = 0 | 1 | 2
-const SCALE: Record<Zoom, number> = { 0: 0.62, 1: 1.45, 2: 1 }
+// ── continuous-zoom transfer functions ───────────────────────────────────────
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+// World 0.55× → Locale 1.4× → keep growing to 3.6× as the node fills the frame.
+function mapScaleFor(z: number) {
+  return z <= 1 ? lerp(0.55, 1.4, clamp(z, 0, 1)) : lerp(1.4, 3.6, clamp(z - 1, 0, 1))
+}
+const battleOpacityFor = (z: number) => clamp((z - 1.3) / 0.45, 0, 1) // fades in over 1.3 → 1.75
+const battleScaleFor   = (z: number) => lerp(0.94, 1, clamp((z - 1.25) / 0.55, 0, 1))
+const ZOOM_NAMES = ['World', 'Locale', 'Battle']
 
 // ── WorldNode ───────────────────────────────────────────────────────────────
 function WorldNode({ loc, units, equipment, selected, onTap, onDive }: {
@@ -83,7 +89,7 @@ function WorldNode({ loc, units, equipment, selected, onTap, onDive }: {
       <div className={[
         'relative w-12 h-12 rounded-xl border-2 flex items-center justify-center backdrop-blur-sm transition-all',
         selected
-          ? 'border-game-primary bg-game-primary/25 ring-4 ring-game-primary/30 scale-110 shadow-lg shadow-game-primary/40'
+          ? 'border-game-primary bg-game-primary/25 ring-4 ring-game-primary/30 scale-110'
           : `${kind.ring} bg-game-surface/80 group-hover:scale-105 group-hover:border-game-primary/60`,
       ].join(' ')}>
         <span className={`text-2xl leading-none drop-shadow ${kind.glow}`}>{kind.symbol}</span>
@@ -108,21 +114,25 @@ function WorldNode({ loc, units, equipment, selected, onTap, onDive }: {
 
 // ── ProtoStage ──────────────────────────────────────────────────────────────
 export function ProtoStage() {
-  const units              = useGameStore((s) => s.units)
-  const locations          = useGameStore((s) => s.locations)
-  const equipment          = useGameStore((s) => s.equipment)
-  const selectedLocationId = useGameStore((s) => s.selectedLocationId)
+  const units               = useGameStore((s) => s.units)
+  const locations           = useGameStore((s) => s.locations)
+  const equipment           = useGameStore((s) => s.equipment)
+  const selectedLocationId  = useGameStore((s) => s.selectedLocationId)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
-  const setCombatLocation  = useGameStore((s) => s.setCombatLocation)
-  const battles            = useGameStore((s) => s.battles)
+  const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
+  const battles             = useGameStore((s) => s.battles)
 
-  const [zoom, setZoom] = useState<Zoom>(0)
-  // World-space point the camera is centred on, and a manual drag offset (screen px).
-  const [focus, setFocus] = useState<{ x: number; y: number }>({ x: 6 * CELL, y: 3.5 * CELL })
+  const [zoom, setZoom] = useState(0)       // continuous 0..2
+  const [focus, setFocus] = useState({ x: 6 * CELL, y: 3.5 * CELL })
   const [drag, setDrag] = useState({ x: 0, y: 0 })
-  const dragRef = useRef<{ sx: number; sy: number; base: { x: number; y: number }; moved: boolean } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
+
+  // Pointer bookkeeping: single-pointer drag-pan + two-pointer pinch-zoom.
+  const pointers = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const dragRef = useRef<{ sx: number; sy: number; base: { x: number; y: number }; moved: boolean } | null>(null)
+  const pinchRef = useRef<number | null>(null)
+  const tweenRef = useRef<number | null>(null)
 
   useLayoutEffect(() => {
     const el = wrapRef.current; if (!el) return
@@ -133,102 +143,148 @@ export function ProtoStage() {
 
   const worldLocs = locations.filter((l) => l.region === 'world' && LOCATION_COORDS[l.id])
   const focusLoc = selectedLocationId ? locations.find((l) => l.id === selectedLocationId) ?? null : null
+  const maxZoom = focusLoc ? 2 : 1   // can't dive without a focused location
 
-  // Fly the camera to the selected location whenever it changes (roster pick, node tap).
+  // Tween the zoom axis to a named stop (button / breadcrumb / dive).
+  function animateZoomTo(target: number) {
+    if (tweenRef.current) cancelAnimationFrame(tweenRef.current)
+    const from = zoom, t0 = performance.now(), dur = 420
+    const step = (t: number) => {
+      const k = clamp((t - t0) / dur, 0, 1)
+      const eased = 1 - Math.pow(1 - k, 3)
+      setZoom(lerp(from, target, eased))
+      if (k < 1) tweenRef.current = requestAnimationFrame(step)
+    }
+    tweenRef.current = requestAnimationFrame(step)
+  }
+
+  // Fly to the selected location whenever it changes (roster pick, node tap).
   useEffect(() => {
     if (!focusLoc) return
     const c = LOCATION_COORDS[focusLoc.id]; if (!c) return
     setFocus({ x: worldX(c), y: worldY(c) }); setDrag({ x: 0, y: 0 })
-    setZoom((z) => (z === 0 ? 1 : z))
     setCombatLocation(focusLoc.id)
+    setZoom((z) => (z < 1 ? 1 : z))
   }, [focusLoc?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function flyTo(loc: Location) { setSelectedLocation(loc.id) }
-  function dive(loc: Location)  { setSelectedLocation(loc.id); setZoom(2) }
-  function zoomOut() {
-    if (zoom === 2) { setZoom(1); return }
-    setZoom(0); setFocus({ x: 6 * CELL, y: 3.5 * CELL }); setDrag({ x: 0, y: 0 })
-  }
+  // Native non-passive wheel listener so we can preventDefault (page-scroll) and
+  // drive the zoom axis continuously.
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      if (tweenRef.current) { cancelAnimationFrame(tweenRef.current); tweenRef.current = null }
+      setZoom((z) => clamp(z - e.deltaY * 0.0016, 0, maxZoom))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [maxZoom])
 
-  // Drag-to-pan (world & locale only).
-  function onDown(e: React.PointerEvent) {
-    if (zoom === 2) return
-    dragRef.current = { sx: e.clientX, sy: e.clientY, base: drag, moved: false }
-  }
-  function onMove(e: React.PointerEvent) {
-    const d = dragRef.current; if (!d) return
-    const dx = e.clientX - d.sx, dy = e.clientY - d.sy
-    if (!d.moved && Math.hypot(dx, dy) > 5) d.moved = true
-    if (d.moved) setDrag({ x: d.base.x + dx, y: d.base.y + dy })
-  }
-  function onUp() { dragRef.current = null }
-
-  const scale = SCALE[zoom]
+  const scale = mapScaleFor(zoom)
+  const battleOpacity = focusLoc ? battleOpacityFor(zoom) : 0
+  const mapActive = battleOpacity < 0.5      // map handles pan/tap until the battle takes over
   const panX = size.w / 2 - focus.x * scale + drag.x
   const panY = size.h / 2 - focus.y * scale + drag.y
 
-  // Connection lines between linked world locations.
+  function dist2() {
+    const pts = [...pointers.current.values()]
+    return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+  }
+  function onDown(e: React.PointerEvent) {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size === 2) { pinchRef.current = dist2(); dragRef.current = null; return }
+    if (mapActive) dragRef.current = { sx: e.clientX, sy: e.clientY, base: drag, moved: false }
+  }
+  function onMove(e: React.PointerEvent) {
+    if (!pointers.current.has(e.pointerId)) return
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.current.size >= 2) {
+      const d = dist2()
+      if (pinchRef.current != null) setZoom((z) => clamp(z + (d - pinchRef.current!) * 0.006, 0, maxZoom))
+      pinchRef.current = d
+      return
+    }
+    const dg = dragRef.current; if (!dg || !mapActive) return
+    const dx = e.clientX - dg.sx, dy = e.clientY - dg.sy
+    if (!dg.moved && Math.hypot(dx, dy) > 5) dg.moved = true
+    if (dg.moved) setDrag({ x: dg.base.x + dx, y: dg.base.y + dy })
+  }
+  function onUp(e: React.PointerEvent) {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinchRef.current = null
+    if (pointers.current.size === 0) dragRef.current = null
+  }
+
+  function flyTo(loc: Location) { setSelectedLocation(loc.id) }
+  function dive(loc: Location)  { setSelectedLocation(loc.id); animateZoomTo(2) }
+  function gotoStop(z: number) {
+    if (z === 0) { setFocus({ x: 6 * CELL, y: 3.5 * CELL }); setDrag({ x: 0, y: 0 }) }
+    animateZoomTo(z)
+  }
+
   const lines: { x1: number; y1: number; x2: number; y2: number }[] = []
   for (const l of worldLocs) {
     const a = LOCATION_COORDS[l.id]; if (!a) continue
     for (const cid of l.connections) {
-      if (cid < l.id) continue // de-dupe each undirected edge
+      if (cid < l.id) continue
       const b = LOCATION_COORDS[cid]; if (!b) continue
       lines.push({ x1: worldX(a), y1: worldY(a), x2: worldX(b), y2: worldY(b) })
     }
   }
-
   const battleLive = focusLoc ? !!battles[focusLoc.id] : false
+  const nearest = Math.round(zoom)
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-game-bg via-[#0b0b14] to-[#0d0d18]">
       {/* breadcrumb */}
-      <div className="absolute top-2 left-2 z-20 flex items-center gap-1 text-[11px]">
-        <button onClick={zoomOut} className={`px-2 py-1 rounded-md border border-game-border bg-game-bg/80 ${zoom === 0 ? 'text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>World</button>
+      <div className="absolute top-2 left-2 z-30 flex items-center gap-1 text-[11px]">
+        <button onClick={() => gotoStop(0)} className={`px-2 py-1 rounded-md border border-game-border bg-game-bg/80 ${nearest === 0 ? 'text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>World</button>
         {focusLoc && <span className="text-game-muted">›</span>}
         {focusLoc && (
-          <button onClick={() => setZoom(1)} className={`px-2 py-1 rounded-md border border-game-border bg-game-bg/80 ${zoom === 1 ? 'text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>{focusLoc.name}</button>
+          <button onClick={() => gotoStop(1)} className={`px-2 py-1 rounded-md border border-game-border bg-game-bg/80 ${nearest === 1 ? 'text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>{focusLoc.name}</button>
         )}
-        {focusLoc && zoom === 2 && <span className="text-game-muted">›</span>}
-        {focusLoc && zoom === 2 && <span className="px-2 py-1 rounded-md border border-game-primary/50 bg-game-primary/15 text-game-text">⚔ Battlefield</span>}
+        {focusLoc && (
+          <>
+            <span className="text-game-muted">›</span>
+            <button onClick={() => gotoStop(2)} className={`px-2 py-1 rounded-md border bg-game-bg/80 ${nearest === 2 ? 'border-game-primary/50 bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text'}`}>⚔ Battle</button>
+          </>
+        )}
       </div>
 
-      {/* zoom rail */}
-      <div className="absolute top-1/2 right-2 -translate-y-1/2 z-20 flex flex-col gap-1.5 bg-game-bg/70 border border-game-border rounded-xl p-1.5">
-        {([2, 1, 0] as Zoom[]).map((z) => (
+      {/* zoom rail (also shows the continuous position) */}
+      <div className="absolute top-1/2 right-2 -translate-y-1/2 z-30 flex flex-col items-center gap-2 bg-game-bg/70 border border-game-border rounded-xl p-1.5">
+        {([2, 1, 0]).map((z) => (
           <button
             key={z}
-            onClick={() => { if (z === 2 && !focusLoc) return; setZoom(z) }}
+            onClick={() => { if (z === 2 && !focusLoc) return; gotoStop(z) }}
             disabled={z === 2 && !focusLoc}
-            title={['World', 'Locale', 'Battle'][z]}
+            title={ZOOM_NAMES[z]}
             className={[
               'w-8 h-8 rounded-lg text-sm flex items-center justify-center transition-colors',
-              zoom === z ? 'bg-game-primary text-white' : 'text-game-text-dim hover:bg-white/5',
+              nearest === z ? 'bg-game-primary text-white' : 'text-game-text-dim hover:bg-white/5',
               z === 2 && !focusLoc ? 'opacity-30 cursor-not-allowed' : '',
             ].join(' ')}
           >{['🗺', '⌖', '⚔'][z]}</button>
         ))}
+        {/* continuous fill indicator */}
+        <div className="w-1 h-16 rounded-full bg-game-border overflow-hidden relative">
+          <div className="absolute bottom-0 inset-x-0 bg-game-primary/70 rounded-full" style={{ height: `${(zoom / 2) * 100}%` }} />
+        </div>
       </div>
 
-      {zoom === 2 && focusLoc ? (
-        <div className="absolute inset-0 pt-12">
-          <div className="h-full">
-            <BattleView locationId={focusLoc.id} />
-          </div>
-          {!battleLive && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] text-game-text-dim bg-game-bg/80 border border-game-border rounded-full px-3 py-1">
-              Formation preview — deploy heroes here to begin the fight
-            </div>
-          )}
-        </div>
-      ) : (
+      {/* viewport: map layer (always) + battle layer (crossfades in) */}
+      <div
+        ref={wrapRef}
+        className="absolute inset-0 select-none touch-none"
+        style={{ cursor: mapActive ? 'grab' : 'default' }}
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+      >
+        {/* map */}
         <div
-          ref={wrapRef}
-          className="absolute inset-0 select-none cursor-grab active:cursor-grabbing"
-          style={{ touchAction: 'none' }}
-          onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+          className="absolute inset-0"
+          style={{ opacity: 1 - battleOpacity, pointerEvents: mapActive ? 'auto' : 'none' }}
         >
-          <div className="absolute top-0 left-0 origin-top-left transition-transform duration-500 ease-out"
+          <div className="absolute top-0 left-0 origin-top-left"
                style={{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }}>
             <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0 }}>
               {lines.map((ln, i) => (
@@ -237,22 +293,38 @@ export function ProtoStage() {
               ))}
             </svg>
             {worldLocs.map((loc) => (
-              <WorldNode
-                key={loc.id} loc={loc} units={units} equipment={equipment}
-                selected={selectedLocationId === loc.id}
-                onTap={() => flyTo(loc)} onDive={() => dive(loc)}
-              />
+              <WorldNode key={loc.id} loc={loc} units={units} equipment={equipment}
+                         selected={selectedLocationId === loc.id}
+                         onTap={() => flyTo(loc)} onDive={() => dive(loc)} />
             ))}
           </div>
         </div>
-      )}
 
-      {/* dive affordance at locale zoom */}
-      {zoom === 1 && focusLoc && (
-        <button
-          onClick={() => setZoom(2)}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-full border border-game-primary/60 bg-game-primary/20 text-sm text-game-text hover:bg-game-primary/30 transition-colors shadow-lg shadow-game-primary/20"
-        >⚔ Drop into {focusLoc.name}</button>
+        {/* battlefield — mounted once we're zooming in, crossfaded over the map */}
+        {focusLoc && zoom > 1.2 && (
+          <div
+            className="absolute inset-0 pt-12 bg-game-bg"
+            style={{
+              opacity: battleOpacity,
+              transform: `scale(${battleScaleFor(zoom)})`,
+              pointerEvents: mapActive ? 'none' : 'auto',
+            }}
+          >
+            <div className="h-full"><BattleView locationId={focusLoc.id} /></div>
+            {!battleLive && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] text-game-text-dim bg-game-bg/80 border border-game-border rounded-full px-3 py-1">
+                Formation preview — deploy heroes here to begin the fight
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* dive hint while in the locale band */}
+      {focusLoc && zoom >= 0.85 && battleOpacity < 0.15 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full border border-game-border bg-game-bg/80 text-[11px] text-game-text-dim pointer-events-none">
+          Pinch / scroll in to drop into {focusLoc.name}
+        </div>
       )}
     </div>
   )

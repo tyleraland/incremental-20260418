@@ -6,24 +6,25 @@ import {
 } from '@/stores/useGameStore'
 import { getUnitTraits } from '@/data/traits'
 import { SLOT_LABELS, SLOT_COMPATIBLE } from '@/data/equipment'
-import type { EquipSlot, EquipmentItem, TacticSlot } from '@/types'
+import type { EquipSlot, EquipmentItem, WeaponRecord } from '@/types'
 import { buildSaga } from './lore'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
-// The always-on right half: a context inspector bound to the selected hero. It
-// trades altitude — Summary (high-level vitals + role) and Saga (pure narrative)
-// at the top of the scale; Gear and Tactician (per-point numbers + the combat
-// levers) at the bottom. Deploy spans both: move the hero across the world while
-// watching the battle on the left.
+// The always-on right half. Per-hero lenses (Summary / Saga / Gear / Tactician)
+// bind to the selected hero; squad lenses (Party / Deploy) span the whole roster.
+// The guiding bias: put the numbers that change a decision next to each other —
+// equip a sword and see ATK move on the same row; compare every hero's doctrine
+// in one channel×hero grid — rather than making the player hold state in memory.
 
-type Lens = 'summary' | 'gear' | 'tactics' | 'saga' | 'deploy'
-const LENSES: { id: Lens; label: string; icon: string; altitude: string }[] = [
-  { id: 'summary', label: 'Summary',   icon: '◈', altitude: 'high' },
-  { id: 'saga',    label: 'Saga',      icon: '✶', altitude: 'high' },
-  { id: 'gear',    label: 'Gear',      icon: '⚙', altitude: 'low'  },
-  { id: 'tactics', label: 'Tactician', icon: '⚑', altitude: 'low'  },
-  { id: 'deploy',  label: 'Deploy',    icon: '➤', altitude: 'mid'  },
+type Lens = 'summary' | 'saga' | 'gear' | 'tactics' | 'party' | 'deploy'
+const LENSES: { id: Lens; label: string; icon: string; squad?: boolean }[] = [
+  { id: 'summary', label: 'Summary',   icon: '◈' },
+  { id: 'saga',    label: 'Saga',      icon: '✶' },
+  { id: 'gear',    label: 'Gear',      icon: '⚙' },
+  { id: 'tactics', label: 'Tactics',   icon: '⚑' },
+  { id: 'party',   label: 'Party',     icon: '☷', squad: true },
+  { id: 'deploy',  label: 'Deploy',    icon: '➤', squad: true },
 ]
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
@@ -32,18 +33,8 @@ const CHANNELS: { id: string; label: string }[] = [
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'Reaction' }, { id: 'passive', label: 'Passive' },
 ]
 
-function StatBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  return (
-    <div>
-      <div className="flex justify-between text-[10px] mb-0.5">
-        <span className="uppercase tracking-wider text-game-text-dim">{label}</span>
-        <span className="text-game-text tabular-nums">{value}</span>
-      </div>
-      <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, (value / max) * 100)}%` }} />
-      </div>
-    </div>
-  )
+function selectHero(u: Unit) {
+  useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })
 }
 
 // ── Summary lens ──────────────────────────────────────────────────────────────
@@ -70,7 +61,7 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-game-primary/30 to-game-secondary/20 border border-game-primary/40 flex items-center justify-center text-3xl">
+        <div className="w-16 h-16 rounded-2xl bg-game-surface border border-game-primary/40 flex items-center justify-center text-3xl">
           {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
         </div>
         <div className="min-w-0">
@@ -141,8 +132,42 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
   )
 }
 
-// ── Gear lens ─────────────────────────────────────────────────────────────────
+// ── Gear lens (delta-aware) ───────────────────────────────────────────────────
 const GEAR_SLOTS: EquipSlot[] = ['mainHand', 'offHand', 'armor', 'accessory', 'sideboard1', 'sideboard2']
+// The derived stats a gear swap can move — shown as a before→after delta.
+const DELTA_STATS: [keyof DerivedStats, string][] = [
+  ['attack', 'ATK'], ['defense', 'DEF'], ['magicAttack', 'M.ATK'],
+  ['magicDefense', 'M.DEF'], ['attackRange', 'RNG'], ['maxHp', 'HP'],
+]
+
+// Clone the unit with a candidate item placed in `slot`, so getDerivedStats can
+// price the swap exactly the way the live game would (weapon-set aware).
+function withItem(unit: Unit, slot: EquipSlot, itemId: string | null): Unit {
+  if (slot === 'mainHand' || slot === 'offHand') {
+    const weaponSets = unit.weaponSets.map((ws, i) =>
+      i === unit.activeWeaponSet ? { ...ws, [slot]: itemId } : ws) as [WeaponRecord, WeaponRecord]
+    return { ...unit, weaponSets }
+  }
+  return { ...unit, equipment: { ...unit.equipment, [slot]: itemId } }
+}
+
+function DeltaChips({ before, after }: { before: DerivedStats; after: DerivedStats }) {
+  const chips = DELTA_STATS.map(([k, label]) => {
+    const d = Math.round(after[k] as number) - Math.round(before[k] as number)
+    return d !== 0 ? { label, d } : null
+  }).filter(Boolean) as { label: string; d: number }[]
+  if (chips.length === 0) return <span className="text-[10px] text-game-muted">no stat change</span>
+  return (
+    <div className="flex flex-wrap gap-1">
+      {chips.map((c) => (
+        <span key={c.label} className={['text-[10px] px-1.5 py-0.5 rounded tabular-nums',
+          c.d > 0 ? 'bg-game-green/15 text-game-green' : 'bg-red-500/15 text-red-300'].join(' ')}>
+          {c.label} {c.d > 0 ? '+' : ''}{c.d}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 function GearLens({ unit }: { unit: Unit }) {
   const equipment = useGameStore((s) => s.equipment)
@@ -154,21 +179,9 @@ function GearLens({ unit }: { unit: Unit }) {
     return equipment.find((e) => e.id === id)
   }
   const mainHand = equipment.find((e) => e.id === unit.weaponSets[unit.activeWeaponSet].mainHand)
-  const candidates = activeSlot
-    ? equipment.filter((e) => SLOT_COMPATIBLE[activeSlot].includes(e.category))
-    : []
+  const base = getDerivedStats(unit, equipment)
+  const candidates = activeSlot ? equipment.filter((e) => SLOT_COMPATIBLE[activeSlot].includes(e.category)) : []
   const current = activeSlot ? itemFor(activeSlot) : undefined
-
-  function statLine(it?: EquipmentItem): string {
-    if (!it) return '—'
-    const parts: string[] = []
-    if (it.stats.attack) parts.push(`ATK ${it.stats.attack}`)
-    if (it.stats.defense) parts.push(`DEF ${it.stats.defense}`)
-    if (it.stats.specialAttack) parts.push(`M.ATK ${it.stats.specialAttack}`)
-    if (it.stats.specialDefense) parts.push(`M.DEF ${it.stats.specialDefense}`)
-    if (it.stats.range) parts.push(`RNG ${it.stats.range}`)
-    return parts.join(' · ') || 'no stats'
-  }
 
   return (
     <div className="space-y-4">
@@ -194,62 +207,67 @@ function GearLens({ unit }: { unit: Unit }) {
               <div className={['text-xs leading-snug mt-0.5', it ? 'text-game-text font-medium' : 'text-game-muted italic'].join(' ')}>
                 {locked ? '2H locked' : it?.name ?? 'empty'}
               </div>
-              {it && <div className="text-[9px] text-game-accent mt-0.5">{statLine(it)}</div>}
             </button>
           )
         })}
       </div>
 
-      {activeSlot && (
+      {activeSlot ? (
         <div>
           <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">
-            Equip → {SLOT_LABELS[activeSlot]}
+            {SLOT_LABELS[activeSlot]} — pick to see the impact
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {current && (
               <button
-                onClick={() => { equipItem(unit.id, activeSlot, null); }}
-                className="w-full flex items-center justify-between rounded-md border border-game-border/60 bg-game-bg px-2.5 py-1.5 text-left hover:border-red-500/50"
+                onClick={() => equipItem(unit.id, activeSlot, null)}
+                className="w-full rounded-md border border-game-border/60 bg-game-bg px-2.5 py-2 text-left hover:border-red-500/50"
               >
-                <span className="text-xs text-game-text-dim italic">Unequip {current.name}</span>
-                <span className="text-[10px] text-red-300">remove</span>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-game-text-dim italic">Unequip {current.name}</span>
+                  <span className="text-[10px] text-red-300">remove</span>
+                </div>
+                <DeltaChips before={base} after={getDerivedStats(withItem(unit, activeSlot, null), equipment)} />
               </button>
             )}
             {candidates.length === 0 && <div className="text-xs text-game-muted italic px-1">No compatible items in stash.</div>}
             {candidates.map((it) => {
               const equipped = current?.id === it.id
+              const after = getDerivedStats(withItem(unit, activeSlot, it.id), equipment)
               return (
                 <button
                   key={it.id}
                   onClick={() => equipItem(unit.id, activeSlot, it.id)}
                   className={[
-                    'w-full flex items-center justify-between rounded-md border px-2.5 py-1.5 text-left transition-colors',
+                    'w-full rounded-md border px-2.5 py-2 text-left transition-colors',
                     equipped ? 'border-game-primary/60 bg-game-primary/10' : 'border-game-border bg-game-bg hover:border-game-primary/50',
                   ].join(' ')}
                 >
-                  <div className="min-w-0">
-                    <div className="text-xs text-game-text font-medium truncate">{it.name}</div>
-                    <div className="text-[9px] text-game-accent">{statLine(it)}</div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-game-text font-medium truncate">{it.name}</span>
+                    {equipped ? <span className="text-[10px] text-game-primary shrink-0">equipped</span>
+                      : <span className="text-[10px] text-game-text-dim shrink-0">equip ›</span>}
                   </div>
-                  {equipped ? <span className="text-[10px] text-game-primary shrink-0">equipped</span>
-                    : <span className="text-[10px] text-game-text-dim shrink-0">equip ›</span>}
+                  {equipped ? <span className="text-[10px] text-game-muted">currently worn</span>
+                    : <DeltaChips before={base} after={after} />}
                 </button>
               )
             })}
           </div>
         </div>
+      ) : (
+        <div className="text-xs text-game-muted italic">Tap a slot to compare gear — each option shows how it moves this hero's stats (and it updates live on the battlefield).</div>
       )}
-      {!activeSlot && <div className="text-xs text-game-muted italic">Tap a slot to swap gear — stats update live on the Summary lens and on the battlefield.</div>}
     </div>
   )
 }
 
-// ── Tactician lens ────────────────────────────────────────────────────────────
+// ── Tactician lens (single hero) ──────────────────────────────────────────────
 function TacticianLens({ unit }: { unit: Unit }) {
-  const partyTactics    = useGameStore((s) => s.partyTactics)
-  const moveTactic      = useGameStore((s) => s.moveTactic)
-  const equipTactic     = useGameStore((s) => s.equipTactic)
-  const unequipTactic   = useGameStore((s) => s.unequipTactic)
+  const partyTactics  = useGameStore((s) => s.partyTactics)
+  const moveTactic    = useGameStore((s) => s.moveTactic)
+  const equipTactic   = useGameStore((s) => s.equipTactic)
+  const unequipTactic = useGameStore((s) => s.unequipTactic)
   const [adding, setAdding] = useState(false)
 
   const equippedIds = new Set(unit.tactics.map((t) => t.id))
@@ -339,13 +357,91 @@ function TacticianLens({ unit }: { unit: Unit }) {
   )
 }
 
+// ── Party lens (channel × hero doctrine matrix) ───────────────────────────────
+function PartyLens({ selectedId }: { selectedId: string | null }) {
+  const units        = useGameStore((s) => s.units)
+  const locations    = useGameStore((s) => s.locations)
+  const partyTactics = useGameStore((s) => s.partyTactics)
+
+  // Deployed squad first; fall back to the whole roster so the lens is never empty.
+  const deployed = units.filter((u) => u.locationId)
+  const squad = deployed.length > 0 ? deployed : units
+  const locName = (id: string | null) => id ? (locations.find((l) => l.id === id)?.name ?? id) : 'guild'
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">
+          {deployed.length > 0 ? 'Deployed squad' : 'Roster'} · doctrine
+        </span>
+        <span className="text-[10px] text-game-text-dim">{squad.length} heroes</span>
+      </div>
+
+      {partyTactics.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-game-secondary/30 bg-game-secondary/5 px-2 py-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-game-secondary">Party</span>
+          {partyTactics.map((t) => (
+            <span key={t.id} className="text-[10px] px-1.5 py-0.5 rounded bg-game-secondary/15 text-game-text" title={TACTIC_REGISTRY[t.id]?.description}>{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
+          ))}
+        </div>
+      )}
+
+      {/* matrix: sticky channel column on the left, one column per hero */}
+      <div className="overflow-x-auto -mx-3 px-3">
+        <div className="min-w-max">
+          {/* header row */}
+          <div className="flex">
+            <div className="w-16 shrink-0" />
+            {squad.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => selectHero(u)}
+                className={['w-28 shrink-0 px-1.5 pb-2 text-left border-b-2 transition-colors',
+                  selectedId === u.id ? 'border-game-primary' : 'border-transparent hover:border-game-border'].join(' ')}
+              >
+                <div className="flex items-center gap-1">
+                  <span className="text-sm">{u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}</span>
+                  <span className="text-[11px] font-medium text-game-text truncate">{u.name.split(' ')[0]}</span>
+                </div>
+                <div className="text-[9px] text-game-text-dim truncate">{u.class ?? 'Novice'} · {locName(u.locationId)}</div>
+              </button>
+            ))}
+          </div>
+          {/* one row per channel */}
+          {CHANNELS.map((ch) => (
+            <div key={ch.id} className="flex border-t border-game-border/50">
+              <div className="w-16 shrink-0 py-1.5 text-[9px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface/40">{ch.label}</div>
+              {squad.map((u) => {
+                const inCh = u.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch.id)
+                return (
+                  <div key={u.id} className={['w-28 shrink-0 py-1.5 px-1 space-y-0.5',
+                    selectedId === u.id ? 'bg-game-primary/5' : ''].join(' ')}>
+                    {inCh.length === 0 ? <span className="text-[10px] text-game-muted">·</span>
+                      : inCh.map((t, i) => (
+                        <div key={t.id} className="flex items-center gap-1" title={TACTIC_REGISTRY[t.id]?.description}>
+                          <span className="text-[8px] text-game-muted tabular-nums">{i + 1}</span>
+                          <span className="text-[10px] text-game-text leading-tight">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
+                        </div>
+                      ))}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="text-[10px] text-game-muted italic">Tap a hero column to open their full Tactician lens. Skill-granted actions inject on top of this manual loadout in combat.</div>
+    </div>
+  )
+}
+
 // ── Saga lens ─────────────────────────────────────────────────────────────────
 function SagaLens({ unit }: { unit: Unit }) {
   const eventLog = useGameStore((s) => s.eventLog)
   const saga = buildSaga(unit, eventLog)
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-game-border bg-gradient-to-b from-game-surface to-game-bg p-4">
+      <div className="rounded-xl border border-game-border bg-game-surface/60 p-4">
         <div className="text-[10px] uppercase tracking-[0.25em] text-game-secondary mb-1">{saga.epithet}</div>
         <div className="text-xl font-semibold text-game-text">{saga.title}</div>
         <p className="text-sm text-game-text-dim italic mt-2 leading-relaxed">{saga.opening}</p>
@@ -372,13 +468,12 @@ function SagaLens({ unit }: { unit: Unit }) {
 }
 
 // ── Deploy lens ───────────────────────────────────────────────────────────────
-function DeployLens({ unit }: { unit: Unit }) {
+function DeployLens({ unit }: { unit: Unit | null }) {
   const locations  = useGameStore((s) => s.locations)
   const units      = useGameStore((s) => s.units)
   const assignUnits = useGameStore((s) => s.assignUnits)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
 
-  // Group deployable world locations by region for a scannable list.
   const byRegion = new Map<string, typeof locations>()
   for (const l of locations) {
     const arr = byRegion.get(l.region); if (arr) arr.push(l); else byRegion.set(l.region, [l])
@@ -387,11 +482,11 @@ function DeployLens({ unit }: { unit: Unit }) {
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-game-border bg-game-bg p-2.5">
-        <div className="text-xs text-game-text-dim">Currently</div>
+        <div className="text-xs text-game-text-dim">{unit ? `${unit.name} is` : 'No hero selected —'}</div>
         <div className="text-sm text-game-text font-medium">
-          {unit.locationId ? (locations.find((l) => l.id === unit.locationId)?.name ?? unit.locationId) : 'At the guild (undeployed)'}
+          {unit ? (unit.locationId ? (locations.find((l) => l.id === unit.locationId)?.name ?? unit.locationId) : 'At the guild (undeployed)') : 'pick a hero to send them somewhere'}
         </div>
-        {unit.locationId && (
+        {unit?.locationId && (
           <button onClick={() => assignUnits([unit.id], null)} className="mt-1.5 text-[11px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">↩ Recall to guild</button>
         )}
       </div>
@@ -402,7 +497,7 @@ function DeployLens({ unit }: { unit: Unit }) {
           <div className="space-y-1">
             {locs.map((l) => {
               const here = units.filter((u) => u.locationId === l.id)
-              const isHere = unit.locationId === l.id
+              const isHere = unit?.locationId === l.id
               return (
                 <div key={l.id} className={['flex items-center gap-2 rounded-md border px-2.5 py-1.5',
                   isHere ? 'border-game-primary/50 bg-game-primary/10' : 'border-game-border bg-game-bg'].join(' ')}>
@@ -411,10 +506,10 @@ function DeployLens({ unit }: { unit: Unit }) {
                     <div className="text-[9px] text-game-text-dim">{here.length} hero{here.length !== 1 ? 'es' : ''} · {l.monsterIds.length} foe types{l.openWorld ? ' · open' : ''}</div>
                   </button>
                   <button
-                    onClick={() => assignUnits([unit.id], l.id)}
-                    disabled={isHere}
+                    onClick={() => unit && assignUnits([unit.id], l.id)}
+                    disabled={!unit || isHere}
                     className={['text-[11px] px-2 py-1 rounded shrink-0 transition-colors',
-                      isHere ? 'text-game-muted' : 'border border-game-primary/50 text-game-text hover:bg-game-primary/15'].join(' ')}
+                      (!unit || isHere) ? 'text-game-muted' : 'border border-game-primary/50 text-game-text hover:bg-game-primary/15'].join(' ')}
                   >{isHere ? 'here' : 'send ›'}</button>
                 </div>
               )
@@ -434,24 +529,11 @@ export function ProtoLens() {
   const [lens, setLens] = useState<Lens>('summary')
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
-
-  if (!unit) {
-    return (
-      <div className="h-full flex items-center justify-center p-6 text-center">
-        <div>
-          <div className="text-4xl mb-2 opacity-40">◈</div>
-          <div className="text-sm text-game-text-dim">Select a hero from the roster</div>
-          <div className="text-xs text-game-muted mt-1">Their summary, gear, tactics and saga appear here while you watch the world on the left.</div>
-        </div>
-      </div>
-    )
-  }
-
-  const ds = getDerivedStats(unit, equipment)
+  const def = LENSES.find((l) => l.id === lens)!
+  const needsHero = !def.squad && !unit
 
   return (
     <div className="h-full flex flex-col bg-game-surface/40 min-h-0">
-      {/* lens switcher */}
       <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
         {LENSES.map((l) => (
           <button
@@ -469,11 +551,24 @@ export function ProtoLens() {
         ))}
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
-        {lens === 'summary' && <SummaryLens unit={unit} ds={ds} />}
-        {lens === 'gear'    && <GearLens unit={unit} />}
-        {lens === 'tactics' && <TacticianLens unit={unit} />}
-        {lens === 'saga'    && <SagaLens unit={unit} />}
-        {lens === 'deploy'  && <DeployLens unit={unit} />}
+        {needsHero ? (
+          <div className="h-full flex items-center justify-center text-center">
+            <div>
+              <div className="text-4xl mb-2 opacity-40">◈</div>
+              <div className="text-sm text-game-text-dim">Select a hero from the roster</div>
+              <div className="text-xs text-game-muted mt-1">Their {def.label.toLowerCase()} appears here while you watch the world on the left.</div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {lens === 'summary' && unit && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+            {lens === 'saga'    && unit && <SagaLens unit={unit} />}
+            {lens === 'gear'    && unit && <GearLens unit={unit} />}
+            {lens === 'tactics' && unit && <TacticianLens unit={unit} />}
+            {lens === 'party'   && <PartyLens selectedId={unit?.id ?? null} />}
+            {lens === 'deploy'  && <DeployLens unit={unit} />}
+          </>
+        )}
       </div>
     </div>
   )
