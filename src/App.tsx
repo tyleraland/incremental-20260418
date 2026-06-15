@@ -12,6 +12,7 @@ import { Inventory } from '@/pages/Inventory'
 import { Guild } from '@/pages/Guild'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
+import { ProtoApp } from '@/proto/ProtoApp'
 
 // Dev-only: expose the store on `window.__game` so a Playwright (or devtools)
 // session can read and drive live game state — `page.evaluate(() => __game.getState())`
@@ -46,6 +47,11 @@ function App() {
   // The import.meta.env.DEV gate dead-code-strips it from production bundles.
   const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
 
+  // ?proto=1 → the split-screen "Tactician" UI-overhaul prototype. Shares the
+  // live tick loop + persisted save (the effects below still run); it just swaps
+  // the whole render. Experimental / not wired into the tab bar or save format.
+  const protoMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('proto')
+
   // Interval fires every second. catchUp() computes how many real seconds
   // have elapsed and applies them all at once, so throttled background tabs
   // and returning from sleep both catch up correctly.
@@ -77,6 +83,16 @@ function App() {
     }, 60_000)
     return () => clearInterval(id)
   }, [perfMode])
+
+  if (protoMode) {
+    return (
+      <>
+        <ProtoApp />
+        <UnitReportSheet />
+        <OfflineSummary />
+      </>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col">
