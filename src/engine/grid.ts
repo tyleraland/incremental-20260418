@@ -1,8 +1,9 @@
 // Combat Tactic Engine — spatial model (spec §2).
-// Continuous 2D space on a 5×10 logical grid. Euclidean distance only.
+// Continuous 2D space on a 15×15 grid (COLS=ROWS=15 default; per-battle bounds
+// can be larger for open-world, read via engine/arena.ts). Euclidean distance only.
 
 import {
-  COLS, ROWS, BASE_MOVE_SPEED, SEPARATION, FRONT_ROWS, MID_ROWS,
+  COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
   PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
 import { slideMove, steerAround } from './barriers'

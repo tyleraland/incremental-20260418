@@ -61,8 +61,9 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
   },
 
   // ── Active skills (cast/use; do not give passive stat bonuses) ───────────────
-  // Casting / cooldown / mana semantics: not yet implemented. These exist as
-  // action-slot draggables only; combat automation will read them later.
+  // These are the action-bar/draggable skills; the combat engine resolves their
+  // cast/cooldown/channel semantics (src/engine/skills.ts). No mana resource —
+  // casts are gated by cooldowns (a spell-slot/mana model is backlogged).
   'fire-bolt': {
     id: 'fire-bolt', name: 'Fire Bolt', maxLevel: 10, type: 'active',
     description: (lv) => `Fire spell. ${lv}× M.ATK. Cast 1.5s fixed + 3.5s variable (DEX-reducible).`,

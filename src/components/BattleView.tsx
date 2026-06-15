@@ -7,8 +7,8 @@ import {
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
 } from '@/engine'
 
-// The sim advances ~2.5 rounds/sec (store ROUND_EVERY_TICKS=2 over
-// TICKS_PER_SECOND=5), so status durations (in rounds) read back to real seconds.
+// The sim advances ~2.5 *logical* rounds/sec (5 engine rounds/sec ÷ timeScale=2),
+// so status durations (in logical rounds) read back to real seconds.
 const ROUNDS_PER_SEC = 2.5
 
 // Battle rendering for the Map tab's "drop-in" view. The arena fills the space
@@ -326,7 +326,8 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
   return initials(c.name)
 }
 
-// Wall-clock length of one engine round (ROUND_EVERY_TICKS=2 × 1000/TICKS_PER_SECOND=5).
+// Wall-clock length of one *logical* round (2 engine rounds at timeScale=2 ×
+// 1000/TICKS_PER_SECOND=5 = 400ms; a raw engine round is 200ms).
 const ROUND_MS = 400
 
 // Floating label: name/HP/cast sit BELOW the circle for *every* unit (players

@@ -1,8 +1,8 @@
 // Combat Tactic Engine — public surface.
-// Round-based, deterministic 5v5 grid autobattle (see spec in repo history).
-// v0.1: engine core only — grid, movement, turn order, damage/heal, naive
-// behavior, status scaffolding, events, win/loss. Tactics and the catalog are
-// future layers that plug into the channels described in the spec.
+// Round-based, deterministic, RNG-free spatial autobattle on a per-battle grid
+// (15×15 encounters, larger for open-world). Full system: grid/movement, turn
+// order, damage/heal, the tactic channels + catalog, skills, statuses, ground
+// zones, snapshots, events, win/loss. See CLAUDE.md / AGENTS.md for the spec.
 
 export * from './types'
 export {

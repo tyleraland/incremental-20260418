@@ -36,15 +36,18 @@ export function getDerivedStats(unit: Unit, allEquipment: EquipmentItem[]): Deri
   const eq = { atk: 0, def: 0, matk: 0, mdef: 0, range: 0 }
   const ws = unit.weaponSets[unit.activeWeaponSet]
   const weaponIds = [ws.mainHand, ws.offHand]
-  // mainHand wins for both range and attack element (LIFO with offHand at the
-  // bottom of the stack); later, temporary skill imbues will push on top.
+  // Range takes the longer of the two weapons. Attack element: mainHand wins
+  // (offHand only fills in if mainHand has none). SIMPLIFICATION — a unit attacks
+  // with ONE element. Proper per-weapon elements (a fire mainHand + frost offHand
+  // each striking with their own element on their own cadence) waits on real
+  // dual-wield support — see BACKLOG.
   let attackElement: Element = 'neutral'
   let armorElement:  Element = 'neutral'
   for (const id of weaponIds) {
     if (!id) continue
     const item = allEquipment.find((e) => e.id === id); if (!item) continue
     eq.range = Math.max(eq.range, item.stats.range ?? 0)
-    if (item.element) attackElement = item.element
+    if (item.element && attackElement === 'neutral') attackElement = item.element
   }
   const armorItem = unit.equipment.armor ? allEquipment.find((e) => e.id === unit.equipment.armor) : null
   if (armorItem?.element) armorElement = armorItem.element

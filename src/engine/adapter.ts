@@ -33,7 +33,8 @@ function equippedCombatSkills(unit: Unit): EngineSkill[] {
   return out
 }
 
-// The engine grid is 5×10 abstract units; the game's "feet" don't map 1:1.
+// The engine grid is ~15×15 abstract units (per-battle, larger for open-world);
+// the game's "feet" don't map 1:1.
 // Melee stops ~1.1 away (just shy of contact). Ranged is tiered: long-range
 // weapons (bows, staves) reach 6 cells; medium-range (wands, monster
 // spitters like Living Nightshade or Giant Frog) reach 4. The cleric's Rod is

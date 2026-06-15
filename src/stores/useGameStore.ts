@@ -78,12 +78,14 @@ export interface GameState {
   partyTactics:           TacticSlot[]                 // team-wide tactics injected into every unit (§5.5)
   ticks: number
 
-  // RUNTIME — regenerated on load; not saved
+  // MIXED TIER (see CLAUDE.md): `locations`, `eventLog`, `lastTickAt`, OfflineSummary
+  // regenerate on load; the rest below PERSIST — battles/battleCooldown/
+  // monsterSpawnTimers via battlesCodec, itemSockets via socketsCodec.
   locations: Location[]
-  battles: Record<string, BattleState>                // locationId → live engine battle (one wave)
-  battleCooldown: Record<string, number>              // locationId → ticks until the next wave spawns
-  monsterSpawnTimers: Record<string, number>          // open-world: locationId → ticks until next monster trickles in
-  itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds
+  battles: Record<string, BattleState>                // locationId → live engine battle (persisted as BSNAP)
+  battleCooldown: Record<string, number>              // locationId → ticks until the next wave spawns (persisted)
+  monsterSpawnTimers: Record<string, number>          // open-world: ticks until next monster trickles in (persisted)
+  itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds (persisted)
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
   // "While you were away" summary produced by the last offline catch-up
@@ -1040,7 +1042,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       detectDeaths(battle)
       if (battle.outcome !== 'ongoing') {
         battleCooldown[locationId] = BATTLE_RESPAWN_TICKS
-        logs.push({ category: battle.outcome === 'victory' ? 'defeat' : 'flee', message: `${loc.name}: ${battle.outcome}` })
+        logs.push({ category: battle.outcome === 'victory' ? 'victory' : 'defeat', message: `${loc.name}: ${battle.outcome}` })
       }
     }
 

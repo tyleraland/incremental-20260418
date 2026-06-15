@@ -232,7 +232,6 @@ export function castRange(self: Combatant): number {
   return hasAttack ? shootRange : maxSkillRange(self)
 }
 
-// shoot that round — preferable to dying mid-channel.
 export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
   // Match maxSkillRange's filter: casters consider all skills (positioning for
   // next cast); non-casters only need cast room for skills currently ready.

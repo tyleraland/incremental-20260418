@@ -23,9 +23,10 @@ function coef(base: number, per: number, level: number): string {
   return (base + per * (level - 1)).toFixed(2)
 }
 
-// Cooldowns are tracked in engine rounds, but the sim runs ~2.5 rounds/sec
-// (store ROUND_EVERY_TICKS=2 over TICKS_PER_SECOND=5), so author them in real
-// seconds and convert once. Current tuning: bolts + Heal at 5s, everything else 10s.
+// Cooldowns are tracked in engine rounds, but the sim runs ~2.5 *logical*
+// rounds/sec (5 engine rounds/sec at TICKS_PER_SECOND=5 × ROUND_EVERY_TICKS=1,
+// ÷ timeScale=ROUND_TIME_SCALE=2), so author them in real seconds and convert
+// once. Current tuning: bolts + Heal at 5s, everything else 10s.
 const ROUNDS_PER_SEC = 2.5
 const cd = (seconds: number) => Math.round(seconds * ROUNDS_PER_SEC)
 

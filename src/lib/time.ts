@@ -10,12 +10,8 @@ export const SEASON_NAMES     = ['Spring', 'Summer', 'Autumn', 'Winter'] as cons
 export const RECOVERY_TICKS     = 5    // ticks of KO phase, no regen (~1 real-sec)
 export const RESTING_REGEN_RATE = 50   // HP per tick while resting after KO — refills a typical unit in ~1s
 export const REGEN_RATE         = 50   // HP per tick for idle regen (locationId=null) — heal to full in ~1s
-export const FLEE_TICKS_CONST   = 10   // ticks to complete a flee action (~2 real-sec)
-export const WAVE_COOLDOWN_MIN  = 15   // min ticks between last defeat and next wave (~3 real-sec)
-export const WAVE_COOLDOWN_MAX  = 40   // max ticks between last defeat and next wave (~8 real-sec)
-export const ATTACK_SPEED_BASE  = 10   // attackSpeed=10 → baseline; cooldown = round(TICKS_PER_SECOND * BASE / speed)
-export const APPROACH_DISTANCE  = 60   // 1D combat axis length in feet; monsters spawn here, units hold near 0
-export const APPROACH_SPEED     = 1    // legacy; per-actor moveSpeed is read from monster/unit stats now
+// (Removed legacy per-slot/1D-combat constants — FLEE_TICKS_CONST, WAVE_COOLDOWN_*,
+// ATTACK_SPEED_BASE, APPROACH_* — superseded by the spatial engine; all were unused.)
 
 export const FAMILIARITY_THRESHOLDS = { stats: 2, dropNames: 4, dropRates: 8 } as const
 

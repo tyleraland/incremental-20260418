@@ -13,8 +13,8 @@ export const locationsCodec = makeCodec<LocationsSave>({
     monstersSeen: s.locationMonstersSeen  ?? {},
   }),
   deserialize: (data) => ({
-    locationFamiliarity:  data.familiarity,
-    locationMonstersSeen: data.monstersSeen,
+    locationFamiliarity:  data.familiarity  ?? {},
+    locationMonstersSeen: data.monstersSeen ?? {},
   }),
   empty: () => ({ familiarity: {}, monstersSeen: {} }),
 })

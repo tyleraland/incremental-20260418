@@ -13,7 +13,7 @@ import {
 import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat, onAttackBeat } from './timescale'
 import { SpatialHash, setSpatialHash } from './spatialhash'
-import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, clampToGrid, enforceSeparation } from './grid'
+import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
@@ -42,7 +42,7 @@ import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
-  TeamPlan, Planner, Barrier, TacticResolution, TacticOutcome, FireWall, BattleZone,
+  TeamPlan, Planner, Barrier, TacticOutcome, BattleZone,
 } from './types'
 
 // Deterministic [0,1) hash of an integer — seeds open-world wander choices
@@ -933,7 +933,7 @@ function evalTargeting(state: BattleState, self: Combatant): void {
     rec(self, t, 'idle')
   }
   if (won) return
-  // default: keep lock if alive, else nearest enemy (with taunt bias)
+  // default: keep lock if alive, else threat+proximity fallback (selectTarget)
   const prev = selectTarget(state, self)
   if (prev !== null && self.lockedTargetId) {
     emit(state, { round: state.round, type: 'target_switch', sourceId: self.id, targetId: self.lockedTargetId, extra: { from: prev } })
@@ -1485,7 +1485,7 @@ function tickChannel(state: BattleState, self: Combatant): boolean {
       // fizzles onto cooldown if its target is gone.
       if (targetPoint) resolveSkill(state, self, skill, targetId, targetPoint)
       else if (tgt && tgt.alive) resolveSkill(state, self, skill, targetId)
-      else self.skillCooldowns[skill.id] = skill.cooldown
+      else self.skillCooldowns[skill.id] = scaleRounds(skill.cooldown)   // fizzle: scale like a successful cast (recordSkillUse)
     }
   }
   return true   // a channel always consumes the turn (rooted while casting)

@@ -441,6 +441,77 @@ Detector** (reveal + strike cloaked foes via `removesStatusId`, vs an **Assassin
 - **Visibility graph rebuilt per nav call** — fine at this scale; cache
   corner-corner edges per battle if terrain grows.
 
+## Code health / tech debt (2026-06 audit follow-ups)
+
+Deferred items from the codebase audit (the obvious stale-comment / dead-code /
+small-bug wins were already cleaned up). Grouped by theme; each is left for a
+focused pass because it's behavior-sensitive, a refactor, or a product decision.
+
+- **15-grid constants used unscaled on big arenas (behavior + replay-sensitive).**
+  `PERIMETER_LEFT=2`/`PERIMETER_RIGHT=13` (`constants.ts`, via `grid.ts` `isPerimeter`)
+  and `steerAround`'s herd-bias pivot `COLS/2` (`barriers.ts:170`) are baked for a
+  15-wide grid; on a 50×50 open-world map "perimeter" and the left-side path
+  surcharge pivot around x≈7.5 regardless of true width. Should read `arenaCols()`.
+  Touches movement → verify open-world replays after. (Relates to the *Grid-size
+  independence* invariant below — these are the known violations.)
+- **Reward model duplicated across live / batch / offline.** `tick` vs `batchTick`
+  vs offline `runCombatSlice`/`rewardKills`/`rollOfflineLoot` re-implement
+  kill→loot→reward + recovery/level-up separately; the per-kill drop-roll is
+  copy-pasted 3× and the empty `LocationCombatStats` literal ~4× (no
+  `emptyLocationStats()` factory like `emptyTally()`). Drift risk if drop/exp
+  semantics change. Consolidate the shared core.
+- **Store monolith + duplicated initial state.** `useGameStore.ts` (~1.8k lines)
+  holds engine-adjacent offline sim/priming (~lines 220-672) that could move to
+  `lib/offline.ts`; the initial-state literals (familiarity/seen/partyTactics/recipe
+  ids) are duplicated verbatim between the store initializer and `resetSave` →
+  extract `INITIAL_*` factories. Also: `resetSave` omits clearing persistent
+  `unitStatHistory` and `lastCatchUp` (stale data survives a reset).
+- **Vestigial `tool` equip slot.** No `tool` slot in the live 6-slot model
+  (`mainHand/offHand/sideboard1/sideboard2/armor/accessory`); handaxe/pickaxe/
+  lockpick are unreachable gear and CLAUDE.md still lists `tool` as a slot. Decide:
+  remove the plumbing, or wire it to a gather/resource feature (see *Economy &
+  resources*). Update CLAUDE.md either way.
+- **Now-orphaned `'flee'` LogCategory.** After fixing the inverted victory chip,
+  `'flee'` is emitted nowhere (only `victory`/`defeat` are). Either wire it to
+  monster-flee events or drop it from `LogCategory` + `LOG_META` + the filter list.
+- **Per-weapon elements / dual-wield.** Attack element is simplified to "mainHand
+  wins" (one element per unit, `lib/stats.ts`). The richer model: a fire mainHand +
+  frost offHand each strike with their own element on their own cadence — needs real
+  dual-wield support (separate attack timing) first.
+- **Save robustness / codec dedup.** `combatStatsCodec.byUnit` is documented to
+  "migrate to {}" but has no `migrate`/backfill; `worldCodec.deserialize` defaults
+  `partyTactics ?? []` while `migrate`/`empty` default to `DEFAULT_PARTY_TACTICS`
+  (a current save with the field absent loses the default tactic). The near-identical
+  single-record codecs (codex/combatStats/unitStats/unitHistory/sockets) could share
+  a `makeRecordCodec` that also fixes the `?? {}` guard drift in one place. (None are
+  `version`-migrated; first required-field shape change needs a migration story.)
+- **Duplicated UI tables.** `CLASS_ICON` (BattleView ↔ RosterCarousel), `ELEMENT_COLORS`
+  (Map ↔ LocationCodex, while a canonical copy sits unused in `lib/elements.ts`),
+  `fmt` number formatters (SamplingDebug ↔ TallyBreakdown), `Window`/`WINDOWS`
+  (UnitReportSheet ↔ Reports). Hoist to shared modules (verify the class strings are
+  byte-identical before collapsing, to avoid a visual regression).
+- **App-root re-render.** `App.tsx` subscribes `units` only to pass to
+  `RosterCarousel`; per-tick HP sync then re-renders the whole tree. Let
+  RosterCarousel subscribe internally (mobile perf).
+- **Vision cache global-state dependency.** The per-turn `visibleEnemiesOf` memo
+  (`spatial.ts`) is process-global and correct only because one battle is stepped at
+  a time. If concurrent/interleaved battle stepping is ever added, key it on battle
+  identity or it can collide on `self.id`.
+- **Latent type traps.** `damage.ts` `StatKey` includes `'magicDef'` but `STAT_KEYS`
+  excludes it (a formula using it silently resolves to 0); `StatModifiers.acc` is
+  tracked/shown but never rolled in combat.
+- **Magic-number literals worth centralizing.** `380ms` token/cam transitions vs
+  `ROUND_MS` (BattleView/RosterCarousel), the `300`ms double-tap window + drag
+  threshold duplicated across Map/RosterCarousel handlers, and engine tuning literals
+  (taunt `+10%`, kite dead-band `0.4`, "arrived" radius `0.6`, summon fan-out offsets).
+  Name them where it reduces drift risk.
+- **Content orphans (keep-for-future vs remove).** `earth-bolt` skill (defined in both
+  registries, equipped by nothing); `versatile`/`calm` traits (unreferenced); element
+  id scheme inconsistency (a `lightning` *trait* exists but items use `wind`, e.g.
+  "Spark Knife" `element:'wind'`). Decide and either wire up or delete.
+- **React index keys.** eventLog / battle-trace / status rows keyed by array index;
+  fine while append-only, but a prepend/trim would reuse wrong rows.
+
 ## Performance (large-battle render & engine)
 
 Target: ~25+ entity open-world battles smooth on mobile. **Phases 1–3 of the

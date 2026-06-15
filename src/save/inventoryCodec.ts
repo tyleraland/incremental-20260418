@@ -17,9 +17,9 @@ export const inventoryCodec = makeCodec<InventorySave>({
     learnedRecipes: s.learnedRecipes ?? [],
   }),
   deserialize: (data) => ({
-    equipment:      data.equipment,
-    miscItems:      data.miscItems,
-    learnedRecipes: data.learnedRecipes,
+    equipment:      data.equipment      ?? [],
+    miscItems:      data.miscItems      ?? [],
+    learnedRecipes: data.learnedRecipes ?? [],
   }),
   empty: () => ({
     equipment:      [...INITIAL_EQUIPMENT],

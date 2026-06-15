@@ -1,7 +1,7 @@
 // Combat Tactic Engine — base behavior (spec §4.1, §5.3 defaults, §16.8).
 // This is what a unit does with ZERO tactics equipped: walk toward the nearest
 // enemy, keep a locked target, and use naive skill intelligence (heal the hurt,
-// otherwise attack). Tactics (a later layer) will override these defaults.
+// otherwise attack). Equipped tactics override these defaults per channel.
 
 import { distance, attackReach } from './grid'
 import { sightlineClear } from './barriers'
@@ -91,7 +91,7 @@ function ready(self: Combatant, skill: EngineSkill): boolean {
 }
 
 // §4.1 naive skill usage for the skill types the core supports (attack, heal).
-// Other types fall through to a basic attack until tactics/skill layers land.
+// Other types fall through to a basic attack; equipped tactics/skills override this.
 export function chooseAction(state: BattleState, self: Combatant): Action | null {
   // Turtling (Shield Wall): hold attacks while the shield status is active.
   if (self.statuses.some((s) => s.flags.includes('shielded'))) return null

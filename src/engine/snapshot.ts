@@ -96,7 +96,8 @@ interface BattleSnapshot {
 }
 
 // Serialize → a single copy-pasteable token: `BSNAP.<base64(deflate(json))>`.
-// The JSON is dominated by repeated keys/strings (~12 combatants), so DEFLATE
+// The JSON is dominated by repeated keys/strings (often dozens of combatants in
+// open-world), so DEFLATE
 // shrinks the token ~6× — small enough to paste into a bug report. (Legacy
 // uncompressed tokens still load — see deserializeBattle.)
 export function serializeBattle(state: BattleState): string {
@@ -141,7 +142,9 @@ export function deserializeBattle(token: string): BattleState {
     if (body.length < guard.len) {
       throw new Error(`Battle snapshot: token looks truncated (${body.length} of ${guard.len} chars) — re-copy the whole string`)
     }
-    if (body.length === guard.len && bodyTag(body).toString(36) !== guard.hash) {
+    // Any length mismatch (short OR long — appended/garbled paste) or hash mismatch
+    // is corruption; only an exact-length, exact-hash body is trusted.
+    if (body.length !== guard.len || bodyTag(body).toString(36) !== guard.hash) {
       throw new Error('Battle snapshot: token looks corrupted (checksum mismatch) — re-copy it')
     }
   }

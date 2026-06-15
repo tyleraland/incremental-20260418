@@ -233,7 +233,7 @@ export interface CraftingRecipe {
 // ── Event log ─────────────────────────────────────────────────────────────────
 
 // §7: ring buffer of game events; max 200 entries
-export type LogCategory = 'loot' | 'levelup' | 'ko' | 'defeat' | 'flee' | 'craft' | 'travel' | 'offline'
+export type LogCategory = 'loot' | 'levelup' | 'ko' | 'victory' | 'defeat' | 'flee' | 'craft' | 'travel' | 'offline'
 
 export interface LogEntry {
   tick: number
@@ -250,8 +250,8 @@ export interface LogEntry {
 export interface LocationCombatStats {
   startTick: number                       // tick the aggregate started counting
   monstersDefeated: Record<string, number> // monsterId → count
-  itemsDropped:     Record<string, number> // itemId → count (loot system stub)
-  expDistributed: number                  // exp per unit (1 per kill at this location)
+  itemsDropped:     Record<string, number> // itemId → count
+  expDistributed: number                  // total exp pool distributed here (split across the party by level)
   goldEarned: number
   // Per-hero combat breakdown at this location (battle-report "per character"
   // table). Keyed by unitId; each is the same rich tally as the per-unit lifetime

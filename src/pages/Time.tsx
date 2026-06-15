@@ -91,6 +91,7 @@ declare const __GIT_HASH__: string
 declare const __GIT_LOG__: { hash: string; message: string }[]
 
 const LOG_META: Record<LogCategory, { label: string; chip: string }> = {
+  victory: { label: 'Victory', chip: 'bg-game-green/20 text-game-green border-game-green/30' },
   defeat:  { label: 'Defeat',  chip: 'bg-game-primary/20 text-game-primary border-game-primary/30' },
   loot:    { label: 'Loot',    chip: 'bg-game-gold/20 text-game-gold border-game-gold/30' },
   ko:      { label: 'KO',      chip: 'bg-red-500/20 text-red-400 border-red-500/30' },
