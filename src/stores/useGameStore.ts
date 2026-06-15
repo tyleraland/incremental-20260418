@@ -1067,7 +1067,7 @@ export const useGameStore = create<GameState>((set) => ({
   locations: INITIAL_LOCATIONS,
   equipment: INITIAL_EQUIPMENT,
   miscItems: INITIAL_MISC,
-  activeTab: 'war',  // prototype: land on the War Table overhaul by default
+  activeTab: 'armory',  // prototype: land on the latest experiment by default
   selectedUnitIds: [],
   selectedLocationId: null,
   combatLocationId: null,
