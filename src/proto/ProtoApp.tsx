@@ -142,24 +142,32 @@ export function ProtoApp() {
   const deployed = units.filter((u) => u.locationId).length
   const recovering = units.filter((u) => u.recoveryTicksLeft > 0 || u.isResting).length
 
-  // On load, select the first hero in the roster — preferring one that's
-  // deployed so we land on (and follow the camera into) their battlefield. This
-  // also drills the lens into Hero.
+  // On load, select the first hero in the roster — preferring a deployed one so
+  // we land on (and follow the camera into) their battlefield, and the lens
+  // drills into Hero. Deferred a macrotask so App.tsx's loadPersistedSave()
+  // (a sibling mount effect that runs *after* this child effect) has applied the
+  // real save first — otherwise we'd pick from the initial seed roster.
   const didInit = useRef(false)
   useEffect(() => {
-    if (didInit.current || units.length === 0) return
-    const ordered = sortUnits(units, sortMode, sortDir, viewed)
-    const hero = ordered.find((u) => u.locationId) ?? ordered[0]
-    if (!hero) return
+    if (didInit.current) return
     didInit.current = true
-    useGameStore.setState({
-      selectedUnitIds: [hero.id],
-      selectedLocationId: hero.locationId ?? null,
-      combatLocationId: hero.locationId ?? null,
-      battleFollowId: hero.locationId ? hero.id : null,
-    })
-    if (hero.locationId) requestZoom(2)
-  }, [units, requestZoom, sortMode, sortDir, viewed])
+    const id = setTimeout(() => {
+      const s = useGameStore.getState()
+      if (s.units.length === 0) return
+      const ordered = sortUnits(s.units, sortMode, sortDir, s.viewedUnitLevels)
+      const hero = ordered.find((u) => u.locationId) ?? ordered[0]
+      if (!hero) return
+      useGameStore.setState({
+        selectedUnitIds: [hero.id],
+        selectedLocationId: hero.locationId ?? null,
+        combatLocationId: hero.locationId ?? null,
+        battleFollowId: hero.locationId ? hero.id : null,
+      })
+      if (hero.locationId) requestZoom(2)
+    }, 0)
+    return () => clearTimeout(id)
+  // run once on mount
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectHero(u: Unit) {
     // Single-select drives the lens (→ Hero); fly the stage to the hero's
