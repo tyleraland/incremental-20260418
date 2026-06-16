@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useGameStore, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
+import { useProtoStore, type ZoomLevel } from './protoStore'
 
 // ── Prototype Stage ────────────────────────────────────────────────────────────
 //
@@ -233,6 +234,11 @@ export function ProtoStage() {
   }
   const battleLive = focusLoc ? !!battles[focusLoc.id] : false
   const nearest = Math.round(zoom)
+
+  // Publish the current altitude so the lens can follow it (world/locale/battle).
+  useEffect(() => {
+    useProtoStore.getState().setZoomLevel(Math.min(2, Math.max(0, nearest)) as ZoomLevel)
+  }, [nearest])
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-game-bg via-[#0b0b14] to-[#0d0d18]">

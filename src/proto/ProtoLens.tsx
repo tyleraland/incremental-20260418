@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   useGameStore, getDerivedStats, getInitials,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS,
@@ -8,34 +8,39 @@ import { getUnitTraits } from '@/data/traits'
 import { SLOT_LABELS, SLOT_COMPATIBLE } from '@/data/equipment'
 import type { EquipSlot, EquipmentItem, WeaponRecord } from '@/types'
 import { buildSaga } from './lore'
+import { ArmyMatrix } from './ArmyMatrix'
+import { LocationDetail } from './LocationDetail'
+import { useProtoStore, type ZoomLevel } from './protoStore'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
-// The always-on right half. Per-hero lenses (Summary / Saga / Gear / Tactician)
-// bind to the selected hero; squad lenses (Party / Deploy) span the whole roster.
-// The guiding bias: put the numbers that change a decision next to each other —
-// equip a sword and see ATK move on the same row; compare every hero's doctrine
-// in one channel×hero grid — rather than making the player hold state in memory.
+// The always-on right half, organised by ALTITUDE so it answers "what sits next
+// to the stage at each zoom?":
+//   World  → World    (deploy / roster overview)
+//   Locale → Location (its meters, attunement upgrades, story path)
+//   Battle → Army     (the channel×hero doctrine matrix — squad command)
+// The lens follows the stage's zoom level, but the tabs stay manual. The Hero tab
+// drills into one hero (Summary / Gear / Saga / Tactics) from any altitude.
 
-type Lens = 'summary' | 'saga' | 'gear' | 'tactics' | 'party' | 'deploy'
-const LENSES: { id: Lens; label: string; icon: string; squad?: boolean }[] = [
-  { id: 'summary', label: 'Summary',   icon: '◈' },
-  { id: 'saga',    label: 'Saga',      icon: '✶' },
-  { id: 'gear',    label: 'Gear',      icon: '⚙' },
-  { id: 'tactics', label: 'Tactics',   icon: '⚑' },
-  { id: 'party',   label: 'Party',     icon: '☷', squad: true },
-  { id: 'deploy',  label: 'Deploy',    icon: '➤', squad: true },
+type Top = 'hero' | 'location' | 'army' | 'world'
+type HeroSub = 'summary' | 'gear' | 'saga' | 'tactics'
+const TOP_TABS: { id: Top; label: string; icon: string }[] = [
+  { id: 'hero',     label: 'Hero',     icon: '◈' },
+  { id: 'location', label: 'Location', icon: '⌖' },
+  { id: 'army',     label: 'Army',     icon: '☷' },
+  { id: 'world',    label: 'World',    icon: '➤' },
 ]
+const HERO_SUBS: { id: HeroSub; label: string }[] = [
+  { id: 'summary', label: 'Summary' }, { id: 'gear', label: 'Gear' },
+  { id: 'tactics', label: 'Tactics' }, { id: 'saga', label: 'Saga' },
+]
+const ZOOM_TAB: Record<ZoomLevel, Top> = { 0: 'world', 1: 'location', 2: 'army' }
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
   { id: 'movement', label: 'Movement' }, { id: 'targeting', label: 'Targeting' },
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'Reaction' }, { id: 'passive', label: 'Passive' },
 ]
-
-function selectHero(u: Unit) {
-  useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })
-}
 
 // ── Summary lens ──────────────────────────────────────────────────────────────
 function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
@@ -357,84 +362,6 @@ function TacticianLens({ unit }: { unit: Unit }) {
   )
 }
 
-// ── Party lens (channel × hero doctrine matrix) ───────────────────────────────
-function PartyLens({ selectedId }: { selectedId: string | null }) {
-  const units        = useGameStore((s) => s.units)
-  const locations    = useGameStore((s) => s.locations)
-  const partyTactics = useGameStore((s) => s.partyTactics)
-
-  // Deployed squad first; fall back to the whole roster so the lens is never empty.
-  const deployed = units.filter((u) => u.locationId)
-  const squad = deployed.length > 0 ? deployed : units
-  const locName = (id: string | null) => id ? (locations.find((l) => l.id === id)?.name ?? id) : 'guild'
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">
-          {deployed.length > 0 ? 'Deployed squad' : 'Roster'} · doctrine
-        </span>
-        <span className="text-[10px] text-game-text-dim">{squad.length} heroes</span>
-      </div>
-
-      {partyTactics.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-game-secondary/30 bg-game-secondary/5 px-2 py-1.5">
-          <span className="text-[9px] uppercase tracking-wider text-game-secondary">Party</span>
-          {partyTactics.map((t) => (
-            <span key={t.id} className="text-[10px] px-1.5 py-0.5 rounded bg-game-secondary/15 text-game-text" title={TACTIC_REGISTRY[t.id]?.description}>{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
-          ))}
-        </div>
-      )}
-
-      {/* matrix: sticky channel column on the left, one column per hero */}
-      <div className="overflow-x-auto -mx-3 px-3">
-        <div className="min-w-max">
-          {/* header row */}
-          <div className="flex">
-            <div className="w-16 shrink-0" />
-            {squad.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => selectHero(u)}
-                className={['w-28 shrink-0 px-1.5 pb-2 text-left border-b-2 transition-colors',
-                  selectedId === u.id ? 'border-game-primary' : 'border-transparent hover:border-game-border'].join(' ')}
-              >
-                <div className="flex items-center gap-1">
-                  <span className="text-sm">{u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}</span>
-                  <span className="text-[11px] font-medium text-game-text truncate">{u.name.split(' ')[0]}</span>
-                </div>
-                <div className="text-[9px] text-game-text-dim truncate">{u.class ?? 'Novice'} · {locName(u.locationId)}</div>
-              </button>
-            ))}
-          </div>
-          {/* one row per channel */}
-          {CHANNELS.map((ch) => (
-            <div key={ch.id} className="flex border-t border-game-border/50">
-              <div className="w-16 shrink-0 py-1.5 text-[9px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface/40">{ch.label}</div>
-              {squad.map((u) => {
-                const inCh = u.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch.id)
-                return (
-                  <div key={u.id} className={['w-28 shrink-0 py-1.5 px-1 space-y-0.5',
-                    selectedId === u.id ? 'bg-game-primary/5' : ''].join(' ')}>
-                    {inCh.length === 0 ? <span className="text-[10px] text-game-muted">·</span>
-                      : inCh.map((t, i) => (
-                        <div key={t.id} className="flex items-center gap-1" title={TACTIC_REGISTRY[t.id]?.description}>
-                          <span className="text-[8px] text-game-muted tabular-nums">{i + 1}</span>
-                          <span className="text-[10px] text-game-text leading-tight">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
-                        </div>
-                      ))}
-                  </div>
-                )
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="text-[10px] text-game-muted italic">Tap a hero column to open their full Tactician lens. Skill-granted actions inject on top of this manual loadout in combat.</div>
-    </div>
-  )
-}
-
 // ── Saga lens ─────────────────────────────────────────────────────────────────
 function SagaLens({ unit }: { unit: Unit }) {
   const eventLog = useGameStore((s) => s.eventLog)
@@ -523,52 +450,106 @@ function DeployLens({ unit }: { unit: Unit | null }) {
 
 // ── ProtoLens shell ─────────────────────────────────────────────────────────--
 export function ProtoLens() {
-  const units = useGameStore((s) => s.units)
-  const equipment = useGameStore((s) => s.equipment)
-  const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)
-  const [lens, setLens] = useState<Lens>('summary')
+  const units            = useGameStore((s) => s.units)
+  const equipment        = useGameStore((s) => s.equipment)
+  const locations        = useGameStore((s) => s.locations)
+  const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
+  const selectedLocId    = useGameStore((s) => s.selectedLocationId)
+  const zoomLevel        = useProtoStore((s) => s.zoomLevel)
+
+  const [top, setTop] = useState<Top>('world')
+  const [heroSub, setHeroSub] = useState<HeroSub>('summary')
+
+  // The lens follows two signals, by design:
+  //  • zoom altitude change → World / Location / Army (the contextual surface)
+  //  • a newly-selected hero → Hero (drill in, from roster or the Army matrix)
+  // When both fire at once (e.g. picking a hero also flies the map), the hero
+  // signal wins because its effect runs last.
+  const prevZoom = useRef<ZoomLevel | null>(null)
+  useEffect(() => {
+    if (prevZoom.current !== null && prevZoom.current !== zoomLevel) setTop(ZOOM_TAB[zoomLevel])
+    prevZoom.current = zoomLevel
+  }, [zoomLevel])
+
+  const heroId = selectedUnitIds[0] ?? null
+  const prevHero = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevHero.current !== heroId && heroId) setTop('hero')
+    prevHero.current = heroId
+  }, [heroId])
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
-  const def = LENSES.find((l) => l.id === lens)!
-  const needsHero = !def.squad && !unit
+  const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
+
+  // Army = the deployed squad (the command surface spans every hero in the
+  // field, not just one battle), falling back to the whole roster so it's never
+  // empty. Heroes on the focused battlefield are flagged for emphasis.
+  const deployed = units.filter((u) => u.locationId)
+  const squad = deployed.length > 0 ? deployed : units
 
   return (
     <div className="h-full flex flex-col bg-game-surface/40 min-h-0">
       <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
-        {LENSES.map((l) => (
+        {TOP_TABS.map((t) => (
           <button
-            key={l.id}
-            onClick={() => setLens(l.id)}
+            key={t.id}
+            aria-label={t.label}
+            onClick={() => setTop(t.id)}
             className={[
               'flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors relative',
-              lens === l.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
+              top === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
             ].join(' ')}
           >
-            <span className="text-base leading-none">{l.icon}</span>
-            <span className="text-[10px] font-medium">{l.label}</span>
-            {lens === l.id && <span className="absolute bottom-0 inset-x-3 h-0.5 rounded-full bg-game-primary" />}
+            <span className="text-base leading-none">{t.icon}</span>
+            <span className="text-[10px] font-medium">{t.label}</span>
+            {top === t.id && <span className="absolute bottom-0 inset-x-3 h-0.5 rounded-full bg-game-primary" />}
           </button>
         ))}
       </div>
+
+      {/* Hero sub-tabs only appear on the Hero altitude. */}
+      {top === 'hero' && unit && (
+        <div className="shrink-0 flex gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
+          {HERO_SUBS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setHeroSub(s.id)}
+              className={['text-[11px] px-2 py-0.5 rounded-full transition-colors',
+                heroSub === s.id ? 'bg-game-primary/20 text-game-text border border-game-primary/40' : 'text-game-text-dim hover:text-game-text border border-transparent'].join(' ')}
+            >{s.label}</button>
+          ))}
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
-        {needsHero ? (
-          <div className="h-full flex items-center justify-center text-center">
-            <div>
-              <div className="text-4xl mb-2 opacity-40">◈</div>
-              <div className="text-sm text-game-text-dim">Select a hero from the roster</div>
-              <div className="text-xs text-game-muted mt-1">Their {def.label.toLowerCase()} appears here while you watch the world on the left.</div>
-            </div>
-          </div>
-        ) : (
+        {top === 'hero' && (unit ? (
           <>
-            {lens === 'summary' && unit && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
-            {lens === 'saga'    && unit && <SagaLens unit={unit} />}
-            {lens === 'gear'    && unit && <GearLens unit={unit} />}
-            {lens === 'tactics' && unit && <TacticianLens unit={unit} />}
-            {lens === 'party'   && <PartyLens selectedId={unit?.id ?? null} />}
-            {lens === 'deploy'  && <DeployLens unit={unit} />}
+            {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+            {heroSub === 'gear'    && <GearLens unit={unit} />}
+            {heroSub === 'tactics' && <TacticianLens unit={unit} />}
+            {heroSub === 'saga'    && <SagaLens unit={unit} />}
           </>
-        )}
+        ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
+
+        {top === 'location' && (location
+          ? <LocationDetail location={location} />
+          : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
+
+        {top === 'army' && <ArmyMatrix squad={squad} locationName={location?.name ?? (deployed.length ? 'Deployed squad' : 'Roster')} />}
+
+        {top === 'world' && <DeployLens unit={unit} />}
+      </div>
+    </div>
+  )
+}
+
+function Empty({ icon, title, sub }: { icon: string; title: string; sub: string }) {
+  return (
+    <div className="h-full flex items-center justify-center text-center">
+      <div>
+        <div className="text-4xl mb-2 opacity-40">{icon}</div>
+        <div className="text-sm text-game-text-dim">{title}</div>
+        <div className="text-xs text-game-muted mt-1 max-w-[16rem]">{sub}</div>
       </div>
     </div>
   )
