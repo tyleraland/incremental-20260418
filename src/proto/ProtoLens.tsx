@@ -481,24 +481,39 @@ function relativeDeltas(it: EquipmentItem, current: EquipmentItem | null): { l: 
   return out
 }
 
+function canUse(it: EquipmentItem, unit: Unit): boolean {
+  const cls = unit.class ?? 'Novice'
+  if (it.requiredLevel && unit.level < it.requiredLevel) return false
+  if (it.requiredClasses && !it.requiredClasses.includes(cls)) return false
+  return true
+}
+
 function ItemsLens({ unit }: { unit: Unit | null }) {
   const equipment = useGameStore((s) => s.equipment)
   const miscItems = useGameStore((s) => s.miscItems)
   const equipItem = useGameStore((s) => s.equipItem)
   const [filters, setFilters] = useState<Record<FilterKey, FilterState>>({ weapon: 'off', armor: 'off', accessory: 'off', tool: 'off', material: 'off' })
+  // Scope: everything in the stash, vs only what THIS hero can equip/use.
+  const [scope, setScope] = useState<'all' | 'usable'>('all')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
+  const usable = scope === 'usable' && !!unit
   const includes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'include')
   const excludes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'exclude')
   const visible = (k: FilterKey) => (includes.length === 0 || includes.includes(k)) && !excludes.includes(k)
   const cycle = (k: FilterKey) => setFilters((f) => ({ ...f, [k]: nextState(f[k]) }))
+  const toggle = (id: string) => setCollapsed((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  const mats = usable ? miscItems.filter((m) => m.kind === 'consumable') : miscItems
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-lg border border-game-border bg-game-bg/50 px-2.5 py-2">
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Guild stash</div>
-        <div className="text-xs text-game-text">
-          {equipment.length} gear · {miscItems.length} materials
-          {unit ? <> · diffs vs <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : <> · select a hero for diffs</>}
+    <div className="space-y-2">
+      {/* slim header line + scope toggle */}
+      <div className="flex items-center gap-2 text-[10px] text-game-text-dim">
+        <span className="truncate">Stash · {equipment.length} gear · {miscItems.length} mat{unit ? <> · vs <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : null}</span>
+        <div className="ml-auto flex rounded-md border border-game-border overflow-hidden shrink-0">
+          <button onClick={() => setScope('all')} className={`px-2 py-0.5 ${scope === 'all' ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>All</button>
+          <button onClick={() => unit && setScope('usable')} disabled={!unit} className={`px-2 py-0.5 border-l border-game-border ${usable ? 'bg-game-primary/20 text-game-text' : unit ? 'text-game-text-dim hover:text-game-text' : 'text-game-muted cursor-not-allowed'}`}>{unit ? `${unit.name.split(' ')[0]} can use` : 'Usable'}</button>
         </div>
       </div>
 
@@ -512,7 +527,7 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
               onClick={() => cycle(f.key)}
               title={`${f.label}: ${st}`}
               className={[
-                'flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] transition-colors',
+                'flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] transition-colors',
                 st === 'include' ? 'border-game-green/60 bg-game-green/10 text-game-green'
                   : st === 'exclude' ? 'border-red-500/60 bg-red-500/10 text-red-300 line-through'
                   : 'border-game-border text-game-text-dim hover:text-game-text',
@@ -527,56 +542,68 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
 
       {ITEM_CATEGORIES.map((cat) => {
         if (!visible(filterKeyOf(cat))) return null
-        const items = equipment.filter((e) => e.category === cat)
+        let items = equipment.filter((e) => e.category === cat)
+        if (usable && unit) items = items.filter((it) => canUse(it, unit))
         if (items.length === 0) return null
         const slot = CAT_SLOT[cat]
         const currentId = unit && slot ? (slot === 'mainHand' ? unit.weaponSets[unit.activeWeaponSet].mainHand : unit.equipment[slot as keyof typeof unit.equipment]) : null
         const current = currentId ? equipment.find((e) => e.id === currentId) ?? null : null
+        const isCollapsed = collapsed.has(cat)
         return (
           <div key={cat}>
-            <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">{CATEGORY_LABELS[cat]}</div>
-            <div className="space-y-1.5">
-              {items.map((it) => {
-                const worn = current?.id === it.id
-                const rel = unit && slot && !worn ? relativeDeltas(it, current) : []
-                return (
-                  <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-game-text font-medium truncate flex-1">{it.name}</span>
-                      {it.slots ? <span className="text-[9px] text-game-text-dim" title={`${it.slots} card sockets`}>◳{it.slots}</span> : null}
-                      {unit && slot && (worn
-                        ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
-                        : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)}
-                    </div>
-                    {/* objective stats (chips) */}
-                    <TraitRow traits={objectiveChips(it)} className="mt-1" />
-                    {/* relative vs worn (text) */}
-                    {rel.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {rel.map((x) => (
-                          <span key={x.l} className={`text-[11px] font-mono ${x.d > 0 ? 'text-game-green' : 'text-red-400'}`}>{x.d > 0 ? '+' : ''}{x.d} {x.l}</span>
-                        ))}
+            <button onClick={() => toggle(cat)} className="w-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text py-1">
+              <span className="w-3 text-center">{isCollapsed ? '▸' : '▾'}</span>
+              <span>{CATEGORY_LABELS[cat]}</span>
+              <span className="text-game-muted normal-case tracking-normal">({items.length})</span>
+            </button>
+            {!isCollapsed && (
+              <div className="space-y-1.5">
+                {items.map((it) => {
+                  const worn = current?.id === it.id
+                  const rel = unit && slot && !worn ? relativeDeltas(it, current) : []
+                  return (
+                    <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-game-text font-medium truncate flex-1">{it.name}</span>
+                        {it.slots ? <span className="text-[9px] text-game-text-dim" title={`${it.slots} card sockets`}>◳{it.slots}</span> : null}
+                        {unit && slot && (worn
+                          ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
+                          : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)}
                       </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                      <TraitRow traits={objectiveChips(it)} className="mt-1" />
+                      {rel.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {rel.map((x) => (
+                            <span key={x.l} className={`text-[11px] font-mono ${x.d > 0 ? 'text-game-green' : 'text-red-400'}`}>{x.d > 0 ? '+' : ''}{x.d} {x.l}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )
       })}
 
-      {visible('material') && miscItems.length > 0 && (
+      {visible('material') && mats.length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Materials & consumables</div>
-          <div className="grid grid-cols-2 gap-1">
-            {miscItems.map((m) => (
-              <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}>
-                <span className="text-xs text-game-text truncate flex-1">{m.name}</span>
-                <span className="text-[10px] text-game-text-dim tabular-nums">×{m.quantity}</span>
-              </div>
-            ))}
-          </div>
+          <button onClick={() => toggle('__mats')} className="w-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text py-1">
+            <span className="w-3 text-center">{collapsed.has('__mats') ? '▸' : '▾'}</span>
+            <span>{usable ? 'Consumables' : 'Materials & consumables'}</span>
+            <span className="text-game-muted normal-case tracking-normal">({mats.length})</span>
+          </button>
+          {!collapsed.has('__mats') && (
+            <div className="grid grid-cols-2 gap-1">
+              {mats.map((m) => (
+                <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}>
+                  <span className="text-xs text-game-text truncate flex-1">{m.name}</span>
+                  <span className="text-[10px] text-game-text-dim tabular-nums">×{m.quantity}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -55,6 +55,12 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.getByRole('button', { name: /Weapons/ }).click()
   await page.waitForTimeout(250)
   await shot('06b-items-filtered')
+  // Scope to what this hero can use, then collapse a section.
+  await page.getByRole('button', { name: /can use/ }).click()
+  await page.waitForTimeout(200)
+  await page.getByRole('button', { name: /1H Weapon/i }).click().catch(() => {})
+  await page.waitForTimeout(200)
+  await shot('06c-items-scope-collapse')
 
   // Global screens now live in the top bar as full-screen overlays.
   await page.getByRole('button', { name: 'Guild', exact: true }).click()
