@@ -16,10 +16,10 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.waitForTimeout(2500)
   await shot('01-initial')
 
-  // Roster sort control: switch to Level.
+  // Roster sort control: default is grouped-by-Area; switch to Class grouping.
   await page.getByRole('button', { name: 'Sort roster' }).click()
   await page.waitForTimeout(150)
-  await page.getByRole('button', { name: /Level/ }).first().click()
+  await page.getByRole('button', { name: /Class/ }).first().click()
   await page.waitForTimeout(250)
   await shot('02-roster-sorted')
 

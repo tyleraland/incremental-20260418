@@ -35,6 +35,37 @@ function sortUnits(units: Unit[], mode: SortMode, dir: SortDir, viewed: Record<s
   return dir === 'desc' ? arr.reverse() : arr
 }
 
+// Grouped roster: area / class / to-do bucket heroes; name/level stay flat. Each
+// group renders in a light container so same-area (etc.) heroes read as a set.
+interface RGroup { key: string; label: string | null; icon: string; units: Unit[]; locId?: string | null }
+function groupRoster(units: Unit[], mode: SortMode, dir: SortDir, viewed: Record<string, number>, locations: { id: string; name: string }[]): RGroup[] {
+  const byName = (a: Unit, b: Unit) => a.name.localeCompare(b.name)
+  const bucket = () => new Map<string, Unit[]>()
+  const push = (m: Map<string, Unit[]>, k: string, u: Unit) => { const a = m.get(k); if (a) a.push(u); else m.set(k, [u]) }
+  const flip = (g: RGroup[]) => (dir === 'desc' ? g.reverse() : g)
+
+  if (mode === 'location') {
+    const m = bucket(); for (const u of units) push(m, u.locationId ?? '__none__', u)
+    const out: RGroup[] = []
+    for (const l of locations) { const a = m.get(l.id); if (a) out.push({ key: l.id, label: l.name, icon: '⌖', units: a.sort(byName), locId: l.id }) }
+    const none = m.get('__none__'); if (none) out.push({ key: '__none__', label: 'Guild', icon: '⌂', units: none.sort(byName), locId: null })
+    return flip(out)
+  }
+  if (mode === 'class') {
+    const m = bucket(); for (const u of units) push(m, u.class ?? 'Novice', u)
+    return flip([...m.keys()].sort().map((k) => ({ key: k, label: k, icon: CLASS_ICON[k] ?? '◆', units: m.get(k)!.sort(byName) })))
+  }
+  if (mode === 'attention') {
+    const todo = units.filter((u) => needsAttention(u, viewed)).sort(byName)
+    const ready = units.filter((u) => !needsAttention(u, viewed)).sort(byName)
+    const out: RGroup[] = []
+    if (todo.length) out.push({ key: 'todo', label: 'To-do', icon: '!', units: todo })
+    if (ready.length) out.push({ key: 'ready', label: 'Ready', icon: '✓', units: ready })
+    return flip(out)
+  }
+  return [{ key: 'all', label: null, icon: '', units: sortUnits(units, mode, dir, viewed) }]
+}
+
 function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPick: (m: SortMode) => void }) {
   const [open, setOpen] = useState(false)
   const cur = SORT_MODES.find((m) => m.id === mode)!
@@ -201,16 +232,17 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
 
 export function ProtoApp() {
   const units            = useGameStore((s) => s.units)
+  const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
   const requestHeroTab   = useProtoStore((s) => s.requestHeroTab)
 
-  const [sortMode, setSortMode] = useState<SortMode>('attention')
+  const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
-  const sortedUnits = useMemo(() => sortUnits(units, sortMode, sortDir, viewed), [units, sortMode, sortDir, viewed])
+  const groups = useMemo(() => groupRoster(units, sortMode, sortDir, viewed, locations), [units, sortMode, sortDir, viewed, locations])
   function pickSort(m: SortMode) {
     if (m === sortMode) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortMode(m); setSortDir(SORT_MODES.find((x) => x.id === m)!.defaultDir) }
@@ -284,20 +316,34 @@ export function ProtoApp() {
         </div>
       </header>
 
-      {/* roster rail — always visible, shared selector + sort */}
-      <div className="shrink-0 flex items-center gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
+      {/* roster rail — always visible, shared selector + sort (grouped) */}
+      <div className="shrink-0 flex items-stretch gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
         <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
-        <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar flex-1">
-          {sortedUnits.map((u) => (
-            <RosterChip
-              key={u.id}
-              unit={u}
-              selected={selectedUnitIds[0] === u.id}
-              here={!!selectedLocId && u.locationId === selectedLocId}
-              onSelect={() => selectQuiet(u)}
-              onFocus={() => focusHero(u)}
-            />
-          ))}
+        <div className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar flex-1">
+          {groups.map((g) => {
+            const chips = g.units.map((u) => (
+              <RosterChip
+                key={u.id}
+                unit={u}
+                selected={selectedUnitIds[0] === u.id}
+                here={!!selectedLocId && u.locationId === selectedLocId}
+                onSelect={() => selectQuiet(u)}
+                onFocus={() => focusHero(u)}
+              />
+            ))
+            // Flat (name/level): no container.
+            if (g.label === null) return <div key={g.key} className="flex items-center gap-0.5">{chips}</div>
+            const isCurrent = g.locId !== undefined && g.locId === selectedLocId
+            return (
+              <div key={g.key} className={['flex flex-col rounded-lg border px-1 pb-0.5 shrink-0',
+                isCurrent ? 'border-game-accent/50 bg-game-accent/5' : 'border-game-border/50 bg-white/[0.02]'].join(' ')}>
+                <span className="text-[8px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
+                  {g.icon} {g.label}
+                </span>
+                <div className="flex items-center gap-0.5">{chips}</div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
