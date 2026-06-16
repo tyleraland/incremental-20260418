@@ -124,7 +124,6 @@ function RosterChip({ unit, selected, onSelect }: { unit: Unit; selected: boolea
 
 export function ProtoApp() {
   const units            = useGameStore((s) => s.units)
-  const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const paused           = useGameStore((s) => s.paused)
   const togglePause      = useGameStore((s) => s.togglePause)
@@ -143,19 +142,24 @@ export function ProtoApp() {
   const deployed = units.filter((u) => u.locationId).length
   const recovering = units.filter((u) => u.recoveryTicksLeft > 0 || u.isResting).length
 
-  // First screen = the first hero's battlefield: focus the location the first
-  // deployed hero is on and fly the stage in. (No hero selected → lens opens on
-  // Location.)
+  // On load, select the first hero in the roster — preferring one that's
+  // deployed so we land on (and follow the camera into) their battlefield. This
+  // also drills the lens into Hero.
   const didInit = useRef(false)
   useEffect(() => {
     if (didInit.current || units.length === 0) return
-    const firstHero = units.find((u) => u.locationId)
-    const loc = (firstHero && locations.find((l) => l.id === firstHero.locationId)) || locations[0]
-    if (!loc) return
+    const ordered = sortUnits(units, sortMode, sortDir, viewed)
+    const hero = ordered.find((u) => u.locationId) ?? ordered[0]
+    if (!hero) return
     didInit.current = true
-    useGameStore.setState({ selectedLocationId: loc.id, combatLocationId: loc.id })
-    requestZoom(2)
-  }, [units, locations, requestZoom])
+    useGameStore.setState({
+      selectedUnitIds: [hero.id],
+      selectedLocationId: hero.locationId ?? null,
+      combatLocationId: hero.locationId ?? null,
+      battleFollowId: hero.locationId ? hero.id : null,
+    })
+    if (hero.locationId) requestZoom(2)
+  }, [units, requestZoom, sortMode, sortDir, viewed])
 
   function selectHero(u: Unit) {
     // Single-select drives the lens (→ Hero); fly the stage to the hero's
