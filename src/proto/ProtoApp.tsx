@@ -91,7 +91,7 @@ function needsAttention(u: Unit, viewed: Record<string, number>): boolean {
   return u.abilityPoints > 0 || u.skillPoints > 0 || (v !== undefined && u.level > v)
 }
 
-function RosterChip({ unit, selected, onSelect }: { unit: Unit; selected: boolean; onSelect: () => void }) {
+function RosterChip({ unit, selected, here, onSelect, onFocus }: { unit: Unit; selected: boolean; here: boolean; onSelect: () => void; onFocus: () => void }) {
   const equipment = useGameStore((s) => s.equipment)
   const viewed    = useGameStore((s) => s.viewedUnitLevels)
   const ds = getDerivedStats(unit, equipment)
@@ -102,14 +102,23 @@ function RosterChip({ unit, selected, onSelect }: { unit: Unit; selected: boolea
     : 'bg-game-muted'
   // ring stroke for HP
   const ring = `conic-gradient(${hpPct > 60 ? '#10b981' : hpPct > 30 ? '#f59e0b' : '#ef4444'} ${hpPct}%, #2a2a3a 0)`
+  // Single tap = quiet select; double tap (within 300ms) = focus (fly camera).
+  const lastTap = useRef(0)
+  function tap() {
+    const now = Date.now()
+    if (now - lastTap.current < 300) { lastTap.current = 0; onFocus(); return }
+    lastTap.current = now; onSelect()
+  }
 
   return (
     <button
-      onClick={onSelect}
-      title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}`}
+      onClick={tap}
+      title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}${here ? ' · on the viewed battlefield' : ''}\nTap to select · double-tap to jump the camera`}
       className={[
         'relative shrink-0 w-[54px] flex flex-col items-center gap-0.5 px-0.5 py-1 rounded-lg border transition-all',
-        selected ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/30' : 'border-transparent hover:bg-white/5',
+        selected
+          ? (here ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/30' : 'border-amber-500/70 bg-amber-500/10 ring-1 ring-amber-500/30')
+          : 'border-transparent hover:bg-white/5',
       ].join(' ')}
     >
       <div className="relative w-9 h-9 rounded-full p-[2px]" style={{ background: ring }}>
@@ -122,6 +131,8 @@ function RosterChip({ unit, selected, onSelect }: { unit: Unit; selected: boolea
         )}
       </div>
       <span className="text-[9px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
+      {/* cue: this hero is on the battlefield you're currently viewing */}
+      {here && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-accent" />}
     </button>
   )
 }
@@ -191,8 +202,10 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
 export function ProtoApp() {
   const units            = useGameStore((s) => s.units)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
+  const selectedLocId    = useGameStore((s) => s.selectedLocationId)
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
+  const requestHeroTab   = useProtoStore((s) => s.requestHeroTab)
 
   const [sortMode, setSortMode] = useState<SortMode>('attention')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -228,19 +241,27 @@ export function ProtoApp() {
         battleFollowId: hero.locationId ? hero.id : null,
       })
       if (hero.locationId) requestZoom(2)
+      requestHeroTab()
     }, 0)
     return () => clearTimeout(id)
   // run once on mount
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function selectHero(u: Unit) {
-    // Single-select drives the lens (→ Hero); fly the stage to the hero's
-    // battlefield and lock the camera on them so the roster commands the field.
+  // Single-tap: quiet select — change the active hero WITHOUT moving the camera
+  // or the focused location, so you can pick someone to deploy/compare while
+  // still looking at where you are.
+  function selectQuiet(u: Unit) {
+    useGameStore.setState({ selectedUnitIds: [u.id] })
+  }
+  // Double-tap: focus — fly the stage to the hero's battlefield, follow the
+  // camera, and drill the lens into Hero.
+  function focusHero(u: Unit) {
     useGameStore.setState({
       selectedUnitIds: [u.id],
-      ...(u.locationId ? { selectedLocationId: u.locationId, battleFollowId: u.id } : {}),
+      ...(u.locationId ? { selectedLocationId: u.locationId, combatLocationId: u.locationId, battleFollowId: u.id } : {}),
     })
     if (u.locationId) requestZoom(2)
+    requestHeroTab()
   }
 
   const proto = new URLSearchParams(window.location.search)
@@ -268,7 +289,14 @@ export function ProtoApp() {
         <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
         <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar flex-1">
           {sortedUnits.map((u) => (
-            <RosterChip key={u.id} unit={u} selected={selectedUnitIds[0] === u.id} onSelect={() => selectHero(u)} />
+            <RosterChip
+              key={u.id}
+              unit={u}
+              selected={selectedUnitIds[0] === u.id}
+              here={!!selectedLocId && u.locationId === selectedLocId}
+              onSelect={() => selectQuiet(u)}
+              onFocus={() => focusHero(u)}
+            />
           ))}
         </div>
       </div>

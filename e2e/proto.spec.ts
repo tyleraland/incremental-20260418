@@ -30,8 +30,8 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   })
   await page.waitForTimeout(600)
 
-  // Pick a hero — battlefield + Hero (with live battlefield status).
-  await page.getByRole('button', { name: /Mira/ }).first().click()
+  // Double-tap a roster hero — focus: fly the camera to their battlefield + Hero.
+  await page.getByRole('button', { name: /Mira/ }).first().dblclick()
   await page.waitForTimeout(1000)
   await shot('03-hero-battlestatus')
 
@@ -99,4 +99,12 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.getByRole('button', { name: 'Next location with units' }).click()
   await page.waitForTimeout(800)
   await shot('12-step-next2')
+
+  // Quiet single-tap a hero who is NOT on the viewed battlefield: camera stays,
+  // chip turns amber, and the Hero lens shows the "elsewhere" focus cue.
+  await page.getByRole('button', { name: /Aldric/ }).first().click()
+  await page.waitForTimeout(300)
+  await page.getByRole('button', { name: 'Hero', exact: true }).click()
+  await page.waitForTimeout(300)
+  await shot('13-quiet-select-cue')
 })

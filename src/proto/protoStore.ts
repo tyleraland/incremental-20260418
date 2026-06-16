@@ -42,6 +42,9 @@ interface ProtoState {
   // A cross-component request for the stage to fly to a zoom stop (ProtoApp /
   // roster → stage). nonce so the same level re-fires.
   zoomRequest: { level: ZoomLevel; nonce: number } | null
+  // Bumped when the lens should drill into the Hero tab (double-tap a roster
+  // hero / initial focus). A plain single-tap selects without bumping this.
+  heroTabRequest: number
   attunementSpent: number
   upgrades: Record<string, Record<string, number>>   // locId → upgradeId → level
   storyChoice: Record<string, string>                // locId → chosen path id
@@ -50,6 +53,7 @@ interface ProtoState {
 
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
+  requestHeroTab: () => void
   buyUpgrade: (locId: string, upId: string, cost: number, max: number) => void
   chooseStory: (locId: string, pathId: string) => void
   toggleLock: (heroId: string) => void
@@ -60,6 +64,7 @@ interface ProtoState {
 export const useProtoStore = create<ProtoState>((set) => ({
   zoomLevel: 0,
   zoomRequest: null,
+  heroTabRequest: 0,
   attunementSpent: 0,
   upgrades: {},
   storyChoice: {},
@@ -68,6 +73,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
+  requestHeroTab: () => set((s) => ({ heroTabRequest: s.heroTabRequest + 1 })),
   buyUpgrade: (locId, upId, cost, max) => set((s) => {
     const cur = s.upgrades[locId]?.[upId] ?? 0
     if (cur >= max) return s

@@ -8,6 +8,7 @@ import { getUnitTraits } from '@/data/traits'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
 import { TraitRow } from '@/components/TraitBubble'
 import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait } from '@/types'
+import { useProtoStore } from './protoStore'
 import { buildSaga } from './lore'
 import { ArmyMatrix } from './ArmyMatrix'
 import { LocationDetail } from './LocationDetail'
@@ -395,6 +396,40 @@ function SagaLens({ unit }: { unit: Unit }) {
   )
 }
 
+// ── Focus cue ─────────────────────────────────────────────────────────────────
+// Whether the selected hero is on the battlefield you're currently viewing, with
+// shortcuts: bring them HERE (deploy to the focused location) or JUMP the camera
+// to where they are. Resolves the "I selected someone elsewhere" ambiguity.
+function FocusCue({ unit, location }: { unit: Unit; location: { id: string; name: string } | null }) {
+  const assignUnits = useGameStore((s) => s.assignUnits)
+  const requestZoom = useProtoStore((s) => s.requestZoom)
+  const here = !!location && unit.locationId === location.id
+  if (here) {
+    return <div className="mb-2 text-[10px] text-game-accent flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-game-accent" /> On the battlefield you're viewing</div>
+  }
+  function jump() {
+    if (!unit.locationId) return
+    useGameStore.setState({ selectedLocationId: unit.locationId, combatLocationId: unit.locationId, battleFollowId: unit.id })
+    requestZoom(2)
+  }
+  return (
+    <div className="mb-2 rounded-md border border-amber-600/40 bg-amber-950/20 px-2.5 py-1.5">
+      <div className="text-[10px] text-amber-200/90">
+        {unit.name.split(' ')[0]} is {unit.locationId ? 'elsewhere' : 'at the guild'}
+        {location ? <> — you're viewing <span className="text-game-text">{location.name}</span></> : null}
+      </div>
+      <div className="flex gap-1.5 mt-1">
+        {location && (
+          <button onClick={() => assignUnits([unit.id], location.id)} className="text-[10px] px-2 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15">➤ Deploy here</button>
+        )}
+        {unit.locationId && (
+          <button onClick={jump} className="text-[10px] px-2 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text">⌖ Jump to them</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Battlefield status (live combatant readout) ───────────────────────────────
 const STATUS_TINT: Record<string, string> = {
   buff: 'border-game-green/40 bg-game-green/10 text-game-green',
@@ -621,13 +656,14 @@ export function ProtoLens() {
   const [top, setTop] = useState<Top>('location')
   const [heroSub, setHeroSub] = useState<HeroSub>('summary')
 
-  // Selecting a hero (roster or the Party matrix) drills into the Hero tab.
-  const heroId = selectedUnitIds[0] ?? null
-  const prevHero = useRef<string | null>(null)
+  // Drill into Hero only on an explicit focus request (double-tap a roster hero
+  // / initial load). A plain single-tap selects quietly and leaves the tab — so
+  // you can keep, say, the Location lens up while you pick a hero to deploy.
+  const heroTabRequest = useProtoStore((s) => s.heroTabRequest)
+  const prevReq = useRef(heroTabRequest)
   useEffect(() => {
-    if (prevHero.current !== heroId && heroId) setTop('hero')
-    prevHero.current = heroId
-  }, [heroId])
+    if (heroTabRequest !== prevReq.current) { setTop('hero'); prevReq.current = heroTabRequest }
+  }, [heroTabRequest])
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
@@ -673,6 +709,7 @@ export function ProtoLens() {
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         {top === 'hero' && (unit ? (
           <>
+            <FocusCue unit={unit} location={location} />
             <BattleStatus unit={unit} />
             {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
             {heroSub === 'gear'    && <GearLens unit={unit} />}
