@@ -160,13 +160,21 @@ export function ProtoStage() {
   }
 
   // Fly to the selected location whenever it changes (roster pick, node tap).
+  // Zoom itself is driven explicitly (node taps below, or a store zoom request)
+  // so a single tap can settle on the locale while a dive/roster goes to battle.
   useEffect(() => {
     if (!focusLoc) return
     const c = LOCATION_COORDS[focusLoc.id]; if (!c) return
     setFocus({ x: worldX(c), y: worldY(c) }); setDrag({ x: 0, y: 0 })
     setCombatLocation(focusLoc.id)
-    setZoom((z) => (z < 1 ? 1 : z))
   }, [focusLoc?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Honour cross-component zoom requests (initial battlefield, roster pick).
+  const zoomRequest = useProtoStore((s) => s.zoomRequest)
+  useEffect(() => {
+    if (zoomRequest) animateZoomTo(zoomRequest.level)
+  }, [zoomRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Native non-passive wheel listener so we can preventDefault (page-scroll) and
   // drive the zoom axis continuously.
@@ -216,7 +224,7 @@ export function ProtoStage() {
     if (pointers.current.size === 0) dragRef.current = null
   }
 
-  function flyTo(loc: Location) { setSelectedLocation(loc.id) }
+  function flyTo(loc: Location) { setSelectedLocation(loc.id); animateZoomTo(Math.max(1, zoom)) }
   function dive(loc: Location)  { setSelectedLocation(loc.id); animateZoomTo(2) }
   function gotoStop(z: number) {
     if (z === 0) { setFocus({ x: 6 * CELL, y: 3.5 * CELL }); setDrag({ x: 0, y: 0 }) }
@@ -242,23 +250,15 @@ export function ProtoStage() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-game-bg via-[#0b0b14] to-[#0d0d18]">
-      {/* breadcrumb */}
-      <div className="absolute top-2 left-2 z-30 flex items-center gap-1 text-[11px]">
-        <button onClick={() => gotoStop(0)} className={`px-2 py-1 rounded-md border border-game-border bg-game-bg/80 ${nearest === 0 ? 'text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>World</button>
-        {focusLoc && <span className="text-game-muted">›</span>}
-        {focusLoc && (
-          <button onClick={() => gotoStop(1)} className={`px-2 py-1 rounded-md border border-game-border bg-game-bg/80 ${nearest === 1 ? 'text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>{focusLoc.name}</button>
-        )}
-        {focusLoc && (
-          <>
-            <span className="text-game-muted">›</span>
-            <button onClick={() => gotoStop(2)} className={`px-2 py-1 rounded-md border bg-game-bg/80 ${nearest === 2 ? 'border-game-primary/50 bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text'}`}>⚔ Battle</button>
-          </>
-        )}
-      </div>
+      {/* context chip — just names where you are (the slider does the navigating) */}
+      {focusLoc && (
+        <div className="absolute top-2 left-2 z-30 px-2 py-1 rounded-md border border-game-border bg-game-bg/80 text-[11px] text-game-text-dim pointer-events-none">
+          {ZOOM_NAMES[nearest]} · <span className="text-game-text">{focusLoc.name}</span>
+        </div>
+      )}
 
-      {/* zoom rail (also shows the continuous position) */}
-      <div className="absolute top-1/2 right-2 -translate-y-1/2 z-30 flex flex-col items-center gap-2 bg-game-bg/70 border border-game-border rounded-xl p-1.5">
+      {/* zoom slider — the single nav control: World ⇄ Locale ⇄ Battle */}
+      <div className="absolute top-1/2 right-2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 bg-game-bg/70 border border-game-border rounded-xl p-1.5">
         {([2, 1, 0]).map((z) => (
           <button
             key={z}
@@ -266,14 +266,17 @@ export function ProtoStage() {
             disabled={z === 2 && !focusLoc}
             title={ZOOM_NAMES[z]}
             className={[
-              'w-8 h-8 rounded-lg text-sm flex items-center justify-center transition-colors',
+              'w-9 rounded-lg flex flex-col items-center py-1 transition-colors',
               nearest === z ? 'bg-game-primary text-white' : 'text-game-text-dim hover:bg-white/5',
               z === 2 && !focusLoc ? 'opacity-30 cursor-not-allowed' : '',
             ].join(' ')}
-          >{['🗺', '⌖', '⚔'][z]}</button>
+          >
+            <span className="text-sm leading-none">{['🗺', '⌖', '⚔'][z]}</span>
+            <span className="text-[8px] leading-none mt-0.5">{ZOOM_NAMES[z]}</span>
+          </button>
         ))}
         {/* continuous fill indicator */}
-        <div className="w-1 h-16 rounded-full bg-game-border overflow-hidden relative">
+        <div className="w-1 h-12 rounded-full bg-game-border overflow-hidden relative">
           <div className="absolute bottom-0 inset-x-0 bg-game-primary/70 rounded-full" style={{ height: `${(zoom / 2) * 100}%` }} />
         </div>
       </div>

@@ -1,6 +1,8 @@
+import { useEffect, useRef } from 'react'
 import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
+import { useProtoStore } from './protoStore'
 
 // ── Prototype shell ─────────────────────────────────────────────────────────--
 //
@@ -58,21 +60,37 @@ function RosterChip({ unit, selected, onSelect }: { unit: Unit; selected: boolea
 
 export function ProtoApp() {
   const units            = useGameStore((s) => s.units)
+  const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const paused           = useGameStore((s) => s.paused)
   const togglePause      = useGameStore((s) => s.togglePause)
   const ticks            = useGameStore((s) => s.ticks)
+  const requestZoom      = useProtoStore((s) => s.requestZoom)
 
   const deployed = units.filter((u) => u.locationId).length
   const recovering = units.filter((u) => u.recoveryTicksLeft > 0 || u.isResting).length
 
+  // First screen = a battlefield: focus the first location that has a party and
+  // fly the stage straight in. (No hero selected → the lens opens on Location.)
+  const didInit = useRef(false)
+  useEffect(() => {
+    if (didInit.current || units.length === 0) return
+    const firstParty = locations.find((l) => units.some((u) => u.locationId === l.id))
+    const loc = firstParty ?? locations[0]
+    if (!loc) return
+    didInit.current = true
+    useGameStore.setState({ selectedLocationId: loc.id, combatLocationId: loc.id })
+    requestZoom(2)
+  }, [units, locations, requestZoom])
+
   function selectHero(u: Unit) {
-    // Precise single-select drives the lens; flying the stage keys off the
-    // selected location, so set both at once.
+    // Single-select drives the lens (→ Hero); fly the stage to the hero's
+    // battlefield and lock the camera on them so the roster commands the field.
     useGameStore.setState({
       selectedUnitIds: [u.id],
-      ...(u.locationId ? { selectedLocationId: u.locationId } : {}),
+      ...(u.locationId ? { selectedLocationId: u.locationId, battleFollowId: u.id } : {}),
     })
+    if (u.locationId) requestZoom(2)
   }
 
   const proto = new URLSearchParams(window.location.search)

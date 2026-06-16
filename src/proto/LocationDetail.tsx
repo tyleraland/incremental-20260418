@@ -1,7 +1,14 @@
-import { useGameStore, type Location } from '@/stores/useGameStore'
+import { useState } from 'react'
+import { useGameStore, MONSTER_REGISTRY, type Location } from '@/stores/useGameStore'
+import { MonsterCodex } from '@/components/MonsterCodex'
 import {
   useProtoStore, attunementAvailable, LOCATION_UPGRADES, upgradeCost, STORY_PATHS,
 } from './protoStore'
+
+const ELEMENT_DOT: Record<string, string> = {
+  fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
+  wind: 'bg-green-400', water: 'bg-blue-400', neutral: 'bg-game-text-dim',
+}
 
 // ── Location Detail ────────────────────────────────────────────────────────--
 //
@@ -31,6 +38,8 @@ export function LocationDetail({ location }: { location: Location }) {
   const units               = useGameStore((s) => s.units)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
+  const battle              = useGameStore((s) => s.battles[location.id])
+  const monsterSeen         = useGameStore((s) => s.monsterSeen)
 
   const spent       = useProtoStore((s) => s.attunementSpent)
   const upgrades    = useProtoStore((s) => s.upgrades)
@@ -38,9 +47,18 @@ export function LocationDetail({ location }: { location: Location }) {
   const storyChoice = useProtoStore((s) => s.storyChoice)
   const chooseStory = useProtoStore((s) => s.chooseStory)
 
+  const [codexId, setCodexId] = useState<string | null>(null)
+
   const available = attunementAvailable(ticks, spent)
   const famPct = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
   const here = units.filter((u) => u.locationId === location.id)
+
+  // Foes: live count per monster type on the field now, else the location's pool.
+  const liveCount: Record<string, number> = {}
+  for (const c of battle?.combatants ?? []) {
+    if (c.team === 'enemy' && c.alive) { const mid = c.id.split('#')[0]; liveCount[mid] = (liveCount[mid] ?? 0) + 1 }
+  }
+  const foeIds = (battle ? Object.keys(liveCount) : location.monsterIds).filter((id) => MONSTER_REGISTRY[id])
   const locUpgrades = upgrades[location.id] ?? {}
   // Progress toward the next attunement point (purely cosmetic feedback).
   const attunePct = ((ticks % 50) / 50) * 100
@@ -140,7 +158,38 @@ export function LocationDetail({ location }: { location: Location }) {
         </div>
       )}
 
+      {/* foes — tap a card to inspect its monster stats */}
+      {foeIds.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">
+            {battle ? 'Foes on the field' : 'Native foes'}
+          </div>
+          <div className="space-y-1">
+            {foeIds.map((id) => {
+              const m = MONSTER_REGISTRY[id]
+              return (
+                <button
+                  key={id}
+                  onClick={() => setCodexId(id)}
+                  className="w-full flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-primary/50 text-left"
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${ELEMENT_DOT[m.element] ?? ELEMENT_DOT.neutral}`} />
+                  <span className="text-xs text-game-text flex-1 truncate">{m.name}</span>
+                  {battle && <span className="text-[10px] text-game-text-dim">×{liveCount[id]}</span>}
+                  <span className="text-[10px] text-game-text-dim">Lv {m.level}</span>
+                  <span className="text-[10px] text-game-primary">card ›</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <button onClick={() => setSelectedLocation(null)} className="text-[11px] text-game-text-dim hover:text-game-text">clear selection</button>
+
+      {codexId && MONSTER_REGISTRY[codexId] && (
+        <MonsterCodex monster={MONSTER_REGISTRY[codexId]} seenCount={monsterSeen[codexId] ?? 0} onClose={() => setCodexId(null)} />
+      )}
     </div>
   )
 }

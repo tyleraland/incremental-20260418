@@ -5,36 +5,37 @@ import {
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
 import { getUnitTraits } from '@/data/traits'
-import { SLOT_LABELS, SLOT_COMPATIBLE } from '@/data/equipment'
-import type { EquipSlot, EquipmentItem, WeaponRecord } from '@/types'
+import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
+import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory } from '@/types'
 import { buildSaga } from './lore'
 import { ArmyMatrix } from './ArmyMatrix'
 import { LocationDetail } from './LocationDetail'
-import { useProtoStore, type ZoomLevel } from './protoStore'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
-// The always-on right half, organised by ALTITUDE so it answers "what sits next
-// to the stage at each zoom?":
-//   World  → World    (deploy / roster overview)
-//   Locale → Location (its meters, attunement upgrades, story path)
-//   Battle → Army     (the channel×hero doctrine matrix — squad command)
-// The lens follows the stage's zoom level, but the tabs stay manual. The Hero tab
-// drills into one hero (Summary / Gear / Saga / Tactics) from any altitude.
+// The always-on right half. Tabs, in altitude order:
+//   Location — the focused site's meters, attunement upgrades, story, foes
+//   Party    — the party on this battlefield (doctrine + gear matrix)
+//   Hero     — one hero (Summary / Gear / Saga / Tactics + battlefield status)
+//   Items    — the guild's whole stash, with per-hero equip diffs (n=all ↔ n=1)
+//   World    — deploy / roster overview
+// Default = Location (first screen is a battlefield). Selecting a hero (roster or
+// matrix) drills to Hero; otherwise the tabs are manual — the stage's zoom slider
+// drives navigation, not the lens.
 
-type Top = 'hero' | 'location' | 'army' | 'world'
+type Top = 'location' | 'party' | 'hero' | 'items' | 'world'
 type HeroSub = 'summary' | 'gear' | 'saga' | 'tactics'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
-  { id: 'hero',     label: 'Hero',     icon: '◈' },
   { id: 'location', label: 'Location', icon: '⌖' },
-  { id: 'army',     label: 'Army',     icon: '☷' },
+  { id: 'party',    label: 'Party',    icon: '☷' },
+  { id: 'hero',     label: 'Hero',     icon: '◈' },
+  { id: 'items',    label: 'Items',    icon: '🎒' },
   { id: 'world',    label: 'World',    icon: '➤' },
 ]
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
   { id: 'summary', label: 'Summary' }, { id: 'gear', label: 'Gear' },
   { id: 'tactics', label: 'Tactics' }, { id: 'saga', label: 'Saga' },
 ]
-const ZOOM_TAB: Record<ZoomLevel, Top> = { 0: 'world', 1: 'location', 2: 'army' }
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
@@ -448,6 +449,112 @@ function DeployLens({ unit }: { unit: Unit | null }) {
   )
 }
 
+// ── Battlefield status (live combatant readout) ───────────────────────────────
+const STATUS_TINT: Record<string, string> = {
+  buff: 'border-game-green/40 bg-game-green/10 text-game-green',
+  debuff: 'border-red-500/40 bg-red-500/10 text-red-300',
+  control: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+}
+function BattleStatus({ unit }: { unit: Unit }) {
+  const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
+  const me = battle?.combatants.find((c) => c.id === unit.id)
+  if (!battle || !me) return null
+  const hpPct = Math.max(0, (me.hp / me.maxHp) * 100)
+  const target = me.lockedTargetId ? battle.combatants.find((c) => c.id === me.lockedTargetId) : null
+  return (
+    <div className="mb-3 rounded-lg border border-game-border bg-game-bg/60 p-2.5 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest text-game-accent">● On the battlefield</span>
+        <span className="text-[10px] text-game-text-dim tabular-nums">{Math.ceil(me.hp)}/{me.maxHp} HP</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
+        <div className={`h-full rounded-full ${hpPct > 60 ? 'bg-game-green' : hpPct > 30 ? 'bg-game-gold' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} />
+      </div>
+      <div className="flex items-center gap-2 text-[10px] text-game-text-dim">
+        <span>{me.channel ? `casting ${me.channel.skillId ?? '…'}` : me.moving ? 'moving' : 'engaging'}</span>
+        {target && <span className="ml-auto">⊕ target: <span className="text-game-text">{target.name}</span></span>}
+      </div>
+      {me.statuses.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {me.statuses.map((s, i) => (
+            <span key={`${s.id}-${i}`} className={['text-[9px] px-1.5 py-0.5 rounded border', STATUS_TINT[s.category ?? 'debuff'] ?? STATUS_TINT.debuff].join(' ')} title={s.flags.join(', ')}>
+              {s.name} <span className="opacity-70 tabular-nums">{s.duration}r</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Items lens (guild stash, n=all ↔ per-hero n=1 diffs) ───────────────────────
+const CAT_SLOT: Partial<Record<ItemCategory, EquipSlot>> = {
+  'weapon-1h': 'mainHand', 'weapon-2h': 'mainHand', shield: 'offHand', armor: 'armor', accessory: 'accessory',
+}
+const ITEM_CATEGORIES: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'shield', 'armor', 'accessory', 'tool']
+
+function ItemsLens({ unit }: { unit: Unit | null }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const miscItems = useGameStore((s) => s.miscItems)
+  const equipItem = useGameStore((s) => s.equipItem)
+  const base = unit ? getDerivedStats(unit, equipment) : null
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-game-border bg-game-bg/50 px-2.5 py-2">
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Guild stash</div>
+        <div className="text-xs text-game-text">
+          {equipment.length} gear · {miscItems.length} materials
+          {unit ? <> · diffs for <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : <> · select a hero for equip diffs</>}
+        </div>
+      </div>
+
+      {ITEM_CATEGORIES.map((cat) => {
+        const items = equipment.filter((e) => e.category === cat)
+        if (items.length === 0) return null
+        const slot = CAT_SLOT[cat]
+        return (
+          <div key={cat}>
+            <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">{CATEGORY_LABELS[cat]}</div>
+            <div className="space-y-1">
+              {items.map((it) => {
+                const after = unit && slot ? getDerivedStats(withItem(unit, slot, it.id), equipment) : null
+                const worn = unit && slot ? (slot === 'mainHand' ? unit.weaponSets[unit.activeWeaponSet].mainHand : unit.equipment[slot as keyof typeof unit.equipment]) === it.id : false
+                return (
+                  <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-game-text font-medium truncate flex-1">{it.name}</span>
+                      {it.slots ? <span className="text-[9px] text-game-text-dim">◳{it.slots}</span> : null}
+                      {unit && slot && (worn
+                        ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
+                        : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)}
+                    </div>
+                    {base && after && !worn && <div className="mt-1"><DeltaChips before={base} after={after} /></div>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
+
+      {miscItems.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Materials & consumables</div>
+          <div className="grid grid-cols-2 gap-1">
+            {miscItems.map((m) => (
+              <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}>
+                <span className="text-xs text-game-text truncate flex-1">{m.name}</span>
+                <span className="text-[10px] text-game-text-dim tabular-nums">×{m.quantity}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── ProtoLens shell ─────────────────────────────────────────────────────────--
 export function ProtoLens() {
   const units            = useGameStore((s) => s.units)
@@ -455,22 +562,11 @@ export function ProtoLens() {
   const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
-  const zoomLevel        = useProtoStore((s) => s.zoomLevel)
 
-  const [top, setTop] = useState<Top>('world')
+  const [top, setTop] = useState<Top>('location')
   const [heroSub, setHeroSub] = useState<HeroSub>('summary')
 
-  // The lens follows two signals, by design:
-  //  • zoom altitude change → World / Location / Army (the contextual surface)
-  //  • a newly-selected hero → Hero (drill in, from roster or the Army matrix)
-  // When both fire at once (e.g. picking a hero also flies the map), the hero
-  // signal wins because its effect runs last.
-  const prevZoom = useRef<ZoomLevel | null>(null)
-  useEffect(() => {
-    if (prevZoom.current !== null && prevZoom.current !== zoomLevel) setTop(ZOOM_TAB[zoomLevel])
-    prevZoom.current = zoomLevel
-  }, [zoomLevel])
-
+  // Selecting a hero (roster or the Party matrix) drills into the Hero tab.
   const heroId = selectedUnitIds[0] ?? null
   const prevHero = useRef<string | null>(null)
   useEffect(() => {
@@ -481,7 +577,7 @@ export function ProtoLens() {
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
 
-  // Army = the party currently on the focused battlefield (empty → matrix shows
+  // Party = the party currently on the focused battlefield (empty → matrix shows
   // a prompt to deploy / focus a location).
   const squad = location ? units.filter((u) => u.locationId === location.id) : []
 
@@ -522,6 +618,7 @@ export function ProtoLens() {
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         {top === 'hero' && (unit ? (
           <>
+            <BattleStatus unit={unit} />
             {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
             {heroSub === 'gear'    && <GearLens unit={unit} />}
             {heroSub === 'tactics' && <TacticianLens unit={unit} />}
@@ -533,7 +630,9 @@ export function ProtoLens() {
           ? <LocationDetail location={location} />
           : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
 
-        {top === 'army' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
+        {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
+
+        {top === 'items' && <ItemsLens unit={unit} />}
 
         {top === 'world' && <DeployLens unit={unit} />}
       </div>
