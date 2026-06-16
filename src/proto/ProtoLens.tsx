@@ -481,11 +481,9 @@ export function ProtoLens() {
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
 
-  // Army = the deployed squad (the command surface spans every hero in the
-  // field, not just one battle), falling back to the whole roster so it's never
-  // empty. Heroes on the focused battlefield are flagged for emphasis.
-  const deployed = units.filter((u) => u.locationId)
-  const squad = deployed.length > 0 ? deployed : units
+  // Army = the party currently on the focused battlefield (empty → matrix shows
+  // a prompt to deploy / focus a location).
+  const squad = location ? units.filter((u) => u.locationId === location.id) : []
 
   return (
     <div className="h-full flex flex-col bg-game-surface/40 min-h-0">
@@ -535,7 +533,7 @@ export function ProtoLens() {
           ? <LocationDetail location={location} />
           : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
 
-        {top === 'army' && <ArmyMatrix squad={squad} locationName={location?.name ?? (deployed.length ? 'Deployed squad' : 'Roster')} />}
+        {top === 'army' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
 
         {top === 'world' && <DeployLens unit={unit} />}
       </div>
