@@ -10,9 +10,6 @@ import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory } from '@/typ
 import { buildSaga } from './lore'
 import { ArmyMatrix } from './ArmyMatrix'
 import { LocationDetail } from './LocationDetail'
-import { Guild } from '@/pages/Guild'
-import { Reports } from '@/pages/Reports'
-import { Time } from '@/pages/Time'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
@@ -26,16 +23,13 @@ import { Time } from '@/pages/Time'
 // matrix) drills to Hero; otherwise the tabs are manual — the stage's zoom slider
 // drives navigation, not the lens.
 
-type Top = 'location' | 'hero' | 'party' | 'items' | 'guild' | 'reports' | 'time'
+type Top = 'location' | 'hero' | 'party' | 'items'
 type HeroSub = 'summary' | 'gear' | 'saga' | 'tactics'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location', label: 'Location', icon: '⌖' },
   { id: 'hero',     label: 'Hero',     icon: '◈' },
   { id: 'party',    label: 'Party',    icon: '☷' },
   { id: 'items',    label: 'Items',    icon: '🎒' },
-  { id: 'guild',    label: 'Guild',    icon: '⚜' },
-  { id: 'reports',  label: 'Reports',  icon: '📊' },
-  { id: 'time',     label: 'Time',     icon: '⏳' },
 ]
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
   { id: 'summary', label: 'Summary' }, { id: 'gear', label: 'Gear' },
@@ -566,33 +560,24 @@ export function ProtoLens() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {/* Guild / Reports / Time embed the real game pages (own padding). */}
-        {top === 'guild'   && <Guild />}
-        {top === 'reports' && <Reports />}
-        {top === 'time'    && <Time />}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+        {top === 'hero' && (unit ? (
+          <>
+            <BattleStatus unit={unit} />
+            {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+            {heroSub === 'gear'    && <GearLens unit={unit} />}
+            {heroSub === 'tactics' && <TacticianLens unit={unit} />}
+            {heroSub === 'saga'    && <SagaLens unit={unit} />}
+          </>
+        ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
 
-        {top !== 'guild' && top !== 'reports' && top !== 'time' && (
-          <div className="p-3">
-            {top === 'hero' && (unit ? (
-              <>
-                <BattleStatus unit={unit} />
-                {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
-                {heroSub === 'gear'    && <GearLens unit={unit} />}
-                {heroSub === 'tactics' && <TacticianLens unit={unit} />}
-                {heroSub === 'saga'    && <SagaLens unit={unit} />}
-              </>
-            ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
+        {top === 'location' && (location
+          ? <LocationDetail location={location} />
+          : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
 
-            {top === 'location' && (location
-              ? <LocationDetail location={location} />
-              : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
+        {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
 
-            {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
-
-            {top === 'items' && <ItemsLens unit={unit} />}
-          </div>
-        )}
+        {top === 'items' && <ItemsLens unit={unit} />}
       </div>
     </div>
   )

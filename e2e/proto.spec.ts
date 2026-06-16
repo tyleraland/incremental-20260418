@@ -12,7 +12,7 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   const shot = (name: string) => page.screenshot({ path: `e2e/__shots__/proto-${proj}-${name}.png` })
 
   await page.goto(BASE)
-  await page.getByText('TACTICIAN').waitFor({ state: 'visible', timeout: 30_000 })
+  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
   await page.waitForTimeout(2500)
   await shot('01-initial')
 
@@ -52,16 +52,20 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.waitForTimeout(300)
   await shot('06-items')
 
-  // Folded-in game pages.
+  // Global screens now live in the top bar as full-screen overlays.
   await page.getByRole('button', { name: 'Guild', exact: true }).click()
   await page.waitForTimeout(300)
   await shot('07-guild')
+  await page.getByRole('button', { name: /Close/ }).click()
   await page.getByRole('button', { name: 'Reports', exact: true }).click()
   await page.waitForTimeout(300)
   await shot('08-reports')
-  await page.getByRole('button', { name: 'Time', exact: true }).click()
+  await page.getByRole('button', { name: /Close/ }).click()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.waitForTimeout(300)
-  await shot('09-time')
+  await shot('09-settings')
+  await page.getByRole('button', { name: /Close/ }).click()
+  await page.waitForTimeout(200)
 
   // Spread a few heroes so several locations are occupied (for the stepper).
   await page.evaluate(() => {

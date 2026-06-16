@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
 import { useProtoStore } from './protoStore'
+import { Guild } from '@/pages/Guild'
+import { Reports } from '@/pages/Reports'
+import { Time } from '@/pages/Time'
 
 // ── Roster sort (ported from the production RosterCarousel) ───────────────────--
 type SortMode = 'attention' | 'level' | 'class' | 'name' | 'location'
@@ -122,38 +126,98 @@ function RosterChip({ unit, selected, onSelect }: { unit: Unit; selected: boolea
   )
 }
 
+// ── Top-bar global nav ─────────────────────────────────────────────────────--
+type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings'
+const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings' }
+
+function NavBtn({ icon, label, active, disabled, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      className={[
+        'flex items-center gap-1.5 px-2.5 h-8 rounded-lg border text-[11px] font-medium transition-colors',
+        active ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
+          : 'border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5',
+        disabled ? 'opacity-40 cursor-not-allowed' : '',
+      ].join(' ')}
+    >
+      <span className="text-sm leading-none">{icon}</span>
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  )
+}
+
+// Full-screen overlay hosting a global game screen (Guild / Reports / Time) or
+// the settings placeholder. Portal so it escapes the split layout.
+function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose: () => void; onExit: () => void }) {
+  const paused      = useGameStore((s) => s.paused)
+  const togglePause = useGameStore((s) => s.togglePause)
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
+      <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
+        <span className="text-sm font-semibold text-game-text">{PANEL_TITLE[panel]}</span>
+        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+      </header>
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {panel === 'guild'   && <Guild />}
+        {panel === 'reports' && <Reports />}
+        {panel === 'time'    && <Time />}
+        {panel === 'settings' && (
+          <div className="p-4 space-y-4 max-w-md">
+            <div className="text-xs text-game-text-dim">Prototype settings — placeholders for now.</div>
+            <div className="space-y-2">
+              {['Audio', 'Notifications', 'Display', 'Save & sync', 'Accessibility'].map((s) => (
+                <div key={s} className="flex items-center justify-between rounded-lg border border-game-border bg-game-surface/40 px-3 py-2.5">
+                  <span className="text-sm text-game-text">{s}</span>
+                  <span className="text-[10px] uppercase tracking-widest text-game-muted">soon</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 pt-2 border-t border-game-border">
+              <button onClick={togglePause} className="px-3 py-1.5 rounded-lg border border-game-border text-sm text-game-text hover:bg-white/5">{paused ? '▶ Resume' : '❚❚ Pause'}</button>
+              <button onClick={onExit} className="px-3 py-1.5 rounded-lg border border-red-500/50 text-sm text-red-200 hover:bg-red-600/20">Exit prototype</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 export function ProtoApp() {
   const units            = useGameStore((s) => s.units)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
-  const paused           = useGameStore((s) => s.paused)
-  const togglePause      = useGameStore((s) => s.togglePause)
-  const ticks            = useGameStore((s) => s.ticks)
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
 
   const [sortMode, setSortMode] = useState<SortMode>('attention')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [panel, setPanel] = useState<GlobalPanel | null>(null)
   const sortedUnits = useMemo(() => sortUnits(units, sortMode, sortDir, viewed), [units, sortMode, sortDir, viewed])
   function pickSort(m: SortMode) {
     if (m === sortMode) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortMode(m); setSortDir(SORT_MODES.find((x) => x.id === m)!.defaultDir) }
   }
 
-  const deployed = units.filter((u) => u.locationId).length
-  const recovering = units.filter((u) => u.recoveryTicksLeft > 0 || u.isResting).length
-
   // On load, select the first hero in the roster — preferring a deployed one so
   // we land on (and follow the camera into) their battlefield, and the lens
   // drills into Hero. Deferred a macrotask so App.tsx's loadPersistedSave()
   // (a sibling mount effect that runs *after* this child effect) has applied the
   // real save first — otherwise we'd pick from the initial seed roster.
+  // Guard lives INSIDE the timeout (not around scheduling) so StrictMode's
+  // mount→cleanup→mount double-invoke — which clears the first timer — doesn't
+  // skip the second one and leave us never selecting.
   const didInit = useRef(false)
   useEffect(() => {
-    if (didInit.current) return
-    didInit.current = true
     const id = setTimeout(() => {
+      if (didInit.current) return
       const s = useGameStore.getState()
       if (s.units.length === 0) return
+      didInit.current = true
       const ordered = sortUnits(s.units, sortMode, sortDir, s.viewedUnitLevels)
       const hero = ordered.find((u) => u.locationId) ?? ordered[0]
       if (!hero) return
@@ -187,16 +251,15 @@ export function ProtoApp() {
 
   return (
     <div className="h-full flex flex-col bg-game-bg overflow-hidden">
-      {/* command bar */}
-      <header className="shrink-0 flex items-center gap-3 px-3 h-11 border-b border-game-border bg-game-surface/70">
-        <span className="text-sm font-bold tracking-[0.2em] text-game-text">TACTICIAN</span>
-        <span className="text-[10px] uppercase tracking-widest text-game-secondary bg-game-secondary/10 border border-game-secondary/30 rounded px-1.5 py-0.5">prototype</span>
-        <div className="ml-auto flex items-center gap-2 text-[11px] text-game-text-dim">
-          <span title="Heroes deployed">⚔ {deployed}/{units.length}</span>
-          <span title="Recovering / resting">✚ {recovering}</span>
-          <span className="tabular-nums" title="Game ticks">⏱ {ticks}</span>
-          <button onClick={togglePause} className="px-2 py-0.5 rounded border border-game-border hover:bg-white/5">{paused ? '▶' : '❚❚'}</button>
-          <button onClick={exitProto} className="px-2 py-0.5 rounded border border-game-border hover:bg-white/5">exit</button>
+      {/* global nav bar — guild/reports/time + settings (placeholders) */}
+      <header className="shrink-0 flex items-center gap-1.5 px-2 h-11 border-b border-game-border bg-game-surface/70">
+        <NavBtn icon="⚜" label="Guild"   active={panel === 'guild'}   onClick={() => setPanel('guild')} />
+        <NavBtn icon="📊" label="Reports" active={panel === 'reports'} onClick={() => setPanel('reports')} />
+        <NavBtn icon="⏳" label="Time"    active={panel === 'time'}    onClick={() => setPanel('time')} />
+        <div className="ml-auto flex items-center gap-1.5">
+          <NavBtn icon="🏆" label="Achievements" disabled />
+          <NavBtn icon="🔔" label="Alerts" disabled />
+          <NavBtn icon="⚙" label="Settings" active={panel === 'settings'} onClick={() => setPanel('settings')} />
         </div>
       </header>
 
@@ -219,6 +282,8 @@ export function ProtoApp() {
           <ProtoLens />
         </div>
       </div>
+
+      {panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
     </div>
   )
 }
