@@ -63,8 +63,26 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.waitForTimeout(300)
   await shot('09-time')
 
+  // Spread a few heroes so several locations are occupied (for the stepper).
+  await page.evaluate(() => {
+    const g = (window as unknown as { __game: { getState: () => { units: { id: string }[]; assignUnits: (ids: string[], loc: string) => void } } }).__game.getState()
+    const ids = g.units.map((u) => u.id)
+    g.assignUnits([ids[0]], 'geffen-field-1')
+    g.assignUnits([ids[1]], 'prontera-city')
+    g.assignUnits([ids[2]], 'beach-1')
+  })
+  await page.waitForTimeout(400)
+
   // Zoom breadcrumb back out to the world.
   await page.getByRole('button', { name: /World/ }).first().click()
   await page.waitForTimeout(800)
   await shot('10-world')
+
+  // ‹ › stepper cycles between locations that have units assigned.
+  await page.getByRole('button', { name: 'Next location with units' }).click()
+  await page.waitForTimeout(800)
+  await shot('11-step-next')
+  await page.getByRole('button', { name: 'Next location with units' }).click()
+  await page.waitForTimeout(800)
+  await shot('12-step-next2')
 })

@@ -243,6 +243,17 @@ export function ProtoStage() {
   const battleLive = focusLoc ? !!battles[focusLoc.id] : false
   const nearest = Math.round(zoom)
 
+  // Occupied locations (have ≥1 hero + a map coord) — the ‹ › stepper cycles
+  // through these, keeping the current altitude (≥ locale).
+  const occupied = locations.filter((l) => LOCATION_COORDS[l.id] && units.some((u) => u.locationId === l.id))
+  const occIdx = occupied.findIndex((l) => l.id === selectedLocationId)
+  function stepLocation(dir: -1 | 1) {
+    if (occupied.length === 0) return
+    const i = occIdx < 0 ? (dir === 1 ? 0 : occupied.length - 1) : (occIdx + dir + occupied.length) % occupied.length
+    setSelectedLocation(occupied[i].id)
+    animateZoomTo(Math.max(1, zoom))
+  }
+
   // Publish the current altitude so the lens can follow it (world/locale/battle).
   useEffect(() => {
     useProtoStore.getState().setZoomLevel(Math.min(2, Math.max(0, nearest)) as ZoomLevel)
@@ -250,29 +261,53 @@ export function ProtoStage() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-game-bg via-[#0b0b14] to-[#0d0d18]">
-      {/* zoom breadcrumb — the single nav control, above the view */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center bg-game-bg/85 border border-game-border rounded-lg px-1 py-0.5 text-[11px] backdrop-blur-sm">
-        {([0, 1, 2] as const).map((z, i) => {
-          const label = z === 0 ? 'World' : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
-          const disabled = z > 0 && !focusLoc
-          return (
-            <span key={z} className="flex items-center">
-              {i > 0 && <span className="px-0.5 text-game-muted">›</span>}
-              <button
-                onClick={() => { if (!disabled) gotoStop(z) }}
-                disabled={disabled}
-                className={[
-                  'px-2 py-1 rounded-md flex items-center gap-1 transition-colors max-w-[40vw] truncate',
-                  nearest === z ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text',
-                  disabled ? 'opacity-40 cursor-not-allowed' : '',
-                ].join(' ')}
-              >
-                <span aria-hidden>{['🗺', '⌖', '⚔'][z]}</span>
-                <span className="truncate">{label}</span>
-              </button>
-            </span>
-          )
-        })}
+      {/* zoom breadcrumb + occupied-location stepper — the nav controls, above the view */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 text-[11px]">
+        {/* ‹ prev occupied location */}
+        <button
+          onClick={() => stepLocation(-1)}
+          disabled={occupied.length < 2}
+          title="Previous location with units"
+          aria-label="Previous location with units"
+          className="w-7 h-7 flex items-center justify-center rounded-lg border border-game-border bg-game-bg/85 text-game-text-dim hover:text-game-text disabled:opacity-30 backdrop-blur-sm"
+        >‹</button>
+
+        <div className="flex items-center bg-game-bg/85 border border-game-border rounded-lg px-1 py-0.5 backdrop-blur-sm">
+          {([0, 1, 2] as const).map((z, i) => {
+            const label = z === 0 ? 'World' : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
+            const disabled = z > 0 && !focusLoc
+            return (
+              <span key={z} className="flex items-center">
+                {i > 0 && <span className="px-0.5 text-game-muted">›</span>}
+                <button
+                  onClick={() => { if (!disabled) gotoStop(z) }}
+                  disabled={disabled}
+                  className={[
+                    'px-2 py-1 rounded-md flex items-center gap-1 transition-colors max-w-[34vw] truncate',
+                    nearest === z ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text',
+                    disabled ? 'opacity-40 cursor-not-allowed' : '',
+                  ].join(' ')}
+                >
+                  <span aria-hidden>{['🗺', '⌖', '⚔'][z]}</span>
+                  <span className="truncate">{label}</span>
+                </button>
+              </span>
+            )
+          })}
+        </div>
+
+        {/* › next occupied location */}
+        <button
+          onClick={() => stepLocation(1)}
+          disabled={occupied.length < 2}
+          title="Next location with units"
+          aria-label="Next location with units"
+          className="relative w-7 h-7 flex items-center justify-center rounded-lg border border-game-border bg-game-bg/85 text-game-text-dim hover:text-game-text disabled:opacity-30 backdrop-blur-sm"
+        >›
+          {occupied.length > 0 && (
+            <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[8px] text-game-muted tabular-nums whitespace-nowrap">{occIdx >= 0 ? occIdx + 1 : '–'}/{occupied.length}</span>
+          )}
+        </button>
       </div>
 
       {/* viewport: map layer (always) + battle layer (crossfades in) */}
