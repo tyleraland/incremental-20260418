@@ -17,7 +17,7 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await shot('01-initial')
 
   // Roster sort control: switch to Level.
-  await page.getByRole('button', { name: /To-do/ }).click()
+  await page.getByRole('button', { name: 'Sort roster' }).click()
   await page.waitForTimeout(150)
   await page.getByRole('button', { name: /Level/ }).first().click()
   await page.waitForTimeout(250)
@@ -51,6 +51,10 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.getByRole('button', { name: 'Items', exact: true }).click()
   await page.waitForTimeout(300)
   await shot('06-items')
+  // Tri-state type filter: include Weapons only.
+  await page.getByRole('button', { name: /Weapons/ }).click()
+  await page.waitForTimeout(250)
+  await shot('06b-items-filtered')
 
   // Global screens now live in the top bar as full-screen overlays.
   await page.getByRole('button', { name: 'Guild', exact: true }).click()

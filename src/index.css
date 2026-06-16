@@ -23,6 +23,9 @@
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
+  /* Hide the scrollbar but keep scrolling (roster carousel, matrix). */
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 }
 
 /* Combatant "appearing" pop when a wave spawns. */

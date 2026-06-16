@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  useGameStore, getDerivedStats, getInitials,
+  useGameStore, getDerivedStats, getInitials, getItemTraits,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
 import { getUnitTraits } from '@/data/traits'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
-import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory } from '@/types'
+import { TraitRow } from '@/components/TraitBubble'
+import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait } from '@/types'
 import { buildSaga } from './lore'
 import { ArmyMatrix } from './ArmyMatrix'
 import { LocationDetail } from './LocationDetail'
@@ -438,43 +439,125 @@ const CAT_SLOT: Partial<Record<ItemCategory, EquipSlot>> = {
 }
 const ITEM_CATEGORIES: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'shield', 'armor', 'accessory', 'tool']
 
+// Tri-state type filters (include / exclude / off), modelled on the production
+// Inventory's type chips but each one cycles through three states.
+type FilterKey = 'weapon' | 'armor' | 'accessory' | 'tool' | 'material'
+type FilterState = 'off' | 'include' | 'exclude'
+const FILTERS: { key: FilterKey; label: string; icon: string }[] = [
+  { key: 'weapon', label: 'Weapons', icon: '🗡' },
+  { key: 'armor', label: 'Armor', icon: '🛡' },
+  { key: 'accessory', label: 'Accessory', icon: '💍' },
+  { key: 'tool', label: 'Tools', icon: '🔧' },
+  { key: 'material', label: 'Materials', icon: '📦' },
+]
+function filterKeyOf(cat: ItemCategory): FilterKey {
+  if (cat === 'weapon-1h' || cat === 'weapon-2h') return 'weapon'
+  if (cat === 'shield' || cat === 'armor') return 'armor'
+  if (cat === 'accessory') return 'accessory'
+  return 'tool'
+}
+const nextState = (s: FilterState): FilterState => (s === 'off' ? 'include' : s === 'include' ? 'exclude' : 'off')
+
+// Objective (absolute, unsigned) stat/trait chips for an item, + a range chip
+// for weapons — mirrors the production Inventory's chip row.
+function objectiveChips(it: EquipmentItem): Trait[] {
+  const chips = getItemTraits(it)
+  if (it.category === 'weapon-1h' || it.category === 'weapon-2h') {
+    const r = it.stats.range ?? 5
+    chips.push({ id: `rng-${it.id}`, label: r > 5 ? `${r} RNG` : 'melee', category: 'stat', description: r > 5 ? `Reaches ${r} ft.` : 'Melee weapon.' })
+  }
+  return chips
+}
+// Relative stat deltas (signed) vs the hero's worn item in that slot — as text.
+const REL_STATS: [keyof EquipmentItem['stats'], string][] = [
+  ['attack', 'ATK'], ['defense', 'DEF'], ['specialAttack', 'M.ATK'], ['specialDefense', 'M.DEF'],
+]
+function relativeDeltas(it: EquipmentItem, current: EquipmentItem | null): { l: string; d: number }[] {
+  const out: { l: string; d: number }[] = []
+  for (const [k, l] of REL_STATS) { const d = (it.stats[k] ?? 0) - (current?.stats[k] ?? 0); if (d) out.push({ l, d }) }
+  const iw = it.category === 'weapon-1h' || it.category === 'weapon-2h'
+  const cw = current && (current.category === 'weapon-1h' || current.category === 'weapon-2h')
+  if (iw && cw) { const d = (it.stats.range ?? 5) - (current!.stats.range ?? 5); if (d) out.push({ l: 'RNG', d }) }
+  return out
+}
+
 function ItemsLens({ unit }: { unit: Unit | null }) {
   const equipment = useGameStore((s) => s.equipment)
   const miscItems = useGameStore((s) => s.miscItems)
   const equipItem = useGameStore((s) => s.equipItem)
-  const base = unit ? getDerivedStats(unit, equipment) : null
+  const [filters, setFilters] = useState<Record<FilterKey, FilterState>>({ weapon: 'off', armor: 'off', accessory: 'off', tool: 'off', material: 'off' })
+
+  const includes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'include')
+  const excludes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'exclude')
+  const visible = (k: FilterKey) => (includes.length === 0 || includes.includes(k)) && !excludes.includes(k)
+  const cycle = (k: FilterKey) => setFilters((f) => ({ ...f, [k]: nextState(f[k]) }))
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="rounded-lg border border-game-border bg-game-bg/50 px-2.5 py-2">
         <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Guild stash</div>
         <div className="text-xs text-game-text">
           {equipment.length} gear · {miscItems.length} materials
-          {unit ? <> · diffs for <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : <> · select a hero for equip diffs</>}
+          {unit ? <> · diffs vs <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : <> · select a hero for diffs</>}
         </div>
       </div>
 
+      {/* tri-state type filters: off → include (✓) → exclude (✕) */}
+      <div className="flex flex-wrap gap-1">
+        {FILTERS.map((f) => {
+          const st = filters[f.key]
+          return (
+            <button
+              key={f.key}
+              onClick={() => cycle(f.key)}
+              title={`${f.label}: ${st}`}
+              className={[
+                'flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] transition-colors',
+                st === 'include' ? 'border-game-green/60 bg-game-green/10 text-game-green'
+                  : st === 'exclude' ? 'border-red-500/60 bg-red-500/10 text-red-300 line-through'
+                  : 'border-game-border text-game-text-dim hover:text-game-text',
+              ].join(' ')}
+            >
+              <span>{st === 'include' ? '✓' : st === 'exclude' ? '✕' : f.icon}</span>
+              {f.label}
+            </button>
+          )
+        })}
+      </div>
+
       {ITEM_CATEGORIES.map((cat) => {
+        if (!visible(filterKeyOf(cat))) return null
         const items = equipment.filter((e) => e.category === cat)
         if (items.length === 0) return null
         const slot = CAT_SLOT[cat]
+        const currentId = unit && slot ? (slot === 'mainHand' ? unit.weaponSets[unit.activeWeaponSet].mainHand : unit.equipment[slot as keyof typeof unit.equipment]) : null
+        const current = currentId ? equipment.find((e) => e.id === currentId) ?? null : null
         return (
           <div key={cat}>
             <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">{CATEGORY_LABELS[cat]}</div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {items.map((it) => {
-                const after = unit && slot ? getDerivedStats(withItem(unit, slot, it.id), equipment) : null
-                const worn = unit && slot ? (slot === 'mainHand' ? unit.weaponSets[unit.activeWeaponSet].mainHand : unit.equipment[slot as keyof typeof unit.equipment]) === it.id : false
+                const worn = current?.id === it.id
+                const rel = unit && slot && !worn ? relativeDeltas(it, current) : []
                 return (
-                  <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-1.5">
+                  <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-game-text font-medium truncate flex-1">{it.name}</span>
-                      {it.slots ? <span className="text-[9px] text-game-text-dim">◳{it.slots}</span> : null}
+                      {it.slots ? <span className="text-[9px] text-game-text-dim" title={`${it.slots} card sockets`}>◳{it.slots}</span> : null}
                       {unit && slot && (worn
                         ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
                         : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)}
                     </div>
-                    {base && after && !worn && <div className="mt-1"><DeltaChips before={base} after={after} /></div>}
+                    {/* objective stats (chips) */}
+                    <TraitRow traits={objectiveChips(it)} className="mt-1" />
+                    {/* relative vs worn (text) */}
+                    {rel.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {rel.map((x) => (
+                          <span key={x.l} className={`text-[11px] font-mono ${x.d > 0 ? 'text-game-green' : 'text-red-400'}`}>{x.d > 0 ? '+' : ''}{x.d} {x.l}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -483,7 +566,7 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
         )
       })}
 
-      {miscItems.length > 0 && (
+      {visible('material') && miscItems.length > 0 && (
         <div>
           <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Materials & consumables</div>
           <div className="grid grid-cols-2 gap-1">

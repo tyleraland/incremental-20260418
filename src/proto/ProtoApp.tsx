@@ -40,14 +40,15 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   const cur = SORT_MODES.find((m) => m.id === mode)!
   return (
     <div className="relative shrink-0">
+      {/* compact icon-only trigger — keeps horizontal room for the roster */}
       <button
         onClick={() => setOpen((v) => !v)}
-        title="Sort roster"
-        className="flex items-center gap-1 px-2 h-9 rounded-lg border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
+        title={`Sort: ${cur.label} ${dir === 'asc' ? '▲' : '▼'}`}
+        aria-label="Sort roster"
+        className="flex flex-col items-center justify-center w-8 h-10 rounded-lg border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
       >
-        <span className="text-xs">⇅</span>
-        <span className="text-[10px] font-medium">{cur.label}</span>
-        <span className="text-[8px]">{dir === 'asc' ? '▲' : '▼'}</span>
+        <span className="text-xs leading-none">⇅</span>
+        <span className="text-[8px] leading-none mt-0.5">{cur.icon}{dir === 'asc' ? '▲' : '▼'}</span>
       </button>
       {open && (
         <>
@@ -107,21 +108,20 @@ function RosterChip({ unit, selected, onSelect }: { unit: Unit; selected: boolea
       onClick={onSelect}
       title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}`}
       className={[
-        'relative shrink-0 w-[68px] flex flex-col items-center gap-1 px-1 py-2 rounded-xl border transition-all',
-        selected ? 'border-game-primary bg-game-primary/15 ring-2 ring-game-primary/30' : 'border-transparent hover:bg-white/5',
+        'relative shrink-0 w-[54px] flex flex-col items-center gap-0.5 px-0.5 py-1 rounded-lg border transition-all',
+        selected ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/30' : 'border-transparent hover:bg-white/5',
       ].join(' ')}
     >
-      <div className="relative w-11 h-11 rounded-full p-[2px]" style={{ background: ring }}>
-        <div className="w-full h-full rounded-full bg-game-surface border border-game-border flex items-center justify-center text-lg">
+      <div className="relative w-9 h-9 rounded-full p-[2px]" style={{ background: ring }}>
+        <div className="w-full h-full rounded-full bg-game-surface border border-game-border flex items-center justify-center text-base">
           {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
         </div>
-        <span className={`absolute -bottom-0 -right-0 w-3 h-3 rounded-full border-2 border-game-bg ${statusColor}`} />
+        <span className={`absolute -bottom-0 -right-0 w-2.5 h-2.5 rounded-full border-2 border-game-bg ${statusColor}`} />
         {needsAttention(unit, viewed) && (
-          <span className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 rounded-full bg-game-gold border-2 border-game-bg text-[8px] font-bold text-black flex items-center justify-center">!</span>
+          <span className="absolute -top-0.5 -left-0.5 w-3 h-3 rounded-full bg-game-gold border border-game-bg text-[7px] font-bold text-black flex items-center justify-center">!</span>
         )}
       </div>
-      <span className="text-[10px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
-      <span className="text-[9px] text-game-text-dim leading-none">Lv {unit.level}</span>
+      <span className="text-[9px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
     </button>
   )
 }
@@ -264,9 +264,9 @@ export function ProtoApp() {
       </header>
 
       {/* roster rail — always visible, shared selector + sort */}
-      <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-game-border bg-game-surface/40">
+      <div className="shrink-0 flex items-center gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
         <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
-        <div className="flex items-center gap-1 overflow-x-auto flex-1">
+        <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar flex-1">
           {sortedUnits.map((u) => (
             <RosterChip key={u.id} unit={u} selected={selectedUnitIds[0] === u.id} onSelect={() => selectHero(u)} />
           ))}
