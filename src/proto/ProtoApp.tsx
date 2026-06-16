@@ -143,13 +143,14 @@ export function ProtoApp() {
   const deployed = units.filter((u) => u.locationId).length
   const recovering = units.filter((u) => u.recoveryTicksLeft > 0 || u.isResting).length
 
-  // First screen = a battlefield: focus the first location that has a party and
-  // fly the stage straight in. (No hero selected → the lens opens on Location.)
+  // First screen = the first hero's battlefield: focus the location the first
+  // deployed hero is on and fly the stage in. (No hero selected → lens opens on
+  // Location.)
   const didInit = useRef(false)
   useEffect(() => {
     if (didInit.current || units.length === 0) return
-    const firstParty = locations.find((l) => units.some((u) => u.locationId === l.id))
-    const loc = firstParty ?? locations[0]
+    const firstHero = units.find((u) => u.locationId)
+    const loc = (firstHero && locations.find((l) => l.id === firstHero.locationId)) || locations[0]
     if (!loc) return
     didInit.current = true
     useGameStore.setState({ selectedLocationId: loc.id, combatLocationId: loc.id })
