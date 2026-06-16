@@ -818,7 +818,7 @@ function UnitDetailOverlay({ c, battle, onClose }: { c: Combatant; battle: Battl
     <>
       {/* transparent catcher: tap outside the sheet to dismiss (battle stays visible) */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="fixed inset-x-0 bottom-0 z-50 max-h-[62vh] flex flex-col rounded-t-2xl border-t border-game-border bg-game-surface/98 backdrop-blur-sm shadow-2xl">
+      <div className="fixed inset-x-0 bottom-0 z-50 max-h-[62vh] flex flex-col rounded-t-2xl border-t border-game-border bg-game-surface shadow-2xl">
         <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-game-border shrink-0" />
         <div className="px-4 pb-2 text-xs">
           <div className="flex items-center justify-between">
