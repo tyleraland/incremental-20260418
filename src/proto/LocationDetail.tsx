@@ -40,6 +40,9 @@ export function LocationDetail({ location }: { location: Location }) {
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const battle              = useGameStore((s) => s.battles[location.id])
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
+  const assignUnits         = useGameStore((s) => s.assignUnits)
+  const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
+  const selected            = units.find((u) => u.id === selectedUnitIds[0]) ?? null
 
   const spent       = useProtoStore((s) => s.attunementSpent)
   const upgrades    = useProtoStore((s) => s.upgrades)
@@ -75,6 +78,16 @@ export function LocationDetail({ location }: { location: Location }) {
           <span className="text-[10px] px-1.5 py-0.5 rounded border border-game-border bg-game-bg text-game-text-dim">{here.length} hero{here.length !== 1 ? 'es' : ''} here</span>
         </div>
       </div>
+
+      {/* deploy / recall the selected hero (deploy lives here now, not a tab) */}
+      {selected && (
+        <div className="flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5">
+          <span className="text-xs text-game-text flex-1 truncate">{selected.name.split(' ')[0]}</span>
+          {selected.locationId === location.id
+            ? <button onClick={() => assignUnits([selected.id], null)} className="text-[11px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">↩ Recall</button>
+            : <button onClick={() => assignUnits([selected.id], location.id)} className="text-[11px] px-2 py-1 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15">➤ Deploy here</button>}
+        </div>
+      )}
 
       {/* meters */}
       <div className="space-y-2">

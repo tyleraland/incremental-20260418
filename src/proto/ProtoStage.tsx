@@ -250,35 +250,29 @@ export function ProtoStage() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-game-bg via-[#0b0b14] to-[#0d0d18]">
-      {/* context chip — just names where you are (the slider does the navigating) */}
-      {focusLoc && (
-        <div className="absolute top-2 left-2 z-30 px-2 py-1 rounded-md border border-game-border bg-game-bg/80 text-[11px] text-game-text-dim pointer-events-none">
-          {ZOOM_NAMES[nearest]} · <span className="text-game-text">{focusLoc.name}</span>
-        </div>
-      )}
-
-      {/* zoom slider — the single nav control: World ⇄ Locale ⇄ Battle */}
-      <div className="absolute top-1/2 right-2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 bg-game-bg/70 border border-game-border rounded-xl p-1.5">
-        {([2, 1, 0]).map((z) => (
-          <button
-            key={z}
-            onClick={() => { if (z === 2 && !focusLoc) return; gotoStop(z) }}
-            disabled={z === 2 && !focusLoc}
-            title={ZOOM_NAMES[z]}
-            className={[
-              'w-9 rounded-lg flex flex-col items-center py-1 transition-colors',
-              nearest === z ? 'bg-game-primary text-white' : 'text-game-text-dim hover:bg-white/5',
-              z === 2 && !focusLoc ? 'opacity-30 cursor-not-allowed' : '',
-            ].join(' ')}
-          >
-            <span className="text-sm leading-none">{['🗺', '⌖', '⚔'][z]}</span>
-            <span className="text-[8px] leading-none mt-0.5">{ZOOM_NAMES[z]}</span>
-          </button>
-        ))}
-        {/* continuous fill indicator */}
-        <div className="w-1 h-12 rounded-full bg-game-border overflow-hidden relative">
-          <div className="absolute bottom-0 inset-x-0 bg-game-primary/70 rounded-full" style={{ height: `${(zoom / 2) * 100}%` }} />
-        </div>
+      {/* zoom breadcrumb — the single nav control, above the view */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center bg-game-bg/85 border border-game-border rounded-lg px-1 py-0.5 text-[11px] backdrop-blur-sm">
+        {([0, 1, 2] as const).map((z, i) => {
+          const label = z === 0 ? 'World' : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
+          const disabled = z > 0 && !focusLoc
+          return (
+            <span key={z} className="flex items-center">
+              {i > 0 && <span className="px-0.5 text-game-muted">›</span>}
+              <button
+                onClick={() => { if (!disabled) gotoStop(z) }}
+                disabled={disabled}
+                className={[
+                  'px-2 py-1 rounded-md flex items-center gap-1 transition-colors max-w-[40vw] truncate',
+                  nearest === z ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text',
+                  disabled ? 'opacity-40 cursor-not-allowed' : '',
+                ].join(' ')}
+              >
+                <span aria-hidden>{['🗺', '⌖', '⚔'][z]}</span>
+                <span className="truncate">{label}</span>
+              </button>
+            </span>
+          )
+        })}
       </div>
 
       {/* viewport: map layer (always) + battle layer (crossfades in) */}

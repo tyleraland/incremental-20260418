@@ -10,6 +10,9 @@ import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory } from '@/typ
 import { buildSaga } from './lore'
 import { ArmyMatrix } from './ArmyMatrix'
 import { LocationDetail } from './LocationDetail'
+import { Guild } from '@/pages/Guild'
+import { Reports } from '@/pages/Reports'
+import { Time } from '@/pages/Time'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
@@ -23,14 +26,16 @@ import { LocationDetail } from './LocationDetail'
 // matrix) drills to Hero; otherwise the tabs are manual — the stage's zoom slider
 // drives navigation, not the lens.
 
-type Top = 'location' | 'party' | 'hero' | 'items' | 'world'
+type Top = 'location' | 'hero' | 'party' | 'items' | 'guild' | 'reports' | 'time'
 type HeroSub = 'summary' | 'gear' | 'saga' | 'tactics'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location', label: 'Location', icon: '⌖' },
-  { id: 'party',    label: 'Party',    icon: '☷' },
   { id: 'hero',     label: 'Hero',     icon: '◈' },
+  { id: 'party',    label: 'Party',    icon: '☷' },
   { id: 'items',    label: 'Items',    icon: '🎒' },
-  { id: 'world',    label: 'World',    icon: '➤' },
+  { id: 'guild',    label: 'Guild',    icon: '⚜' },
+  { id: 'reports',  label: 'Reports',  icon: '📊' },
+  { id: 'time',     label: 'Time',     icon: '⏳' },
 ]
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
   { id: 'summary', label: 'Summary' }, { id: 'gear', label: 'Gear' },
@@ -395,60 +400,6 @@ function SagaLens({ unit }: { unit: Unit }) {
   )
 }
 
-// ── Deploy lens ───────────────────────────────────────────────────────────────
-function DeployLens({ unit }: { unit: Unit | null }) {
-  const locations  = useGameStore((s) => s.locations)
-  const units      = useGameStore((s) => s.units)
-  const assignUnits = useGameStore((s) => s.assignUnits)
-  const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
-
-  const byRegion = new Map<string, typeof locations>()
-  for (const l of locations) {
-    const arr = byRegion.get(l.region); if (arr) arr.push(l); else byRegion.set(l.region, [l])
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-game-border bg-game-bg p-2.5">
-        <div className="text-xs text-game-text-dim">{unit ? `${unit.name} is` : 'No hero selected —'}</div>
-        <div className="text-sm text-game-text font-medium">
-          {unit ? (unit.locationId ? (locations.find((l) => l.id === unit.locationId)?.name ?? unit.locationId) : 'At the guild (undeployed)') : 'pick a hero to send them somewhere'}
-        </div>
-        {unit?.locationId && (
-          <button onClick={() => assignUnits([unit.id], null)} className="mt-1.5 text-[11px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">↩ Recall to guild</button>
-        )}
-      </div>
-
-      {[...byRegion.entries()].map(([region, locs]) => (
-        <div key={region}>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5 capitalize">{region.replace('-', ' ')}</div>
-          <div className="space-y-1">
-            {locs.map((l) => {
-              const here = units.filter((u) => u.locationId === l.id)
-              const isHere = unit?.locationId === l.id
-              return (
-                <div key={l.id} className={['flex items-center gap-2 rounded-md border px-2.5 py-1.5',
-                  isHere ? 'border-game-primary/50 bg-game-primary/10' : 'border-game-border bg-game-bg'].join(' ')}>
-                  <button onClick={() => setSelectedLocation(l.id)} className="min-w-0 flex-1 text-left">
-                    <div className="text-xs text-game-text font-medium truncate">{l.name}</div>
-                    <div className="text-[9px] text-game-text-dim">{here.length} hero{here.length !== 1 ? 'es' : ''} · {l.monsterIds.length} foe types{l.openWorld ? ' · open' : ''}</div>
-                  </button>
-                  <button
-                    onClick={() => unit && assignUnits([unit.id], l.id)}
-                    disabled={!unit || isHere}
-                    className={['text-[11px] px-2 py-1 rounded shrink-0 transition-colors',
-                      (!unit || isHere) ? 'text-game-muted' : 'border border-game-primary/50 text-game-text hover:bg-game-primary/15'].join(' ')}
-                  >{isHere ? 'here' : 'send ›'}</button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ── Battlefield status (live combatant readout) ───────────────────────────────
 const STATUS_TINT: Record<string, string> = {
   buff: 'border-game-green/40 bg-game-green/10 text-game-green',
@@ -590,13 +541,13 @@ export function ProtoLens() {
             aria-label={t.label}
             onClick={() => setTop(t.id)}
             className={[
-              'flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors relative',
+              'flex-1 flex flex-col items-center gap-0.5 py-1.5 transition-colors relative',
               top === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
             ].join(' ')}
           >
-            <span className="text-base leading-none">{t.icon}</span>
-            <span className="text-[10px] font-medium">{t.label}</span>
-            {top === t.id && <span className="absolute bottom-0 inset-x-3 h-0.5 rounded-full bg-game-primary" />}
+            <span className="text-sm leading-none">{t.icon}</span>
+            <span className="text-[9px] font-medium">{t.label}</span>
+            {top === t.id && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-primary" />}
           </button>
         ))}
       </div>
@@ -615,26 +566,33 @@ export function ProtoLens() {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-3">
-        {top === 'hero' && (unit ? (
-          <>
-            <BattleStatus unit={unit} />
-            {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
-            {heroSub === 'gear'    && <GearLens unit={unit} />}
-            {heroSub === 'tactics' && <TacticianLens unit={unit} />}
-            {heroSub === 'saga'    && <SagaLens unit={unit} />}
-          </>
-        ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* Guild / Reports / Time embed the real game pages (own padding). */}
+        {top === 'guild'   && <Guild />}
+        {top === 'reports' && <Reports />}
+        {top === 'time'    && <Time />}
 
-        {top === 'location' && (location
-          ? <LocationDetail location={location} />
-          : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
+        {top !== 'guild' && top !== 'reports' && top !== 'time' && (
+          <div className="p-3">
+            {top === 'hero' && (unit ? (
+              <>
+                <BattleStatus unit={unit} />
+                {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+                {heroSub === 'gear'    && <GearLens unit={unit} />}
+                {heroSub === 'tactics' && <TacticianLens unit={unit} />}
+                {heroSub === 'saga'    && <SagaLens unit={unit} />}
+              </>
+            ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
 
-        {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
+            {top === 'location' && (location
+              ? <LocationDetail location={location} />
+              : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
 
-        {top === 'items' && <ItemsLens unit={unit} />}
+            {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
 
-        {top === 'world' && <DeployLens unit={unit} />}
+            {top === 'items' && <ItemsLens unit={unit} />}
+          </div>
+        )}
       </div>
     </div>
   )

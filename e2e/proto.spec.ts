@@ -1,62 +1,70 @@
 import { test } from '@playwright/test'
 
-// Visual harness for the ?proto=1 "Tactician" UI-overhaul prototype. The first
-// screen is a battlefield with the Location lens; tabs are Location / Party /
-// Hero / Items / World. Captures screenshots for review. Not part of CI.
+// Visual harness for the ?proto=1 "Tactician" UI-overhaul prototype.
+// Tabs: Location / Hero / Party / Items / Guild / Reports / Time. The stage is
+// navigated by a zoom breadcrumb; tapping a combatant opens a bottom sheet.
+// Not part of CI.
 
 const BASE = '/incremental-20260418/?proto=1'
 
-test('proto: battlefield-first walkthrough', async ({ page }, testInfo) => {
+test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, testInfo) => {
   const proj = testInfo.project.name
   const shot = (name: string) => page.screenshot({ path: `e2e/__shots__/proto-${proj}-${name}.png` })
 
   await page.goto(BASE)
   await page.getByText('TACTICIAN').waitFor({ state: 'visible', timeout: 30_000 })
-  await page.waitForTimeout(2500) // ticks stand up battles + the stage flies in
-  await shot('01-initial-battlefield')
+  await page.waitForTimeout(2500)
+  await shot('01-initial')
 
-  // Stack a real party onto one battlefield so the Party matrix has columns.
+  // Roster sort control: switch to Level.
+  await page.getByRole('button', { name: /To-do/ }).click()
+  await page.waitForTimeout(150)
+  await page.getByRole('button', { name: /Level/ }).first().click()
+  await page.waitForTimeout(250)
+  await shot('02-roster-sorted')
+
+  // Stack a party onto one field for the matrix / battlefield.
   await page.evaluate(() => {
     const g = (window as unknown as { __game: { getState: () => { units: { id: string }[]; assignUnits: (ids: string[], loc: string) => void } } }).__game.getState()
     g.assignUnits(g.units.map((u) => u.id), 'prontera-field-1')
   })
   await page.waitForTimeout(600)
 
-  // Pick a hero — flies to their battlefield, follows the camera, opens Hero
-  // (with the live battlefield-status readout on top).
+  // Pick a hero — battlefield + Hero (with live battlefield status).
   await page.getByRole('button', { name: /Mira/ }).first().click()
   await page.waitForTimeout(1000)
-  await shot('02-hero-battlestatus')
+  await shot('03-hero-battlestatus')
 
-  // Party matrix (doctrine) + Optimize.
-  await page.getByRole('button', { name: 'Party', exact: true }).click()
-  await page.waitForTimeout(300)
-  const opt = page.getByRole('button', { name: /Optimize/ })
-  if (await opt.isEnabled()) await opt.click()
-  await page.waitForTimeout(300)
-  await shot('03-party-matrix')
-
-  // Gear facet of the matrix.
-  await page.getByRole('button', { name: /Gear/ }).click()
-  await page.waitForTimeout(300)
-  await shot('04-party-gear')
-
-  // Items lens — guild stash with per-hero equip diffs.
-  await page.getByRole('button', { name: 'Items', exact: true }).click()
-  await page.waitForTimeout(300)
-  await shot('05-items-stash')
-
-  // Location lens — meters, upgrades, story, foes. Open a monster card.
-  await page.getByRole('button', { name: 'Location', exact: true }).click()
-  await page.waitForTimeout(300)
-  await page.getByText('card ›').first().click().catch(() => {})
+  // Tap the hero's chip on the battlefield → the combatant bottom sheet.
+  // The battlefield chip's title is "<name> — <hp>/<max>" or "— casting …"
+  // (the roster chip is "<name> — Lv N <class>"), so match the combat form.
+  await page.getByTitle(/Ashdown — (\d|casting)/).first().click({ timeout: 4000, force: true }).catch(() => {})
   await page.waitForTimeout(400)
-  await shot('06-location-monstercard')
-  await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => {})
+  await shot('04-combatant-bottomsheet')
+  await page.getByRole('button', { name: 'Close unit detail' }).click({ timeout: 3000 }).catch(() => {})
   await page.waitForTimeout(200)
 
-  // Zoom back out to the world via the slider.
-  await page.getByTitle('World', { exact: true }).click()
+  // Party / Items lenses.
+  await page.getByRole('button', { name: 'Party', exact: true }).click()
+  await page.waitForTimeout(300)
+  await shot('05-party')
+  await page.getByRole('button', { name: 'Items', exact: true }).click()
+  await page.waitForTimeout(300)
+  await shot('06-items')
+
+  // Folded-in game pages.
+  await page.getByRole('button', { name: 'Guild', exact: true }).click()
+  await page.waitForTimeout(300)
+  await shot('07-guild')
+  await page.getByRole('button', { name: 'Reports', exact: true }).click()
+  await page.waitForTimeout(300)
+  await shot('08-reports')
+  await page.getByRole('button', { name: 'Time', exact: true }).click()
+  await page.waitForTimeout(300)
+  await shot('09-time')
+
+  // Zoom breadcrumb back out to the world.
+  await page.getByRole('button', { name: /World/ }).first().click()
   await page.waitForTimeout(800)
-  await shot('07-world')
+  await shot('10-world')
 })

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
@@ -813,30 +814,38 @@ function UnitDetailOverlay({ c, battle, onClose }: { c: Combatant; battle: Battl
     setTimeout(() => setCopied(false), 1200)
   }
 
-  return (
-    <div className="absolute inset-x-0 bottom-0 z-20 px-2 pb-2 pointer-events-none">
-      <div className="max-w-md mx-auto w-full rounded-md border border-game-border bg-game-surface/95 backdrop-blur-sm shadow-lg p-3 text-xs pointer-events-auto">
-        <div className="flex items-center justify-between">
-          <div className={`font-semibold text-sm ${isPlayer ? 'text-blue-200' : 'text-red-200'}`}>{c.name}</div>
-          <div className="flex items-center gap-2">
-            <div className="text-[10px] text-game-text-dim uppercase tracking-wide">{c.team}{c.alive ? '' : ' · KO'}</div>
-            <button onClick={onClose} aria-label="Close unit detail" className="w-5 h-5 flex items-center justify-center rounded border border-game-border text-game-text-dim hover:bg-white/5">✕</button>
+  return createPortal(
+    <>
+      {/* transparent catcher: tap outside the sheet to dismiss (battle stays visible) */}
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed inset-x-0 bottom-0 z-50 max-h-[62vh] flex flex-col rounded-t-2xl border-t border-game-border bg-game-surface/98 backdrop-blur-sm shadow-2xl">
+        <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-game-border shrink-0" />
+        <div className="px-4 pb-2 text-xs">
+          <div className="flex items-center justify-between">
+            <div className={`font-semibold text-base ${isPlayer ? 'text-blue-200' : 'text-red-200'}`}>{c.name}</div>
+            <div className="flex items-center gap-2">
+              <div className="text-[10px] text-game-text-dim uppercase tracking-wide">{c.team}{c.alive ? '' : ' · KO'}</div>
+              <button onClick={onClose} aria-label="Close unit detail" className="w-6 h-6 flex items-center justify-center rounded border border-game-border text-game-text-dim hover:bg-white/5">✕</button>
+            </div>
+          </div>
+
+          <div className="mt-2 flex items-center gap-1">
+            <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
+            <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
+            {tab === 'debug' && (
+              <button onClick={copy} className="ml-auto px-2 py-0.5 rounded text-[10px] border border-game-border text-game-text-dim hover:bg-white/5" aria-label="Copy debug info">
+                {copied ? '✓ copied' : '⧉ copy last 15'}
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="mt-2 flex items-center gap-1">
-          <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
-          <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
-          {tab === 'debug' && (
-            <button onClick={copy} className="ml-auto px-2 py-0.5 rounded text-[10px] border border-game-border text-game-text-dim hover:bg-white/5" aria-label="Copy debug info">
-              {copied ? '✓ copied' : '⧉ copy last 15'}
-            </button>
-          )}
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-xs">
+          {tab === 'stats' ? <StatsTab c={c} battle={battle} /> : <DebugTab c={c} battle={battle} />}
         </div>
-
-        {tab === 'stats' ? <StatsTab c={c} battle={battle} /> : <DebugTab c={c} battle={battle} />}
       </div>
-    </div>
+    </>,
+    document.body,
   )
 }
 

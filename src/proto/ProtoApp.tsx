@@ -1,8 +1,72 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
 import { useProtoStore } from './protoStore'
+
+// ── Roster sort (ported from the production RosterCarousel) ───────────────────--
+type SortMode = 'attention' | 'level' | 'class' | 'name' | 'location'
+type SortDir = 'asc' | 'desc'
+const SORT_MODES: { id: SortMode; label: string; icon: string; defaultDir: SortDir }[] = [
+  { id: 'attention', label: 'To-do', icon: '!', defaultDir: 'asc' },
+  { id: 'level',     label: 'Level', icon: '⬆', defaultDir: 'desc' },
+  { id: 'class',     label: 'Class', icon: '◆', defaultDir: 'asc' },
+  { id: 'name',      label: 'Name',  icon: 'A', defaultDir: 'asc' },
+  { id: 'location',  label: 'Area',  icon: '⌖', defaultDir: 'asc' },
+]
+function sortUnits(units: Unit[], mode: SortMode, dir: SortDir, viewed: Record<string, number>): Unit[] {
+  const asc = (a: Unit, b: Unit): number => {
+    switch (mode) {
+      case 'name':  return a.name.localeCompare(b.name)
+      case 'class': return (a.class ?? '').localeCompare(b.class ?? '') || a.name.localeCompare(b.name)
+      case 'level': return a.level - b.level
+      case 'location': return (a.locationId ?? '~').localeCompare(b.locationId ?? '~') || a.name.localeCompare(b.name)
+      case 'attention': {
+        const ra = needsAttention(a, viewed) ? 0 : 1, rb = needsAttention(b, viewed) ? 0 : 1
+        return (ra - rb) || a.name.localeCompare(b.name)
+      }
+    }
+  }
+  const arr = [...units].sort(asc)
+  return dir === 'desc' ? arr.reverse() : arr
+}
+
+function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPick: (m: SortMode) => void }) {
+  const [open, setOpen] = useState(false)
+  const cur = SORT_MODES.find((m) => m.id === mode)!
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Sort roster"
+        className="flex items-center gap-1 px-2 h-9 rounded-lg border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
+      >
+        <span className="text-xs">⇅</span>
+        <span className="text-[10px] font-medium">{cur.label}</span>
+        <span className="text-[8px]">{dir === 'asc' ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 mt-1 left-0 w-32 rounded-lg border border-game-border bg-game-surface shadow-xl py-1">
+            {SORT_MODES.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => { onPick(m.id); setOpen(false) }}
+                className={['w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-colors',
+                  m.id === mode ? 'text-game-primary' : 'text-game-text-dim hover:text-game-text hover:bg-white/5'].join(' ')}
+              >
+                <span className="w-4 text-center">{m.icon}</span>
+                <span className="flex-1">{m.label}</span>
+                {m.id === mode && <span className="text-[8px]">{dir === 'asc' ? '▲' : '▼'}</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 // ── Prototype shell ─────────────────────────────────────────────────────────--
 //
@@ -65,7 +129,16 @@ export function ProtoApp() {
   const paused           = useGameStore((s) => s.paused)
   const togglePause      = useGameStore((s) => s.togglePause)
   const ticks            = useGameStore((s) => s.ticks)
+  const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
+
+  const [sortMode, setSortMode] = useState<SortMode>('attention')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const sortedUnits = useMemo(() => sortUnits(units, sortMode, sortDir, viewed), [units, sortMode, sortDir, viewed])
+  function pickSort(m: SortMode) {
+    if (m === sortMode) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortMode(m); setSortDir(SORT_MODES.find((x) => x.id === m)!.defaultDir) }
+  }
 
   const deployed = units.filter((u) => u.locationId).length
   const recovering = units.filter((u) => u.recoveryTicksLeft > 0 || u.isResting).length
@@ -114,11 +187,14 @@ export function ProtoApp() {
         </div>
       </header>
 
-      {/* roster rail — always visible, shared selector */}
-      <div className="shrink-0 flex items-center gap-1 px-2 py-1.5 border-b border-game-border bg-game-surface/40 overflow-x-auto">
-        {units.map((u) => (
-          <RosterChip key={u.id} unit={u} selected={selectedUnitIds[0] === u.id} onSelect={() => selectHero(u)} />
-        ))}
+      {/* roster rail — always visible, shared selector + sort */}
+      <div className="shrink-0 flex items-center gap-2 px-2 py-1.5 border-b border-game-border bg-game-surface/40">
+        <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
+        <div className="flex items-center gap-1 overflow-x-auto flex-1">
+          {sortedUnits.map((u) => (
+            <RosterChip key={u.id} unit={u} selected={selectedUnitIds[0] === u.id} onSelect={() => selectHero(u)} />
+          ))}
+        </div>
       </div>
 
       {/* split: world/battle stage  |  context lens */}
