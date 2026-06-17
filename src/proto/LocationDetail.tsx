@@ -42,6 +42,10 @@ export function LocationDetail({ location }: { location: Location }) {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const battle              = useGameStore((s) => s.battles[location.id])
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
+  const assignUnits         = useGameStore((s) => s.assignUnits)
+  const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
+  // Heroes in the current selection that aren't already stationed here.
+  const toDeploy = units.filter((u) => selectedUnitIds.includes(u.id) && u.locationId !== location.id)
 
   // "Enter <Region>" — a world location can open into a dungeon map page.
   const entryRegion = location.dungeonEntryRegion
@@ -84,6 +88,16 @@ export function LocationDetail({ location }: { location: Location }) {
           <span className="text-base">◆</span>
           <span className="text-xs text-game-text flex-1">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
           <span className="text-[11px] text-rose-300">descend ›</span>
+        </button>
+      )}
+
+      {/* deploy the current hero selection here (recall lives on the hero chips) */}
+      {toDeploy.length > 0 && (
+        <button
+          onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
+          className="w-full text-xs px-2.5 py-2 rounded-md border border-game-primary/50 bg-game-primary/10 text-game-text hover:bg-game-primary/20"
+        >
+          ➤ Deploy here{toDeploy.length > 1 ? ` (${toDeploy.length})` : ''}
         </button>
       )}
 
