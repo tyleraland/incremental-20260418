@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useGameStore, MONSTER_REGISTRY, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
-import { useProtoStore, STORY_PATHS } from './protoStore'
+import { useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus } from './protoStore'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
@@ -11,33 +11,161 @@ const ELEMENT_DOT: Record<string, string> = {
 // ── Location Detail ────────────────────────────────────────────────────────--
 //
 // The locale view's other half: what a single location IS and how you shape it.
-// Live meters (familiarity, attunement) up top; a kittens-style upgrade economy
-// where you spend "attunement" — a currency that trickles in with play time — on
-// small persistent boosts (vendors, drop rate, fewer spawns…); and a branching
-// story choice. Mock economy (see protoStore) but it reads like the eventual
-// location-management screen.
-
-function Meter({ label, pct, value, color }: { label: string; pct: number; value: string; color: string }) {
-  return (
-    <div>
-      <div className="flex justify-between text-[10px] mb-0.5">
-        <span className="uppercase tracking-wider text-game-text-dim">{label}</span>
-        <span className="text-game-text tabular-nums">{value}</span>
-      </div>
-      <div className="h-2 rounded-full bg-game-border overflow-hidden">
-        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
-      </div>
-    </div>
-  )
-}
+// The heroes deployed here (+ a staged-deploy proposal), a WoW-style quest board
+// (which replaces the old familiarity / story-path / upgrade surfaces), and the
+// site's inhabitants. Mock quest economy (see protoStore) but it reads like the
+// eventual location-management screen.
 
 // Friendly names for the dungeon sub-regions a world location can open into.
 const REGION_NAMES: Record<string, string> = { 'geffen-dungeon': 'Geffen Dungeon', aerie: 'Sky Aerie' }
 
+// ── Quest board ───────────────────────────────────────────────────────────────
+// WoW-style status glyph + color. Yellow = actionable right now (accept / turn
+// in); gray = waiting (locked, blocked behind your commitment, or mid-progress).
+const QUEST_GLYPH: Record<QuestStatus, string> = {
+  locked: '…', blocked: '!', available: '!', progress: '?', ready: '?', done: '✓',
+}
+const QUEST_ICON_CLS: Record<QuestStatus, string> = {
+  locked:    'border-game-border text-game-muted',
+  blocked:   'border-game-border text-game-muted',
+  available: 'border-game-gold/60 text-game-gold',
+  progress:  'border-game-border text-game-text-dim',
+  ready:     'border-game-gold/70 text-game-gold',
+  done:      'border-game-green/50 text-game-green',
+}
+const QUEST_HINT: Record<QuestStatus, string> = {
+  locked: 'Not yet eligible', blocked: 'Committed elsewhere', available: 'Available — expand to accept',
+  progress: 'In progress', ready: 'Ready to turn in', done: 'Completed',
+}
+
+// Template the mock quest copy with this site's signature foe / name / target.
+function fill(s: string, foe: string, place: string, n: number): string {
+  return s.replace(/\{foe\}/g, foe).replace(/\{place\}/g, place).replace(/\{n\}/g, String(n))
+}
+
+function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: string; place: string }) {
+  const activeId     = useProtoStore((s) => s.activeQuest[locId] ?? null)
+  const progress     = useProtoStore((s) => s.questProgress[locId]?.[q.id] ?? 0)
+  const doneIds      = useProtoStore((s) => s.completedQuests[locId] ?? [])
+  const acceptQuest  = useProtoStore((s) => s.acceptQuest)
+  const advanceQuest = useProtoStore((s) => s.advanceQuest)
+  const turnInQuest  = useProtoStore((s) => s.turnInQuest)
+  const [open, setOpen] = useState(false)
+
+  const status = questStatus(q, { activeId, doneIds, progress })
+  const canExpand = status !== 'locked'        // can't research a quest you can't see yet
+  const title = fill(q.title, foe, place, q.target)
+  const committed = status === 'progress' || status === 'ready'
+
+  return (
+    <div className={['rounded-md border transition-colors', open ? 'border-game-primary/40 bg-game-bg' : 'border-game-border bg-game-bg'].join(' ')}>
+      <button
+        onClick={() => canExpand && setOpen((v) => !v)}
+        disabled={!canExpand}
+        title={QUEST_HINT[status]}
+        className={['w-full flex items-center gap-2 px-2 py-1.5 text-left', canExpand ? 'hover:bg-white/[0.03]' : 'cursor-default'].join(' ')}
+      >
+        <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', QUEST_ICON_CLS[status]].join(' ')}>
+          {QUEST_GLYPH[status]}
+        </span>
+        <span className={['text-xs flex-1 truncate', status === 'locked' ? 'text-game-muted' : 'text-game-text'].join(' ')}>{title}</span>
+        {status === 'progress' && <span className="text-[10px] text-game-text-dim tabular-nums shrink-0">{progress}/{q.target}</span>}
+        {status === 'ready' && <span className="text-[10px] text-game-gold shrink-0">ready</span>}
+        {canExpand && <span className="text-[10px] text-game-muted shrink-0 w-3 text-center">{open ? '▴' : '▾'}</span>}
+      </button>
+
+      {open && canExpand && (
+        <div className="px-2.5 pb-2.5 pt-1 space-y-2 border-t border-game-border/60">
+          <p className="text-[11px] text-game-text-dim leading-snug">{fill(q.story, foe, place, q.target)}</p>
+          <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{fill(q.objective, foe, place, q.target)}</span></div>
+
+          {committed && (
+            <div>
+              <div className="flex justify-between text-[10px] mb-0.5">
+                <span className="uppercase tracking-wider text-game-text-dim">Progress</span>
+                <span className="text-game-text tabular-nums">{progress}/{q.target}</span>
+              </div>
+              <div className="h-2 rounded-full bg-game-border overflow-hidden">
+                <div className={['h-full rounded-full transition-all', status === 'ready' ? 'bg-game-gold' : 'bg-game-accent'].join(' ')} style={{ width: `${Math.min(100, (progress / q.target) * 100)}%` }} />
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Rewards</span>
+            {q.rewards.map((r) => (
+              <span key={r} className="text-[10px] px-1.5 py-0.5 rounded border border-game-gold/40 bg-game-gold/10 text-game-gold">{r}</span>
+            ))}
+          </div>
+
+          {status === 'available' && (
+            <button onClick={() => acceptQuest(locId, q.id)} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/60 bg-game-gold/15 text-game-gold hover:bg-game-gold/25 transition-colors">
+              Accept quest
+            </button>
+          )}
+          {status === 'blocked' && (
+            <div className="text-[10px] text-game-muted italic">Finish the quest you're committed to here before taking this on.</div>
+          )}
+          {status === 'progress' && (
+            <button onClick={() => advanceQuest(locId, q.id, 1)} className="text-[10px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">
+              +1 progress (sim)
+            </button>
+          )}
+          {status === 'ready' && (
+            <button onClick={() => { turnInQuest(locId, q.id); setOpen(false) }} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
+              ✓ Collect rewards
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QuestBoard({ location }: { location: Location }) {
+  const doneIds = useProtoStore((s) => s.completedQuests[location.id] ?? [])
+  const [showDone, setShowDone] = useState(false)
+  const foe = MONSTER_REGISTRY[location.monsterIds[0] ?? '']?.name ?? 'beast'
+  const place = location.name
+  const board = LOCATION_QUESTS.filter((q) => !doneIds.includes(q.id))
+  const done  = LOCATION_QUESTS.filter((q) => doneIds.includes(q.id))
+
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Quests</div>
+      <div className="space-y-1">
+        {board.length === 0
+          ? <div className="text-[11px] text-game-muted italic">Every quest here is done.</div>
+          : board.map((q) => <QuestRow key={q.id} q={q} locId={location.id} foe={foe} place={place} />)}
+      </div>
+
+      {done.length > 0 && (
+        <div className="mt-2">
+          <button onClick={() => setShowDone((v) => !v)} className="w-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text py-1">
+            <span className="w-3 text-center">{showDone ? '▾' : '▸'}</span>
+            <span>Completed</span>
+            <span className="text-game-muted normal-case tracking-normal">({done.length})</span>
+          </button>
+          {showDone && (
+            <div className="space-y-1">
+              {done.map((q) => (
+                <div key={q.id} className="flex items-center gap-2 rounded-md border border-game-green/30 bg-game-green/5 px-2 py-1.5">
+                  <span className="w-5 h-5 rounded-full border border-game-green/50 text-game-green flex items-center justify-center text-[11px] leading-none shrink-0">✓</span>
+                  <span className="text-xs text-game-text flex-1 truncate">{fill(q.title, foe, place, q.target)}</span>
+                  <span className="text-[10px] text-game-text-dim truncate max-w-[48%]" title={q.rewards.join(', ')}>{q.rewards.join(' · ')}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function LocationDetail({ location }: { location: Location }) {
   const units               = useGameStore((s) => s.units)
   const locations           = useGameStore((s) => s.locations)
-  const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const battle              = useGameStore((s) => s.battles[location.id])
@@ -56,12 +184,8 @@ export function LocationDetail({ location }: { location: Location }) {
     if (first) setSelectedLocation(first.id)
   }
 
-  const storyChoice = useProtoStore((s) => s.storyChoice)
-  const chooseStory = useProtoStore((s) => s.chooseStory)
-
   const [codexId, setCodexId] = useState<string | null>(null)
 
-  const famPct = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
   const here = units.filter((u) => u.locationId === location.id)
   // Tap a hero chip to add/remove them from the current selection (so this group
   // doubles as a selection surface — you can see who's picked and adjust).
@@ -75,7 +199,6 @@ export function LocationDetail({ location }: { location: Location }) {
     if (c.team === 'enemy' && c.alive) { const mid = c.id.split('#')[0]; liveCount[mid] = (liveCount[mid] ?? 0) + 1 }
   }
   const foeIds = (battle ? Object.keys(liveCount) : location.monsterIds).filter((id) => MONSTER_REGISTRY[id])
-  const chosen = storyChoice[location.id]
 
   return (
     <div className="space-y-4">
@@ -148,41 +271,8 @@ export function LocationDetail({ location }: { location: Location }) {
         </div>
       )}
 
-      {/* meters */}
-      <div className="space-y-2">
-        <Meter label="Familiarity" pct={famPct} value={`${famPct}%`} color="bg-game-accent" />
-      </div>
-
-      {/* site upgrades — placeholder (attunement economy scrapped for now;
-          kept as a stub so the management surface still reads, see BACKLOG.md) */}
-      <div className="rounded-md border border-dashed border-game-border bg-game-bg/40 px-2.5 py-2">
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-0.5">Site upgrades</div>
-        <div className="text-[11px] text-game-muted">Spend a location currency on vendors / drop rate / spawns — design TBD.</div>
-      </div>
-
-      {/* story path */}
-      <div>
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Story path</div>
-        <div className="space-y-1">
-          {STORY_PATHS.map((p) => {
-            const picked = chosen === p.id
-            return (
-              <button
-                key={p.id}
-                onClick={() => chooseStory(location.id, p.id)}
-                className={['w-full text-left rounded-md border px-2.5 py-2 transition-colors',
-                  picked ? 'border-game-primary/60 bg-game-primary/10' : 'border-game-border bg-game-bg hover:border-game-primary/40'].join(' ')}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={['w-3 h-3 rounded-full border shrink-0', picked ? 'border-game-primary bg-game-primary' : 'border-game-text-dim'].join(' ')} />
-                  <span className="text-xs font-medium text-game-text">{p.name}</span>
-                </div>
-                {picked && <div className="text-[10px] text-game-text-dim leading-snug mt-1 pl-5">{p.blurb}</div>}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      {/* quests — replaces the old familiarity / story-path / site-upgrade rows */}
+      <QuestBoard location={location} />
 
       {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (

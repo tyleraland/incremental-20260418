@@ -42,6 +42,48 @@ export const STORY_PATHS: StoryPath[] = [
   { id: 'purge',  name: 'Purge the nest',         blurb: 'Burn it out. Fewer foes prowl here — but the land remembers the fire.' },
 ]
 
+// ── Quests (mock) ────────────────────────────────────────────────────────────--
+//
+// A WoW-style quest board per location, replacing the old familiarity / story /
+// upgrade surfaces. One quest per location can be active ("committed") at a time;
+// finishing it unlocks the next in the chain. All mock + unpersisted. Display
+// strings template {foe} (the site's signature monster), {place} (location name)
+// and {n} (the objective target) at render so one chain reads fine everywhere.
+export interface QuestDef {
+  id: string
+  title: string
+  story: string        // narrative blurb (shown when expanded)
+  objective: string    // what you commit to
+  target: number       // count that satisfies the objective
+  rewards: string[]
+  requires: string[]   // quest ids that must be completed before this is eligible
+}
+export const LOCATION_QUESTS: QuestDef[] = [
+  { id: 'q-cull',    title: 'Cull the {foe}s',  story: 'The {foe}s have grown bold around {place}. Thin their numbers before they overrun the approach.', objective: 'Defeat {n} {foe}s', target: 20, rewards: ['120 gold', 'Familiar Charm'], requires: [] },
+  { id: 'q-forage',  title: 'Forage {place}',   story: 'The quartermaster needs reagents that only grow wild around {place}.',                              objective: 'Gather {n} reagents', target: 15, rewards: ['Sturdy Belt', '60 gold'], requires: [] },
+  { id: 'q-relic',   title: 'The Buried Relic', story: 'Scouts whisper of a relic lost beneath {place}, guarded by the {foe}s.',                            objective: 'Recover the relic',   target: 1,  rewards: ['Rare cache', '200 gold'], requires: ['q-cull'] },
+  { id: 'q-warlord', title: 'Break the Warlord',story: 'A warlord has rallied the {foe}s of {place} into a host. End the threat at its head.',             objective: 'Defeat the warlord',  target: 1,  rewards: ['Epic trophy', '500 gold'], requires: ['q-cull', 'q-forage'] },
+]
+
+export type QuestStatus =
+  | 'locked'     // prerequisites unmet — gray (…), can't expand
+  | 'available'  // eligible & nothing else committed — yellow (!)
+  | 'blocked'    // eligible but another quest is committed here — gray (!)
+  | 'progress'   // committed, objective not yet met — gray (?)
+  | 'ready'      // committed & satisfied — yellow (?), turn in to complete
+  | 'done'       // completed (archived)
+
+export function questStatus(
+  q: QuestDef,
+  o: { activeId: string | null; doneIds: string[]; progress: number },
+): QuestStatus {
+  if (o.doneIds.includes(q.id)) return 'done'
+  if (o.activeId === q.id) return o.progress >= q.target ? 'ready' : 'progress'
+  const eligible = q.requires.every((r) => o.doneIds.includes(r))
+  if (!eligible) return 'locked'
+  return o.activeId ? 'blocked' : 'available'
+}
+
 interface ProtoState {
   zoomLevel: ZoomLevel
   // A cross-component request for the stage to fly to a zoom stop (ProtoApp /
@@ -57,6 +99,10 @@ interface ProtoState {
   upgrades: Record<string, Record<string, number>>   // locId → upgradeId → level
   storyChoice: Record<string, string>                // locId → chosen path id
   heroLocks: string[]                                // hero ids the matrix won't overwrite
+  // Quests (mock): per-location commitment, progress, and completion archive.
+  activeQuest: Record<string, string | null>         // locId → committed quest id
+  questProgress: Record<string, Record<string, number>> // locId → questId → count
+  completedQuests: Record<string, string[]>          // locId → done quest ids (in order)
 
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
@@ -66,6 +112,9 @@ interface ProtoState {
   buyUpgrade: (locId: string, upId: string, cost: number, max: number) => void
   chooseStory: (locId: string, pathId: string) => void
   toggleLock: (heroId: string) => void
+  acceptQuest: (locId: string, questId: string) => void
+  advanceQuest: (locId: string, questId: string, by: number) => void  // mock progress
+  turnInQuest: (locId: string, questId: string) => void
 }
 
 export const useProtoStore = create<ProtoState>((set) => ({
@@ -77,6 +126,9 @@ export const useProtoStore = create<ProtoState>((set) => ({
   upgrades: {},
   storyChoice: {},
   heroLocks: [],
+  activeQuest: {},
+  questProgress: {},
+  completedQuests: {},
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
@@ -94,6 +146,23 @@ export const useProtoStore = create<ProtoState>((set) => ({
   chooseStory: (locId, pathId) => set((s) => ({ storyChoice: { ...s.storyChoice, [locId]: pathId } })),
   toggleLock: (heroId) => set((s) => ({
     heroLocks: s.heroLocks.includes(heroId) ? s.heroLocks.filter((x) => x !== heroId) : [...s.heroLocks, heroId],
+  })),
+  acceptQuest: (locId, questId) => set((s) => {
+    if (s.activeQuest[locId]) return s // one commitment at a time
+    return {
+      activeQuest: { ...s.activeQuest, [locId]: questId },
+      questProgress: { ...s.questProgress, [locId]: { ...(s.questProgress[locId] ?? {}), [questId]: 0 } },
+    }
+  }),
+  advanceQuest: (locId, questId, by) => set((s) => {
+    const def = LOCATION_QUESTS.find((q) => q.id === questId)
+    const cur = s.questProgress[locId]?.[questId] ?? 0
+    const next = def ? Math.min(def.target, cur + by) : cur + by
+    return { questProgress: { ...s.questProgress, [locId]: { ...(s.questProgress[locId] ?? {}), [questId]: next } } }
+  }),
+  turnInQuest: (locId, questId) => set((s) => ({
+    activeQuest: s.activeQuest[locId] === questId ? { ...s.activeQuest, [locId]: null } : s.activeQuest,
+    completedQuests: { ...s.completedQuests, [locId]: [...(s.completedQuests[locId] ?? []), questId] },
   })),
 }))
 

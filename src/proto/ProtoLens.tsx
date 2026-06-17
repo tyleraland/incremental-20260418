@@ -17,7 +17,7 @@ import { LocationDetail } from './LocationDetail'
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
 // The always-on right half. Tabs, in altitude order:
-//   Location — the focused site's meters, attunement upgrades, story, foes
+//   Location — the focused site's heroes, quest board, and inhabitants
 //   Party    — the party on this battlefield (doctrine + gear matrix)
 //   Hero     — one hero (Summary / Gear / Saga / Tactics + battlefield status)
 //   Items    — the guild's whole stash, with per-hero equip diffs (n=all ↔ n=1)
