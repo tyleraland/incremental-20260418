@@ -71,15 +71,15 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   const cur = SORT_MODES.find((m) => m.id === mode)!
   return (
     <div className="relative shrink-0">
-      {/* compact icon-only trigger — keeps horizontal room for the roster */}
+      {/* compact icon-only trigger — shares a column with the multi toggle */}
       <button
         onClick={() => setOpen((v) => !v)}
         title={`Sort: ${cur.label} ${dir === 'asc' ? '▲' : '▼'}`}
         aria-label="Sort roster"
-        className="flex flex-col items-center justify-center w-8 h-10 rounded-lg border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
+        className="flex items-center justify-center gap-0.5 w-10 h-6 rounded-md border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
       >
-        <span className="text-xs leading-none">⇅</span>
-        <span className="text-[8px] leading-none mt-0.5">{cur.icon}{dir === 'asc' ? '▲' : '▼'}</span>
+        <span className="text-[11px] leading-none">⇅</span>
+        <span className="text-[9px] leading-none">{cur.icon}{dir === 'asc' ? '▲' : '▼'}</span>
       </button>
       {open && (
         <>
@@ -377,18 +377,21 @@ export function ProtoApp() {
 
       {/* roster rail — always visible, shared selector + sort (grouped) */}
       <div className="shrink-0 flex items-stretch gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
-        <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
-        {/* multi-select toggle — build a selection for bulk deploy */}
-        <button
-          onClick={() => setMulti((v) => !v)}
-          title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
-          aria-label="Toggle multi-select"
-          className={['flex flex-col items-center justify-center w-8 h-10 rounded-lg border shrink-0',
-            multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
-        >
-          <span className="text-xs leading-none">{multi ? '✓' : '⊕'}</span>
-          <span className="text-[8px] leading-none mt-0.5">{multi ? selectedUnitIds.length : 'multi'}</span>
-        </button>
+        {/* filter (sort) + multi-select share a column to the left of the roster */}
+        <div className="flex flex-col gap-1 shrink-0">
+          <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
+          {/* multi-select toggle — build a selection for bulk deploy */}
+          <button
+            onClick={() => setMulti((v) => !v)}
+            title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
+            aria-label="Toggle multi-select"
+            className={['flex items-center justify-center gap-0.5 w-10 h-6 rounded-md border',
+              multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
+          >
+            <span className="text-[11px] leading-none">{multi ? '✓' : '⊕'}</span>
+            <span className="text-[9px] leading-none">{multi ? selectedUnitIds.length : 'multi'}</span>
+          </button>
+        </div>
         <div className="relative flex-1 min-w-0">
           <div ref={rosterScrollRef} className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar h-full">
             {groups.map((g) => {
