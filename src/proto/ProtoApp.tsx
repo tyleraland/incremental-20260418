@@ -252,8 +252,10 @@ export function ProtoApp() {
   }
 
   // On load, select the first hero in the roster — preferring a deployed one so
-  // we land on (and follow the camera into) their battlefield, and the lens
-  // drills into Hero. Deferred a macrotask so App.tsx's loadPersistedSave()
+  // we land on (and follow the camera into) their battlefield. The lens stays on
+  // its default Location tab (you've just dropped onto a battlefield — show the
+  // site, not the hero dossier; double-tapping a roster hero still drills to Hero).
+  // Deferred a macrotask so App.tsx's loadPersistedSave()
   // (a sibling mount effect that runs *after* this child effect) has applied the
   // real save first — otherwise we'd pick from the initial seed roster.
   // Guard lives INSIDE the timeout (not around scheduling) so StrictMode's
@@ -276,7 +278,6 @@ export function ProtoApp() {
         battleFollowId: hero.locationId ? hero.id : null,
       })
       if (hero.locationId) requestZoom(2)
-      requestHeroTab()
     }, 0)
     return () => clearTimeout(id)
   // run once on mount

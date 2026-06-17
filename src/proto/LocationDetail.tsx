@@ -63,6 +63,11 @@ export function LocationDetail({ location }: { location: Location }) {
 
   const famPct = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
   const here = units.filter((u) => u.locationId === location.id)
+  // Tap a hero chip to add/remove them from the current selection (so this group
+  // doubles as a selection surface — you can see who's picked and adjust).
+  const toggleSel = (id: string) => useGameStore.setState((s) => ({
+    selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id],
+  }))
 
   // Foes: live count per monster type on the field now, else the location's pool.
   const liveCount: Record<string, number> = {}
@@ -91,14 +96,56 @@ export function LocationDetail({ location }: { location: Location }) {
         </button>
       )}
 
-      {/* deploy the current hero selection here (recall lives on the hero chips) */}
-      {toDeploy.length > 0 && (
-        <button
-          onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
-          className="w-full text-xs px-2.5 py-2 rounded-md border border-game-primary/50 bg-game-primary/10 text-game-text hover:bg-game-primary/20"
-        >
-          ➤ Deploy here{toDeploy.length > 1 ? ` (${toDeploy.length})` : ''}
-        </button>
+      {/* Heroes — everyone stationed here, plus any selected hero staged for a
+          deploy. Color reads the two axes at a glance: present (green) ·
+          selected (primary ring) · proposed-deploy (blue ghost, matching the
+          blue Deploy button below). Tap a chip to add/remove from the selection. */}
+      {(here.length > 0 || toDeploy.length > 0) && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Heroes</div>
+          <div className="flex flex-wrap gap-1.5">
+            {here.map((u) => {
+              const sel = selectedUnitIds.includes(u.id)
+              return (
+                <button
+                  key={u.id}
+                  onClick={() => toggleSel(u.id)}
+                  title={sel ? 'On site · selected' : 'On site'}
+                  className={[
+                    'flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors',
+                    sel
+                      ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
+                      : 'border-game-green/40 bg-game-green/10 text-game-text hover:border-game-green/70',
+                  ].join(' ')}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-game-green shrink-0" />
+                  <span className="truncate">{u.name.split(' ')[0]}</span>
+                  <span className="text-game-text-dim">Lv {u.level}</span>
+                </button>
+              )
+            })}
+            {toDeploy.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => toggleSel(u.id)}
+                title={`${u.name.split(' ')[0]} is elsewhere — Deploy here to bring them in (tap to unselect)`}
+                className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-dashed border-blue-400/60 bg-blue-500/10 text-blue-100 hover:border-blue-300 transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                <span className="truncate">{u.name.split(' ')[0]}</span>
+                <span className="text-blue-300/80">Lv {u.level}</span>
+              </button>
+            ))}
+          </div>
+          {toDeploy.length > 0 && (
+            <button
+              onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
+              className="mt-2 w-full text-sm font-semibold px-3 py-2 rounded-md border border-blue-400/70 bg-blue-500/25 text-blue-50 hover:bg-blue-500/40 hover:border-blue-300 transition-colors shadow-sm"
+            >
+              ➤ Deploy {toDeploy.length > 1 ? `${toDeploy.length} ` : ''}here
+            </button>
+          )}
+        </div>
       )}
 
       {/* meters */}
@@ -136,22 +183,6 @@ export function LocationDetail({ location }: { location: Location }) {
           })}
         </div>
       </div>
-
-      {/* who's here */}
-      {here.length > 0 && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Heroes on site</div>
-          <div className="flex flex-wrap gap-1.5">
-            {here.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => useGameStore.setState({ selectedUnitIds: [u.id] })}
-                className="text-[11px] px-2 py-1 rounded border border-game-border bg-game-bg text-game-text hover:border-game-primary/50"
-              >{u.name.split(' ')[0]} · Lv {u.level}</button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (
