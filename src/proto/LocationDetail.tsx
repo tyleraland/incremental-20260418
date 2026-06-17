@@ -115,6 +115,13 @@ function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: s
           <p className="text-[11px] text-game-text-dim leading-snug">{fill(q.story, foe, place, q.target)}</p>
           <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{fill(q.objective, foe, place, q.target)}</span></div>
 
+          {/* Rewards sit up here with the objective — kept clear of the action
+              button below so you don't fat-finger Accept while tapping a reward. */}
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Rewards</span>
+            <RewardChips rewards={q.rewards} />
+          </div>
+
           {committed && (
             <div>
               <div className="flex justify-between text-[10px] mb-0.5">
@@ -127,29 +134,27 @@ function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: s
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-1">
-            <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Rewards</span>
-            <RewardChips rewards={q.rewards} />
+          {/* action footer — separated from the rewards above by a divider + gap */}
+          <div className="pt-2 mt-1 border-t border-game-border/60">
+            {status === 'available' && (
+              <button onClick={() => acceptQuest(locId, q.id)} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/60 bg-game-gold/15 text-game-gold hover:bg-game-gold/25 transition-colors">
+                Accept quest
+              </button>
+            )}
+            {status === 'blocked' && (
+              <div className="text-[10px] text-game-muted italic">Finish the quest you're committed to here before taking this on.</div>
+            )}
+            {status === 'progress' && (
+              <button onClick={() => advanceQuest(locId, q.id, 1)} className="text-[10px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">
+                +1 progress (sim)
+              </button>
+            )}
+            {status === 'ready' && (
+              <button onClick={() => { turnInQuest(locId, q.id); setOpen(false) }} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
+                ✓ Collect rewards
+              </button>
+            )}
           </div>
-
-          {status === 'available' && (
-            <button onClick={() => acceptQuest(locId, q.id)} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/60 bg-game-gold/15 text-game-gold hover:bg-game-gold/25 transition-colors">
-              Accept quest
-            </button>
-          )}
-          {status === 'blocked' && (
-            <div className="text-[10px] text-game-muted italic">Finish the quest you're committed to here before taking this on.</div>
-          )}
-          {status === 'progress' && (
-            <button onClick={() => advanceQuest(locId, q.id, 1)} className="text-[10px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">
-              +1 progress (sim)
-            </button>
-          )}
-          {status === 'ready' && (
-            <button onClick={() => { turnInQuest(locId, q.id); setOpen(false) }} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
-              ✓ Collect rewards
-            </button>
-          )}
         </div>
       )}
     </div>
