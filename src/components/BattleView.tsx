@@ -802,7 +802,7 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
 // Selected-unit detail as a dismissable bottom-sheet overlay. Floats over the
 // arena so the board keeps its full height regardless of screen size. Two tabs:
 // Stats (the card) and Debug (blackboard + tactics + trace, with copy-to-share).
-function UnitDetailOverlay({ c, battle, onClose }: { c: Combatant; battle: BattleState; onClose: () => void }) {
+function UnitDetailOverlay({ c, battle, onClose, onFollow }: { c: Combatant; battle: BattleState; onClose: () => void; onFollow?: (unitId: string) => void }) {
   const isPlayer = c.team === 'player'
   const [tab, setTab] = useState<'stats' | 'debug'>('stats')
   const [copied, setCopied] = useState(false)
@@ -818,12 +818,21 @@ function UnitDetailOverlay({ c, battle, onClose }: { c: Combatant; battle: Battl
     <>
       {/* transparent catcher: tap outside the sheet to dismiss (battle stays visible) */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="fixed inset-x-0 bottom-0 z-50 max-h-[62vh] flex flex-col rounded-t-2xl border-t border-game-border bg-game-surface shadow-2xl">
+      {/* A full bottom-half panel that reads as its OWN screen — covering the lens
+          tabs beneath — so it's clearly separate from those decision surfaces. */}
+      <div className="fixed inset-x-0 bottom-0 top-1/2 z-50 flex flex-col rounded-t-2xl border-t border-game-border bg-game-surface shadow-2xl">
         <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-game-border shrink-0" />
         <div className="px-4 pb-2 text-xs">
-          <div className="flex items-center justify-between">
-            <div className={`font-semibold text-base ${isPlayer ? 'text-blue-200' : 'text-red-200'}`}>{c.name}</div>
-            <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className={`font-semibold text-base truncate ${isPlayer ? 'text-blue-200' : 'text-red-200'}`}>{c.name}</div>
+            <div className="flex items-center gap-2 shrink-0">
+              {isPlayer && onFollow && (
+                <button
+                  onClick={() => { onFollow(c.id); onClose() }}
+                  title="Select this hero in the roster and lock the camera onto them"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-game-accent/60 bg-game-accent/15 text-game-accent text-[11px] font-semibold hover:bg-game-accent/25 transition-colors"
+                >🎥 Follow</button>
+              )}
               <div className="text-[10px] text-game-text-dim uppercase tracking-wide">{c.team}{c.alive ? '' : ' · KO'}</div>
               <button onClick={onClose} aria-label="Close unit detail" className="w-6 h-6 flex items-center justify-center rounded border border-game-border text-game-text-dim hover:bg-white/5">✕</button>
             </div>
@@ -921,7 +930,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle }: { battle: BattleState }) {
+function LiveBattle({ battle, onFollow, inspectRequest }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null }) {
   const units = useGameStore((s) => s.units)
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
@@ -1048,6 +1057,18 @@ function LiveBattle({ battle }: { battle: BattleState }) {
       snapshotWaveRef.current = battle.combatants
     }
   }
+  // External "inspect this combatant" request (proto Hero lens → battlefield
+  // card). Opens the detail card for the unit if it's present in this battle.
+  useEffect(() => {
+    if (!inspectRequest) return
+    const live = battle.combatants.find((c) => c.id === inspectRequest.unitId)
+    if (!live) return
+    setSelectedId(live.id)
+    setSnapshot(live)
+    snapshotWaveRef.current = battle.combatants
+  // fire on each new request nonce
+  }, [inspectRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const closeDetail = () => {
     setSelectedId(null)
     setSnapshot(null)
@@ -1435,7 +1456,7 @@ function LiveBattle({ battle }: { battle: BattleState }) {
       </div>
 
       <Legend players={playersAlive} enemies={enemiesAlive} openWorld={isOpen} />
-      {selected && <UnitDetailOverlay c={selected} battle={battle} onClose={closeDetail} />}
+      {selected && <UnitDetailOverlay c={selected} battle={battle} onClose={closeDetail} onFollow={onFollow} />}
     </div>
   )
 }
@@ -1512,10 +1533,21 @@ export function Preview({ location }: { location: Location | null }) {
 // The viewer for one location's encounter: live battle if one is running,
 // otherwise the static form-up preview. Fills the flex column it's dropped in.
 
-export function BattleView({ locationId }: { locationId: string | null }) {
+// A request to inspect a specific combatant (open its detail card) raised from
+// outside the battle view — e.g. the proto Hero lens. Nonce-driven so repeats
+// re-fire. `onFollow` (when provided) surfaces a Follow action in the card.
+export interface BattleInspectRequest { unitId: string; nonce: number }
+
+export function BattleView({ locationId, onFollow, inspectRequest }: {
+  locationId: string | null
+  onFollow?: (unitId: string) => void
+  inspectRequest?: BattleInspectRequest | null
+}) {
   const battle    = useGameStore((s) => (locationId ? s.battles[locationId] : undefined))
   const locations = useGameStore((s) => s.locations)
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
-  return battle ? <LiveBattle battle={battle} /> : <Preview location={location} />
+  return battle
+    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} />
+    : <Preview location={location} />
 }

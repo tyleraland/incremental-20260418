@@ -781,10 +781,20 @@ const STATUS_TINT: Record<string, string> = {
 }
 function BattleStatus({ unit }: { unit: Unit }) {
   const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
+  const requestZoom          = useProtoStore((s) => s.requestZoom)
+  const requestBattleInspect = useProtoStore((s) => s.requestBattleInspect)
   const me = battle?.combatants.find((c) => c.id === unit.id)
   if (!battle || !me) return null
   const hpPct = Math.max(0, (me.hp / me.maxHp) * 100)
   const target = me.lockedTargetId ? battle.combatants.find((c) => c.id === me.lockedTargetId) : null
+  // Drop onto the battlefield and pop this hero's detail card (the big
+  // bottom-half readout) — the same card you'd get by tapping their chip.
+  function openCard() {
+    if (!unit.locationId) return
+    useGameStore.setState({ selectedLocationId: unit.locationId, combatLocationId: unit.locationId })
+    requestZoom(2)
+    requestBattleInspect(unit.id)
+  }
   return (
     <div className="mb-3 rounded-lg border border-game-border bg-game-bg/60 p-2.5 space-y-1.5">
       <div className="flex items-center justify-between">
@@ -807,6 +817,11 @@ function BattleStatus({ unit }: { unit: Unit }) {
           ))}
         </div>
       )}
+      <button
+        onClick={openCard}
+        title="Open this hero's battlefield detail card"
+        className="w-full mt-0.5 text-[11px] px-2 py-1 rounded-md border border-game-accent/50 bg-game-accent/10 text-game-accent hover:bg-game-accent/20 transition-colors"
+      >⚔ Battlefield card ▸</button>
     </div>
   )
 }

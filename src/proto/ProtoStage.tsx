@@ -142,6 +142,15 @@ export function ProtoStage() {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const stageOverlay        = useProtoStore((s) => s.stageOverlay)
   const closeStageOverlay   = useProtoStore((s) => s.closeStageOverlay)
+  const requestZoom         = useProtoStore((s) => s.requestZoom)
+  const battleInspectRequest = useProtoStore((s) => s.battleInspectRequest)
+
+  // Follow from the battlefield detail card: select the hero in the roster and
+  // lock the camera onto them (battleFollowId), staying on the battlefield.
+  function followFromCard(unitId: string) {
+    useGameStore.setState({ selectedUnitIds: [unitId], battleFollowId: unitId })
+    requestZoom(2)
+  }
 
   const [zoom, setZoom] = useState(0)       // continuous 0..2
   const [focus, setFocus] = useState({ x: 6 * CELL, y: 3.5 * CELL })
@@ -394,7 +403,7 @@ export function ProtoStage() {
               pointerEvents: mapActive ? 'none' : 'auto',
             }}
           >
-            <div className="h-full"><BattleView locationId={focusLoc.id} /></div>
+            <div className="h-full"><BattleView locationId={focusLoc.id} onFollow={followFromCard} inspectRequest={battleInspectRequest} /></div>
             {!battleLive && (
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] text-game-text-dim bg-game-bg/80 border border-game-border rounded-full px-3 py-1">
                 Formation preview — deploy heroes here to begin the fight
