@@ -1,12 +1,19 @@
 import { useState } from 'react'
 import { useGameStore, MONSTER_REGISTRY, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
-import { useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus } from './protoStore'
+import { ItemCodex } from '@/components/ItemCodex'
+import { INITIAL_EQUIPMENT } from '@/data/equipment'
+import type { EquipmentItem } from '@/types'
+import { useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward } from './protoStore'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
   wind: 'bg-green-400', water: 'bg-blue-400', neutral: 'bg-game-text-dim',
 }
+
+// Equipment lookup by id, so quest item rewards can be resolved to a real def
+// (name + stats) and inspected in an ItemCodex before you commit.
+const EQUIP_BY_ID: Record<string, EquipmentItem> = Object.fromEntries(INITIAL_EQUIPMENT.map((e) => [e.id, e]))
 
 // ── Location Detail ────────────────────────────────────────────────────────--
 //
@@ -41,6 +48,35 @@ const QUEST_HINT: Record<QuestStatus, string> = {
 // Template the mock quest copy with this site's signature foe / name / target.
 function fill(s: string, foe: string, place: string, n: number): string {
   return s.replace(/\{foe\}/g, foe).replace(/\{place\}/g, place).replace(/\{n\}/g, String(n))
+}
+
+// Reward pills. Gold is plain; item rewards are tappable — they open an item
+// codex so you can inspect the gear before accepting / after completing.
+function RewardChips({ rewards }: { rewards: QuestReward[] }) {
+  const [inspect, setInspect] = useState<EquipmentItem | null>(null)
+  return (
+    <>
+      {rewards.map((r, i) => {
+        if (r.kind === 'gold') {
+          return <span key={i} className="text-[10px] px-1.5 py-0.5 rounded border border-game-gold/40 bg-game-gold/10 text-game-gold">{r.amount} gold</span>
+        }
+        const it = EQUIP_BY_ID[r.itemId]
+        return (
+          <button
+            key={i}
+            onClick={() => it && setInspect(it)}
+            disabled={!it}
+            title={it ? `Inspect ${it.name}` : undefined}
+            className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-game-gold/50 bg-game-gold/15 text-game-gold hover:bg-game-gold/25 hover:border-game-gold transition-colors"
+          >
+            <span>{it?.name ?? r.itemId}</span>
+            <span className="opacity-60">›</span>
+          </button>
+        )
+      })}
+      {inspect && <ItemCodex item={inspect} onClose={() => setInspect(null)} />}
+    </>
+  )
 }
 
 function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: string; place: string }) {
@@ -93,9 +129,7 @@ function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: s
 
           <div className="flex flex-wrap items-center gap-1">
             <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Rewards</span>
-            {q.rewards.map((r) => (
-              <span key={r} className="text-[10px] px-1.5 py-0.5 rounded border border-game-gold/40 bg-game-gold/10 text-game-gold">{r}</span>
-            ))}
+            <RewardChips rewards={q.rewards} />
           </div>
 
           {status === 'available' && (
@@ -149,10 +183,15 @@ function QuestBoard({ location }: { location: Location }) {
           {showDone && (
             <div className="space-y-1">
               {done.map((q) => (
-                <div key={q.id} className="flex items-center gap-2 rounded-md border border-game-green/30 bg-game-green/5 px-2 py-1.5">
-                  <span className="w-5 h-5 rounded-full border border-game-green/50 text-game-green flex items-center justify-center text-[11px] leading-none shrink-0">✓</span>
-                  <span className="text-xs text-game-text flex-1 truncate">{fill(q.title, foe, place, q.target)}</span>
-                  <span className="text-[10px] text-game-text-dim truncate max-w-[48%]" title={q.rewards.join(', ')}>{q.rewards.join(' · ')}</span>
+                <div key={q.id} className="rounded-md border border-game-green/30 bg-game-green/5 px-2 py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full border border-game-green/50 text-game-green flex items-center justify-center text-[11px] leading-none shrink-0">✓</span>
+                    <span className="text-xs text-game-text flex-1 truncate">{fill(q.title, foe, place, q.target)}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1 mt-1 pl-7">
+                    <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Gave</span>
+                    <RewardChips rewards={q.rewards} />
+                  </div>
                 </div>
               ))}
             </div>

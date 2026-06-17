@@ -49,20 +49,25 @@ export const STORY_PATHS: StoryPath[] = [
 // finishing it unlocks the next in the chain. All mock + unpersisted. Display
 // strings template {foe} (the site's signature monster), {place} (location name)
 // and {n} (the objective target) at render so one chain reads fine everywhere.
+// Rewards are structured so item rewards can be inspected (open an item codex)
+// before you commit; `itemId` references a real equipment def (src/data/equipment).
+export type QuestReward =
+  | { kind: 'gold'; amount: number }
+  | { kind: 'item'; itemId: string }
 export interface QuestDef {
   id: string
   title: string
   story: string        // narrative blurb (shown when expanded)
   objective: string    // what you commit to
   target: number       // count that satisfies the objective
-  rewards: string[]
+  rewards: QuestReward[]
   requires: string[]   // quest ids that must be completed before this is eligible
 }
 export const LOCATION_QUESTS: QuestDef[] = [
-  { id: 'q-cull',    title: 'Cull the {foe}s',  story: 'The {foe}s have grown bold around {place}. Thin their numbers before they overrun the approach.', objective: 'Defeat {n} {foe}s', target: 20, rewards: ['120 gold', 'Familiar Charm'], requires: [] },
-  { id: 'q-forage',  title: 'Forage {place}',   story: 'The quartermaster needs reagents that only grow wild around {place}.',                              objective: 'Gather {n} reagents', target: 15, rewards: ['Sturdy Belt', '60 gold'], requires: [] },
-  { id: 'q-relic',   title: 'The Buried Relic', story: 'Scouts whisper of a relic lost beneath {place}, guarded by the {foe}s.',                            objective: 'Recover the relic',   target: 1,  rewards: ['Rare cache', '200 gold'], requires: ['q-cull'] },
-  { id: 'q-warlord', title: 'Break the Warlord',story: 'A warlord has rallied the {foe}s of {place} into a host. End the threat at its head.',             objective: 'Defeat the warlord',  target: 1,  rewards: ['Epic trophy', '500 gold'], requires: ['q-cull', 'q-forage'] },
+  { id: 'q-cull',    title: 'Cull the {foe}s',  story: 'The {foe}s have grown bold around {place}. Thin their numbers before they overrun the approach.', objective: 'Defeat {n} {foe}s', target: 20, rewards: [{ kind: 'gold', amount: 120 }, { kind: 'item', itemId: 'eq-leather' }], requires: [] },
+  { id: 'q-forage',  title: 'Forage {place}',   story: 'The quartermaster needs reagents that only grow wild around {place}.',                              objective: 'Gather {n} reagents', target: 15, rewards: [{ kind: 'item', itemId: 'eq-shield-wood' }, { kind: 'gold', amount: 60 }], requires: [] },
+  { id: 'q-relic',   title: 'The Buried Relic', story: 'Scouts whisper of a relic lost beneath {place}, guarded by the {foe}s.',                            objective: 'Recover the relic',   target: 1,  rewards: [{ kind: 'item', itemId: 'eq-wand' }, { kind: 'gold', amount: 200 }], requires: ['q-cull'] },
+  { id: 'q-warlord', title: 'Break the Warlord',story: 'A warlord has rallied the {foe}s of {place} into a host. End the threat at its head.',             objective: 'Defeat the warlord',  target: 1,  rewards: [{ kind: 'item', itemId: 'eq-greatsword' }, { kind: 'item', itemId: 'eq-chainmail' }, { kind: 'gold', amount: 500 }], requires: ['q-cull', 'q-forage'] },
 ]
 
 export type QuestStatus =
