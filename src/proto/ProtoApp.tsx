@@ -122,7 +122,7 @@ function needsAttention(u: Unit, viewed: Record<string, number>): boolean {
   return u.abilityPoints > 0 || u.skillPoints > 0 || (v !== undefined && u.level > v)
 }
 
-function RosterChip({ unit, selected, here, onSelect, onFocus }: { unit: Unit; selected: boolean; here: boolean; onSelect: () => void; onFocus: () => void }) {
+function RosterChip({ unit, selected, here, following, onSelect, onFocus }: { unit: Unit; selected: boolean; here: boolean; following: boolean; onSelect: () => void; onFocus: () => void }) {
   const equipment = useGameStore((s) => s.equipment)
   const viewed    = useGameStore((s) => s.viewedUnitLevels)
   const ds = getDerivedStats(unit, equipment)
@@ -144,12 +144,16 @@ function RosterChip({ unit, selected, here, onSelect, onFocus }: { unit: Unit; s
   return (
     <button
       onClick={tap}
-      title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}${here ? ' · on the viewed battlefield' : ''}\nTap to select · double-tap to jump the camera`}
+      title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}${here ? ' · on the viewed battlefield' : ''}${following ? ' · camera is following them' : ''}\nTap to select · double-tap to jump the camera`}
       className={[
         'relative shrink-0 w-[54px] flex flex-col items-center gap-0.5 px-0.5 py-1 rounded-lg border transition-all',
-        selected
-          ? (here ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/30' : 'border-amber-500/70 bg-amber-500/10 ring-1 ring-amber-500/30')
-          : 'border-transparent hover:bg-white/5',
+        // The follow cue is its own, always-on accent ring so the pinned hero
+        // stays obvious even while you're inspecting (selecting) someone else.
+        following
+          ? 'border-game-accent bg-game-accent/10 ring-2 ring-game-accent/60'
+          : selected
+            ? (here ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/30' : 'border-amber-500/70 bg-amber-500/10 ring-1 ring-amber-500/30')
+            : 'border-transparent hover:bg-white/5',
       ].join(' ')}
     >
       <div className="relative w-9 h-9 rounded-full p-[2px]" style={{ background: ring }}>
@@ -157,13 +161,19 @@ function RosterChip({ unit, selected, here, onSelect, onFocus }: { unit: Unit; s
           {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
         </div>
         <span className={`absolute -bottom-0 -right-0 w-2.5 h-2.5 rounded-full border-2 border-game-bg ${statusColor}`} />
+        {following && (
+          <span
+            title="Camera is following this hero"
+            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-game-accent border border-game-bg flex items-center justify-center text-[8px] leading-none shadow"
+          >🎥</span>
+        )}
         {needsAttention(unit, viewed) && (
           <span className="absolute -top-0.5 -left-0.5 w-3 h-3 rounded-full bg-game-gold border border-game-bg text-[7px] font-bold text-black flex items-center justify-center">!</span>
         )}
       </div>
-      <span className="text-[9px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
+      <span className={['text-[9px] font-medium leading-none truncate w-full text-center', following ? 'text-game-accent' : 'text-game-text'].join(' ')}>{unit.name.split(' ')[0]}</span>
       {/* cue: this hero is on the battlefield you're currently viewing */}
-      {here && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-accent" />}
+      {here && <span className={`absolute bottom-0 inset-x-2 h-0.5 rounded-full ${following ? 'bg-game-accent' : 'bg-game-accent/70'}`} />}
     </button>
   )
 }
@@ -235,6 +245,7 @@ export function ProtoApp() {
   const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
+  const battleFollowId   = useGameStore((s) => s.battleFollowId)
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
   const requestHeroTab   = useProtoStore((s) => s.requestHeroTab)
@@ -352,6 +363,7 @@ export function ProtoApp() {
                 unit={u}
                 selected={multi ? selectedUnitIds.includes(u.id) : selectedUnitIds[0] === u.id}
                 here={!!selectedLocId && u.locationId === selectedLocId}
+                following={battleFollowId === u.id}
                 onSelect={() => selectQuiet(u)}
                 onFocus={() => focusHero(u)}
               />
