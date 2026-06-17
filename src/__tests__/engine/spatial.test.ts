@@ -236,7 +236,7 @@ describe('movement behaviours', () => {
   })
 
   it('a faster Kiter ranged unit opens distance on a slower attacker', () => {
-    // Mira-style: high spd + ranged + kiter. Pursuer is melee and slower.
+    // Miri-style: high spd + ranged + kiter. Pursuer is melee and slower.
     const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant — we want shots/round, not cast tempo
     const b = createBattle({
       playerUnits: [eu({ id: 'r', spd: 18, int: 20, rangedRange: 4, maxHp: 999, hp: 999, moveSpeed: 1.2, skills: [fb], tactics: [{ id: 'kiter', rank: 1 }] })],

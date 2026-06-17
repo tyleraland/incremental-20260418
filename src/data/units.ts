@@ -32,7 +32,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   // ── Ranger (kiting archer) ──────────────────────────────────────────────────
   {
-    id: 'u2', name: 'Mira Ashdown', level: 1, exp: 0, expToNext: 10, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
+    id: 'u2', name: 'Miri Ashdown', level: 1, exp: 0, expToNext: 10, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
     class: 'Ranger', proficiencies: ['Bows'], locationId: 'prontera-field-1',
     abilities: { strength: 6, agility: 7, dexterity: 8, constitution: 4, intelligence: 3 },
     abilityPoints: 15, skillPoints: 1,

@@ -55,7 +55,7 @@ export const SCENARIO_REGISTRY: Record<string, ScenarioDef> = {
   'pg-threat-trial': {
     id: 'pg-threat-trial',
     name: 'The Threat Trial',
-    description: 'Three Stone Sentinels — slow slabs with huge HP/DEF but a feeble Slam. Bring the tank (Davan: Defensive Stance + Taunt) and a ranged kiter (Mira/Theron). Watch the §threat wobble: the kiter out-damages the tank and the sentinels peel toward it, then Taunt yanks them back for ~3s. The tank holds; the back line lives.',
+    description: 'Three Stone Sentinels — slow slabs with huge HP/DEF but a feeble Slam. Bring the tank (Davan: Defensive Stance + Taunt) and a ranged kiter (Miri/Theron). Watch the §threat wobble: the kiter out-damages the tank and the sentinels peel toward it, then Taunt yanks them back for ~3s. The tank holds; the back line lives.',
     wave: ['stone-sentinel', 'stone-sentinel', 'stone-sentinel'],
   },
   'pg-veiled-approach': {

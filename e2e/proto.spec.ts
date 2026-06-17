@@ -31,7 +31,7 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.waitForTimeout(600)
 
   // Double-tap a roster hero — focus: fly the camera to their battlefield + Hero.
-  await page.getByRole('button', { name: /Mira/ }).first().dblclick()
+  await page.getByRole('button', { name: /Miri/ }).first().dblclick()
   await page.waitForTimeout(1000)
   await shot('03-hero-battlestatus')
 
