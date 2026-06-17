@@ -31,15 +31,33 @@ function Meter({ label, pct, value, color }: { label: string; pct: number; value
   )
 }
 
+// Friendly names for the dungeon sub-regions a world location can open into.
+const REGION_NAMES: Record<string, string> = { 'geffen-dungeon': 'Geffen Dungeon', aerie: 'Sky Aerie' }
+
 export function LocationDetail({ location }: { location: Location }) {
   const units               = useGameStore((s) => s.units)
+  const locations           = useGameStore((s) => s.locations)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
+  const setMapPage          = useGameStore((s) => s.setMapPage)
   const battle              = useGameStore((s) => s.battles[location.id])
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
   const selected            = units.find((u) => u.id === selectedUnitIds[0]) ?? null
+  // Multi-select bulk deploy: every selected hero, split by who's already here.
+  const selectedUnits       = units.filter((u) => selectedUnitIds.includes(u.id))
+  const toDeploy            = selectedUnits.filter((u) => u.locationId !== location.id)
+  const toRecall            = selectedUnits.filter((u) => u.locationId === location.id)
+
+  // "Enter <Region>" — a world location can open into a dungeon map page.
+  const entryRegion = location.dungeonEntryRegion
+  function enterRegion() {
+    if (!entryRegion) return
+    const first = locations.find((l) => l.region === entryRegion)
+    setMapPage(entryRegion)
+    if (first) setSelectedLocation(first.id)
+  }
 
   const storyChoice = useProtoStore((s) => s.storyChoice)
   const chooseStory = useProtoStore((s) => s.chooseStory)
@@ -69,8 +87,30 @@ export function LocationDetail({ location }: { location: Location }) {
         </div>
       </div>
 
-      {/* deploy / recall the selected hero (deploy lives here now, not a tab) */}
-      {selected && (
+      {/* enter a dungeon sub-region (its own map page) */}
+      {entryRegion && (
+        <button
+          onClick={enterRegion}
+          className="w-full flex items-center gap-2 rounded-md border border-rose-700/50 bg-rose-950/20 px-2.5 py-2 text-left hover:border-rose-600/70"
+        >
+          <span className="text-base">◆</span>
+          <span className="text-xs text-game-text flex-1">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
+          <span className="text-[11px] text-rose-300">descend ›</span>
+        </button>
+      )}
+
+      {/* deploy / recall — single selected hero, or the whole multi-selection */}
+      {selectedUnits.length > 1 ? (
+        <div className="flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5">
+          <span className="text-xs text-game-text flex-1 truncate">{selectedUnits.length} selected</span>
+          {toDeploy.length > 0 && (
+            <button onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)} className="text-[11px] px-2 py-1 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15">➤ Deploy {toDeploy.length}</button>
+          )}
+          {toRecall.length > 0 && (
+            <button onClick={() => assignUnits(toRecall.map((u) => u.id), null)} className="text-[11px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">↩ Recall {toRecall.length}</button>
+          )}
+        </div>
+      ) : selected && (
         <div className="flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5">
           <span className="text-xs text-game-text flex-1 truncate">{selected.name.split(' ')[0]}</span>
           {selected.locationId === location.id
@@ -85,7 +125,7 @@ export function LocationDetail({ location }: { location: Location }) {
       </div>
 
       {/* site upgrades — placeholder (attunement economy scrapped for now;
-          kept as a stub so the management surface still reads, see ui-overhaul.md) */}
+          kept as a stub so the management surface still reads, see BACKLOG.md) */}
       <div className="rounded-md border border-dashed border-game-border bg-game-bg/40 px-2.5 py-2">
         <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-0.5">Site upgrades</div>
         <div className="text-[11px] text-game-muted">Spend a location currency on vendors / drop rate / spawns — design TBD.</div>

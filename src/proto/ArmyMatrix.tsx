@@ -97,7 +97,7 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
     if (heroLocks.includes(u.id)) continue
     if (facet === 'tactics') {
       // Placeholder "intelligence": casters kite, everyone else charges. The real
-      // recommendation engine lands later (see ui-overhaul.md).
+      // recommendation engine lands later (see BACKLOG.md → UI Tactician shell).
       const want = (u.class === 'Mage' || u.class === 'Cleric') ? 'kiter' : 'charger'
       const equipped = new Set(u.tactics.map((t) => t.id))
       const free = MAX_UNIT_TACTICS - u.tactics.length

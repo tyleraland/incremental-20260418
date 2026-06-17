@@ -242,6 +242,9 @@ export function ProtoApp() {
   const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
+  // Multi-select: when on, single-tap toggles a hero in/out of the selection for
+  // bulk deploy (Location lens). Off = single-select (tap replaces).
+  const [multi, setMulti] = useState(false)
   const groups = useMemo(() => groupRoster(units, sortMode, sortDir, viewed, locations), [units, sortMode, sortDir, viewed, locations])
   function pickSort(m: SortMode) {
     if (m === sortMode) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -281,9 +284,17 @@ export function ProtoApp() {
 
   // Single-tap: quiet select — change the active hero WITHOUT moving the camera
   // or the focused location, so you can pick someone to deploy/compare while
-  // still looking at where you are.
+  // still looking at where you are. In multi-select mode it toggles membership.
   function selectQuiet(u: Unit) {
-    useGameStore.setState({ selectedUnitIds: [u.id] })
+    if (multi) {
+      useGameStore.setState((s) => ({
+        selectedUnitIds: s.selectedUnitIds.includes(u.id)
+          ? s.selectedUnitIds.filter((id) => id !== u.id)
+          : [...s.selectedUnitIds, u.id],
+      }))
+    } else {
+      useGameStore.setState({ selectedUnitIds: [u.id] })
+    }
   }
   // Double-tap: focus — fly the stage to the hero's battlefield, follow the
   // camera, and drill the lens into Hero.
@@ -321,13 +332,24 @@ export function ProtoApp() {
       {/* roster rail — always visible, shared selector + sort (grouped) */}
       <div className="shrink-0 flex items-stretch gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
         <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
+        {/* multi-select toggle — build a selection for bulk deploy */}
+        <button
+          onClick={() => setMulti((v) => !v)}
+          title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
+          aria-label="Toggle multi-select"
+          className={['flex flex-col items-center justify-center w-8 h-10 rounded-lg border shrink-0',
+            multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
+        >
+          <span className="text-xs leading-none">{multi ? '✓' : '⊕'}</span>
+          <span className="text-[8px] leading-none mt-0.5">{multi ? selectedUnitIds.length : 'multi'}</span>
+        </button>
         <div className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar flex-1">
           {groups.map((g) => {
             const chips = g.units.map((u) => (
               <RosterChip
                 key={u.id}
                 unit={u}
-                selected={selectedUnitIds[0] === u.id}
+                selected={multi ? selectedUnitIds.includes(u.id) : selectedUnitIds[0] === u.id}
                 here={!!selectedLocId && u.locationId === selectedLocId}
                 onSelect={() => selectQuiet(u)}
                 onFocus={() => focusHero(u)}

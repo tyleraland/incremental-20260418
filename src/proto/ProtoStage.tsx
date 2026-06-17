@@ -17,6 +17,7 @@ import { StageOverlay } from './StageOverlay'
 // continuously; the zoom rail / breadcrumb tween to the named stops.
 
 const LOCATION_COORDS: Record<string, [number, number]> = {
+  // World page
   'geffen-city': [2, 3], 'elite-four': [2, 2], 'geffen-field-1': [3, 3],
   'prontera-field-1': [4, 3], 'prontera-city': [5, 3], 'prontera-field-3': [6, 3],
   'harpy-roost': [7, 3], 'boar-meadow': [6, 4], 'wolf-den': [7, 4],
@@ -27,6 +28,20 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'pg-pillared-hall': [10, 5], 'pg-moat': [8, 6], 'pg-overgrown-maze': [9, 6],
   'pg-elemental-circle': [10, 6], 'ember-hollow': [7, 7], 'cinder-dunes': [8, 7],
   'hollow-barrow': [9, 7], 'irradiated-marsh': [10, 7],
+  // Geffen Dungeon page — L-shape (Floor 1 → Floor 5)
+  'geffen-dungeon-1': [2, 2], 'geffen-dungeon-2': [3, 2], 'geffen-dungeon-3': [4, 2],
+  'geffen-dungeon-4': [4, 3], 'geffen-dungeon-5': [4, 4],
+  // Sky Aerie page
+  'aerie-1': [3, 3],
+}
+
+// Map pages (regions) reachable in the stage. Dungeons are entered from a world
+// location's `dungeonEntryRegion` (LocationDetail) and exited back to their
+// `entryLocationId`. Mirrors PAGES in the production Map.
+const REGIONS: Record<string, { name: string; icon: string; entryLocationId?: string }> = {
+  world:            { name: 'World',          icon: '🗺' },
+  'geffen-dungeon': { name: 'Geffen Dungeon', icon: '◆', entryLocationId: 'geffen-city' },
+  aerie:            { name: 'Sky Aerie',      icon: '▲', entryLocationId: 'harpy-roost' },
 }
 
 const CELL = 96 // world-space px per grid step
@@ -123,6 +138,8 @@ export function ProtoStage() {
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
   const battles             = useGameStore((s) => s.battles)
+  const mapPageId           = useGameStore((s) => s.mapPageId)
+  const setMapPage          = useGameStore((s) => s.setMapPage)
   const stageOverlay        = useProtoStore((s) => s.stageOverlay)
   const closeStageOverlay   = useProtoStore((s) => s.closeStageOverlay)
 
@@ -145,9 +162,25 @@ export function ProtoStage() {
     return () => ro.disconnect()
   }, [])
 
-  const worldLocs = locations.filter((l) => l.region === 'world' && LOCATION_COORDS[l.id])
+  // The stage renders one region (map page) at a time. Dungeon pages are entered
+  // from a world location's "Enter <Region>" (LocationDetail) and exited here.
+  const pageLocs = locations.filter((l) => l.region === mapPageId && LOCATION_COORDS[l.id])
+  const region = REGIONS[mapPageId] ?? REGIONS.world
   const focusLoc = selectedLocationId ? locations.find((l) => l.id === selectedLocationId) ?? null : null
   const maxZoom = focusLoc ? 2 : 1   // can't dive without a focused location
+
+  // Centre of the current page (centroid of its placed cells) — the World stop.
+  const pageCenter = (() => {
+    if (pageLocs.length === 0) return { x: 6 * CELL, y: 3.5 * CELL }
+    let sx = 0, sy = 0
+    for (const l of pageLocs) { const c = LOCATION_COORDS[l.id]; sx += worldX(c); sy += worldY(c) }
+    return { x: sx / pageLocs.length, y: sy / pageLocs.length }
+  })()
+  function leaveDungeon() {
+    const back = region.entryLocationId
+    setMapPage('world')
+    if (back) setSelectedLocation(back)
+  }
 
   // Tween the zoom axis to a named stop (button / breadcrumb / dive).
   function animateZoomTo(target: number) {
@@ -230,12 +263,12 @@ export function ProtoStage() {
   function flyTo(loc: Location) { setSelectedLocation(loc.id); animateZoomTo(Math.max(1, zoom)) }
   function dive(loc: Location)  { setSelectedLocation(loc.id); animateZoomTo(2) }
   function gotoStop(z: number) {
-    if (z === 0) { setFocus({ x: 6 * CELL, y: 3.5 * CELL }); setDrag({ x: 0, y: 0 }) }
+    if (z === 0) { setFocus(pageCenter); setDrag({ x: 0, y: 0 }) }
     animateZoomTo(z)
   }
 
   const lines: { x1: number; y1: number; x2: number; y2: number }[] = []
-  for (const l of worldLocs) {
+  for (const l of pageLocs) {
     const a = LOCATION_COORDS[l.id]; if (!a) continue
     for (const cid of l.connections) {
       if (cid < l.id) continue
@@ -246,9 +279,9 @@ export function ProtoStage() {
   const battleLive = focusLoc ? !!battles[focusLoc.id] : false
   const nearest = Math.round(zoom)
 
-  // Occupied locations (have ≥1 hero + a map coord) — the ‹ › stepper cycles
-  // through these, keeping the current altitude (≥ locale).
-  const occupied = locations.filter((l) => LOCATION_COORDS[l.id] && units.some((u) => u.locationId === l.id))
+  // Occupied locations on THIS page (have ≥1 hero + a map coord) — the ‹ ›
+  // stepper cycles through these, keeping the current altitude (≥ locale).
+  const occupied = pageLocs.filter((l) => units.some((u) => u.locationId === l.id))
   const occIdx = occupied.findIndex((l) => l.id === selectedLocationId)
   function stepLocation(dir: -1 | 1) {
     if (occupied.length === 0) return
@@ -276,8 +309,18 @@ export function ProtoStage() {
         >‹</button>
 
         <div className="flex items-center bg-game-bg/85 border border-game-border rounded-lg px-1 py-0.5 backdrop-blur-sm">
+          {/* In a dungeon page, a leading ↩ chip pops back to the world. */}
+          {mapPageId !== 'world' && (
+            <button
+              onClick={leaveDungeon}
+              title={`Leave ${region.name}`}
+              aria-label={`Leave ${region.name}`}
+              className="px-1.5 py-1 rounded-md flex items-center gap-0.5 text-game-text-dim hover:text-game-text"
+            ><span aria-hidden>↩</span></button>
+          )}
           {([0, 1, 2] as const).map((z, i) => {
-            const label = z === 0 ? 'World' : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
+            const label = z === 0 ? region.name : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
+            const icon = z === 0 ? region.icon : (['🗺', '⌖', '⚔'][z])
             const disabled = z > 0 && !focusLoc
             return (
               <span key={z} className="flex items-center">
@@ -291,7 +334,7 @@ export function ProtoStage() {
                     disabled ? 'opacity-40 cursor-not-allowed' : '',
                   ].join(' ')}
                 >
-                  <span aria-hidden>{['🗺', '⌖', '⚔'][z]}</span>
+                  <span aria-hidden>{icon}</span>
                   <span className="truncate">{label}</span>
                 </button>
               </span>
@@ -333,7 +376,7 @@ export function ProtoStage() {
                       stroke="#2a2a3a" strokeWidth={3} strokeDasharray="2 6" strokeLinecap="round" />
               ))}
             </svg>
-            {worldLocs.map((loc) => (
+            {pageLocs.map((loc) => (
               <WorldNode key={loc.id} loc={loc} units={units} equipment={equipment}
                          selected={selectedLocationId === loc.id}
                          onTap={() => flyTo(loc)} onDive={() => dive(loc)} />

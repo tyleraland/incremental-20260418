@@ -3,6 +3,45 @@
 Deferred work and known shortcuts for the combat engine (`src/engine`).
 Implemented behavior is in `CLAUDE.md` → Feature Specifications.
 
+## UI — "Tactician" shell (remaining work)
+
+The split-screen Tactician shell (`src/proto/`) is now the **default app UI**
+(legacy tab-bar UI behind `?classic=1`). The P0 build/combat-parity gaps and P1
+#6–8 (beast companion, dungeons/multi-page maps, multi-select bulk deploy) and
+the P2 Items polish (equipped/held filter + "held by <hero>" labels) are **done**.
+What's left:
+
+- **Classic-UI retirement (cleanup).** Once the shell is proven in the wild,
+  delete the legacy tab-bar path: `TabBar`, the `?classic=1` / `classicMode`
+  branch in `App.tsx`, and the standalone page routing. **Keep the page
+  *components*** the shell embeds (`Guild`/`Reports`/`Time`) and the data/store;
+  only `pages/Map.tsx`, `pages/Units.tsx`, `pages/Inventory.tsx`, and
+  `components/TabBar.tsx` become removable (confirm nothing else imports them).
+  The dev `?perf` harness still wants the single-screen `BattleView`, so either
+  keep a minimal perf render path or point it at the shell's battle stage first.
+- **Crafting** (`craft`, `learnedRecipes`) — not surfaced in the shell. Note it's
+  **broken even in production**: drops are `drop-*` and recipe outputs `craft-*`,
+  neither of which are real item defs (see *Economy & resources* below). Data
+  work first, then a crafting surface (could embed like Guild/Reports).
+- **Map polish (P2)** — scenario markers, an open-world badge on world nodes, a
+  round counter in the breadcrumb, and the full `LocationCodex` in the Location
+  lens (only the per-monster `MonsterCodex` card is wired today).
+- **Proto mock systems** (backed only by `protoStore`, not saved) to resolve
+  before they can be considered shipped:
+  - **Saga / lore** (`lore.ts`) — deterministic flavour text; cosmetic.
+  - **Auto intelligence** (`ArmyMatrix.tsx`) — the two-tap Auto *assigns* for
+    real, but the recommendation logic is a placeholder heuristic (casters →
+    Kiter, else Charger; gear → best-in-slot in the worn category).
+  - **Attunement / site upgrades** — scrapped; a placeholder stub in
+    `LocationDetail`. The catalog/economy lives dormant in `protoStore.ts`
+    (`LOCATION_UPGRADES`/`attunement*`) if ever revived.
+  - **Proto UI state** (zoom level, hero locks, stage overlay, roster
+    sort/multi-select) is ephemeral — decide what, if anything, should persist
+    like the production expand/selection `localStorage` keys.
+- **Explicit non-gaps** (don't build unless the underlying feature lands):
+  *Weapon-set A/B switch* has no production analog (weapon sets aren't a real
+  game feature yet); the shell intentionally edits only the active set.
+
 ## Long-horizon shape changes
 
 - **✅ Combat lives inside the Map tab.** Done — the standalone Combat tab is

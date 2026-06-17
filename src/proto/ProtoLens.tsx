@@ -27,7 +27,7 @@ import { LocationDetail } from './LocationDetail'
 // drives navigation, not the lens.
 
 type Top = 'location' | 'hero' | 'party' | 'items'
-type HeroSub = 'summary' | 'skills' | 'gear' | 'tactics' | 'saga'
+type HeroSub = 'summary' | 'skills' | 'gear' | 'tactics' | 'pet' | 'saga'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location', label: 'Location', icon: '⌖' },
   { id: 'hero',     label: 'Hero',     icon: '◈' },
@@ -38,6 +38,8 @@ const HERO_SUBS: { id: HeroSub; label: string }[] = [
   { id: 'summary', label: 'Summary' }, { id: 'skills', label: 'Skills' }, { id: 'gear', label: 'Gear' },
   { id: 'tactics', label: 'Tactics' }, { id: 'saga', label: 'Saga' },
 ]
+// The Pet sub only appears once a hero has a beast companion.
+const PET_SUB: { id: HeroSub; label: string } = { id: 'pet', label: 'Pet' }
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
@@ -492,6 +494,114 @@ function PartyDoctrine() {
   )
 }
 
+// ── Pet lens (beast companion) ────────────────────────────────────────────────
+// Surfaces only once a hero learns Beast Companion. Statline scales with the
+// hero's level (kept in sync with companionToEngineInput); tactics use the same
+// per-channel priority rules as a hero's (pets have no skills, so no inherited).
+function CompanionLens({ unit }: { unit: Unit }) {
+  const equipCompanionTactic   = useGameStore((s) => s.equipCompanionTactic)
+  const unequipCompanionTactic = useGameStore((s) => s.unequipCompanionTactic)
+  const moveCompanionTactic    = useGameStore((s) => s.moveCompanionTactic)
+  const [adding, setAdding] = useState(false)
+  const comp = unit.companion
+  if (!comp) return null
+
+  const lv = Math.max(1, unit.level)
+  const stats: [string, number][] = [['HP', 50 + 14 * lv], ['ATK', 7 + 2 * lv], ['DEF', 3 + lv]]
+  const equipped = comp.tactics
+  const equippedIds = new Set(equipped.map((t) => t.id))
+  const byChannel = (ch: string) => equipped.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch)
+  const available = listTactics('unit').filter((d) => !equippedIds.has(d.id))
+  const atCap = equipped.length >= MAX_UNIT_TACTICS
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-2xl leading-none">🐺</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-game-text truncate">{comp.name}</div>
+          <div className="text-[11px] text-game-text-dim">Beast companion · scales with you (Lv {lv})</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5">
+        {stats.map(([k, v]) => (
+          <div key={k} className="rounded-lg bg-game-bg border border-game-border py-1.5 flex flex-col items-center">
+            <span className="text-sm font-semibold text-game-text tabular-nums leading-none">{v}</span>
+            <span className="text-[9px] text-game-text-dim mt-0.5">{k}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[10px] text-game-muted leading-snug">Fights at your side on a short leash; rejoins when you next deploy. Levels with you (a dedicated pet XP track is coming).</p>
+
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Pet tactics</span>
+        <span className="text-[10px] text-game-text-dim">{equipped.length}/{MAX_UNIT_TACTICS}</span>
+      </div>
+      {equipped.length === 0 ? (
+        <p className="text-[11px] text-game-muted italic">No tactics — the pet just holds and bites the nearest foe.</p>
+      ) : (
+        <div className="space-y-3">
+          {CHANNELS.map((ch) => {
+            const slots = byChannel(ch.id)
+            if (slots.length === 0) return null
+            return (
+              <div key={ch.id}>
+                <div className="text-[10px] text-game-muted mb-1">{ch.label}</div>
+                <div className="space-y-1">
+                  {slots.map((t, i) => {
+                    const def = TACTIC_REGISTRY[t.id]
+                    return (
+                      <div key={t.id} className="flex items-start gap-1.5 rounded-md border border-game-border bg-game-bg px-2 py-1.5">
+                        <span className="text-[10px] text-game-muted w-4 text-center tabular-nums pt-0.5">{i + 1}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium text-game-text">{def?.name ?? t.id}</div>
+                          <div className="text-[10px] text-game-text-dim leading-snug">{def?.description}</div>
+                        </div>
+                        <div className="flex flex-col gap-0.5 shrink-0">
+                          <button onClick={() => moveCompanionTactic(unit.id, t.id, -1)} className="w-5 h-4 rounded bg-game-border/60 text-[9px] text-game-text-dim hover:text-game-text leading-none">▲</button>
+                          <button onClick={() => moveCompanionTactic(unit.id, t.id, 1)} className="w-5 h-4 rounded bg-game-border/60 text-[9px] text-game-text-dim hover:text-game-text leading-none">▼</button>
+                        </div>
+                        <button onClick={() => unequipCompanionTactic(unit.id, t.id)} className="text-game-muted hover:text-red-300 text-xs shrink-0 pt-0.5">✕</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div>
+        <button
+          onClick={() => setAdding((v) => !v)}
+          disabled={atCap}
+          className={['text-xs px-3 py-1.5 rounded-lg border w-full transition-colors',
+            atCap ? 'border-game-border text-game-muted cursor-not-allowed' : 'border-game-primary/50 text-game-text hover:bg-game-primary/10'].join(' ')}
+        >{atCap ? 'Tactic slots full' : adding ? 'Close' : '＋ Add tactic'}</button>
+        {adding && !atCap && (
+          <div className="mt-1.5 space-y-1 max-h-44 overflow-y-auto">
+            {available.map((def) => (
+              <button
+                key={def.id}
+                onClick={() => { equipCompanionTactic(unit.id, def.id); setAdding(false) }}
+                className="w-full text-left rounded-md border border-game-border bg-game-bg px-2 py-1.5 hover:border-game-primary/50"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium text-game-text">{def.name}</span>
+                  <span className="text-[9px] text-game-muted capitalize">{def.channel}</span>
+                </div>
+                <div className="text-[10px] text-game-text-dim leading-snug">{def.description}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Saga lens ─────────────────────────────────────────────────────────────────
 function SagaLens({ unit }: { unit: Unit }) {
   const eventLog = useGameStore((s) => s.eventLog)
@@ -528,7 +638,7 @@ function SagaLens({ unit }: { unit: Unit }) {
 // Assign learned active skills to the 6-slot action bar — the loadout the hero
 // casts in battle. Learning new skills / spending points is "research" and lives
 // in the top stage overlay (Skill tree ▸), so you can tweak the bar while the
-// fight plays. (See ui-overhaul.md for the decisions-bottom / details-top split.)
+// fight plays — the shell's "decisions in the lens, details/research on top" split.
 function SkillsLens({ unit }: { unit: Unit }) {
   const setActionSlot   = useGameStore((s) => s.setActionSlot)
   const equipment       = useGameStore((s) => s.equipment)
@@ -756,22 +866,45 @@ function canUse(it: EquipmentItem, unit: Unit): boolean {
   return true
 }
 
+// Which hero (if any) holds each gear id — worn or reserved in a weapon set /
+// sideboard. Drives "held by <hero>" labels and the equipped/unequipped filter.
+function heldByMap(units: Unit[]): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const u of units) {
+    const refs = [
+      u.weaponSets[0].mainHand, u.weaponSets[0].offHand,
+      u.weaponSets[1].mainHand, u.weaponSets[1].offHand,
+      u.equipment.armor, u.equipment.accessory, u.equipment.sideboard1, u.equipment.sideboard2,
+    ]
+    for (const id of refs) if (id) m.set(id, u.name)
+  }
+  return m
+}
+type EquipFilter = 'both' | 'equipped' | 'unequipped'
+const EQUIP_FILTER_NEXT: Record<EquipFilter, EquipFilter> = { both: 'equipped', equipped: 'unequipped', unequipped: 'both' }
+const EQUIP_FILTER_LABEL: Record<EquipFilter, string> = { both: 'All', equipped: 'Held', unequipped: 'Free' }
+
 function ItemsLens({ unit }: { unit: Unit | null }) {
   const equipment = useGameStore((s) => s.equipment)
   const miscItems = useGameStore((s) => s.miscItems)
   const equipItem = useGameStore((s) => s.equipItem)
   const units     = useGameStore((s) => s.units)
-  // Hide gear reserved (worn/sideboarded) by other heroes once a hero is focused.
+  // Who holds what (worn/reserved) — held gear is labelled, not hidden; the
+  // equip action is still blocked for gear reserved by *another* hero.
+  const heldBy = heldByMap(units)
   const reserved = unit ? reservedByOthers(units, unit.id) : null
   const [filters, setFilters] = useState<Record<FilterKey, FilterState>>({ weapon: 'off', armor: 'off', accessory: 'off', tool: 'off', material: 'off' })
   // Scope: everything in the stash, vs only what THIS hero can equip/use.
   const [scope, setScope] = useState<'all' | 'usable'>('all')
+  // Equipped-state filter: all gear ↔ only held ↔ only free.
+  const [equipFilter, setEquipFilter] = useState<EquipFilter>('both')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const usable = scope === 'usable' && !!unit
   const includes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'include')
   const excludes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'exclude')
   const visible = (k: FilterKey) => (includes.length === 0 || includes.includes(k)) && !excludes.includes(k)
+  const passesEquip = (id: string) => equipFilter === 'both' || (equipFilter === 'equipped' ? heldBy.has(id) : !heldBy.has(id))
   const cycle = (k: FilterKey) => setFilters((f) => ({ ...f, [k]: nextState(f[k]) }))
   const toggle = (id: string) => setCollapsed((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
@@ -782,7 +915,12 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
       {/* slim header line + scope toggle */}
       <div className="flex items-center gap-2 text-[10px] text-game-text-dim">
         <span className="truncate">Stash · {equipment.length} gear · {miscItems.length} mat{unit ? <> · vs <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : null}</span>
-        <div className="ml-auto flex rounded-md border border-game-border overflow-hidden shrink-0">
+        <button
+          onClick={() => setEquipFilter((f) => EQUIP_FILTER_NEXT[f])}
+          title={`Equipped state: ${EQUIP_FILTER_LABEL[equipFilter]}`}
+          className={`px-2 py-0.5 rounded-md border shrink-0 ${equipFilter === 'both' ? 'border-game-border text-game-text-dim hover:text-game-text' : 'border-game-primary/50 bg-game-primary/15 text-game-text'}`}
+        >{equipFilter === 'equipped' ? '◉' : equipFilter === 'unequipped' ? '○' : '◐'} {EQUIP_FILTER_LABEL[equipFilter]}</button>
+        <div className="flex rounded-md border border-game-border overflow-hidden shrink-0">
           <button onClick={() => setScope('all')} className={`px-2 py-0.5 ${scope === 'all' ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>All</button>
           <button onClick={() => unit && setScope('usable')} disabled={!unit} className={`px-2 py-0.5 border-l border-game-border ${usable ? 'bg-game-primary/20 text-game-text' : unit ? 'text-game-text-dim hover:text-game-text' : 'text-game-muted cursor-not-allowed'}`}>{unit ? `${unit.name.split(' ')[0]} can use` : 'Usable'}</button>
         </div>
@@ -813,9 +951,10 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
 
       {ITEM_CATEGORIES.map((cat) => {
         if (!visible(filterKeyOf(cat))) return null
-        let items = equipment.filter((e) => e.category === cat)
-        if (reserved) items = items.filter((it) => !reserved.has(it.id))
+        let items = equipment.filter((e) => e.category === cat && passesEquip(e.id))
         if (usable && unit) items = items.filter((it) => canUse(it, unit))
+        // Held gear sinks to the bottom of its group (available first).
+        items = [...items].sort((a, b) => (heldBy.has(a.id) ? 1 : 0) - (heldBy.has(b.id) ? 1 : 0))
         if (items.length === 0) return null
         const slot = CAT_SLOT[cat]
         const currentId = unit && slot ? (slot === 'mainHand' ? unit.weaponSets[unit.activeWeaponSet].mainHand : unit.equipment[slot as keyof typeof unit.equipment]) : null
@@ -832,18 +971,26 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
               <div className="space-y-1.5">
                 {items.map((it) => {
                   const worn = current?.id === it.id
+                  const holder = heldBy.get(it.id)
+                  const otherHolds = !!reserved && reserved.has(it.id)   // held by a hero that isn't the focused one
                   const restriction = unit && !worn ? equipRestriction(it, unit) : null
-                  const rel = unit && slot && !worn && !restriction ? relativeDeltas(it, current) : []
+                  const rel = unit && slot && !worn && !restriction && !otherHolds ? relativeDeltas(it, current) : []
                   return (
                     <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-2">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-game-text font-medium truncate flex-1">{it.name}</span>
                         {it.slots ? <span className="text-[9px] text-game-text-dim" title={`${it.slots} card sockets`}>◳{it.slots}</span> : null}
-                        {unit && slot && (worn
-                          ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
-                          : restriction
-                          ? <span className="text-[10px] text-game-muted shrink-0" title={`Can't equip — ${restriction}`}>{restriction}</span>
-                          : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)}
+                        {unit && slot
+                          ? (worn
+                            ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
+                            : otherHolds
+                            ? <span className="text-[10px] text-game-muted shrink-0 truncate max-w-[8rem]" title={`Held by ${holder}`}>held · {holder?.split(' ')[0]}</span>
+                            : restriction
+                            ? <span className="text-[10px] text-game-muted shrink-0" title={`Can't equip — ${restriction}`}>{restriction}</span>
+                            : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)
+                          : holder
+                          ? <span className="text-[10px] text-game-muted shrink-0 truncate max-w-[8rem]" title={`Held by ${holder}`}>held · {holder.split(' ')[0]}</span>
+                          : <span className="text-[10px] text-game-muted shrink-0">free</span>}
                       </div>
                       <TraitRow traits={objectiveChips(it)} className="mt-1" />
                       {rel.length > 0 && (
@@ -920,6 +1067,11 @@ export function ProtoLens() {
   // a prompt to deploy / focus a location).
   const squad = location ? units.filter((u) => u.locationId === location.id) : []
 
+  // Hero sub-tabs: the Pet tab only appears once this hero has a companion.
+  const heroSubs = unit?.companion ? [...HERO_SUBS, PET_SUB] : HERO_SUBS
+  // Guard a stale 'pet' selection (switched to a companionless hero).
+  const effSub: HeroSub = heroSub === 'pet' && !unit?.companion ? 'summary' : heroSub
+
   return (
     <div className="h-full flex flex-col bg-game-surface/40 min-h-0">
       <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
@@ -943,12 +1095,12 @@ export function ProtoLens() {
       {/* Hero sub-tabs only appear on the Hero altitude. */}
       {top === 'hero' && unit && (
         <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
-          {HERO_SUBS.map((s) => (
+          {heroSubs.map((s) => (
             <button
               key={s.id}
               onClick={() => setHeroSub(s.id)}
               className={['text-[11px] px-2 py-0.5 rounded-full transition-colors',
-                heroSub === s.id ? 'bg-game-primary/20 text-game-text border border-game-primary/40' : 'text-game-text-dim hover:text-game-text border border-transparent'].join(' ')}
+                effSub === s.id ? 'bg-game-primary/20 text-game-text border border-game-primary/40' : 'text-game-text-dim hover:text-game-text border border-transparent'].join(' ')}
             >{s.label}</button>
           ))}
           <button
@@ -964,11 +1116,12 @@ export function ProtoLens() {
           <>
             <FocusCue unit={unit} location={location} />
             <BattleStatus unit={unit} />
-            {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
-            {heroSub === 'skills'  && <SkillsLens unit={unit} />}
-            {heroSub === 'gear'    && <GearLens unit={unit} />}
-            {heroSub === 'tactics' && <TacticianLens unit={unit} />}
-            {heroSub === 'saga'    && <SagaLens unit={unit} />}
+            {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+            {effSub === 'skills'  && <SkillsLens unit={unit} />}
+            {effSub === 'gear'    && <GearLens unit={unit} />}
+            {effSub === 'tactics' && <TacticianLens unit={unit} />}
+            {effSub === 'pet'     && <CompanionLens unit={unit} />}
+            {effSub === 'saga'    && <SagaLens unit={unit} />}
           </>
         ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
 

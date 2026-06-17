@@ -1,4 +1,5 @@
 import { useGameStore, getAvailableSkills, SKILL_REGISTRY } from '@/stores/useGameStore'
+import { buildEngineSkill } from '@/engine'
 import { type StageOverlay as Overlay } from './protoStore'
 
 // ── Stage overlay (top half = details / research) ─────────────────────────────--
@@ -20,6 +21,18 @@ export function StageOverlay({ overlay, onClose }: { overlay: Overlay; onClose: 
       </div>
     </div>
   )
+}
+
+// The simultaneous-active cap the engine gates on (firewalls a caster can keep
+// up, or how many of a capped buff/status its team can carry) — null if uncapped.
+// Mirrors engine `skillActiveCap`'s two flavours, read statically from the def so
+// the tree can hint it without a live battle (the battle card shows live n/max).
+function skillCapMax(skillId: string, level: number): number | null {
+  const es = buildEngineSkill(skillId, Math.max(1, level))
+  if (!es) return null
+  if (es.wall) return es.wall.maxActive
+  if (es.statusApplied && es.statusMaxActive != null) return es.statusMaxActive
+  return null
 }
 
 // ── Skill tree (learn skills / spend skill points) ────────────────────────────--
@@ -49,6 +62,7 @@ function SkillTree({ unitId }: { unitId: string }) {
           const unmet = skill.requires.filter((r) => (unit.learnedSkills[r.skillId] ?? 0) < r.minLevel)
           // Per-level preview: at level N, what the *next* point buys.
           const nextDesc = !maxed && current > 0 ? skill.description(current + 1) : null
+          const capMax = skillCapMax(skill.id, current)
           return (
             <div key={skill.id} className={['rounded-lg border px-2.5 py-2',
               current > 0 ? 'border-game-primary/40 bg-game-primary/5' : prereqsMet ? 'border-game-border bg-game-bg' : 'border-game-border/50 bg-game-bg/40 opacity-70'].join(' ')}>
@@ -60,6 +74,9 @@ function SkillTree({ unitId }: { unitId: string }) {
               <p className="text-[10px] text-game-text-dim leading-snug mt-0.5">{skill.description(Math.max(1, current))}</p>
               {nextDesc && nextDesc !== skill.description(current) && (
                 <p className="text-[10px] text-game-primary/80 leading-snug mt-0.5">→ Lv {current + 1}: {nextDesc}</p>
+              )}
+              {capMax != null && (
+                <div className="text-[9px] text-game-text-dim mt-1" title="The engine limits how many of this effect can be active at once (the battle card shows the live count).">⤴ up to {capMax} active at once</div>
               )}
               {unmet.length > 0 && (
                 <div className="text-[9px] text-amber-300/80 mt-1">Needs {unmet.map((r) => `${SKILL_REGISTRY[r.skillId]?.name ?? r.skillId} Lv ${r.minLevel}`).join(', ')}</div>
