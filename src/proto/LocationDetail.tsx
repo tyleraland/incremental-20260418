@@ -42,13 +42,6 @@ export function LocationDetail({ location }: { location: Location }) {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const battle              = useGameStore((s) => s.battles[location.id])
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
-  const assignUnits         = useGameStore((s) => s.assignUnits)
-  const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
-  const selected            = units.find((u) => u.id === selectedUnitIds[0]) ?? null
-  // Multi-select bulk deploy: every selected hero, split by who's already here.
-  const selectedUnits       = units.filter((u) => selectedUnitIds.includes(u.id))
-  const toDeploy            = selectedUnits.filter((u) => u.locationId !== location.id)
-  const toRecall            = selectedUnits.filter((u) => u.locationId === location.id)
 
   // "Enter <Region>" — a world location can open into a dungeon map page.
   const entryRegion = location.dungeonEntryRegion
@@ -80,11 +73,6 @@ export function LocationDetail({ location }: { location: Location }) {
       <div>
         <div className="text-base font-semibold text-game-text">{location.name}</div>
         <p className="text-xs text-game-text-dim leading-snug mt-0.5">{location.description}</p>
-        <div className="flex gap-1.5 mt-1.5 flex-wrap">
-          {location.openWorld && <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700/50 bg-emerald-950/30 text-emerald-300">open world</span>}
-          <span className="text-[10px] px-1.5 py-0.5 rounded border border-game-border bg-game-bg text-game-text-dim">{location.monsterIds.length} foe types</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded border border-game-border bg-game-bg text-game-text-dim">{here.length} hero{here.length !== 1 ? 'es' : ''} here</span>
-        </div>
       </div>
 
       {/* enter a dungeon sub-region (its own map page) */}
@@ -97,26 +85,6 @@ export function LocationDetail({ location }: { location: Location }) {
           <span className="text-xs text-game-text flex-1">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
           <span className="text-[11px] text-rose-300">descend ›</span>
         </button>
-      )}
-
-      {/* deploy / recall — single selected hero, or the whole multi-selection */}
-      {selectedUnits.length > 1 ? (
-        <div className="flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5">
-          <span className="text-xs text-game-text flex-1 truncate">{selectedUnits.length} selected</span>
-          {toDeploy.length > 0 && (
-            <button onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)} className="text-[11px] px-2 py-1 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15">➤ Deploy {toDeploy.length}</button>
-          )}
-          {toRecall.length > 0 && (
-            <button onClick={() => assignUnits(toRecall.map((u) => u.id), null)} className="text-[11px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">↩ Recall {toRecall.length}</button>
-          )}
-        </div>
-      ) : selected && (
-        <div className="flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5">
-          <span className="text-xs text-game-text flex-1 truncate">{selected.name.split(' ')[0]}</span>
-          {selected.locationId === location.id
-            ? <button onClick={() => assignUnits([selected.id], null)} className="text-[11px] px-2 py-1 rounded border border-game-border text-game-text-dim hover:text-game-text">↩ Recall</button>
-            : <button onClick={() => assignUnits([selected.id], location.id)} className="text-[11px] px-2 py-1 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15">➤ Deploy here</button>}
-        </div>
       )}
 
       {/* meters */}
@@ -171,26 +139,22 @@ export function LocationDetail({ location }: { location: Location }) {
         </div>
       )}
 
-      {/* foes — tap a card to inspect its monster stats */}
+      {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">
-            {battle ? 'Foes on the field' : 'Native foes'}
-          </div>
-          <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Inhabitants</div>
+          <div className="flex flex-wrap gap-1.5">
             {foeIds.map((id) => {
               const m = MONSTER_REGISTRY[id]
               return (
                 <button
                   key={id}
                   onClick={() => setCodexId(id)}
-                  className="w-full flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-primary/50 text-left"
+                  className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-border bg-game-bg text-game-text hover:border-game-primary/50"
                 >
                   <span className={`w-2 h-2 rounded-full shrink-0 ${ELEMENT_DOT[m.element] ?? ELEMENT_DOT.neutral}`} />
-                  <span className="text-xs text-game-text flex-1 truncate">{m.name}</span>
-                  {battle && <span className="text-[10px] text-game-text-dim">×{liveCount[id]}</span>}
-                  <span className="text-[10px] text-game-text-dim">Lv {m.level}</span>
-                  <span className="text-[10px] text-game-primary">card ›</span>
+                  <span className="truncate">{m.name}</span>
+                  <span className="text-game-text-dim">Lv {m.level}</span>
                 </button>
               )
             })}
