@@ -286,14 +286,14 @@ export function LocationDetail({ location }: { location: Location }) {
         </button>
       )}
 
-      {/* Heroes — three positional groups: present-but-unselected (left),
-          selected & already here (middle), and the staged-deploy cluster
-          (blue ghost chips + a compact Deploy button) pinned to the right.
-          Tap any chip to add/remove it from the selection. */}
+      {/* Heroes — three positional columns: present-but-unselected (left),
+          selected & already here (middle), and the staged-deploy column on the
+          right — a compact Deploy button stacked above the blue ghost chips for
+          selected-elsewhere heroes. Tap any chip to add/remove it. */}
       {(here.length > 0 || toDeploy.length > 0) && (
         <div>
           <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Heroes</div>
-          <div className="flex items-center gap-x-3 gap-y-1.5 flex-wrap">
+          <div className="flex items-start gap-x-3 gap-y-1.5 flex-wrap">
             {presentUnsel.length > 0 && (
               <div className="flex flex-wrap gap-1.5">{presentUnsel.map((u) => hereChip(u, false))}</div>
             )}
@@ -301,7 +301,13 @@ export function LocationDetail({ location }: { location: Location }) {
               <div className="flex flex-wrap gap-1.5">{selectedHere.map((u) => hereChip(u, true))}</div>
             )}
             {toDeploy.length > 0 && (
-              <div className="ml-auto flex items-center justify-end flex-wrap gap-1.5">
+              <div className="ml-auto flex flex-col items-end gap-1.5">
+                <button
+                  onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-md border border-blue-400/70 bg-blue-500/25 text-blue-50 hover:bg-blue-500/40 hover:border-blue-300 transition-colors shadow-sm"
+                >
+                  ➤ Deploy {toDeploy.length > 1 ? `${toDeploy.length} ` : ''}here
+                </button>
                 {toDeploy.map((u) => (
                   <button
                     key={u.id}
@@ -314,12 +320,6 @@ export function LocationDetail({ location }: { location: Location }) {
                     <span className="text-blue-300/80">Lv {u.level}</span>
                   </button>
                 ))}
-                <button
-                  onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
-                  className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-md border border-blue-400/70 bg-blue-500/25 text-blue-50 hover:bg-blue-500/40 hover:border-blue-300 transition-colors shadow-sm"
-                >
-                  ➤ Deploy {toDeploy.length > 1 ? `${toDeploy.length} ` : ''}here
-                </button>
               </div>
             )}
           </div>
