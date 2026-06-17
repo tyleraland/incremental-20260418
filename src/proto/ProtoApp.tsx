@@ -220,7 +220,7 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
             </div>
             <div className="flex items-center gap-2 pt-2 border-t border-game-border">
               <button onClick={togglePause} className="px-3 py-1.5 rounded-lg border border-game-border text-sm text-game-text hover:bg-white/5">{paused ? '▶ Resume' : '❚❚ Pause'}</button>
-              <button onClick={onExit} className="px-3 py-1.5 rounded-lg border border-red-500/50 text-sm text-red-200 hover:bg-red-600/20">Exit prototype</button>
+              <button onClick={onExit} className="px-3 py-1.5 rounded-lg border border-game-border text-sm text-game-text-dim hover:bg-white/5" title="Switch to the legacy tab-bar UI">↩ Classic UI</button>
             </div>
           </div>
         )}
@@ -296,10 +296,12 @@ export function ProtoApp() {
     requestHeroTab()
   }
 
-  const proto = new URLSearchParams(window.location.search)
+  // Drop to the legacy tab-bar UI (kept as a fallback behind ?classic=1).
   function exitProto() {
-    proto.delete('proto')
-    window.location.search = proto.toString()
+    const q = new URLSearchParams(window.location.search)
+    q.delete('proto')
+    q.set('classic', '1')
+    window.location.search = q.toString()
   }
 
   return (

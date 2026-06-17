@@ -68,22 +68,25 @@ block).
 
 ## Gaps to close for full production parity (prioritised)
 
-### P0 — build/combat parity
-1. **Action bar polish** — first cut shipped (assign learned *active* skills to the
-   6 slots; Skill tree overlay learns/levels). Remaining: allow **item** entries
-   (consumables) in slots + sideboard sync (`setActionSlot` already handles items),
-   optional drag-reorder. **S–M**
-2. **Skill tree depth** — learning works; consider tree/prereq visualisation,
-   active-cap hints (`skillActiveCap`), and per-level descriptions. **S–M**
-3. **Equip safety** — proto `equipItem` doesn't block level/class-restricted items
-   or *reserve* gear already worn by another hero (production hides it). Enforce in
-   the Gear picker + Items equip. **S–M**
-4. **Party-tactics editing** (`equipPartyTactic`/`unequipPartyTactic`) + **inherited
-   skill tactics** w/ decouple (`toggleInheritedTactic`). Lens shows party tactics
-   read-only and omits inherited. **S–M**
-5. **Attention clears + Report** — call `markUnitViewed` when a hero is viewed; add
-   a Report button (`openReport`) to the Hero lens (sheet renders but is
-   unreachable). **S**
+### P0 — build/combat parity  *(✅ done — the shell is now the default UI)*
+1. ✅ **Action bar polish** — Skills lens assigns learned *active* skills to the 6
+   slots and now also stages **items** (any usable, non-reserved equipment →
+   reserved into the sideboard via `setActionSlot`'s item sync); slot labels
+   resolve real item names. Skill-tree overlay learns/levels. *(drag-reorder still
+   deferred — tap-to-assign covers it.)*
+2. ◑ **Skill tree depth** — learning works; the overlay now shows a per-level
+   **→ Lv N+1** preview + prereq chains. *Active-cap hints (`skillActiveCap`) need
+   live combat state (active count), so they stay on the battle card — deferred.*
+3. ✅ **Equip safety** — Gear picker + Items equip now block level/class-restricted
+   items (locked w/ reason) and hide gear *reserved* by another hero
+   (`equipRestriction`/`reservedByOthers`, mirroring the production Inventory).
+4. ✅ **Party-tactics editing** — the Tactics lens edits party doctrine
+   (`equip/unequipPartyTactic`, capped) and surfaces **inherited skill tactics**
+   with decouple (`toggleInheritedTactic`); inherited ids are excluded from the
+   manual catalog.
+5. ✅ **Attention clears + Report** — viewing a hero's lens calls `markUnitViewed`;
+   a **Report ▸** button (`openReport`) sits in the Hero sub-tab row (the
+   `UnitReportSheet` renders globally).
 
 ### P1 — important parity
 6. **Beast companion** (`equip/unequip/moveCompanionTactic`, companion stats) —
@@ -118,12 +121,17 @@ Backed only by `protoStore` (not saved):
 - **Proto UI state** (zoom level, hero locks, stage overlay) is ephemeral; decide
   what (if anything) persists like the production expand/selection localStorage keys.
 
-## The switch-over
-- Make `ProtoApp` the default shell; retire `TabBar` + standalone page routing in
-  `App.tsx` (keep the page *components* — the proto already embeds Guild/Reports/
-  Time and could embed Crafting the same way).
-- Fold proto-only mock state into the real save, or drop it.
-- Re-point the perf/e2e harness (`e2e/perf.spec.ts`, `e2e/proto.spec.ts`).
+## The switch-over  *(✅ done)*
+- ✅ `ProtoApp` is now the **default** shell (`App.tsx`). The legacy tab-bar UI is
+  kept as a fallback behind **`?classic=1`** (and the dev `?perf` harness, which
+  still expects the single-screen BattleView). Page *components* (Guild/Reports/
+  Time) stay embedded in the shell; `TabBar`/`Map`/`Units`/`Inventory` remain only
+  for the classic fallback. Settings ▸ **↩ Classic UI** jumps to `?classic=1`.
+- ⏳ Proto-only mock state (Saga/lore, attunement/upgrades, hero locks, zoom,
+  stage overlay) is still **ephemeral** — consistent with production's ephemeral
+  UI tier. Folding any of it into the save is deferred (see *Mock systems*).
+- ✅ `e2e/proto.spec.ts` now drives the default route (no `?proto`); `?proto=1`
+  still resolves to the shell. `e2e/perf.spec.ts` (`?perf`) is unaffected.
 
 ## Verification
 `npm run ci` (tsc + 539 tests) stays green. `e2e/proto.spec.ts` walks the whole

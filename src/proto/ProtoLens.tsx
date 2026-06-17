@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   useGameStore, getDerivedStats, getInitials, getItemTraits, getAvailableSkills, SKILL_REGISTRY,
-  TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS,
+  TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS, SKILL_TACTICS, inheritedTacticIds,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
 import { getUnitTraits } from '@/data/traits'
@@ -159,6 +159,29 @@ function withItem(unit: Unit, slot: EquipSlot, itemId: string | null): Unit {
   return { ...unit, equipment: { ...unit.equipment, [slot]: itemId } }
 }
 
+// ── Equip safety (mirrors production Inventory) ───────────────────────────────
+// Class/level gates lock an item with a reason; gear already reserved (worn or
+// sideboarded) by *another* hero is hidden from the picker entirely. The hero's
+// own worn/reserved gear stays visible so it can be swapped freely.
+function equipRestriction(it: EquipmentItem, unit: Unit): string | null {
+  if (it.requiredLevel && unit.level < it.requiredLevel) return `Lv ${it.requiredLevel}`
+  if (it.requiredClasses && !it.requiredClasses.includes(unit.class ?? 'Novice')) return `${it.requiredClasses.join(' / ')} only`
+  return null
+}
+function reservedByOthers(units: Unit[], unitId: string): Set<string> {
+  const reserved = new Set<string>()
+  for (const o of units) {
+    if (o.id === unitId) continue
+    const refs = [
+      o.weaponSets[0].mainHand, o.weaponSets[0].offHand,
+      o.weaponSets[1].mainHand, o.weaponSets[1].offHand,
+      o.equipment.armor, o.equipment.accessory, o.equipment.sideboard1, o.equipment.sideboard2,
+    ]
+    for (const id of refs) if (id) reserved.add(id)
+  }
+  return reserved
+}
+
 function DeltaChips({ before, after }: { before: DerivedStats; after: DerivedStats }) {
   const chips = DELTA_STATS.map(([k, label]) => {
     const d = Math.round(after[k] as number) - Math.round(before[k] as number)
@@ -180,6 +203,7 @@ function DeltaChips({ before, after }: { before: DerivedStats; after: DerivedSta
 function GearLens({ unit }: { unit: Unit }) {
   const equipment = useGameStore((s) => s.equipment)
   const equipItem = useGameStore((s) => s.equipItem)
+  const units     = useGameStore((s) => s.units)
   const [activeSlot, setActiveSlot] = useState<EquipSlot | null>(null)
 
   const itemFor = (slot: EquipSlot): EquipmentItem | undefined => {
@@ -188,8 +212,12 @@ function GearLens({ unit }: { unit: Unit }) {
   }
   const mainHand = equipment.find((e) => e.id === unit.weaponSets[unit.activeWeaponSet].mainHand)
   const base = getDerivedStats(unit, equipment)
-  const candidates = activeSlot ? equipment.filter((e) => SLOT_COMPATIBLE[activeSlot].includes(e.category)) : []
   const current = activeSlot ? itemFor(activeSlot) : undefined
+  const reserved = reservedByOthers(units, unit.id)
+  // Hide gear reserved by other heroes (but keep this hero's own worn item).
+  const candidates = activeSlot
+    ? equipment.filter((e) => SLOT_COMPATIBLE[activeSlot].includes(e.category) && (e.id === current?.id || !reserved.has(e.id)))
+    : []
 
   return (
     <div className="space-y-4">
@@ -241,22 +269,29 @@ function GearLens({ unit }: { unit: Unit }) {
             {candidates.length === 0 && <div className="text-xs text-game-muted italic px-1">No compatible items in stash.</div>}
             {candidates.map((it) => {
               const equipped = current?.id === it.id
+              const restriction = equipped ? null : equipRestriction(it, unit)
+              const locked = !!restriction
               const after = getDerivedStats(withItem(unit, activeSlot, it.id), equipment)
               return (
                 <button
                   key={it.id}
-                  onClick={() => equipItem(unit.id, activeSlot, it.id)}
+                  disabled={locked}
+                  onClick={() => !locked && equipItem(unit.id, activeSlot, it.id)}
                   className={[
                     'w-full rounded-md border px-2.5 py-2 text-left transition-colors',
-                    equipped ? 'border-game-primary/60 bg-game-primary/10' : 'border-game-border bg-game-bg hover:border-game-primary/50',
+                    equipped ? 'border-game-primary/60 bg-game-primary/10'
+                      : locked ? 'border-game-border/40 bg-game-bg/40 opacity-50 cursor-not-allowed'
+                      : 'border-game-border bg-game-bg hover:border-game-primary/50',
                   ].join(' ')}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-game-text font-medium truncate">{it.name}</span>
                     {equipped ? <span className="text-[10px] text-game-primary shrink-0">equipped</span>
+                      : locked ? <span className="text-[10px] text-game-muted shrink-0">{restriction}</span>
                       : <span className="text-[10px] text-game-text-dim shrink-0">equip ›</span>}
                   </div>
                   {equipped ? <span className="text-[10px] text-game-muted">currently worn</span>
+                    : locked ? <span className="text-[10px] text-game-muted italic">can't equip</span>
                     : <DeltaChips before={base} after={after} />}
                 </button>
               )
@@ -271,31 +306,33 @@ function GearLens({ unit }: { unit: Unit }) {
 }
 
 // ── Tactician lens (single hero) ──────────────────────────────────────────────
+// Mirrors the production Tactics tab: an editable party doctrine (shared, capped),
+// the hero's manual per-channel priority list, and the tactics inherited free from
+// equipped skills (decouple-able). Only skills change numbers — tactics are pure
+// behaviour, so everything here is a reorder/equip/decouple.
 function TacticianLens({ unit }: { unit: Unit }) {
-  const partyTactics  = useGameStore((s) => s.partyTactics)
   const moveTactic    = useGameStore((s) => s.moveTactic)
   const equipTactic   = useGameStore((s) => s.equipTactic)
   const unequipTactic = useGameStore((s) => s.unequipTactic)
+  const toggleInherited = useGameStore((s) => s.toggleInheritedTactic)
   const [adding, setAdding] = useState(false)
 
   const equippedIds = new Set(unit.tactics.map((t) => t.id))
   const byChannel = (ch: string) => unit.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch)
-  const available = listTactics('unit').filter((d) => !equippedIds.has(d.id))
   const atCap = unit.tactics.length >= MAX_UNIT_TACTICS
+
+  // Tactics granted free by equipped (action-bar) skills — shown separately and
+  // decouple-able; excluded from the manual "add" catalog so they're not dupes.
+  const equippedSkillIds = (unit.actionSlots ?? []).filter((e): e is ActionSlotEntry => e?.kind === 'skill').map((e) => e.id)
+  const suppressed = new Set(unit.suppressedTactics ?? [])
+  const grantedBy: Record<string, string[]> = {}
+  for (const sid of equippedSkillIds) for (const tid of SKILL_TACTICS[sid] ?? []) (grantedBy[tid] ??= []).push(SKILL_REGISTRY[sid]?.name ?? sid)
+  const inherited = inheritedTacticIds(equippedSkillIds).filter((id) => !equippedIds.has(id))
+  const available = listTactics('unit').filter((d) => !equippedIds.has(d.id) && !(d.id in grantedBy))
 
   return (
     <div className="space-y-4">
-      {partyTactics.length > 0 && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Party doctrine</div>
-          <div className="flex flex-wrap gap-1.5">
-            {partyTactics.map((t) => {
-              const def = TACTIC_REGISTRY[t.id]
-              return <span key={t.id} className="text-[11px] px-2 py-1 rounded-md border border-game-secondary/40 bg-game-secondary/10 text-game-text" title={def?.description}>{def?.name ?? t.id}</span>
-            })}
-          </div>
-        </div>
-      )}
+      <PartyDoctrine />
 
       <div className="flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Priority by channel</span>
@@ -336,6 +373,40 @@ function TacticianLens({ unit }: { unit: Unit }) {
         })}
       </div>
 
+      {inherited.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Inherited from skills</span>
+            <span className="text-[9px] text-game-muted">free · auto</span>
+          </div>
+          <div className="space-y-1">
+            {inherited.map((id) => {
+              const def = TACTIC_REGISTRY[id]
+              if (!def) return null
+              const off = suppressed.has(id)
+              const sources = (grantedBy[id] ?? []).join(', ')
+              return (
+                <div key={id} className={['flex items-start gap-1.5 rounded-md border border-dashed px-2 py-1.5',
+                  off ? 'border-game-border bg-game-bg/40 opacity-60' : 'border-amber-400/40 bg-amber-400/5'].join(' ')}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={['text-xs font-medium', off ? 'text-game-muted line-through' : 'text-game-text'].join(' ')}>{def.name}</span>
+                      <span className="text-[8px] px-1 rounded border border-amber-400/40 text-amber-300/90">from {sources}</span>
+                    </div>
+                    <div className="text-[10px] text-game-text-dim leading-snug">{def.description}</div>
+                  </div>
+                  <button
+                    onClick={() => toggleInherited(unit.id, id)}
+                    title={off ? `Re-couple ${def.name}` : `Decouple ${def.name}`}
+                    className={['shrink-0 w-5 h-5 rounded flex items-center justify-center text-xs', off ? 'bg-game-green/15 text-game-green' : 'bg-amber-500/15 text-amber-300'].join(' ')}
+                  >{off ? '+' : '−'}</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div>
         <button
           onClick={() => setAdding((v) => !v)}
@@ -361,6 +432,62 @@ function TacticianLens({ unit }: { unit: Unit }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+// Party doctrine — shared tactics applied to every deployed hero. Editable here
+// (equip/unequip, capped at MAX_PARTY_TACTICS) since the party screen and the
+// hero's Tactics lens are the two places you tune combat behaviour.
+function PartyDoctrine() {
+  const partyTactics      = useGameStore((s) => s.partyTactics)
+  const equipPartyTactic  = useGameStore((s) => s.equipPartyTactic)
+  const unequipPartyTactic = useGameStore((s) => s.unequipPartyTactic)
+  const [adding, setAdding] = useState(false)
+
+  const equippedIds = new Set(partyTactics.map((t) => t.id))
+  const available = listTactics('party').filter((d) => !equippedIds.has(d.id))
+  const atCap = partyTactics.length >= MAX_PARTY_TACTICS
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Party doctrine</span>
+        <span className="text-[9px] text-game-muted">{partyTactics.length}/{MAX_PARTY_TACTICS} · all deployed</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {partyTactics.map((t) => {
+          const def = TACTIC_REGISTRY[t.id]
+          return (
+            <span key={t.id} className="flex items-center gap-1 text-[11px] pl-2 pr-1 py-1 rounded-md border border-game-secondary/40 bg-game-secondary/10 text-game-text" title={def?.description}>
+              {def?.name ?? t.id}
+              <button onClick={() => unequipPartyTactic(t.id)} className="text-game-muted hover:text-red-300" aria-label="Remove party tactic">✕</button>
+            </span>
+          )
+        })}
+        {!atCap && available.length > 0 && (
+          <button onClick={() => setAdding((v) => !v)} className="text-[11px] px-2 py-1 rounded-md border border-game-secondary/40 text-game-text-dim hover:text-game-text hover:bg-game-secondary/10">
+            {adding ? 'Close' : '＋ Doctrine'}
+          </button>
+        )}
+      </div>
+      {adding && !atCap && (
+        <div className="mt-1.5 space-y-1 max-h-36 overflow-y-auto">
+          {available.map((def) => (
+            <button
+              key={def.id}
+              onClick={() => { equipPartyTactic(def.id); setAdding(false) }}
+              className="w-full text-left rounded-md border border-game-border bg-game-bg px-2 py-1.5 hover:border-game-secondary/50"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-game-text">{def.name}</span>
+                <span className="text-[9px] text-game-muted capitalize">{def.channel}</span>
+              </div>
+              <div className="text-[10px] text-game-text-dim leading-snug">{def.description}</div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -404,19 +531,26 @@ function SagaLens({ unit }: { unit: Unit }) {
 // fight plays. (See ui-overhaul.md for the decisions-bottom / details-top split.)
 function SkillsLens({ unit }: { unit: Unit }) {
   const setActionSlot   = useGameStore((s) => s.setActionSlot)
+  const equipment       = useGameStore((s) => s.equipment)
+  const units           = useGameStore((s) => s.units)
   const openStageOverlay = useProtoStore((s) => s.openStageOverlay)
   const [slotIdx, setSlotIdx] = useState<number | null>(null)
 
   const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
   const onBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'skill').map((e) => e.id))
+  const itemsOnBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'item').map((e) => e.id))
   // Learned ACTIVE skills are the assignable pool (passives are always-on).
   const learnedActive = getAvailableSkills(unit).filter((e) => e.current > 0 && e.skill.type === 'active')
   const pool = learnedActive.filter((e) => !onBar.has(e.skill.id))
+  // Items the hero can stage on the bar — reserved into the sideboard (stat-
+  // inactive) so they're carried, not worn. Hide gear another hero holds.
+  const reserved = reservedByOthers(units, unit.id)
+  const itemPool = equipment.filter((it) => canUse(it, unit) && !reserved.has(it.id) && !itemsOnBar.has(it.id))
 
   function label(e: ActionSlotEntry | null): string {
     if (!e) return ''
     if (e.kind === 'skill') return SKILL_REGISTRY[e.id]?.name ?? e.id
-    return 'item'
+    return equipment.find((it) => it.id === e.id)?.name ?? 'item'
   }
 
   return (
@@ -469,10 +603,28 @@ function SkillsLens({ unit }: { unit: Unit }) {
                 <div className="text-[10px] text-game-text-dim leading-snug">{skill.description(current)}</div>
               </button>
             ))}
+            {itemPool.length > 0 && (
+              <>
+                <div className="text-[9px] uppercase tracking-widest text-game-muted pt-1.5 px-1">Items — reserve to sideboard</div>
+                {itemPool.map((it) => (
+                  <button
+                    key={it.id}
+                    onClick={() => { setActionSlot(unit.id, slotIdx, { kind: 'item', id: it.id }); setSlotIdx(null) }}
+                    className="w-full text-left rounded-md border border-game-border/70 bg-game-bg/60 px-2.5 py-1.5 hover:border-game-secondary/50"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-game-text">{it.name}</span>
+                      <span className="text-[9px] text-game-muted">{CATEGORY_LABELS[it.category]}</span>
+                    </div>
+                    {it.description && <div className="text-[10px] text-game-text-dim leading-snug truncate">{it.description}</div>}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         </div>
       )}
-      {slotIdx === null && <div className="text-[10px] text-game-muted italic">Tap a slot to assign one of this hero's learned active skills.</div>}
+      {slotIdx === null && <div className="text-[10px] text-game-muted italic">Tap a slot to assign a learned active skill — or stage an item (it's reserved to the sideboard).</div>}
     </div>
   )
 }
@@ -608,6 +760,9 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
   const equipment = useGameStore((s) => s.equipment)
   const miscItems = useGameStore((s) => s.miscItems)
   const equipItem = useGameStore((s) => s.equipItem)
+  const units     = useGameStore((s) => s.units)
+  // Hide gear reserved (worn/sideboarded) by other heroes once a hero is focused.
+  const reserved = unit ? reservedByOthers(units, unit.id) : null
   const [filters, setFilters] = useState<Record<FilterKey, FilterState>>({ weapon: 'off', armor: 'off', accessory: 'off', tool: 'off', material: 'off' })
   // Scope: everything in the stash, vs only what THIS hero can equip/use.
   const [scope, setScope] = useState<'all' | 'usable'>('all')
@@ -659,6 +814,7 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
       {ITEM_CATEGORIES.map((cat) => {
         if (!visible(filterKeyOf(cat))) return null
         let items = equipment.filter((e) => e.category === cat)
+        if (reserved) items = items.filter((it) => !reserved.has(it.id))
         if (usable && unit) items = items.filter((it) => canUse(it, unit))
         if (items.length === 0) return null
         const slot = CAT_SLOT[cat]
@@ -676,7 +832,8 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
               <div className="space-y-1.5">
                 {items.map((it) => {
                   const worn = current?.id === it.id
-                  const rel = unit && slot && !worn ? relativeDeltas(it, current) : []
+                  const restriction = unit && !worn ? equipRestriction(it, unit) : null
+                  const rel = unit && slot && !worn && !restriction ? relativeDeltas(it, current) : []
                   return (
                     <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-2">
                       <div className="flex items-center gap-2">
@@ -684,6 +841,8 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
                         {it.slots ? <span className="text-[9px] text-game-text-dim" title={`${it.slots} card sockets`}>◳{it.slots}</span> : null}
                         {unit && slot && (worn
                           ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
+                          : restriction
+                          ? <span className="text-[10px] text-game-muted shrink-0" title={`Can't equip — ${restriction}`}>{restriction}</span>
                           : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)}
                       </div>
                       <TraitRow traits={objectiveChips(it)} className="mt-1" />
@@ -733,6 +892,8 @@ export function ProtoLens() {
   const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
+  const markUnitViewed   = useGameStore((s) => s.markUnitViewed)
+  const openReport       = useGameStore((s) => s.openReport)
 
   const [top, setTop] = useState<Top>('location')
   const [heroSub, setHeroSub] = useState<HeroSub>('summary')
@@ -748,6 +909,12 @@ export function ProtoLens() {
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
+
+  // Viewing a hero's dossier clears their "to-do" cue (new level / unspent pts) —
+  // same rule as the production unit detail (re-fires when the level changes).
+  useEffect(() => {
+    if (top === 'hero' && unit) markUnitViewed(unit.id)
+  }, [top, unit?.id, unit?.level, markUnitViewed]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Party = the party currently on the focused battlefield (empty → matrix shows
   // a prompt to deploy / focus a location).
@@ -775,7 +942,7 @@ export function ProtoLens() {
 
       {/* Hero sub-tabs only appear on the Hero altitude. */}
       {top === 'hero' && unit && (
-        <div className="shrink-0 flex gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
+        <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
           {HERO_SUBS.map((s) => (
             <button
               key={s.id}
@@ -784,6 +951,11 @@ export function ProtoLens() {
                 heroSub === s.id ? 'bg-game-primary/20 text-game-text border border-game-primary/40' : 'text-game-text-dim hover:text-game-text border border-transparent'].join(' ')}
             >{s.label}</button>
           ))}
+          <button
+            onClick={() => openReport(unit.id)}
+            title="Open full report"
+            className="ml-auto text-[11px] px-2 py-0.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5"
+          >Report ▸</button>
         </div>
       )}
 

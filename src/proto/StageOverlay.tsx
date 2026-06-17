@@ -47,6 +47,8 @@ function SkillTree({ unitId }: { unitId: string }) {
         {sorted.map(({ skill, current, prereqsMet, maxed }) => {
           const canLearn = unit.skillPoints > 0 && prereqsMet && !maxed
           const unmet = skill.requires.filter((r) => (unit.learnedSkills[r.skillId] ?? 0) < r.minLevel)
+          // Per-level preview: at level N, what the *next* point buys.
+          const nextDesc = !maxed && current > 0 ? skill.description(current + 1) : null
           return (
             <div key={skill.id} className={['rounded-lg border px-2.5 py-2',
               current > 0 ? 'border-game-primary/40 bg-game-primary/5' : prereqsMet ? 'border-game-border bg-game-bg' : 'border-game-border/50 bg-game-bg/40 opacity-70'].join(' ')}>
@@ -56,6 +58,9 @@ function SkillTree({ unitId }: { unitId: string }) {
                 <span className="text-[10px] text-game-text-dim tabular-nums">{current}/{skill.maxLevel}</span>
               </div>
               <p className="text-[10px] text-game-text-dim leading-snug mt-0.5">{skill.description(Math.max(1, current))}</p>
+              {nextDesc && nextDesc !== skill.description(current) && (
+                <p className="text-[10px] text-game-primary/80 leading-snug mt-0.5">→ Lv {current + 1}: {nextDesc}</p>
+              )}
               {unmet.length > 0 && (
                 <div className="text-[9px] text-amber-300/80 mt-1">Needs {unmet.map((r) => `${SKILL_REGISTRY[r.skillId]?.name ?? r.skillId} Lv ${r.minLevel}`).join(', ')}</div>
               )}

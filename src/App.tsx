@@ -47,10 +47,11 @@ function App() {
   // The import.meta.env.DEV gate dead-code-strips it from production bundles.
   const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
 
-  // ?proto=1 → the split-screen "Tactician" UI-overhaul prototype. Shares the
-  // live tick loop + persisted save (the effects below still run); it just swaps
-  // the whole render. Experimental / not wired into the tab bar or save format.
-  const protoMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('proto')
+  // The split-screen "Tactician" shell (src/proto) is now the DEFAULT UI. The
+  // legacy tab-bar UI is kept as a fallback behind `?classic=1` (and the perf
+  // harness, which expects the old single-screen BattleView). Both share the same
+  // live tick loop + persisted save — only the render differs.
+  const classicMode = perfMode || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('classic'))
 
   // Interval fires every second. catchUp() computes how many real seconds
   // have elapsed and applies them all at once, so throttled background tabs
@@ -84,7 +85,7 @@ function App() {
     return () => clearInterval(id)
   }, [perfMode])
 
-  if (protoMode) {
+  if (!classicMode) {
     return (
       <>
         <ProtoApp />
