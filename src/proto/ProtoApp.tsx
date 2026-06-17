@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
@@ -122,7 +122,7 @@ function needsAttention(u: Unit, viewed: Record<string, number>): boolean {
   return u.abilityPoints > 0 || u.skillPoints > 0 || (v !== undefined && u.level > v)
 }
 
-function RosterChip({ unit, selected, here, following, onSelect, onFocus }: { unit: Unit; selected: boolean; here: boolean; following: boolean; onSelect: () => void; onFocus: () => void }) {
+function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
   const equipment = useGameStore((s) => s.equipment)
   const viewed    = useGameStore((s) => s.viewedUnitLevels)
   const ds = getDerivedStats(unit, equipment)
@@ -143,6 +143,7 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus }: { un
 
   return (
     <button
+      ref={innerRef}
       onClick={tap}
       title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}${here ? ' · on the viewed battlefield' : ''}${following ? ' · camera is following them' : ''}\nTap to select · double-tap to jump the camera`}
       className={[
@@ -262,6 +263,39 @@ export function ProtoApp() {
     else { setSortMode(m); setSortDir(SORT_MODES.find((x) => x.id === m)!.defaultDir) }
   }
 
+  // Followed-hero sticky: keep the camera-followed chip ALWAYS visible in the
+  // rail. Its chip stays in its natural slot; when it scrolls off an edge we pin
+  // a clone to that edge (`pin`), so the followed hero is reachable no matter how
+  // far you scroll. Measured from the live geometry on scroll/resize.
+  const rosterScrollRef = useRef<HTMLDivElement>(null)
+  const followChipRef   = useRef<HTMLButtonElement | null>(null)
+  const [pin, setPin] = useState<'left' | 'right' | null>(null)
+  const followUnit = battleFollowId ? units.find((u) => u.id === battleFollowId) ?? null : null
+
+  const measurePin = useCallback(() => {
+    const sc = rosterScrollRef.current
+    const ch = followChipRef.current
+    if (!sc || !ch || !battleFollowId) { setPin(null); return }
+    const s = sc.getBoundingClientRect()
+    const c = ch.getBoundingClientRect()
+    // Pin the instant the chip would start clipping at an edge, so a full chip
+    // stays parked there (it never scrolls partway off before sticking).
+    if (c.left < s.left - 0.5) setPin('left')
+    else if (c.right > s.right + 0.5) setPin('right')
+    else setPin(null)
+  }, [battleFollowId])
+
+  useEffect(() => {
+    const sc = rosterScrollRef.current
+    if (!sc) return
+    measurePin()
+    const onScroll = () => measurePin()
+    sc.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll)
+    return () => { sc.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll) }
+  // re-run when the list or follow target changes (groups re-derives from units)
+  }, [measurePin, groups])
+
   // On load, select the first hero in the roster — preferring a deployed one so
   // we land on (and follow the camera into) their battlefield. The lens stays on
   // its default Location tab (you've just dropped onto a battlefield — show the
@@ -355,32 +389,52 @@ export function ProtoApp() {
           <span className="text-xs leading-none">{multi ? '✓' : '⊕'}</span>
           <span className="text-[8px] leading-none mt-0.5">{multi ? selectedUnitIds.length : 'multi'}</span>
         </button>
-        <div className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar flex-1">
-          {groups.map((g) => {
-            const chips = g.units.map((u) => (
-              <RosterChip
-                key={u.id}
-                unit={u}
-                selected={multi ? selectedUnitIds.includes(u.id) : selectedUnitIds[0] === u.id}
-                here={!!selectedLocId && u.locationId === selectedLocId}
-                following={battleFollowId === u.id}
-                onSelect={() => selectQuiet(u)}
-                onFocus={() => focusHero(u)}
-              />
-            ))
-            // Flat (name/level): no container.
-            if (g.label === null) return <div key={g.key} className="flex items-center gap-0.5">{chips}</div>
-            const isCurrent = g.locId !== undefined && g.locId === selectedLocId
-            return (
-              <div key={g.key} className={['flex flex-col rounded-lg border px-1 pb-0.5 shrink-0',
-                isCurrent ? 'border-game-accent/50 bg-game-accent/5' : 'border-game-border/50 bg-white/[0.02]'].join(' ')}>
-                <span className="text-[8px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
-                  {g.icon} {g.label}
-                </span>
-                <div className="flex items-center gap-0.5">{chips}</div>
+        <div className="relative flex-1 min-w-0">
+          <div ref={rosterScrollRef} className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar h-full">
+            {groups.map((g) => {
+              const chips = g.units.map((u) => (
+                <RosterChip
+                  key={u.id}
+                  unit={u}
+                  selected={multi ? selectedUnitIds.includes(u.id) : selectedUnitIds[0] === u.id}
+                  here={!!selectedLocId && u.locationId === selectedLocId}
+                  following={battleFollowId === u.id}
+                  innerRef={battleFollowId === u.id ? followChipRef : undefined}
+                  onSelect={() => selectQuiet(u)}
+                  onFocus={() => focusHero(u)}
+                />
+              ))
+              // Flat (name/level): no container.
+              if (g.label === null) return <div key={g.key} className="flex items-center gap-0.5">{chips}</div>
+              const isCurrent = g.locId !== undefined && g.locId === selectedLocId
+              return (
+                <div key={g.key} className={['flex flex-col rounded-lg border px-1 pb-0.5 shrink-0',
+                  isCurrent ? 'border-game-accent/50 bg-game-accent/5' : 'border-game-border/50 bg-white/[0.02]'].join(' ')}>
+                  <span className="text-[8px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
+                    {g.icon} {g.label}
+                  </span>
+                  <div className="flex items-center gap-0.5">{chips}</div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* pinned clone of the followed hero — appears at whichever edge the
+              real chip has scrolled past, so it's always on screen + tappable. */}
+          {pin && followUnit && (
+            <div className={['absolute top-0 bottom-0 z-10 flex items-center pointer-events-none', pin === 'left' ? 'left-0 pr-3' : 'right-0 pl-3'].join(' ')}>
+              <div className={['flex items-center h-full pointer-events-auto bg-game-surface', pin === 'left' ? 'pr-2 bg-gradient-to-r from-game-surface via-game-surface to-transparent' : 'pl-2 bg-gradient-to-l from-game-surface via-game-surface to-transparent'].join(' ')}>
+                <RosterChip
+                  unit={followUnit}
+                  selected={multi ? selectedUnitIds.includes(followUnit.id) : selectedUnitIds[0] === followUnit.id}
+                  here={!!selectedLocId && followUnit.locationId === selectedLocId}
+                  following
+                  onSelect={() => selectQuiet(followUnit)}
+                  onFocus={() => focusHero(followUnit)}
+                />
               </div>
-            )
-          })}
+            </div>
+          )}
         </div>
       </div>
 
