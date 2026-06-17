@@ -100,6 +100,9 @@ interface ProtoState {
   // A request to open a combatant's battlefield detail card (Hero lens →
   // battlefield). Nonce so the same unit re-fires.
   battleInspectRequest: { unitId: string; nonce: number } | null
+  // Bumped to dismiss an open battlefield detail card (e.g. a roster tap, which
+  // also selects the hero) — the card isn't a modal that traps the roster.
+  battleCardDismiss: number
   // Stage overlay (top half = details/research, shown in front of the
   // battlefield): the skill tree for now; item details / codex later.
   stageOverlay: StageOverlay | null
@@ -116,6 +119,7 @@ interface ProtoState {
   requestZoom: (level: ZoomLevel) => void
   requestHeroTab: () => void
   requestBattleInspect: (unitId: string) => void
+  dismissBattleCard: () => void
   openStageOverlay: (o: StageOverlay) => void
   closeStageOverlay: () => void
   buyUpgrade: (locId: string, upId: string, cost: number, max: number) => void
@@ -131,6 +135,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   zoomRequest: null,
   heroTabRequest: 0,
   battleInspectRequest: null,
+  battleCardDismiss: 0,
   stageOverlay: null,
   attunementSpent: 0,
   upgrades: {},
@@ -144,6 +149,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
   requestHeroTab: () => set((s) => ({ heroTabRequest: s.heroTabRequest + 1 })),
   requestBattleInspect: (unitId) => set((s) => ({ battleInspectRequest: { unitId, nonce: (s.battleInspectRequest?.nonce ?? 0) + 1 } })),
+  dismissBattleCard: () => set((s) => ({ battleCardDismiss: s.battleCardDismiss + 1 })),
   openStageOverlay: (o) => set({ stageOverlay: o }),
   closeStageOverlay: () => set({ stageOverlay: null }),
   buyUpgrade: (locId, upId, cost, max) => set((s) => {

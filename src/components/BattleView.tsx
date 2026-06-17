@@ -816,10 +816,10 @@ function UnitDetailOverlay({ c, battle, onClose, onFollow }: { c: Combatant; bat
 
   return createPortal(
     <>
-      {/* transparent catcher: tap outside the sheet to dismiss (battle stays visible) */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
       {/* A full bottom-half panel that reads as its OWN screen — covering the lens
-          tabs beneath — so it's clearly separate from those decision surfaces. */}
+          tabs beneath — so it's clearly separate from those decision surfaces.
+          No backdrop catcher, so the roster + stage above stay live: tapping a
+          roster hero both selects them AND dismisses this card (via closeNonce). */}
       <div className="fixed inset-x-0 bottom-0 top-1/2 z-50 flex flex-col rounded-t-2xl border-t border-game-border bg-game-surface shadow-2xl">
         <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-game-border shrink-0" />
         <div className="px-4 pb-2 text-xs">
@@ -930,7 +930,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, onFollow, inspectRequest }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null }) {
+function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number }) {
   const units = useGameStore((s) => s.units)
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
@@ -1068,6 +1068,17 @@ function LiveBattle({ battle, onFollow, inspectRequest }: { battle: BattleState;
     snapshotWaveRef.current = battle.combatants
   // fire on each new request nonce
   }, [inspectRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // External "dismiss the card" signal (e.g. a roster tap that also selects a
+  // hero). Bumped nonce → close; skip the initial value so it doesn't fire on mount.
+  const closeNonceRef = useRef(closeNonce)
+  useEffect(() => {
+    if (closeNonce === closeNonceRef.current) return
+    closeNonceRef.current = closeNonce
+    setSelectedId(null)
+    setSnapshot(null)
+    snapshotWaveRef.current = null
+  }, [closeNonce])
 
   const closeDetail = () => {
     setSelectedId(null)
@@ -1538,16 +1549,17 @@ export function Preview({ location }: { location: Location | null }) {
 // re-fire. `onFollow` (when provided) surfaces a Follow action in the card.
 export interface BattleInspectRequest { unitId: string; nonce: number }
 
-export function BattleView({ locationId, onFollow, inspectRequest }: {
+export function BattleView({ locationId, onFollow, inspectRequest, closeNonce }: {
   locationId: string | null
   onFollow?: (unitId: string) => void
   inspectRequest?: BattleInspectRequest | null
+  closeNonce?: number   // bump to dismiss any open detail card (e.g. roster tap)
 }) {
   const battle    = useGameStore((s) => (locationId ? s.battles[locationId] : undefined))
   const locations = useGameStore((s) => s.locations)
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
   return battle
-    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} />
+    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} />
     : <Preview location={location} />
 }

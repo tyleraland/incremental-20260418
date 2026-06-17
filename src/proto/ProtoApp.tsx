@@ -250,6 +250,7 @@ export function ProtoApp() {
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
   const requestHeroTab   = useProtoStore((s) => s.requestHeroTab)
+  const dismissBattleCard = useProtoStore((s) => s.dismissBattleCard)
 
   const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -341,6 +342,8 @@ export function ProtoApp() {
     } else {
       useGameStore.setState({ selectedUnitIds: [u.id] })
     }
+    // A roster pick dismisses any open battlefield detail card (it isn't a modal).
+    dismissBattleCard()
   }
   // Double-tap: focus — fly the stage to the hero's battlefield, follow the
   // camera, and drill the lens into Hero.
@@ -351,6 +354,7 @@ export function ProtoApp() {
     })
     if (u.locationId) requestZoom(2)
     requestHeroTab()
+    dismissBattleCard()
   }
 
   // Drop to the legacy tab-bar UI (kept as a fallback behind ?classic=1).
