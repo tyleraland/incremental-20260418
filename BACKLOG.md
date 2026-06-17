@@ -12,13 +12,26 @@ the P2 Items polish (equipped/held filter + "held by <hero>" labels) are **done*
 What's left:
 
 - **Classic-UI retirement (cleanup).** Once the shell is proven in the wild,
-  delete the legacy tab-bar path: `TabBar`, the `?classic=1` / `classicMode`
-  branch in `App.tsx`, and the standalone page routing. **Keep the page
-  *components*** the shell embeds (`Guild`/`Reports`/`Time`) and the data/store;
-  only `pages/Map.tsx`, `pages/Units.tsx`, `pages/Inventory.tsx`, and
-  `components/TabBar.tsx` become removable (confirm nothing else imports them).
-  The dev `?perf` harness still wants the single-screen `BattleView`, so either
-  keep a minimal perf render path or point it at the shell's battle stage first.
+  delete the legacy tab-bar path. Dependency graph traced 2026-06 (importers
+  outside tests + `App.tsx`):
+  - **Removable (classic-only):** `components/TabBar.tsx`,
+    `components/RosterCarousel.tsx` (only `App.tsx` imports it — the shell has
+    its own roster rail; the `ProtoApp` "RosterCarousel" mention is a comment,
+    not an import), `pages/Map.tsx`, `pages/Units.tsx`, `pages/Inventory.tsx`,
+    and the `?classic=1` / `classicMode` branch + those imports in `App.tsx`.
+  - **Keep (shared):** `pages/Guild`, `pages/Reports`, `pages/Time` (embedded in
+    `ProtoApp`), and the shared components `BattleView`, `MonsterCodex`,
+    `TraitBubble`, `UnitReportSheet`, `OfflineSummary`.
+  - **Tests to port, not just delete (real coverage loss otherwise):** the only
+    UI-rendering tests live against the classic pages and have **no proto
+    equivalent** — `__tests__/ui/UnitRect.test.tsx` (3, → `pages/Map`),
+    `__tests__/ui/TacticsTab.test.tsx` (7, → `pages/Units`),
+    `__tests__/ui/UnitsPage.test.tsx` (6, → `pages/Units`) = 16 test blocks.
+    Re-point them at the shell lenses (`TacticianLens`/`GearLens`/the stage)
+    before removing the pages. `TabBar` and `pages/Inventory` have no tests.
+  - **Blocker:** the dev `?perf` harness still renders the classic path for the
+    single-screen `BattleView`, so keep a minimal perf render path (or point it
+    at the shell's battle stage) before deleting the `classicMode` branch.
 - **Crafting** (`craft`, `learnedRecipes`) — not surfaced in the shell. Note it's
   **broken even in production**: drops are `drop-*` and recipe outputs `craft-*`,
   neither of which are real item defs (see *Economy & resources* below). Data
