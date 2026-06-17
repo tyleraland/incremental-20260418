@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useGameStore, MONSTER_REGISTRY, type Location } from '@/stores/useGameStore'
+import { useGameStore, MONSTER_REGISTRY, type Location, type Unit } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { ItemCodex } from '@/components/ItemCodex'
 import { INITIAL_EQUIPMENT } from '@/data/equipment'
@@ -231,11 +231,34 @@ export function LocationDetail({ location }: { location: Location }) {
   const [codexId, setCodexId] = useState<string | null>(null)
 
   const here = units.filter((u) => u.locationId === location.id)
+  // Three positional groups for the Heroes row: present-but-unselected (left),
+  // selected & already here (middle), and toDeploy (selected elsewhere) which
+  // rides next to the Deploy button on the right.
+  const selectedHere = here.filter((u) => selectedUnitIds.includes(u.id))
+  const presentUnsel = here.filter((u) => !selectedUnitIds.includes(u.id))
   // Tap a hero chip to add/remove them from the current selection (so this group
   // doubles as a selection surface — you can see who's picked and adjust).
   const toggleSel = (id: string) => useGameStore.setState((s) => ({
     selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id],
   }))
+  // A stationed-here chip (green when just present, primary ring when selected).
+  const hereChip = (u: Unit, sel: boolean) => (
+    <button
+      key={u.id}
+      onClick={() => toggleSel(u.id)}
+      title={sel ? 'On site · selected' : 'On site'}
+      className={[
+        'flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors',
+        sel
+          ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
+          : 'border-game-green/40 bg-game-green/10 text-game-text hover:border-game-green/70',
+      ].join(' ')}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-game-green shrink-0" />
+      <span className="truncate">{u.name.split(' ')[0]}</span>
+      <span className="text-game-text-dim">Lv {u.level}</span>
+    </button>
+  )
 
   // Foes: live count per monster type on the field now, else the location's pool.
   const liveCount: Record<string, number> = {}
@@ -263,55 +286,43 @@ export function LocationDetail({ location }: { location: Location }) {
         </button>
       )}
 
-      {/* Heroes — everyone stationed here, plus any selected hero staged for a
-          deploy. Color reads the two axes at a glance: present (green) ·
-          selected (primary ring) · proposed-deploy (blue ghost, matching the
-          blue Deploy button below). Tap a chip to add/remove from the selection. */}
+      {/* Heroes — three positional groups: present-but-unselected (left),
+          selected & already here (middle), and the staged-deploy cluster
+          (blue ghost chips + a compact Deploy button) pinned to the right.
+          Tap any chip to add/remove it from the selection. */}
       {(here.length > 0 || toDeploy.length > 0) && (
         <div>
           <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Heroes</div>
-          <div className="flex flex-wrap gap-1.5">
-            {here.map((u) => {
-              const sel = selectedUnitIds.includes(u.id)
-              return (
+          <div className="flex items-center gap-x-3 gap-y-1.5 flex-wrap">
+            {presentUnsel.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">{presentUnsel.map((u) => hereChip(u, false))}</div>
+            )}
+            {selectedHere.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">{selectedHere.map((u) => hereChip(u, true))}</div>
+            )}
+            {toDeploy.length > 0 && (
+              <div className="ml-auto flex items-center justify-end flex-wrap gap-1.5">
+                {toDeploy.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => toggleSel(u.id)}
+                    title={`${u.name.split(' ')[0]} is elsewhere — Deploy here to bring them in (tap to unselect)`}
+                    className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-dashed border-blue-400/60 bg-blue-500/10 text-blue-100 hover:border-blue-300 transition-colors"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
+                    <span className="truncate">{u.name.split(' ')[0]}</span>
+                    <span className="text-blue-300/80">Lv {u.level}</span>
+                  </button>
+                ))}
                 <button
-                  key={u.id}
-                  onClick={() => toggleSel(u.id)}
-                  title={sel ? 'On site · selected' : 'On site'}
-                  className={[
-                    'flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors',
-                    sel
-                      ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
-                      : 'border-game-green/40 bg-game-green/10 text-game-text hover:border-game-green/70',
-                  ].join(' ')}
+                  onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
+                  className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-md border border-blue-400/70 bg-blue-500/25 text-blue-50 hover:bg-blue-500/40 hover:border-blue-300 transition-colors shadow-sm"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-game-green shrink-0" />
-                  <span className="truncate">{u.name.split(' ')[0]}</span>
-                  <span className="text-game-text-dim">Lv {u.level}</span>
+                  ➤ Deploy {toDeploy.length > 1 ? `${toDeploy.length} ` : ''}here
                 </button>
-              )
-            })}
-            {toDeploy.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => toggleSel(u.id)}
-                title={`${u.name.split(' ')[0]} is elsewhere — Deploy here to bring them in (tap to unselect)`}
-                className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-dashed border-blue-400/60 bg-blue-500/10 text-blue-100 hover:border-blue-300 transition-colors"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                <span className="truncate">{u.name.split(' ')[0]}</span>
-                <span className="text-blue-300/80">Lv {u.level}</span>
-              </button>
-            ))}
+              </div>
+            )}
           </div>
-          {toDeploy.length > 0 && (
-            <button
-              onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
-              className="mt-2 w-full text-sm font-semibold px-3 py-2 rounded-md border border-blue-400/70 bg-blue-500/25 text-blue-50 hover:bg-blue-500/40 hover:border-blue-300 transition-colors shadow-sm"
-            >
-              ➤ Deploy {toDeploy.length > 1 ? `${toDeploy.length} ` : ''}here
-            </button>
-          )}
         </div>
       )}
 
