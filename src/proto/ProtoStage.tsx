@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useGameStore, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { useProtoStore, type ZoomLevel } from './protoStore'
+import { StageOverlay } from './StageOverlay'
 
 // ── Prototype Stage ────────────────────────────────────────────────────────────
 //
@@ -122,6 +123,8 @@ export function ProtoStage() {
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const setCombatLocation   = useGameStore((s) => s.setCombatLocation)
   const battles             = useGameStore((s) => s.battles)
+  const stageOverlay        = useProtoStore((s) => s.stageOverlay)
+  const closeStageOverlay   = useProtoStore((s) => s.closeStageOverlay)
 
   const [zoom, setZoom] = useState(0)       // continuous 0..2
   const [focus, setFocus] = useState({ x: 6 * CELL, y: 3.5 * CELL })
@@ -359,11 +362,14 @@ export function ProtoStage() {
       </div>
 
       {/* dive hint while in the locale band */}
-      {focusLoc && zoom >= 0.85 && battleOpacity < 0.15 && (
+      {focusLoc && zoom >= 0.85 && battleOpacity < 0.15 && !stageOverlay && (
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full border border-game-border bg-game-bg/80 text-[11px] text-game-text-dim pointer-events-none">
           Pinch / scroll in to drop into {focusLoc.name}
         </div>
       )}
+
+      {/* details/research overlay (skill tree, …) — in front of the battlefield */}
+      {stageOverlay && <StageOverlay overlay={stageOverlay} onClose={closeStageOverlay} />}
     </div>
   )
 }

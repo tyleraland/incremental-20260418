@@ -44,10 +44,26 @@ test('proto: breadcrumb + tabs + bottom-sheet walkthrough', async ({ page }, tes
   await page.getByRole('button', { name: 'Close unit detail' }).click({ timeout: 3000 }).catch(() => {})
   await page.waitForTimeout(200)
 
-  // Party / Items lenses.
+  // Hero → Skills: the action bar (bottom) + Skill tree overlay (top, in front
+  // of the battlefield).
+  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await page.waitForTimeout(250)
+  await shot('04b-hero-skills')
+  await page.getByRole('button', { name: /Skill tree/ }).click()
+  await page.waitForTimeout(300)
+  await shot('04c-skill-tree')
+  await page.getByRole('button', { name: /Close/ }).click().catch(() => {})
+  await page.waitForTimeout(200)
+
+  // Party matrix — Auto is a two-tap commit (arm → ghosts → Apply).
   await page.getByRole('button', { name: 'Party', exact: true }).click()
   await page.waitForTimeout(300)
-  await shot('05-party')
+  await page.getByRole('button', { name: /Auto/ }).click() // arm: show ghosts
+  await page.waitForTimeout(250)
+  await shot('05-party-auto-armed')
+  await page.getByRole('button', { name: /Apply/ }).click() // commit
+  await page.waitForTimeout(250)
+  await shot('05b-party-applied')
   await page.getByRole('button', { name: 'Items', exact: true }).click()
   await page.waitForTimeout(300)
   await shot('06-items')

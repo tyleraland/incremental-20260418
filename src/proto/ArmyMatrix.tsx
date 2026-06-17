@@ -24,14 +24,6 @@ const CHANNELS: { id: string; label: string }[] = [
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'React' }, { id: 'passive', label: 'Passive' },
 ]
 const GEAR_ROWS: EquipSlot[] = ['mainHand', 'offHand', 'armor', 'accessory']
-const CLASS_RECS: Record<string, string[]> = {
-  Fighter: ['charger', 'tank-buster', 'opportunist'],
-  Ranger:  ['kiter', 'focus-casters', 'opportunist'],
-  Mage:    ['kiter', 'storm-caller', 'wary-caster'],
-  Cleric:  ['retreater', 'focus-casters'],
-  Rogue:   ['flanker', 'assassinate', 'opportunist'],
-  Novice:  ['charger', 'opportunist'],
-}
 
 // ── shared gear helpers ───────────────────────────────────────────────────────
 function itemFor(unit: Unit, slot: EquipSlot, equipment: EquipmentItem[]): EquipmentItem | undefined {
@@ -80,8 +72,10 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
   const toggleLock    = useProtoStore((s) => s.toggleLock)
 
   const [facet, setFacet] = useState<Facet>('tactics')
-  const [whatIf, setWhatIf] = useState(true)
+  // Auto is a two-tap commit: 1st tap arms (shows ghosts + Cancel), 2nd applies.
+  const [armed, setArmed] = useState(false)
   const [picker, setPicker] = useState<{ unit: Unit; key: string } | null>(null)
+  const pickFacet = (f: Facet) => { setFacet(f); setArmed(false) }
 
   if (squad.length === 0) {
     return (
@@ -102,11 +96,12 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
   for (const u of squad) {
     if (heroLocks.includes(u.id)) continue
     if (facet === 'tactics') {
-      const recs = CLASS_RECS[u.class ?? 'Novice'] ?? CLASS_RECS.Novice
+      // Placeholder "intelligence": casters kite, everyone else charges. The real
+      // recommendation engine lands later (see ui-overhaul.md).
+      const want = (u.class === 'Mage' || u.class === 'Cleric') ? 'kiter' : 'charger'
       const equipped = new Set(u.tactics.map((t) => t.id))
       const free = MAX_UNIT_TACTICS - u.tactics.length
-      const add = recs.filter((id) => TACTIC_REGISTRY[id] && !equipped.has(id)).slice(0, Math.max(0, free))
-      if (add.length) tacticProps[u.id] = add
+      if (TACTIC_REGISTRY[want] && !equipped.has(want) && free > 0) tacticProps[u.id] = [want]
     } else {
       const g: Partial<Record<EquipSlot, string>> = {}
       for (const slot of GEAR_ROWS) {
@@ -122,51 +117,45 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
     ? Object.values(tacticProps).some((a) => a.length)
     : Object.values(gearProps).some((g) => Object.keys(g).length)
 
-  function optimize() {
+  function apply() {
     for (const u of squad) {
       if (heroLocks.includes(u.id)) continue
       if (facet === 'tactics') for (const id of tacticProps[u.id] ?? []) equipTactic(u.id, id)
       else for (const [slot, id] of Object.entries(gearProps[u.id] ?? {})) equipItem(u.id, slot as EquipSlot, id)
     }
+    setArmed(false)
   }
+  function tapAuto() { if (armed) apply(); else if (hasProps) setArmed(true) }
 
   const rows = facet === 'tactics' ? CHANNELS.map((c) => ({ id: c.id, label: c.label })) : GEAR_ROWS.map((s) => ({ id: s, label: SLOT_LABELS[s] }))
 
   return (
     <div className="space-y-3">
-      {/* command bar */}
-      <div className="flex items-center gap-2">
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim">On the field</div>
-          <div className="text-xs text-game-text font-medium truncate">{locationName}</div>
-        </div>
-        <button
-          onClick={optimize}
-          disabled={!hasProps}
-          title="Apply the what-if loadout now (skips locked heroes)"
-          className={['ml-auto text-[11px] px-2.5 py-1 rounded-lg border', hasProps
-            ? 'border-game-accent/60 bg-game-accent/10 text-game-accent hover:bg-game-accent/20'
-            : 'border-game-border text-game-muted cursor-not-allowed'].join(' ')}
-        >⚡ Optimize</button>
-      </div>
-
-      {/* facet toggle + what-if */}
+      {/* command bar: facet toggle + Auto (two-tap) */}
       <div className="flex items-center gap-1">
         {(['tactics', 'gear'] as Facet[]).map((f) => (
           <button
             key={f}
-            onClick={() => setFacet(f)}
+            onClick={() => pickFacet(f)}
             className={['text-[11px] px-3 py-1 rounded-full border transition-colors capitalize', facet === f
               ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
               : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
           >{f === 'tactics' ? '⚑ Tactics' : '⚙ Gear'}</button>
         ))}
-        <button
-          onClick={() => setWhatIf((v) => !v)}
-          title="Preview the loadout Optimize would apply"
-          className={['ml-auto text-[11px] px-2.5 py-1 rounded-full border transition-colors', whatIf
-            ? 'border-game-accent/50 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
-        >👁 what-if</button>
+        <div className="ml-auto flex items-center gap-1">
+          {armed && (
+            <button onClick={() => setArmed(false)} className="text-[11px] px-2 py-1 rounded-full border border-game-border text-game-text-dim hover:text-game-text">Cancel</button>
+          )}
+          <button
+            onClick={tapAuto}
+            disabled={!hasProps && !armed}
+            title={armed ? 'Tap again to apply the highlighted loadout' : 'Auto-assign a recommended loadout (preview first)'}
+            className={['text-[11px] px-3 py-1 rounded-full border transition-colors',
+              armed ? 'border-game-accent bg-game-accent/20 text-game-accent ring-2 ring-game-accent/50 animate-pulse'
+                : hasProps ? 'border-game-accent/60 bg-game-accent/10 text-game-accent hover:bg-game-accent/20'
+                : 'border-game-border text-game-muted cursor-not-allowed'].join(' ')}
+          >{armed ? '⚡ Apply' : '⚡ Auto'}</button>
+        </div>
       </div>
 
       {partyTactics.length > 0 && facet === 'tactics' && (
@@ -218,14 +207,14 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
                   const prop = (tacticProps[u.id] ?? []).filter((id) => TACTIC_REGISTRY[id]?.channel === row.id)
                   body = (
                     <>
-                      {inCh.length === 0 && (!whatIf || prop.length === 0) && <span className="text-[10px] text-game-muted">＋</span>}
+                      {inCh.length === 0 && (!armed || prop.length === 0) && <span className="text-[10px] text-game-muted">＋</span>}
                       {inCh.map((t, i) => (
                         <div key={t.id} className="flex items-center gap-1">
                           <span className="text-[8px] text-game-muted tabular-nums">{i + 1}</span>
                           <span className="text-[10px] text-game-text leading-tight">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
                         </div>
                       ))}
-                      {whatIf && prop.map((id) => (
+                      {armed && prop.map((id) => (
                         <div key={id} className="flex items-center gap-1 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
                           <span className="text-[8px] text-game-accent">+</span>
                           <span className="text-[10px] text-game-accent leading-tight">{TACTIC_REGISTRY[id]?.name ?? id}</span>
@@ -238,7 +227,7 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
                   const mh = itemFor(u, 'mainHand', equipment)
                   const slotLocked = slot === 'offHand' && mh?.category === 'weapon-2h'
                   const it = itemFor(u, slot, equipment)
-                  const propId = whatIf ? gearProps[u.id]?.[slot] : undefined
+                  const propId = armed ? gearProps[u.id]?.[slot] : undefined
                   const propItem = propId ? equipment.find((e) => e.id === propId) : undefined
                   body = slotLocked ? <span className="text-[10px] text-game-muted italic">2H</span> : (
                     <>
@@ -267,7 +256,7 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
       </div>
 
       <div className="text-[10px] text-game-muted italic">
-        Tap a cell to assign · 👁 what-if ghosts the loadout Optimize would pick · ⚡ Optimize applies it now · 🔒 protects a hero.
+        Tap a cell to assign · ⚡ Auto previews a loadout (ghosts); tap Apply to commit · 🔒 protects a hero.
       </div>
 
       {picker && facet === 'tactics' && createPortal(

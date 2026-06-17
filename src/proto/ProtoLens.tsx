@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  useGameStore, getDerivedStats, getInitials, getItemTraits,
+  useGameStore, getDerivedStats, getInitials, getItemTraits, getAvailableSkills, SKILL_REGISTRY,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
 import { getUnitTraits } from '@/data/traits'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
 import { TraitRow } from '@/components/TraitBubble'
-import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait } from '@/types'
+import { ACTION_SLOT_COUNT } from '@/types'
+import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait, ActionSlotEntry } from '@/types'
 import { useProtoStore } from './protoStore'
 import { buildSaga } from './lore'
 import { ArmyMatrix } from './ArmyMatrix'
@@ -26,7 +27,7 @@ import { LocationDetail } from './LocationDetail'
 // drives navigation, not the lens.
 
 type Top = 'location' | 'hero' | 'party' | 'items'
-type HeroSub = 'summary' | 'gear' | 'saga' | 'tactics'
+type HeroSub = 'summary' | 'skills' | 'gear' | 'tactics' | 'saga'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location', label: 'Location', icon: '⌖' },
   { id: 'hero',     label: 'Hero',     icon: '◈' },
@@ -34,7 +35,7 @@ const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'items',    label: 'Items',    icon: '🎒' },
 ]
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
-  { id: 'summary', label: 'Summary' }, { id: 'gear', label: 'Gear' },
+  { id: 'summary', label: 'Summary' }, { id: 'skills', label: 'Skills' }, { id: 'gear', label: 'Gear' },
   { id: 'tactics', label: 'Tactics' }, { id: 'saga', label: 'Saga' },
 ]
 
@@ -396,6 +397,86 @@ function SagaLens({ unit }: { unit: Unit }) {
   )
 }
 
+// ── Skills lens (bottom = quick decisions: the action bar) ────────────────────--
+// Assign learned active skills to the 6-slot action bar — the loadout the hero
+// casts in battle. Learning new skills / spending points is "research" and lives
+// in the top stage overlay (Skill tree ▸), so you can tweak the bar while the
+// fight plays. (See ui-overhaul.md for the decisions-bottom / details-top split.)
+function SkillsLens({ unit }: { unit: Unit }) {
+  const setActionSlot   = useGameStore((s) => s.setActionSlot)
+  const openStageOverlay = useProtoStore((s) => s.openStageOverlay)
+  const [slotIdx, setSlotIdx] = useState<number | null>(null)
+
+  const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
+  const onBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'skill').map((e) => e.id))
+  // Learned ACTIVE skills are the assignable pool (passives are always-on).
+  const learnedActive = getAvailableSkills(unit).filter((e) => e.current > 0 && e.skill.type === 'active')
+  const pool = learnedActive.filter((e) => !onBar.has(e.skill.id))
+
+  function label(e: ActionSlotEntry | null): string {
+    if (!e) return ''
+    if (e.kind === 'skill') return SKILL_REGISTRY[e.id]?.name ?? e.id
+    return 'item'
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Action bar — battle skills</span>
+        <button onClick={() => openStageOverlay({ kind: 'skill-tree', unitId: unit.id })} className="text-[11px] px-2 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text">
+          Skill tree ▸{unit.skillPoints > 0 ? <span className="text-game-gold"> · {unit.skillPoints} pt</span> : null}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5">
+        {slots.map((entry, i) => (
+          <button
+            key={i}
+            onClick={() => setSlotIdx(slotIdx === i ? null : i)}
+            className={['h-12 rounded-lg border flex items-center justify-center px-1 text-center transition-colors',
+              slotIdx === i ? 'border-game-primary bg-game-primary/15'
+                : entry ? 'border-game-border bg-game-bg hover:border-game-primary/50'
+                : 'border-dashed border-game-border/60 bg-game-bg/40 hover:border-game-primary/40'].join(' ')}
+          >
+            <span className={['text-[11px] leading-tight', entry ? 'text-game-text font-medium' : 'text-game-muted'].join(' ')}>
+              {entry ? label(entry) : '＋'}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {slotIdx !== null && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Slot {slotIdx + 1} — assign a skill</div>
+          <div className="space-y-1">
+            {slots[slotIdx] && (
+              <button onClick={() => { setActionSlot(unit.id, slotIdx, null); setSlotIdx(null) }}
+                className="w-full text-left rounded-md border border-game-border/60 bg-game-bg px-2.5 py-1.5 text-xs text-game-text-dim italic hover:border-red-500/50">
+                Clear slot
+              </button>
+            )}
+            {pool.length === 0 && <div className="text-xs text-game-muted italic px-1">No more learned active skills — learn some in the Skill tree.</div>}
+            {pool.map(({ skill, current }) => (
+              <button
+                key={skill.id}
+                onClick={() => { setActionSlot(unit.id, slotIdx, { kind: 'skill', id: skill.id }); setSlotIdx(null) }}
+                className="w-full text-left rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-primary/50"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium text-game-text">{skill.name}</span>
+                  <span className="text-[9px] text-game-text-dim">Lv {current}</span>
+                </div>
+                <div className="text-[10px] text-game-text-dim leading-snug">{skill.description(current)}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {slotIdx === null && <div className="text-[10px] text-game-muted italic">Tap a slot to assign one of this hero's learned active skills.</div>}
+    </div>
+  )
+}
+
 // ── Focus cue ─────────────────────────────────────────────────────────────────
 // Whether the selected hero is on the battlefield you're currently viewing, with
 // shortcuts: bring them HERE (deploy to the focused location) or JUMP the camera
@@ -712,6 +793,7 @@ export function ProtoLens() {
             <FocusCue unit={unit} location={location} />
             <BattleStatus unit={unit} />
             {heroSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+            {heroSub === 'skills'  && <SkillsLens unit={unit} />}
             {heroSub === 'gear'    && <GearLens unit={unit} />}
             {heroSub === 'tactics' && <TacticianLens unit={unit} />}
             {heroSub === 'saga'    && <SagaLens unit={unit} />}

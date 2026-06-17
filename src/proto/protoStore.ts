@@ -10,6 +10,11 @@ import { create } from 'zustand'
 
 export type ZoomLevel = 0 | 1 | 2
 
+// What the stage's top-half "details" overlay is showing. Decisions happen in the
+// bottom lens; this is the research/detail surface drawn over the battlefield.
+export type StageOverlay =
+  | { kind: 'skill-tree'; unitId: string }
+
 // Attunement: a currency that trickles in with real game time. We derive the
 // *available* balance from the game clock (floor(ticks / ATTUNE_TICKS) minus what
 // you've spent), so it ticks up on its own without a separate timer.
@@ -45,35 +50,39 @@ interface ProtoState {
   // Bumped when the lens should drill into the Hero tab (double-tap a roster
   // hero / initial focus). A plain single-tap selects without bumping this.
   heroTabRequest: number
+  // Stage overlay (top half = details/research, shown in front of the
+  // battlefield): the skill tree for now; item details / codex later.
+  stageOverlay: StageOverlay | null
   attunementSpent: number
   upgrades: Record<string, Record<string, number>>   // locId → upgradeId → level
   storyChoice: Record<string, string>                // locId → chosen path id
   heroLocks: string[]                                // hero ids the matrix won't overwrite
-  proposals: Record<string, string[]>                // heroId → proposed (not-yet-applied) tactic ids
 
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
   requestHeroTab: () => void
+  openStageOverlay: (o: StageOverlay) => void
+  closeStageOverlay: () => void
   buyUpgrade: (locId: string, upId: string, cost: number, max: number) => void
   chooseStory: (locId: string, pathId: string) => void
   toggleLock: (heroId: string) => void
-  setProposals: (p: Record<string, string[]>) => void
-  clearProposals: () => void
 }
 
 export const useProtoStore = create<ProtoState>((set) => ({
   zoomLevel: 0,
   zoomRequest: null,
   heroTabRequest: 0,
+  stageOverlay: null,
   attunementSpent: 0,
   upgrades: {},
   storyChoice: {},
   heroLocks: [],
-  proposals: {},
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
   requestHeroTab: () => set((s) => ({ heroTabRequest: s.heroTabRequest + 1 })),
+  openStageOverlay: (o) => set({ stageOverlay: o }),
+  closeStageOverlay: () => set({ stageOverlay: null }),
   buyUpgrade: (locId, upId, cost, max) => set((s) => {
     const cur = s.upgrades[locId]?.[upId] ?? 0
     if (cur >= max) return s
@@ -86,8 +95,6 @@ export const useProtoStore = create<ProtoState>((set) => ({
   toggleLock: (heroId) => set((s) => ({
     heroLocks: s.heroLocks.includes(heroId) ? s.heroLocks.filter((x) => x !== heroId) : [...s.heroLocks, heroId],
   })),
-  setProposals: (p) => set({ proposals: p }),
-  clearProposals: () => set({ proposals: {} }),
 }))
 
 // A small starting pool so the upgrade economy is playable immediately in the

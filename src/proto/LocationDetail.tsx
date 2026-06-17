@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import { useGameStore, MONSTER_REGISTRY, type Location } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
-import {
-  useProtoStore, attunementAvailable, LOCATION_UPGRADES, upgradeCost, STORY_PATHS,
-} from './protoStore'
+import { useProtoStore, STORY_PATHS } from './protoStore'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
@@ -34,7 +32,6 @@ function Meter({ label, pct, value, color }: { label: string; pct: number; value
 }
 
 export function LocationDetail({ location }: { location: Location }) {
-  const ticks               = useGameStore((s) => s.ticks)
   const units               = useGameStore((s) => s.units)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
@@ -44,15 +41,11 @@ export function LocationDetail({ location }: { location: Location }) {
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
   const selected            = units.find((u) => u.id === selectedUnitIds[0]) ?? null
 
-  const spent       = useProtoStore((s) => s.attunementSpent)
-  const upgrades    = useProtoStore((s) => s.upgrades)
-  const buyUpgrade  = useProtoStore((s) => s.buyUpgrade)
   const storyChoice = useProtoStore((s) => s.storyChoice)
   const chooseStory = useProtoStore((s) => s.chooseStory)
 
   const [codexId, setCodexId] = useState<string | null>(null)
 
-  const available = attunementAvailable(ticks, spent)
   const famPct = Math.round(((locationFamiliarity[location.id] ?? 0) / location.familiarityMax) * 100)
   const here = units.filter((u) => u.locationId === location.id)
 
@@ -62,9 +55,6 @@ export function LocationDetail({ location }: { location: Location }) {
     if (c.team === 'enemy' && c.alive) { const mid = c.id.split('#')[0]; liveCount[mid] = (liveCount[mid] ?? 0) + 1 }
   }
   const foeIds = (battle ? Object.keys(liveCount) : location.monsterIds).filter((id) => MONSTER_REGISTRY[id])
-  const locUpgrades = upgrades[location.id] ?? {}
-  // Progress toward the next attunement point (purely cosmetic feedback).
-  const attunePct = ((ticks % 50) / 50) * 100
   const chosen = storyChoice[location.id]
 
   return (
@@ -92,43 +82,13 @@ export function LocationDetail({ location }: { location: Location }) {
       {/* meters */}
       <div className="space-y-2">
         <Meter label="Familiarity" pct={famPct} value={`${famPct}%`} color="bg-game-accent" />
-        <Meter label="Attunement charge" pct={attunePct} value={`+1 soon`} color="bg-game-secondary" />
       </div>
 
-      {/* attunement economy */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Site upgrades</span>
-          <span className="text-[11px] text-game-secondary font-medium">✷ {available} attunement</span>
-        </div>
-        <div className="space-y-1.5">
-          {LOCATION_UPGRADES.map((u) => {
-            const level = locUpgrades[u.id] ?? 0
-            const maxed = level >= u.max
-            const cost = upgradeCost(u, level)
-            const affordable = available >= cost && !maxed
-            return (
-              <div key={u.id} className="flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-2">
-                <span className="text-lg leading-none">{u.icon}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium text-game-text">{u.name}</span>
-                    <span className="text-[9px] text-game-text-dim">Lv {level}/{u.max}</span>
-                  </div>
-                  <div className="text-[10px] text-game-text-dim leading-snug">{u.desc}</div>
-                </div>
-                <button
-                  onClick={() => buyUpgrade(location.id, u.id, cost, u.max)}
-                  disabled={!affordable}
-                  className={['text-[11px] px-2 py-1 rounded shrink-0 transition-colors tabular-nums',
-                    maxed ? 'text-game-muted'
-                      : affordable ? 'border border-game-secondary/50 text-game-text hover:bg-game-secondary/15'
-                      : 'border border-game-border text-game-muted cursor-not-allowed'].join(' ')}
-                >{maxed ? 'max' : `✷ ${cost}`}</button>
-              </div>
-            )
-          })}
-        </div>
+      {/* site upgrades — placeholder (attunement economy scrapped for now;
+          kept as a stub so the management surface still reads, see ui-overhaul.md) */}
+      <div className="rounded-md border border-dashed border-game-border bg-game-bg/40 px-2.5 py-2">
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-0.5">Site upgrades</div>
+        <div className="text-[11px] text-game-muted">Spend a location currency on vendors / drop rate / spawns — design TBD.</div>
       </div>
 
       {/* story path */}
