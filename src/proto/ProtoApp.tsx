@@ -181,7 +181,7 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
 type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings'
 const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings' }
 
-function NavBtn({ icon, label, active, disabled, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; onClick?: () => void }) {
+function NavBtn({ icon, label, active, disabled, prominent, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; prominent?: boolean; onClick?: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -189,14 +189,16 @@ function NavBtn({ icon, label, active, disabled, onClick }: { icon: string; labe
       title={label}
       aria-label={label}
       className={[
-        'flex items-center gap-1.5 px-2.5 h-8 rounded-lg border text-[11px] font-medium transition-colors',
+        'flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors',
         active ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
+          : prominent ? 'border-game-gold/50 bg-game-gold/10 text-game-gold hover:bg-game-gold/20'
           : 'border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5',
         disabled ? 'opacity-40 cursor-not-allowed' : '',
       ].join(' ')}
     >
-      <span className="text-sm leading-none">{icon}</span>
-      <span className="hidden sm:inline">{label}</span>
+      <span className="text-base leading-none">{icon}</span>
+      {/* Prominent items (Guild) keep their label on every breakpoint. */}
+      <span className={prominent ? 'inline' : 'hidden sm:inline'}>{label}</span>
     </button>
   )
 }
@@ -367,7 +369,7 @@ export function ProtoApp() {
     <div className="h-full flex flex-col bg-game-bg overflow-hidden">
       {/* global nav bar — guild/reports/time + settings (placeholders) */}
       <header className="shrink-0 flex items-center gap-1.5 px-2 h-11 border-b border-game-border bg-game-surface/70">
-        <NavBtn icon="⚜" label="Guild"   active={panel === 'guild'}   onClick={() => setPanel('guild')} />
+        <NavBtn icon="⚜" label="Guild"   prominent active={panel === 'guild'}   onClick={() => setPanel('guild')} />
         <NavBtn icon="📊" label="Reports" active={panel === 'reports'} onClick={() => setPanel('reports')} />
         <NavBtn icon="⏳" label="Time"    active={panel === 'time'}    onClick={() => setPanel('time')} />
         <div className="ml-auto flex items-center gap-1.5">

@@ -1060,12 +1060,12 @@ export function ProtoLens() {
             aria-label={t.label}
             onClick={() => setTop(t.id)}
             className={[
-              'flex-1 flex flex-col items-center gap-0.5 py-1.5 transition-colors relative',
+              'flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors relative',
               top === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
             ].join(' ')}
           >
-            <span className="text-sm leading-none">{t.icon}</span>
-            <span className="text-[9px] font-medium">{t.label}</span>
+            <span className="text-base leading-none">{t.icon}</span>
+            <span className="text-[11px] font-medium">{t.label}</span>
             {top === t.id && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-primary" />}
           </button>
         ))}
@@ -1099,26 +1099,31 @@ export function ProtoLens() {
         </div>
       )}
 
+      {/* Content. A modest zoom nudges every nested text size up a touch without
+          rewriting dozens of explicit `text-[*]` classes (h-full keeps Empty
+          states centred; overflow is handled by the scroll container above). */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
-        {top === 'hero' && (unit ? (
-          <>
-            <FocusCue unit={unit} location={location} />
-            {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
-            {effSub === 'skills'  && <SkillsLens unit={unit} />}
-            {effSub === 'gear'    && <GearLens unit={unit} />}
-            {effSub === 'tactics' && <TacticianLens unit={unit} />}
-            {effSub === 'pet'     && <CompanionLens unit={unit} />}
-            {effSub === 'saga'    && <SagaLens unit={unit} />}
-          </>
-        ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
+        <div className="h-full" style={{ zoom: 1.08 }}>
+          {top === 'hero' && (unit ? (
+            <>
+              <FocusCue unit={unit} location={location} />
+              {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+              {effSub === 'skills'  && <SkillsLens unit={unit} />}
+              {effSub === 'gear'    && <GearLens unit={unit} />}
+              {effSub === 'tactics' && <TacticianLens unit={unit} />}
+              {effSub === 'pet'     && <CompanionLens unit={unit} />}
+              {effSub === 'saga'    && <SagaLens unit={unit} />}
+            </>
+          ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
 
-        {top === 'location' && (location
-          ? <LocationDetail location={location} />
-          : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
+          {top === 'location' && (location
+            ? <LocationDetail location={location} />
+            : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
 
-        {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
+          {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
 
-        {top === 'items' && <ItemsLens unit={unit} />}
+          {top === 'items' && <ItemsLens unit={unit} />}
+        </div>
       </div>
     </div>
   )

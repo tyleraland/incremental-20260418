@@ -320,14 +320,14 @@ export function ProtoStage() {
         >‹</button>
 
         <div className="flex items-center bg-game-bg/85 border border-game-border rounded-lg px-1 py-0.5 backdrop-blur-sm">
-          {/* In a dungeon page, a leading ↩ chip pops back to the world. */}
+          {/* In a dungeon page, a leading Exit chip pops back to the world. */}
           {mapPageId !== 'world' && (
             <button
               onClick={leaveDungeon}
               title={`Leave ${region.name}`}
               aria-label={`Leave ${region.name}`}
-              className="px-1.5 py-1 rounded-md flex items-center gap-0.5 text-game-text-dim hover:text-game-text"
-            ><span aria-hidden>↩</span></button>
+              className="mr-0.5 px-2 py-1 rounded-md flex items-center gap-1 font-medium text-rose-300 hover:text-rose-200 hover:bg-rose-500/10"
+            ><span aria-hidden>↩</span><span>Exit</span></button>
           )}
           {([0, 1, 2] as const).map((z, i) => {
             const label = z === 0 ? region.name : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'

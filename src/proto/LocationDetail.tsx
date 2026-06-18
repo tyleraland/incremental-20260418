@@ -441,11 +441,10 @@ export function LocationDetail({ location }: { location: Location }) {
       {entryRegion && (
         <button
           onClick={enterRegion}
-          className="w-full flex items-center gap-2 rounded-md border border-rose-700/50 bg-rose-950/20 px-2.5 py-2 text-left hover:border-rose-600/70"
+          className="inline-flex items-center gap-2 rounded-md border border-rose-700/50 bg-rose-950/20 px-3 py-2 text-left hover:border-rose-600/70"
         >
           <span className="text-base">◆</span>
-          <span className="text-xs text-game-text flex-1">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
-          <span className="text-[11px] text-rose-300">descend ›</span>
+          <span className="text-sm text-game-text">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
         </button>
       )}
 
