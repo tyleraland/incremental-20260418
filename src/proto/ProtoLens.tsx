@@ -797,9 +797,17 @@ function BattleStatus({ unit }: { unit: Unit }) {
   }
   return (
     <div className="mb-3 rounded-lg border border-game-border bg-game-bg/60 p-2.5 space-y-1.5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] uppercase tracking-widest text-game-accent">● On the battlefield</span>
-        <span className="text-[10px] text-game-text-dim tabular-nums">{Math.ceil(me.hp)}/{me.maxHp} HP</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[10px] text-game-text-dim tabular-nums">{Math.ceil(me.hp)}/{me.maxHp} HP</span>
+          {/* twin of the card's Follow button (same pill) — opens this hero's card */}
+          <button
+            onClick={openCard}
+            title="Open this hero's battlefield detail card"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-game-accent/60 bg-game-accent/15 text-game-accent text-[11px] font-semibold hover:bg-game-accent/25 transition-colors"
+          >⚔ Card</button>
+        </div>
       </div>
       <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
         <div className={`h-full rounded-full ${hpPct > 60 ? 'bg-game-green' : hpPct > 30 ? 'bg-game-gold' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} />
@@ -817,11 +825,6 @@ function BattleStatus({ unit }: { unit: Unit }) {
           ))}
         </div>
       )}
-      <button
-        onClick={openCard}
-        title="Open this hero's battlefield detail card"
-        className="w-full mt-0.5 text-[11px] px-2 py-1 rounded-md border border-game-accent/50 bg-game-accent/10 text-game-accent hover:bg-game-accent/20 transition-colors"
-      >⚔ Battlefield card ▸</button>
     </div>
   )
 }
