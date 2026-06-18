@@ -41,7 +41,7 @@ const HERO_SUBS: { id: HeroSub; label: string }[] = [
 // The Pet sub only appears once a hero has a beast companion.
 const PET_SUB: { id: HeroSub; label: string } = { id: 'pet', label: 'Pet' }
 
-const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
+const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Archer: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
   { id: 'movement', label: 'Movement' }, { id: 'targeting', label: 'Targeting' },
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'Reaction' }, { id: 'passive', label: 'Passive' },

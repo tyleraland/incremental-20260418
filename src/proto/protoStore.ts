@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useGameStore } from '@/stores/useGameStore'
 
 // ── Prototype-only mock state ───────────────────────────────────────────────--
 //
@@ -89,6 +90,56 @@ export function questStatus(
   return o.activeId ? 'blocked' : 'available'
 }
 
+// ── Class-change quests (hero-relative) ──────────────────────────────────────--
+//
+// Unlike the per-location monster quests above, these are tied to a single hero
+// rather than a location's progress. They live in the peaceful cities and turn a
+// *Novice* (a hero with no class — `class: null`) into a specialized class. The
+// board status is computed against the currently *selected* hero:
+//   • no Novice selected            → gray (…)  "select Novice"
+//   • a level-1 Novice selected     → gray (!)  "requires level 2+"
+//   • a level-2+ Novice selected    → yellow (!) — that hero can *begin* the path
+//   • a hero has committed (begun)  → yellow (?) — requirement met, ready to change
+// Only one hero may be committed to a given path at a time; while it's committed
+// no one else can begin it. Committing/cancelling is mock proto state, but the
+// final class change is written to the real game unit (it persists via the units
+// codec). The "requirement" is instantly satisfied for now — committing makes the
+// quest immediately ready to complete.
+export interface ClassChangeQuestDef {
+  id: string
+  locationId: string   // the city this path is offered in
+  targetClass: string  // class the Novice becomes on completion
+  title: string        // e.g. "Path of the Fighter"
+  story: string        // narrative blurb (shown when expanded)
+}
+export const CLASS_CHANGE_QUESTS: ClassChangeQuestDef[] = [
+  { id: 'path-fighter', locationId: 'prontera-city', targetClass: 'Fighter', title: 'Path of the Fighter', story: 'The Prontera guard drills recruits in sword and shield. Prove your mettle and take up the blade as a Fighter.' },
+  { id: 'path-cleric',  locationId: 'prontera-city', targetClass: 'Cleric',  title: 'Path of the Cleric',  story: 'The cathedral of Prontera seeks the devout. Take your vows and walk the divine path as a Cleric.' },
+  { id: 'path-archer',  locationId: 'payon-city',    targetClass: 'Archer',  title: 'Path of the Archer',  story: 'The hunters of Payon test every comer at the range. String a bow and master the hunt as an Archer.' },
+  { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild watches from the rafters. Slip past their wards and earn your daggers as a Rogue." },
+  { id: 'path-mage',    locationId: 'geffen-city',   targetClass: 'Mage',    title: 'Path of the Mage',    story: 'The arcane college of Geffen admits only the gifted. Study the weave and claim your robes as a Mage.' },
+]
+
+// A Novice is a hero with no specialized class yet (`class: null`, rendered as
+// "Novice"). Pre-classed heroes can't take a class-change path.
+export const MIN_CLASS_CHANGE_LEVEL = 2
+
+export type ClassQuestStatus =
+  | 'select-novice'  // gray (…) — no eligible Novice in the current selection
+  | 'underleveled'   // gray (!) — a Novice is selected but below the level gate
+  | 'eligible'       // yellow (!) — a level-gate Novice is selected; can begin
+  | 'committed'      // yellow (?) — a hero has begun; requirement met, ready to change
+
+export function classQuestStatus(o: {
+  committedHeroId: string | null
+  selectedNovice: { level: number } | null
+}): ClassQuestStatus {
+  if (o.committedHeroId) return 'committed'
+  if (!o.selectedNovice) return 'select-novice'
+  if (o.selectedNovice.level < MIN_CLASS_CHANGE_LEVEL) return 'underleveled'
+  return 'eligible'
+}
+
 interface ProtoState {
   zoomLevel: ZoomLevel
   // A cross-component request for the stage to fly to a zoom stop (ProtoApp /
@@ -114,6 +165,8 @@ interface ProtoState {
   activeQuest: Record<string, string | null>         // locId → committed quest id
   questProgress: Record<string, Record<string, number>> // locId → questId → count
   completedQuests: Record<string, string[]>          // locId → done quest ids (in order)
+  // Class-change quests: which hero (if any) has committed to each path.
+  classQuestCommit: Record<string, string>           // questId → committed heroId
 
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
@@ -128,6 +181,10 @@ interface ProtoState {
   acceptQuest: (locId: string, questId: string) => void
   advanceQuest: (locId: string, questId: string, by: number) => void  // mock progress
   turnInQuest: (locId: string, questId: string) => void
+  // Class-change quests (hero-relative).
+  beginClassQuest: (questId: string, heroId: string) => void
+  completeClassQuest: (questId: string) => void   // applies the class change to the real unit
+  cancelClassQuest: (questId: string) => void     // discards the commitment, no change
 }
 
 export const useProtoStore = create<ProtoState>((set) => ({
@@ -144,6 +201,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   activeQuest: {},
   questProgress: {},
   completedQuests: {},
+  classQuestCommit: {},
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
@@ -181,6 +239,27 @@ export const useProtoStore = create<ProtoState>((set) => ({
     activeQuest: s.activeQuest[locId] === questId ? { ...s.activeQuest, [locId]: null } : s.activeQuest,
     completedQuests: { ...s.completedQuests, [locId]: [...(s.completedQuests[locId] ?? []), questId] },
   })),
+
+  beginClassQuest: (questId, heroId) => set((s) => {
+    if (s.classQuestCommit[questId]) return s   // someone's already on this path
+    return { classQuestCommit: { ...s.classQuestCommit, [questId]: heroId } }
+  }),
+  completeClassQuest: (questId) => set((s) => {
+    const heroId = s.classQuestCommit[questId]
+    const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
+    if (!heroId || !def) return s
+    // Write the class change to the real game unit (persists via the units codec).
+    useGameStore.setState((g) => ({
+      units: g.units.map((u) => (u.id === heroId ? { ...u, class: def.targetClass } : u)),
+    }))
+    const next = { ...s.classQuestCommit }; delete next[questId]
+    return { classQuestCommit: next }
+  }),
+  cancelClassQuest: (questId) => set((s) => {
+    if (!s.classQuestCommit[questId]) return s
+    const next = { ...s.classQuestCommit }; delete next[questId]
+    return { classQuestCommit: next }
+  }),
 }))
 
 // A small starting pool so the upgrade economy is playable immediately in the

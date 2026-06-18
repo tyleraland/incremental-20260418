@@ -36,6 +36,7 @@ export const TRAIT_REGISTRY: Record<string, Trait> = {
   cleric:      { id: 'cleric',      label: 'Cleric',      category: 'class', description: 'A divine spellcaster. Wields rods and blesses allies.' },
   rogue:       { id: 'rogue',       label: 'Rogue',       category: 'class', description: 'A nimble operative. Favors light weapons, tools, and stealth.' },
   ranger:      { id: 'ranger',      label: 'Ranger',      category: 'class', description: 'A ranged combatant. Expert with bows and survival skills.' },
+  archer:      { id: 'archer',      label: 'Archer',      category: 'class', description: 'A bow specialist. Strikes from range and keeps the enemy at a distance.' },
   'prof-swords':      { id: 'prof-swords',      label: 'Swords',      category: 'proficiency', description: 'Trained with swords. Improved accuracy and damage.' },
   'prof-heavy-armor': { id: 'prof-heavy-armor', label: 'Heavy Armor', category: 'proficiency', description: 'No movement penalty in chain or plate.' },
   'prof-tools':       { id: 'prof-tools',       label: 'Tools',       category: 'proficiency', description: 'Improved yield from tool-based activities.' },

@@ -20,6 +20,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   // World page
   'geffen-city': [2, 3], 'elite-four': [2, 2], 'geffen-field-1': [3, 3],
   'prontera-field-1': [4, 3], 'prontera-city': [5, 3], 'prontera-field-3': [6, 3],
+  'payon-city': [5, 2],
   'harpy-roost': [7, 3], 'boar-meadow': [6, 4], 'wolf-den': [7, 4],
   'prontera-field-2': [5, 4], 'beach-1': [5, 5],
   'pg-guardian-stand': [8, 2], 'pg-veiled-approach': [9, 2], 'pg-wolf-pack': [10, 2],

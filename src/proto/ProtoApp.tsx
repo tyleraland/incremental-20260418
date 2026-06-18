@@ -115,7 +115,7 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
 // Mock-grade: it leans on the real store + BattleView, fakes the narrative lens,
 // and isn't wired into the tab bar / save format. Purpose is to feel the shape.
 
-const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
+const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Archer: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
 function needsAttention(u: Unit, viewed: Record<string, number>): boolean {
   const v = viewed[u.id]

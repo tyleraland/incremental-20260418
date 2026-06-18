@@ -10,8 +10,8 @@ export const INITIAL_LOCATIONS: Location[] = [
   // ── World path (Geffen → Prontera → Kanto) ───────────────────────────────
   {
     id: 'geffen-city', region: 'world', name: 'Geffen City',
-    description: 'A bustling mage city built atop ancient catacombs.',
-    traits: ['city', 'arcane'], monsterIds: ['slime'],
+    description: 'A bustling mage city built atop ancient catacombs. Within its walls no monster stirs — but its arcane college will set a Novice on the Path of the Mage.',
+    traits: ['city', 'arcane'], monsterIds: [],
     familiarityMax: 100, connections: [],
     dungeonEntryRegion: 'geffen-dungeon',
   },
@@ -38,8 +38,14 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
   {
     id: 'prontera-city', region: 'world', name: 'Prontera City',
-    description: 'Capital of the Prontera kingdom.',
-    traits: ['city'], monsterIds: ['slime'],
+    description: 'Capital of the Prontera kingdom — a walled, peaceful city. Its guild halls train Novices on the Path of the Fighter and the Path of the Cleric.',
+    traits: ['city'], monsterIds: [],
+    familiarityMax: 100, connections: [],
+  },
+  {
+    id: 'payon-city', region: 'world', name: 'Payon Town',
+    description: 'A forest town of archers and shadowy dealings — no monster walks its streets. Its hunters and thieves take Novices onto the Path of the Archer or the Path of the Rogue.',
+    traits: ['city', 'forest'], monsterIds: [],
     familiarityMax: 100, connections: [],
   },
   {

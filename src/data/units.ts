@@ -110,4 +110,49 @@ export const INITIAL_UNITS: Unit[] = [
     // the manual slots go to targeting/retreat — see SKILL_TACTICS.
     tactics: [t('focus-casters'), t('opportunist'), t('retreater')],
   },
+  // ── Novices (unclassed adventurers) ──────────────────────────────────────────
+  // Blank-slate recruits (`class: null` renders as "Novice"). They carry no kit
+  // beyond a basic weapon — their whole arc is the city class-change quests (Path
+  // of the Fighter / Cleric / Archer / Rogue / Mage), which require a Novice at
+  // level 2+. Pell starts at level 2 so a class change is available immediately;
+  // the others must earn their second level in the field first.
+  {
+    id: 'u7', name: 'Pell Hightower', level: 2, exp: 0, expToNext: 80, age: 17, health: 90, recoveryTicksLeft: 0, isResting: false,
+    class: null, proficiencies: [], locationId: 'prontera-city',
+    abilities: { strength: 4, agility: 4, dexterity: 4, constitution: 4, intelligence: 4 },
+    abilityPoints: 13, skillPoints: 1,
+    learnedSkills: {},
+    travelPath: null,
+    weaponSets: [{ mainHand: 'eq-knife', offHand: null }, { mainHand: null, offHand: null }],
+    activeWeaponSet: 0,
+    equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: bar(),
+    tactics: [],
+  },
+  {
+    id: 'u8', name: 'Wynne Cobb', level: 1, exp: 0, expToNext: 10, age: 18, health: 90, recoveryTicksLeft: 0, isResting: false,
+    class: null, proficiencies: [], locationId: null,
+    abilities: { strength: 4, agility: 4, dexterity: 4, constitution: 4, intelligence: 4 },
+    abilityPoints: 10, skillPoints: 0,
+    learnedSkills: {},
+    travelPath: null,
+    weaponSets: [{ mainHand: 'eq-knife', offHand: null }, { mainHand: null, offHand: null }],
+    activeWeaponSet: 0,
+    equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: bar(),
+    tactics: [],
+  },
+  {
+    id: 'u9', name: 'Bram Tully', level: 1, exp: 0, expToNext: 10, age: 20, health: 90, recoveryTicksLeft: 0, isResting: false,
+    class: null, proficiencies: [], locationId: null,
+    abilities: { strength: 4, agility: 4, dexterity: 4, constitution: 4, intelligence: 4 },
+    abilityPoints: 10, skillPoints: 0,
+    learnedSkills: {},
+    travelPath: null,
+    weaponSets: [{ mainHand: 'eq-knife', offHand: null }, { mainHand: null, offHand: null }],
+    activeWeaponSet: 0,
+    equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
+    actionSlots: bar(),
+    tactics: [],
+  },
 ]

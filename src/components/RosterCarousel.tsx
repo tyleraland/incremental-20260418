@@ -13,6 +13,7 @@ import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/
 const CLASS_ICON: Record<string, string> = {
   Fighter: '⚔',
   Ranger:  '🏹',
+  Archer:  '🏹',
   Mage:    '✦',
   Cleric:  '✚',
   Rogue:   '🗡',

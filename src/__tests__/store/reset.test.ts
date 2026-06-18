@@ -25,7 +25,10 @@ describe('store: resetSave', () => {
     const units = useGameStore.getState().units
     expect(units.length).toBeGreaterThan(0)
     for (const u of units) {
-      expect(u.level).toBe(1)            // heroes start at level 1
+      // Starters carry no leftover progression: zero banked exp and no skill
+      // ranks above 1. (Level itself is a design choice — a Novice starter ships
+      // at level 2 so a city class-change is available out of the box.)
+      expect(u.level).toBeGreaterThanOrEqual(1)
       expect(u.exp).toBe(0)
       for (const lv of Object.values(u.learnedSkills)) expect(lv).toBeLessThanOrEqual(1)
     }

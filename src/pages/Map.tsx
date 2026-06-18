@@ -48,6 +48,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'geffen-field-1':   [3, 3],   // Geffen Outskirts
   'prontera-field-1': [4, 3],   // Western Approach
   'prontera-city':    [5, 3],
+  'payon-city':       [5, 2],   // Payon Town (forest town — archers & rogues)
   'prontera-field-3': [6, 3],   // Prontera Field (east)
   'harpy-roost':      [7, 3],   // Harpy Roost (continues east; dense open-world)
   'boar-meadow':      [6, 4],   // Boar Meadow (passive herd — aggression showcase)

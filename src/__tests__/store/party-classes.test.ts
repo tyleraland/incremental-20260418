@@ -11,19 +11,27 @@ const byId = (id: string) => INITIAL_UNITS.find((u) => u.id === id)!
 const ds = (id: string) => getDerivedStats(byId(id), INITIAL_EQUIPMENT)
 const engine = (id: string) => unitToEngineInput(byId(id), ds(id), 'player')
 
-describe('starting party classes', () => {
-  it('assigns every hero a class', () => {
-    expect(INITIAL_UNITS.every((u) => u.class !== null)).toBe(true)
-  })
+// The classed heroes (Fighter … Rogue) vs. the unclassed Novice recruits the
+// city class-change quests act on (`class: null`, rendered as "Novice").
+const CLASSED = INITIAL_UNITS.filter((u) => u.class !== null)
+const NOVICES = INITIAL_UNITS.filter((u) => u.class === null)
 
-  it('covers all five classes', () => {
-    expect(new Set(INITIAL_UNITS.map((u) => u.class))).toEqual(
+describe('starting party classes', () => {
+  it('covers all five classes among the classed starters', () => {
+    expect(new Set(CLASSED.map((u) => u.class))).toEqual(
       new Set(['Fighter', 'Ranger', 'Mage', 'Cleric', 'Rogue']),
     )
   })
 
-  it('gives each hero a deep, usable kit (equipped skills + tactics)', () => {
-    for (const u of INITIAL_UNITS) {
+  it('ships unclassed Novices for the city class-change quests', () => {
+    expect(NOVICES.length).toBeGreaterThan(0)
+    // At least one Novice is level 2+, so a class change is available out of the
+    // box (the paths gate on a level-2 Novice — see classQuestStatus).
+    expect(NOVICES.some((u) => u.level >= 2)).toBe(true)
+  })
+
+  it('gives each classed hero a deep, usable kit (equipped skills + tactics)', () => {
+    for (const u of CLASSED) {
       const skills = u.actionSlots.filter((s) => s?.kind === 'skill').length
       expect(skills).toBeGreaterThanOrEqual(2)
       expect(u.tactics.length).toBeGreaterThanOrEqual(2)

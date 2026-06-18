@@ -4,7 +4,11 @@ import { MonsterCodex } from '@/components/MonsterCodex'
 import { ItemCodex } from '@/components/ItemCodex'
 import { INITIAL_EQUIPMENT } from '@/data/equipment'
 import type { EquipmentItem } from '@/types'
-import { useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward } from './protoStore'
+import {
+  useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
+  CLASS_CHANGE_QUESTS, classQuestStatus, MIN_CLASS_CHANGE_LEVEL,
+  type ClassChangeQuestDef, type ClassQuestStatus,
+} from './protoStore'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
@@ -157,6 +161,165 @@ function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: s
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Class-change quest board (hero-relative) ─────────────────────────────────--
+// Lives in the peaceful cities. Status keys off the currently *selected* hero —
+// see classQuestStatus. Glyphs mirror the monster board's convention (yellow =
+// actionable now, gray = waiting on you).
+const CLASS_GLYPH: Record<ClassQuestStatus, string> = {
+  'select-novice': '…', underleveled: '!', eligible: '!', committed: '?',
+}
+const CLASS_ICON_CLS: Record<ClassQuestStatus, string> = {
+  'select-novice': 'border-game-border text-game-muted',
+  underleveled:    'border-game-border text-game-muted',
+  eligible:        'border-game-gold/60 text-game-gold',
+  committed:       'border-game-gold/70 text-game-gold',
+}
+const CLASS_SUBTITLE: Record<ClassQuestStatus, string> = {
+  'select-novice': 'select Novice', underleveled: 'requires level 2+', eligible: 'ready', committed: 'in progress',
+}
+
+const isNovice = (u: Unit) => u.class === null || u.class === 'Novice'
+
+// A committed-hero chip (gold ring) shown in the quest details once a hero has
+// begun the path — the hero this commitment belongs to.
+function HeroChip({ u, gold }: { u: Unit; gold?: boolean }) {
+  return (
+    <span className={[
+      'flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border',
+      gold ? 'border-game-gold/50 bg-game-gold/10 text-game-gold' : 'border-game-green/40 bg-game-green/10 text-game-text',
+    ].join(' ')}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${gold ? 'bg-game-gold' : 'bg-game-green'}`} />
+      <span className="truncate">{u.name.split(' ')[0]}</span>
+      <span className="opacity-70">Lv {u.level}</span>
+    </span>
+  )
+}
+
+function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
+  const units              = useGameStore((s) => s.units)
+  const selectedUnitIds    = useGameStore((s) => s.selectedUnitIds)
+  const commit             = useProtoStore((s) => s.classQuestCommit)
+  const beginClassQuest    = useProtoStore((s) => s.beginClassQuest)
+  const completeClassQuest = useProtoStore((s) => s.completeClassQuest)
+  const cancelClassQuest   = useProtoStore((s) => s.cancelClassQuest)
+  const [open, setOpen] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+
+  const committedHeroId = commit[q.id] ?? null
+  const committedHero   = committedHeroId ? units.find((u) => u.id === committedHeroId) ?? null : null
+  // Heroes already committed to *any* path can't begin a second one.
+  const busy = new Set(Object.values(commit))
+  // The selected Novice this path would act on: first selected, unclassed, free hero.
+  const selectedNovice = committedHeroId
+    ? null
+    : units.find((u) => selectedUnitIds.includes(u.id) && isNovice(u) && !busy.has(u.id)) ?? null
+
+  const status   = classQuestStatus({ committedHeroId, selectedNovice })
+  const subject  = committedHero ?? selectedNovice
+  const firstName = subject?.name.split(' ')[0] ?? 'the hero'
+
+  return (
+    <div className={['rounded-md border transition-colors', open ? 'border-game-primary/40 bg-game-bg' : 'border-game-border bg-game-bg'].join(' ')}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-white/[0.03]"
+      >
+        <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', CLASS_ICON_CLS[status]].join(' ')}>
+          {CLASS_GLYPH[status]}
+        </span>
+        <span className={['text-xs flex-1 truncate', status === 'select-novice' || status === 'underleveled' ? 'text-game-muted' : 'text-game-text'].join(' ')}>{q.title}</span>
+        <span className={['text-[10px] shrink-0', status === 'eligible' || status === 'committed' ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>
+          {status === 'committed' && committedHero ? committedHero.name.split(' ')[0] : CLASS_SUBTITLE[status]}
+        </span>
+        <span className="text-[10px] text-game-muted shrink-0 w-3 text-center">{open ? '▴' : '▾'}</span>
+      </button>
+
+      {open && (
+        <div className="px-2.5 pb-2.5 pt-1 space-y-2 border-t border-game-border/60">
+          <p className="text-[11px] text-game-text-dim leading-snug">{q.story}</p>
+          <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">Become a {q.targetClass}.</span></div>
+
+          {/* committed hero chip — whose path this is */}
+          {committedHero && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hero</span>
+              <HeroChip u={committedHero} gold />
+            </div>
+          )}
+
+          {/* action footer */}
+          <div className="pt-2 mt-1 border-t border-game-border/60 space-y-2">
+            {status === 'select-novice' && (
+              <div className="text-[10px] text-game-muted italic">Select a Novice (level {MIN_CLASS_CHANGE_LEVEL}+) to walk this path.</div>
+            )}
+            {status === 'underleveled' && selectedNovice && (
+              <div className="text-[10px] text-game-muted italic">{firstName} is only level {selectedNovice.level}. A Novice must reach level {MIN_CLASS_CHANGE_LEVEL} before changing class.</div>
+            )}
+            {status === 'eligible' && selectedNovice && (
+              <button
+                onClick={() => beginClassQuest(q.id, selectedNovice.id)}
+                className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/60 bg-game-gold/15 text-game-gold hover:bg-game-gold/25 transition-colors"
+              >
+                Begin — {firstName} takes {q.title}
+              </button>
+            )}
+            {status === 'committed' && !confirmCancel && (
+              <>
+                <button
+                  onClick={() => { completeClassQuest(q.id); setOpen(false) }}
+                  className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors"
+                >
+                  ✓ Complete the class change
+                </button>
+                <button
+                  onClick={() => setConfirmCancel(true)}
+                  className="w-full text-[11px] px-3 py-1.5 rounded-md border border-game-border text-game-text-dim hover:text-rose-300 hover:border-rose-700/60 transition-colors"
+                >
+                  Cancel quest
+                </button>
+              </>
+            )}
+            {status === 'committed' && confirmCancel && (
+              <div className="rounded-md border border-rose-700/50 bg-rose-950/20 p-2 space-y-2">
+                <div className="text-[11px] text-game-text leading-snug">
+                  Are you sure? This will discard all of {firstName}'s progress towards {q.title}.
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmCancel(false)}
+                    className="flex-1 text-[11px] px-2 py-1.5 rounded border border-game-border text-game-text-dim hover:text-game-text"
+                  >
+                    Keep going
+                  </button>
+                  <button
+                    onClick={() => { cancelClassQuest(q.id); setConfirmCancel(false) }}
+                    className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded border border-rose-600/70 bg-rose-600/20 text-rose-200 hover:bg-rose-600/30"
+                  >
+                    Discard progress
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ClassQuestBoard({ location }: { location: Location }) {
+  const quests = CLASS_CHANGE_QUESTS.filter((q) => q.locationId === location.id)
+  if (quests.length === 0) return null
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Class Change</div>
+      <div className="space-y-1">
+        {quests.map((q) => <ClassQuestRow key={q.id} q={q} />)}
+      </div>
     </div>
   )
 }
@@ -326,8 +489,12 @@ export function LocationDetail({ location }: { location: Location }) {
         </div>
       )}
 
-      {/* quests — replaces the old familiarity / story-path / site-upgrade rows */}
-      <QuestBoard location={location} />
+      {/* class-change quests — hero-relative paths offered in the cities */}
+      <ClassQuestBoard location={location} />
+
+      {/* monster quests — replaces the old familiarity / story-path / site-upgrade
+          rows. Suppressed in peaceful cities (no foes → nothing to cull). */}
+      {location.monsterIds.length > 0 && <QuestBoard location={location} />}
 
       {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (

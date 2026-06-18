@@ -18,7 +18,7 @@ import { useProtoStore } from './protoStore'
 // keeps a hand-tuned hero out of it.
 
 type Facet = 'tactics' | 'gear'
-const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
+const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Archer: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
   { id: 'movement', label: 'Move' }, { id: 'targeting', label: 'Target' },
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'React' }, { id: 'passive', label: 'Passive' },
