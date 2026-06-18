@@ -148,13 +148,11 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
       title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}${here ? ' · on the viewed battlefield' : ''}${following ? ' · camera is following them' : ''}\nTap to select · double-tap to jump the camera`}
       className={[
         'relative shrink-0 w-[54px] flex flex-col items-center gap-0.5 px-0.5 py-1 rounded-lg border transition-all',
-        // The follow cue is its own, always-on accent ring so the pinned hero
-        // stays obvious even while you're inspecting (selecting) someone else.
-        following
-          ? 'border-game-accent bg-game-accent/10 ring-2 ring-game-accent/60'
-          : selected
-            ? (here ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/30' : 'border-amber-500/70 bg-amber-500/10 ring-1 ring-amber-500/30')
-            : 'border-transparent hover:bg-white/5',
+        // Follow is signalled purely by the 🎥 badge below — no extra highlight,
+        // so it never competes with the selection ring.
+        selected
+          ? (here ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/30' : 'border-amber-500/70 bg-amber-500/10 ring-1 ring-amber-500/30')
+          : 'border-transparent hover:bg-white/5',
       ].join(' ')}
     >
       <div className="relative w-9 h-9 rounded-full p-[2px]" style={{ background: ring }}>
@@ -172,9 +170,9 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
           <span className="absolute -top-0.5 -left-0.5 w-3 h-3 rounded-full bg-game-gold border border-game-bg text-[7px] font-bold text-black flex items-center justify-center">!</span>
         )}
       </div>
-      <span className={['text-[9px] font-medium leading-none truncate w-full text-center', following ? 'text-game-accent' : 'text-game-text'].join(' ')}>{unit.name.split(' ')[0]}</span>
+      <span className="text-[9px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
       {/* cue: this hero is on the battlefield you're currently viewing */}
-      {here && <span className={`absolute bottom-0 inset-x-2 h-0.5 rounded-full ${following ? 'bg-game-accent' : 'bg-game-accent/70'}`} />}
+      {here && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-accent" />}
     </button>
   )
 }
