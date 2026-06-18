@@ -17,7 +17,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Fighter (offensive 2H bruiser) ──────────────────────────────────────────
   {
     id: 'u1', name: 'Aldric Thorne', level: 1, exp: 0, expToNext: 10, age: 24, health: 95, recoveryTicksLeft: 0, isResting: false,
-    class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
+    class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: 'prontera-city',
     abilities: { strength: 9, agility: 5, dexterity: 4, constitution: 7, intelligence: 2 },
     abilityPoints: 20, skillPoints: 1,
     learnedSkills: { 'sword-mastery-1h': 1, 'sword-mastery-2h': 1, 'bash': 1, 'hammer-fall': 1, 'boost-agility': 1, 'last-stand': 1 },
@@ -33,7 +33,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Ranger (kiting archer) ──────────────────────────────────────────────────
   {
     id: 'u2', name: 'Miri Ashdown', level: 1, exp: 0, expToNext: 10, age: 19, health: 90, recoveryTicksLeft: 0, isResting: false,
-    class: 'Ranger', proficiencies: ['Bows'], locationId: 'prontera-field-1',
+    class: 'Ranger', proficiencies: ['Bows'], locationId: 'prontera-city',
     abilities: { strength: 6, agility: 7, dexterity: 8, constitution: 4, intelligence: 3 },
     abilityPoints: 15, skillPoints: 1,
     learnedSkills: { 'keen-eyes': 1, 'eagle-eyes': 1, 'arrow-shower': 1, 'ankle-snare': 1, 'poison': 1 },
@@ -64,7 +64,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Cleric (back-line healer / support) ─────────────────────────────────────
   {
     id: 'u4', name: 'Sera Holloway', level: 1, exp: 0, expToNext: 10, age: 16, health: 80, recoveryTicksLeft: 0, isResting: false,
-    class: 'Cleric', proficiencies: ['Rods'], locationId: null,
+    class: 'Cleric', proficiencies: ['Rods'], locationId: 'prontera-city',
     abilities: { strength: 3, agility: 4, dexterity: 5, constitution: 5, intelligence: 8 },
     abilityPoints: 30, skillPoints: 1,
     learnedSkills: { 'arcane-knowledge': 1, 'heal': 1, 'aoe-heal': 1, 'boost-agility': 1, 'bless': 1, 'molasses': 1, 'dispel': 1, 'sight': 1, 'evasion': 1 },
@@ -78,7 +78,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Fighter (defensive knight / tank) ───────────────────────────────────────
   {
     id: 'u5', name: 'Davan Cobble', level: 1, exp: 0, expToNext: 10, age: 28, health: 67, recoveryTicksLeft: 0, isResting: false,
-    class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: null,
+    class: 'Fighter', proficiencies: ['Swords', 'Heavy Armor'], locationId: 'prontera-city',
     abilities: { strength: 6, agility: 4, dexterity: 4, constitution: 8, intelligence: 2 },
     abilityPoints: 18, skillPoints: 1,
     // The party's dedicated tank: Defensive Stance (high threat to hold aggro) +
@@ -97,7 +97,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Rogue (stealth assassin) ────────────────────────────────────────────────
   {
     id: 'u6', name: 'Lyra Briar', level: 1, exp: 0, expToNext: 10, age: 35, health: 90, recoveryTicksLeft: 0, isResting: false,
-    class: 'Rogue', proficiencies: ['Daggers', 'Lockpicks'], locationId: 'geffen-field-1',
+    class: 'Rogue', proficiencies: ['Daggers', 'Lockpicks'], locationId: 'prontera-city',
     abilities: { strength: 6, agility: 9, dexterity: 8, constitution: 5, intelligence: 5 },
     abilityPoints: 22, skillPoints: 3,
     learnedSkills: { 'keen-eyes': 1, 'cloak': 1, 'back-stab': 1, 'arrow-shower': 1, 'ankle-snare': 1, 'sight': 1, 'poison': 1 },
@@ -131,7 +131,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   {
     id: 'u8', name: 'Wynne Cobb', level: 1, exp: 0, expToNext: 10, age: 18, health: 90, recoveryTicksLeft: 0, isResting: false,
-    class: null, proficiencies: [], locationId: null,
+    class: null, proficiencies: [], locationId: 'prontera-city',
     abilities: { strength: 4, agility: 4, dexterity: 4, constitution: 4, intelligence: 4 },
     abilityPoints: 10, skillPoints: 0,
     learnedSkills: {},
@@ -144,7 +144,7 @@ export const INITIAL_UNITS: Unit[] = [
   },
   {
     id: 'u9', name: 'Bram Tully', level: 1, exp: 0, expToNext: 10, age: 20, health: 90, recoveryTicksLeft: 0, isResting: false,
-    class: null, proficiencies: [], locationId: null,
+    class: null, proficiencies: [], locationId: 'prontera-city',
     abilities: { strength: 4, agility: 4, dexterity: 4, constitution: 4, intelligence: 4 },
     abilityPoints: 10, skillPoints: 0,
     learnedSkills: {},

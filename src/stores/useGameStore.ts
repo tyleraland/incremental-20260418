@@ -1595,7 +1595,8 @@ export const useGameStore = create<GameState>((set) => ({
       id: `u${Date.now()}`, name, level: 1, exp: 0, expToNext: expForLevel(1),
       age: r(16, 30), health: 100, recoveryTicksLeft: 0, isResting: false, class: null, proficiencies: [],
       abilities: { strength: r(2,5), agility: r(2,5), dexterity: r(2,5), constitution: r(2,5), intelligence: r(2,5) },
-      abilityPoints: 3, skillPoints: 1, learnedSkills: {}, locationId: null, travelPath: null,
+      // New recruits spawn stationed in Prontera (the safe starter hub).
+      abilityPoints: 3, skillPoints: 1, learnedSkills: {}, locationId: 'prontera-city', travelPath: null,
       weaponSets: [{ mainHand: null, offHand: null }, { mainHand: null, offHand: null }],
       activeWeaponSet: 0,
       equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
