@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useGameStore, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { useProtoStore, type ZoomLevel } from './protoStore'
+import { useQuestBoard } from './QuestJournal'
 import { StageOverlay } from './StageOverlay'
 
 // ── Prototype Stage ────────────────────────────────────────────────────────────
@@ -84,9 +85,9 @@ const battleScaleFor   = (z: number) => lerp(0.94, 1, clamp((z - 1.25) / 0.55, 0
 const ZOOM_NAMES = ['World', 'Locale', 'Battle']
 
 // ── WorldNode ───────────────────────────────────────────────────────────────
-function WorldNode({ loc, units, equipment, selected, onTap, onDive }: {
+function WorldNode({ loc, units, equipment, selected, questReady, onTap, onDive }: {
   loc: Location; units: Unit[]; equipment: ReturnType<typeof useGameStore.getState>['equipment']
-  selected: boolean; onTap: () => void; onDive: () => void
+  selected: boolean; questReady: boolean; onTap: () => void; onDive: () => void
 }) {
   const c = LOCATION_COORDS[loc.id]; if (!c) return null
   const kind = kindOf(loc.traits)
@@ -113,6 +114,13 @@ function WorldNode({ loc, units, equipment, selected, onTap, onDive }: {
         <span className={`text-2xl leading-none drop-shadow ${kind.glow}`}>{kind.symbol}</span>
         {loc.openWorld && (
           <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-game-bg" title="Open world" />
+        )}
+        {/* a quest here is ready to collect — a yellow (?) nudge */}
+        {questReady && (
+          <span
+            className="absolute -top-2 -left-2 w-4 h-4 rounded-full bg-game-gold text-game-bg text-[11px] font-bold leading-none flex items-center justify-center border border-game-bg shadow"
+            title="Rewards ready to collect"
+          >?</span>
         )}
         {here.length > 0 && (
           <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex gap-0.5 px-1 py-0.5 rounded-full bg-game-bg/90 border border-game-border">
@@ -176,6 +184,9 @@ export function ProtoStage() {
   // The stage renders one region (map page) at a time. Dungeon pages are entered
   // from a world location's "Enter <Region>" (LocationDetail) and exited here.
   const pageLocs = locations.filter((l) => l.region === mapPageId && LOCATION_COORDS[l.id])
+  // Locations with a quest ready to collect → a yellow (?) nudge on the node.
+  const questBoard = useQuestBoard()
+  const questReadyLocs = new Set(questBoard.filter((e) => e.status === 'ready').map((e) => e.locationId))
   const region = REGIONS[mapPageId] ?? REGIONS.world
   const focusLoc = selectedLocationId ? locations.find((l) => l.id === selectedLocationId) ?? null : null
   const maxZoom = focusLoc ? 2 : 1   // can't dive without a focused location
@@ -390,6 +401,7 @@ export function ProtoStage() {
             {pageLocs.map((loc) => (
               <WorldNode key={loc.id} loc={loc} units={units} equipment={equipment}
                          selected={selectedLocationId === loc.id}
+                         questReady={questReadyLocs.has(loc.id)}
                          onTap={() => flyTo(loc)} onDive={() => dive(loc)} />
             ))}
           </div>

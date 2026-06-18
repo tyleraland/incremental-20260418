@@ -223,3 +223,24 @@ test('quest journal: filter + go to location', async ({ page }, testInfo) => {
   const loc = await page.evaluate(() => (window as unknown as { __game: { getState: () => { selectedLocationId: string | null } } }).__game.getState().selectedLocationId)
   expect(loc).toBe('prontera-city')
 })
+
+test('world map shows a (?) on locations with rewards ready', async ({ page }, testInfo) => {
+  const proj = testInfo.project.name
+  await page.goto(BASE)
+  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+  await page.waitForTimeout(1500)
+
+  // No quests are ready at the start → no nudge on the map.
+  await expect(page.getByTitle('Rewards ready to collect')).toHaveCount(0)
+
+  // Stock 30 Boar Hides → Boar Meadow's "Trapper's Order" (hand in 20) is ready.
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { setState: (s: object) => void } }).__game
+    store.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 30 }] })
+  })
+  // Zoom out to the world map.
+  await page.getByRole('button', { name: /World/ }).first().click()
+  await page.waitForTimeout(900)
+  await expect(page.getByTitle('Rewards ready to collect').first()).toBeVisible()
+  await page.screenshot({ path: `e2e/__shots__/mapnudge-${proj}-ready.png` })
+})
