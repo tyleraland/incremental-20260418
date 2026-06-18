@@ -371,6 +371,9 @@ interface ProtoState {
   bountyDone: string[]
   bountyClaimed: Record<string, number>   // bountyId → kills already rewarded (cyclic bounties)
   completeBounty: (bountyId: string) => void
+  // Lifetime quest/bounty completion tally (questId → times completed), for a
+  // future "quests completed" report. Repeatable bounty claims increment too.
+  questCompletions: Record<string, number>
 }
 
 export const useProtoStore = create<ProtoState>((set) => ({
@@ -390,6 +393,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   classQuestCommit: {},
   bountyDone: [],
   bountyClaimed: {},
+  questCompletions: {},
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
@@ -464,7 +468,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
       units: gs.units.map((u) => (u.id === commit.heroId ? { ...u, class: def.targetClass } : u)),
     }))
     const next = { ...s.classQuestCommit }; delete next[questId]
-    return { classQuestCommit: next }
+    return { classQuestCommit: next, questCompletions: { ...s.questCompletions, [questId]: (s.questCompletions[questId] ?? 0) + 1 } }
   }),
   cancelClassQuest: (questId) => set((s) => {
     if (!s.classQuestCommit[questId]) return s
@@ -486,10 +490,15 @@ export const useProtoStore = create<ProtoState>((set) => ({
     if (o.kind === 'handin') { if (o.source === 'quest') g.consumeQuestItem(o.itemId, o.count); else g.consumeMiscItem(o.itemId, o.count) }
     else if (o.kind === 'collect') g.consumeQuestItem(o.itemId, o.count)
     if (def.rewardGold) g.grantMiscItem('m-gold', def.rewardGold)
-    // Kill bounties advance the claim baseline (cyclic); others archive unless repeatable.
-    if (o.kind === 'kill') return { bountyClaimed: { ...s.bountyClaimed, [bountyId]: claimed + o.count } }
-    if (def.repeatable) return s
-    return { bountyDone: [...s.bountyDone, bountyId] }
+    const completions = { ...s.questCompletions, [bountyId]: (s.questCompletions[bountyId] ?? 0) + 1 }
+    // Kill bounties advance the claim baseline to the CURRENT total — overflow past
+    // 100 doesn't bank, so a backlog only ever yields one claim and you must re-up.
+    if (o.kind === 'kill') {
+      const total = o.monsterId ? (g.monsterDefeated[o.monsterId] ?? 0) : Object.values(g.monsterDefeated).reduce((a, b) => a + b, 0)
+      return { bountyClaimed: { ...s.bountyClaimed, [bountyId]: total }, questCompletions: completions }
+    }
+    if (def.repeatable) return { questCompletions: completions }
+    return { bountyDone: [...s.bountyDone, bountyId], questCompletions: completions }
   }),
 }))
 

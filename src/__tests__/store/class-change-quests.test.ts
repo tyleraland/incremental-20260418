@@ -213,6 +213,7 @@ describe('location bounties (hero-less, chained)', () => {
     expect(useProtoStore.getState().bountyDone).toContain('boar-hides-20')
     expect(useGameStore.getState().miscItems.find((m) => m.id === 'drop-boar-hide')!.quantity).toBe(5)   // 25 − 20
     expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(200)         // reward
+    expect(useProtoStore.getState().questCompletions['boar-hides-20']).toBe(1)                           // tallied
   })
 
   it('will not complete a still-locked bounty', () => {
@@ -221,20 +222,24 @@ describe('location bounties (hero-less, chained)', () => {
     expect(useProtoStore.getState().bountyDone).toEqual([])
   })
 
-  it('the repeatable kill bounty pays out every 100 boars and never archives', () => {
+  it('the repeatable kill bounty is capped at one claim per cycle; backlog never banks', () => {
+    const gold = () => useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0
     const { completeBounty } = useProtoStore.getState()
     useGameStore.setState({ monsterDefeated: { 'wild-boar': 99 } })
     completeBounty('boar-cull-repeat')                          // 99/100 → no-op
-    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0).toBe(0)
+    expect(gold()).toBe(0)
 
-    useGameStore.setState({ monsterDefeated: { 'wild-boar': 250 } })
-    completeBounty('boar-cull-repeat')                          // claim #1 (kills 0..100)
-    completeBounty('boar-cull-repeat')                          // claim #2 (kills 100..200)
-    expect(useProtoStore.getState().bountyClaimed['boar-cull-repeat']).toBe(200)
-    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(2)  // 1 gold each
-    expect(useProtoStore.getState().bountyDone).not.toContain('boar-cull-repeat')               // still on the board
+    useGameStore.setState({ monsterDefeated: { 'wild-boar': 250 } })   // a 250-boar backlog
+    completeBounty('boar-cull-repeat')                          // claims ONCE; overflow discarded
+    completeBounty('boar-cull-repeat')                          // immediately re-upped to 0/100 → no-op
+    expect(gold()).toBe(1)
+    expect(useProtoStore.getState().bountyClaimed['boar-cull-repeat']).toBe(250)   // baseline = current total
+    expect(useProtoStore.getState().bountyDone).not.toContain('boar-cull-repeat')  // never archives
 
-    completeBounty('boar-cull-repeat')                          // only 50 since the last claim → no-op
-    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(2)
+    useGameStore.setState({ monsterDefeated: { 'wild-boar': 350 } })   // cull 100 fresh
+    completeBounty('boar-cull-repeat')
+    expect(gold()).toBe(2)
+    // The completion tally counts every claim (for a future quests-completed report).
+    expect(useProtoStore.getState().questCompletions['boar-cull-repeat']).toBe(2)
   })
 })
