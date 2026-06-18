@@ -773,62 +773,6 @@ function FocusCue({ unit, location }: { unit: Unit; location: { id: string; name
   )
 }
 
-// ── Battlefield status (live combatant readout) ───────────────────────────────
-const STATUS_TINT: Record<string, string> = {
-  buff: 'border-game-green/40 bg-game-green/10 text-game-green',
-  debuff: 'border-red-500/40 bg-red-500/10 text-red-300',
-  control: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
-}
-function BattleStatus({ unit }: { unit: Unit }) {
-  const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
-  const requestZoom          = useProtoStore((s) => s.requestZoom)
-  const requestBattleInspect = useProtoStore((s) => s.requestBattleInspect)
-  const me = battle?.combatants.find((c) => c.id === unit.id)
-  if (!battle || !me) return null
-  const hpPct = Math.max(0, (me.hp / me.maxHp) * 100)
-  const target = me.lockedTargetId ? battle.combatants.find((c) => c.id === me.lockedTargetId) : null
-  // Drop onto the battlefield and pop this hero's detail card (the big
-  // bottom-half readout) — the same card you'd get by tapping their chip.
-  function openCard() {
-    if (!unit.locationId) return
-    useGameStore.setState({ selectedLocationId: unit.locationId, combatLocationId: unit.locationId })
-    requestZoom(2)
-    requestBattleInspect(unit.id)
-  }
-  return (
-    <div className="mb-3 rounded-lg border border-game-border bg-game-bg/60 p-2.5 space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-widest text-game-accent">● On the battlefield</span>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[10px] text-game-text-dim tabular-nums">{Math.ceil(me.hp)}/{me.maxHp} HP</span>
-          {/* twin of the card's Follow button (same pill) — opens this hero's card */}
-          <button
-            onClick={openCard}
-            title="Open this hero's battlefield detail card"
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-game-accent/60 bg-game-accent/15 text-game-accent text-[11px] font-semibold hover:bg-game-accent/25 transition-colors"
-          >⚔ Card</button>
-        </div>
-      </div>
-      <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
-        <div className={`h-full rounded-full ${hpPct > 60 ? 'bg-game-green' : hpPct > 30 ? 'bg-game-gold' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} />
-      </div>
-      <div className="flex items-center gap-2 text-[10px] text-game-text-dim">
-        <span>{me.channel ? `casting ${me.channel.skillId ?? '…'}` : me.moving ? 'moving' : 'engaging'}</span>
-        {target && <span className="ml-auto">⊕ target: <span className="text-game-text">{target.name}</span></span>}
-      </div>
-      {me.statuses.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {me.statuses.map((s, i) => (
-            <span key={`${s.id}-${i}`} className={['text-[9px] px-1.5 py-0.5 rounded border', STATUS_TINT[s.category ?? 'debuff'] ?? STATUS_TINT.debuff].join(' ')} title={s.flags.join(', ')}>
-              {s.name} <span className="opacity-70 tabular-nums">{s.duration}r</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Items lens (guild stash, n=all ↔ per-hero n=1 diffs) ───────────────────────
 const CAT_SLOT: Partial<Record<ItemCategory, EquipSlot>> = {
   'weapon-1h': 'mainHand', 'weapon-2h': 'mainHand', shield: 'offHand', armor: 'armor', accessory: 'accessory',
@@ -1059,6 +1003,14 @@ export function ProtoLens() {
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
   const markUnitViewed   = useGameStore((s) => s.markUnitViewed)
   const openReport       = useGameStore((s) => s.openReport)
+  const requestZoom          = useProtoStore((s) => s.requestZoom)
+  const requestBattleInspect = useProtoStore((s) => s.requestBattleInspect)
+  // The live battle the selected hero is fighting in (if any) — gates the
+  // "⚔ Card" shortcut in the sub-tab bar.
+  const heroBattle = useGameStore((s) => {
+    const u = s.units.find((x) => x.id === selectedUnitIds[0])
+    return u?.locationId ? s.battles[u.locationId] : undefined
+  })
 
   const [top, setTop] = useState<Top>('location')
   const [heroSub, setHeroSub] = useState<HeroSub>('summary')
@@ -1074,6 +1026,15 @@ export function ProtoLens() {
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
+  const unitInBattle = !!unit && !!heroBattle?.combatants.some((c) => c.id === unit.id)
+  // Drop onto this hero's battlefield and pop their detail card (the big
+  // bottom-half live readout — where HP/casting/target now live).
+  function openHeroCard() {
+    if (!unit?.locationId) return
+    useGameStore.setState({ selectedLocationId: unit.locationId, combatLocationId: unit.locationId })
+    requestZoom(2)
+    requestBattleInspect(unit.id)
+  }
 
   // Viewing a hero's dossier clears their "to-do" cue (new level / unspent pts) —
   // same rule as the production unit detail (re-fires when the level changes).
@@ -1121,11 +1082,20 @@ export function ProtoLens() {
                 effSub === s.id ? 'bg-game-primary/20 text-game-text border border-game-primary/40' : 'text-game-text-dim hover:text-game-text border border-transparent'].join(' ')}
             >{s.label}</button>
           ))}
-          <button
-            onClick={() => openReport(unit.id)}
-            title="Open full report"
-            className="ml-auto text-[11px] px-2 py-0.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5"
-          >Report ▸</button>
+          <div className="ml-auto flex items-center gap-1">
+            {unitInBattle && (
+              <button
+                onClick={openHeroCard}
+                title="Open this hero's battlefield detail card"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-game-accent/60 bg-game-accent/15 text-game-accent text-[11px] font-semibold hover:bg-game-accent/25 transition-colors"
+              >⚔ Card</button>
+            )}
+            <button
+              onClick={() => openReport(unit.id)}
+              title="Open full report"
+              className="text-[11px] px-2 py-0.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5"
+            >Report ▸</button>
+          </div>
         </div>
       )}
 
@@ -1133,7 +1103,6 @@ export function ProtoLens() {
         {top === 'hero' && (unit ? (
           <>
             <FocusCue unit={unit} location={location} />
-            <BattleStatus unit={unit} />
             {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
             {effSub === 'skills'  && <SkillsLens unit={unit} />}
             {effSub === 'gear'    && <GearLens unit={unit} />}
