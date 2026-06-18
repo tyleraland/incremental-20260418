@@ -115,7 +115,7 @@ export interface ClassChangeQuestDef {
 export const CLASS_CHANGE_QUESTS: ClassChangeQuestDef[] = [
   { id: 'path-fighter', locationId: 'prontera-city', targetClass: 'Fighter', title: 'Path of the Fighter', story: 'The Prontera guard drills recruits in sword and shield. Prove your mettle and take up the blade as a Fighter.' },
   { id: 'path-cleric',  locationId: 'prontera-city', targetClass: 'Cleric',  title: 'Path of the Cleric',  story: 'The cathedral of Prontera seeks the devout. Take your vows and walk the divine path as a Cleric.' },
-  { id: 'path-archer',  locationId: 'payon-city',    targetClass: 'Archer',  title: 'Path of the Archer',  story: 'The hunters of Payon test every comer at the range. String a bow and master the hunt as an Archer.' },
+  { id: 'path-ranger',  locationId: 'payon-city',    targetClass: 'Ranger',  title: 'Path of the Ranger',  story: 'The hunters of Payon test every comer at the range. String a bow and master the hunt as a Ranger.' },
   { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild watches from the rafters. Slip past their wards and earn your daggers as a Rogue." },
   { id: 'path-mage',    locationId: 'geffen-city',   targetClass: 'Mage',    title: 'Path of the Mage',    story: 'The arcane college of Geffen admits only the gifted. Study the weave and claim your robes as a Mage.' },
 ]

@@ -58,7 +58,7 @@ describe('class-change quest lifecycle', () => {
   it('places the paths in the right cities', () => {
     const byCity = (loc: string) => CLASS_CHANGE_QUESTS.filter((q) => q.locationId === loc).map((q) => q.targetClass).sort()
     expect(byCity('prontera-city')).toEqual(['Cleric', 'Fighter'])
-    expect(byCity('payon-city')).toEqual(['Archer', 'Rogue'])
+    expect(byCity('payon-city')).toEqual(['Ranger', 'Rogue'])
     expect(byCity('geffen-city')).toEqual(['Mage'])
   })
 })

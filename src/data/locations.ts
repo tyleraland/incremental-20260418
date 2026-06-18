@@ -44,7 +44,7 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
   {
     id: 'payon-city', region: 'world', name: 'Payon Town',
-    description: 'A forest town of archers and shadowy dealings — no monster walks its streets. Its hunters and thieves take Novices onto the Path of the Archer or the Path of the Rogue.',
+    description: 'A forest town of archers and shadowy dealings — no monster walks its streets. Its hunters and thieves take Novices onto the Path of the Ranger or the Path of the Rogue.',
     traits: ['city', 'forest'], monsterIds: [],
     familiarityMax: 100, connections: [],
   },

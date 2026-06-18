@@ -113,7 +113,7 @@ export const INITIAL_UNITS: Unit[] = [
   // ── Novices (unclassed adventurers) ──────────────────────────────────────────
   // Blank-slate recruits (`class: null` renders as "Novice"). They carry no kit
   // beyond a basic weapon — their whole arc is the city class-change quests (Path
-  // of the Fighter / Cleric / Archer / Rogue / Mage), which require a Novice at
+  // of the Fighter / Cleric / Ranger / Rogue / Mage), which require a Novice at
   // level 2+. Pell starts at level 2 so a class change is available immediately;
   // the others must earn their second level in the field first.
   {
