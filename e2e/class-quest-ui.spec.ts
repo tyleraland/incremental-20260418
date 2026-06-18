@@ -89,10 +89,10 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   expect(cls).toBe('Fighter')
 
   // ── Collect objective (Path of the Rogue, Payon) ────────────────────────────
-  // Promote a second Novice to level 2 and take them to Payon.
+  // Promote two more Novices to level 2 and take them to Payon.
   await page.evaluate(() => {
     const store = (window as unknown as { __game: { getState: () => { setSelectedLocation: (id: string) => void }; setState: (s: object) => void } }).__game
-    store.setState((s: { units: { id: string; level: number }[] }) => ({ units: s.units.map((u) => (u.id === 'u8' ? { ...u, level: 2 } : u)) }))
+    store.setState((s: { units: { id: string; level: number }[] }) => ({ units: s.units.map((u) => (u.id === 'u8' || u.id === 'u9' ? { ...u, level: 2 } : u)) }))
     store.getState().setSelectedLocation('payon-city')
     store.setState({ selectedUnitIds: ['u8'] })
   })
@@ -101,23 +101,46 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: /Path of the Rogue/ }).click()          // expand
   await page.getByRole('button', { name: /Begin — .* takes/ }).click()
   await page.waitForTimeout(300)
-  // The collect path tracks a quest item (Bone Splinter) and shows 0/3.
+  // The collect path tracks an ephemeral quest item (Bone Splinter) at 0/3.
   await expect(page.getByText('Bone Splinter').first()).toBeVisible()
   await expect(page.getByText('0/3').first()).toBeVisible()
   await shot('08-collect-in-progress')
 
-  // Simulate collecting the 3 quest items (what monster drops would do) → ready.
+  // Simulate the monster drops filling the quest-item ledger → ready.
   await page.evaluate(() => {
-    const store = (window as unknown as { __game: { setState: (fn: (s: { questDrops: Record<string, number> }) => object) => void } }).__game
-    store.setState((s) => ({ questDrops: { ...s.questDrops, 'path-rogue': 3 } }))
+    const store = (window as unknown as { __game: { setState: (fn: (s: { questItems: Record<string, number> }) => object) => void } }).__game
+    store.setState((s) => ({ questItems: { ...s.questItems, 'qi-bone-splinter': 3 } }))
   })
   await page.waitForTimeout(300)
-  const completeRogue = page.getByRole('button', { name: /Complete the class change/ })
-  await expect(completeRogue).toBeVisible()
-  await completeRogue.click()
+  // Completing a collect/hand-in goes through a "will be consumed" confirm.
+  await page.getByRole('button', { name: /Hand in & become a Rogue/ }).click()
+  await page.getByRole('button', { name: 'Hand in', exact: true }).click()
   await page.waitForTimeout(300)
   const cls8 = await page.evaluate(() => (window as unknown as { __game: { getState: () => { units: { id: string; class: string | null }[] } } }).__game.getState().units.find((u) => u.id === 'u8')?.class)
   expect(cls8).toBe('Rogue')
+
+  // ── Hand-in objective (Path of the Ranger, Payon) — non-ephemeral inventory ──
+  // Stock the guild with Boar Hides and take a Novice to hand them in.
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { setState: (s: object) => void } }).__game
+    store.setState({ selectedUnitIds: ['u9'], miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 5 }] })
+  })
+  await page.waitForTimeout(300)
+  await page.getByRole('button', { name: /Path of the Ranger/ }).click()         // expand
+  await page.getByRole('button', { name: /Begin — .* takes/ }).click()
+  await page.waitForTimeout(300)
+  // 5 hides in the stash already satisfies "hand in 3" → ready immediately.
+  await expect(page.getByText('Boar Hide').first()).toBeVisible()
+  await shot('09-handin-ready')
+  await page.getByRole('button', { name: /Hand in & become a Ranger/ }).click()
+  await page.getByRole('button', { name: 'Hand in', exact: true }).click()
+  await page.waitForTimeout(300)
+  const after = await page.evaluate(() => {
+    const s = (window as unknown as { __game: { getState: () => { units: { id: string; class: string | null }[]; miscItems: { id: string; quantity: number }[] } } }).__game.getState()
+    return { cls: s.units.find((u) => u.id === 'u9')?.class, hides: s.miscItems.find((m) => m.id === 'drop-boar-hide')?.quantity ?? 0 }
+  })
+  expect(after.cls).toBe('Ranger')
+  expect(after.hides).toBe(2)   // 5 − 3 consumed
 
   // All four lens tabs are reachable.
   for (const tab of ['Hero', 'Party', 'Items', 'Location']) {

@@ -6,7 +6,7 @@ import { INITIAL_EQUIPMENT } from '@/data/equipment'
 import type { EquipmentItem } from '@/types'
 import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
-  CLASS_CHANGE_QUESTS, classQuestStatus, objectiveProgress, MIN_CLASS_CHANGE_LEVEL,
+  CLASS_CHANGE_QUESTS, classQuestStatus, objectiveProgress, objectiveConsumes, MIN_CLASS_CHANGE_LEVEL,
   type ClassChangeQuestDef, type ClassQuestStatus,
 } from './protoStore'
 
@@ -205,13 +205,15 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   const selectedUnitIds    = useGameStore((s) => s.selectedUnitIds)
   const unitStats          = useGameStore((s) => s.unitStats)
   const monsterDefeated    = useGameStore((s) => s.monsterDefeated)
-  const questDrops         = useGameStore((s) => s.questDrops)
+  const questItems         = useGameStore((s) => s.questItems)
+  const miscItems          = useGameStore((s) => s.miscItems)
   const commit             = useProtoStore((s) => s.classQuestCommit)
   const beginClassQuest    = useProtoStore((s) => s.beginClassQuest)
   const completeClassQuest = useProtoStore((s) => s.completeClassQuest)
   const cancelClassQuest   = useProtoStore((s) => s.cancelClassQuest)
   const [open, setOpen] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [confirmComplete, setConfirmComplete] = useState(false)
 
   const commitData      = commit[q.id] ?? null
   const committedHeroId = commitData?.heroId ?? null
@@ -223,9 +225,11 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
     ? null
     : units.find((u) => selectedUnitIds.includes(u.id) && isNovice(u) && !busy.has(u.id)) ?? null
 
-  // Live objective progress (kill = kills since baseline; collect = drop ledger).
-  const target   = q.objective.count
-  const progress = committedHeroId ? objectiveProgress(q, commitData, { unitStats, monsterDefeated, questDrops }) : 0
+  // Live objective progress (kill = kills since baseline; collect = drop ledger;
+  // hand-in = how many you currently hold).
+  const obj      = q.objective
+  const target   = obj.count
+  const progress = committedHeroId ? objectiveProgress(q, commitData, { unitStats, monsterDefeated, questItems, miscItems }) : 0
 
   const status   = classQuestStatus({ committedHeroId, selectedNovice, progress, target })
   const subject  = committedHero ?? selectedNovice
@@ -262,18 +266,38 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
             </div>
           )}
 
-          {/* quest item (collect objectives) — a temporary drop tracked here only,
-              never in the Inventory. */}
-          {q.objective.kind === 'collect' && (
+          {/* quest item (collect) — a temporary drop tracked here only, never in
+              the Inventory. */}
+          {obj.kind === 'collect' && (
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Quest item</span>
               <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
                 <span aria-hidden>📜</span>
-                <span className="truncate">{q.objective.itemName}</span>
+                <span className="truncate">{obj.itemName}</span>
                 {committedHeroId && <span className="text-game-text-dim tabular-nums">×{progress}</span>}
               </span>
+              <span className="text-[10px] text-game-muted italic">tracked here, not in your bags</span>
             </div>
           )}
+
+          {/* hand-in — the item turned in (consumed on completion). 'inventory'
+              reads the guild stash; 'quest' an ephemeral quest item. */}
+          {obj.kind === 'handin' && (() => {
+            const held = obj.source === 'quest'
+              ? (questItems[obj.itemId] ?? 0)
+              : (miscItems.find((m) => m.id === obj.itemId)?.quantity ?? 0)
+            return (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hand in</span>
+                <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
+                  <span aria-hidden>{obj.source === 'quest' ? '📜' : '🎒'}</span>
+                  <span className="truncate">{obj.itemName}</span>
+                  <span className="text-game-text-dim tabular-nums">×{Math.min(obj.count, held)}/{obj.count}</span>
+                </span>
+                <span className="text-[10px] text-game-muted">you hold {held} in {obj.source === 'quest' ? 'quest items' : 'your stash'} · consumed on hand-in</span>
+              </div>
+            )
+          })()}
 
           {/* objective progress bar (committed) */}
           {committedHeroId && (
@@ -307,19 +331,19 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
             {status === 'in-progress' && (
               <div className="text-[10px] text-game-muted italic">
                 {firstName} must {q.objective.label.toLowerCase()} ({progress}/{target}).{' '}
-                {q.objective.kind === 'collect'
-                  ? `Drops while ${firstName} is deployed where they fall.`
+                {obj.kind === 'collect' ? `Drops while ${firstName} is deployed where they fall.`
+                  : obj.kind === 'handin' ? `Gather ${obj.itemName}s${obj.source === 'inventory' ? ' from the field' : ''}, then hand them in here.`
                   : 'Deploy them to a battlefield to make progress.'}
               </div>
             )}
-            {(status === 'in-progress' || status === 'ready') && !confirmCancel && (
+            {(status === 'in-progress' || status === 'ready') && !confirmCancel && !confirmComplete && (
               <>
                 {status === 'ready' && (
                   <button
-                    onClick={() => { completeClassQuest(q.id); setOpen(false) }}
+                    onClick={() => { if (objectiveConsumes(obj)) setConfirmComplete(true); else { completeClassQuest(q.id); setOpen(false) } }}
                     className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors"
                   >
-                    ✓ Complete the class change
+                    {objectiveConsumes(obj) ? `✓ Hand in & become a ${q.targetClass}` : '✓ Complete the class change'}
                   </button>
                 )}
                 <button
@@ -329,6 +353,27 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
                   Cancel quest
                 </button>
               </>
+            )}
+            {status === 'ready' && confirmComplete && (
+              <div className="rounded-md border border-game-gold/50 bg-game-gold/10 p-2 space-y-2">
+                <div className="text-[11px] text-game-text leading-snug">
+                  Hand in <span className="font-semibold">{obj.count} × {(obj.kind === 'collect' || obj.kind === 'handin') ? obj.itemName : 'items'}</span>? They'll be consumed and {firstName} becomes a {q.targetClass}.
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmComplete(false)}
+                    className="flex-1 text-[11px] px-2 py-1.5 rounded border border-game-border text-game-text-dim hover:text-game-text"
+                  >
+                    Not yet
+                  </button>
+                  <button
+                    onClick={() => { completeClassQuest(q.id); setConfirmComplete(false); setOpen(false) }}
+                    className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded border border-game-gold/70 bg-game-gold/25 text-game-gold hover:bg-game-gold/40"
+                  >
+                    Hand in
+                  </button>
+                </div>
+              </div>
             )}
             {(status === 'in-progress' || status === 'ready') && confirmCancel && (
               <div className="rounded-md border border-rose-700/50 bg-rose-950/20 p-2 space-y-2">

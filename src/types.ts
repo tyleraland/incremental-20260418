@@ -217,10 +217,11 @@ export interface MiscItem { id: string; name: string; quantity: number; descript
 
 // A temporary quest-item drop the store rolls during combat. Registered by an
 // active "collect" quest objective; on a matching kill `rewardKills` rolls
-// `dropRate` and accumulates into the store's `questDrops[id]` ledger (kept out
-// of `miscItems` so quest items never appear in the Inventory). Runtime-only.
+// `dropRate` and accumulates into the store's `questItems[itemId]` ledger (kept
+// out of `miscItems` so quest items never appear in the Inventory). Runtime-only.
 export interface QuestDropRule {
   id: string                 // unique per active objective (the questId)
+  itemId: string             // quest-item id the drop accumulates into questItems
   monsterId: string          // the monster whose death can drop the item
   scope: 'hero' | 'global'   // 'hero' = only while the committed hero is on the map; 'global' = any kill
   heroId?: string            // committed hero, for 'hero' scope

@@ -1,5 +1,6 @@
-// Hero-relative class-change quests (proto store). Paths carry a kill (cull) or
-// collect objective, hero- or global-scoped. Status keys off the selected hero +
+// Hero-relative class-change quests (proto store). Paths carry a kill (cull),
+// collect, or hand-in objective — hero- or global-scoped. Collect and hand-in
+// CONSUME their items on completion. Status keys off the selected hero +
 // progress; completing writes the new class onto the real unit only once met.
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
@@ -12,12 +13,14 @@ import { makeUnit, resetStore, tick } from '../helpers'
 import { emptyTally } from '@/lib/combatTally'
 
 const reset = () => useProtoStore.setState({ classQuestCommit: {} })
-const ROGUE = CLASS_CHANGE_QUESTS.find((q) => q.id === 'path-rogue')!   // the collect path
-// Give a hero N killing blows on a monster type (what landing them in combat does).
+const ROGUE  = CLASS_CHANGE_QUESTS.find((q) => q.id === 'path-rogue')!   // collect (ephemeral)
+const RANGER = CLASS_CHANGE_QUESTS.find((q) => q.id === 'path-ranger')!  // hand-in (inventory)
 const setTypeKills = (heroId: string, monsterId: string, n: number) =>
   useGameStore.setState((s) => ({
     unitStats: { ...s.unitStats, [heroId]: { ...emptyTally(), monstersDefeated: n, killsByMonster: { [monsterId]: n } } },
   }))
+const view = (over: Partial<Parameters<typeof objectiveProgress>[2]> = {}) =>
+  ({ unitStats: {}, monsterDefeated: {}, questItems: {}, miscItems: [], ...over })
 
 describe('classQuestStatus', () => {
   const base = { progress: 0, target: 3 }
@@ -56,28 +59,31 @@ describe('classQuestKillCount (scope)', () => {
   })
 })
 
-describe('classQuestProgress / objectiveProgress', () => {
+describe('objectiveProgress (per kind)', () => {
   const commit: ClassQuestCommit = { heroId: 'u7', killBaseline: 3 }
-  const view = (questDrops: Record<string, number> = {}) => ({ unitStats: {}, monsterDefeated: {}, questDrops })
-  it('kill objective: kills since the baseline, clamped', () => {
+  it('kill: kills since the baseline, clamped', () => {
     expect(classQuestProgress(commit, 5, 3)).toBe(2)
     expect(classQuestProgress(commit, 99, 3)).toBe(3)
   })
-  it('collect objective: reads the quest drop ledger, clamped', () => {
-    expect(objectiveProgress(ROGUE, { heroId: 'u7', killBaseline: 0 }, view({ 'path-rogue': 2 }))).toBe(2)
-    expect(objectiveProgress(ROGUE, { heroId: 'u7', killBaseline: 0 }, view({ 'path-rogue': 9 }))).toBe(ROGUE.objective.count)
+  it('collect: reads the ephemeral quest-item ledger, clamped', () => {
+    expect(objectiveProgress(ROGUE, commit, view({ questItems: { 'qi-bone-splinter': 2 } }))).toBe(2)
+    expect(objectiveProgress(ROGUE, commit, view({ questItems: { 'qi-bone-splinter': 9 } }))).toBe(ROGUE.objective.count)
+  })
+  it('hand-in (inventory): reads how many you hold in the stash, clamped', () => {
+    expect(objectiveProgress(RANGER, commit, view({ miscItems: [{ id: 'drop-boar-hide', quantity: 2 }] }))).toBe(2)
+    expect(objectiveProgress(RANGER, commit, view({ miscItems: [{ id: 'drop-boar-hide', quantity: 9 }] }))).toBe(RANGER.objective.count)
   })
 })
 
 describe('class-change quest lifecycle', () => {
   beforeEach(() => {
     reset()
-    resetStore({ units: [makeUnit({ id: 'u7', name: 'Pell Hightower', level: 2, class: null })], unitStats: {}, monsterDefeated: {}, questDropRules: [], questDrops: {} })
+    resetStore({ units: [makeUnit({ id: 'u7', name: 'Pell Hightower', level: 2, class: null })], unitStats: {}, monsterDefeated: {}, questDropRules: [], questItems: {}, miscItems: [] })
   })
 
-  it('a kill path does not complete until the cull objective is met', () => {
+  it('kill path: completes only once the cull objective is met', () => {
     const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
-    beginClassQuest('path-fighter', 'u7')           // cull 3 tough-slime, baseline 0
+    beginClassQuest('path-fighter', 'u7')           // cull 3 tough-slime
     setTypeKills('u7', 'tough-slime', 2)
     completeClassQuest('path-fighter')
     expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBeNull()
@@ -86,52 +92,63 @@ describe('class-change quest lifecycle', () => {
     expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBe('Fighter')
   })
 
-  it('a collect path arms a drop rule on begin and clears it on complete', () => {
+  it('collect path: arms a drop rule, then consumes the quest items on complete', () => {
     const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
     beginClassQuest('path-rogue', 'u7')
-    const rule = useGameStore.getState().questDropRules.find((r) => r.id === 'path-rogue')
-    expect(rule).toMatchObject({ monsterId: 'skeleton-archer', scope: 'hero', heroId: 'u7', target: 3 })
-    expect(useGameStore.getState().questDrops['path-rogue']).toBe(0)
+    expect(useGameStore.getState().questDropRules.find((r) => r.id === 'path-rogue')).toMatchObject({ itemId: 'qi-bone-splinter', monsterId: 'skeleton-archer', heroId: 'u7' })
 
     completeClassQuest('path-rogue')                // 0/3 → no-op
     expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBeNull()
 
-    useGameStore.setState((s) => ({ questDrops: { ...s.questDrops, 'path-rogue': 3 } }))  // collected 3
+    useGameStore.setState((s) => ({ questItems: { ...s.questItems, 'qi-bone-splinter': 4 } }))  // collected 4
     completeClassQuest('path-rogue')
     expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBe('Rogue')
     expect(useGameStore.getState().questDropRules.find((r) => r.id === 'path-rogue')).toBeUndefined()
-    expect(useGameStore.getState().questDrops['path-rogue']).toBeUndefined()
+    expect(useGameStore.getState().questItems['qi-bone-splinter']).toBeUndefined()   // consumed + cleared
   })
 
-  it('cancel discards a collect commitment and its drop rule', () => {
+  it('hand-in path: consumes the required materials from the inventory on complete', () => {
+    const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
+    useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 5 }] })
+    beginClassQuest('path-ranger', 'u7')            // hand in 3 boar hides
+    expect(useGameStore.getState().questDropRules.length).toBe(0)   // hand-in arms no drop rule
+
+    completeClassQuest('path-ranger')               // 5 held ≥ 3 → ready
+    expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBe('Ranger')
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'drop-boar-hide')!.quantity).toBe(2)  // 5 − 3
+  })
+
+  it('hand-in path: will not complete without enough materials', () => {
+    const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
+    useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 2 }] })
+    beginClassQuest('path-ranger', 'u7')
+    completeClassQuest('path-ranger')               // only 2/3
+    expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBeNull()
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'drop-boar-hide')!.quantity).toBe(2)  // not consumed
+  })
+
+  it('cancel discards a collect commitment and its drop rule + items', () => {
     const { beginClassQuest, cancelClassQuest } = useProtoStore.getState()
     beginClassQuest('path-rogue', 'u7')
+    useGameStore.setState((s) => ({ questItems: { ...s.questItems, 'qi-bone-splinter': 2 } }))
     cancelClassQuest('path-rogue')
     expect(useProtoStore.getState().classQuestCommit['path-rogue']).toBeUndefined()
     expect(useGameStore.getState().questDropRules.find((r) => r.id === 'path-rogue')).toBeUndefined()
-    expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBeNull()
+    expect(useGameStore.getState().questItems['qi-bone-splinter']).toBeUndefined()
   })
 
-  it('only the right monster type counts toward a cull objective', () => {
-    const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
-    beginClassQuest('path-fighter', 'u7')
-    setTypeKills('u7', 'hornet', 9)                 // wrong type
-    completeClassQuest('path-fighter')
-    expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBeNull()
-  })
-
-  it('places the paths in the right cities; objectives are hero-scoped, count 3', () => {
+  it('places the paths in the right cities; one of each new objective kind', () => {
     const byCity = (loc: string) => CLASS_CHANGE_QUESTS.filter((q) => q.locationId === loc).map((q) => q.targetClass).sort()
     expect(byCity('prontera-city')).toEqual(['Cleric', 'Fighter'])
     expect(byCity('payon-city')).toEqual(['Ranger', 'Rogue'])
     expect(byCity('geffen-city')).toEqual(['Mage'])
-    expect(CLASS_CHANGE_QUESTS.every((q) => q.objective.count === 3 && (q.objective.scope ?? 'hero') === 'hero')).toBe(true)
+    expect(CLASS_CHANGE_QUESTS.every((q) => q.objective.count === 3)).toBe(true)
     expect(ROGUE.objective.kind).toBe('collect')
+    expect(RANGER.objective.kind).toBe('handin')
   })
 })
 
 describe('quest-item drops (store plumbing)', () => {
-  // Pin loot RNG to 0 so every dropRate roll fires (and monster drops are stable).
   beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
   afterEach(() => vi.restoreAllMocks())
 
@@ -144,29 +161,29 @@ describe('quest-item drops (store plumbing)', () => {
     resetStore({
       locations: [OPEN(['slime'])],
       units: [0, 1].map((i) => makeUnit({ id: `u${i}`, locationId: 'field', health: 100, abilities: { strength: 100, agility: 5, dexterity: 5, constitution: 30, intelligence: 5 } })),
-      unitStats: {}, monsterDefeated: {}, questDropRules: [], questDrops: {},
+      unitStats: {}, monsterDefeated: {}, questDropRules: [], questItems: {},
     })
     const g = useGameStore.getState()
-    g.registerQuestDrop({ id: 'q-global', monsterId: 'slime', scope: 'global', dropRate: 1, target: 9999 })
-    g.registerQuestDrop({ id: 'q-absent', monsterId: 'slime', scope: 'hero', heroId: 'nobody', dropRate: 1, target: 9999 })
+    g.armQuestDrop({ id: 'q-global', itemId: 'qi-global', monsterId: 'slime', scope: 'global', dropRate: 1, target: 9999 })
+    g.armQuestDrop({ id: 'q-absent', itemId: 'qi-absent', monsterId: 'slime', scope: 'hero', heroId: 'nobody', dropRate: 1, target: 9999 })
 
     for (let i = 0; i < 400; i++) tick()
 
     const st = useGameStore.getState()
     const kills = st.monsterDefeated['slime'] ?? 0
     expect(kills).toBeGreaterThan(0)
-    expect(st.questDrops['q-global']).toBe(kills)   // dropRate 1 → one item per kill
-    expect(st.questDrops['q-absent'] ?? 0).toBe(0)  // hero not on the map → never drops
+    expect(st.questItems['qi-global']).toBe(kills)    // dropRate 1 → one item per kill
+    expect(st.questItems['qi-absent'] ?? 0).toBe(0)   // hero not on the map → never drops
   })
 
   it('stops dropping once the target is reached', () => {
     resetStore({
       locations: [OPEN(['slime'])],
       units: [makeUnit({ id: 'u0', locationId: 'field', health: 100, abilities: { strength: 100, agility: 5, dexterity: 5, constitution: 30, intelligence: 5 } })],
-      unitStats: {}, monsterDefeated: {}, questDropRules: [], questDrops: {},
+      unitStats: {}, monsterDefeated: {}, questDropRules: [], questItems: {},
     })
-    useGameStore.getState().registerQuestDrop({ id: 'q-cap', monsterId: 'slime', scope: 'global', dropRate: 1, target: 2 })
+    useGameStore.getState().armQuestDrop({ id: 'q-cap', itemId: 'qi-cap', monsterId: 'slime', scope: 'global', dropRate: 1, target: 2 })
     for (let i = 0; i < 400; i++) tick()
-    expect(useGameStore.getState().questDrops['q-cap']).toBe(2)
+    expect(useGameStore.getState().questItems['qi-cap']).toBe(2)
   })
 })

@@ -178,15 +178,19 @@ Objective types, roughly easiest → most plumbing:
   (added with this work); global per-type rides the persisted `monsterDefeated`
   map; "any monster" uses the flat lifetime kill count. Progress = current −
   baseline snapshotted at commit.
-- **Collect a dropped quest item** — *IN PROGRESS*. A quest seeds a *temporary*
-  drop on a target monster; each pickup increments the counter. Tracked in the
-  **quest detail only, never added to `miscItems`/Inventory.** Hero-scoped ("when
-  *this* hero is on a map and X dies") or global ("any hero, Y dies"). Built as a
-  generic quest-drop ledger in the store (`questDrops` + active rules), rolled in
-  `rewardKills` alongside loot.
-- **Hand-in from inventory.** Turn in items the guild already holds. Plumbing:
-  read `miscItems`, show an explicit "these will be consumed" confirm, decrement
-  on complete. (Low–medium.)
+- **Collect a dropped quest item** — *DONE*. A quest seeds a *temporary* drop on
+  a target monster; each pickup increments an item-addressable ledger
+  (`questItems` by itemId) tracked in the **quest detail only, never in
+  `miscItems`/Inventory.** Hero-scoped ("while *this* hero is on the map where X
+  dies") or global ("any hero, Y dies"). Generic `QuestDropRule` registry rolled
+  in `rewardKills` alongside loot; completion consumes (hands in) the collected
+  items behind a confirm.
+- **Hand-in from inventory** — *DONE*. Turn in items you already hold; completion
+  CONSUMES them behind an explicit "will be consumed" confirm. `source:
+  'inventory'` decrements a real `miscItems` material (e.g. Boar Hide — Path of
+  the Ranger); `source: 'quest'` decrements an ephemeral `questItems` entry.
+  Progress = how many you currently hold, so a quest can be ready the moment you
+  have enough.
 - **Crafting / transformational.** Consume reagents A+B+C → grant reward Z, with a
   clear **"Items consumed"** panel (reagents are ordinary materials, *not*
   quest-specific items). Overlaps the dormant `RECIPE_REGISTRY` (see "crafting
