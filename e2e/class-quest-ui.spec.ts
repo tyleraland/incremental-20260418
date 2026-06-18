@@ -88,6 +88,37 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   const cls = await page.evaluate(() => (window as unknown as { __game: { getState: () => { units: { id: string; class: string | null }[] } } }).__game.getState().units.find((u) => u.id === 'u7')?.class)
   expect(cls).toBe('Fighter')
 
+  // ── Collect objective (Path of the Rogue, Payon) ────────────────────────────
+  // Promote a second Novice to level 2 and take them to Payon.
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { getState: () => { setSelectedLocation: (id: string) => void }; setState: (s: object) => void } }).__game
+    store.setState((s: { units: { id: string; level: number }[] }) => ({ units: s.units.map((u) => (u.id === 'u8' ? { ...u, level: 2 } : u)) }))
+    store.getState().setSelectedLocation('payon-city')
+    store.setState({ selectedUnitIds: ['u8'] })
+  })
+  await page.getByRole('button', { name: 'Location', exact: true }).click()
+  await page.waitForTimeout(400)
+  await page.getByRole('button', { name: /Path of the Rogue/ }).click()          // expand
+  await page.getByRole('button', { name: /Begin — .* takes/ }).click()
+  await page.waitForTimeout(300)
+  // The collect path tracks a quest item (Bone Splinter) and shows 0/3.
+  await expect(page.getByText('Bone Splinter').first()).toBeVisible()
+  await expect(page.getByText('0/3').first()).toBeVisible()
+  await shot('08-collect-in-progress')
+
+  // Simulate collecting the 3 quest items (what monster drops would do) → ready.
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { setState: (fn: (s: { questDrops: Record<string, number> }) => object) => void } }).__game
+    store.setState((s) => ({ questDrops: { ...s.questDrops, 'path-rogue': 3 } }))
+  })
+  await page.waitForTimeout(300)
+  const completeRogue = page.getByRole('button', { name: /Complete the class change/ })
+  await expect(completeRogue).toBeVisible()
+  await completeRogue.click()
+  await page.waitForTimeout(300)
+  const cls8 = await page.evaluate(() => (window as unknown as { __game: { getState: () => { units: { id: string; class: string | null }[] } } }).__game.getState().units.find((u) => u.id === 'u8')?.class)
+  expect(cls8).toBe('Rogue')
+
   // All four lens tabs are reachable.
   for (const tab of ['Hero', 'Party', 'Items', 'Location']) {
     await page.getByRole('button', { name: tab, exact: true }).click()

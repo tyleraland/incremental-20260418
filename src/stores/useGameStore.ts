@@ -3,6 +3,7 @@ import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
   LocationCombatStats, UnitCombatStats, CombatTally, StatBucket, ActionSlotEntry, TacticSlot, CompanionInstance,
+  QuestDropRule,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
@@ -97,6 +98,13 @@ export interface GameState {
   // and weigh sampling cost vs output. Runtime-only, not saved.
   lastCatchUp: CatchUpDebug | null
 
+  // Quest-item drops (runtime; the proto quest layer owns the quest defs). Active
+  // collect objectives register a QuestDropRule; `rewardKills` rolls a drop on a
+  // matching kill and accumulates the count here, keyed by ruleId. Tracked here
+  // (NOT in `miscItems`) so quest items never show up in the Inventory. Not saved.
+  questDropRules: QuestDropRule[]
+  questDrops: Record<string, number>            // ruleId → quest items collected
+
   // EPHEMERAL_UI — stored in localStorage; not in save string
   activeTab: TabId
   selectedUnitIds: string[]
@@ -135,6 +143,10 @@ export interface GameState {
   tick: () => void
   batchTick: (n: number) => void
   dismissOfflineSummary: () => void
+  // Quest-item drops (driven by the proto quest layer). Register a rule when a
+  // collect objective begins; clear it (and its ledger entry) on cancel/complete.
+  registerQuestDrop: (rule: QuestDropRule) => void
+  clearQuestDrop: (ruleId: string) => void
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
   toggleRegion: (id: string) => void
@@ -744,6 +756,7 @@ interface CombatStep {
   expByUnit: Record<string, number>
   goldEarned: number
   lootDelta: Record<string, number>   // miscItemId → qty gained
+  questDropDelta: Record<string, number>  // questDropRule id → quest items collected this tick
   monsterDefeated: Record<string, number>
   monsterSeen: Record<string, number>
   locationMonstersSeen: Record<string, string[]>
@@ -768,6 +781,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const koUnitIds = new Set<string>()
   const expByUnit: Record<string, number> = {}
   const lootDelta: Record<string, number> = {}
+  const questDropDelta: Record<string, number> = {}
   let goldEarned = 0
   const logs: { category: LogCategory; message: string }[] = []
 
@@ -825,6 +839,15 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         bumpUnit(credited, 'monstersDefeated', 1)
         const cur = unitStatsDelta[credited]!   // bumpUnit just created/fetched it
         cur.killsByMonster[mid] = (cur.killsByMonster[mid] ?? 0) + 1   // per-type, for cull quests
+      }
+      // Quest-item drops: any active collect rule for this monster rolls a drop.
+      // Hero-scoped rules only fire while their hero is deployed at this location.
+      for (const rule of s.questDropRules) {
+        if (rule.monsterId !== mid) continue
+        const already = (s.questDrops[rule.id] ?? 0) + (questDropDelta[rule.id] ?? 0)
+        if (already >= rule.target) continue
+        if (rule.scope === 'hero' && s.units.find((u) => u.id === rule.heroId)?.locationId !== loc.id) continue
+        if (Math.random() < rule.dropRate) questDropDelta[rule.id] = (questDropDelta[rule.id] ?? 0) + 1
       }
       const def = MONSTER_REGISTRY[mid]
       const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
@@ -1066,7 +1089,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
   return {
     battles, battleCooldown, monsterSpawnTimers, hpByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
-    monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, logs,
+    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, logs,
   }
 }
 
@@ -1106,6 +1129,8 @@ export const useGameStore = create<GameState>((set) => ({
   lastTickAt: Date.now(),
   offlineSummary: null,
   lastCatchUp: null,
+  questDropRules: [],
+  questDrops: {},
   paused: false,
   eventLog: [],
   itemSockets: {},
@@ -1168,6 +1193,12 @@ export const useGameStore = create<GameState>((set) => ({
       ? applyMiscDeltas(s.miscItems, { 'm-gold': combat.goldEarned, ...combat.lootDelta })
       : s.miscItems
 
+    // Fold quest-item drops into the ledger (kept out of miscItems on purpose).
+    const questDrops = Object.keys(combat.questDropDelta).length > 0
+      ? { ...s.questDrops }
+      : s.questDrops
+    for (const [id, n] of Object.entries(combat.questDropDelta)) questDrops[id] = (questDrops[id] ?? 0) + n
+
     return {
       ticks: newTicks,
       units,
@@ -1175,6 +1206,7 @@ export const useGameStore = create<GameState>((set) => ({
       battleCooldown: combat.battleCooldown,
       monsterSpawnTimers: combat.monsterSpawnTimers,
       monsterDefeated: combat.monsterDefeated,
+      questDrops,
       monsterSeen: combat.monsterSeen,
       locationMonstersSeen: combat.locationMonstersSeen,
       locationStats: foldLocationByUnit(combat.locationStats, combat.unitStatsDelta, locationOf, newTicks),
@@ -1414,6 +1446,14 @@ export const useGameStore = create<GameState>((set) => ({
   }),
 
   dismissOfflineSummary: () => set({ offlineSummary: null }),
+  registerQuestDrop: (rule) => set((s) => ({
+    questDropRules: [...s.questDropRules.filter((r) => r.id !== rule.id), rule],
+    questDrops: { ...s.questDrops, [rule.id]: s.questDrops[rule.id] ?? 0 },
+  })),
+  clearQuestDrop: (ruleId) => set((s) => {
+    const drops = { ...s.questDrops }; delete drops[ruleId]
+    return { questDropRules: s.questDropRules.filter((r) => r.id !== ruleId), questDrops: drops }
+  }),
 
   togglePause: () => set((s) => s.paused
     ? { paused: false, lastTickAt: Date.now() }  // reset clock so no catch-up on unpause
@@ -1759,6 +1799,8 @@ export const useGameStore = create<GameState>((set) => ({
       ticks:         0,
       lastTickAt:    Date.now(),
       offlineSummary: null,
+      questDropRules: [],
+      questDrops:    {},
       paused:        false,
       eventLog:      [],
       itemSockets:   {},

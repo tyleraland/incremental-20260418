@@ -6,7 +6,7 @@ import { INITIAL_EQUIPMENT } from '@/data/equipment'
 import type { EquipmentItem } from '@/types'
 import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
-  CLASS_CHANGE_QUESTS, classQuestStatus, classQuestProgress, classQuestKillCount, MIN_CLASS_CHANGE_LEVEL,
+  CLASS_CHANGE_QUESTS, classQuestStatus, objectiveProgress, MIN_CLASS_CHANGE_LEVEL,
   type ClassChangeQuestDef, type ClassQuestStatus,
 } from './protoStore'
 
@@ -205,6 +205,7 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   const selectedUnitIds    = useGameStore((s) => s.selectedUnitIds)
   const unitStats          = useGameStore((s) => s.unitStats)
   const monsterDefeated    = useGameStore((s) => s.monsterDefeated)
+  const questDrops         = useGameStore((s) => s.questDrops)
   const commit             = useProtoStore((s) => s.classQuestCommit)
   const beginClassQuest    = useProtoStore((s) => s.beginClassQuest)
   const completeClassQuest = useProtoStore((s) => s.completeClassQuest)
@@ -222,11 +223,9 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
     ? null
     : units.find((u) => selectedUnitIds.includes(u.id) && isNovice(u) && !busy.has(u.id)) ?? null
 
-  // Live objective progress: kills toward the goal earned since the path began,
-  // clamped. (Scope decides whose kills count — see classQuestKillCount.)
+  // Live objective progress (kill = kills since baseline; collect = drop ledger).
   const target   = q.objective.count
-  const kills    = committedHeroId ? classQuestKillCount(q.objective, committedHeroId, unitStats, monsterDefeated) : 0
-  const progress = classQuestProgress(commitData, kills, target)
+  const progress = committedHeroId ? objectiveProgress(q, commitData, { unitStats, monsterDefeated, questDrops }) : 0
 
   const status   = classQuestStatus({ committedHeroId, selectedNovice, progress, target })
   const subject  = committedHero ?? selectedNovice
@@ -263,6 +262,19 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
             </div>
           )}
 
+          {/* quest item (collect objectives) — a temporary drop tracked here only,
+              never in the Inventory. */}
+          {q.objective.kind === 'collect' && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Quest item</span>
+              <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
+                <span aria-hidden>📜</span>
+                <span className="truncate">{q.objective.itemName}</span>
+                {committedHeroId && <span className="text-game-text-dim tabular-nums">×{progress}</span>}
+              </span>
+            </div>
+          )}
+
           {/* objective progress bar (committed) */}
           {committedHeroId && (
             <div>
@@ -293,7 +305,12 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
               </button>
             )}
             {status === 'in-progress' && (
-              <div className="text-[10px] text-game-muted italic">{firstName} must {q.objective.label.toLowerCase()} ({progress}/{target}). Deploy them to a battlefield to make progress.</div>
+              <div className="text-[10px] text-game-muted italic">
+                {firstName} must {q.objective.label.toLowerCase()} ({progress}/{target}).{' '}
+                {q.objective.kind === 'collect'
+                  ? `Drops while ${firstName} is deployed where they fall.`
+                  : 'Deploy them to a battlefield to make progress.'}
+              </div>
             )}
             {(status === 'in-progress' || status === 'ready') && !confirmCancel && (
               <>

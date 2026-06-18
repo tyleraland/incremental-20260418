@@ -178,12 +178,12 @@ Objective types, roughly easiest → most plumbing:
   (added with this work); global per-type rides the persisted `monsterDefeated`
   map; "any monster" uses the flat lifetime kill count. Progress = current −
   baseline snapshotted at commit.
-- **Collect a dropped quest item.** A quest seeds a *temporary* drop on a target
-  monster; each pickup increments the counter. Tracked in the **quest menu only,
-  hidden from `miscItems`/Inventory.** Can be hero-scoped ("when *this* hero is on
-  a map and X dies") or global ("any hero, Y dies"). Plumbing: a quest-item ledger
-  separate from inventory + a drop hook in `rewardKills` keyed on the active quest
-  and (optional) committed hero / location.
+- **Collect a dropped quest item** — *IN PROGRESS*. A quest seeds a *temporary*
+  drop on a target monster; each pickup increments the counter. Tracked in the
+  **quest detail only, never added to `miscItems`/Inventory.** Hero-scoped ("when
+  *this* hero is on a map and X dies") or global ("any hero, Y dies"). Built as a
+  generic quest-drop ledger in the store (`questDrops` + active rules), rolled in
+  `rewardKills` alongside loot.
 - **Hand-in from inventory.** Turn in items the guild already holds. Plumbing:
   read `miscItems`, show an explicit "these will be consumed" confirm, decrement
   on complete. (Low–medium.)
@@ -199,6 +199,36 @@ currently **unpersisted proto state** (a reload resets an in-flight quest) and
 the per-hero `killsByMonster` map is persisted but the *baseline* lives in the
 proto store — fold quest state into a real save slice when the system graduates
 out of `src/proto`.
+
+### Quest log / journal — a global "who's on what" view
+
+Today quests are only visible by travelling to the city that offers them
+(`LocationDetail`). As the board grows (many paths, a mix of hero-scoped and
+global), the player needs a **single roll-up**: every accepted/active quest, who
+(if anyone) is committed to each, live progress, and a tap-through detail with a
+**"Go to location"** button that focuses the map on the quest's site (reuse
+`setMapPage` + `setSelectedLocation`, as the dungeon-entry button does).
+
+Open question — **where does it live?** Options:
+
+1. **Party tab** (the user's hunch). Pro: the Party lens is already the
+   roster/doctrine roll-up, so "who is assigned to what quest" fits the mental
+   model; it's one tap from anywhere. Con: Party is currently scoped to *the
+   focused battlefield's* squad — a global quest list is a different scope and
+   could feel bolted on. Might split Party into "this battlefield" vs "guild".
+2. **A new top-bar overlay** next to Guild/Reports/Time (e.g. a "Quests" /
+   journal button). Pro: global by nature, matches the other full-screen
+   roll-ups; room to grow (filters, completed archive). Con: another top-bar
+   slot; further from the map.
+3. **Inside the Guild overlay** as a "Quests" section. Pro: the guild already
+   represents the meta/roster layer and unassigned heroes bucket there. Con:
+   Guild is getting busy; quests may warrant their own surface.
+
+Leaning **#2 (top-bar Quests overlay)** for a true global view, with a compact
+"active paths" strip possibly mirrored in Party for at-a-glance. Data is already
+centralised (`CLASS_CHANGE_QUESTS` + `classQuestCommit` + the progress helpers),
+so the view is mostly presentational; the main design work is the scope/placement
+decision and the per-row "Go to location" focus action. **Not started.**
 
 ## Combat content
 

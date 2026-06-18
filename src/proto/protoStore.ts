@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
-import type { UnitCombatStats } from '@/types'
+import type { UnitCombatStats, QuestDropRule } from '@/types'
 
 // ── Prototype-only mock state ───────────────────────────────────────────────--
 //
@@ -107,21 +107,37 @@ export function questStatus(
 // final class change is written to the real game unit (it persists via the units
 // codec).
 //
-// Objective (the WoW-style goal). For now every path is a "kill / cull" goal:
-// land `count` killing blows on `monsterId` (any monster when unset). `scope`
-// decides whose kills count — `'hero'` (only the committed hero) or `'global'`
-// (any hero). Hero+type rides the per-hero `unitStats[hero].killsByMonster`
-// map; global+type rides the store-wide `monsterDefeated` map; "any monster"
-// uses the flat lifetime kill count — see classQuestKillCount. Other objective
-// kinds (collect a dropped quest item, hand in / craft reagents, reach a
-// location) are designed to slot in here later — see BACKLOG "Quest system".
-export interface ClassQuestObjective {
+//
+// Objective (the WoW-style goal). Two kinds so far, both `scope`d `'hero'` (only
+// the committed hero) or `'global'` (any hero):
+//   • kill    — land `count` killing blows on `monsterId` (any monster when
+//     unset). Hero+type rides the per-hero `unitStats[hero].killsByMonster` map;
+//     global+type rides the store-wide `monsterDefeated` map; "any monster" uses
+//     the flat lifetime kill count — see classQuestKillCount.
+//   • collect — kills of `monsterId` roll a temporary quest item (`dropRate`);
+//     each drop increments the store's `questDrops[questId]` ledger. The item is
+//     tracked here only and never enters the Inventory. Hero scope only drops
+//     while the committed hero is deployed on the map where the monster dies.
+// Other kinds (hand-in / craft reagents, reach a location) slot in here later —
+// see BACKLOG "Quest system".
+export interface KillObjective {
   kind: 'kill'
   count: number             // killing blows required
   monsterId?: string        // restrict to a monster id; unset = any monster
   scope?: 'hero' | 'global' // whose kills count; default 'hero'
   label: string             // human copy, e.g. "Defeat 3 Tough Slimes"
 }
+export interface CollectObjective {
+  kind: 'collect'
+  count: number             // quest items to collect
+  monsterId: string         // monster whose death can drop the item
+  itemId: string            // quest-item id (tracking/display only — never in Inventory)
+  itemName: string          // display name, e.g. "Bone Splinter"
+  scope?: 'hero' | 'global' // whose kills can drop it; default 'hero'
+  dropRate?: number         // chance per matching kill; default 0.5
+  label: string             // human copy, e.g. "Collect 3 Bone Splinters"
+}
+export type ClassQuestObjective = KillObjective | CollectObjective
 export interface ClassChangeQuestDef {
   id: string
   locationId: string   // the city this path is offered in
@@ -130,32 +146,35 @@ export interface ClassChangeQuestDef {
   story: string        // narrative blurb (shown when expanded)
   objective: ClassQuestObjective
 }
-// A class-change trial: the aspiring hero must personally cull a handful of a
-// nearby creature (hero-scoped — only their own killing blows count). The label
-// names the foe so the player knows what to hunt.
-const CULL = (monsterId: string, count: number, label: string): ClassQuestObjective =>
+// Class-change trials (hero-scoped). CULL = personally defeat a handful of a
+// nearby creature; COLLECT = gather quest items that drop from one. Labels name
+// the foe so the player knows what to hunt.
+const CULL = (monsterId: string, count: number, label: string): KillObjective =>
   ({ kind: 'kill', monsterId, count, scope: 'hero', label })
+const COLLECT = (monsterId: string, itemId: string, itemName: string, count: number, label: string, dropRate = 0.5): CollectObjective =>
+  ({ kind: 'collect', monsterId, itemId, itemName, count, scope: 'hero', dropRate, label })
 export const CLASS_CHANGE_QUESTS: ClassChangeQuestDef[] = [
   { id: 'path-fighter', locationId: 'prontera-city', targetClass: 'Fighter', title: 'Path of the Fighter', story: 'The Prontera guard drills recruits in sword and shield. Cull the slimes on the Western Approach to prove your mettle.', objective: CULL('tough-slime', 3, 'Defeat 3 Tough Slimes') },
   { id: 'path-cleric',  locationId: 'prontera-city', targetClass: 'Cleric',  title: 'Path of the Cleric',  story: 'The cathedral asks its postulants to cleanse the unnatural growth east of the city before taking their vows.', objective: CULL('living-nightshade', 3, 'Purge 3 Living Nightshades') },
   { id: 'path-ranger',  locationId: 'payon-city',    targetClass: 'Ranger',  title: 'Path of the Ranger',  story: 'The hunters of Payon take no one who cannot bring down their own quarry. Thin the hornets in the field.', objective: CULL('hornet', 3, 'Hunt 3 Hornets') },
-  { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild sets a simple test: ambush the skeleton archers haunting the Southern Road.", objective: CULL('skeleton-archer', 3, 'Ambush 3 Skeleton Archers') },
+  { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild sets a thief's test: shadow the skeleton archers on the Southern Road and lift the bone splinters they carry.", objective: COLLECT('skeleton-archer', 'qi-bone-splinter', 'Bone Splinter', 3, 'Collect 3 Bone Splinters') },
   { id: 'path-mage',    locationId: 'geffen-city',   targetClass: 'Mage',    title: 'Path of the Mage',    story: 'The arcane college admits only those who act. Destroy the egg sacs festering on the Geffen Outskirts.', objective: CULL('egg-sac', 3, 'Destroy 3 Egg Sacs') },
 ]
 
 // A live commitment: which hero is on the path + the kill tally they had when
-// they began (the baseline the objective's current count is diffed against).
+// they began (the baseline a kill objective's current count is diffed against;
+// 0/unused for collect, which counts its own fresh `questDrops` ledger).
 export interface ClassQuestCommit { heroId: string; killBaseline: number }
 
 // A Novice is a hero with no specialized class yet (`class: null`, rendered as
 // "Novice"). Pre-classed heroes can't take a class-change path.
 export const MIN_CLASS_CHANGE_LEVEL = 2
 
-// The kill count an objective measures *right now*, given the game's stat maps.
-// hero-scope reads the committed hero's tally (per-type or flat); global-scope
-// reads the store-wide per-monster defeat totals (per-type or summed).
+// The kill count a kill objective measures *right now*, given the game's stat
+// maps. hero-scope reads the committed hero's tally (per-type or flat);
+// global-scope reads the store-wide per-monster defeat totals (per-type/summed).
 export function classQuestKillCount(
-  o: ClassQuestObjective,
+  o: KillObjective,
   heroId: string,
   unitStats: Record<string, UnitCombatStats>,
   monsterDefeated: Record<string, number>,
@@ -174,6 +193,29 @@ export function classQuestKillCount(
 export function classQuestProgress(commit: ClassQuestCommit | null, currentKills: number, target: number): number {
   if (!commit) return 0
   return Math.min(target, Math.max(0, currentKills - commit.killBaseline))
+}
+
+// Snapshot of the game stats objective progress reads from.
+export interface QuestStatView {
+  unitStats: Record<string, UnitCombatStats>
+  monsterDefeated: Record<string, number>
+  questDrops: Record<string, number>
+}
+
+// Unified live progress for any objective kind. kill → kills since baseline;
+// collect → the quest's fresh drop ledger.
+export function objectiveProgress(q: ClassChangeQuestDef, commit: ClassQuestCommit | null, g: QuestStatView): number {
+  const o = q.objective
+  if (o.kind === 'collect') return Math.min(o.count, g.questDrops[q.id] ?? 0)
+  if (!commit) return 0
+  return classQuestProgress(commit, classQuestKillCount(o, commit.heroId, g.unitStats, g.monsterDefeated), o.count)
+}
+
+// Build the store drop-rule a collect objective installs while it's committed.
+function dropRuleFor(q: ClassChangeQuestDef, heroId: string): QuestDropRule | null {
+  const o = q.objective
+  if (o.kind !== 'collect') return null
+  return { id: q.id, monsterId: o.monsterId, scope: o.scope ?? 'hero', heroId, dropRate: o.dropRate ?? 0.5, target: o.count }
 }
 
 export type ClassQuestStatus =
@@ -300,28 +342,39 @@ export const useProtoStore = create<ProtoState>((set) => ({
     if (s.classQuestCommit[questId]) return s   // someone's already on this path
     const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
     if (!def) return s
-    // Snapshot the objective's kill count now — progress is measured against this.
     const g = useGameStore.getState()
-    const killBaseline = classQuestKillCount(def.objective, heroId, g.unitStats, g.monsterDefeated)
+    let killBaseline = 0
+    if (def.objective.kind === 'kill') {
+      // Snapshot the objective's kill count now — progress is measured against it.
+      killBaseline = classQuestKillCount(def.objective, heroId, g.unitStats, g.monsterDefeated)
+    } else {
+      // Collect: start a fresh drop ledger and arm the store drop rule.
+      g.clearQuestDrop(questId)
+      const rule = dropRuleFor(def, heroId)
+      if (rule) g.registerQuestDrop(rule)
+    }
     return { classQuestCommit: { ...s.classQuestCommit, [questId]: { heroId, killBaseline } } }
   }),
   completeClassQuest: (questId) => set((s) => {
     const commit = s.classQuestCommit[questId]
     const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
     if (!commit || !def) return s
-    // Gate on the objective: the committed hero must have met the kill goal.
+    // Gate on the objective: progress must have reached the goal.
     const g = useGameStore.getState()
-    const kills = classQuestKillCount(def.objective, commit.heroId, g.unitStats, g.monsterDefeated)
-    if (classQuestProgress(commit, kills, def.objective.count) < def.objective.count) return s
+    const progress = objectiveProgress(def, commit, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questDrops: g.questDrops })
+    if (progress < def.objective.count) return s
     // Write the class change to the real game unit (persists via the units codec).
-    useGameStore.setState((g) => ({
-      units: g.units.map((u) => (u.id === commit.heroId ? { ...u, class: def.targetClass } : u)),
+    useGameStore.setState((gs) => ({
+      units: gs.units.map((u) => (u.id === commit.heroId ? { ...u, class: def.targetClass } : u)),
     }))
+    if (def.objective.kind === 'collect') g.clearQuestDrop(questId)   // retire the temporary item
     const next = { ...s.classQuestCommit }; delete next[questId]
     return { classQuestCommit: next }
   }),
   cancelClassQuest: (questId) => set((s) => {
     if (!s.classQuestCommit[questId]) return s
+    const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
+    if (def?.objective.kind === 'collect') useGameStore.getState().clearQuestDrop(questId)
     const next = { ...s.classQuestCommit }; delete next[questId]
     return { classQuestCommit: next }
   }),
