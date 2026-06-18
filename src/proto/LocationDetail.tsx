@@ -7,7 +7,7 @@ import type { EquipmentItem } from '@/types'
 import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
   CLASS_CHANGE_QUESTS, classQuestStatus, objectiveProgress, objectiveConsumes, MIN_CLASS_CHANGE_LEVEL,
-  LOCATION_BOUNTIES, bountyVisible,
+  LOCATION_BOUNTIES, bountyVisible, bountyProgress,
   type ClassChangeQuestDef, type ClassQuestStatus, type BountyDef,
 } from './protoStore'
 
@@ -423,13 +423,15 @@ function BountyRow({ def, done }: { def: BountyDef; done: boolean }) {
   const monsterDefeated = useGameStore((s) => s.monsterDefeated)
   const questItems      = useGameStore((s) => s.questItems)
   const miscItems       = useGameStore((s) => s.miscItems)
+  const claimed         = useProtoStore((s) => s.bountyClaimed[def.id] ?? 0)
   const completeBounty  = useProtoStore((s) => s.completeBounty)
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState(false)
 
   const o = def.objective
+  const consumes = objectiveConsumes(o)
   const target   = o.count
-  const progress = done ? target : objectiveProgress(o, null, { unitStats, monsterDefeated, questItems, miscItems })
+  const progress = done ? target : bountyProgress(def, { unitStats, monsterDefeated, questItems, miscItems }, claimed)
   const ready    = !done && progress >= target
   const itemId   = o.kind === 'collect' || o.kind === 'handin' ? o.itemId : ''
   const held     = o.kind === 'handin' && o.source === 'inventory'
@@ -445,6 +447,7 @@ function BountyRow({ def, done }: { def: BountyDef; done: boolean }) {
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-white/[0.03]">
         <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', iconCls].join(' ')}>{glyph}</span>
         <span className="text-xs flex-1 truncate text-game-text">{def.title}</span>
+        {def.repeatable && <span className="text-[9px] shrink-0 text-game-accent" title="Repeatable">↻</span>}
         <span className={['text-[10px] shrink-0 tabular-nums', done ? 'text-game-green' : ready ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>
           {done ? 'done' : `${progress}/${target}`}
         </span>
@@ -482,13 +485,24 @@ function BountyRow({ def, done }: { def: BountyDef; done: boolean }) {
 
           <div className="pt-2 mt-1 border-t border-game-border/60 space-y-2">
             {done && <div className="text-[10px] text-game-green italic">Bounty complete.</div>}
-            {!done && !ready && <div className="text-[10px] text-game-muted italic">Farm {itemName}s and bring them here to claim the reward.</div>}
-            {ready && !confirm && (
+            {!done && !ready && (
+              <div className="text-[10px] text-game-muted italic">
+                {consumes ? `Farm ${itemName}s and bring them here to claim the reward.` : `Cull more — ${progress}/${target} this round.`}
+              </div>
+            )}
+            {/* Kill bounties consume nothing → claim straight away. Hand-in/collect
+                go behind a "will be consumed" confirm. */}
+            {ready && !consumes && (
+              <button onClick={() => { completeBounty(def.id); setOpen(false) }} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
+                ✓ Claim {def.rewardGold ?? 0} gold{def.repeatable ? ' (repeatable)' : ''}
+              </button>
+            )}
+            {ready && consumes && !confirm && (
               <button onClick={() => setConfirm(true)} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
                 ✓ Hand in {target} {itemName}s
               </button>
             )}
-            {ready && confirm && (
+            {ready && consumes && confirm && (
               <div className="rounded-md border border-game-gold/50 bg-game-gold/10 p-2 space-y-2">
                 <div className="text-[11px] text-game-text leading-snug">
                   Hand in <span className="font-semibold">{target} × {itemName}</span>? They'll be consumed{def.rewardGold ? ` for ${def.rewardGold} gold` : ''}.

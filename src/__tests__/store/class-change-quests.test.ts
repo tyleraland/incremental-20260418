@@ -191,7 +191,7 @@ describe('quest-item drops (store plumbing)', () => {
 
 describe('location bounties (hero-less, chained)', () => {
   beforeEach(() => {
-    useProtoStore.setState({ bountyDone: [] })
+    useProtoStore.setState({ bountyDone: [], bountyClaimed: {} })
     resetStore({ units: [], unitStats: {}, monsterDefeated: {}, questItems: {}, miscItems: [] })
   })
 
@@ -219,5 +219,22 @@ describe('location bounties (hero-less, chained)', () => {
     useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 999 }] })
     useProtoStore.getState().completeBounty('boar-hides-100')   // prerequisite not done
     expect(useProtoStore.getState().bountyDone).toEqual([])
+  })
+
+  it('the repeatable kill bounty pays out every 100 boars and never archives', () => {
+    const { completeBounty } = useProtoStore.getState()
+    useGameStore.setState({ monsterDefeated: { 'wild-boar': 99 } })
+    completeBounty('boar-cull-repeat')                          // 99/100 → no-op
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0).toBe(0)
+
+    useGameStore.setState({ monsterDefeated: { 'wild-boar': 250 } })
+    completeBounty('boar-cull-repeat')                          // claim #1 (kills 0..100)
+    completeBounty('boar-cull-repeat')                          // claim #2 (kills 100..200)
+    expect(useProtoStore.getState().bountyClaimed['boar-cull-repeat']).toBe(200)
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(2)  // 1 gold each
+    expect(useProtoStore.getState().bountyDone).not.toContain('boar-cull-repeat')               // still on the board
+
+    completeBounty('boar-cull-repeat')                          // only 50 since the last claim → no-op
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(2)
   })
 })

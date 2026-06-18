@@ -169,6 +169,19 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   expect(bounty.hides).toBe(5)    // 25 − 20 consumed
   expect(bounty.gold).toBe(200)   // reward paid
 
+  // Repeatable kill bounty: cull 100 boars → claim 1 gold, and it stays on the board.
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { setState: (s: object) => void } }).__game
+    store.setState({ monsterDefeated: { 'wild-boar': 100 } })
+  })
+  await page.waitForTimeout(300)
+  await page.getByRole('button', { name: /Boar Culling Contract/ }).click()    // expand
+  await page.getByRole('button', { name: /Claim 1 gold \(repeatable\)/ }).click()
+  await page.waitForTimeout(300)
+  await expect(page.getByRole('button', { name: /Boar Culling Contract/ })).toBeVisible()  // still posted
+  const repeat = await page.evaluate(() => (window as unknown as { __game: { getState: () => { miscItems: { id: string; quantity: number }[] } } }).__game.getState().miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0)
+  expect(repeat).toBe(201)   // 200 + 1
+
   // All four lens tabs are reachable.
   for (const tab of ['Hero', 'Party', 'Items', 'Location']) {
     await page.getByRole('button', { name: tab, exact: true }).click()

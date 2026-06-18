@@ -250,16 +250,18 @@ function dropRuleFor(q: ClassChangeQuestDef, heroId: string): QuestDropRule | nu
 // Unlike the class-change paths these aren't bound to a hero — they're a
 // location's board of objectives the whole guild works toward (progress reads
 // global inventory/kills). They can chain: a bounty with `requires` stays HIDDEN
-// until its prerequisites are completed, so finishing one reveals the next.
-// Reuses the same objective model + objectiveProgress; reward is gold for now.
+// until its prerequisites are completed, so finishing one reveals the next. A
+// `repeatable` bounty never archives — kill bounties advance a per-cycle baseline
+// (`bountyClaimed`) and pay out again every `count`. Reward is gold for now.
 export interface BountyDef {
   id: string
   locationId: string
   title: string
   story: string
-  objective: ClassQuestObjective   // a hand-in (consumes from the stash) for the boar quests
+  objective: ClassQuestObjective   // hand-in (consumes from the stash) or kill (global, cyclic)
   rewardGold?: number
   requires?: string[]              // bounty ids that must be done first; hidden until then
+  repeatable?: boolean             // never archives; can be claimed again and again
 }
 export const LOCATION_BOUNTIES: BountyDef[] = [
   {
@@ -274,10 +276,28 @@ export const LOCATION_BOUNTIES: BountyDef[] = [
     objective: HANDIN('drop-boar-hide', 'Boar Hide', 100, 'Collect 100 Boar Hides'),
     rewardGold: 1500, requires: ['boar-hides-20'],
   },
+  {
+    id: 'boar-cull-repeat', locationId: 'boar-meadow', title: 'Boar Culling Contract',
+    story: 'The meadow warden keeps a standing contract: every hundred boars culled earns a token bounty. Renewed endlessly.',
+    objective: { kind: 'kill', monsterId: 'wild-boar', count: 100, scope: 'global', label: 'Defeat 100 Wild Boars' },
+    rewardGold: 1, requires: [], repeatable: true,
+  },
 ]
 // A bounty is only on the board once every prerequisite is done.
 export function bountyVisible(def: BountyDef, done: string[]): boolean {
   return (def.requires ?? []).every((r) => done.includes(r))
+}
+
+// Live progress for a bounty. Kill bounties are global + cyclic: progress = boars
+// felled since the last claim (`claimed`), clamped. Collect/hand-in read live
+// ledgers/inventory (no baseline).
+export function bountyProgress(def: BountyDef, g: QuestStatView, claimed: number): number {
+  const o = def.objective
+  if (o.kind === 'kill') {
+    const total = o.monsterId ? (g.monsterDefeated[o.monsterId] ?? 0) : Object.values(g.monsterDefeated).reduce((a, b) => a + b, 0)
+    return Math.min(o.count, Math.max(0, total - claimed))
+  }
+  return objectiveProgress(o, null, g)
 }
 
 export type ClassQuestStatus =
@@ -346,8 +366,10 @@ interface ProtoState {
   completeClassQuest: (questId: string) => void   // applies the class change to the real unit
   cancelClassQuest: (questId: string) => void     // discards the commitment, no change
   // Location bounties (hero-less, chained). Completing one consumes its items,
-  // grants the reward, and may reveal a dependent bounty.
+  // grants the reward, and may reveal a dependent bounty. Repeatable kill bounties
+  // advance a per-bounty claim baseline instead of archiving.
   bountyDone: string[]
+  bountyClaimed: Record<string, number>   // bountyId → kills already rewarded (cyclic bounties)
   completeBounty: (bountyId: string) => void
 }
 
@@ -367,6 +389,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   completedQuests: {},
   classQuestCommit: {},
   bountyDone: [],
+  bountyClaimed: {},
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
@@ -451,17 +474,21 @@ export const useProtoStore = create<ProtoState>((set) => ({
     return { classQuestCommit: next }
   }),
   completeBounty: (bountyId) => set((s) => {
-    if (s.bountyDone.includes(bountyId)) return s
     const def = LOCATION_BOUNTIES.find((b) => b.id === bountyId)
     if (!def || !bountyVisible(def, s.bountyDone)) return s
+    if (!def.repeatable && s.bountyDone.includes(bountyId)) return s
     const g = useGameStore.getState()
     const o = def.objective
-    const progress = objectiveProgress(o, null, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questItems: g.questItems, miscItems: g.miscItems })
+    const claimed = s.bountyClaimed[bountyId] ?? 0
+    const progress = bountyProgress(def, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questItems: g.questItems, miscItems: g.miscItems }, claimed)
     if (progress < o.count) return s
-    // Consume the handed-in items, then pay out the reward.
+    // Consume the handed-in items (kill bounties consume nothing), then pay out.
     if (o.kind === 'handin') { if (o.source === 'quest') g.consumeQuestItem(o.itemId, o.count); else g.consumeMiscItem(o.itemId, o.count) }
     else if (o.kind === 'collect') g.consumeQuestItem(o.itemId, o.count)
     if (def.rewardGold) g.grantMiscItem('m-gold', def.rewardGold)
+    // Kill bounties advance the claim baseline (cyclic); others archive unless repeatable.
+    if (o.kind === 'kill') return { bountyClaimed: { ...s.bountyClaimed, [bountyId]: claimed + o.count } }
+    if (def.repeatable) return s
     return { bountyDone: [...s.bountyDone, bountyId] }
   }),
 }))
