@@ -198,6 +198,17 @@ Objective types, roughly easiest → most plumbing:
 - **Reach a location.** Travel-to-X objective (e.g. "reach Geffen Dungeon F3").
   Tiny given existing `locationId` / map-page state.
 
+**Location bounties (hero-less, chained)** — *DONE* (first cut). Beyond the
+hero-bound class paths, a location can post a board of `LOCATION_BOUNTIES`
+(`protoStore`) the whole guild works toward — progress reads global
+inventory/kills, no hero commitment. Bounties **chain via `requires`**: a bounty
+stays **hidden** until its prerequisites are in `bountyDone`, so finishing one
+reveals the next. First example: Boar Meadow's "Trapper's Order" (hand in 20
+Boar Hides) → unlocks "The Tannery's Bulk Order" (100 hides). Reward is gold
+(`grantMiscItem`). The dormant mock `LOCATION_QUESTS` board is suppressed where a
+real bounty board exists — fold the remaining mock locations onto this system
+when convenient.
+
 Cross-cutting follow-ups: class-quest commitments + objective progress are
 currently **unpersisted proto state** (a reload resets an in-flight quest) and
 the per-hero `killsByMonster` map is persisted but the *baseline* lives in the

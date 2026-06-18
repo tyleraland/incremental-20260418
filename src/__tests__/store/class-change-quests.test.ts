@@ -6,7 +6,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
 import {
   useProtoStore, classQuestStatus, classQuestProgress, classQuestKillCount, objectiveProgress,
-  CLASS_CHANGE_QUESTS, MIN_CLASS_CHANGE_LEVEL, type ClassQuestCommit, type KillObjective,
+  CLASS_CHANGE_QUESTS, MIN_CLASS_CHANGE_LEVEL, LOCATION_BOUNTIES, bountyVisible,
+  type ClassQuestCommit, type KillObjective,
 } from '@/proto/protoStore'
 import type { Location } from '@/types'
 import { makeUnit, resetStore, tick } from '../helpers'
@@ -66,12 +67,12 @@ describe('objectiveProgress (per kind)', () => {
     expect(classQuestProgress(commit, 99, 3)).toBe(3)
   })
   it('collect: reads the ephemeral quest-item ledger, clamped', () => {
-    expect(objectiveProgress(ROGUE, commit, view({ questItems: { 'qi-bone-splinter': 2 } }))).toBe(2)
-    expect(objectiveProgress(ROGUE, commit, view({ questItems: { 'qi-bone-splinter': 9 } }))).toBe(ROGUE.objective.count)
+    expect(objectiveProgress(ROGUE.objective, commit, view({ questItems: { 'qi-bone-splinter': 2 } }))).toBe(2)
+    expect(objectiveProgress(ROGUE.objective, commit, view({ questItems: { 'qi-bone-splinter': 9 } }))).toBe(ROGUE.objective.count)
   })
   it('hand-in (inventory): reads how many you hold in the stash, clamped', () => {
-    expect(objectiveProgress(RANGER, commit, view({ miscItems: [{ id: 'drop-boar-hide', quantity: 2 }] }))).toBe(2)
-    expect(objectiveProgress(RANGER, commit, view({ miscItems: [{ id: 'drop-boar-hide', quantity: 9 }] }))).toBe(RANGER.objective.count)
+    expect(objectiveProgress(RANGER.objective, commit, view({ miscItems: [{ id: 'drop-boar-hide', quantity: 2 }] }))).toBe(2)
+    expect(objectiveProgress(RANGER.objective, commit, view({ miscItems: [{ id: 'drop-boar-hide', quantity: 9 }] }))).toBe(RANGER.objective.count)
   })
 })
 
@@ -185,5 +186,38 @@ describe('quest-item drops (store plumbing)', () => {
     useGameStore.getState().armQuestDrop({ id: 'q-cap', itemId: 'qi-cap', monsterId: 'slime', scope: 'global', dropRate: 1, target: 2 })
     for (let i = 0; i < 400; i++) tick()
     expect(useGameStore.getState().questItems['qi-cap']).toBe(2)
+  })
+})
+
+describe('location bounties (hero-less, chained)', () => {
+  beforeEach(() => {
+    useProtoStore.setState({ bountyDone: [] })
+    resetStore({ units: [], unitStats: {}, monsterDefeated: {}, questItems: {}, miscItems: [] })
+  })
+
+  it('the follow-up bounty is hidden until its prerequisite is done', () => {
+    expect(bountyVisible(LOCATION_BOUNTIES.find((b) => b.id === 'boar-hides-100')!, [])).toBe(false)
+    expect(bountyVisible(LOCATION_BOUNTIES.find((b) => b.id === 'boar-hides-100')!, ['boar-hides-20'])).toBe(true)
+    expect(bountyVisible(LOCATION_BOUNTIES.find((b) => b.id === 'boar-hides-20')!, [])).toBe(true)
+  })
+
+  it('completes only with enough hides, consumes them, pays gold, and unlocks the chain', () => {
+    const { completeBounty } = useProtoStore.getState()
+    useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 12 }] })
+
+    completeBounty('boar-hides-20')                 // only 12/20 → no-op
+    expect(useProtoStore.getState().bountyDone).toEqual([])
+
+    useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 25 }] })
+    completeBounty('boar-hides-20')
+    expect(useProtoStore.getState().bountyDone).toContain('boar-hides-20')
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'drop-boar-hide')!.quantity).toBe(5)   // 25 − 20
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(200)         // reward
+  })
+
+  it('will not complete a still-locked bounty', () => {
+    useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 999 }] })
+    useProtoStore.getState().completeBounty('boar-hides-100')   // prerequisite not done
+    expect(useProtoStore.getState().bountyDone).toEqual([])
   })
 })

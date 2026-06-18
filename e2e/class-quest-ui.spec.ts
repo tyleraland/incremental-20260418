@@ -142,6 +142,33 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   expect(after.cls).toBe('Ranger')
   expect(after.hides).toBe(2)   // 5 − 3 consumed
 
+  // ── Location bounty chain (Boar Meadow) — hero-less, hidden follow-up ────────
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { getState: () => { setSelectedLocation: (id: string) => void }; setState: (s: object) => void } }).__game
+    store.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 25 }] })
+    store.getState().setSelectedLocation('boar-meadow')
+  })
+  await page.getByRole('button', { name: 'Location', exact: true }).click()
+  await page.waitForTimeout(400)
+  // The first bounty is on the board; the 100-hide follow-up is hidden until it's done.
+  await expect(page.getByRole('button', { name: /Trapper's Order/ })).toBeVisible()
+  await expect(page.getByText("Tannery's Bulk Order")).toHaveCount(0)
+  await shot('10-bounty-chain')
+
+  // Hand in 20 of the 25 hides → completes, pays gold, and reveals the next bounty.
+  await page.getByRole('button', { name: /Trapper's Order/ }).click()         // expand
+  await page.getByRole('button', { name: /Hand in 20 Boar Hides/ }).click()
+  await page.getByRole('button', { name: 'Hand in', exact: true }).click()
+  await page.waitForTimeout(300)
+  await expect(page.getByRole('button', { name: /Tannery's Bulk Order/ })).toBeVisible()
+  const bounty = await page.evaluate(() => {
+    const g = (window as unknown as { __game: { getState: () => { miscItems: { id: string; quantity: number }[] } } }).__game.getState()
+    const p = (window as unknown as { __proto?: unknown })
+    return { hides: g.miscItems.find((m) => m.id === 'drop-boar-hide')?.quantity ?? 0, gold: g.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0, p: !!p }
+  })
+  expect(bounty.hides).toBe(5)    // 25 − 20 consumed
+  expect(bounty.gold).toBe(200)   // reward paid
+
   // All four lens tabs are reachable.
   for (const tab of ['Hero', 'Party', 'Items', 'Location']) {
     await page.getByRole('button', { name: tab, exact: true }).click()

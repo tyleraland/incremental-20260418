@@ -151,6 +151,7 @@ export interface GameState {
   disarmQuestDrop: (ruleId: string) => void
   consumeQuestItem: (itemId: string, qty: number) => void
   consumeMiscItem: (itemId: string, qty: number) => void
+  grantMiscItem: (itemId: string, qty: number) => void   // add to the stash (quest rewards, gold)
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
   toggleRegion: (id: string) => void
@@ -1472,6 +1473,7 @@ export const useGameStore = create<GameState>((set) => ({
       .map((m) => (m.id === itemId ? { ...m, quantity: m.quantity - qty } : m))
       .filter((m) => m.quantity > 0),
   })),
+  grantMiscItem: (itemId, qty) => set((s) => ({ miscItems: applyMiscDeltas(s.miscItems, { [itemId]: qty }) })),
 
   togglePause: () => set((s) => s.paused
     ? { paused: false, lastTickAt: Date.now() }  // reset clock so no catch-up on unpause

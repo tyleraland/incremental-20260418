@@ -227,8 +227,8 @@ const miscQty = (miscItems: { id: string; quantity: number }[], id: string) =>
 
 // Unified live progress for any objective kind. kill → kills since baseline;
 // collect → the quest item ledger; hand-in → how many you currently hold.
-export function objectiveProgress(q: ClassChangeQuestDef, commit: ClassQuestCommit | null, g: QuestStatView): number {
-  const o = q.objective
+// (Hero-less quests — bounties — pass commit = null; only kill objectives use it.)
+export function objectiveProgress(o: ClassQuestObjective, commit: ClassQuestCommit | null, g: QuestStatView): number {
   if (o.kind === 'collect') return Math.min(o.count, g.questItems[o.itemId] ?? 0)
   if (o.kind === 'handin') {
     const held = o.source === 'quest' ? (g.questItems[o.itemId] ?? 0) : miscQty(g.miscItems, o.itemId)
@@ -243,6 +243,41 @@ function dropRuleFor(q: ClassChangeQuestDef, heroId: string): QuestDropRule | nu
   const o = q.objective
   if (o.kind !== 'collect') return null
   return { id: q.id, itemId: o.itemId, monsterId: o.monsterId, scope: o.scope ?? 'hero', heroId, dropRate: o.dropRate ?? 0.5, target: o.count }
+}
+
+// ── Location bounties (hero-less location quests) ─────────────────────────────--
+//
+// Unlike the class-change paths these aren't bound to a hero — they're a
+// location's board of objectives the whole guild works toward (progress reads
+// global inventory/kills). They can chain: a bounty with `requires` stays HIDDEN
+// until its prerequisites are completed, so finishing one reveals the next.
+// Reuses the same objective model + objectiveProgress; reward is gold for now.
+export interface BountyDef {
+  id: string
+  locationId: string
+  title: string
+  story: string
+  objective: ClassQuestObjective   // a hand-in (consumes from the stash) for the boar quests
+  rewardGold?: number
+  requires?: string[]              // bounty ids that must be done first; hidden until then
+}
+export const LOCATION_BOUNTIES: BountyDef[] = [
+  {
+    id: 'boar-hides-20', locationId: 'boar-meadow', title: 'Trapper\'s Order',
+    story: 'The Boar Meadow trapper pays well for fresh hides. Bring him twenty to open an account.',
+    objective: HANDIN('drop-boar-hide', 'Boar Hide', 20, 'Collect 20 Boar Hides'),
+    rewardGold: 200, requires: [],
+  },
+  {
+    id: 'boar-hides-100', locationId: 'boar-meadow', title: 'The Tannery\'s Bulk Order',
+    story: 'Word of your haul reached the Prontera tannery — now they want a hundred more. Collect even more hides.',
+    objective: HANDIN('drop-boar-hide', 'Boar Hide', 100, 'Collect 100 Boar Hides'),
+    rewardGold: 1500, requires: ['boar-hides-20'],
+  },
+]
+// A bounty is only on the board once every prerequisite is done.
+export function bountyVisible(def: BountyDef, done: string[]): boolean {
+  return (def.requires ?? []).every((r) => done.includes(r))
 }
 
 export type ClassQuestStatus =
@@ -310,6 +345,10 @@ interface ProtoState {
   beginClassQuest: (questId: string, heroId: string) => void
   completeClassQuest: (questId: string) => void   // applies the class change to the real unit
   cancelClassQuest: (questId: string) => void     // discards the commitment, no change
+  // Location bounties (hero-less, chained). Completing one consumes its items,
+  // grants the reward, and may reveal a dependent bounty.
+  bountyDone: string[]
+  completeBounty: (bountyId: string) => void
 }
 
 export const useProtoStore = create<ProtoState>((set) => ({
@@ -327,6 +366,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   questProgress: {},
   completedQuests: {},
   classQuestCommit: {},
+  bountyDone: [],
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
@@ -389,7 +429,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
     // Gate on the objective: progress must have reached the goal.
     const g = useGameStore.getState()
     const o = def.objective
-    const progress = objectiveProgress(def, commit, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questItems: g.questItems, miscItems: g.miscItems })
+    const progress = objectiveProgress(o, commit, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questItems: g.questItems, miscItems: g.miscItems })
     if (progress < o.count) return s
     // Consume the handed-in items (collect & hand-in), then change class.
     if (o.kind === 'collect') { g.consumeQuestItem(o.itemId, o.count); g.disarmQuestDrop(questId) }
@@ -409,6 +449,20 @@ export const useProtoStore = create<ProtoState>((set) => ({
     if (def?.objective.kind === 'collect') useGameStore.getState().disarmQuestDrop(questId)  // drop the rule + any collected items
     const next = { ...s.classQuestCommit }; delete next[questId]
     return { classQuestCommit: next }
+  }),
+  completeBounty: (bountyId) => set((s) => {
+    if (s.bountyDone.includes(bountyId)) return s
+    const def = LOCATION_BOUNTIES.find((b) => b.id === bountyId)
+    if (!def || !bountyVisible(def, s.bountyDone)) return s
+    const g = useGameStore.getState()
+    const o = def.objective
+    const progress = objectiveProgress(o, null, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questItems: g.questItems, miscItems: g.miscItems })
+    if (progress < o.count) return s
+    // Consume the handed-in items, then pay out the reward.
+    if (o.kind === 'handin') { if (o.source === 'quest') g.consumeQuestItem(o.itemId, o.count); else g.consumeMiscItem(o.itemId, o.count) }
+    else if (o.kind === 'collect') g.consumeQuestItem(o.itemId, o.count)
+    if (def.rewardGold) g.grantMiscItem('m-gold', def.rewardGold)
+    return { bountyDone: [...s.bountyDone, bountyId] }
   }),
 }))
 

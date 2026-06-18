@@ -7,7 +7,8 @@ import type { EquipmentItem } from '@/types'
 import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
   CLASS_CHANGE_QUESTS, classQuestStatus, objectiveProgress, objectiveConsumes, MIN_CLASS_CHANGE_LEVEL,
-  type ClassChangeQuestDef, type ClassQuestStatus,
+  LOCATION_BOUNTIES, bountyVisible,
+  type ClassChangeQuestDef, type ClassQuestStatus, type BountyDef,
 } from './protoStore'
 
 const ELEMENT_DOT: Record<string, string> = {
@@ -229,7 +230,7 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   // hand-in = how many you currently hold).
   const obj      = q.objective
   const target   = obj.count
-  const progress = committedHeroId ? objectiveProgress(q, commitData, { unitStats, monsterDefeated, questItems, miscItems }) : 0
+  const progress = committedHeroId ? objectiveProgress(obj, commitData, { unitStats, monsterDefeated, questItems, miscItems }) : 0
 
   const status   = classQuestStatus({ committedHeroId, selectedNovice, progress, target })
   const subject  = committedHero ?? selectedNovice
@@ -416,6 +417,111 @@ function ClassQuestBoard({ location }: { location: Location }) {
   )
 }
 
+// ── Location bounty board (hero-less, chained) ───────────────────────────────--
+function BountyRow({ def, done }: { def: BountyDef; done: boolean }) {
+  const unitStats       = useGameStore((s) => s.unitStats)
+  const monsterDefeated = useGameStore((s) => s.monsterDefeated)
+  const questItems      = useGameStore((s) => s.questItems)
+  const miscItems       = useGameStore((s) => s.miscItems)
+  const completeBounty  = useProtoStore((s) => s.completeBounty)
+  const [open, setOpen] = useState(false)
+  const [confirm, setConfirm] = useState(false)
+
+  const o = def.objective
+  const target   = o.count
+  const progress = done ? target : objectiveProgress(o, null, { unitStats, monsterDefeated, questItems, miscItems })
+  const ready    = !done && progress >= target
+  const itemId   = o.kind === 'collect' || o.kind === 'handin' ? o.itemId : ''
+  const held     = o.kind === 'handin' && o.source === 'inventory'
+    ? (miscItems.find((m) => m.id === itemId)?.quantity ?? 0)
+    : (questItems[itemId] ?? 0)
+  const itemName = (o.kind === 'collect' || o.kind === 'handin') ? o.itemName : ''
+
+  const glyph = done ? '✓' : '?'
+  const iconCls = done ? 'border-game-green/50 text-game-green' : ready ? 'border-game-gold/70 text-game-gold' : 'border-game-border text-game-text-dim'
+
+  return (
+    <div className={['rounded-md border transition-colors', open ? 'border-game-primary/40 bg-game-bg' : done ? 'border-game-green/30 bg-game-green/5' : 'border-game-border bg-game-bg'].join(' ')}>
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-white/[0.03]">
+        <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', iconCls].join(' ')}>{glyph}</span>
+        <span className="text-xs flex-1 truncate text-game-text">{def.title}</span>
+        <span className={['text-[10px] shrink-0 tabular-nums', done ? 'text-game-green' : ready ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>
+          {done ? 'done' : `${progress}/${target}`}
+        </span>
+        <span className="text-[10px] text-game-muted shrink-0 w-3 text-center">{open ? '▴' : '▾'}</span>
+      </button>
+
+      {open && (
+        <div className="px-2.5 pb-2.5 pt-1 space-y-2 border-t border-game-border/60">
+          <p className="text-[11px] text-game-text-dim leading-snug">{def.story}</p>
+          <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{o.label}</span></div>
+          {def.rewardGold ? <div className="text-[11px]"><span className="text-game-text-dim">Reward: </span><span className="text-game-gold">{def.rewardGold} gold</span></div> : null}
+
+          {!done && itemName && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hand in</span>
+              <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
+                <span aria-hidden>🎒</span><span className="truncate">{itemName}</span>
+                <span className="text-game-text-dim tabular-nums">×{Math.min(target, held)}/{target}</span>
+              </span>
+              <span className="text-[10px] text-game-muted">you hold {held} in your stash · consumed on hand-in</span>
+            </div>
+          )}
+
+          {!done && (
+            <div>
+              <div className="flex justify-between text-[10px] mb-0.5">
+                <span className="uppercase tracking-wider text-game-text-dim">Progress</span>
+                <span className="text-game-text tabular-nums">{progress}/{target}</span>
+              </div>
+              <div className="h-2 rounded-full bg-game-border overflow-hidden">
+                <div className={['h-full rounded-full transition-all', ready ? 'bg-game-gold' : 'bg-game-accent'].join(' ')} style={{ width: `${Math.min(100, (progress / target) * 100)}%` }} />
+              </div>
+            </div>
+          )}
+
+          <div className="pt-2 mt-1 border-t border-game-border/60 space-y-2">
+            {done && <div className="text-[10px] text-game-green italic">Bounty complete.</div>}
+            {!done && !ready && <div className="text-[10px] text-game-muted italic">Farm {itemName}s and bring them here to claim the reward.</div>}
+            {ready && !confirm && (
+              <button onClick={() => setConfirm(true)} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
+                ✓ Hand in {target} {itemName}s
+              </button>
+            )}
+            {ready && confirm && (
+              <div className="rounded-md border border-game-gold/50 bg-game-gold/10 p-2 space-y-2">
+                <div className="text-[11px] text-game-text leading-snug">
+                  Hand in <span className="font-semibold">{target} × {itemName}</span>? They'll be consumed{def.rewardGold ? ` for ${def.rewardGold} gold` : ''}.
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setConfirm(false)} className="flex-1 text-[11px] px-2 py-1.5 rounded border border-game-border text-game-text-dim hover:text-game-text">Not yet</button>
+                  <button onClick={() => { completeBounty(def.id); setConfirm(false); setOpen(false) }} className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded border border-game-gold/70 bg-game-gold/25 text-game-gold hover:bg-game-gold/40">Hand in</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LocationBountyBoard({ location }: { location: Location }) {
+  const bountyDone = useProtoStore((s) => s.bountyDone)
+  const all = LOCATION_BOUNTIES.filter((b) => b.locationId === location.id)
+  if (all.length === 0) return null
+  // Hidden until unlocked: only show bounties whose prerequisites are all done.
+  const shown = all.filter((b) => bountyVisible(b, bountyDone))
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Bounties</div>
+      <div className="space-y-1">
+        {shown.map((b) => <BountyRow key={b.id} def={b} done={bountyDone.includes(b.id)} />)}
+      </div>
+    </div>
+  )
+}
+
 function QuestBoard({ location }: { location: Location }) {
   const doneIds = useProtoStore((s) => s.completedQuests[location.id] ?? [])
   const [showDone, setShowDone] = useState(false)
@@ -583,9 +689,12 @@ export function LocationDetail({ location }: { location: Location }) {
       {/* class-change quests — hero-relative paths offered in the cities */}
       <ClassQuestBoard location={location} />
 
-      {/* monster quests — replaces the old familiarity / story-path / site-upgrade
-          rows. Suppressed in peaceful cities (no foes → nothing to cull). */}
-      {location.monsterIds.length > 0 && <QuestBoard location={location} />}
+      {/* location bounties — hero-less, chained location quests (boar meadow) */}
+      <LocationBountyBoard location={location} />
+
+      {/* monster quests (legacy mock board) — only where there are foes and no
+          real bounty board yet. Suppressed in peaceful cities and at bounty sites. */}
+      {location.monsterIds.length > 0 && !LOCATION_BOUNTIES.some((b) => b.locationId === location.id) && <QuestBoard location={location} />}
 
       {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (
