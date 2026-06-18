@@ -443,6 +443,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
   return (
     <div
       onClick={onSelect}
+      data-chip
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? 'left 380ms linear, top 380ms linear' : undefined }}
     >
@@ -1254,7 +1255,17 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   }
 
   return (
-    <div className="relative flex-1 min-h-0 flex flex-col">
+    <div
+      className="relative flex-1 min-h-0 flex flex-col"
+      onClickCapture={(e) => {
+        // Tap empty battlefield (not a combatant chip or a control button) to
+        // dismiss an open detail card — a lightweight tap-away without a backdrop
+        // that would otherwise block the roster/stage.
+        if (!selectedId) return
+        if ((e.target as HTMLElement).closest('button, [data-chip]')) return
+        closeDetail()
+      }}
+    >
       <button
         onClick={copySnapshot}
         title="Copy a snapshot of this battle's state (for bug reports / reproduction)"
