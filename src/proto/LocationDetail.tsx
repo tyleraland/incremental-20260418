@@ -6,7 +6,7 @@ import { INITIAL_EQUIPMENT } from '@/data/equipment'
 import type { EquipmentItem } from '@/types'
 import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
-  CLASS_CHANGE_QUESTS, classQuestStatus, classQuestProgress, MIN_CLASS_CHANGE_LEVEL,
+  CLASS_CHANGE_QUESTS, classQuestStatus, classQuestProgress, classQuestKillCount, MIN_CLASS_CHANGE_LEVEL,
   type ClassChangeQuestDef, type ClassQuestStatus,
 } from './protoStore'
 
@@ -204,6 +204,7 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   const units              = useGameStore((s) => s.units)
   const selectedUnitIds    = useGameStore((s) => s.selectedUnitIds)
   const unitStats          = useGameStore((s) => s.unitStats)
+  const monsterDefeated    = useGameStore((s) => s.monsterDefeated)
   const commit             = useProtoStore((s) => s.classQuestCommit)
   const beginClassQuest    = useProtoStore((s) => s.beginClassQuest)
   const completeClassQuest = useProtoStore((s) => s.completeClassQuest)
@@ -221,10 +222,10 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
     ? null
     : units.find((u) => selectedUnitIds.includes(u.id) && isNovice(u) && !busy.has(u.id)) ?? null
 
-  // Live objective progress: lifetime kills the committed hero has earned since
-  // the path began, clamped to the goal.
+  // Live objective progress: kills toward the goal earned since the path began,
+  // clamped. (Scope decides whose kills count — see classQuestKillCount.)
   const target   = q.objective.count
-  const kills    = committedHeroId ? (unitStats[committedHeroId]?.monstersDefeated ?? 0) : 0
+  const kills    = committedHeroId ? classQuestKillCount(q.objective, committedHeroId, unitStats, monsterDefeated) : 0
   const progress = classQuestProgress(commitData, kills, target)
 
   const status   = classQuestStatus({ committedHeroId, selectedNovice, progress, target })

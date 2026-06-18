@@ -22,7 +22,7 @@ export function bucketIndexOf(tick: number): number {
 
 export function emptyTally(): CombatTally {
   return {
-    damageDealt: 0, monstersDefeated: 0, itemsFound: 0, combatTicks: 0,
+    damageDealt: 0, monstersDefeated: 0, killsByMonster: {}, itemsFound: 0, combatTicks: 0,
     spellDamageDealt: 0, hits: 0, misses: 0, damageTaken: 0, dodges: 0, healingDone: 0,
     expGained: 0, levelsGained: 0,
     dmgDealtByElement: {}, dmgTakenByElement: {}, effDealt: { effective: 0, neutral: 0, resisted: 0, immune: 0 },
@@ -45,6 +45,7 @@ function addMap(dst: Record<string, number>, src: Record<string, number>): void 
 export function addInto(dst: CombatTally, src: Partial<CombatTally>): void {
   dst.damageDealt      += src.damageDealt ?? 0
   dst.monstersDefeated += src.monstersDefeated ?? 0
+  if (src.killsByMonster) addMap(dst.killsByMonster, src.killsByMonster)
   dst.itemsFound       += src.itemsFound ?? 0
   dst.combatTicks      += src.combatTicks ?? 0
   dst.spellDamageDealt += src.spellDamageDealt ?? 0
@@ -85,7 +86,7 @@ export function scaleTally(t: CombatTally, factor: number): CombatTally {
   }
   return {
     damageDealt: s(t.damageDealt), monstersDefeated: s(t.monstersDefeated),
-    itemsFound: s(t.itemsFound), combatTicks: s(t.combatTicks),
+    killsByMonster: sm(t.killsByMonster), itemsFound: s(t.itemsFound), combatTicks: s(t.combatTicks),
     spellDamageDealt: s(t.spellDamageDealt), hits: s(t.hits), misses: s(t.misses),
     damageTaken: s(t.damageTaken), dodges: s(t.dodges), healingDone: s(t.healingDone),
     expGained: s(t.expGained), levelsGained: s(t.levelsGained),

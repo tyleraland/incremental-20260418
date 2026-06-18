@@ -580,7 +580,11 @@ function runCombatSlice(
       killsByMonster[mid] = (killsByMonster[mid] ?? 0) + 1
       const killer = killerByEnemy[c.id]
       const credited = killer && playerIds.has(killer) ? killer : null
-      if (credited) (tally[credited] ?? (tally[credited] = emptyTally())).monstersDefeated += 1
+      if (credited) {
+        const t = tally[credited] ?? (tally[credited] = emptyTally())
+        t.monstersDefeated += 1
+        t.killsByMonster[mid] = (t.killsByMonster[mid] ?? 0) + 1   // per-type, for cull quests
+      }
       const def = MONSTER_REGISTRY[mid]
       if (def) for (const d of def.drops) {
         if (rng() < d.dropRate) {
@@ -817,7 +821,11 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       goldEarned++
       const killer = killerByEnemy[c.id]
       const credited = killer && playerIds.has(killer) ? killer : null
-      if (credited) bumpUnit(credited, 'monstersDefeated', 1)
+      if (credited) {
+        bumpUnit(credited, 'monstersDefeated', 1)
+        const cur = unitStatsDelta[credited]!   // bumpUnit just created/fetched it
+        cur.killsByMonster[mid] = (cur.killsByMonster[mid] ?? 0) + 1   // per-type, for cull quests
+      }
       const def = MONSTER_REGISTRY[mid]
       const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
       const itemsDropped = { ...prev.itemsDropped }

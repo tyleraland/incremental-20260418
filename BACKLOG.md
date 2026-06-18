@@ -162,6 +162,44 @@ What's left:
   `goldDiscount` (the skill can exist in the tree with no effect until the shop
   lands). Closes the loot → gold → power loop. (Mined from the old roadmap Tier 6.)
 
+## Quest system (objective types)
+
+The class-change quests (`src/proto/protoStore.ts`, `LOCATION_QUESTS` is the
+older mock board) are the seed of a WoW-style quest framework. Each quest has an
+**objective** the player works toward, and kill/collect objectives carry a
+**scope: `'hero'` (only the committed hero's actions count) or `'global'` (any
+hero)** — class-change quests are inherently hero-scoped, but the objective model
+supports both so future party/board quests can be global.
+
+Objective types, roughly easiest → most plumbing:
+
+- **Kill / cull N of a type** — *DONE for the kill case* (`{ kind:'kill', count,
+  monsterId?, scope }`). Hero-scope per-type rides `unitStats[hero].killsByMonster`
+  (added with this work); global per-type rides the persisted `monsterDefeated`
+  map; "any monster" uses the flat lifetime kill count. Progress = current −
+  baseline snapshotted at commit.
+- **Collect a dropped quest item.** A quest seeds a *temporary* drop on a target
+  monster; each pickup increments the counter. Tracked in the **quest menu only,
+  hidden from `miscItems`/Inventory.** Can be hero-scoped ("when *this* hero is on
+  a map and X dies") or global ("any hero, Y dies"). Plumbing: a quest-item ledger
+  separate from inventory + a drop hook in `rewardKills` keyed on the active quest
+  and (optional) committed hero / location.
+- **Hand-in from inventory.** Turn in items the guild already holds. Plumbing:
+  read `miscItems`, show an explicit "these will be consumed" confirm, decrement
+  on complete. (Low–medium.)
+- **Crafting / transformational.** Consume reagents A+B+C → grant reward Z, with a
+  clear **"Items consumed"** panel (reagents are ordinary materials, *not*
+  quest-specific items). Overlaps the dormant `RECIPE_REGISTRY` (see "crafting
+  loop disconnected" below) — a chance to wire that up.
+- **Reach a location.** Travel-to-X objective (e.g. "reach Geffen Dungeon F3").
+  Tiny given existing `locationId` / map-page state.
+
+Cross-cutting follow-ups: class-quest commitments + objective progress are
+currently **unpersisted proto state** (a reload resets an in-flight quest) and
+the per-hero `killsByMonster` map is persisted but the *baseline* lives in the
+proto store — fold quest state into a real save slice when the system graduates
+out of `src/proto`.
+
 ## Combat content
 
 - **Per-location quests & async choices.** Each location grows a small

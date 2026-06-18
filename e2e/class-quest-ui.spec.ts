@@ -64,18 +64,18 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   await expect(page.getByRole('button', { name: /Path of the Fighter/ })).toBeVisible()
   await shot('05-class-change')
 
-  // Begin the path → it becomes an in-progress kill objective (0/1), no Complete yet.
+  // Begin the path → it becomes an in-progress cull objective (0/3), no Complete yet.
   await page.getByRole('button', { name: /Path of the Fighter/ }).click()       // expand
   await page.getByRole('button', { name: /Begin — Pell takes/ }).click()
   await page.waitForTimeout(300)
-  await expect(page.getByText('0/1').first()).toBeVisible()
+  await expect(page.getByText('0/3').first()).toBeVisible()
   await expect(page.getByRole('button', { name: /Complete the class change/ })).toHaveCount(0)
   await shot('06-quest-in-progress')
 
-  // Credit Pell a killing blow (what landing one in combat would do) → ready.
+  // Credit Pell three killing blows on the objective monster (Tough Slime) → ready.
   await page.evaluate(() => {
-    const store = (window as unknown as { __game: { setState: (fn: (s: { unitStats: Record<string, unknown> }) => object) => void } }).__game
-    store.setState((s) => ({ unitStats: { ...s.unitStats, u7: { ...(s.unitStats.u7 ?? {}), monstersDefeated: 1 } } }))
+    const store = (window as unknown as { __game: { setState: (fn: (s: { unitStats: Record<string, { killsByMonster?: Record<string, number> }> }) => object) => void } }).__game
+    store.setState((s) => ({ unitStats: { ...s.unitStats, u7: { ...(s.unitStats.u7 ?? {}), monstersDefeated: 3, killsByMonster: { 'tough-slime': 3 } } } }))
   })
   await page.waitForTimeout(300)
   const complete = page.getByRole('button', { name: /Complete the class change/ })

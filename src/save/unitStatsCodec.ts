@@ -16,10 +16,12 @@ function fill(partial: Partial<UnitCombatStats>): UnitCombatStats {
 
 // Per-unit lifetime combat tallies. v2 widened the tally from {damage, kills,
 // items, ticks} to the full battle-report breakdown (taken / hits / element &
-// effectiveness maps); v1 saves migrate by zero-filling the new fields.
+// effectiveness maps); v3 added the per-monster kill map (killsByMonster, for
+// per-type cull-quest progress). Older saves migrate by filling the missing
+// fields ({}/0) via emptyTally.
 export const unitStatsCodec = makeCodec<UnitStatsSave>({
   key: 'unitStats',
-  version: 2,
+  version: 3,
   serialize:   (s) => ({ unitStats: s.unitStats ?? {} }),
   deserialize: (data) => ({ unitStats: data.unitStats ?? {} }),
   empty:       () => ({ unitStats: {} }),

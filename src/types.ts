@@ -279,6 +279,7 @@ export interface EffectivenessTally {
 export interface UnitCombatStats {
   damageDealt: number
   monstersDefeated: number
+  killsByMonster: Record<string, number>   // monsterId → killing blows this unit landed (per-type cull-quest progress)
   itemsFound: number
   combatTicks: number
   // ── battle-report analytics (added) ──────────────────────────────────────────
