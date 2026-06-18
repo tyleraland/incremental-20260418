@@ -99,42 +99,75 @@ export function questStatus(
 //   • no Novice selected            → gray (…)  "select Novice"
 //   • a level-1 Novice selected     → gray (!)  "requires level 2+"
 //   • a level-2+ Novice selected    → yellow (!) — that hero can *begin* the path
-//   • a hero has committed (begun)  → yellow (?) — requirement met, ready to change
+//   • committed, objective unmet    → gray (?)  — in progress (e.g. 0/1)
+//   • committed, objective met      → yellow (?) — ready to change class
 // Only one hero may be committed to a given path at a time; while it's committed
 // no one else can begin it. Committing/cancelling is mock proto state, but the
 // final class change is written to the real game unit (it persists via the units
-// codec). The "requirement" is instantly satisfied for now — committing makes the
-// quest immediately ready to complete.
+// codec).
+//
+// Objective (the WoW-style goal). For now every path is a single "kill" goal:
+// the committed hero must land `count` killing blows (any monster when
+// `monsterId` is unset). Progress is derived from the hero's *lifetime* kill
+// tally (`unitStats[hero].monstersDefeated`) snapshotted at commit time, so it
+// needs no new combat plumbing — see classQuestProgress. Other objective kinds
+// (collect a dropped quest item, cull N of a type, hand in / craft reagents) are
+// designed to slot in here later.
+export interface ClassQuestObjective {
+  kind: 'kill'
+  count: number          // killing blows required
+  monsterId?: string     // restrict to a monster id; unset = any monster
+  label: string          // human copy, e.g. "Defeat any monster"
+}
 export interface ClassChangeQuestDef {
   id: string
   locationId: string   // the city this path is offered in
   targetClass: string  // class the Novice becomes on completion
   title: string        // e.g. "Path of the Fighter"
   story: string        // narrative blurb (shown when expanded)
+  objective: ClassQuestObjective
 }
+// Every path shares the same starter goal for now: the committed hero lands one
+// killing blow on any monster, anywhere.
+const FIRST_BLOOD: ClassQuestObjective = { kind: 'kill', count: 1, label: 'Defeat any monster' }
 export const CLASS_CHANGE_QUESTS: ClassChangeQuestDef[] = [
-  { id: 'path-fighter', locationId: 'prontera-city', targetClass: 'Fighter', title: 'Path of the Fighter', story: 'The Prontera guard drills recruits in sword and shield. Prove your mettle and take up the blade as a Fighter.' },
-  { id: 'path-cleric',  locationId: 'prontera-city', targetClass: 'Cleric',  title: 'Path of the Cleric',  story: 'The cathedral of Prontera seeks the devout. Take your vows and walk the divine path as a Cleric.' },
-  { id: 'path-ranger',  locationId: 'payon-city',    targetClass: 'Ranger',  title: 'Path of the Ranger',  story: 'The hunters of Payon test every comer at the range. String a bow and master the hunt as a Ranger.' },
-  { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild watches from the rafters. Slip past their wards and earn your daggers as a Rogue." },
-  { id: 'path-mage',    locationId: 'geffen-city',   targetClass: 'Mage',    title: 'Path of the Mage',    story: 'The arcane college of Geffen admits only the gifted. Study the weave and claim your robes as a Mage.' },
+  { id: 'path-fighter', locationId: 'prontera-city', targetClass: 'Fighter', title: 'Path of the Fighter', story: 'The Prontera guard drills recruits in sword and shield. Prove your mettle and take up the blade as a Fighter.', objective: FIRST_BLOOD },
+  { id: 'path-cleric',  locationId: 'prontera-city', targetClass: 'Cleric',  title: 'Path of the Cleric',  story: 'The cathedral of Prontera seeks the devout. Take your vows and walk the divine path as a Cleric.', objective: FIRST_BLOOD },
+  { id: 'path-ranger',  locationId: 'payon-city',    targetClass: 'Ranger',  title: 'Path of the Ranger',  story: 'The hunters of Payon test every comer at the range. String a bow and master the hunt as a Ranger.', objective: FIRST_BLOOD },
+  { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild watches from the rafters. Slip past their wards and earn your daggers as a Rogue.", objective: FIRST_BLOOD },
+  { id: 'path-mage',    locationId: 'geffen-city',   targetClass: 'Mage',    title: 'Path of the Mage',    story: 'The arcane college of Geffen admits only the gifted. Study the weave and claim your robes as a Mage.', objective: FIRST_BLOOD },
 ]
+
+// A live commitment: which hero is on the path + the kill tally they had when
+// they began (the baseline we diff against to measure progress).
+export interface ClassQuestCommit { heroId: string; killBaseline: number }
 
 // A Novice is a hero with no specialized class yet (`class: null`, rendered as
 // "Novice"). Pre-classed heroes can't take a class-change path.
 export const MIN_CLASS_CHANGE_LEVEL = 2
 
+// Progress toward a kill objective: lifetime kills earned since the baseline,
+// clamped to the target. (Lifetime kills come from the committed hero's
+// `unitStats[hero].monstersDefeated`, credited to the killing-blow unit.)
+export function classQuestProgress(commit: ClassQuestCommit | null, currentKills: number, target: number): number {
+  if (!commit) return 0
+  return Math.min(target, Math.max(0, currentKills - commit.killBaseline))
+}
+
 export type ClassQuestStatus =
   | 'select-novice'  // gray (…) — no eligible Novice in the current selection
   | 'underleveled'   // gray (!) — a Novice is selected but below the level gate
   | 'eligible'       // yellow (!) — a level-gate Novice is selected; can begin
-  | 'committed'      // yellow (?) — a hero has begun; requirement met, ready to change
+  | 'in-progress'    // gray (?) — a hero has begun but the objective isn't met yet
+  | 'ready'          // yellow (?) — objective met; ready to change class
 
 export function classQuestStatus(o: {
   committedHeroId: string | null
   selectedNovice: { level: number } | null
+  progress: number
+  target: number
 }): ClassQuestStatus {
-  if (o.committedHeroId) return 'committed'
+  if (o.committedHeroId) return o.progress >= o.target ? 'ready' : 'in-progress'
   if (!o.selectedNovice) return 'select-novice'
   if (o.selectedNovice.level < MIN_CLASS_CHANGE_LEVEL) return 'underleveled'
   return 'eligible'
@@ -165,8 +198,9 @@ interface ProtoState {
   activeQuest: Record<string, string | null>         // locId → committed quest id
   questProgress: Record<string, Record<string, number>> // locId → questId → count
   completedQuests: Record<string, string[]>          // locId → done quest ids (in order)
-  // Class-change quests: which hero (if any) has committed to each path.
-  classQuestCommit: Record<string, string>           // questId → committed heroId
+  // Class-change quests: which hero (if any) has committed to each path, plus
+  // the kill baseline we measure objective progress against.
+  classQuestCommit: Record<string, ClassQuestCommit>  // questId → commitment
 
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
@@ -242,15 +276,20 @@ export const useProtoStore = create<ProtoState>((set) => ({
 
   beginClassQuest: (questId, heroId) => set((s) => {
     if (s.classQuestCommit[questId]) return s   // someone's already on this path
-    return { classQuestCommit: { ...s.classQuestCommit, [questId]: heroId } }
+    // Snapshot the hero's lifetime kills now — progress is measured against this.
+    const killBaseline = useGameStore.getState().unitStats[heroId]?.monstersDefeated ?? 0
+    return { classQuestCommit: { ...s.classQuestCommit, [questId]: { heroId, killBaseline } } }
   }),
   completeClassQuest: (questId) => set((s) => {
-    const heroId = s.classQuestCommit[questId]
+    const commit = s.classQuestCommit[questId]
     const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
-    if (!heroId || !def) return s
+    if (!commit || !def) return s
+    // Gate on the objective: the committed hero must have met the kill goal.
+    const kills = useGameStore.getState().unitStats[commit.heroId]?.monstersDefeated ?? 0
+    if (classQuestProgress(commit, kills, def.objective.count) < def.objective.count) return s
     // Write the class change to the real game unit (persists via the units codec).
     useGameStore.setState((g) => ({
-      units: g.units.map((u) => (u.id === heroId ? { ...u, class: def.targetClass } : u)),
+      units: g.units.map((u) => (u.id === commit.heroId ? { ...u, class: def.targetClass } : u)),
     }))
     const next = { ...s.classQuestCommit }; delete next[questId]
     return { classQuestCommit: next }

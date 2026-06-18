@@ -64,6 +64,30 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   await expect(page.getByRole('button', { name: /Path of the Fighter/ })).toBeVisible()
   await shot('05-class-change')
 
+  // Begin the path → it becomes an in-progress kill objective (0/1), no Complete yet.
+  await page.getByRole('button', { name: /Path of the Fighter/ }).click()       // expand
+  await page.getByRole('button', { name: /Begin — Pell takes/ }).click()
+  await page.waitForTimeout(300)
+  await expect(page.getByText('0/1').first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Complete the class change/ })).toHaveCount(0)
+  await shot('06-quest-in-progress')
+
+  // Credit Pell a killing blow (what landing one in combat would do) → ready.
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { setState: (fn: (s: { unitStats: Record<string, unknown> }) => object) => void } }).__game
+    store.setState((s) => ({ unitStats: { ...s.unitStats, u7: { ...(s.unitStats.u7 ?? {}), monstersDefeated: 1 } } }))
+  })
+  await page.waitForTimeout(300)
+  const complete = page.getByRole('button', { name: /Complete the class change/ })
+  await expect(complete).toBeVisible()
+  await shot('07-quest-ready')
+
+  // Complete → Pell becomes a Fighter on the real unit.
+  await complete.click()
+  await page.waitForTimeout(300)
+  const cls = await page.evaluate(() => (window as unknown as { __game: { getState: () => { units: { id: string; class: string | null }[] } } }).__game.getState().units.find((u) => u.id === 'u7')?.class)
+  expect(cls).toBe('Fighter')
+
   // All four lens tabs are reachable.
   for (const tab of ['Hero', 'Party', 'Items', 'Location']) {
     await page.getByRole('button', { name: tab, exact: true }).click()

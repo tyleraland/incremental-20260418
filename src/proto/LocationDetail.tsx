@@ -6,7 +6,7 @@ import { INITIAL_EQUIPMENT } from '@/data/equipment'
 import type { EquipmentItem } from '@/types'
 import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
-  CLASS_CHANGE_QUESTS, classQuestStatus, MIN_CLASS_CHANGE_LEVEL,
+  CLASS_CHANGE_QUESTS, classQuestStatus, classQuestProgress, MIN_CLASS_CHANGE_LEVEL,
   type ClassChangeQuestDef, type ClassQuestStatus,
 } from './protoStore'
 
@@ -170,16 +170,17 @@ function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: s
 // see classQuestStatus. Glyphs mirror the monster board's convention (yellow =
 // actionable now, gray = waiting on you).
 const CLASS_GLYPH: Record<ClassQuestStatus, string> = {
-  'select-novice': '…', underleveled: '!', eligible: '!', committed: '?',
+  'select-novice': '…', underleveled: '!', eligible: '!', 'in-progress': '?', ready: '?',
 }
 const CLASS_ICON_CLS: Record<ClassQuestStatus, string> = {
   'select-novice': 'border-game-border text-game-muted',
   underleveled:    'border-game-border text-game-muted',
   eligible:        'border-game-gold/60 text-game-gold',
-  committed:       'border-game-gold/70 text-game-gold',
+  'in-progress':   'border-game-border text-game-text-dim',
+  ready:           'border-game-gold/70 text-game-gold',
 }
 const CLASS_SUBTITLE: Record<ClassQuestStatus, string> = {
-  'select-novice': 'select Novice', underleveled: 'requires level 2+', eligible: 'ready', committed: 'in progress',
+  'select-novice': 'select Novice', underleveled: 'requires level 2+', eligible: 'begin', 'in-progress': '', ready: 'ready',
 }
 
 const isNovice = (u: Unit) => u.class === null || u.class === 'Novice'
@@ -202,6 +203,7 @@ function HeroChip({ u, gold }: { u: Unit; gold?: boolean }) {
 function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   const units              = useGameStore((s) => s.units)
   const selectedUnitIds    = useGameStore((s) => s.selectedUnitIds)
+  const unitStats          = useGameStore((s) => s.unitStats)
   const commit             = useProtoStore((s) => s.classQuestCommit)
   const beginClassQuest    = useProtoStore((s) => s.beginClassQuest)
   const completeClassQuest = useProtoStore((s) => s.completeClassQuest)
@@ -209,18 +211,26 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   const [open, setOpen] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
 
-  const committedHeroId = commit[q.id] ?? null
+  const commitData      = commit[q.id] ?? null
+  const committedHeroId = commitData?.heroId ?? null
   const committedHero   = committedHeroId ? units.find((u) => u.id === committedHeroId) ?? null : null
   // Heroes already committed to *any* path can't begin a second one.
-  const busy = new Set(Object.values(commit))
+  const busy = new Set(Object.values(commit).map((c) => c.heroId))
   // The selected Novice this path would act on: first selected, unclassed, free hero.
   const selectedNovice = committedHeroId
     ? null
     : units.find((u) => selectedUnitIds.includes(u.id) && isNovice(u) && !busy.has(u.id)) ?? null
 
-  const status   = classQuestStatus({ committedHeroId, selectedNovice })
+  // Live objective progress: lifetime kills the committed hero has earned since
+  // the path began, clamped to the goal.
+  const target   = q.objective.count
+  const kills    = committedHeroId ? (unitStats[committedHeroId]?.monstersDefeated ?? 0) : 0
+  const progress = classQuestProgress(commitData, kills, target)
+
+  const status   = classQuestStatus({ committedHeroId, selectedNovice, progress, target })
   const subject  = committedHero ?? selectedNovice
   const firstName = subject?.name.split(' ')[0] ?? 'the hero'
+  const gold     = status === 'eligible' || status === 'ready'
 
   return (
     <div className={['rounded-md border transition-colors', open ? 'border-game-primary/40 bg-game-bg' : 'border-game-border bg-game-bg'].join(' ')}>
@@ -232,8 +242,8 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
           {CLASS_GLYPH[status]}
         </span>
         <span className={['text-xs flex-1 truncate', status === 'select-novice' || status === 'underleveled' ? 'text-game-muted' : 'text-game-text'].join(' ')}>{q.title}</span>
-        <span className={['text-[10px] shrink-0', status === 'eligible' || status === 'committed' ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>
-          {status === 'committed' && committedHero ? committedHero.name.split(' ')[0] : CLASS_SUBTITLE[status]}
+        <span className={['text-[10px] shrink-0 tabular-nums', gold ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>
+          {status === 'in-progress' ? `${firstName} · ${progress}/${target}` : CLASS_SUBTITLE[status]}
         </span>
         <span className="text-[10px] text-game-muted shrink-0 w-3 text-center">{open ? '▴' : '▾'}</span>
       </button>
@@ -241,13 +251,27 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
       {open && (
         <div className="px-2.5 pb-2.5 pt-1 space-y-2 border-t border-game-border/60">
           <p className="text-[11px] text-game-text-dim leading-snug">{q.story}</p>
-          <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">Become a {q.targetClass}.</span></div>
+          <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{q.objective.label}</span></div>
+          <div className="text-[11px]"><span className="text-game-text-dim">Reward: </span><span className="text-game-text">become a {q.targetClass}</span></div>
 
           {/* committed hero chip — whose path this is */}
           {committedHero && (
             <div className="flex items-center gap-1.5">
               <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hero</span>
               <HeroChip u={committedHero} gold />
+            </div>
+          )}
+
+          {/* objective progress bar (committed) */}
+          {committedHeroId && (
+            <div>
+              <div className="flex justify-between text-[10px] mb-0.5">
+                <span className="uppercase tracking-wider text-game-text-dim">Progress</span>
+                <span className="text-game-text tabular-nums">{progress}/{target}</span>
+              </div>
+              <div className="h-2 rounded-full bg-game-border overflow-hidden">
+                <div className={['h-full rounded-full transition-all', status === 'ready' ? 'bg-game-gold' : 'bg-game-accent'].join(' ')} style={{ width: `${Math.min(100, (progress / target) * 100)}%` }} />
+              </div>
             </div>
           )}
 
@@ -267,14 +291,19 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
                 Begin — {firstName} takes {q.title}
               </button>
             )}
-            {status === 'committed' && !confirmCancel && (
+            {status === 'in-progress' && (
+              <div className="text-[10px] text-game-muted italic">{firstName} must {q.objective.label.toLowerCase()} ({progress}/{target}). Deploy them to a battlefield to make progress.</div>
+            )}
+            {(status === 'in-progress' || status === 'ready') && !confirmCancel && (
               <>
-                <button
-                  onClick={() => { completeClassQuest(q.id); setOpen(false) }}
-                  className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors"
-                >
-                  ✓ Complete the class change
-                </button>
+                {status === 'ready' && (
+                  <button
+                    onClick={() => { completeClassQuest(q.id); setOpen(false) }}
+                    className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors"
+                  >
+                    ✓ Complete the class change
+                  </button>
+                )}
                 <button
                   onClick={() => setConfirmCancel(true)}
                   className="w-full text-[11px] px-3 py-1.5 rounded-md border border-game-border text-game-text-dim hover:text-rose-300 hover:border-rose-700/60 transition-colors"
@@ -283,7 +312,7 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
                 </button>
               </>
             )}
-            {status === 'committed' && confirmCancel && (
+            {(status === 'in-progress' || status === 'ready') && confirmCancel && (
               <div className="rounded-md border border-rose-700/50 bg-rose-950/20 p-2 space-y-2">
                 <div className="text-[11px] text-game-text leading-snug">
                   Are you sure? This will discard all of {firstName}'s progress towards {q.title}.
