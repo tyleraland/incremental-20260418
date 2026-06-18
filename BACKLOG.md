@@ -215,35 +215,23 @@ the per-hero `killsByMonster` map is persisted but the *baseline* lives in the
 proto store — fold quest state into a real save slice when the system graduates
 out of `src/proto`.
 
-### Quest log / journal — a global "who's on what" view
+### Quest log / journal — a global "who's on what" view — *DONE* (option #2)
 
-Today quests are only visible by travelling to the city that offers them
-(`LocationDetail`). As the board grows (many paths, a mix of hero-scoped and
-global), the player needs a **single roll-up**: every accepted/active quest, who
-(if anyone) is committed to each, live progress, and a tap-through detail with a
-**"Go to location"** button that focuses the map on the quest's site (reuse
-`setMapPage` + `setSelectedLocation`, as the dungeon-entry button does).
+A top-bar **📜 Quests** button (next to Guild) opens the `QuestJournal`
+(`src/proto/QuestJournal.tsx`) — a single roll-up of every quest (class paths +
+bounties) built by `buildQuestBoard` (`protoStore`). Each row shows status, the
+committed hero (hero chip) vs guild scope, live progress, completion count, and a
+**"Go ›"** that focuses the map on the quest's site + opens its Location lens
+(`setMapPage` + `setSelectedLocation` + `requestZoom(1)` + a new
+`requestLocationTab`). Filters: status (ready / in-progress / available /
+upcoming / completed), scope (everyone / hero / guild), and a per-location
+group/filter. The **nudge**: the Quests button carries a gold badge with the
+"ready to collect" count.
 
-Open question — **where does it live?** Options:
-
-1. **Party tab** (the user's hunch). Pro: the Party lens is already the
-   roster/doctrine roll-up, so "who is assigned to what quest" fits the mental
-   model; it's one tap from anywhere. Con: Party is currently scoped to *the
-   focused battlefield's* squad — a global quest list is a different scope and
-   could feel bolted on. Might split Party into "this battlefield" vs "guild".
-2. **A new top-bar overlay** next to Guild/Reports/Time (e.g. a "Quests" /
-   journal button). Pro: global by nature, matches the other full-screen
-   roll-ups; room to grow (filters, completed archive). Con: another top-bar
-   slot; further from the map.
-3. **Inside the Guild overlay** as a "Quests" section. Pro: the guild already
-   represents the meta/roster layer and unassigned heroes bucket there. Con:
-   Guild is getting busy; quests may warrant their own surface.
-
-Leaning **#2 (top-bar Quests overlay)** for a true global view, with a compact
-"active paths" strip possibly mirrored in Party for at-a-glance. Data is already
-centralised (`CLASS_CHANGE_QUESTS` + `classQuestCommit` + the progress helpers),
-so the view is mostly presentational; the main design work is the scope/placement
-decision and the per-row "Go to location" focus action. **Not started.**
+Follow-ups: a "completed archive" view (repeatable history beyond the ✓N chip);
+a compact "active paths" strip mirrored in the Party lens; and map-pin markers
+(a `?`/`!` on world-map locations) as a second nudge surface — see the
+`questCompletions` tally for a future "quests completed" report.
 
 ## Combat content
 

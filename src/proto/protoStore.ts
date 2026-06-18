@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
-import type { UnitCombatStats, QuestDropRule } from '@/types'
+import type { UnitCombatStats, QuestDropRule, Unit } from '@/types'
 
 // ── Prototype-only mock state ───────────────────────────────────────────────--
 //
@@ -300,6 +300,86 @@ export function bountyProgress(def: BountyDef, g: QuestStatView, claimed: number
   return objectiveProgress(o, null, g)
 }
 
+// ── Unified quest board (the journal) ────────────────────────────────────────--
+//
+// One flattened view of every quest (class-change paths + location bounties) for
+// the top-bar Quest Journal: a board status for filtering, who it belongs to
+// (hero-specific vs the whole guild), where it lives, and live progress. Pure so
+// it's testable; the journal + the nav-button badge both build from it.
+export type BoardStatus =
+  | 'not-yet'      // visible but its prerequisites aren't met yet (upcoming)
+  | 'available'    // ready to take on / no progress yet
+  | 'in-progress'  // underway, objective not met
+  | 'ready'        // objective met — go collect / complete
+  | 'completed'    // terminal (a non-repeatable bounty that's been turned in)
+
+export interface QuestBoardEntry {
+  id: string
+  kind: 'class' | 'bounty'
+  title: string
+  locationId: string
+  locationName: string
+  scope: 'hero' | 'global'   // hero-specific (a class path) vs guild-wide (a bounty)
+  heroId?: string            // the committed hero, if any → hero chip
+  heroName?: string
+  status: BoardStatus
+  progress: number
+  target: number
+  objectiveLabel: string
+  rewardText?: string
+  repeatable?: boolean
+  completions: number        // times completed (lifetime) — repeatable history
+}
+
+export interface QuestBoardArgs {
+  classCommit: Record<string, ClassQuestCommit>
+  bountyDone: string[]
+  bountyClaimed: Record<string, number>
+  completions: Record<string, number>
+  units: Pick<Unit, 'id' | 'name'>[]
+  view: QuestStatView
+  locationName: (id: string) => string
+}
+
+export function buildQuestBoard(a: QuestBoardArgs): QuestBoardEntry[] {
+  const out: QuestBoardEntry[] = []
+  // Class-change paths (hero-specific). Never terminally "completed" (a new
+  // Novice can always walk the path); committed → in-progress / ready.
+  for (const q of CLASS_CHANGE_QUESTS) {
+    const commit = a.classCommit[q.id] ?? null
+    const target = q.objective.count
+    const progress = commit ? objectiveProgress(q.objective, commit, a.view) : 0
+    const status: BoardStatus = commit ? (progress >= target ? 'ready' : 'in-progress') : 'available'
+    const hero = commit ? a.units.find((u) => u.id === commit.heroId) : undefined
+    out.push({
+      id: q.id, kind: 'class', title: q.title, locationId: q.locationId, locationName: a.locationName(q.locationId),
+      scope: 'hero', heroId: hero?.id, heroName: hero?.name,
+      status, progress, target, objectiveLabel: q.objective.label,
+      rewardText: `become a ${q.targetClass}`, completions: a.completions[q.id] ?? 0,
+    })
+  }
+  // Location bounties (guild-wide). Hidden-at-location prereqs surface here as
+  // 'not-yet'; non-repeatable + done → 'completed'.
+  for (const b of LOCATION_BOUNTIES) {
+    const visible = bountyVisible(b, a.bountyDone)
+    const done = !b.repeatable && a.bountyDone.includes(b.id)
+    const target = b.objective.count
+    const progress = done ? target : bountyProgress(b, a.view, a.bountyClaimed[b.id] ?? 0)
+    const status: BoardStatus = !visible ? 'not-yet'
+      : done ? 'completed'
+      : progress >= target ? 'ready'
+      : progress > 0 ? 'in-progress'
+      : 'available'
+    out.push({
+      id: b.id, kind: 'bounty', title: b.title, locationId: b.locationId, locationName: a.locationName(b.locationId),
+      scope: 'global', status, progress, target, objectiveLabel: b.objective.label,
+      rewardText: b.rewardGold ? `${b.rewardGold} gold` : undefined, repeatable: b.repeatable,
+      completions: a.completions[b.id] ?? 0,
+    })
+  }
+  return out
+}
+
 export type ClassQuestStatus =
   | 'select-novice'  // gray (…) — no eligible Novice in the current selection
   | 'underleveled'   // gray (!) — a Novice is selected but below the level gate
@@ -327,6 +407,8 @@ interface ProtoState {
   // Bumped when the lens should drill into the Hero tab (double-tap a roster
   // hero / initial focus). A plain single-tap selects without bumping this.
   heroTabRequest: number
+  // Bumped to drill the lens into the Location tab (Quest Journal "go to location").
+  locationTabRequest: number
   // A request to open a combatant's battlefield detail card (Hero lens →
   // battlefield). Nonce so the same unit re-fires.
   battleInspectRequest: { unitId: string; nonce: number } | null
@@ -351,6 +433,7 @@ interface ProtoState {
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
   requestHeroTab: () => void
+  requestLocationTab: () => void
   requestBattleInspect: (unitId: string) => void
   dismissBattleCard: () => void
   openStageOverlay: (o: StageOverlay) => void
@@ -380,6 +463,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   zoomLevel: 0,
   zoomRequest: null,
   heroTabRequest: 0,
+  locationTabRequest: 0,
   battleInspectRequest: null,
   battleCardDismiss: 0,
   stageOverlay: null,
@@ -398,6 +482,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
   requestHeroTab: () => set((s) => ({ heroTabRequest: s.heroTabRequest + 1 })),
+  requestLocationTab: () => set((s) => ({ locationTabRequest: s.locationTabRequest + 1 })),
   requestBattleInspect: (unitId) => set((s) => ({ battleInspectRequest: { unitId, nonce: (s.battleInspectRequest?.nonce ?? 0) + 1 } })),
   dismissBattleCard: () => set((s) => ({ battleCardDismiss: s.battleCardDismiss + 1 })),
   openStageOverlay: (o) => set({ stageOverlay: o }),

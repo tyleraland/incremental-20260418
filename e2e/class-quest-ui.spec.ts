@@ -188,3 +188,38 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
     await page.waitForTimeout(200)
   }
 })
+
+test('quest journal: filter + go to location', async ({ page }, testInfo) => {
+  const proj = testInfo.project.name
+  const shot = (n: string) => page.screenshot({ path: `e2e/__shots__/journal-${proj}-${n}.png` })
+
+  await page.goto(BASE)
+  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+  await page.waitForTimeout(1500)
+
+  // Open the Quest Journal from the top bar (next to Guild).
+  await page.getByRole('button', { name: 'Quests', exact: true }).click()
+  const journal = page.getByTestId('quest-journal')   // scope queries to the overlay
+  await expect(journal).toBeVisible()
+  // It rolls up class paths (hero) and bounties (guild) from across the world.
+  await expect(journal.getByText('Path of the Fighter').first()).toBeVisible()
+  await expect(journal.getByText("Trapper's Order").first()).toBeVisible()
+  await shot('01-all')
+
+  // Filter to guild-wide quests → the hero class paths drop out.
+  await journal.getByRole('button', { name: '⌂ Guild', exact: true }).click()
+  await page.waitForTimeout(200)
+  await expect(journal.getByText('Path of the Fighter')).toHaveCount(0)
+  await expect(journal.getByText("Trapper's Order").first()).toBeVisible()
+  await shot('02-guild-only')
+
+  // Filter back to hero quests and jump to a class path's city.
+  await journal.getByRole('button', { name: '◈ Hero', exact: true }).click()
+  await page.waitForTimeout(200)
+  await journal.getByRole('button', { name: 'Go to Path of the Fighter' }).click()
+  await page.waitForTimeout(400)
+  // Overlay closed and the map focused Prontera with its Location lens open.
+  await expect(page.getByTestId('quest-journal')).toHaveCount(0)
+  const loc = await page.evaluate(() => (window as unknown as { __game: { getState: () => { selectedLocationId: string | null } } }).__game.getState().selectedLocationId)
+  expect(loc).toBe('prontera-city')
+})

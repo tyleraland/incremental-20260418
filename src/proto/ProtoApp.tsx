@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom'
 import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
-import { useProtoStore } from './protoStore'
+import { useProtoStore, type QuestBoardEntry } from './protoStore'
+import { QuestJournal, useQuestBoard } from './QuestJournal'
 import { Guild } from '@/pages/Guild'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
@@ -178,18 +179,18 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
 }
 
 // ── Top-bar global nav ─────────────────────────────────────────────────────--
-type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings'
-const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings' }
+type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests'
+const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests' }
 
-function NavBtn({ icon, label, active, disabled, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; onClick?: () => void }) {
+function NavBtn({ icon, label, active, disabled, badge, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; badge?: number; onClick?: () => void }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      title={label}
+      title={badge ? `${label} — ${badge} ready` : label}
       aria-label={label}
       className={[
-        'flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors',
+        'relative flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors',
         active ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
           : 'border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5',
         disabled ? 'opacity-40 cursor-not-allowed' : '',
@@ -197,8 +198,19 @@ function NavBtn({ icon, label, active, disabled, onClick }: { icon: string; labe
     >
       <span className="text-base leading-none">{icon}</span>
       <span className="hidden sm:inline">{label}</span>
+      {/* nudge: a gold badge when quests are ready to collect */}
+      {badge ? (
+        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-bg tabular-nums">{badge}</span>
+      ) : null}
     </button>
   )
+}
+
+// The Quests nav button carries a live "ready to collect" badge as the nudge.
+function QuestsNavButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const board = useQuestBoard()
+  const ready = board.reduce((n, e) => n + (e.status === 'ready' ? 1 : 0), 0)
+  return <NavBtn icon="📜" label="Quests" active={active} badge={ready} onClick={onClick} />
 }
 
 // Full-screen overlay hosting a global game screen (Guild / Reports / Time) or
@@ -248,7 +260,21 @@ export function ProtoApp() {
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
   const requestHeroTab   = useProtoStore((s) => s.requestHeroTab)
+  const requestLocationTab = useProtoStore((s) => s.requestLocationTab)
   const dismissBattleCard = useProtoStore((s) => s.dismissBattleCard)
+
+  // Quest Journal "go to location": focus the map on the quest's site and open
+  // its Location lens (close the overlay).
+  function gotoQuest(e: QuestBoardEntry) {
+    const loc = locations.find((l) => l.id === e.locationId)
+    if (loc) {
+      useGameStore.getState().setMapPage(loc.region)
+      useGameStore.getState().setSelectedLocation(e.locationId)
+      requestZoom(1)
+      requestLocationTab()
+    }
+    setPanel(null)
+  }
 
   const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -368,6 +394,7 @@ export function ProtoApp() {
       {/* global nav bar — guild/reports/time + settings (placeholders) */}
       <header className="shrink-0 flex items-center gap-1.5 px-2 h-11 border-b border-game-border bg-game-surface/70">
         <NavBtn icon="⚜" label="Guild"   active={panel === 'guild'}   onClick={() => setPanel('guild')} />
+        <QuestsNavButton active={panel === 'quests'} onClick={() => setPanel('quests')} />
         <NavBtn icon="📊" label="Reports" active={panel === 'reports'} onClick={() => setPanel('reports')} />
         <NavBtn icon="⏳" label="Time"    active={panel === 'time'}    onClick={() => setPanel('time')} />
         <div className="ml-auto flex items-center gap-1.5">
@@ -453,7 +480,9 @@ export function ProtoApp() {
         </div>
       </div>
 
-      {panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
+      {panel === 'quests'
+        ? <QuestJournal onClose={() => setPanel(null)} onGoto={gotoQuest} />
+        : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
     </div>
   )
 }

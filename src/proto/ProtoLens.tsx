@@ -1024,6 +1024,13 @@ export function ProtoLens() {
     if (heroTabRequest !== prevReq.current) { setTop('hero'); prevReq.current = heroTabRequest }
   }, [heroTabRequest])
 
+  // The Quest Journal's "go to location" drills the lens into the Location tab.
+  const locationTabRequest = useProtoStore((s) => s.locationTabRequest)
+  const prevLocReq = useRef(locationTabRequest)
+  useEffect(() => {
+    if (locationTabRequest !== prevLocReq.current) { setTop('location'); prevLocReq.current = locationTabRequest }
+  }, [locationTabRequest])
+
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
   const unitInBattle = !!unit && !!heroBattle?.combatants.some((c) => c.id === unit.id)

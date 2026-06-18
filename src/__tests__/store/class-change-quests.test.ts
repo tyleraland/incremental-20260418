@@ -6,8 +6,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
 import {
   useProtoStore, classQuestStatus, classQuestProgress, classQuestKillCount, objectiveProgress,
-  CLASS_CHANGE_QUESTS, MIN_CLASS_CHANGE_LEVEL, LOCATION_BOUNTIES, bountyVisible,
-  type ClassQuestCommit, type KillObjective,
+  CLASS_CHANGE_QUESTS, MIN_CLASS_CHANGE_LEVEL, LOCATION_BOUNTIES, bountyVisible, buildQuestBoard,
+  type ClassQuestCommit, type KillObjective, type QuestBoardArgs, type QuestBoardEntry,
 } from '@/proto/protoStore'
 import type { Location } from '@/types'
 import { makeUnit, resetStore, tick } from '../helpers'
@@ -241,5 +241,42 @@ describe('location bounties (hero-less, chained)', () => {
     expect(gold()).toBe(2)
     // The completion tally counts every claim (for a future quests-completed report).
     expect(useProtoStore.getState().questCompletions['boar-cull-repeat']).toBe(2)
+  })
+})
+
+describe('buildQuestBoard (journal)', () => {
+  const base: QuestBoardArgs = {
+    classCommit: {}, bountyDone: [], bountyClaimed: {}, completions: {},
+    units: [{ id: 'u7', name: 'Pell Hightower' }],
+    view: { unitStats: {}, monsterDefeated: {}, questItems: {}, miscItems: [] },
+    locationName: (id) => id,
+  }
+  const find = (b: QuestBoardEntry[], id: string) => b.find((e) => e.id === id)!
+
+  it('class paths are available + hero-scoped until a hero commits', () => {
+    const f = find(buildQuestBoard(base), 'path-fighter')
+    expect(f.status).toBe('available'); expect(f.scope).toBe('hero'); expect(f.heroName).toBeUndefined()
+  })
+  it('a committed class path shows in-progress with the committed hero', () => {
+    const f = find(buildQuestBoard({ ...base, classCommit: { 'path-fighter': { heroId: 'u7', killBaseline: 0 } } }), 'path-fighter')
+    expect(f.status).toBe('in-progress'); expect(f.heroName).toBe('Pell Hightower')
+  })
+  it('the chained bounty is upcoming until its prerequisite is done', () => {
+    expect(find(buildQuestBoard(base), 'boar-hides-100').status).toBe('not-yet')
+    expect(find(buildQuestBoard({ ...base, bountyDone: ['boar-hides-20'] }), 'boar-hides-100').status).toBe('available')
+  })
+  it('a hand-in bounty reads inventory (global): available → ready', () => {
+    expect(find(buildQuestBoard(base), 'boar-hides-20').status).toBe('available')
+    const r = find(buildQuestBoard({ ...base, view: { ...base.view, miscItems: [{ id: 'drop-boar-hide', quantity: 30 }] } }), 'boar-hides-20')
+    expect(r.status).toBe('ready'); expect(r.scope).toBe('global')
+  })
+  it('a completed non-repeatable bounty is terminal; completions surface', () => {
+    const e = find(buildQuestBoard({ ...base, bountyDone: ['boar-hides-20'], completions: { 'boar-hides-20': 1 } }), 'boar-hides-20')
+    expect(e.status).toBe('completed'); expect(e.completions).toBe(1)
+  })
+  it('the repeatable kill bounty is available at 0 and ready at 100', () => {
+    expect(find(buildQuestBoard(base), 'boar-cull-repeat').status).toBe('available')
+    const r = find(buildQuestBoard({ ...base, view: { ...base.view, monsterDefeated: { 'wild-boar': 100 } } }), 'boar-cull-repeat')
+    expect(r.status).toBe('ready'); expect(r.repeatable).toBe(true)
   })
 })

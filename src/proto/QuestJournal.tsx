@@ -1,0 +1,162 @@
+import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useGameStore } from '@/stores/useGameStore'
+import { useProtoStore, buildQuestBoard, type QuestBoardEntry, type BoardStatus } from './protoStore'
+
+// ── Quest Journal ─────────────────────────────────────────────────────────────
+//
+// The top-bar quest board: one roll-up of every quest (class-change paths +
+// location bounties) across the world. Filter by status / scope / location,
+// optionally grouped by location, with a "Go to location" jump that focuses the
+// map on the quest's site and opens its Location lens.
+
+const STATUS_META: Record<BoardStatus, { label: string; glyph: string; chip: string; icon: string }> = {
+  ready:         { label: 'Ready',       glyph: '?', chip: 'border-game-gold/70 text-game-gold bg-game-gold/10',       icon: 'border-game-gold/70 text-game-gold' },
+  'in-progress': { label: 'In progress', glyph: '?', chip: 'border-game-border text-game-text-dim bg-white/[0.03]',     icon: 'border-game-border text-game-text-dim' },
+  available:     { label: 'Available',   glyph: '!', chip: 'border-game-primary/50 text-game-primary bg-game-primary/10', icon: 'border-game-primary/50 text-game-primary' },
+  'not-yet':     { label: 'Upcoming',    glyph: '…', chip: 'border-game-border text-game-muted bg-white/[0.02]',         icon: 'border-game-border text-game-muted' },
+  completed:     { label: 'Completed',   glyph: '✓', chip: 'border-game-green/50 text-game-green bg-game-green/5',       icon: 'border-game-green/50 text-game-green' },
+}
+// Display order (most actionable first).
+const STATUS_ORDER: BoardStatus[] = ['ready', 'in-progress', 'available', 'not-yet', 'completed']
+type ScopeFilter = 'all' | 'hero' | 'global'
+
+// Shared board derivation — used by both the journal and the nav-button badge.
+export function useQuestBoard(): QuestBoardEntry[] {
+  const units           = useGameStore((s) => s.units)
+  const unitStats       = useGameStore((s) => s.unitStats)
+  const monsterDefeated = useGameStore((s) => s.monsterDefeated)
+  const questItems      = useGameStore((s) => s.questItems)
+  const miscItems       = useGameStore((s) => s.miscItems)
+  const locations       = useGameStore((s) => s.locations)
+  const classCommit     = useProtoStore((s) => s.classQuestCommit)
+  const bountyDone      = useProtoStore((s) => s.bountyDone)
+  const bountyClaimed    = useProtoStore((s) => s.bountyClaimed)
+  const completions      = useProtoStore((s) => s.questCompletions)
+  return useMemo(() => buildQuestBoard({
+    classCommit, bountyDone, bountyClaimed, completions, units,
+    view: { unitStats, monsterDefeated, questItems, miscItems },
+    locationName: (id) => locations.find((l) => l.id === id)?.name ?? id,
+  }), [classCommit, bountyDone, bountyClaimed, completions, units, unitStats, monsterDefeated, questItems, miscItems, locations])
+}
+
+function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={['shrink-0 text-[11px] px-2 py-1 rounded-full border transition-colors',
+        active ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
+    >{children}</button>
+  )
+}
+
+function QuestRow({ e, onGoto }: { e: QuestBoardEntry; onGoto: (e: QuestBoardEntry) => void }) {
+  const m = STATUS_META[e.status]
+  return (
+    <div className="rounded-md border border-game-border bg-game-bg px-2 py-1.5 flex items-center gap-2">
+      <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', m.icon].join(' ')}>{m.glyph}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-game-text truncate">{e.title}</span>
+          {e.repeatable && <span className="text-[9px] text-game-accent shrink-0" title="Repeatable">↻</span>}
+          {e.completions > 0 && <span className="text-[9px] text-game-green shrink-0" title="Times completed">✓{e.completions}</span>}
+        </div>
+        <div className="text-[10px] text-game-text-dim truncate">
+          {e.locationName} · {e.objectiveLabel}{e.status === 'not-yet' ? '' : ` (${e.progress}/${e.target})`}
+          {e.rewardText ? <span className="text-game-gold"> · {e.rewardText}</span> : null}
+        </div>
+      </div>
+      {/* hero-specific → hero chip (or "Novice" when unclaimed); guild-wide → Guild tag */}
+      {e.scope === 'hero'
+        ? <span className={['shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border', e.heroName ? 'border-game-gold/50 bg-game-gold/10 text-game-gold' : 'border-game-border text-game-muted'].join(' ')}>
+            <span aria-hidden>{e.heroName ? '◈' : '·'}</span>{e.heroName ? e.heroName.split(' ')[0] : 'Novice'}
+          </span>
+        : <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-text-dim">⌂ Guild</span>}
+      <button
+        onClick={() => onGoto(e)}
+        title={`Go to ${e.locationName}`}
+        aria-label={`Go to ${e.title}`}
+        className="shrink-0 text-[11px] px-2 py-1 rounded-md border border-game-primary/50 text-game-primary hover:bg-game-primary/15 transition-colors"
+      >Go ›</button>
+    </div>
+  )
+}
+
+export function QuestJournal({ onClose, onGoto }: { onClose: () => void; onGoto: (e: QuestBoardEntry) => void }) {
+  const board = useQuestBoard()
+  const [status, setStatus] = useState<BoardStatus | 'all'>('all')
+  const [scope, setScope] = useState<ScopeFilter>('all')
+  const [grouped, setGrouped] = useState(true)
+  const [locFilter, setLocFilter] = useState<string>('all')
+
+  const counts = useMemo(() => {
+    const c: Partial<Record<BoardStatus, number>> = {}
+    for (const e of board) c[e.status] = (c[e.status] ?? 0) + 1
+    return c
+  }, [board])
+
+  const locOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const e of board) if (!seen.has(e.locationId)) seen.set(e.locationId, e.locationName)
+    return [...seen.entries()]
+  }, [board])
+
+  const filtered = board
+    .filter((e) => (status === 'all' || e.status === status) && (scope === 'all' || e.scope === scope) && (locFilter === 'all' || e.locationId === locFilter))
+    .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || a.title.localeCompare(b.title))
+
+  // Group by location (preserving the actionable-first ordering within a group).
+  const groups = useMemo(() => {
+    if (!grouped) return [{ id: '', name: '', entries: filtered }]
+    const m = new Map<string, QuestBoardEntry[]>()
+    for (const e of filtered) { const a = m.get(e.locationId); if (a) a.push(e); else m.set(e.locationId, [e]) }
+    return [...m.entries()].map(([id, entries]) => ({ id, name: entries[0].locationName, entries }))
+  }, [filtered, grouped])
+
+  return createPortal(
+    <div data-testid="quest-journal" className="fixed inset-0 z-50 flex flex-col bg-game-bg">
+      <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
+        <span className="text-sm font-semibold text-game-text">📜 Quests</span>
+        <span className="text-[11px] text-game-text-dim">{board.length} total · {counts.ready ?? 0} ready</span>
+        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+      </header>
+
+      {/* filters */}
+      <div className="shrink-0 border-b border-game-border bg-game-surface/40 px-2 py-1.5 space-y-1.5">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <FilterChip active={status === 'all'} onClick={() => setStatus('all')}>All ({board.length})</FilterChip>
+          {STATUS_ORDER.map((s) => (counts[s] ? <FilterChip key={s} active={status === s} onClick={() => setStatus(s)}>{STATUS_META[s].label} ({counts[s]})</FilterChip> : null))}
+        </div>
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <span className="text-[10px] uppercase tracking-wider text-game-muted shrink-0 mr-0.5">Who</span>
+          <FilterChip active={scope === 'all'} onClick={() => setScope('all')}>Everyone</FilterChip>
+          <FilterChip active={scope === 'hero'} onClick={() => setScope('hero')}>◈ Hero</FilterChip>
+          <FilterChip active={scope === 'global'} onClick={() => setScope('global')}>⌂ Guild</FilterChip>
+          <span className="w-px h-4 bg-game-border mx-0.5 shrink-0" />
+          <FilterChip active={grouped} onClick={() => setGrouped((v) => !v)}>{grouped ? '▾ Grouped' : '▸ Flat'}</FilterChip>
+          <select
+            value={locFilter}
+            onChange={(ev) => setLocFilter(ev.target.value)}
+            className="shrink-0 text-[11px] px-1.5 py-1 rounded-full border border-game-border bg-game-bg text-game-text-dim"
+          >
+            <option value="all">All locations</option>
+            {locOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
+        {filtered.length === 0 && <div className="text-center text-[11px] text-game-muted py-8">No quests match these filters.</div>}
+        {groups.map((g) => (
+          <div key={g.id || 'flat'} className="space-y-1">
+            {grouped && (
+              <div className="text-[10px] uppercase tracking-widest text-game-text-dim px-1 pt-1">{g.name} <span className="text-game-muted normal-case tracking-normal">({g.entries.length})</span></div>
+            )}
+            {g.entries.map((e) => <QuestRow key={e.id} e={e} onGoto={onGoto} />)}
+          </div>
+        ))}
+      </div>
+    </div>,
+    document.body,
+  )
+}
