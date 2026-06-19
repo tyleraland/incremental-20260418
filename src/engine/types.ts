@@ -439,6 +439,7 @@ export interface CombatSetup {
   cols?: number             // arena width in grid units (default COLS); open-world is larger
   rows?: number             // arena height in grid units (default ROWS)
   timeScale?: number        // finer-rounds factor (default 1 = no scaling); N rounds == 1 logical round
+  decisionInterval?: number // re-decide (targeting + team planner) only every N rounds (default 1 = every round); in between, units execute their committed lock/movement. Smooths motion + cuts AI cost. N rounds.
   planner?: Planner         // team blackboard producer (default: built-in defaultPlanner)
   // 'encounter' (default): a discrete wave — `evalOutcome` ends it on a wipe
   // (victory/defeat/draw). 'open': a persistent open-world battle that never
@@ -514,6 +515,7 @@ export interface BattleState {
   rows: number
   mode: BattleMode
   timeScale: number                         // finer-rounds factor: N engine rounds == 1 logical round (default 1)
+  decisionInterval: number                  // re-decide targeting/planner every N rounds (default 1); execute committed plan in between
   plans: Partial<Record<Team, TeamPlan>>   // §coordination: per-team blackboard, recomputed each round
   planner: Planner                          // produces the plans (pluggable)
   round: number

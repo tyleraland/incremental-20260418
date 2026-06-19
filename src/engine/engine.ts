@@ -245,6 +245,7 @@ export function createBattle(setup: CombatSetup): BattleState {
   const cols = setup.cols ?? COLS
   const rows = setup.rows ?? ROWS
   const timeScale = Math.max(1, Math.floor(setup.timeScale ?? 1))
+  const decisionInterval = Math.max(1, Math.floor(setup.decisionInterval ?? 1))
   setArenaBounds(cols, rows)   // so startingPosition/clamp use this battle's bounds
   setTimeScale(timeScale)      // so per-round helpers (move/cooldown/status) scale
   const combatants: Combatant[] = []
@@ -270,6 +271,7 @@ export function createBattle(setup: CombatSetup): BattleState {
     cols,
     rows,
     timeScale,
+    decisionInterval,
     mode: setup.mode ?? 'encounter',
     plans: {},
     planner: setup.planner ?? defaultPlanner,
@@ -1600,9 +1602,17 @@ function takeTurn(state: BattleState, self: Combatant): void {
     return
   }
 
-  // (3→2) targeting, then movement aimed at the resolved lock
+  // (3→2) targeting, then movement aimed at the resolved lock. On a non-decision
+  // round we SKIP the expensive re-target (vision/threat/tactics) and keep the
+  // committed lock — just drop it cheaply if the target died, so movement stays
+  // valid (the unit holds/wanders until the next decision round re-aims).
   const lockBefore = self.lockedTargetId
-  evalTargeting(state, self)
+  if (isDecisionRound(state)) {
+    evalTargeting(state, self)
+  } else if (self.lockedTargetId) {
+    const lt = findCombatant(state, self.lockedTargetId)
+    if (!lt || !lt.alive) self.lockedTargetId = null
+  }
   rallyPack(state, self)   // §pack tactics: call kin to this fight (see helper)
   const tgtText = self.lockedTargetId
     ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`
@@ -1665,6 +1675,12 @@ function evalOutcome(state: BattleState): Outcome {
 // Resolve exactly one round in place (§9.1). No-op once the battle is decided.
 const EVENT_CAP = 600   // open battles never reset; keep the event log bounded
 
+// True on rounds where units re-decide (re-target, refresh the team plan). With
+// decisionInterval 1 (default) this is every round — byte-identical to before.
+function isDecisionRound(state: BattleState): boolean {
+  return state.round % Math.max(1, state.decisionInterval) === 0
+}
+
 export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
   setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
@@ -1682,8 +1698,9 @@ export function advanceRound(state: BattleState): BattleState {
   state.round += 1
 
   // §coordination: refresh every team's blackboard (shared waypoint, focus,
-  // threat) before any unit acts; tactics/wander read it this round.
-  runPlanners(state)
+  // threat) before any unit acts; tactics/wander read it this round. Throttled to
+  // decision rounds (default every round) — between them teams hold their plan.
+  if (isDecisionRound(state)) runPlanners(state)
 
   // §9.1.1 tick status effects (apply DoT, then age out)
   for (const c of state.combatants) {

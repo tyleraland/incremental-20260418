@@ -86,6 +86,7 @@ interface BattleSnapshot {
   cols: number
   rows: number
   timeScale?: number
+  decisionInterval?: number
   mode: BattleState['mode']
   plans: BattleState['plans']
   round: number
@@ -110,6 +111,8 @@ export function serializeBattle(state: BattleState): string {
     cols: state.cols,
     rows: state.rows,
     timeScale: state.timeScale,
+    // decisionInterval intentionally NOT serialized (prototype): keeps tokens
+    // byte-identical; a restored battle defaults to 1 (re-decide every round).
     mode: state.mode,
     plans: state.plans,
     round: state.round,
@@ -194,6 +197,7 @@ export function deserializeBattle(token: string): BattleState {
     cols: snap.cols,
     rows: snap.rows,
     timeScale: snap.timeScale ?? 1,   // legacy tokens predate finer rounds
+    decisionInterval: snap.decisionInterval ?? 1,   // legacy tokens predate decision throttling
     mode: snap.mode,
     plans: snap.plans,
     planner: defaultPlanner,
