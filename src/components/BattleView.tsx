@@ -136,6 +136,41 @@ const CAM_TRANSITION = `left ${SEG} linear, top ${SEG} linear, width ${SEG} line
 // momentarily-late round retargets a token while it's still moving, never parked.
 const CADENCE_RUNWAY = 1.7
 
+// ── Fixed render-clock interpolation (entity interpolation) ──────────────────-
+// The CSS glide restarts every round, so jittery tick TIMING (rounds arriving late/
+// bunched under load) becomes velocity wobble even for a unit moving a steady line.
+// Instead we buffer each unit's last few engine positions WITH timestamps and, on a
+// per-frame rAF clock running a fixed delay in the past, linearly interpolate between
+// the two snapshots that bracket "now − delay". Because it interpolates over the
+// snapshots' ACTUAL spacing, irregular arrival no longer distorts apparent speed —
+// motion is constant-velocity within each segment regardless of when ticks fired.
+// (This fixes timing jitter; it does NOT erase a unit's intrinsic per-round step
+// variance in a crowd — that needs lag we deliberately avoid here.) Cost: ~one round
+// of latency (the delay). DEV ?interp=0 disables (→ raw CSS glide), ?delay= scales it.
+const INTERP_OFF = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('interp') === '0'
+const INTERP_DELAY_MULT = (() => {
+  if (typeof window === 'undefined') return 1.25
+  const v = new URLSearchParams(window.location.search).get('delay')
+  const n = v ? Number(v) : NaN
+  return Number.isFinite(n) && n > 0 ? n : 1.25
+})()
+type Snap = { t: number; x: number; y: number }
+// Position on the render clock: lerp between the snapshots bracketing render-time rt.
+// Before the first snapshot → that snapshot; past the last (a late tick) → hold there.
+function interpAt(buf: Snap[] | undefined, rt: number): Vec2 | null {
+  if (!buf || buf.length === 0) return null
+  if (rt <= buf[0].t) return { x: buf[0].x, y: buf[0].y }
+  for (let i = 0; i < buf.length - 1; i++) {
+    if (rt < buf[i + 1].t) {
+      const a = buf[i], b = buf[i + 1]
+      const f = (rt - a.t) / (b.t - a.t)
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }
+    }
+  }
+  const last = buf[buf.length - 1]
+  return { x: last.x, y: last.y }
+}
+
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
 
@@ -460,7 +495,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
       data-chip
       data-cid={c.id}
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
-      style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? `left ${SEG} linear, top ${SEG} linear` : undefined }}
+      style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos && INTERP_OFF ? `left ${SEG} linear, top ${SEG} linear` : undefined }}
     >
       {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
       {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
@@ -1149,8 +1184,38 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   // the camera (derived from these positions below) stays glued — without a
   // per-frame React re-render. (rpos/rposId kept as the read seam the FX/camera code
   // already uses, so the rest of the view is unchanged.)
-  const rpos = (c: Combatant): Vec2 => c.pos
-  const rposId = (id: string | null | undefined): Vec2 | null => (id ? byId(id)?.pos ?? null : null)
+  // Snapshot buffer for entity interpolation (see interpAt). One timestamped sample
+  // per unit per round (guarded by round); the rAF below renders between them on a
+  // delayed clock. rpos returns the interpolated pos at the current render time so
+  // tokens, FX, and camera all read the same eased position (delay from the measured
+  // cadence so we stay ~one segment behind). Falls back to engine pos when disabled
+  // or un-buffered. The per-frame DOM writes happen in the effect; rpos is the seam.
+  const snapBufRef = useRef<Map<string, Snap[]>>(new Map())
+  const snapRoundRef = useRef(-1)
+  const delayRef = useRef(ROUND_MS)
+  if (!INTERP_OFF && battle.round !== snapRoundRef.current) {
+    snapRoundRef.current = battle.round
+    const now = performance.now()
+    const m = snapBufRef.current
+    const live = new Set<string>()
+    for (const c of battle.combatants) {
+      live.add(c.id)
+      const arr = m.get(c.id)
+      if (!arr) m.set(c.id, [{ t: now, x: c.pos.x, y: c.pos.y }])
+      else { arr.push({ t: now, x: c.pos.x, y: c.pos.y }); while (arr.length > 5) arr.shift() }
+    }
+    if (m.size > live.size + 24) for (const id of [...m.keys()]) if (!live.has(id)) m.delete(id)
+  }
+  // Render delay: ~1.25× the measured round cadence (clamped) → usually one whole
+  // segment behind, so there's always a "next" snapshot to interpolate toward.
+  delayRef.current = Math.min(700, Math.max(150, (cadenceEmaRef.current || ROUND_MS) * INTERP_DELAY_MULT))
+  const interpRt = performance.now() - delayRef.current   // one render-time value for this render pass
+  const rpos = (c: Combatant): Vec2 => (INTERP_OFF ? c.pos : interpAt(snapBufRef.current.get(c.id), interpRt) ?? c.pos)
+  const rposId = (id: string | null | undefined): Vec2 | null => {
+    if (!id) return null
+    const c = byId(id); if (!c) return null
+    return INTERP_OFF ? c.pos : interpAt(snapBufRef.current.get(id), interpRt) ?? c.pos
+  }
   const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
 
   // Round-scoped derivations — recomputed only when the battle advances (its
@@ -1251,6 +1316,39 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
 
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
+
+  // Per-frame render clock (see interpAt). One rAF loop interpolates each token on
+  // the delayed clock and writes left/top straight to the node — no React re-render
+  // (that was the old hot path's cost, not the rAF). Latest cam/battle via refs so
+  // the loop installs once. Token CSS position transition is off while interp drives
+  // them (see BattleChip) so these writes aren't re-glided. DEV-exposes positions for
+  // the smoothness probe.
+  const camRef = useRef(cam); camRef.current = cam
+  const battleRef = useRef(battle); battleRef.current = battle
+  useEffect(() => {
+    if (INTERP_OFF) return
+    let raf = 0
+    const step = () => {
+      raf = requestAnimationFrame(step)
+      const camNow = camRef.current, b = battleRef.current, wrap = arenaWrapRef.current
+      if (!camNow || !b || !wrap) return
+      const rt = performance.now() - delayRef.current
+      const buf = snapBufRef.current
+      const nodes = wrap.querySelectorAll<HTMLElement>('[data-cid]')
+      const log = import.meta.env.DEV ? {} as Record<string, Vec2> : null
+      nodes.forEach((node) => {
+        const id = node.dataset.cid
+        const p = id ? interpAt(buf.get(id), rt) : null
+        if (!p) return
+        node.style.left = px(camNow, insetX(camNow, p.x))
+        node.style.top = py(camNow, insetY(camNow, p.y))
+        if (log && id) log[id] = p
+      })
+      if (log) (window as unknown as { __interp?: unknown }).__interp = { t: performance.now(), pos: log }
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [])
 
   // Tokens to draw. Open-world clips off-screen units (off-screen heroes show as
   // EdgeMarkers instead); encounters render everyone. LOD (drop labels/nubs) when
