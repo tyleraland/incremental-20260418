@@ -25,6 +25,11 @@ const CENTER_Y = ROWS / 2
 // a beat after the cast lands). Newest cast stacks on top of older ones.
 const CAST_LABEL_MS = 3000
 
+// A lingering "✦ <skill>" cast label, anchored to its caster. Rendered as a CHILD
+// of the caster's BattleChip (not a separately-positioned sibling) so it inherits
+// the chip's compositor glide exactly — no drift/snap relative to the token.
+interface CastLabelEntry { id: string; sourceId: string; skillId: string; born: number; seq: number }
+
 // Floating combat numbers (damage/heal/DoT) are harvested into a buffer so they
 // live their full lob-and-fade animation instead of unmounting when the next round
 // arrives (rounds are ~200ms, the arc is ~1.35s). Matches the CSS animation length.
@@ -476,7 +481,7 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
 // (many tiny tokens, open-world), the floating name/HP/cast plate and the
 // facing/moving nubs are unreadable noise *and* the bulk of the per-token DOM —
 // drop them and render just the circle. Full detail returns as you zoom/follow in.
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale, detail }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number; detail: boolean }) {
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale, detail, castLabels }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number; detail: boolean; castLabels?: CastLabelEntry[] }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
   // Outer layer owns ONLY the world position, glided via a compositor transform
@@ -495,6 +500,20 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
         data-cid={c.id}
         className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       >
+        {/* lingering "✦ <skill>" cast labels stack ABOVE the circle, newest on top
+            (flex-col-reverse). Rendered here — as a chip child — so they ride the
+            chip's compositor glide with zero drift, instead of a separately-
+            positioned sibling that snaps to the caster's new spot on mount. Shown
+            regardless of LOD (what's being cast matters even when zoomed out). */}
+        {castLabels && castLabels.length > 0 && (
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-0.5 flex flex-col-reverse items-center gap-0.5 pointer-events-none">
+            {castLabels.map((l) => (
+              <span key={l.id} className="px-1 rounded bg-black/45 text-amber-200 text-[10px] font-semibold leading-tight whitespace-nowrap drop-shadow animate-cast-label">
+                ✦ {skillName(l.skillId)}
+              </span>
+            ))}
+          </div>
+        )}
         {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
         {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
         {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
@@ -1019,7 +1038,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   // Keyed by caster so a newer cast supersedes the older one's slot; `seq`
   // orders the stack (newest on top). The list itself only needs an occasional
   // sweep to drop expired entries — render filters by expiry each frame.
-  const [castLabels, setCastLabels] = useState<{ id: string; sourceId: string; skillId: string; born: number; seq: number }[]>([])
+  const [castLabels, setCastLabels] = useState<CastLabelEntry[]>([])
   const castSeqRef = useRef(0)
   const lastRoundRef = useRef(-1)
   // Lingering floating numbers (damage/heal/DoT/interrupt). Harvested per round into
@@ -1297,21 +1316,20 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   const visibleTokens = isOpen ? battle.combatants.filter((c) => isOnScreen(cam, rpos(c))) : battle.combatants
   const tokenDetail = cam.size <= LOD_CAM_SIZE && visibleTokens.length <= LOD_TOKEN_COUNT
 
-  // Active (non-expired) cast labels, grouped by caster and ordered oldest →
-  // newest so the newest renders on top (the stack uses flex-col-reverse).
-  // Recomputed only when the labels change (harvest / 300ms sweep), not per frame.
-  const castLabelGroups = useMemo(() => {
+  // Active (non-expired) cast labels keyed by caster id (O(1) per-token lookup in
+  // the render below), each list ordered oldest → newest so the newest renders on
+  // top (the chip stacks them with flex-col-reverse). Recomputed only when the
+  // labels change (harvest / 300ms sweep), not per frame.
+  const castLabelsBySource = useMemo(() => {
     const now = Date.now()
-    const bySource = new Map<string, typeof castLabels>()
+    const bySource = new Map<string, CastLabelEntry[]>()
     for (const l of castLabels) {
       if (now - l.born >= CAST_LABEL_MS) continue
       const arr = bySource.get(l.sourceId) ?? []
       arr.push(l); bySource.set(l.sourceId, arr)
     }
-    return [...bySource.entries()].map(([sourceId, labels]) => ({
-      sourceId,
-      labels: labels.sort((a, b) => a.seq - b.seq),
-    }))
+    for (const arr of bySource.values()) arr.sort((a, b) => a.seq - b.seq)
+    return bySource
   }, [castLabels])
 
   const maxSize = Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
@@ -1445,27 +1463,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
             <Float key={f.id} k={f.id} cam={cam} pos={f.pos} anim={f.anim} className={f.className} text={f.text} />
           ))}
 
-          {/* lingering cast labels: each cast's name stays anchored to its
-              caster for ~3s; multiple casts on one caster stack, newest on top. */}
-          {castLabelGroups.map(({ sourceId, labels }) => {
-            const src = byId(sourceId)
-            if (!src) return null
-            const sp = rpos(src)
-            if (!isOnScreen(cam, sp)) return null
-            return (
-              <div
-                key={`cl-${sourceId}`}
-                className="absolute flex flex-col-reverse items-center gap-0.5 pointer-events-none"
-                style={{ left: 0, top: 0, transform: `translate(calc(${fxPct(cam, insetX(cam, sp.x))}cqw - 50%), calc(${fyPct(cam, insetY(cam, sp.y))}cqh - 150%))`, transition: XFORM_TRANSITION }}
-              >
-                {labels.map((l) => (
-                  <span key={l.id} className="px-1 rounded bg-black/45 text-amber-200 text-[10px] font-semibold leading-tight whitespace-nowrap drop-shadow animate-cast-label">
-                    ✦ {skillName(l.skillId)}
-                  </span>
-                ))}
-              </div>
-            )
-          })}
+          {/* (cast labels now render inside each caster's BattleChip, below.) */}
           {tacticUses.map((e, i) => {
             const src = byId(e.sourceId)
             const label = (e.extra?.label as string | undefined)
@@ -1539,6 +1537,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
               glyph={chipGlyph(c, classFor)}
               scale={battle.timeScale}
               detail={tokenDetail}
+              castLabels={castLabelsBySource.get(c.id)}
             />
           ))}
 

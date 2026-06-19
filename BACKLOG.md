@@ -773,12 +773,16 @@ jank** (a busy main thread stalls a left/top transition mid-glide → a label/zo
 visibly desyncs from its token — the reported "spell name drifts / AoE snaps to the
 right spot a beat later"). Still open if it shows on-device:
 
-- *Residual mount-snap.* A freshly-mounted overlay (cast label, zone, AoE ring)
-  appears at its final position instantly while already-mounted tokens glide in over
-  `--seg-ms` (up to 900 ms under load) → a one-segment misalignment. The clean fix is
-  to render a caster-anchored cast label as a **child of its `BattleChip`** (inherits
-  the chip's glide exactly, also cheaper) rather than as a separately-positioned
-  sibling — deferred (needs the dead/off-screen-caster fallback the sibling path has).
+- *Residual mount-snap.* A freshly-mounted overlay appears at its final position
+  instantly while already-mounted tokens glide in over `--seg-ms` (up to 900 ms under
+  load) → a one-segment misalignment. **✅ Fixed for cast labels** — the lingering
+  "✦ &lt;skill&gt;" labels now render as a **child of the caster's `BattleChip`**
+  (above the circle), so they inherit the chip's compositor glide exactly (zero drift)
+  and cost no separate positioned/transitioned element or per-token `byId`/`isOnScreen`
+  scan (`castLabelsBySource` map → `BattleChip castLabels` prop). Still snap-on-mount,
+  but harmless because they're not unit-anchored: ground **zones** / world-anchored
+  **floats** (fixed world point) and the one-shot **AoE/hit/spawn/rally rings**
+  (no position transition, ~1 round life). Fold those in only if they read wrong.
 - *Round-boundary reconcile.* The remaining long-tasks (~260–440 ms / 4 s) are the
   per-round React re-render of 50+ tokens. The next ceiling if more headroom is
   needed (fewer per-token nodes / a value-mirror memo — see the `React.memo` note
