@@ -74,17 +74,21 @@ function arenaCamera(cols = COLS, rows = ROWS): Cam {
 }
 
 // Open-world: a fixed-size window that follows the centroid of the given points
-// (alive combatants), clamped so it never shows past the map edges. The whole
-// open-world field can't fit at once — the player pans to look around.
-function followCamera(pts: Vec2[], cols: number, rows: number, want: number): Cam {
+// (alive combatants). By default it's clamped so it never shows past the map
+// edges (the whole field can't fit at once — the player pans to look around).
+// When following a *single* hero (Diablo cam) we drop the clamp so the hero is
+// always dead-centre even hugging a map edge; the clamp would otherwise shove a
+// near-edge hero off to the side. The party auto-fit / free-look keep the clamp.
+function followCamera(pts: Vec2[], cols: number, rows: number, want: number, clamp = true): Cam {
   const size = Math.min(want, cols, rows)
   if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
   let sx = 0, sy = 0
   for (const p of pts) { sx += p.x; sy += p.y }
   const cx = sx / pts.length, cy = sy / pts.length
+  const rawX = cx - size / 2, rawY = cy - size / 2
   return {
-    x: Math.max(0, Math.min(cols - size, cx - size / 2)),
-    y: Math.max(0, Math.min(rows - size, cy - size / 2)),
+    x: clamp ? Math.max(0, Math.min(cols - size, rawX)) : rawX,
+    y: clamp ? Math.max(0, Math.min(rows - size, rawY)) : rawY,
     size,
   }
 }
@@ -328,9 +332,25 @@ const CLASS_ICON: Record<string, string> = {
   Rogue:   '🗡',
 }
 
+// Off-screen edge arrows stay compact (just the first name) so the floating
+// marker doesn't trail a long label across the rim.
 function shortName(name: string): string {
   const first = name.trim().split(/\s+/)[0] ?? ''
   return first.length > 8 ? first.slice(0, 7) + '…' : first
+}
+
+// Chip name plate: show the WHOLE name (multi-word names like "Wild Boar" were
+// being clipped to their first word). Kept on one line so HP bars stay aligned
+// across the field; the font shrinks for longer names so they still fit the plate.
+function fullName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ')
+}
+function namePlateFont(name: string): string {
+  const n = fullName(name).length
+  if (n <= 8) return '9px'
+  if (n <= 12) return '8px'
+  if (n <= 16) return '7px'
+  return '6px'
 }
 
 function chipGlyph(c: Combatant, classFor: (id: string) => string | null): string {
@@ -345,8 +365,9 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
 // 1000/TICKS_PER_SECOND=5 = 400ms; a raw engine round is 200ms).
 const ROUND_MS = 400
 
-// Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
-// and enemies alike) so health bars read consistently across the field.
+// Floating label: name (+ cast bar) sits BELOW the circle for *every* unit. The
+// HP bar is hero-only — enemy health isn't shown on the field (it just clutters
+// the view); a monster's state reads from its damage floats and KO instead.
 function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer: boolean; casting: boolean; scale: number }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   // Cast bar driven by the live channel (roundsLeft), NOT wall-clock: a round is
@@ -362,12 +383,14 @@ function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer
   const castFill = ch ? (chTime <= 1 ? 1 : Math.max(0, Math.min(1, (chTime - ch.roundsLeft) / (chTime - 1)))) : 0
   return (
     <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
-      <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
-        {shortName(c.name)}
+      <span className={`font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`} style={{ fontSize: namePlateFont(c.name) }}>
+        {fullName(c.name)}
       </span>
-      <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
-        <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
-      </div>
+      {isPlayer && (
+        <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+          <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+        </div>
+      )}
       {ch && (
         <>
           <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
@@ -1241,7 +1264,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   const sizePts = focusUnit ? [rpos(focusUnit)] : (partyPts.length ? partyPts : allPts)
   const effSize = manualZoom ? camSize : autoFitSize(sizePts, cols, rows)
   const cam = isOpen
-    ? followCamera(followPts, cols, rows, effSize)
+    ? followCamera(followPts, cols, rows, effSize, !focusUnit)
     : arenaCamera(cols, rows)
 
   // Identity of the current camera target — changes when we follow a new hero,
@@ -1526,8 +1549,8 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos
   return (
     <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className="absolute -translate-x-1/2 -translate-y-1/2">
       <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
-        <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
-          {shortName(name)}
+        <span className={`font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`} style={{ fontSize: namePlateFont(name) }}>
+          {fullName(name)}
         </span>
         <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
           <div className="h-full bg-emerald-500/90" />
