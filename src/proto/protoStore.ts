@@ -16,7 +16,6 @@ export type ZoomLevel = 0 | 1 | 2
 // bottom lens; this is the research/detail surface drawn over the battlefield.
 export type StageOverlay =
   | { kind: 'skill-tree'; unitId: string }
-  | { kind: 'quest'; questId: string; questKind: 'class' | 'bounty' }
 
 // Attunement: a currency that trickles in with real game time. We derive the
 // *available* balance from the game clock (floor(ticks / ATTUNE_TICKS) minus what

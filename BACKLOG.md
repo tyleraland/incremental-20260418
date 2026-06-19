@@ -233,16 +233,14 @@ a compact "active paths" strip mirrored in the Party lens; and map-pin markers
 (a `?`/`!` on world-map locations) as a second nudge surface — see the
 `questCompletions` tally for a future "quests completed" report.
 
-**Quest detail screen + rewards** — *DONE*. Tapping a quest in either surface (the
-location board or the journal) no longer expands inline / jumps to the map — it
-opens the **full quest detail on the top-half `StageOverlay`** (over the
-map/battlefield, lens stays). Board rows are `summary` mode; the overlay renders
-the same `ClassQuestRow`/`BountyRow` in `detail` mode (story, objective, progress,
-actions, and a "View on the map" link). Quests now carry structured
-`rewards: QuestReward[]` (gold + gear) granted on completion (`grantEquipment`
-mints owned instances; gold via `grantMiscItem`); reward chips are **inspectable**
-— tapping gear opens the `ItemCodex` (stats/requirements/sockets) over the
-overlay. Item-reward *equipment* currently mints fresh instances — fine for the
+**Quest rewards (inline)** — *DONE*. Quest rows stay **inline expand/collapse** in
+the location board (a top-half detail overlay was tried and reverted — the
+expandable sections read better). Quests carry structured `rewards:
+QuestReward[]` (gold + gear) granted on completion (`grantEquipment` mints owned
+instances; gold via `grantMiscItem`); in the expanded row, reward chips are
+**inspectable** — tapping gear opens the `ItemCodex` (stats/requirements/sockets).
+The journal's "Go ›" still focuses the map on the quest's location, where its row
+lives. Item-reward *equipment* currently mints fresh instances — fine for the
 prototype, but revisit stacking/dedupe if the inventory grows noisy.
 
 ## Combat content

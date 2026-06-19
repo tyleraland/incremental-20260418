@@ -64,8 +64,14 @@ test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {
   await expect(page.getByRole('button', { name: /Path of the Fighter/ })).toBeVisible()
   await shot('05-class-change')
 
-  // Begin the path → it becomes an in-progress cull objective (0/3), no Complete yet.
+  // Expand the quest (inline section). Its gear reward is inspectable.
   await page.getByRole('button', { name: /Path of the Fighter/ }).click()       // expand
+  await page.getByTitle('Inspect Sword').click()
+  await expect(page.getByText('Item Detail')).toBeVisible()
+  await shot('05b-reward-inspect')
+  await page.getByRole('button', { name: '×', exact: true }).first().click()    // close codex
+
+  // Begin the path → it becomes an in-progress cull objective (0/3), no Complete yet.
   await page.getByRole('button', { name: /Begin — Pell takes/ }).click()
   await page.waitForTimeout(300)
   await expect(page.getByText('0/3').first()).toBeVisible()
@@ -213,20 +219,15 @@ test('quest journal: filter + go to location', async ({ page }, testInfo) => {
   await expect(journal.getByText("Trapper's Order").first()).toBeVisible()
   await shot('02-guild-only')
 
-  // Filter back to hero quests and open a class path → its full detail screen
-  // takes over the top half (the journal closes).
+  // Filter back to hero quests and jump to a class path's city (the journal closes
+  // and the map focuses Prontera, where the quest's row lives).
   await journal.getByRole('button', { name: '◈ Hero', exact: true }).click()
   await page.waitForTimeout(200)
-  await journal.getByRole('button', { name: 'Open Path of the Fighter' }).click()
+  await journal.getByRole('button', { name: 'Go to Path of the Fighter' }).click()
   await page.waitForTimeout(400)
   await expect(page.getByTestId('quest-journal')).toHaveCount(0)
-  await expect(page.getByText('Quest · Path of the Fighter')).toBeVisible()
-  await shot('03-detail-overlay')
-
-  // Rewards are inspectable: tap the gear reward → an item codex opens.
-  await page.getByTitle('Inspect Sword').click()
-  await expect(page.getByText('Item Detail')).toBeVisible()
-  await shot('04-reward-inspect')
+  const loc = await page.evaluate(() => (window as unknown as { __game: { getState: () => { selectedLocationId: string | null } } }).__game.getState().selectedLocationId)
+  expect(loc).toBe('prontera-city')
 })
 
 test('world map shows a (?) on locations with rewards ready', async ({ page }, testInfo) => {

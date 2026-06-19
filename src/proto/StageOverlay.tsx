@@ -1,47 +1,26 @@
 import { useGameStore, getAvailableSkills, SKILL_REGISTRY } from '@/stores/useGameStore'
 import { buildEngineSkill } from '@/engine'
-import { CLASS_CHANGE_QUESTS, LOCATION_BOUNTIES, type StageOverlay as Overlay } from './protoStore'
-import { ClassQuestRow, BountyRow } from './LocationDetail'
+import { type StageOverlay as Overlay } from './protoStore'
 
 // ── Stage overlay (top half = details / research) ─────────────────────────────--
 //
 // The "decisions on the bottom, details on top" split: quick assignment lives in
 // the lens; this panel is drawn over the battlefield/map for the deeper view —
-// the skill tree, and the full quest detail (with inspectable rewards). Rendered
-// inside ProtoStage so it sits in front of the stage but doesn't cover the lens.
-
-const OVERLAY_TITLE: Record<Overlay['kind'], string> = { 'skill-tree': 'Skill tree', quest: 'Quest' }
+// the skill tree today, item details / codex later. Rendered inside ProtoStage so
+// it sits in front of the stage but doesn't cover the lens.
 
 export function StageOverlay({ overlay, onClose }: { overlay: Overlay; onClose: () => void }) {
   return (
     <div className="absolute inset-0 z-40 flex flex-col bg-game-bg/97 backdrop-blur-sm">
       <div className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border bg-game-surface/70">
-        <span className="text-xs font-semibold text-game-text">{OVERLAY_TITLE[overlay.kind]}{overlay.kind === 'quest' ? questHeader(overlay) : ''}</span>
+        <span className="text-xs font-semibold text-game-text">{overlay.kind === 'skill-tree' ? 'Skill tree' : 'Details'}</span>
         <button onClick={onClose} className="ml-auto text-[11px] px-2.5 py-1 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5">✕ Close</button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         {overlay.kind === 'skill-tree' && <SkillTree unitId={overlay.unitId} />}
-        {overlay.kind === 'quest' && <QuestDetail overlay={overlay} />}
       </div>
     </div>
   )
-}
-
-function questHeader(o: Extract<Overlay, { kind: 'quest' }>): string {
-  const title = o.questKind === 'class'
-    ? CLASS_CHANGE_QUESTS.find((q) => q.id === o.questId)?.title
-    : LOCATION_BOUNTIES.find((b) => b.id === o.questId)?.title
-  return title ? ` · ${title}` : ''
-}
-
-// The full quest view (reuses the board rows in `detail` mode).
-function QuestDetail({ overlay }: { overlay: Extract<Overlay, { kind: 'quest' }> }) {
-  if (overlay.questKind === 'class') {
-    const q = CLASS_CHANGE_QUESTS.find((x) => x.id === overlay.questId)
-    return q ? <ClassQuestRow q={q} mode="detail" /> : <div className="text-xs text-game-muted">Quest not found.</div>
-  }
-  const b = LOCATION_BOUNTIES.find((x) => x.id === overlay.questId)
-  return b ? <BountyRow def={b} mode="detail" /> : <div className="text-xs text-game-muted">Quest not found.</div>
 }
 
 // The simultaneous-active cap the engine gates on (firewalls a caster can keep
