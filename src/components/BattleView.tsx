@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
@@ -175,6 +175,24 @@ function interpAt(buf: Snap[] | undefined, rt: number): Vec2 | null {
   }
   const last = buf[buf.length - 1]
   return { x: last.x, y: last.y }
+}
+// Same fixed-delay interpolation for the CAMERA (open-world follow/zoom moves it each
+// round). The rAF positions tokens in SCREEN space, so the camera must be interpolated
+// on the same clock — otherwise each discrete camera step shifts every token backward
+// on screen (the "clip back" bug). x/y/size all interpolate.
+type CamSnap = { t: number; x: number; y: number; size: number }
+function interpCam(buf: CamSnap[] | undefined, rt: number): Cam | null {
+  if (!buf || buf.length === 0) return null
+  if (rt <= buf[0].t) return { x: buf[0].x, y: buf[0].y, size: buf[0].size }
+  for (let i = 0; i < buf.length - 1; i++) {
+    if (rt < buf[i + 1].t) {
+      const a = buf[i], b = buf[i + 1]
+      const f = (rt - a.t) / (b.t - a.t)
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, size: a.size + (b.size - a.size) * f }
+    }
+  }
+  const l = buf[buf.length - 1]
+  return { x: l.x, y: l.y, size: l.size }
 }
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
@@ -501,7 +519,9 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
       data-chip
       data-cid={c.id}
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
-      style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos && INTERP_OFF ? `left ${SEG} linear, top ${SEG} linear` : undefined }}
+      style={INTERP_OFF
+        ? { left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? `left ${SEG} linear, top ${SEG} linear` : undefined }
+        : undefined /* interp on: the rAF (interpCam + interpolated world pos) is the sole writer of left/top */}
     >
       {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
       {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
@@ -1312,10 +1332,23 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
     ? followCamera(followPts, cols, rows, effSize)
     : arenaCamera(cols, rows)
 
+  // Buffer the camera per round so the rAF can interpolate it on the same clock as
+  // the tokens (see interpCam). Snapshot keyed by round; reset the buffer when the
+  // camera TARGET flips (follow a new hero / free-look) so we don't interpolate across
+  // a discontinuous jump (which would smear, not clip).
+  const camBufRef = useRef<CamSnap[]>([])
+  const camRoundRef = useRef(-1)
+  const camKeyRef = useRef('')
   // Identity of the current camera target — changes when we follow a new hero,
   // free-look to a new spot, or fall back to auto-fit. The Arena zeroes its
   // finger-pan whenever this flips, so a retarget always recentres cleanly.
   const camTargetKey = focusUnitId ?? (manualCenter ? `pt:${manualCenter.x.toFixed(1)},${manualCenter.y.toFixed(1)}` : 'auto')
+  if (!INTERP_OFF && (battle.round !== camRoundRef.current || camTargetKey !== camKeyRef.current)) {
+    if (camTargetKey !== camKeyRef.current) { camBufRef.current = []; camKeyRef.current = camTargetKey }
+    camRoundRef.current = battle.round
+    camBufRef.current.push({ t: performance.now(), x: cam.x, y: cam.y, size: cam.size })
+    while (camBufRef.current.length > 5) camBufRef.current.shift()
+  }
 
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
@@ -1328,14 +1361,17 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   // the smoothness probe.
   const camRef = useRef(cam); camRef.current = cam
   const battleRef = useRef(battle); battleRef.current = battle
-  useEffect(() => {
+  // useLayoutEffect so the first positioning pass runs before paint (tokens render
+  // without left/top — the rAF is their sole positioner — so an initial sync pass
+  // avoids a one-frame flash at the corner).
+  useLayoutEffect(() => {
     if (INTERP_OFF) return
     let raf = 0
-    const step = () => {
-      raf = requestAnimationFrame(step)
-      const camNow = camRef.current, b = battleRef.current, wrap = arenaWrapRef.current
-      if (!camNow || !b || !wrap) return
+    const paint = () => {
+      const b = battleRef.current, wrap = arenaWrapRef.current
+      if (!b || !wrap) return
       const rt = performance.now() - INTERP_DELAY_MS   // fixed delay → strictly monotonic clock
+      const camNow = interpCam(camBufRef.current, rt) ?? camRef.current   // interpolate the camera too
       const buf = snapBufRef.current
       const out = renderPosRef.current
       const nodes = wrap.querySelectorAll<HTMLElement>('[data-cid]')
@@ -1347,11 +1383,14 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
         out.set(id, p)   // authoritative render pos — rpos reads this so React never writes a backward value
         node.style.left = px(camNow, insetX(camNow, p.x))
         node.style.top = py(camNow, insetY(camNow, p.y))
-        if (log) log[id] = p
+        // Log SCREEN-space (camera applied) so the probe sees what the user sees.
+        if (log) log[id] = { x: (insetX(camNow, p.x) - camNow.x) / camNow.size, y: 1 - (insetY(camNow, p.y) - camNow.y) / camNow.size }
       })
       if (log) (window as unknown as { __interp?: unknown }).__interp = { t: performance.now(), pos: log }
     }
-    raf = requestAnimationFrame(step)
+    const loop = () => { paint(); raf = requestAnimationFrame(loop) }
+    paint()   // initial sync pass before first paint (no corner flash)
+    raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
   }, [])
 

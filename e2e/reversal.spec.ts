@@ -25,7 +25,7 @@ test('interp reversal rate (should be ~0)', async ({ page, browserName }, testIn
         if (!a || !b || !c) continue
         const v1x = b.x - a.x, v1y = b.y - a.y, v2x = c.x - b.x, v2y = c.y - b.y
         const m1 = Math.hypot(v1x, v1y), m2 = Math.hypot(v2x, v2y)
-        if (m1 < 0.01 || m2 < 0.01) continue            // ignore near-still frames
+        if (m1 < 0.0015 || m2 < 0.0015) continue         // ignore near-still frames (screen-fraction units)
         moves++
         const cos = (v1x * v2x + v1y * v2y) / (m1 * m2)
         if (cos < -0.5) reversals++                      // >120° direction flip = a backward clip
