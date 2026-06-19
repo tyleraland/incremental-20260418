@@ -657,6 +657,18 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
   transitions, so the battle subtree renders ~5×/sec (one per engine round)
   instead of ~65×/sec. Measured ~2× mobile fps. Screen-space coords unchanged
   (a static frame is pixel-identical).
+- **✅ Phase 1.1 — adaptive motion cadence (`--seg-ms`).** Phase 1 dropped the rAF
+  loop but also threw out `useSmoothScene`'s EMA-of-round-interval timing, hardcoding
+  a fixed `380/400ms` glide. Under per-tick load the round interval jitters (the store
+  ticks on a 200ms `setInterval`, but each tick's sim+render overruns and `catchUp`
+  batches late ticks), so a fixed glide alternately parks early (stall-then-jump) or
+  sprints a batched multi-cell step — the "slow-fast" wobble. LiveBattle now writes
+  `--seg-ms` (EMA of the real round-render gap × `CADENCE_RUNWAY`=1.7, clamped
+  160–900ms) imperatively on the arena wrapper each round; every positional transition
+  reads `var(--seg-ms)`. Re-derives the deleted EMA win declaratively — no rAF, zero
+  extra React renders, just CSS inheritance. Verified live: ~620ms under CPU-throttled
+  mobile (real cadence ~365ms) vs the old 380ms that was *shorter* than the jittery
+  interval. (`BattleView.tsx`.)
 - **✅ Phase 2 — LOD tokens.** `BattleChip` drops its floating plate + facing/
   moving nubs (most per-token DOM) when zoomed past `LOD_CAM_SIZE` or with more
   than `LOD_TOKEN_COUNT` on-screen tokens (`Lod.test.tsx`).
@@ -669,6 +681,33 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
   - *Minion lock-clear* — the crumble pass batches dead-minion ids and clears
     locks in one roster pass instead of one-per-crumble (was O(minions × N),
     `advanceRound`). Non-spatial, so the hash doesn't apply.
+
+Residual smoothness (after Phase 1.1, lower priority than throughput):
+
+- **Knockback reads as a lurch — it's a discrete multi-cell teleport.** Arrow
+  Shower (`knockback: 3`) jumps a target up to 3 cells in one round; the renderer
+  has no notion of distance, so it glides that 3-cell jump over the same `--seg-ms`
+  as a ~0.45-cell walk step → ~7× apparent speed for one segment, then a crawl. The
+  cadence fix (1.1) fixes *timing* jitter, not this *distance* disparity. The engine
+  already speed-limits the analogous case — retreat/flee (`RETREAT_SPEED_MULT`, the
+  "units speed up ~4×" jank, `engine.ts`). Two options: (a) **engine** — spread the
+  push across the `timeScale` sub-rounds like retreat; lowest visual risk but it
+  changes per-round positions, so it **breaks byte-identical snapshot replay** (needs
+  a snapshot version bump + replay regen). (b) **render-only** — per-token
+  distance-aware duration (longer glide when it moved far, so apparent velocity is
+  constant) or an ease-out timing fn for knocked tokens; no determinism risk, but
+  must not also slow-glide respawns / camera-retargets across the map (distance alone
+  is ambiguous — gate on the round's `knockback` events).
+- **Boost Agility "slow-fast" is render-side, not a movement change.** `agi-up` adds
+  `spd:6`, and `spd` does **not** feed `moveSpeedOf` (only `moveSpeed`/`moveSpeedMult`
+  status mods do) — so per-round travel distance is unchanged. What it changes: turn
+  order (SPD-desc re-sort → the buffed unit now moves before/after the units it
+  `enforceSeparation`-shoves against, reshuffling sub-cell shoves round to round) and
+  `onAttackBeat` cadence (more attack floats). The perceived jerk is that reshuffle
+  amplified by the old fixed-duration glide; 1.1 dampens it. If it still reads rough,
+  the lever is `enforceSeparation` adding a shove on top of the move each round (the
+  renderer can't tell a shove from travel) — already `÷ timeScale`'d; further smoothing
+  would be a separation-resolution change, not a render one.
 
 Deferred / not worth it:
 
@@ -698,7 +737,14 @@ Deferred / not worth it:
   BSNAP tokens already make a battle worker-portable, so the engine compute can
   move off the main thread (or, lighter: throttle the *watched* battle's sim rate
   when entity count is high — off-screen battles are already rate-extrapolated).
-  Only reach for it if Phases 1–3 aren't enough.
+  Only reach for it if Phases 1–3 aren't enough. **Note (re: jerkiness):** the worker
+  attacks the *root* of the cadence jitter Phase 1.1 papers over — main-thread sim
+  stalls (`advanceBattles` long-tasks: ~1.5s/5s under CPU-throttled mobile in the
+  `?perf` harness) are what make round-render gaps irregular. Moving the sim off-thread
+  would make the render loop independent of sim cost, so cadence stays steady without
+  needing the EMA stretch. It would **not** fix the knockback lurch (a render-side
+  distance issue, above). So: 1.1 is the cheap smoothness win now; the worker is the
+  throughput ceiling for very high entity counts; the two are complementary.
 
 ## Heuristic shortcuts
 
