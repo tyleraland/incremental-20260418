@@ -1212,13 +1212,7 @@ export const useGameStore = create<GameState>((set) => ({
     let newLog = s.eventLog
 
     // Drive the engine: one round per ROUND_EVERY_TICKS ticks, live per location.
-    const __t0 = import.meta.env.DEV ? performance.now() : 0
     const combat = advanceBattles(s, newTicks, newTicks % ROUND_EVERY_TICKS === 0)
-    if (import.meta.env.DEV) {
-      const w = window as unknown as { __engineMs?: number[] }
-      ;(w.__engineMs ??= []).push(performance.now() - __t0)
-      if (w.__engineMs.length > 240) w.__engineMs.shift()
-    }
     for (const l of combat.logs) newLog = appendLog(newLog, l.category, l.message, newTicks)
 
     // Where each unit fought this tick (1:1) — routes its tally delta into the
@@ -1287,7 +1281,15 @@ export const useGameStore = create<GameState>((set) => ({
       unitStats: foldUnitStats(s.unitStats, combat.unitStatsDelta),
       unitStatHistory: foldHistory(s.unitStatHistory, combat.unitStatsDelta, newTicks),
       miscItems,
-      lastTickAt: Date.now(),
+      // Advance the tick clock by a FIXED step (one TICK_MS), NOT Date.now().
+      // Snapping to wall time after the reducer ran left lastTickAt tens of ms past
+      // the tick boundary, so the next catchUp floored (now - lastTickAt) / TICK_MS
+      // to n=0 and dropped every other tick → rounds applied at ~2× the interval,
+      // irregularly (the fast-slow). A fixed step preserves the sub-tick remainder
+      // and keeps the cadence phase-aligned; catchUp's floor keeps lastTickAt within
+      // a tick of now, so a genuinely slow frame still catches up (n=2) without
+      // runaway drift. Bulk offline catch-up (batchTick) still resyncs to Date.now().
+      lastTickAt: s.lastTickAt + 1000 / TICKS_PER_SECOND,
       eventLog: newLog,
     }
   }),
