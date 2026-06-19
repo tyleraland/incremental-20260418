@@ -783,16 +783,26 @@ right spot a beat later"). Still open if it shows on-device:
   but harmless because they're not unit-anchored: world-anchored **floats** (fixed
   world point) and the one-shot **AoE/hit/spawn/rally rings** (no position
   transition, ~1 round life). Fold those in only if they read wrong.
-- *Centred ground effects must NOT bake `-50%` into the eased transform.* Ground
-  **zones** (the AoE circle) and **firewalls** briefly slid to their final spot
-  after a camera change because they centred via `transform: translate(calc(…cqw -
-  50%), …)` on the *same* transform that eases position+size — a `calc()` mixing a
-  container unit and a box-relative `%` doesn't interpolate cleanly on every browser
-  (fine on desktop Chromium, drifts on mobile). Fixed by the **outer-position /
-  inner-centred split** (plain `translate(…cqw,…cqh)` outer that eases; static
-  `-translate-x/y-1/2` inner that doesn't) — the same pattern chips/floats already
-  use. Rule of thumb: never put a box-relative `%` inside a transitioned transform;
-  centre on a separate static layer.
+- *✅ Ground effects now live in the GROUND LAYER (planted, zero drift).* The AoE
+  **zone** circle (and **firewalls**) visibly slid to its spot a round after being
+  cast under load. Root cause (measured: a fresh zone drifted ~8 px relative to the
+  grid, scaling up under bigger camera moves): each ground element computed its OWN
+  screen `transform` from the camera and eased it, but the grid is a full-map layer
+  that eases `translate` **+ `width` scale** — two different easing structures, so a
+  lone zone desynced from the grid during any camera change, and a fresh zone snapped
+  to the camera basis while the grid was mid-ease. (An earlier attempt — moving the
+  `-50%` out of the eased transform via an outer/inner split — *reduced* it but
+  didn't eliminate it, because the structures still differed.) **Real fix: render
+  terrain barriers + zones + firewalls as CHILDREN of the one ground layer, in
+  map-fraction coords** (`Arena groundOverlay`, `gx/gy` in `LiveBattle`). They now
+  inherit the grid's exact transform/scale, so they're planted on the terrain by
+  construction — a fresh element rides the layer's in-progress ease instead of
+  snapping. Probe (fresh-zone centre as a fraction of the grid rect, pan/zoom
+  invariant): **8 px → 0.0 px drift**, no fps change. *Rule:* anything that must stay
+  glued to the terrain belongs IN the ground layer, not positioned independently from
+  the camera. (Tokens stay independent — they move per-round anyway, so their own
+  ease reads fine; only under a manual *zoom* do they transiently differ from the
+  ground, which is unnoticeable.)
 - *Round-boundary reconcile.* The remaining long-tasks (~260–440 ms / 4 s) are the
   per-round React re-render of 50+ tokens. The next ceiling if more headroom is
   needed (fewer per-token nodes / a value-mirror memo — see the `React.memo` note

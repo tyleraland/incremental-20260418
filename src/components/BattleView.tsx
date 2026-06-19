@@ -184,7 +184,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -285,46 +285,57 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
             anchored to the viewport edges, so only the split line moves (no gap). */}
         <div className="absolute inset-0 origin-top bg-red-500/10 pointer-events-none" style={{ transform: `scaleY(${centerTop / 100})`, transition: `transform ${SEG} linear` }} />
         <div className="absolute inset-0 origin-bottom bg-blue-500/10 pointer-events-none" style={{ transform: `scaleY(${(100 - centerTop) / 100})`, transition: `transform ${SEG} linear` }} />
-        {/* faint grid — world-anchored: backgroundPosition tracks the camera so
-            the squares stay fixed to the ground and the party visibly moves
-            across them (lines land exactly on world-integer cell boundaries).
-            Sized in cqmin so it scales with the (square) size-container arena. */}
-        {/* faint grid — a single FULL-MAP layer pinned to the world and slid with
-            the camera via a compositor `transform` (cells stay fixed to the ground;
-            the party visibly moves across them). Done this way, not by easing
-            `background-position`, because animating background-position repaints the
-            whole arena every frame — a major mobile cost once the camera is panning
-            each round. The layer spans the whole map, so its fixed pattern always
-            covers the viewport. backgroundSize is one world cell (cqmin = % of the
-            square arena). */}
+        {/* GROUND LAYER — a single full-map layer pinned to the world and slid with
+            the camera via one compositor `transform`. It holds the grid pattern,
+            terrain barriers, and ground effects (zones/firewalls), ALL positioned in
+            layer-fraction coords (% of the whole map). Because they're children of
+            this one layer they inherit its exact transform/scale, so they stay locked
+            to each other and to the grid — no per-element camera math, so a ground
+            effect can't drift to its spot a beat after a camera change (each element
+            having its OWN eased transform desynced them; the grid eases translate+
+            scale while a lone token/zone eased translate-only). The layer spans the
+            whole map so its fixed grid pattern always covers the viewport.
+            backgroundSize is one world cell (cqmin = % of the square arena). */}
         <div
-          className="absolute opacity-40 pointer-events-none"
+          className="absolute"
           style={{
             left: 0, top: 0,
             width: `${(mapCols / cam.size) * 100}%`,
             height: `${(mapRows / cam.size) * 100}%`,
             transform: `translate(${fxPct(cam, 0)}cqw, ${fyPct(cam, mapRows)}cqh)`,
-            backgroundImage:
-              'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
-              'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
-            backgroundSize: `${100 / cam.size}cqmin ${100 / cam.size}cqmin`,
             transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear`,
           }}
-        />
-        {/* terrain: walls solid (block movement + sight); cliffs translucent +
-            dashed (block movement only — ranged attacks fire over them) */}
-        {barriers.map((b, i) => {
-          const isCliff = b.kind === 'cliff'
-          return (
-            <div
-              key={i}
-              className={isCliff
-                ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
-                : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
-              style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, b.x)}cqw, ${fyPct(cam, b.y + b.h)}cqh)`, width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%`, transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }}
-            />
-          )
-        })}
+        >
+          {/* faint grid pattern (opacity only on this child, so terrain/effects below
+              read at full strength) */}
+          <div
+            className="absolute inset-0 opacity-40 pointer-events-none"
+            style={{
+              backgroundImage:
+                'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
+                'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
+              backgroundSize: `${100 / cam.size}cqmin ${100 / cam.size}cqmin`,
+            }}
+          />
+          {/* terrain: walls solid (block movement + sight); cliffs translucent +
+              dashed (block movement only — ranged attacks fire over them). Positioned
+              as a fraction of the map → planted on the grid, no own transition. */}
+          {barriers.map((b, i) => {
+            const isCliff = b.kind === 'cliff'
+            return (
+              <div
+                key={i}
+                className={isCliff
+                  ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
+                  : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
+                style={{ left: `${(b.x / mapCols) * 100}%`, top: `${((mapRows - (b.y + b.h)) / mapRows) * 100}%`, width: `${(b.w / mapCols) * 100}%`, height: `${(b.h / mapRows) * 100}%` }}
+              />
+            )
+          })}
+          {/* ground effects (zones / firewalls) — also map-fraction children, so they
+              ride the layer exactly and stay glued to the terrain. */}
+          {groundOverlay}
+        </div>
         {children}
       </div>
       {/* viewport-fixed overlay (off-screen markers): not panned, clipped to the
@@ -1316,6 +1327,36 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   const visibleTokens = isOpen ? battle.combatants.filter((c) => isOnScreen(cam, rpos(c))) : battle.combatants
   const tokenDetail = cam.size <= LOD_CAM_SIZE && visibleTokens.length <= LOD_TOKEN_COUNT
 
+  // Ground effects (zones / firewalls) rendered into the Arena's GROUND LAYER, in
+  // map-fraction coords (% of the whole map), NOT screen-space. As children of the
+  // single camera-transformed ground layer they're planted on the terrain by
+  // construction — they ride the grid's exact transform, so a freshly-cast circle
+  // can't drift to its spot a beat after a camera change (the old per-element screen
+  // transform desynced from the grid's translate+scale). y is flipped (+y is up).
+  const gx = (x: number) => `${(x / cols) * 100}%`
+  const gy = (y: number) => `${((rows - y) / rows) * 100}%`
+  const groundFx = (
+    <>
+      {battle.zones.map((z) => (
+        <div
+          key={z.id}
+          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
+          // A static zone has constant left/top → no transition needed (the layer
+          // glides it). A follow-aura (Consecration) moves with its caster, so ease
+          // its in-layer position too.
+          style={{ left: gx(z.pos.x), top: gy(z.pos.y), width: `${(2 * z.radius / cols) * 100}%`, height: `${(2 * z.radius / rows) * 100}%`, transition: z.follow ? `left ${SEG} linear, top ${SEG} linear` : undefined }}
+        />
+      ))}
+      {battle.firewalls.map((w) => (
+        <div
+          key={w.id}
+          className="absolute rounded-sm bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)] animate-pulse pointer-events-none"
+          style={{ left: gx(w.pos.x), top: gy(w.pos.y), width: `${(2 * w.half / cols) * 100}%`, height: `${(0.5 / rows) * 100}%`, transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)` }}
+        />
+      ))}
+    </>
+  )
+
   // Active (non-expired) cast labels keyed by caster id (O(1) per-token lookup in
   // the render below), each list ordered oldest → newest so the newest renders on
   // top (the chip stacks them with flex-col-reverse). Recomputed only when the
@@ -1410,50 +1451,8 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
               <Minimap battle={battle} cam={cam} followId={focusUnitId} onPick={onMinimapPick} />
             </>
           ) : undefined}
+          groundOverlay={groundFx}
         >
-          {/* persistent ground hazards (Lightning Storm, etc.) */}
-          {battle.zones.map((z) => (
-            <div
-              key={z.id}
-              className="absolute pointer-events-none"
-              style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, z.pos.x)}cqw, ${fyPct(cam, z.pos.y)}cqh)`, transition: XFORM_TRANSITION }}
-            >
-              {/* Inner = the circle, centred via a STATIC -50% transform that is NOT
-                  transitioned. Keeping the `-50%` off the gliding (and size-easing)
-                  transform is what holds the zone locked to its ground point — a
-                  `calc(…cqw - 50%)` on a transform that's easing position AND size at
-                  once desyncs the centre, so the circle slides to its final spot a
-                  beat after the camera changes. Size in cqw (resolves against the
-                  arena, not the 0-box parent). */}
-              <div
-                className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse"
-                style={{ width: `${(2 * z.radius / cam.size) * 100}cqw`, height: `${(2 * z.radius / cam.size) * 100}cqw`, transition: `width ${SEG} linear, height ${SEG} linear` }}
-              />
-            </div>
-          ))}
-
-          {/* firewalls: a bar of flame along the wall's tangent (perpendicular to
-              its normal). Screen-space flips y, so the bar angle is atan2(nx, ny). */}
-          {battle.firewalls.map((w) => (
-            // Outer = world position (plain translate, glided); inner = the flame bar,
-            // centred + rotated by a STATIC transform that isn't eased — same split as
-            // zones, so the bar stays locked to the ground through camera changes.
-            <div
-              key={w.id}
-              className="absolute pointer-events-none"
-              style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, w.pos.x)}cqw, ${fyPct(cam, w.pos.y)}cqh)`, transition: XFORM_TRANSITION }}
-            >
-              <div
-                className="absolute rounded-sm bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)] animate-pulse"
-                style={{
-                  width: `${(2 * w.half / cam.size) * 100}cqw`,
-                  height: `${(0.5 / cam.size) * 100}cqw`,
-                  transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
-                  transition: `width ${SEG} linear, height ${SEG} linear`,
-                }}
-              />
-            </div>
-          ))}
 
           {/* attack arc lines for this round */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${rows - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
