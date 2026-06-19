@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useGameStore, MONSTER_REGISTRY, type Location, type Unit } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { ItemCodex } from '@/components/ItemCodex'
@@ -7,7 +7,7 @@ import type { EquipmentItem } from '@/types'
 import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
   CLASS_CHANGE_QUESTS, classQuestStatus, objectiveProgress, objectiveConsumes, MIN_CLASS_CHANGE_LEVEL,
-  LOCATION_BOUNTIES, bountyVisible, bountyProgress,
+  LOCATION_BOUNTIES, bountyVisible, bountyProgress, rewardGoldTotal,
   type ClassChangeQuestDef, type ClassQuestStatus, type BountyDef,
 } from './protoStore'
 
@@ -201,7 +201,74 @@ function HeroChip({ u, gold }: { u: Unit; gold?: boolean }) {
   )
 }
 
-function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
+// Quest rows render in two modes: a compact `summary` on the board (opens the
+// detail), and the full `detail` shown in the top-half StageOverlay.
+type QuestRowMode = 'summary' | 'detail'
+
+function QuestSummaryButton({ onOpen, glyph, iconCls, title, subtitle, subtitleGold, muted, badge }: {
+  onOpen: () => void; glyph: string; iconCls: string; title: string; subtitle?: string; subtitleGold?: boolean; muted?: boolean; badge?: ReactNode
+}) {
+  return (
+    <button onClick={onOpen} className="w-full flex items-center gap-2 px-2 py-1.5 text-left rounded-md border border-game-border bg-game-bg hover:bg-white/[0.03] transition-colors">
+      <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', iconCls].join(' ')}>{glyph}</span>
+      <span className={['text-xs flex-1 truncate', muted ? 'text-game-muted' : 'text-game-text'].join(' ')}>{title}</span>
+      {badge}
+      {subtitle && <span className={['text-[10px] shrink-0 tabular-nums', subtitleGold ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>{subtitle}</span>}
+      <span className="text-game-muted shrink-0 w-3 text-center">›</span>
+    </button>
+  )
+}
+
+function ProgressBar({ progress, target, ready }: { progress: number; target: number; ready: boolean }) {
+  return (
+    <div>
+      <div className="flex justify-between text-[10px] mb-0.5">
+        <span className="uppercase tracking-wider text-game-text-dim">Progress</span>
+        <span className="text-game-text tabular-nums">{progress}/{target}</span>
+      </div>
+      <div className="h-2 rounded-full bg-game-border overflow-hidden">
+        <div className={['h-full rounded-full transition-all', ready ? 'bg-game-gold' : 'bg-game-accent'].join(' ')} style={{ width: `${Math.min(100, (progress / target) * 100)}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function ConfirmPanel({ message, cancelLabel, confirmLabel, onCancel, onConfirm, danger }: {
+  message: ReactNode; cancelLabel: string; confirmLabel: string; onCancel: () => void; onConfirm: () => void; danger?: boolean
+}) {
+  return (
+    <div className={['rounded-md border p-2 space-y-2', danger ? 'border-rose-700/50 bg-rose-950/20' : 'border-game-gold/50 bg-game-gold/10'].join(' ')}>
+      <div className="text-[11px] text-game-text leading-snug">{message}</div>
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="flex-1 text-[11px] px-2 py-1.5 rounded border border-game-border text-game-text-dim hover:text-game-text">{cancelLabel}</button>
+        <button onClick={onConfirm} className={['flex-1 text-[11px] font-semibold px-2 py-1.5 rounded border', danger ? 'border-rose-600/70 bg-rose-600/20 text-rose-200 hover:bg-rose-600/30' : 'border-game-gold/70 bg-game-gold/25 text-game-gold hover:bg-game-gold/40'].join(' ')}>{confirmLabel}</button>
+      </div>
+    </div>
+  )
+}
+
+// "View on the map" — focus the stage on the quest's location + open its Location
+// lens, and dismiss the overlay. Useful when the quest was opened from the journal.
+function GoToLocationLink({ locationId }: { locationId: string }) {
+  const locations = useGameStore((s) => s.locations)
+  const closeStageOverlay = useProtoStore((s) => s.closeStageOverlay)
+  const requestZoom = useProtoStore((s) => s.requestZoom)
+  const requestLocationTab = useProtoStore((s) => s.requestLocationTab)
+  const loc = locations.find((l) => l.id === locationId)
+  if (!loc) return null
+  return (
+    <button
+      onClick={() => {
+        useGameStore.getState().setMapPage(loc.region)
+        useGameStore.getState().setSelectedLocation(locationId)
+        requestZoom(1); requestLocationTab(); closeStageOverlay()
+      }}
+      className="text-[11px] text-game-primary hover:underline"
+    >◎ View {loc.name} on the map</button>
+  )
+}
+
+export function ClassQuestRow({ q, mode = 'summary' }: { q: ClassChangeQuestDef; mode?: QuestRowMode }) {
   const units              = useGameStore((s) => s.units)
   const selectedUnitIds    = useGameStore((s) => s.selectedUnitIds)
   const unitStats          = useGameStore((s) => s.unitStats)
@@ -212,7 +279,8 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   const beginClassQuest    = useProtoStore((s) => s.beginClassQuest)
   const completeClassQuest = useProtoStore((s) => s.completeClassQuest)
   const cancelClassQuest   = useProtoStore((s) => s.cancelClassQuest)
-  const [open, setOpen] = useState(false)
+  const openStageOverlay   = useProtoStore((s) => s.openStageOverlay)
+  const closeStageOverlay  = useProtoStore((s) => s.closeStageOverlay)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [confirmComplete, setConfirmComplete] = useState(false)
 
@@ -237,169 +305,119 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
   const firstName = subject?.name.split(' ')[0] ?? 'the hero'
   const gold     = status === 'eligible' || status === 'ready'
 
+  // Tap a row → open the full quest detail on the top half (over the map).
+  if (mode === 'summary') {
+    return (
+      <QuestSummaryButton
+        onOpen={() => openStageOverlay({ kind: 'quest', questId: q.id, questKind: 'class' })}
+        glyph={CLASS_GLYPH[status]} iconCls={CLASS_ICON_CLS[status]}
+        title={q.title} muted={status === 'select-novice' || status === 'underleveled'}
+        subtitle={status === 'in-progress' ? `${firstName} · ${progress}/${target}` : CLASS_SUBTITLE[status]}
+        subtitleGold={gold}
+      />
+    )
+  }
+
   return (
-    <div className={['rounded-md border transition-colors', open ? 'border-game-primary/40 bg-game-bg' : 'border-game-border bg-game-bg'].join(' ')}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-white/[0.03]"
-      >
-        <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', CLASS_ICON_CLS[status]].join(' ')}>
-          {CLASS_GLYPH[status]}
-        </span>
-        <span className={['text-xs flex-1 truncate', status === 'select-novice' || status === 'underleveled' ? 'text-game-muted' : 'text-game-text'].join(' ')}>{q.title}</span>
-        <span className={['text-[10px] shrink-0 tabular-nums', gold ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>
-          {status === 'in-progress' ? `${firstName} · ${progress}/${target}` : CLASS_SUBTITLE[status]}
-        </span>
-        <span className="text-[10px] text-game-muted shrink-0 w-3 text-center">{open ? '▴' : '▾'}</span>
-      </button>
+    <div className="space-y-2.5 max-w-xl">
+      <p className="text-xs text-game-text-dim leading-snug">{q.story}</p>
+      <div className="text-xs"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{q.objective.label}</span></div>
 
-      {open && (
-        <div className="px-2.5 pb-2.5 pt-1 space-y-2 border-t border-game-border/60">
-          <p className="text-[11px] text-game-text-dim leading-snug">{q.story}</p>
-          <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{q.objective.label}</span></div>
-          <div className="text-[11px]"><span className="text-game-text-dim">Reward: </span><span className="text-game-text">become a {q.targetClass}</span></div>
+      {/* Reward: the class change is the headline; gear rewards are inspectable. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Reward</span>
+        <span className="text-[11px] px-1.5 py-0.5 rounded border border-game-primary/50 bg-game-primary/10 text-game-primary">become a {q.targetClass}</span>
+        {q.rewards && <RewardChips rewards={q.rewards} />}
+      </div>
 
-          {/* committed hero chip — whose path this is */}
-          {committedHero && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hero</span>
-              <HeroChip u={committedHero} gold />
-            </div>
-          )}
-
-          {/* quest item (collect) — a temporary drop tracked here only, never in
-              the Inventory. */}
-          {obj.kind === 'collect' && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Quest item</span>
-              <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
-                <span aria-hidden>📜</span>
-                <span className="truncate">{obj.itemName}</span>
-                {committedHeroId && <span className="text-game-text-dim tabular-nums">×{progress}</span>}
-              </span>
-              <span className="text-[10px] text-game-muted italic">tracked here, not in your bags</span>
-            </div>
-          )}
-
-          {/* hand-in — the item turned in (consumed on completion). 'inventory'
-              reads the guild stash; 'quest' an ephemeral quest item. */}
-          {obj.kind === 'handin' && (() => {
-            const held = obj.source === 'quest'
-              ? (questItems[obj.itemId] ?? 0)
-              : (miscItems.find((m) => m.id === obj.itemId)?.quantity ?? 0)
-            return (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hand in</span>
-                <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
-                  <span aria-hidden>{obj.source === 'quest' ? '📜' : '🎒'}</span>
-                  <span className="truncate">{obj.itemName}</span>
-                  <span className="text-game-text-dim tabular-nums">×{Math.min(obj.count, held)}/{obj.count}</span>
-                </span>
-                <span className="text-[10px] text-game-muted">you hold {held} in {obj.source === 'quest' ? 'quest items' : 'your stash'} · consumed on hand-in</span>
-              </div>
-            )
-          })()}
-
-          {/* objective progress bar (committed) */}
-          {committedHeroId && (
-            <div>
-              <div className="flex justify-between text-[10px] mb-0.5">
-                <span className="uppercase tracking-wider text-game-text-dim">Progress</span>
-                <span className="text-game-text tabular-nums">{progress}/{target}</span>
-              </div>
-              <div className="h-2 rounded-full bg-game-border overflow-hidden">
-                <div className={['h-full rounded-full transition-all', status === 'ready' ? 'bg-game-gold' : 'bg-game-accent'].join(' ')} style={{ width: `${Math.min(100, (progress / target) * 100)}%` }} />
-              </div>
-            </div>
-          )}
-
-          {/* action footer */}
-          <div className="pt-2 mt-1 border-t border-game-border/60 space-y-2">
-            {status === 'select-novice' && (
-              <div className="text-[10px] text-game-muted italic">Select a Novice (level {MIN_CLASS_CHANGE_LEVEL}+) to walk this path.</div>
-            )}
-            {status === 'underleveled' && selectedNovice && (
-              <div className="text-[10px] text-game-muted italic">{firstName} is only level {selectedNovice.level}. A Novice must reach level {MIN_CLASS_CHANGE_LEVEL} before changing class.</div>
-            )}
-            {status === 'eligible' && selectedNovice && (
-              <button
-                onClick={() => beginClassQuest(q.id, selectedNovice.id)}
-                className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/60 bg-game-gold/15 text-game-gold hover:bg-game-gold/25 transition-colors"
-              >
-                Begin — {firstName} takes {q.title}
-              </button>
-            )}
-            {status === 'in-progress' && (
-              <div className="text-[10px] text-game-muted italic">
-                {firstName} must {q.objective.label.toLowerCase()} ({progress}/{target}).{' '}
-                {obj.kind === 'collect' ? `Drops while ${firstName} is deployed where they fall.`
-                  : obj.kind === 'handin' ? `Gather ${obj.itemName}s${obj.source === 'inventory' ? ' from the field' : ''}, then hand them in here.`
-                  : 'Deploy them to a battlefield to make progress.'}
-              </div>
-            )}
-            {(status === 'in-progress' || status === 'ready') && !confirmCancel && !confirmComplete && (
-              <>
-                {status === 'ready' && (
-                  <button
-                    onClick={() => { if (objectiveConsumes(obj)) setConfirmComplete(true); else { completeClassQuest(q.id); setOpen(false) } }}
-                    className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors"
-                  >
-                    {objectiveConsumes(obj) ? `✓ Hand in & become a ${q.targetClass}` : '✓ Complete the class change'}
-                  </button>
-                )}
-                <button
-                  onClick={() => setConfirmCancel(true)}
-                  className="w-full text-[11px] px-3 py-1.5 rounded-md border border-game-border text-game-text-dim hover:text-rose-300 hover:border-rose-700/60 transition-colors"
-                >
-                  Cancel quest
-                </button>
-              </>
-            )}
-            {status === 'ready' && confirmComplete && (
-              <div className="rounded-md border border-game-gold/50 bg-game-gold/10 p-2 space-y-2">
-                <div className="text-[11px] text-game-text leading-snug">
-                  Hand in <span className="font-semibold">{obj.count} × {(obj.kind === 'collect' || obj.kind === 'handin') ? obj.itemName : 'items'}</span>? They'll be consumed and {firstName} becomes a {q.targetClass}.
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setConfirmComplete(false)}
-                    className="flex-1 text-[11px] px-2 py-1.5 rounded border border-game-border text-game-text-dim hover:text-game-text"
-                  >
-                    Not yet
-                  </button>
-                  <button
-                    onClick={() => { completeClassQuest(q.id); setConfirmComplete(false); setOpen(false) }}
-                    className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded border border-game-gold/70 bg-game-gold/25 text-game-gold hover:bg-game-gold/40"
-                  >
-                    Hand in
-                  </button>
-                </div>
-              </div>
-            )}
-            {(status === 'in-progress' || status === 'ready') && confirmCancel && (
-              <div className="rounded-md border border-rose-700/50 bg-rose-950/20 p-2 space-y-2">
-                <div className="text-[11px] text-game-text leading-snug">
-                  Are you sure? This will discard all of {firstName}'s progress towards {q.title}.
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setConfirmCancel(false)}
-                    className="flex-1 text-[11px] px-2 py-1.5 rounded border border-game-border text-game-text-dim hover:text-game-text"
-                  >
-                    Keep going
-                  </button>
-                  <button
-                    onClick={() => { cancelClassQuest(q.id); setConfirmCancel(false) }}
-                    className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded border border-rose-600/70 bg-rose-600/20 text-rose-200 hover:bg-rose-600/30"
-                  >
-                    Discard progress
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+      {committedHero && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hero</span>
+          <HeroChip u={committedHero} gold />
         </div>
       )}
+
+      {obj.kind === 'collect' && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Quest item</span>
+          <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
+            <span aria-hidden>📜</span><span className="truncate">{obj.itemName}</span>
+            {committedHeroId && <span className="text-game-text-dim tabular-nums">×{progress}</span>}
+          </span>
+          <span className="text-[10px] text-game-muted italic">tracked here, not in your bags</span>
+        </div>
+      )}
+
+      {obj.kind === 'handin' && (() => {
+        const held = obj.source === 'quest' ? (questItems[obj.itemId] ?? 0) : (miscItems.find((m) => m.id === obj.itemId)?.quantity ?? 0)
+        return (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hand in</span>
+            <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
+              <span aria-hidden>{obj.source === 'quest' ? '📜' : '🎒'}</span><span className="truncate">{obj.itemName}</span>
+              <span className="text-game-text-dim tabular-nums">×{Math.min(obj.count, held)}/{obj.count}</span>
+            </span>
+            <span className="text-[10px] text-game-muted">you hold {held} in {obj.source === 'quest' ? 'quest items' : 'your stash'} · consumed on hand-in</span>
+          </div>
+        )
+      })()}
+
+      {committedHeroId && <ProgressBar progress={progress} target={target} ready={status === 'ready'} />}
+
+      <div className="pt-2 mt-1 border-t border-game-border/60 space-y-2">
+        {status === 'select-novice' && (
+          <div className="text-[11px] text-game-muted italic">Select a Novice (level {MIN_CLASS_CHANGE_LEVEL}+) from the roster to walk this path.</div>
+        )}
+        {status === 'underleveled' && selectedNovice && (
+          <div className="text-[11px] text-game-muted italic">{firstName} is only level {selectedNovice.level}. A Novice must reach level {MIN_CLASS_CHANGE_LEVEL} before changing class.</div>
+        )}
+        {status === 'eligible' && selectedNovice && (
+          <button onClick={() => beginClassQuest(q.id, selectedNovice.id)} className="w-full text-sm font-semibold px-3 py-2 rounded-md border border-game-gold/60 bg-game-gold/15 text-game-gold hover:bg-game-gold/25 transition-colors">
+            Begin — {firstName} takes {q.title}
+          </button>
+        )}
+        {status === 'in-progress' && (
+          <div className="text-[11px] text-game-muted italic">
+            {firstName} must {q.objective.label.toLowerCase()} ({progress}/{target}).{' '}
+            {obj.kind === 'collect' ? `Drops while ${firstName} is deployed where they fall.`
+              : obj.kind === 'handin' ? `Gather ${obj.itemName}s${obj.source === 'inventory' ? ' from the field' : ''}, then hand them in.`
+              : 'Deploy them to a battlefield to make progress.'}
+          </div>
+        )}
+        {(status === 'in-progress' || status === 'ready') && !confirmCancel && !confirmComplete && (
+          <>
+            {status === 'ready' && (
+              <button
+                onClick={() => { if (objectiveConsumes(obj)) setConfirmComplete(true); else { completeClassQuest(q.id); closeStageOverlay() } }}
+                className="w-full text-sm font-semibold px-3 py-2 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors"
+              >
+                {objectiveConsumes(obj) ? `✓ Hand in & become a ${q.targetClass}` : '✓ Complete the class change'}
+              </button>
+            )}
+            <button onClick={() => setConfirmCancel(true)} className="w-full text-[11px] px-3 py-1.5 rounded-md border border-game-border text-game-text-dim hover:text-rose-300 hover:border-rose-700/60 transition-colors">
+              Cancel quest
+            </button>
+          </>
+        )}
+        {status === 'ready' && confirmComplete && (
+          <ConfirmPanel
+            message={<>Hand in <span className="font-semibold">{obj.count} × {(obj.kind === 'collect' || obj.kind === 'handin') ? obj.itemName : 'items'}</span>? They'll be consumed and {firstName} becomes a {q.targetClass}.</>}
+            cancelLabel="Not yet" confirmLabel="Hand in"
+            onCancel={() => setConfirmComplete(false)}
+            onConfirm={() => { completeClassQuest(q.id); setConfirmComplete(false); closeStageOverlay() }}
+          />
+        )}
+        {(status === 'in-progress' || status === 'ready') && confirmCancel && (
+          <ConfirmPanel danger
+            message={<>Are you sure? This will discard all of {firstName}'s progress towards {q.title}.</>}
+            cancelLabel="Keep going" confirmLabel="Discard progress"
+            onCancel={() => setConfirmCancel(false)}
+            onConfirm={() => { cancelClassQuest(q.id); setConfirmCancel(false); closeStageOverlay() }}
+          />
+        )}
+      </div>
+
+      <GoToLocationLink locationId={q.locationId} />
     </div>
   )
 }
@@ -418,14 +436,16 @@ function ClassQuestBoard({ location }: { location: Location }) {
 }
 
 // ── Location bounty board (hero-less, chained) ───────────────────────────────--
-function BountyRow({ def, done }: { def: BountyDef; done: boolean }) {
+export function BountyRow({ def, mode = 'summary' }: { def: BountyDef; mode?: QuestRowMode }) {
   const unitStats       = useGameStore((s) => s.unitStats)
   const monsterDefeated = useGameStore((s) => s.monsterDefeated)
   const questItems      = useGameStore((s) => s.questItems)
   const miscItems       = useGameStore((s) => s.miscItems)
   const claimed         = useProtoStore((s) => s.bountyClaimed[def.id] ?? 0)
+  const done            = useProtoStore((s) => !def.repeatable && s.bountyDone.includes(def.id))
   const completeBounty  = useProtoStore((s) => s.completeBounty)
-  const [open, setOpen] = useState(false)
+  const openStageOverlay  = useProtoStore((s) => s.openStageOverlay)
+  const closeStageOverlay = useProtoStore((s) => s.closeStageOverlay)
   const [confirm, setConfirm] = useState(false)
 
   const o = def.objective
@@ -438,84 +458,76 @@ function BountyRow({ def, done }: { def: BountyDef; done: boolean }) {
     ? (miscItems.find((m) => m.id === itemId)?.quantity ?? 0)
     : (questItems[itemId] ?? 0)
   const itemName = (o.kind === 'collect' || o.kind === 'handin') ? o.itemName : ''
+  const goldReward = rewardGoldTotal(def.rewards)
 
   const glyph = done ? '✓' : '?'
   const iconCls = done ? 'border-game-green/50 text-game-green' : ready ? 'border-game-gold/70 text-game-gold' : 'border-game-border text-game-text-dim'
 
+  if (mode === 'summary') {
+    return (
+      <QuestSummaryButton
+        onOpen={() => openStageOverlay({ kind: 'quest', questId: def.id, questKind: 'bounty' })}
+        glyph={glyph} iconCls={iconCls} title={def.title}
+        badge={def.repeatable ? <span className="text-[9px] shrink-0 text-game-accent" title="Repeatable">↻</span> : undefined}
+        subtitle={done ? 'done' : `${progress}/${target}`} subtitleGold={ready}
+      />
+    )
+  }
+
   return (
-    <div className={['rounded-md border transition-colors', open ? 'border-game-primary/40 bg-game-bg' : done ? 'border-game-green/30 bg-game-green/5' : 'border-game-border bg-game-bg'].join(' ')}>
-      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-white/[0.03]">
-        <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', iconCls].join(' ')}>{glyph}</span>
-        <span className="text-xs flex-1 truncate text-game-text">{def.title}</span>
-        {def.repeatable && <span className="text-[9px] shrink-0 text-game-accent" title="Repeatable">↻</span>}
-        <span className={['text-[10px] shrink-0 tabular-nums', done ? 'text-game-green' : ready ? 'text-game-gold' : 'text-game-text-dim'].join(' ')}>
-          {done ? 'done' : `${progress}/${target}`}
-        </span>
-        <span className="text-[10px] text-game-muted shrink-0 w-3 text-center">{open ? '▴' : '▾'}</span>
-      </button>
+    <div className="space-y-2.5 max-w-xl">
+      <p className="text-xs text-game-text-dim leading-snug">{def.story}</p>
+      <div className="text-xs"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{o.label}</span>{def.repeatable && <span className="text-game-accent"> · repeatable ↻</span>}</div>
 
-      {open && (
-        <div className="px-2.5 pb-2.5 pt-1 space-y-2 border-t border-game-border/60">
-          <p className="text-[11px] text-game-text-dim leading-snug">{def.story}</p>
-          <div className="text-[11px]"><span className="text-game-text-dim">Objective: </span><span className="text-game-text">{o.label}</span></div>
-          {def.rewardGold ? <div className="text-[11px]"><span className="text-game-text-dim">Reward: </span><span className="text-game-gold">{def.rewardGold} gold</span></div> : null}
+      {/* Reward chips — gold + inspectable gear. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Reward</span>
+        <RewardChips rewards={def.rewards} />
+      </div>
 
-          {!done && itemName && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hand in</span>
-              <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
-                <span aria-hidden>🎒</span><span className="truncate">{itemName}</span>
-                <span className="text-game-text-dim tabular-nums">×{Math.min(target, held)}/{target}</span>
-              </span>
-              <span className="text-[10px] text-game-muted">you hold {held} in your stash · consumed on hand-in</span>
-            </div>
-          )}
-
-          {!done && (
-            <div>
-              <div className="flex justify-between text-[10px] mb-0.5">
-                <span className="uppercase tracking-wider text-game-text-dim">Progress</span>
-                <span className="text-game-text tabular-nums">{progress}/{target}</span>
-              </div>
-              <div className="h-2 rounded-full bg-game-border overflow-hidden">
-                <div className={['h-full rounded-full transition-all', ready ? 'bg-game-gold' : 'bg-game-accent'].join(' ')} style={{ width: `${Math.min(100, (progress / target) * 100)}%` }} />
-              </div>
-            </div>
-          )}
-
-          <div className="pt-2 mt-1 border-t border-game-border/60 space-y-2">
-            {done && <div className="text-[10px] text-game-green italic">Bounty complete.</div>}
-            {!done && !ready && (
-              <div className="text-[10px] text-game-muted italic">
-                {consumes ? `Farm ${itemName}s and bring them here to claim the reward.` : `Cull more — ${progress}/${target} this round.`}
-              </div>
-            )}
-            {/* Kill bounties consume nothing → claim straight away. Hand-in/collect
-                go behind a "will be consumed" confirm. */}
-            {ready && !consumes && (
-              <button onClick={() => { completeBounty(def.id); setOpen(false) }} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
-                ✓ Claim {def.rewardGold ?? 0} gold{def.repeatable ? ' (repeatable)' : ''}
-              </button>
-            )}
-            {ready && consumes && !confirm && (
-              <button onClick={() => setConfirm(true)} className="w-full text-xs font-semibold px-3 py-1.5 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
-                ✓ Hand in {target} {itemName}s
-              </button>
-            )}
-            {ready && consumes && confirm && (
-              <div className="rounded-md border border-game-gold/50 bg-game-gold/10 p-2 space-y-2">
-                <div className="text-[11px] text-game-text leading-snug">
-                  Hand in <span className="font-semibold">{target} × {itemName}</span>? They'll be consumed{def.rewardGold ? ` for ${def.rewardGold} gold` : ''}.
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setConfirm(false)} className="flex-1 text-[11px] px-2 py-1.5 rounded border border-game-border text-game-text-dim hover:text-game-text">Not yet</button>
-                  <button onClick={() => { completeBounty(def.id); setConfirm(false); setOpen(false) }} className="flex-1 text-[11px] font-semibold px-2 py-1.5 rounded border border-game-gold/70 bg-game-gold/25 text-game-gold hover:bg-game-gold/40">Hand in</button>
-                </div>
-              </div>
-            )}
-          </div>
+      {!done && itemName && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] uppercase tracking-wider text-game-text-dim mr-0.5">Hand in</span>
+          <span className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-accent/40 bg-game-accent/10 text-game-text">
+            <span aria-hidden>🎒</span><span className="truncate">{itemName}</span>
+            <span className="text-game-text-dim tabular-nums">×{Math.min(target, held)}/{target}</span>
+          </span>
+          <span className="text-[10px] text-game-muted">you hold {held} in your stash · consumed on hand-in</span>
         </div>
       )}
+
+      {!done && <ProgressBar progress={progress} target={target} ready={ready} />}
+
+      <div className="pt-2 mt-1 border-t border-game-border/60 space-y-2">
+        {done && <div className="text-[11px] text-game-green italic">Bounty complete.</div>}
+        {!done && !ready && (
+          <div className="text-[11px] text-game-muted italic">
+            {consumes ? `Farm ${itemName}s and bring them here to claim the reward.` : `Cull more — ${progress}/${target} this round.`}
+          </div>
+        )}
+        {/* Kill bounties consume nothing → claim straight away. Hand-in/collect go
+            behind a "will be consumed" confirm. */}
+        {ready && !consumes && (
+          <button onClick={() => { completeBounty(def.id); closeStageOverlay() }} className="w-full text-sm font-semibold px-3 py-2 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
+            ✓ Claim {goldReward} gold{def.repeatable ? ' (repeatable)' : ''}
+          </button>
+        )}
+        {ready && consumes && !confirm && (
+          <button onClick={() => setConfirm(true)} className="w-full text-sm font-semibold px-3 py-2 rounded-md border border-game-gold/70 bg-game-gold/20 text-game-gold hover:bg-game-gold/30 transition-colors">
+            ✓ Hand in {target} {itemName}s
+          </button>
+        )}
+        {ready && consumes && confirm && (
+          <ConfirmPanel
+            message={<>Hand in <span className="font-semibold">{target} × {itemName}</span>? They'll be consumed{goldReward ? ` for ${goldReward} gold` : ''}.</>}
+            cancelLabel="Not yet" confirmLabel="Hand in"
+            onCancel={() => setConfirm(false)}
+            onConfirm={() => { completeBounty(def.id); setConfirm(false); closeStageOverlay() }}
+          />
+        )}
+      </div>
+
+      <GoToLocationLink locationId={def.locationId} />
     </div>
   )
 }
@@ -530,7 +542,7 @@ function LocationBountyBoard({ location }: { location: Location }) {
     <div>
       <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Bounties</div>
       <div className="space-y-1">
-        {shown.map((b) => <BountyRow key={b.id} def={b} done={bountyDone.includes(b.id)} />)}
+        {shown.map((b) => <BountyRow key={b.id} def={b} />)}
       </div>
     </div>
   )

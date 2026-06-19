@@ -213,15 +213,20 @@ test('quest journal: filter + go to location', async ({ page }, testInfo) => {
   await expect(journal.getByText("Trapper's Order").first()).toBeVisible()
   await shot('02-guild-only')
 
-  // Filter back to hero quests and jump to a class path's city.
+  // Filter back to hero quests and open a class path → its full detail screen
+  // takes over the top half (the journal closes).
   await journal.getByRole('button', { name: '◈ Hero', exact: true }).click()
   await page.waitForTimeout(200)
-  await journal.getByRole('button', { name: 'Go to Path of the Fighter' }).click()
+  await journal.getByRole('button', { name: 'Open Path of the Fighter' }).click()
   await page.waitForTimeout(400)
-  // Overlay closed and the map focused Prontera with its Location lens open.
   await expect(page.getByTestId('quest-journal')).toHaveCount(0)
-  const loc = await page.evaluate(() => (window as unknown as { __game: { getState: () => { selectedLocationId: string | null } } }).__game.getState().selectedLocationId)
-  expect(loc).toBe('prontera-city')
+  await expect(page.getByText('Quest · Path of the Fighter')).toBeVisible()
+  await shot('03-detail-overlay')
+
+  // Rewards are inspectable: tap the gear reward → an item codex opens.
+  await page.getByTitle('Inspect Sword').click()
+  await expect(page.getByText('Item Detail')).toBeVisible()
+  await shot('04-reward-inspect')
 })
 
 test('world map shows a (?) on locations with rewards ready', async ({ page }, testInfo) => {

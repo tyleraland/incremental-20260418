@@ -152,6 +152,7 @@ export interface GameState {
   consumeQuestItem: (itemId: string, qty: number) => void
   consumeMiscItem: (itemId: string, qty: number) => void
   grantMiscItem: (itemId: string, qty: number) => void   // add to the stash (quest rewards, gold)
+  grantEquipment: (itemId: string) => void               // add an owned equipment instance (quest item rewards)
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
   toggleRegion: (id: string) => void
@@ -1474,6 +1475,13 @@ export const useGameStore = create<GameState>((set) => ({
       .filter((m) => m.quantity > 0),
   })),
   grantMiscItem: (itemId, qty) => set((s) => ({ miscItems: applyMiscDeltas(s.miscItems, { [itemId]: qty }) })),
+  grantEquipment: (itemId) => set((s) => {
+    const def = INITIAL_EQUIPMENT.find((e) => e.id === itemId)
+    if (!def) return s
+    // A fresh owned instance (unique id) so duplicates of the same gear coexist.
+    const inst = { ...def, id: `${itemId}#${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}` }
+    return { equipment: [...s.equipment, inst] }
+  }),
 
   togglePause: () => set((s) => s.paused
     ? { paused: false, lastTickAt: Date.now() }  // reset clock so no catch-up on unpause

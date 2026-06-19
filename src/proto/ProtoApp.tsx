@@ -260,20 +260,14 @@ export function ProtoApp() {
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
   const requestHeroTab   = useProtoStore((s) => s.requestHeroTab)
-  const requestLocationTab = useProtoStore((s) => s.requestLocationTab)
   const dismissBattleCard = useProtoStore((s) => s.dismissBattleCard)
+  const openStageOverlay = useProtoStore((s) => s.openStageOverlay)
 
-  // Quest Journal "go to location": focus the map on the quest's site and open
-  // its Location lens (close the overlay).
-  function gotoQuest(e: QuestBoardEntry) {
-    const loc = locations.find((l) => l.id === e.locationId)
-    if (loc) {
-      useGameStore.getState().setMapPage(loc.region)
-      useGameStore.getState().setSelectedLocation(e.locationId)
-      requestZoom(1)
-      requestLocationTab()
-    }
+  // Quest Journal: tapping a quest opens its full detail on the top-half overlay
+  // (closing the journal so the detail is visible over the map).
+  function openQuest(e: QuestBoardEntry) {
     setPanel(null)
+    openStageOverlay({ kind: 'quest', questId: e.id, questKind: e.kind })
   }
 
   const [sortMode, setSortMode] = useState<SortMode>('location')
@@ -481,7 +475,7 @@ export function ProtoApp() {
       </div>
 
       {panel === 'quests'
-        ? <QuestJournal onClose={() => setPanel(null)} onGoto={gotoQuest} />
+        ? <QuestJournal onClose={() => setPanel(null)} onOpen={openQuest} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
     </div>
   )

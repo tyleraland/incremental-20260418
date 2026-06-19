@@ -50,7 +50,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   )
 }
 
-function QuestRow({ e, onGoto }: { e: QuestBoardEntry; onGoto: (e: QuestBoardEntry) => void }) {
+function QuestRow({ e, onOpen }: { e: QuestBoardEntry; onOpen: (e: QuestBoardEntry) => void }) {
   const m = STATUS_META[e.status]
   return (
     <div className="rounded-md border border-game-border bg-game-bg px-2 py-1.5 flex items-center gap-2">
@@ -73,16 +73,16 @@ function QuestRow({ e, onGoto }: { e: QuestBoardEntry; onGoto: (e: QuestBoardEnt
           </span>
         : <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-text-dim">⌂ Guild</span>}
       <button
-        onClick={() => onGoto(e)}
-        title={`Go to ${e.locationName}`}
-        aria-label={`Go to ${e.title}`}
+        onClick={() => onOpen(e)}
+        title={`Open ${e.title}`}
+        aria-label={`Open ${e.title}`}
         className="shrink-0 text-[11px] px-2 py-1 rounded-md border border-game-primary/50 text-game-primary hover:bg-game-primary/15 transition-colors"
-      >Go ›</button>
+      >Open ›</button>
     </div>
   )
 }
 
-export function QuestJournal({ onClose, onGoto }: { onClose: () => void; onGoto: (e: QuestBoardEntry) => void }) {
+export function QuestJournal({ onClose, onOpen }: { onClose: () => void; onOpen: (e: QuestBoardEntry) => void }) {
   const board = useQuestBoard()
   const [status, setStatus] = useState<BoardStatus | 'all'>('all')
   const [scope, setScope] = useState<ScopeFilter>('all')
@@ -152,7 +152,7 @@ export function QuestJournal({ onClose, onGoto }: { onClose: () => void; onGoto:
             {grouped && (
               <div className="text-[10px] uppercase tracking-widest text-game-text-dim px-1 pt-1">{g.name} <span className="text-game-muted normal-case tracking-normal">({g.entries.length})</span></div>
             )}
-            {g.entries.map((e) => <QuestRow key={e.id} e={e} onGoto={onGoto} />)}
+            {g.entries.map((e) => <QuestRow key={e.id} e={e} onOpen={onOpen} />)}
           </div>
         ))}
       </div>

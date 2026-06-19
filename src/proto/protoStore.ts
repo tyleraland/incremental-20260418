@@ -16,6 +16,7 @@ export type ZoomLevel = 0 | 1 | 2
 // bottom lens; this is the research/detail surface drawn over the battlefield.
 export type StageOverlay =
   | { kind: 'skill-tree'; unitId: string }
+  | { kind: 'quest'; questId: string; questKind: 'class' | 'bounty' }
 
 // Attunement: a currency that trickles in with real game time. We derive the
 // *available* balance from the game clock (floor(ticks / ATTUNE_TICKS) minus what
@@ -161,6 +162,7 @@ export interface ClassChangeQuestDef {
   title: string        // e.g. "Path of the Fighter"
   story: string        // narrative blurb (shown when expanded)
   objective: ClassQuestObjective
+  rewards?: QuestReward[]  // granted on completion (the class change is the headline)
 }
 // Class-change trials (hero-scoped). CULL = personally defeat a handful of a
 // nearby creature; COLLECT = gather quest items that drop from one then hand
@@ -173,11 +175,11 @@ const COLLECT = (monsterId: string, itemId: string, itemName: string, count: num
 const HANDIN = (itemId: string, itemName: string, count: number, label: string, source: 'inventory' | 'quest' = 'inventory'): HandInObjective =>
   ({ kind: 'handin', itemId, itemName, count, source, label })
 export const CLASS_CHANGE_QUESTS: ClassChangeQuestDef[] = [
-  { id: 'path-fighter', locationId: 'prontera-city', targetClass: 'Fighter', title: 'Path of the Fighter', story: 'The Prontera guard drills recruits in sword and shield. Cull the slimes on the Western Approach to prove your mettle.', objective: CULL('tough-slime', 3, 'Defeat 3 Tough Slimes') },
-  { id: 'path-cleric',  locationId: 'prontera-city', targetClass: 'Cleric',  title: 'Path of the Cleric',  story: 'The cathedral asks its postulants to cleanse the unnatural growth east of the city before taking their vows.', objective: CULL('living-nightshade', 3, 'Purge 3 Living Nightshades') },
-  { id: 'path-ranger',  locationId: 'payon-city',    targetClass: 'Ranger',  title: 'Path of the Ranger',  story: 'The hunters of Payon judge an applicant by their trophies. Bring boar hides from the meadow to earn your bow.', objective: HANDIN('drop-boar-hide', 'Boar Hide', 3, 'Hand in 3 Boar Hides') },
-  { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild sets a thief's test: shadow the skeleton archers on the Southern Road and lift the bone splinters they carry, then hand them over.", objective: COLLECT('skeleton-archer', 'qi-bone-splinter', 'Bone Splinter', 3, 'Collect & hand in 3 Bone Splinters') },
-  { id: 'path-mage',    locationId: 'geffen-city',   targetClass: 'Mage',    title: 'Path of the Mage',    story: 'The arcane college admits only those who act. Destroy the egg sacs festering on the Geffen Outskirts.', objective: CULL('egg-sac', 3, 'Destroy 3 Egg Sacs') },
+  { id: 'path-fighter', locationId: 'prontera-city', targetClass: 'Fighter', title: 'Path of the Fighter', story: 'The Prontera guard drills recruits in sword and shield. Cull the slimes on the Western Approach to prove your mettle.', objective: CULL('tough-slime', 3, 'Defeat 3 Tough Slimes'), rewards: [{ kind: 'item', itemId: 'eq-sword' }] },
+  { id: 'path-cleric',  locationId: 'prontera-city', targetClass: 'Cleric',  title: 'Path of the Cleric',  story: 'The cathedral asks its postulants to cleanse the unnatural growth east of the city before taking their vows.', objective: CULL('living-nightshade', 3, 'Purge 3 Living Nightshades'), rewards: [{ kind: 'item', itemId: 'eq-rod' }] },
+  { id: 'path-ranger',  locationId: 'payon-city',    targetClass: 'Ranger',  title: 'Path of the Ranger',  story: 'The hunters of Payon judge an applicant by their trophies. Bring boar hides from the meadow to earn your bow.', objective: HANDIN('drop-boar-hide', 'Boar Hide', 3, 'Hand in 3 Boar Hides'), rewards: [{ kind: 'item', itemId: 'eq-bow' }] },
+  { id: 'path-rogue',   locationId: 'payon-city',    targetClass: 'Rogue',   title: 'Path of the Rogue',   story: "Payon's shadow guild sets a thief's test: shadow the skeleton archers on the Southern Road and lift the bone splinters they carry, then hand them over.", objective: COLLECT('skeleton-archer', 'qi-bone-splinter', 'Bone Splinter', 3, 'Collect & hand in 3 Bone Splinters'), rewards: [{ kind: 'item', itemId: 'eq-knife' }] },
+  { id: 'path-mage',    locationId: 'geffen-city',   targetClass: 'Mage',    title: 'Path of the Mage',    story: 'The arcane college admits only those who act. Destroy the egg sacs festering on the Geffen Outskirts.', objective: CULL('egg-sac', 3, 'Destroy 3 Egg Sacs'), rewards: [{ kind: 'item', itemId: 'eq-staff' }] },
 ]
 
 // A live commitment: which hero is on the path + the kill tally they had when
@@ -259,7 +261,7 @@ export interface BountyDef {
   title: string
   story: string
   objective: ClassQuestObjective   // hand-in (consumes from the stash) or kill (global, cyclic)
-  rewardGold?: number
+  rewards: QuestReward[]           // gold + inspectable item rewards, granted on completion
   requires?: string[]              // bounty ids that must be done first; hidden until then
   repeatable?: boolean             // never archives; can be claimed again and again
 }
@@ -268,21 +270,41 @@ export const LOCATION_BOUNTIES: BountyDef[] = [
     id: 'boar-hides-20', locationId: 'boar-meadow', title: 'Trapper\'s Order',
     story: 'The Boar Meadow trapper pays well for fresh hides. Bring him twenty to open an account.',
     objective: HANDIN('drop-boar-hide', 'Boar Hide', 20, 'Collect 20 Boar Hides'),
-    rewardGold: 200, requires: [],
+    rewards: [{ kind: 'gold', amount: 200 }, { kind: 'item', itemId: 'eq-leather' }], requires: [],
   },
   {
     id: 'boar-hides-100', locationId: 'boar-meadow', title: 'The Tannery\'s Bulk Order',
     story: 'Word of your haul reached the Prontera tannery — now they want a hundred more. Collect even more hides.',
     objective: HANDIN('drop-boar-hide', 'Boar Hide', 100, 'Collect 100 Boar Hides'),
-    rewardGold: 1500, requires: ['boar-hides-20'],
+    rewards: [{ kind: 'gold', amount: 1500 }, { kind: 'item', itemId: 'eq-chainmail' }], requires: ['boar-hides-20'],
   },
   {
     id: 'boar-cull-repeat', locationId: 'boar-meadow', title: 'Boar Culling Contract',
     story: 'The meadow warden keeps a standing contract: every hundred boars culled earns a token bounty. Renewed endlessly.',
     objective: { kind: 'kill', monsterId: 'wild-boar', count: 100, scope: 'global', label: 'Defeat 100 Wild Boars' },
-    rewardGold: 1, requires: [], repeatable: true,
+    rewards: [{ kind: 'gold', amount: 1 }], requires: [], repeatable: true,
   },
 ]
+// Total gold across a reward list (for the kill-bounty "Claim N gold" button etc.).
+export function rewardGoldTotal(rewards: QuestReward[]): number {
+  return rewards.reduce((n, r) => n + (r.kind === 'gold' ? r.amount : 0), 0)
+}
+// A short reward summary for list rows ("200 gold · +1 item").
+export function rewardSummary(rewards: QuestReward[]): string {
+  const gold = rewardGoldTotal(rewards)
+  const items = rewards.filter((r) => r.kind === 'item').length
+  return [gold ? `${gold} gold` : '', items ? `+${items} item${items > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')
+}
+// Pay out a quest's rewards into the real game state: gold to the stash, items as
+// owned equipment instances.
+function grantRewards(rewards: QuestReward[] | undefined): void {
+  if (!rewards) return
+  const g = useGameStore.getState()
+  for (const r of rewards) {
+    if (r.kind === 'gold') g.grantMiscItem('m-gold', r.amount)
+    else g.grantEquipment(r.itemId)
+  }
+}
 // A bounty is only on the board once every prerequisite is done.
 export function bountyVisible(def: BountyDef, done: string[]): boolean {
   return (def.requires ?? []).every((r) => done.includes(r))
@@ -355,7 +377,8 @@ export function buildQuestBoard(a: QuestBoardArgs): QuestBoardEntry[] {
       id: q.id, kind: 'class', title: q.title, locationId: q.locationId, locationName: a.locationName(q.locationId),
       scope: 'hero', heroId: hero?.id, heroName: hero?.name,
       status, progress, target, objectiveLabel: q.objective.label,
-      rewardText: `become a ${q.targetClass}`, completions: a.completions[q.id] ?? 0,
+      rewardText: [`become a ${q.targetClass}`, q.rewards ? rewardSummary(q.rewards) : ''].filter(Boolean).join(' · '),
+      completions: a.completions[q.id] ?? 0,
     })
   }
   // Location bounties (guild-wide). Hidden-at-location prereqs surface here as
@@ -373,7 +396,7 @@ export function buildQuestBoard(a: QuestBoardArgs): QuestBoardEntry[] {
     out.push({
       id: b.id, kind: 'bounty', title: b.title, locationId: b.locationId, locationName: a.locationName(b.locationId),
       scope: 'global', status, progress, target, objectiveLabel: b.objective.label,
-      rewardText: b.rewardGold ? `${b.rewardGold} gold` : undefined, repeatable: b.repeatable,
+      rewardText: rewardSummary(b.rewards) || undefined, repeatable: b.repeatable,
       completions: a.completions[b.id] ?? 0,
     })
   }
@@ -552,6 +575,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
     useGameStore.setState((gs) => ({
       units: gs.units.map((u) => (u.id === commit.heroId ? { ...u, class: def.targetClass } : u)),
     }))
+    grantRewards(def.rewards)
     const next = { ...s.classQuestCommit }; delete next[questId]
     return { classQuestCommit: next, questCompletions: { ...s.questCompletions, [questId]: (s.questCompletions[questId] ?? 0) + 1 } }
   }),
@@ -574,7 +598,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
     // Consume the handed-in items (kill bounties consume nothing), then pay out.
     if (o.kind === 'handin') { if (o.source === 'quest') g.consumeQuestItem(o.itemId, o.count); else g.consumeMiscItem(o.itemId, o.count) }
     else if (o.kind === 'collect') g.consumeQuestItem(o.itemId, o.count)
-    if (def.rewardGold) g.grantMiscItem('m-gold', def.rewardGold)
+    grantRewards(def.rewards)
     const completions = { ...s.questCompletions, [bountyId]: (s.questCompletions[bountyId] ?? 0) + 1 }
     // Kill bounties advance the claim baseline to the CURRENT total — overflow past
     // 100 doesn't bank, so a backlog only ever yields one claim and you must re-up.

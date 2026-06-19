@@ -212,7 +212,8 @@ describe('location bounties (hero-less, chained)', () => {
     completeBounty('boar-hides-20')
     expect(useProtoStore.getState().bountyDone).toContain('boar-hides-20')
     expect(useGameStore.getState().miscItems.find((m) => m.id === 'drop-boar-hide')!.quantity).toBe(5)   // 25 − 20
-    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(200)         // reward
+    expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(200)         // gold reward
+    expect(useGameStore.getState().equipment.some((e) => e.id.startsWith('eq-leather'))).toBe(true)      // gear reward granted
     expect(useProtoStore.getState().questCompletions['boar-hides-20']).toBe(1)                           // tallied
   })
 
