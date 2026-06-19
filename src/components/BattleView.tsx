@@ -365,8 +365,9 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
 // 1000/TICKS_PER_SECOND=5 = 400ms; a raw engine round is 200ms).
 const ROUND_MS = 400
 
-// Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
-// and enemies alike) so health bars read consistently across the field.
+// Floating label: name (+ cast bar) sits BELOW the circle for *every* unit. The
+// HP bar is hero-only — enemy health isn't shown on the field (it just clutters
+// the view); a monster's state reads from its damage floats and KO instead.
 function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer: boolean; casting: boolean; scale: number }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   // Cast bar driven by the live channel (roundsLeft), NOT wall-clock: a round is
@@ -385,9 +386,11 @@ function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer
       <span className={`font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`} style={{ fontSize: namePlateFont(c.name) }}>
         {fullName(c.name)}
       </span>
-      <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
-        <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
-      </div>
+      {isPlayer && (
+        <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+          <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+        </div>
+      )}
       {ch && (
         <>
           <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
