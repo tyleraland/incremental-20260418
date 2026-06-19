@@ -74,17 +74,21 @@ function arenaCamera(cols = COLS, rows = ROWS): Cam {
 }
 
 // Open-world: a fixed-size window that follows the centroid of the given points
-// (alive combatants), clamped so it never shows past the map edges. The whole
-// open-world field can't fit at once — the player pans to look around.
-function followCamera(pts: Vec2[], cols: number, rows: number, want: number): Cam {
+// (alive combatants). By default it's clamped so it never shows past the map
+// edges (the whole field can't fit at once — the player pans to look around).
+// When following a *single* hero (Diablo cam) we drop the clamp so the hero is
+// always dead-centre even hugging a map edge; the clamp would otherwise shove a
+// near-edge hero off to the side. The party auto-fit / free-look keep the clamp.
+function followCamera(pts: Vec2[], cols: number, rows: number, want: number, clamp = true): Cam {
   const size = Math.min(want, cols, rows)
   if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
   let sx = 0, sy = 0
   for (const p of pts) { sx += p.x; sy += p.y }
   const cx = sx / pts.length, cy = sy / pts.length
+  const rawX = cx - size / 2, rawY = cy - size / 2
   return {
-    x: Math.max(0, Math.min(cols - size, cx - size / 2)),
-    y: Math.max(0, Math.min(rows - size, cy - size / 2)),
+    x: clamp ? Math.max(0, Math.min(cols - size, rawX)) : rawX,
+    y: clamp ? Math.max(0, Math.min(rows - size, rawY)) : rawY,
     size,
   }
 }
@@ -1241,7 +1245,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   const sizePts = focusUnit ? [rpos(focusUnit)] : (partyPts.length ? partyPts : allPts)
   const effSize = manualZoom ? camSize : autoFitSize(sizePts, cols, rows)
   const cam = isOpen
-    ? followCamera(followPts, cols, rows, effSize)
+    ? followCamera(followPts, cols, rows, effSize, !focusUnit)
     : arenaCamera(cols, rows)
 
   // Identity of the current camera target — changes when we follow a new hero,
