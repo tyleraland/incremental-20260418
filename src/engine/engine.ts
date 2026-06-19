@@ -13,7 +13,7 @@ import {
 import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat, onAttackBeat } from './timescale'
 import { SpatialHash, setSpatialHash } from './spatialhash'
-import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation } from './grid'
+import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation, setDirectMove } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
@@ -1606,20 +1606,25 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // round we SKIP the expensive re-target (vision/threat/tactics) and keep the
   // committed lock — just drop it cheaply if the target died, so movement stays
   // valid (the unit holds/wanders until the next decision round re-aims).
+  const decideNow = isDecisionRound(state)
   const lockBefore = self.lockedTargetId
-  if (isDecisionRound(state)) {
+  if (decideNow) {
     evalTargeting(state, self)
   } else if (self.lockedTargetId) {
     const lt = findCombatant(state, self.lockedTargetId)
     if (!lt || !lt.alive) self.lockedTargetId = null
   }
-  rallyPack(state, self)   // §pack tactics: call kin to this fight (see helper)
+  if (decideNow) rallyPack(state, self)   // §pack tactics: call kin (a decision)
   const tgtText = self.lockedTargetId
     ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`
     : (state.mode === 'open' || !self.provoked ? 'no target · wander' : 'no target')
 
   const posBefore = { ...self.pos }
+  // Between decisions, execute committed movement without the steerAround Dijkstra
+  // (slide straight; re-route at the next decision round). No-op when decideNow.
+  if (!decideNow) setDirectMove(true)
   executeMovement(state, self, applyLeash(state, self, evalMovement(state, self)))
+  setDirectMove(false)
   applyFirewalls(state, self, posBefore)   // §firewall: bounce a foe that tried to cross
   const moved = self.pos.x !== posBefore.x || self.pos.y !== posBefore.y
   updateFacing(state, self, posBefore, moved)

@@ -12,6 +12,14 @@ import { timeScale } from './timescale'
 import { spatialHashFor, SPATIAL_MARGIN } from './spatialhash'
 import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
 
+// Direct-move ambient: on non-decision rounds (decisionInterval > 1) the engine
+// executes committed movement WITHOUT re-running steerAround's Dijkstra — units
+// slide straight at their target/point (slideMove still hugs walls). Set per unit
+// turn by takeTurn and cleared after; default false = full routing (byte-identical).
+// Like the timeScale/arena ambients, this is safe because one battle steps at a time.
+let directMoveActive = false
+export function setDirectMove(v: boolean): void { directMoveActive = v }
+
 export function distance(a: Vec2, b: Vec2): number {
   const dx = a.x - b.x
   const dy = a.y - b.y
@@ -101,8 +109,12 @@ export function moveToward(
 
   // Route around terrain toward a corner that keeps line of sight (§spatial).
   // No route through the known terrain → give up (hold) rather than grind into
-  // a wall toward an unreachable target.
-  const { point, direct, reachable } = steerAround(mover.pos, target.pos, barriers)
+  // a wall toward an unreachable target. In direct-move mode (between decision
+  // rounds) bypass the Dijkstra and slide straight at the target (slideMove still
+  // hugs walls) — a cheap execute step; the next decision round re-routes properly.
+  const { point, direct, reachable } = directMoveActive
+    ? { point: target.pos, direct: true, reachable: true }
+    : steerAround(mover.pos, target.pos, barriers)
   if (!reachable) return false
   const dd = distance(mover.pos, point)
   if (dd <= EPS) return false
@@ -126,7 +138,9 @@ export function moveTowardPoint(
   if (speed <= EPS) return false   // immobile (moveSpeed 0): hold — never reach slideMove
   const d = distance(mover.pos, point)
   if (d <= EPS) return false
-  const { point: wp, reachable } = steerAround(mover.pos, point, barriers)   // route around terrain
+  const { point: wp, reachable } = directMoveActive
+    ? { point, reachable: true }
+    : steerAround(mover.pos, point, barriers)   // route around terrain
   if (!reachable) return false   // unreachable through known terrain → hold
   const dd = distance(mover.pos, wp)
   if (dd <= EPS) return false
