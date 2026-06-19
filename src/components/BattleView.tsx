@@ -332,9 +332,25 @@ const CLASS_ICON: Record<string, string> = {
   Rogue:   '🗡',
 }
 
+// Off-screen edge arrows stay compact (just the first name) so the floating
+// marker doesn't trail a long label across the rim.
 function shortName(name: string): string {
   const first = name.trim().split(/\s+/)[0] ?? ''
   return first.length > 8 ? first.slice(0, 7) + '…' : first
+}
+
+// Chip name plate: show the WHOLE name (multi-word names like "Wild Boar" were
+// being clipped to their first word). Kept on one line so HP bars stay aligned
+// across the field; the font shrinks for longer names so they still fit the plate.
+function fullName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ')
+}
+function namePlateFont(name: string): string {
+  const n = fullName(name).length
+  if (n <= 8) return '9px'
+  if (n <= 12) return '8px'
+  if (n <= 16) return '7px'
+  return '6px'
 }
 
 function chipGlyph(c: Combatant, classFor: (id: string) => string | null): string {
@@ -366,8 +382,8 @@ function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer
   const castFill = ch ? (chTime <= 1 ? 1 : Math.max(0, Math.min(1, (chTime - ch.roundsLeft) / (chTime - 1)))) : 0
   return (
     <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
-      <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
-        {shortName(c.name)}
+      <span className={`font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`} style={{ fontSize: namePlateFont(c.name) }}>
+        {fullName(c.name)}
       </span>
       <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
         <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
@@ -1530,8 +1546,8 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos
   return (
     <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className="absolute -translate-x-1/2 -translate-y-1/2">
       <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
-        <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
-          {shortName(name)}
+        <span className={`font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`} style={{ fontSize: namePlateFont(name) }}>
+          {fullName(name)}
         </span>
         <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
           <div className="h-full bg-emerald-500/90" />
