@@ -113,22 +113,25 @@ What's left:
     and tuning the vision/speed/cap/size knobs. The residual cloaked-rogue
     "jitter next to an engaged fight" (separation crowding at the rally point) is
     cosmetic and separate.
-  - *Open-world camera (`BattleView`) — controls reworked 2026-06; still open.*
-    Modes: follow a hero (roster/minimap tap), free-look (minimap tap on ground OR
-    **drag-pan** — the first drag move freezes the camera, each release shifts the
-    free-look point by the dragged world delta), and auto-fit the party (default,
-    re-engaged by the **⊙** button). Fixed this pass: (a) **drag-pan now works** in
-    open-world (was disabled because a raw pixel pan fought the auto-follow — now the
-    drag detaches to free-look first); (b) **auto-fit zoom no longer "breathes" while
-    you're looking elsewhere** — auto-fit applies ONLY while following the party;
-    free-look / hero-follow hold a fixed zoom (`effSize`); (c) **grid no longer slides
-    against the barriers during a zoom** — the grid `backgroundSize` is now `%` of the
-    ground layer (scales WITH the layer + barriers) instead of `cqmin` (arena-relative,
-    which snapped while the layer eased). Still open:
-    - *Follow hero vs party — make it explicit.* Deploying a followed hero elsewhere
-      silently drops the follow to auto-fit-party. A small toggle / sticky mode
-      ("follow this hero" vs "frame the party") would make intent clear. (Raised
-      2026-06; low priority — the ⊙/roster/minimap controls cover it for now.)
+  - *Open-world camera (`BattleView`) — controls reworked 2026-06.* **Three explicit
+    modes** the top-left toggle cycles: **party** (auto-fit + centre on the group,
+    default), **hero** (follow the roster-selected hero, fixed zoom), **free** (hold a
+    look-point; drag to pan, pinch to zoom). Roster/minimap tap → hero; minimap
+    ground tap or a drag → free. Fixed across this work: (a) **drag-pan is live** —
+    the look-point follows the finger directly, clamped to the map so it can't
+    over-drag, with the glide held at 0 (`panningRef` → `--seg-ms` 0) so the board
+    tracks instantly. This replaced a freeze→pixel-offset→commit-on-release scheme
+    that **stuck while held and snapped back on release** (the pixel nudge could
+    over-drag past the edge, then the camera clamped on commit). (b) **auto-fit zoom
+    no longer "breathes" while looking elsewhere** — auto-fit applies ONLY in party
+    mode (`effSize`). (c) **grid no longer slides against the barriers during a zoom**
+    — grid `backgroundSize` is `%` of the ground layer (scales WITH it) not `cqmin`.
+    (d) **explicit follow-hero-vs-party toggle** — done (the 3-state cycle above).
+    Still open:
+    - *Live-pan re-render cost.* The live pan re-renders the battle subtree per
+      pointermove (glide suppressed, so paint is cheap, but React reconcile of 50+
+      tokens each move can dip fps during a drag in a very crowded field). Add an rAF
+      coalesce (one `setManualCenter` per frame) if a heavy-field pan reads janky.
     - *Zoom feel — choppy + slow.* Auto-fit changes `cam.size` per round (discrete
       steps) and eases each over `--seg-ms` (up to 900 ms), so a zoom reads as slow,
       stepped breathing. Options to paper over: a snappier fixed transition for
