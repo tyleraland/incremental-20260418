@@ -244,6 +244,17 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 // sim finer/smoother at the same pace (it's the lever to tune feel).
 const ROUND_TIME_SCALE    = 2    // engine rounds per logical round (finer = smoother)
 const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (~200ms/round at scale 2)
+// Sim-rate throttle for large open-world fields. The watched battle is the only one
+// full-simmed, and on mobile a crowded field's per-tick `advanceRound` is what
+// overruns the frame budget (long-tasks → irregular round cadence → choppiness). For
+// a high-cap field we halve the engine round RATE — step every 2 ticks at timeScale 1
+// instead of every tick at scale 2. Because `everyTicks × timeScale` is held at
+// ROUND_TIME_SCALE, the logical pace (and so rewards/sec, cooldown/move seconds) is
+// IDENTICAL; we just do half the advanceRound work. Motion stays smooth because the
+// adaptive `--seg-ms` glide (BattleView) stretches to the slower ~400ms cadence. The
+// choice is static per battle (from the cap, set at creation) so timeScale never
+// thrashes mid-battle and snapshot replays stay deterministic.
+const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs throttled
 // Off-screen / offline simulation budgets are centralized in `@/lib/sampling`
 // (SAMPLING) — the one place to tune cost-vs-fidelity. SAMPLING.offscreenCreditTicks
 // is how often an unwatched location credits rate-extrapolated rewards.
@@ -428,6 +439,14 @@ function spawnMonsterInto(battle: BattleState, loc: Location, size: number): str
   return spawnMonsterAt(battle, mid, scatterPos(size, battle.barriers)) ? mid : null
 }
 
+// Engine timeScale for a battle on this location: the finer (smoother) default, but
+// a high-cap open-world field runs coarser so it can be stepped half as often at the
+// same pace (the sim-rate throttle — see HEAVY_FIELD_CAP). `advanceBattles` derives
+// the matching step cadence (`everyTicks`) back out of the battle's timeScale.
+function timeScaleFor(loc: Location): number {
+  return loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP ? 1 : ROUND_TIME_SCALE
+}
+
 // Stand up a fresh persistent battle on the location's (large) open-world map:
 // the party knotted at the centre, `cap` monsters scattered across the field,
 // everyone with a limited sight radius. Marked `mode: 'open'` so it never ends.
@@ -435,7 +454,7 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   const size = openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
   const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: ROUND_TIME_SCALE })
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: timeScaleFor(loc) })
   party.forEach((u, i) => {
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
     const cinp = companionToEngineInput(u)
@@ -1004,7 +1023,12 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // Live-edit: push any loadout changes onto the heroes already fighting.
       syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
 
-      if (advance) {
+      // Sim-rate throttle: a throttled (coarse, timeScale-1) field advances every 2
+      // ticks; the finer default every tick. `everyTicks × timeScale` = ROUND_TIME_SCALE
+      // keeps the real-time pace identical (see HEAVY_FIELD_CAP). Spawn trickle and
+      // hero reconcile still run every tick above — only the costly round is paced.
+      const everyTicks = Math.max(1, Math.round(ROUND_TIME_SCALE / (battle.timeScale || ROUND_TIME_SCALE)))
+      if (advance && newTicks % everyTicks === 0) {
         // Clear out enemy corpses from prior rounds before this one resolves —
         // a persistent battle never resets, so without this the combatant list
         // (and the viewer's ✕ chips) would grow without bound. They've already
