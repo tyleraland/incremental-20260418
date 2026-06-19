@@ -669,6 +669,20 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
   extra React renders, just CSS inheritance. Verified live: ~620ms under CPU-throttled
   mobile (real cadence ~365ms) vs the old 380ms that was *shorter* than the jittery
   interval. (`BattleView.tsx`.)
+- **✅ Phase 1.2 — sim-rate throttle on heavy fields (the "lighter" Phase-4 alt).**
+  The watched battle is the only one full-simmed, and on mobile a crowded field's
+  per-tick `advanceRound` is what overruns the frame budget (the long-tasks behind the
+  choppiness). A high-cap open-world field (`openWorldCap >= HEAVY_FIELD_CAP`=16) now
+  runs at `timeScale 1` stepping every 2 ticks instead of `timeScale 2` every tick.
+  Because `everyTicks × timeScale` is held at `ROUND_TIME_SCALE`, the logical pace —
+  and so rewards/sec, cooldown/move seconds — is **identical**; we just do half the
+  `advanceRound` work. Motion stays smooth because the Phase-1.1 `--seg-ms` glide
+  stretches to the ~400ms cadence. Static per battle (decided from the cap at
+  creation), so timeScale never thrashes mid-battle and snapshot replays stay
+  byte-identical (all open-world store tests use cap 3, unaffected). Verified in the
+  `?perf` harness: Harpy Roost (cap 25) runs `timeScale 1` at ~2.5 engine rounds/sec
+  (was 5). No async seam, fully reversible — unlike Phase 4. (`useGameStore.ts`:
+  `HEAVY_FIELD_CAP`, `timeScaleFor`, the `everyTicks` gate in `advanceBattles`.)
 - **✅ Phase 2 — LOD tokens.** `BattleChip` drops its floating plate + facing/
   moving nubs (most per-token DOM) when zoomed past `LOD_CAM_SIZE` or with more
   than `LOD_TOKEN_COUNT` on-screen tokens (`Lod.test.tsx`).
@@ -735,9 +749,9 @@ Deferred / not worth it:
   subtree only renders ~5×/sec and most tokens change every round anyway.
 - **Phase 4 — run the sim in a Web Worker.** The highest ceiling, the most work.
   BSNAP tokens already make a battle worker-portable, so the engine compute can
-  move off the main thread (or, lighter: throttle the *watched* battle's sim rate
-  when entity count is high — off-screen battles are already rate-extrapolated).
-  Only reach for it if Phases 1–3 aren't enough. **Note (re: jerkiness):** the worker
+  move off the main thread. (The lighter sim-rate throttle is now **done** — Phase
+  1.2 above; off-screen battles are already rate-extrapolated.) Only reach for the
+  worker if Phases 1–3 + 1.1/1.2 aren't enough. **Note (re: jerkiness):** the worker
   attacks the *root* of the cadence jitter Phase 1.1 papers over — main-thread sim
   stalls (`advanceBattles` long-tasks: ~1.5s/5s under CPU-throttled mobile in the
   `?perf` harness) are what make round-render gaps irregular. Moving the sim off-thread
