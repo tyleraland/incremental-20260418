@@ -184,7 +184,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, onPanStart, onPanBy }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; onPanStart?: () => void; onPanBy?: (worldDx: number, worldDy: number) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -243,13 +243,30 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
     if (!d.moved && Math.hypot(dx, dy) > 6) {
       d.moved = true
       try { d.target.setPointerCapture(d.pointerId) } catch { /* noop in tests */ }
+      // Drag crossed the threshold → detach the camera to free-look (so it stops
+      // following the party and holds still under the finger for the rest of the drag).
+      onPanStart?.()
     }
     if (d.moved) setPan({ x: d.basePan.x + dx, y: d.basePan.y + dy })
   }
   const onPointerUp = (e: React.PointerEvent) => {
     pointersRef.current.delete(e.pointerId)
     if (pointersRef.current.size < 2) pinchRef.current = null
-    if (dragRef.current?.moved) suppressClickRef.current = true
+    const d = dragRef.current
+    if (d?.moved) {
+      suppressClickRef.current = true
+      // Commit the drag: turn the pixel nudge into a world-space camera move so it
+      // sticks (and survives the next round). Reset the pixel pan in the SAME tick —
+      // React batches this with the caller's manualCenter update, so the camera lands
+      // on the dragged-to spot with pan back at 0, no flicker.
+      const el = ref.current
+      if (onPanBy && el && el.clientWidth > 0) {
+        const cells = cam.size / el.clientWidth                 // world cells per pixel
+        const dx = e.clientX - d.startX, dy = e.clientY - d.startY
+        setPan({ x: 0, y: 0 })
+        onPanBy(-dx * cells, dy * cells)                        // screen y is flipped (+y up)
+      }
+    }
     dragRef.current = null
   }
 
@@ -314,7 +331,12 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
               backgroundImage:
                 'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
                 'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
-              backgroundSize: `${100 / cam.size}cqmin ${100 / cam.size}cqmin`,
+              // One cell = 1/mapCols of the layer (NOT cqmin/arena-relative). This
+              // makes the grid scale WITH the layer (and the barriers, also % of it)
+              // as it eases through a zoom — a cqmin size resolves against the arena,
+              // which doesn't transition, so the grid would snap-resize while the
+              // barriers eased, sliding the grid across the terrain.
+              backgroundSize: `${100 / mapCols}% ${100 / mapRows}%`,
             }}
           />
           {/* terrain: walls solid (block movement + sight); cliffs translucent +
@@ -1144,12 +1166,26 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
     if (focusUnitId && !battle.combatants.some((c) => c.id === focusUnitId && c.alive)) setBattleFollow(null)
   }, [battle, focusUnitId, setBattleFollow])
 
-  // Camera target controls (shared by the roster follow + minimap).
+  // Camera target controls (shared by the roster follow + minimap + drag-pan).
   const followUnit = (id: string) => { setBattleFollow(id); setManualCenter(null) }
   const resetToAuto = () => { setBattleFollow(null); setManualCenter(null); setManualZoom(false) }
   const onMinimapPick = (hit: MinimapPick) => {
+    // Free-looking holds its zoom (see effSize) — seed camSize to the current zoom
+    // so the view doesn't jump when the minimap drops us onto a point.
     if ('unitId' in hit) followUnit(hit.unitId)
-    else { setManualCenter(hit.point); setBattleFollow(null) }
+    else { setManualCenter(hit.point); setBattleFollow(null); setCamSize(cam.size) }
+  }
+  // Drag-pan (open-world): the first move freezes the camera where it is (stop
+  // following, hold zoom); each release shifts that free-look point by the dragged
+  // world delta. Center = the camera window's middle.
+  const camCenter = (): Vec2 => ({ x: cam.x + cam.size / 2, y: cam.y + cam.size / 2 })
+  const beginFreeLook = () => { setBattleFollow(null); setCamSize(cam.size); setManualCenter((c) => c ?? camCenter()) }
+  const panByWorld = (dx: number, dy: number) => {
+    setBattleFollow(null)
+    setManualCenter((c) => {
+      const base = c ?? camCenter()
+      return { x: Math.max(0, Math.min(cols, base.x + dx)), y: Math.max(0, Math.min(rows, base.y + dy)) }
+    })
   }
 
   const handleSelect = (c: Combatant) => {
@@ -1303,12 +1339,15 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   const focusUnit = focusUnitId ? battle.combatants.find((c) => c.id === focusUnitId && c.alive) : null
   const lookPts: Vec2[] | null = focusUnit ? [rpos(focusUnit)] : manualCenter ? [manualCenter] : null
   const followPts = lookPts ?? (partyPts.length ? partyPts : allPts)
-  // Zoom is sized on the followed hero (single-hero "Diablo cam") or the whole
-  // party — NEVER on a free-look point. A minimap tap only re-centers the camera;
-  // letting it drive the zoom too collapsed the view to a tight 15-cell window on
-  // the tapped (often empty) spot, leaving every unit clipped off-screen.
-  const sizePts = focusUnit ? [rpos(focusUnit)] : (partyPts.length ? partyPts : allPts)
-  const effSize = manualZoom ? camSize : autoFitSize(sizePts, cols, rows)
+  // Auto-fit the zoom ONLY while actually following the party — not while
+  // free-looking or following a single hero. Otherwise the view "breathes" in and
+  // out as the party spreads even though you're looking somewhere else (free-look
+  // taps a minimap point / pans the camera). Free-look and hero-follow hold a fixed
+  // zoom (camSize, seeded to the current zoom when that mode is entered).
+  const effSize = manualZoom ? camSize
+    : focusUnit ? autoFitSize([rpos(focusUnit)], cols, rows)   // tight, fixed single-hero cam
+    : manualCenter ? camSize                                    // free-look holds its zoom
+    : autoFitSize(partyPts.length ? partyPts : allPts, cols, rows)
   const cam = isOpen
     ? followCamera(followPts, cols, rows, effSize)
     : arenaCamera(cols, rows)
@@ -1442,7 +1481,9 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
           centerY={rows / 2}
           mapCols={cols}
           mapRows={rows}
-          panEnabled={!isOpen}
+          panEnabled
+          onPanStart={isOpen ? beginFreeLook : undefined}
+          onPanBy={isOpen ? panByWorld : undefined}
           panResetKey={isOpen ? camTargetKey : undefined}
           zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={isOpen ? (
