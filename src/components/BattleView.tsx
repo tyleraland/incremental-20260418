@@ -134,7 +134,14 @@ const SEG = `var(--seg-ms, ${CAM_MS}ms)`
 const CAM_TRANSITION = `left ${SEG} linear, top ${SEG} linear, width ${SEG} linear, height ${SEG} linear`
 // How much longer than the measured interval each glide runs: a hair of runway so a
 // momentarily-late round retargets a token while it's still moving, never parked.
-const CADENCE_RUNWAY = 1.7
+// DEV ?runway= overrides it for tuning sweeps (diag.spec).
+const DEV_RUNWAY = (() => {
+  if (typeof window === 'undefined') return undefined
+  const v = new URLSearchParams(window.location.search).get('runway')
+  const n = v ? Number(v) : NaN
+  return Number.isFinite(n) && n > 0 ? n : undefined
+})()
+const CADENCE_RUNWAY = DEV_RUNWAY ?? 1.7
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
