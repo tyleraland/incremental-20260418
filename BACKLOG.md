@@ -735,6 +735,55 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
     locks in one roster pass instead of one-per-crumble (was O(minions × N),
     `advanceRound`). Non-spatial, so the hash doesn't apply.
 
+### ✅ "Many entities" is RENDER-bound, not engine-bound — composited transforms (2026-06)
+
+A focused pass on the *many-entities* case (15 casters + 30–40 monsters = 40–57
+combatants), distinct from the fast-slow work above. **Finding: at 50+ entities
+the engine is cheap and the renderer is the bottleneck.** New harness
+(`e2e/many-entities.spec.ts` + `?heroes`/`?cap` on `perfSeed`) separates the two
+costs by pausing the store loop and timing raw `tick()` vs sampling rAF fps:
+
+- *Engine* (4× CPU, 57 combatants): mean **~6 ms/tick**, worst single tick (the one
+  running `advanceRound`) **~26 ms** — comfortably inside the 200 ms tick budget. So
+  the **Web Worker (Phase 4) is NOT the lever for this case**; it only matters for
+  far higher entity counts or to harden cadence under *engine* stalls.
+- *Render* was the cost: fps fell 43→**22** as on-screen tokens grew 8→57, with
+  uniformly low fps *between* rounds (not just at round boundaries) — the tell that
+  it's per-frame work, not React reconcile. Confirmed by probe: killing all CSS
+  transitions ~doubled fps.
+
+**Root cause: every per-round glide animated layout-/paint-triggering properties.**
+Tokens, ground hazards, terrain, the team-split, edge markers and the minimap box
+all eased `left`/`top`/`width`/`height`, and the grid eased `background-position` —
+each forces a full **layout** (or full-arena **repaint**) every animation frame, ×
+dozens of elements. **Fix: drive every per-round glide with `transform: translate`
+(compositor-only) instead.** `cqw`/`cqh` units resolve against the square
+size-container arena, so a world point maps to `translate(<pct>cqw, <pct>cqh)`
+(+ `calc(… - 50%)` for centred elements). The grid became a single **full-map**
+layer (`mapCols/mapRows` on `Arena`) translated with the camera, so its pattern is
+fixed and never repaints. Elements whose own keyframes animate `transform`
+(`BattleChip` spawn-pop, `Float` lob/fade) got an **outer position layer + inner
+keyframe layer** so the two transforms don't clash. (`BattleView.tsx`:
+`fxPct`/`fyPct`, `XFORM_TRANSITION`; the old `CAM_TRANSITION` is gone.)
+
+**Result (4× CPU mobile, 57 combatants): 22 → 46 fps (~2×)** — at the
+"transitions-off" ceiling, so the per-frame layout cost is essentially eliminated.
+Compositor motion also keeps overlays glued to their token **under main-thread
+jank** (a busy main thread stalls a left/top transition mid-glide → a label/zone
+visibly desyncs from its token — the reported "spell name drifts / AoE snaps to the
+right spot a beat later"). Still open if it shows on-device:
+
+- *Residual mount-snap.* A freshly-mounted overlay (cast label, zone, AoE ring)
+  appears at its final position instantly while already-mounted tokens glide in over
+  `--seg-ms` (up to 900 ms under load) → a one-segment misalignment. The clean fix is
+  to render a caster-anchored cast label as a **child of its `BattleChip`** (inherits
+  the chip's glide exactly, also cheaper) rather than as a separately-positioned
+  sibling — deferred (needs the dead/off-screen-caster fallback the sibling path has).
+- *Round-boundary reconcile.* The remaining long-tasks (~260–440 ms / 4 s) are the
+  per-round React re-render of 50+ tokens. The next ceiling if more headroom is
+  needed (fewer per-token nodes / a value-mirror memo — see the `React.memo` note
+  below for why a naive wrap doesn't work).
+
 Residual smoothness (after Phase 1.1, lower priority than throughput):
 
 - **Knockback reads as a lurch — it's a discrete multi-cell teleport.** Arrow

@@ -108,13 +108,19 @@ function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
 
 // Motion is CSS-transition-driven, not React-driven. The store advances one engine
 // round per tick (~5×/s), producing a fresh `battle` → BattleView re-renders → each
-// token's `left/top` (BattleChip `animatePos`) and every camera-following world
-// element (grid, barriers, zones, floats, … via CAM_TRANSITION) ease to their new
-// positions through a CSS `transition`. So a unit's render position IS its engine
-// round position — there's no per-frame rAF that re-renders the whole subtree just
-// to interpolate (the old hot path: ~60 renders/s on top of the ~5/s real ones).
-// Encounters always worked this way (static camera + animatePos); open-world now
-// matches, dropping the per-frame React churn that dominated the mobile profile.
+// token (BattleChip `animatePos`) and every camera-following world element (grid,
+// barriers, zones, floats, …) eases to its new position through a CSS `transition`.
+// So a unit's render position IS its engine round position — there's no per-frame
+// rAF that re-renders the whole subtree just to interpolate (the old hot path: ~60
+// renders/s on top of the ~5/s real ones). Encounters always worked this way (static
+// camera + animatePos); open-world now matches, dropping the per-frame React churn.
+//
+// The glide is driven by `transform: translate` (XFORM_TRANSITION), NOT left/top:
+// transform animates on the COMPOSITOR, while left/top forces a full layout every
+// frame — which, with dozens of tokens gliding at once, was the dominant mobile
+// render cost (measured ~2× fps at 50+ entities). Compositor motion also keeps
+// elements glued to each other under main-thread jank (a busy main thread stalls a
+// left/top transition mid-glide, so a label/zone visibly desyncs from its token).
 //
 // A linear transition a hair longer than the round interval means a token is still
 // gliding toward its last target when the next round retargets it — continuous
@@ -131,13 +137,23 @@ const CAM_MS = 400
 // useSmoothScene EMA win declaratively, without bringing back its per-frame rAF.
 // The `${CAM_MS}ms` fallback covers the first frame and the static world-map Arena.
 const SEG = `var(--seg-ms, ${CAM_MS}ms)`
-const CAM_TRANSITION = `left ${SEG} linear, top ${SEG} linear, width ${SEG} linear, height ${SEG} linear`
 // How much longer than the measured interval each glide runs: a hair of runway so a
 // momentarily-late round retargets a token while it's still moving, never parked.
 const CADENCE_RUNWAY = 1.7
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
+// Same mapping as px/py but as a bare number (percent of the square arena side).
+// Used to position elements via a `transform: translate(…cqw, …cqh)` instead of
+// left/top: cqw/cqh resolve against the size-container arena, and animating
+// `transform` runs the per-round glide on the COMPOSITOR. Animating left/top
+// instead forces a full layout every frame — the dominant cost once dozens of
+// tokens are gliding (measured: ~2× mobile fps at 50+ entities). Prefer this for
+// anything that glides every round (tokens, ground hazards, terrain).
+const fxPct = (cam: Cam, x: number) => ((x - cam.x) / cam.size) * 100
+const fyPct = (cam: Cam, y: number) => (1 - (y - cam.y) / cam.size) * 100
+// Transition that glides `transform` over the adaptive cadence (compositor, no layout).
+const XFORM_TRANSITION = `transform ${SEG} linear`
 
 // True when a world point is inside the camera viewport. Off-screen tokens are
 // clipped (not clamped to the rim, which made them pile up misleadingly in a
@@ -163,7 +179,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, panResetKey, panEnabled = true }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -262,23 +278,32 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
         {/* team-half tints, split at the arena's center line. The split eases with
             the camera (CSS) so it pans in sync with the tokens — the divs stay
             anchored to the viewport edges, so only the split line moves (no gap). */}
-        <div className="absolute inset-x-0 top-0 bg-red-500/10 pointer-events-none" style={{ height: `${centerTop}%`, transition: `height ${SEG} linear` }} />
-        <div className="absolute inset-x-0 bottom-0 bg-blue-500/10 pointer-events-none" style={{ top: `${centerTop}%`, transition: `top ${SEG} linear` }} />
+        <div className="absolute inset-0 origin-top bg-red-500/10 pointer-events-none" style={{ transform: `scaleY(${centerTop / 100})`, transition: `transform ${SEG} linear` }} />
+        <div className="absolute inset-0 origin-bottom bg-blue-500/10 pointer-events-none" style={{ transform: `scaleY(${(100 - centerTop) / 100})`, transition: `transform ${SEG} linear` }} />
         {/* faint grid — world-anchored: backgroundPosition tracks the camera so
             the squares stay fixed to the ground and the party visibly moves
             across them (lines land exactly on world-integer cell boundaries).
             Sized in cqmin so it scales with the (square) size-container arena. */}
+        {/* faint grid — a single FULL-MAP layer pinned to the world and slid with
+            the camera via a compositor `transform` (cells stay fixed to the ground;
+            the party visibly moves across them). Done this way, not by easing
+            `background-position`, because animating background-position repaints the
+            whole arena every frame — a major mobile cost once the camera is panning
+            each round. The layer spans the whole map, so its fixed pattern always
+            covers the viewport. backgroundSize is one world cell (cqmin = % of the
+            square arena). */}
         <div
-          className="absolute inset-0 opacity-40 pointer-events-none"
+          className="absolute opacity-40 pointer-events-none"
           style={{
+            left: 0, top: 0,
+            width: `${(mapCols / cam.size) * 100}%`,
+            height: `${(mapRows / cam.size) * 100}%`,
+            transform: `translate(${fxPct(cam, 0)}cqw, ${fyPct(cam, mapRows)}cqh)`,
             backgroundImage:
               'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
               'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
             backgroundSize: `${100 / cam.size}cqmin ${100 / cam.size}cqmin`,
-            backgroundPosition: `${(-cam.x / cam.size) * 100}cqmin ${(cam.y / cam.size) * 100}cqmin`,
-            // Ease the background scroll/zoom with the camera so the ground pans
-            // smoothly between rounds (the pattern repeats, so no edge gap).
-            transition: `background-position ${SEG} linear, background-size ${SEG} linear`,
+            transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear`,
           }}
         />
         {/* terrain: walls solid (block movement + sight); cliffs translucent +
@@ -291,7 +316,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
               className={isCliff
                 ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
                 : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
-              style={{ left: px(cam, b.x), top: py(cam, b.y + b.h), width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%`, transition: CAM_TRANSITION }}
+              style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, b.x)}cqw, ${fyPct(cam, b.y + b.h)}cqh)`, width: `${(b.w / cam.size) * 100}%`, height: `${(b.h / cam.size) * 100}%`, transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }}
             />
           )
         })}
@@ -454,30 +479,39 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
 function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale, detail }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number; detail: boolean }) {
   const isPlayer = c.team === 'player'
   const casting = c.alive && !!c.channel
+  // Outer layer owns ONLY the world position, glided via a compositor transform
+  // (no layout per frame). The inner layer keeps the spawn pop + centering (which
+  // own `transform` themselves — keeping them off the positioned element avoids a
+  // transform clash). data-cid/data-chip ride the inner box so its bounding rect
+  // is the token circle (what the jerk harness samples).
   return (
     <div
-      onClick={onSelect}
-      data-chip
-      data-cid={c.id}
-      className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
-      style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? `left ${SEG} linear, top ${SEG} linear` : undefined }}
+      className="absolute"
+      style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, insetX(cam, pos.x))}cqw, ${fyPct(cam, insetY(cam, pos.y))}cqh)`, transition: animatePos ? XFORM_TRANSITION : undefined }}
     >
-      {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
-      {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
-      {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
       <div
-        title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
-        style={chipDims(cam)}
-        className={[
-          'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
-          casting ? 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100'
-            : isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50'
-                       : 'bg-red-900  border-red-300/80  text-red-50',
-          selected ? 'ring-2 ring-emerald-300' : '',
-          c.alive ? '' : 'opacity-25 grayscale',
-        ].join(' ')}
+        onClick={onSelect}
+        data-chip
+        data-cid={c.id}
+        className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       >
-        {c.alive ? glyph : '✕'}
+        {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
+        {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
+        {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
+        <div
+          title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
+          style={chipDims(cam)}
+          className={[
+            'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
+            casting ? 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100'
+              : isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50'
+                         : 'bg-red-900  border-red-300/80  text-red-50',
+            selected ? 'ring-2 ring-emerald-300' : '',
+            c.alive ? '' : 'opacity-25 grayscale',
+          ].join(' ')}
+        >
+          {c.alive ? glyph : '✕'}
+        </div>
       </div>
     </div>
   )
@@ -497,7 +531,7 @@ function EdgeMarker({ c, pos, cam }: { c: Combatant; pos: Vec2; cam: Cam }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI
   return (
-    <div className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-0.5" style={{ left: `${bx * 100}%`, top: `${by * 100}%`, transition: `left ${SEG} linear, top ${SEG} linear` }}>
+    <div className="absolute flex items-center gap-0.5" style={{ left: 0, top: 0, transform: `translate(calc(${bx * 100}cqw - 50%), calc(${by * 100}cqh - 50%))`, transition: XFORM_TRANSITION }}>
       <div
         title={`${c.name} — ${Math.ceil(c.hp)}/${c.maxHp} (off-screen)`}
         className={`w-6 h-6 rounded-full bg-blue-900/90 border-2 flex items-center justify-center text-[8px] font-bold text-blue-50 shadow ${ratio >= 0.75 ? 'border-emerald-300/80' : ratio >= 0.4 ? 'border-amber-300/80' : 'border-red-300/80'}`}
@@ -514,9 +548,14 @@ function EdgeMarker({ c, pos, cam }: { c: Combatant; pos: Vec2; cam: Cam }) {
 // float for labels (rally / tactic / aggro). The arc transform is baked into the
 // keyframes, so the Tailwind centering classes only matter before it kicks in.
 function Float({ cam, pos, className, text, k, anim = 'animate-dmg-float' }: { cam: Cam; pos: Vec2; className: string; text: string; k: string; anim?: string }) {
+  // Outer = world position glided via a compositor transform (no per-frame layout);
+  // inner owns the lob/fade keyframe (which animates `transform` itself, so it can't
+  // share the positioned element). The keyframe's translate(-50%,…) base centres it.
   return (
-    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow whitespace-nowrap ${anim} ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: `left ${SEG} linear, top ${SEG} linear` }}>
-      {text}
+    <div key={k} className="absolute" style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, insetX(cam, pos.x))}cqw, ${fyPct(cam, insetY(cam, pos.y))}cqh)`, transition: XFORM_TRANSITION }}>
+      <div className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow whitespace-nowrap ${anim} ${className}`}>
+        {text}
+      </div>
     </div>
   )
 }
@@ -931,7 +970,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       ))}
       {/* current camera window — eases with the camera so the radar box tracks the
           smooth pan instead of stepping per round */}
-      <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: mx(cam.x), top: my(cam.y + cam.size), width: (cam.size / cols) * w, height: (cam.size / rows) * h, transition: CAM_TRANSITION }} />
+      <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: 0, top: 0, transform: `translate(${mx(cam.x)}px, ${my(cam.y + cam.size)}px)`, width: (cam.size / cols) * w, height: (cam.size / rows) * h, transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }} />
       {battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => (
         <div key={c.id} className="absolute w-1 h-1 rounded-full bg-red-400/90 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: mx(c.pos.x), top: my(c.pos.y) }} />
       ))}
@@ -991,7 +1030,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   // Adaptive motion cadence. Each round we measure the real wall-clock gap since the
   // last round-render, EMA-smooth it (per-tick load makes the raw gap jitter), and
   // publish it as the `--seg-ms` CSS var that drives every positional transition (see
-  // SEG/CAM_TRANSITION). Written imperatively on the arena wrapper so it costs no
+  // SEG/XFORM_TRANSITION). Written imperatively on the arena wrapper so it costs no
   // React re-render — the read seam is pure CSS inheritance. arenaWrapRef is an
   // ancestor of the tokens + camera elements, so the var reaches them all.
   const arenaWrapRef = useRef<HTMLDivElement>(null)
@@ -1342,6 +1381,8 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
           cam={cam}
           barriers={battle.barriers}
           centerY={rows / 2}
+          mapCols={cols}
+          mapRows={rows}
           panEnabled={!isOpen}
           panResetKey={isOpen ? camTargetKey : undefined}
           zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
@@ -1356,8 +1397,8 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
           {battle.zones.map((z) => (
             <div
               key={z.id}
-              className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
-              style={{ left: px(cam, z.pos.x), top: py(cam, z.pos.y), width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%`, transition: CAM_TRANSITION }}
+              className="absolute rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
+              style={{ left: 0, top: 0, transform: `translate(calc(${fxPct(cam, z.pos.x)}cqw - 50%), calc(${fyPct(cam, z.pos.y)}cqh - 50%))`, width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%`, transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }}
             />
           ))}
 
@@ -1368,12 +1409,12 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
               key={w.id}
               className="absolute rounded-sm bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)] animate-pulse pointer-events-none"
               style={{
-                left: px(cam, w.pos.x),
-                top: py(cam, w.pos.y),
+                left: 0,
+                top: 0,
                 width: `${(2 * w.half / cam.size) * 100}%`,
                 height: `${(0.5 / cam.size) * 100}%`,
-                transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
-                transition: `left ${SEG} linear, top ${SEG} linear`,
+                transform: `translate(calc(${fxPct(cam, w.pos.x)}cqw - 50%), calc(${fyPct(cam, w.pos.y)}cqh - 50%)) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
+                transition: XFORM_TRANSITION,
               }}
             />
           ))}
@@ -1414,8 +1455,8 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
             return (
               <div
                 key={`cl-${sourceId}`}
-                className="absolute -translate-x-1/2 flex flex-col-reverse items-center gap-0.5 pointer-events-none"
-                style={{ left: px(cam, insetX(cam, sp.x)), top: py(cam, insetY(cam, sp.y)), transform: 'translate(-50%, -150%)', transition: `left ${SEG} linear, top ${SEG} linear` }}
+                className="absolute flex flex-col-reverse items-center gap-0.5 pointer-events-none"
+                style={{ left: 0, top: 0, transform: `translate(calc(${fxPct(cam, insetX(cam, sp.x))}cqw - 50%), calc(${fyPct(cam, insetY(cam, sp.y))}cqh - 150%))`, transition: XFORM_TRANSITION }}
               >
                 {labels.map((l) => (
                   <span key={l.id} className="px-1 rounded bg-black/45 text-amber-200 text-[10px] font-semibold leading-tight whitespace-nowrap drop-shadow animate-cast-label">

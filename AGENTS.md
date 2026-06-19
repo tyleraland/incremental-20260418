@@ -57,7 +57,7 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 - No standalone Combat tab: `mapMode` is `'world'` | `'battle'`. `BattleView` is the drop-in viewer for `combatLocationId`. `RosterCarousel` stays pinned across both (scopes to the battlefield's heroes in battle mode and drives camera follow via `battleFollowId`).
 - Drop in: double-tap a location or the **Drop in ›** button (`enterBattleView`); **⤢ Overworld** exits (`exitBattleView`).
 - Only the *watched* battle full-sims per tick; others advance off-screen via `creditOffscreen` (rate extrapolation every `OFFSCREEN_CREDIT_TICKS`=25). World mode + tests full-sim every location.
-- Motion rides CSS transitions (no rAF loop). Combatants mutate in place, so `BattleChip` is **not** `React.memo`'d. **LOD**: `BattleChip` drops its label/nubs past `LOD_CAM_SIZE`=18 cells or >`LOD_TOKEN_COUNT`=16 on-screen tokens.
+- Motion rides CSS transitions (no rAF loop), glided via **compositor `transform: translate`** (cqw/cqh against the square size-container arena), never `left`/`top` — animating left/top forces a per-frame layout and tanks fps once many tokens glide (many-entities is render-bound, not engine-bound; see BACKLOG → Performance). Combatants mutate in place, so `BattleChip` is **not** `React.memo`'d. **LOD**: `BattleChip` drops its label/nubs past `LOD_CAM_SIZE`=18 cells or >`LOD_TOKEN_COUNT`=16 on-screen tokens.
 
 ## Offline progression (`src/lib/offline.ts`)
 `catchUp` (`App.tsx`) → `batchTick(n)` for `n>10`. Does **not** re-simulate combat; **extrapolates rewards from realized rates**.
