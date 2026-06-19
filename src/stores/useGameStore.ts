@@ -275,10 +275,20 @@ const DEV_DECIDE      = devNum('decide')   // re-decide targeting/planner every 
 // (from the cap at creation) so timeScale never thrashes mid-battle and snapshot
 // replays stay byte-identical. DEV `?hts=`/`?hevery=`/`?ts=` override for tuning sweeps.
 const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs the trade
+// Heavy fields run at FULL pace (one round every tick) but re-decide targeting +
+// the team planner only every DECISION_INTERVAL_HEAVY engine rounds — units execute
+// their committed lock/movement in between. This kills the fast-slow jerk without
+// slowing combat (the big finding from the decision-throttle exploration). ~1/sec
+// at 5 rounds/sec. Normal fields re-decide every round (responsive at small scale).
+const DECISION_INTERVAL_HEAVY = 5
 function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
-  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? 2 }
+  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? 1 }
   return { timeScale: DEV_BASE_TS ?? ROUND_TIME_SCALE, everyTicks: ROUND_EVERY_TICKS }
+}
+function decisionIntervalFor(loc: Location): number {
+  const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
+  return heavy ? DECISION_INTERVAL_HEAVY : 1
 }
 // Off-screen / offline simulation budgets are centralized in `@/lib/sampling`
 // (SAMPLING) — the one place to tune cost-vs-fidelity. SAMPLING.offscreenCreditTicks
@@ -482,7 +492,7 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   const size = openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
   const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? 1 })
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? decisionIntervalFor(loc) })
   party.forEach((u, i) => {
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
     const cinp = companionToEngineInput(u)
