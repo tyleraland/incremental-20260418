@@ -97,3 +97,4 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 - Develop on a feature branch; **merge to `main` when a feature is complete** (`git merge --ff-only <branch> && git push origin main`) — `main` is what gets browser-tested. Don't wait to be asked.
 - After pushing to `main`, include the commit hash in the chat reply.
 - Open PRs auto-deploy to `https://tyleraland.github.io/incremental-20260418/pr-preview/pr-<N>/` (`pr-preview.yml`); share the exact URL.
+- When a turn leaves work on an open PR, end the reply with that preview link — unless it isn't ready yet (CI/Pages deploy still building, or the change can't be exercised in-browser), in which case say so instead.
