@@ -229,7 +229,7 @@ function ConfirmPanel({ message, cancelLabel, confirmLabel, onCancel, onConfirm,
   )
 }
 
-function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
+export function ClassQuestRow({ q, onGoto }: { q: ClassChangeQuestDef; onGoto?: () => void }) {
   const units              = useGameStore((s) => s.units)
   const selectedUnitIds    = useGameStore((s) => s.selectedUnitIds)
   const unitStats          = useGameStore((s) => s.unitStats)
@@ -373,6 +373,11 @@ function ClassQuestRow({ q }: { q: ClassChangeQuestDef }) {
                 onConfirm={() => { cancelClassQuest(q.id); setConfirmCancel(false) }}
               />
             )}
+            {onGoto && (
+              <button onClick={onGoto} aria-label={`Go to ${q.title}`} className="w-full text-[11px] px-3 py-1.5 rounded-md border border-game-primary/40 text-game-primary/90 hover:bg-game-primary/10 transition-colors">
+                Go to location ›
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -394,7 +399,7 @@ function ClassQuestBoard({ location }: { location: Location }) {
 }
 
 // ── Location bounty board (hero-less, chained) ───────────────────────────────--
-function BountyRow({ def }: { def: BountyDef }) {
+export function BountyRow({ def, onGoto }: { def: BountyDef; onGoto?: () => void }) {
   const unitStats       = useGameStore((s) => s.unitStats)
   const monsterDefeated = useGameStore((s) => s.monsterDefeated)
   const questItems      = useGameStore((s) => s.questItems)
@@ -480,6 +485,11 @@ function BountyRow({ def }: { def: BountyDef }) {
                 onCancel={() => setConfirm(false)}
                 onConfirm={() => { completeBounty(def.id); setConfirm(false); setOpen(false) }}
               />
+            )}
+            {onGoto && (
+              <button onClick={onGoto} aria-label={`Go to ${def.title}`} className="w-full text-[11px] px-3 py-1.5 rounded-md border border-game-primary/40 text-game-primary/90 hover:bg-game-primary/10 transition-colors">
+                Go to location ›
+              </button>
             )}
           </div>
         </div>

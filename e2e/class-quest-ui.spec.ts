@@ -219,15 +219,54 @@ test('quest journal: filter + go to location', async ({ page }, testInfo) => {
   await expect(journal.getByText("Trapper's Order").first()).toBeVisible()
   await shot('02-guild-only')
 
-  // Filter back to hero quests and jump to a class path's city (the journal closes
-  // and the map focuses Prontera, where the quest's row lives).
+  // Filter back to hero quests. The journal rows are the real interactive quest
+  // rows: expand one inline, see its objective/reward, then jump to its city.
   await journal.getByRole('button', { name: '◈ Hero', exact: true }).click()
   await page.waitForTimeout(200)
+  await journal.getByRole('button', { name: /Path of the Fighter/ }).first().click()   // expand inline
+  await page.waitForTimeout(200)
+  await expect(journal.getByText('become a Fighter').first()).toBeVisible()
+  await shot('03-inline-expand')
+  // "Go to location" (inside the expanded row) closes the journal and focuses Prontera.
   await journal.getByRole('button', { name: 'Go to Path of the Fighter' }).click()
   await page.waitForTimeout(400)
   await expect(page.getByTestId('quest-journal')).toHaveCount(0)
   const loc = await page.evaluate(() => (window as unknown as { __game: { getState: () => { selectedLocationId: string | null } } }).__game.getState().selectedLocationId)
   expect(loc).toBe('prontera-city')
+})
+
+test('quest journal: redeem a bounty inline (one-stop shop)', async ({ page }, testInfo) => {
+  const proj = testInfo.project.name
+  const shot = (n: string) => page.screenshot({ path: `e2e/__shots__/journal-redeem-${proj}-${n}.png` })
+
+  await page.goto(BASE)
+  await page.getByRole('button', { name: 'Settings', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+  await page.waitForTimeout(1500)
+
+  // Stock 30 Boar Hides so Boar Meadow's "Trapper's Order" (hand in 20) is ready.
+  await page.evaluate(() => {
+    const store = (window as unknown as { __game: { setState: (s: object) => void } }).__game
+    store.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 30 }] })
+  })
+
+  // Open the journal and redeem the bounty WITHOUT visiting the location.
+  await page.getByRole('button', { name: 'Quests', exact: true }).click()
+  const journal = page.getByTestId('quest-journal')
+  await expect(journal).toBeVisible()
+  await journal.getByRole('button', { name: /Trapper's Order/ }).click()        // expand inline
+  await journal.getByRole('button', { name: /Hand in 20 Boar Hides/ }).click()
+  await journal.getByRole('button', { name: 'Hand in', exact: true }).click()
+  await page.waitForTimeout(300)
+  await shot('01-redeemed')
+
+  // Reward paid, hides consumed — all from the journal; the follow-up now surfaces.
+  const r = await page.evaluate(() => {
+    const g = (window as unknown as { __game: { getState: () => { miscItems: { id: string; quantity: number }[] } } }).__game.getState()
+    return { hides: g.miscItems.find((m) => m.id === 'drop-boar-hide')?.quantity ?? 0, gold: g.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0 }
+  })
+  expect(r.hides).toBe(10)   // 30 − 20
+  expect(r.gold).toBe(200)
+  await expect(journal.getByText("Tannery's Bulk Order").first()).toBeVisible()
 })
 
 test('world map shows a (?) on locations with rewards ready', async ({ page }, testInfo) => {

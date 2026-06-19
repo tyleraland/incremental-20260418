@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore } from '@/stores/useGameStore'
-import { useProtoStore, buildQuestBoard, type QuestBoardEntry, type BoardStatus } from './protoStore'
+import {
+  useProtoStore, buildQuestBoard, CLASS_CHANGE_QUESTS, LOCATION_BOUNTIES,
+  type QuestBoardEntry, type BoardStatus, type BountyDef,
+} from './protoStore'
+import { ClassQuestRow, BountyRow } from './LocationDetail'
 
 // ── Quest Journal ─────────────────────────────────────────────────────────────
 //
@@ -50,36 +54,41 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   )
 }
 
-function QuestRow({ e, onGoto }: { e: QuestBoardEntry; onGoto: (e: QuestBoardEntry) => void }) {
-  const m = STATUS_META[e.status]
+// An upcoming bounty whose prerequisites aren't met yet — read-only preview (the
+// interactive BountyRow would wrongly offer a claim). Shows what unlocks it.
+function LockedQuestPreview({ e, def }: { e: QuestBoardEntry; def: BountyDef }) {
+  const prereqNames = (def.requires ?? [])
+    .map((id) => LOCATION_BOUNTIES.find((b) => b.id === id)?.title ?? id)
   return (
-    <div className="rounded-md border border-game-border bg-game-bg px-2 py-1.5 flex items-center gap-2">
-      <span className={['w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none shrink-0', m.icon].join(' ')}>{m.glyph}</span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-game-text truncate">{e.title}</span>
-          {e.repeatable && <span className="text-[9px] text-game-accent shrink-0" title="Repeatable">↻</span>}
-          {e.completions > 0 && <span className="text-[9px] text-game-green shrink-0" title="Times completed">✓{e.completions}</span>}
-        </div>
-        <div className="text-[10px] text-game-text-dim truncate">
-          {e.locationName} · {e.objectiveLabel}{e.status === 'not-yet' ? '' : ` (${e.progress}/${e.target})`}
-          {e.rewardText ? <span className="text-game-gold"> · {e.rewardText}</span> : null}
-        </div>
+    <div className="rounded-md border border-game-border bg-white/[0.02] px-2 py-1.5">
+      <div className="flex items-center gap-2">
+        <span className="w-5 h-5 rounded-full border border-game-border text-game-muted flex items-center justify-center text-[11px] font-bold leading-none shrink-0">…</span>
+        <span className="text-xs text-game-muted flex-1 truncate">{def.title}</span>
+        <span className="text-[9px] text-game-muted shrink-0 uppercase tracking-wider">locked</span>
       </div>
-      {/* hero-specific → hero chip (or "Novice" when unclaimed); guild-wide → Guild tag */}
-      {e.scope === 'hero'
-        ? <span className={['shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border', e.heroName ? 'border-game-gold/50 bg-game-gold/10 text-game-gold' : 'border-game-border text-game-muted'].join(' ')}>
-            <span aria-hidden>{e.heroName ? '◈' : '·'}</span>{e.heroName ? e.heroName.split(' ')[0] : 'Novice'}
-          </span>
-        : <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-text-dim">⌂ Guild</span>}
-      <button
-        onClick={() => onGoto(e)}
-        title={`Go to ${e.locationName}`}
-        aria-label={`Go to ${e.title}`}
-        className="shrink-0 text-[11px] px-2 py-1 rounded-md border border-game-primary/50 text-game-primary hover:bg-game-primary/15 transition-colors"
-      >Go ›</button>
+      <div className="text-[10px] text-game-muted truncate pl-7 mt-0.5">
+        {e.objectiveLabel}{e.rewardText ? <span className="text-game-gold/70"> · {e.rewardText}</span> : null}
+      </div>
+      {prereqNames.length > 0 && (
+        <div className="text-[10px] text-game-muted italic pl-7 mt-0.5">Unlocks after: {prereqNames.join(', ')}</div>
+      )}
     </div>
   )
+}
+
+// One journal entry → the *real* interactive row for its quest (class-change path
+// or location bounty), so commit / progress / redeem all happen right here. The
+// only exception is an upcoming (locked) bounty, which gets a read-only preview.
+function JournalEntry({ e, onGoto }: { e: QuestBoardEntry; onGoto: (e: QuestBoardEntry) => void }) {
+  if (e.kind === 'class') {
+    const def = CLASS_CHANGE_QUESTS.find((q) => q.id === e.id)
+    if (!def) return null
+    return <ClassQuestRow q={def} onGoto={() => onGoto(e)} />
+  }
+  const def = LOCATION_BOUNTIES.find((b) => b.id === e.id)
+  if (!def) return null
+  if (e.status === 'not-yet') return <LockedQuestPreview e={e} def={def} />
+  return <BountyRow def={def} onGoto={() => onGoto(e)} />
 }
 
 export function QuestJournal({ onClose, onGoto }: { onClose: () => void; onGoto: (e: QuestBoardEntry) => void }) {
@@ -152,7 +161,7 @@ export function QuestJournal({ onClose, onGoto }: { onClose: () => void; onGoto:
             {grouped && (
               <div className="text-[10px] uppercase tracking-widest text-game-text-dim px-1 pt-1">{g.name} <span className="text-game-muted normal-case tracking-normal">({g.entries.length})</span></div>
             )}
-            {g.entries.map((e) => <QuestRow key={e.id} e={e} onGoto={onGoto} />)}
+            {g.entries.map((e) => <JournalEntry key={e.id} e={e} onGoto={onGoto} />)}
           </div>
         ))}
       </div>
