@@ -1157,7 +1157,6 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   // free-look point so the camera snaps to the chosen hero.
   useEffect(() => {
     if (focusUnitId) setManualCenter(null)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusUnitId])
 
   // Drop a stale follow when the followed hero dies / leaves the field, so the
@@ -1210,7 +1209,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
     setSnapshot(live)
     snapshotWaveRef.current = battle.combatants
   // fire on each new request nonce
-  }, [inspectRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [inspectRequest?.nonce])
 
   // External "dismiss the card" signal (e.g. a roster tap that also selects a
   // hero). Bumped nonce → close; skip the initial value so it doesn't fire on mount.

@@ -351,7 +351,7 @@ export function ProtoApp() {
     }, 0)
     return () => clearTimeout(id)
   // run once on mount
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // Single-tap: quiet select — change the active hero WITHOUT moving the camera
   // or the focused location, so you can pick someone to deploy/compare while

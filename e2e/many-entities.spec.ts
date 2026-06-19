@@ -79,7 +79,6 @@ async function sampleEngine(page: import('@playwright/test').Page) {
 test('many-entities: engine vs render cost sweep', async ({ page, browserName }, testInfo) => {
   test.setTimeout(300_000)
   const throttle = testInfo.project.name.startsWith('mobile') && browserName === 'chromium'
-  // eslint-disable-next-line no-console
   console.log(`\n[many] sweep on ${testInfo.project.name}${throttle ? ' (4x CPU)' : ''}\n`)
   for (const s of SCENARIOS) {
     await page.goto(`/?perf=1&heroes=${s.heroes}&cap=${s.cap}`)
@@ -93,7 +92,6 @@ test('many-entities: engine vs render cost sweep', async ({ page, browserName },
 
     const render = await sampleRender(page, SAMPLE_MS)
     const engine = await sampleEngine(page)
-    // eslint-disable-next-line no-console
     console.log(
       `[many] heroes=${s.heroes} cap=${s.cap} → ents=${engine.ents}  ` +
         `ENGINE mean=${engine.meanTickMs.toFixed(1)}ms p50=${engine.p50TickMs.toFixed(1)} max=${engine.maxTickMs.toFixed(1)}  ` +

@@ -1047,7 +1047,7 @@ export function ProtoLens() {
   // same rule as the production unit detail (re-fires when the level changes).
   useEffect(() => {
     if (top === 'hero' && unit) markUnitViewed(unit.id)
-  }, [top, unit?.id, unit?.level, markUnitViewed]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [top, unit?.id, unit?.level, markUnitViewed])
 
   // Party = the party currently on the focused battlefield (empty → matrix shows
   // a prompt to deploy / focus a location).

@@ -266,7 +266,6 @@ function PannableWorld({ pageId, locations, units }: { pageId: string; locations
       x: rect.width  / 2 - cellCenterX(c[0]),
       y: rect.height / 2 - cellCenterY(c[1]),
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapFocusNonce])
 
   // Pointer capture only kicks in once the pointer has actually moved past the

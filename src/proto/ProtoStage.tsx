@@ -225,13 +225,13 @@ export function ProtoStage() {
     const c = LOCATION_COORDS[focusLoc.id]; if (!c) return
     setFocus({ x: worldX(c), y: worldY(c) }); setDrag({ x: 0, y: 0 })
     setCombatLocation(focusLoc.id)
-  }, [focusLoc?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [focusLoc?.id])
 
   // Honour cross-component zoom requests (initial battlefield, roster pick).
   const zoomRequest = useProtoStore((s) => s.zoomRequest)
   useEffect(() => {
     if (zoomRequest) animateZoomTo(zoomRequest.level)
-  }, [zoomRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoomRequest?.nonce])
 
 
   // Native non-passive wheel listener so we can preventDefault (page-scroll) and

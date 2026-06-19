@@ -79,7 +79,6 @@ async function measure(page: import('@playwright/test').Page) {
 test('jerk sweep: slower-rounds lever', async ({ page, browserName }, testInfo) => {
   test.setTimeout(180_000)
   const throttle = testInfo.project.name.startsWith('mobile') && browserName === 'chromium'
-  // eslint-disable-next-line no-console
   console.log(`\n[jerk] sweep on ${testInfo.project.name}${throttle ? ' (4x CPU)' : ''} — lower medianCoV = smoother\n`)
   for (const s of SWEEP) {
     await page.goto(`/?perf=1&hts=${s.hts}&hevery=${s.hevery}`)
@@ -91,7 +90,6 @@ test('jerk sweep: slower-rounds lever', async ({ page, browserName }, testInfo) 
     await page.waitForFunction(() => document.querySelectorAll('[data-cid]').length > 10, { timeout: 30_000 })
     await page.waitForTimeout(SETTLE_MS)
     const m = await measure(page)
-    // eslint-disable-next-line no-console
     console.log(
       `[jerk] hts=${s.hts} hevery=${s.hevery}  ` +
         `CoV=${m.medianCoV.toFixed(3)}  speed=${m.medianSpeedPxS.toFixed(1)}px/s  ` +

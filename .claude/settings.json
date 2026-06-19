@@ -3,6 +3,19 @@
     "deny": ["mcp__chrome-devtools"]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"${CLAUDE_PROJECT_DIR:-/home/user/incremental-20260418}\" 2>/dev/null && [ -f package.json ] && { [ -d node_modules ] || npm ci; npx playwright install chromium; } >/dev/null 2>&1; true",
+            "async": true,
+            "timeout": 600,
+            "statusMessage": "Preparing deps + Playwright Chromium (perf harness)"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",

@@ -69,7 +69,6 @@ test('heavy open-world battle: frame rate + visual', async ({ page, browserName 
   await testInfo.attach('battle.png', { body, contentType: 'image/png' })
 
   const m = await sampleRuntime(page, SAMPLE_MS)
-  // eslint-disable-next-line no-console
   console.log(`[perf] ${m.fps.toFixed(1)} fps over ${m.seconds.toFixed(1)}s · ` +
     `longtasks ${m.longTaskCount} (${m.longTaskMs.toFixed(0)}ms) · arena DOM nodes ${m.arenaNodes}`)
   await testInfo.attach('metrics.json', { body: JSON.stringify(m, null, 2), contentType: 'application/json' })

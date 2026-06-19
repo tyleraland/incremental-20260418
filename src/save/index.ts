@@ -15,7 +15,6 @@ import { socketsCodec }     from './socketsCodec'
 
 export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec, unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ALL_CODECS: SliceCodec<any>[] = [
   unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec,
   unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec,

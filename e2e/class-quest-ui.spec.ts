@@ -9,7 +9,6 @@ import { test, expect } from '@playwright/test'
 
 const BASE = '/incremental-20260418/'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const G = (page: import('@playwright/test').Page, fn: string) => page.evaluate(fn)
 
 test('city/dungeon/lens chrome tweaks', async ({ page }, testInfo) => {

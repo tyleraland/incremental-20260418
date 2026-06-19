@@ -29,7 +29,6 @@ export function makeCodec<T>(config: SliceCodec<T>) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function saveGame(state: GameState, codecs: SliceCodec<any>[]): string {
   const slices: Record<string, { v: number; d: unknown }> = {}
   for (const codec of codecs) {
@@ -39,7 +38,6 @@ export function saveGame(state: GameState, codecs: SliceCodec<any>[]): string {
   return `v1:${btoa(JSON.stringify(envelope))}`
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function loadGame(str: string, codecs: SliceCodec<any>[]): Partial<GameState> {
   try {
     if (!str.startsWith('v1:')) return {}

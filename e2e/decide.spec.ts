@@ -69,7 +69,6 @@ async function measure(page: import('@playwright/test').Page) {
 test('decision-throttle sweep (full-pace render)', async ({ page, browserName }, testInfo) => {
   test.setTimeout(180_000)
   const throttle = testInfo.project.name.startsWith('mobile') && browserName === 'chromium'
-  // eslint-disable-next-line no-console
   console.log(`\n[decide] sweep on ${testInfo.project.name}${throttle ? ' (4x CPU)' : ''} — lower CoV = smoother, higher fps = cheaper AI\n`)
   for (const s of SWEEP) {
     await page.goto(`/?perf=1&hts=2&hevery=1&decide=${s.decide}`)
@@ -81,7 +80,6 @@ test('decision-throttle sweep (full-pace render)', async ({ page, browserName },
     await page.waitForFunction(() => document.querySelectorAll('[data-cid]').length > 10, { timeout: 30_000 })
     await page.waitForTimeout(SETTLE_MS)
     const m = await measure(page)
-    // eslint-disable-next-line no-console
     console.log(
       `[decide] decide=${String(s.decide).padStart(2)}  CoV=${m.medianCoV.toFixed(3)}  ` +
         `speed=${m.medianSpeedPxS.toFixed(1)}px/s  fps=${m.fps.toFixed(0)}  tokens=${m.movingTokens}   · ${s.note}`,

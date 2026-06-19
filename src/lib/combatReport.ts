@@ -19,7 +19,6 @@ export type CombatReportWindow = { kind: 'ever' }
 export function getLocationCombatReport(
   stats: LocationCombatStats | undefined,
   currentTick: number,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _window: CombatReportWindow = { kind: 'ever' },
 ): LocationCombatReport {
   if (!stats) {
