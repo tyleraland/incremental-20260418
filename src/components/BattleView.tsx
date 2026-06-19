@@ -458,6 +458,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
     <div
       onClick={onSelect}
       data-chip
+      data-cid={c.id}
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
       style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? `left ${SEG} linear, top ${SEG} linear` : undefined }}
     >

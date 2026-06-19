@@ -245,6 +245,20 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 // sim finer/smoother at the same pace (it's the lever to tune feel).
 const ROUND_TIME_SCALE    = 2    // engine rounds per logical round (finer = smoother)
 const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (~200ms/round at scale 2)
+
+// DEV-only cadence overrides for the "slower rounds" exploration. `?hts=N` sets the
+// heavy-field timeScale (granularity: higher = smaller steps), `?hevery=M` the ticks
+// between its rounds (tempo/CPU), `?ts=N` the base (non-heavy) timeScale. Read once at
+// module load; absent in prod builds. Lets a Playwright sweep A/B the lever without a
+// recompile. See e2e/jerk.spec.ts.
+function devNum(key: string): number | null {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return null
+  const v = new URLSearchParams(window.location.search).get(key)
+  return v != null && +v >= 1 ? Math.floor(+v) : null
+}
+const DEV_HEAVY_TS    = devNum('hts')
+const DEV_HEAVY_EVERY = devNum('hevery')
+const DEV_BASE_TS     = devNum('ts')
 // Sim-rate throttle for large open-world fields. The watched battle is the only one
 // full-simmed, and on mobile a crowded field's per-tick `advanceRound` is what
 // overruns the frame budget (long-tasks → irregular round cadence → choppiness). For
@@ -445,7 +459,8 @@ function spawnMonsterInto(battle: BattleState, loc: Location, size: number): str
 // same pace (the sim-rate throttle — see HEAVY_FIELD_CAP). `advanceBattles` derives
 // the matching step cadence (`everyTicks`) back out of the battle's timeScale.
 function timeScaleFor(loc: Location): number {
-  return loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP ? 1 : ROUND_TIME_SCALE
+  if (loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP) return DEV_HEAVY_TS ?? 1
+  return DEV_BASE_TS ?? ROUND_TIME_SCALE
 }
 
 // Stand up a fresh persistent battle on the location's (large) open-world map:
@@ -1028,7 +1043,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // ticks; the finer default every tick. `everyTicks × timeScale` = ROUND_TIME_SCALE
       // keeps the real-time pace identical (see HEAVY_FIELD_CAP). Spawn trickle and
       // hero reconcile still run every tick above — only the costly round is paced.
-      const everyTicks = Math.max(1, Math.round(ROUND_TIME_SCALE / (battle.timeScale || ROUND_TIME_SCALE)))
+      const everyTicks = DEV_HEAVY_EVERY ?? Math.max(1, Math.round(ROUND_TIME_SCALE / (battle.timeScale || ROUND_TIME_SCALE)))
       if (advance && newTicks % everyTicks === 0) {
         // Clear out enemy corpses from prior rounds before this one resolves —
         // a persistent battle never resets, so without this the combatant list
