@@ -471,26 +471,51 @@ function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer
 
 // Cast-progress bar, decoupled from the round cadence. Driving the fill straight
 // off `roundsLeft` makes it step once per round (and lurch under load, when several
-// rounds land between paints). Instead we estimate the cast's finish — roundsLeft ×
-// engineRoundMs of wall-clock — and let a single CSS width transition glide the fill
-// there. Each round we re-target: pin the bar's currently-rendered width, then animate
-// to 100% over the new remaining estimate. That keeps it locked to the real cast (so
-// it self-corrects drift and never finishes far ahead of the spell) while reading as
-// one continuous sweep. A re-cast (skill change or roundsLeft jumping back up) restarts
-// from the elapsed fraction; on interrupt/resolve the channel clears and this unmounts.
+// rounds land between paints). Instead we estimate the cast's finish and let a single
+// CSS width transition glide the fill there. The estimate can't trust the *nominal*
+// round length: on a busy battlefield rounds land far slower than ROUND_MS, so a
+// nominal estimate fills the bar early and then sits full while the spell grinds out
+// (the "done, but nothing happens" feel). So we MEASURE this cast's realized cadence —
+// EMA of wall-clock ms per round actually observed — and project remaining = roundsLeft
+// × measured cadence. Each round we re-target: pin the bar's currently-rendered width,
+// then animate to 100% over that remaining estimate. The measurement adapts within a
+// round of a load change, so the fill tracks the *real* pace and lands as the spell
+// fires. A re-cast (skill change or roundsLeft jumping back up) restarts from the
+// elapsed fraction; on interrupt/resolve the channel clears and this unmounts.
 function CastBar({ skillId, roundsLeft, totalRounds, engineRoundMs }: {
   skillId: string; roundsLeft: number; totalRounds: number; engineRoundMs: number
 }) {
   const fillRef = useRef<HTMLDivElement>(null)
   const skillRef = useRef('')
   const prevRoundsRef = useRef(Infinity)
+  // Realized cadence (ms per round), measured live and EMA-smoothed. Seeded to the
+  // nominal round length and carried across casts so the first round of a new cast
+  // already reflects the board's current pace. lastTs/lastRounds anchor each sample.
+  const cadenceRef = useRef(engineRoundMs)
+  const lastTsRef = useRef(0)
+  const lastRoundsRef = useRef(0)
   useLayoutEffect(() => {
     const el = fillRef.current
     if (!el) return
+    const now = performance.now()
     const isNewCast = skillId !== skillRef.current || roundsLeft > prevRoundsRef.current
     skillRef.current = skillId
     prevRoundsRef.current = roundsLeft
-    const remainingMs = Math.max(0, roundsLeft * engineRoundMs)
+    if (isNewCast) {
+      lastTsRef.current = now
+      lastRoundsRef.current = roundsLeft
+    } else {
+      // Measure ms-per-round actually observed since the last round, fold into the EMA.
+      // Clamp the sample so a one-off stall (hidden tab, GC pause) can't poison it.
+      const dRounds = lastRoundsRef.current - roundsLeft
+      if (dRounds > 0) {
+        const sample = Math.min(1500, Math.max(80, (now - lastTsRef.current) / dRounds))
+        cadenceRef.current = cadenceRef.current * 0.5 + sample * 0.5
+        lastTsRef.current = now
+        lastRoundsRef.current = roundsLeft
+      }
+    }
+    const remainingMs = Math.max(0, roundsLeft * cadenceRef.current)
     el.style.transition = 'none'
     if (isNewCast) {
       // Start from the fraction already elapsed (usually 0) rather than snapping back.
