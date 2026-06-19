@@ -149,11 +149,17 @@ const CADENCE_RUNWAY = 1.7
 // of latency (the delay). DEV ?interp=0 disables (→ raw CSS glide), ?delay= scales it.
 const INTERP_OFF = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('interp') === '0'
 const INTERP_DELAY_MULT = (() => {
-  if (typeof window === 'undefined') return 1.25
+  if (typeof window === 'undefined') return 1.5
   const v = new URLSearchParams(window.location.search).get('delay')
   const n = v ? Number(v) : NaN
-  return Number.isFinite(n) && n > 0 ? n : 1.25
+  return Number.isFinite(n) && n > 0 ? n : 1.5
 })()
+// FIXED delay (ms) → the render clock `now − delay` is strictly monotonic, so it can
+// never step backward and re-sample an earlier position (a cadence-EMA-derived delay
+// did exactly that, snapping tokens back). Based on the nominal full-pace tick
+// (~200ms), 1.5× = 300ms — enough buffer to bridge normal jitter; a slower round just
+// briefly holds at the latest snapshot (never reverses). ?delay= scales it.
+const INTERP_DELAY_MS = 200 * INTERP_DELAY_MULT
 type Snap = { t: number; x: number; y: number }
 // Position on the render clock: lerp between the snapshots bracketing render-time rt.
 // Before the first snapshot → that snapshot; past the last (a late tick) → hold there.
@@ -1185,14 +1191,15 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   // per-frame React re-render. (rpos/rposId kept as the read seam the FX/camera code
   // already uses, so the rest of the view is unchanged.)
   // Snapshot buffer for entity interpolation (see interpAt). One timestamped sample
-  // per unit per round (guarded by round); the rAF below renders between them on a
-  // delayed clock. rpos returns the interpolated pos at the current render time so
-  // tokens, FX, and camera all read the same eased position (delay from the measured
-  // cadence so we stay ~one segment behind). Falls back to engine pos when disabled
-  // or un-buffered. The per-frame DOM writes happen in the effect; rpos is the seam.
+  // per unit per round (guarded by round); the rAF below renders between them on the
+  // fixed-delay clock and writes left/top straight to the nodes. CRUCIAL: rpos does
+  // NOT re-run interpAt here (a render computes its time at render-start, which under
+  // load lags the rAF's current frame — writing that stale value snapped tokens
+  // backward). Instead rpos returns the rAF's OWN last output (renderPosRef), so the
+  // React commit always agrees with what's on screen; FX/camera read the same value.
   const snapBufRef = useRef<Map<string, Snap[]>>(new Map())
   const snapRoundRef = useRef(-1)
-  const delayRef = useRef(ROUND_MS)
+  const renderPosRef = useRef<Map<string, Vec2>>(new Map())
   if (!INTERP_OFF && battle.round !== snapRoundRef.current) {
     snapRoundRef.current = battle.round
     const now = performance.now()
@@ -1204,17 +1211,13 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
       if (!arr) m.set(c.id, [{ t: now, x: c.pos.x, y: c.pos.y }])
       else { arr.push({ t: now, x: c.pos.x, y: c.pos.y }); while (arr.length > 5) arr.shift() }
     }
-    if (m.size > live.size + 24) for (const id of [...m.keys()]) if (!live.has(id)) m.delete(id)
+    if (m.size > live.size + 24) { for (const id of [...m.keys()]) if (!live.has(id)) { m.delete(id); renderPosRef.current.delete(id) } }
   }
-  // Render delay: ~1.25× the measured round cadence (clamped) → usually one whole
-  // segment behind, so there's always a "next" snapshot to interpolate toward.
-  delayRef.current = Math.min(700, Math.max(150, (cadenceEmaRef.current || ROUND_MS) * INTERP_DELAY_MULT))
-  const interpRt = performance.now() - delayRef.current   // one render-time value for this render pass
-  const rpos = (c: Combatant): Vec2 => (INTERP_OFF ? c.pos : interpAt(snapBufRef.current.get(c.id), interpRt) ?? c.pos)
+  const rpos = (c: Combatant): Vec2 => (INTERP_OFF ? c.pos : renderPosRef.current.get(c.id) ?? c.pos)
   const rposId = (id: string | null | undefined): Vec2 | null => {
     if (!id) return null
     const c = byId(id); if (!c) return null
-    return INTERP_OFF ? c.pos : interpAt(snapBufRef.current.get(id), interpRt) ?? c.pos
+    return INTERP_OFF ? c.pos : renderPosRef.current.get(id) ?? c.pos
   }
   const fxPos = (id: string | null | undefined): Vec2 | undefined => rposId(id) ?? byId(id ?? undefined)?.pos
 
@@ -1332,17 +1335,19 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
       raf = requestAnimationFrame(step)
       const camNow = camRef.current, b = battleRef.current, wrap = arenaWrapRef.current
       if (!camNow || !b || !wrap) return
-      const rt = performance.now() - delayRef.current
+      const rt = performance.now() - INTERP_DELAY_MS   // fixed delay → strictly monotonic clock
       const buf = snapBufRef.current
+      const out = renderPosRef.current
       const nodes = wrap.querySelectorAll<HTMLElement>('[data-cid]')
       const log = import.meta.env.DEV ? {} as Record<string, Vec2> : null
       nodes.forEach((node) => {
         const id = node.dataset.cid
         const p = id ? interpAt(buf.get(id), rt) : null
-        if (!p) return
+        if (!p || !id) return
+        out.set(id, p)   // authoritative render pos — rpos reads this so React never writes a backward value
         node.style.left = px(camNow, insetX(camNow, p.x))
         node.style.top = py(camNow, insetY(camNow, p.y))
-        if (log && id) log[id] = p
+        if (log) log[id] = p
       })
       if (log) (window as unknown as { __interp?: unknown }).__interp = { t: performance.now(), pos: log }
     }
