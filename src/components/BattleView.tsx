@@ -433,12 +433,13 @@ const ROUND_MS = 400
 
 // Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
 // and enemies alike) so health bars read consistently across the field.
-// Heroes hide their HP bar until they're actually hurt — only show it below this
-// fraction (declutters a healthy party; enemies always show theirs).
+// HP bars on the battlefield are kept sparse: monsters never show one, and a hero
+// only shows theirs once actually hurt (below this fraction). Declutters the field
+// so the bars that DO appear flag a hero in real trouble.
 const HERO_HP_BAR_BELOW = 0.30
 function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer: boolean; casting: boolean; scale: number }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
-  const showHpBar = !isPlayer || ratio < HERO_HP_BAR_BELOW
+  const showHpBar = isPlayer && ratio < HERO_HP_BAR_BELOW
   // Cast bar driven by the live channel (roundsLeft), NOT wall-clock: a round is
   // gated to game ticks, and under load they advance in jumps — a wall-clock
   // animation then runs ahead and fills before the spell fires. Mapping
