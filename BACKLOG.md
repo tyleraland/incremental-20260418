@@ -669,20 +669,25 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
   extra React renders, just CSS inheritance. Verified live: ~620ms under CPU-throttled
   mobile (real cadence ~365ms) vs the old 380ms that was *shorter* than the jittery
   interval. (`BattleView.tsx`.)
-- **✅ Phase 1.2 — sim-rate throttle on heavy fields (the "lighter" Phase-4 alt).**
-  The watched battle is the only one full-simmed, and on mobile a crowded field's
-  per-tick `advanceRound` is what overruns the frame budget (the long-tasks behind the
-  choppiness). A high-cap open-world field (`openWorldCap >= HEAVY_FIELD_CAP`=16) now
-  runs at `timeScale 1` stepping every 2 ticks instead of `timeScale 2` every tick.
-  Because `everyTicks × timeScale` is held at `ROUND_TIME_SCALE`, the logical pace —
-  and so rewards/sec, cooldown/move seconds — is **identical**; we just do half the
-  `advanceRound` work. Motion stays smooth because the Phase-1.1 `--seg-ms` glide
-  stretches to the ~400ms cadence. Static per battle (decided from the cap at
-  creation), so timeScale never thrashes mid-battle and snapshot replays stay
-  byte-identical (all open-world store tests use cap 3, unaffected). Verified in the
-  `?perf` harness: Harpy Roost (cap 25) runs `timeScale 1` at ~2.5 engine rounds/sec
-  (was 5). No async seam, fully reversible — unlike Phase 4. (`useGameStore.ts`:
-  `HEAVY_FIELD_CAP`, `timeScaleFor`, the `everyTicks` gate in `advanceBattles`.)
+- **✅ Phase 1.2 — heavy-field cadence: half the sim rate AND half the pace, for
+  smoothness (the "lighter" Phase-4 alt).** The watched battle is the only one
+  full-simmed, and on mobile a crowded field's per-tick `advanceRound` overruns the
+  frame budget (the long-tasks behind the choppiness). A high-cap open-world field
+  (`openWorldCap >= HEAVY_FIELD_CAP`=16) advances every 2 ticks instead of every tick,
+  halving the `advanceRound` work. It keeps the **fine** `timeScale 2` granularity, so
+  its logical pace also halves — a deliberate trade: crowded *watched* fights resolve
+  slower but glide smoothly (off-screen/offline rewards are rate-extrapolated
+  regardless). Cadence lives in one place (`cadenceFor`) so `timeScale`/`everyTicks`
+  can't drift; static per battle so timeScale never thrashes mid-battle and snapshot
+  replays stay byte-identical (open-world store tests use cap 3, unaffected).
+  *Why fine + slow, not coarse + full-pace:* the first cut held pace identical by
+  dropping to `timeScale 1` (`everyTicks × timeScale` = const) — but the jerk-metric
+  sweep (`e2e/jerk.spec.ts`, median CoV of per-token on-screen speed under 4× CPU)
+  showed **granularity, not tempo, is the smoothness lever**: `timeScale 1` is the
+  *coarsest*, jerkiest step (CoV ~0.8–1.1) while `timeScale 2` every-2-ticks measures
+  ~0.65 at the same CPU; slowing tempo *alone* (coarse + `hevery 4`) barely helps. DEV
+  `?hts=`/`?hevery=`/`?ts=` params + `data-cid` on tokens drive the sweep.
+  (`useGameStore.ts`: `HEAVY_FIELD_CAP`, `cadenceFor`; `e2e/jerk.spec.ts`.)
 - **✅ Phase 2 — LOD tokens.** `BattleChip` drops its floating plate + facing/
   moving nubs (most per-token DOM) when zoomed past `LOD_CAM_SIZE` or with more
   than `LOD_TOKEN_COUNT` on-screen tokens (`Lod.test.tsx`).

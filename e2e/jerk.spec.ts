@@ -10,11 +10,11 @@ import { test } from '@playwright/test'
 // the moving tokens (robust to any one token stopping) plus mean speed (the pace) and
 // fps. Sweep (hts = heavy timeScale / granularity, hevery = ticks per round / tempo):
 const SWEEP = [
-  { hts: 1, hevery: 2, note: 'baseline (shipped throttle): coarse, pace 2.5/s' },
-  { hts: 2, hevery: 2, note: 'finer, same CPU, half pace (1.25/s)' },
-  { hts: 2, hevery: 1, note: 'finer, full pace (2.5/s), 2x CPU' },
+  { hts: 2, hevery: 2, note: 'SHIPPED DEFAULT: fine steps, half pace (1.25/s)' },
+  { hts: 1, hevery: 2, note: 'old throttle: coarse (timeScale 1), full pace 2.5/s' },
+  { hts: 2, hevery: 1, note: 'fine, full pace (2.5/s), 2x CPU' },
   { hts: 4, hevery: 2, note: 'much finer, quarter pace (0.625/s)' },
-  { hts: 1, hevery: 4, note: 'coarse but slow tempo (1.25/s), half CPU' },
+  { hts: 1, hevery: 4, note: 'coarse but slow tempo (1.25/s) — tempo alone' },
 ]
 
 const SETTLE_MS = 2500

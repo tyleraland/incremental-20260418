@@ -259,17 +259,26 @@ function devNum(key: string): number | null {
 const DEV_HEAVY_TS    = devNum('hts')
 const DEV_HEAVY_EVERY = devNum('hevery')
 const DEV_BASE_TS     = devNum('ts')
-// Sim-rate throttle for large open-world fields. The watched battle is the only one
-// full-simmed, and on mobile a crowded field's per-tick `advanceRound` is what
-// overruns the frame budget (long-tasks → irregular round cadence → choppiness). For
-// a high-cap field we halve the engine round RATE — step every 2 ticks at timeScale 1
-// instead of every tick at scale 2. Because `everyTicks × timeScale` is held at
-// ROUND_TIME_SCALE, the logical pace (and so rewards/sec, cooldown/move seconds) is
-// IDENTICAL; we just do half the advanceRound work. Motion stays smooth because the
-// adaptive `--seg-ms` glide (BattleView) stretches to the slower ~400ms cadence. The
-// choice is static per battle (from the cap, set at creation) so timeScale never
-// thrashes mid-battle and snapshot replays stay deterministic.
-const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs throttled
+// Per-field engine cadence: `timeScale` (granularity — higher = finer/smaller steps =
+// smoother) and `everyTicks` (how many 200ms ticks between rounds — tempo and CPU).
+// A large open-world field is the costly one to full-sim and the one that reads jerky
+// on mobile. We keep the *fine* granularity (timeScale 2, same as normal fields — the
+// jerk-metric sweep in e2e/jerk.spec.ts showed granularity, NOT tempo, is the lever)
+// but step it every 2 ticks: that halves the advanceRound work (the long-tasks behind
+// the choppiness) AND halves the field's logical pace — a deliberate trade (crowded
+// watched fights resolve slower but glide smoothly; off-screen/offline rewards are
+// rate-extrapolated regardless). An earlier version threw the granularity away instead
+// (timeScale 1, full pace) to keep pace identical, but timeScale 1 is the *coarsest*,
+// jerkiest step — measurably worse. The `--seg-ms` glide (BattleView) stretches to the
+// ~400ms cadence so the every-2-ticks step still reads continuous. Static per battle
+// (from the cap at creation) so timeScale never thrashes mid-battle and snapshot
+// replays stay byte-identical. DEV `?hts=`/`?hevery=`/`?ts=` override for tuning sweeps.
+const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs the trade
+function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
+  const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
+  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? 2 }
+  return { timeScale: DEV_BASE_TS ?? ROUND_TIME_SCALE, everyTicks: ROUND_EVERY_TICKS }
+}
 // Off-screen / offline simulation budgets are centralized in `@/lib/sampling`
 // (SAMPLING) — the one place to tune cost-vs-fidelity. SAMPLING.offscreenCreditTicks
 // is how often an unwatched location credits rate-extrapolated rewards.
@@ -458,9 +467,11 @@ function spawnMonsterInto(battle: BattleState, loc: Location, size: number): str
 // a high-cap open-world field runs coarser so it can be stepped half as often at the
 // same pace (the sim-rate throttle — see HEAVY_FIELD_CAP). `advanceBattles` derives
 // the matching step cadence (`everyTicks`) back out of the battle's timeScale.
+// Engine timeScale for a battle on this location (see cadenceFor): finer (smoother)
+// the default; a high-cap field keeps it but is stepped less often (the smoothness/
+// pace trade). `advanceBattles` reads the matching step cadence from cadenceFor too.
 function timeScaleFor(loc: Location): number {
-  if (loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP) return DEV_HEAVY_TS ?? 1
-  return DEV_BASE_TS ?? ROUND_TIME_SCALE
+  return cadenceFor(loc).timeScale
 }
 
 // Stand up a fresh persistent battle on the location's (large) open-world map:
@@ -1039,11 +1050,11 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // Live-edit: push any loadout changes onto the heroes already fighting.
       syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
 
-      // Sim-rate throttle: a throttled (coarse, timeScale-1) field advances every 2
-      // ticks; the finer default every tick. `everyTicks × timeScale` = ROUND_TIME_SCALE
-      // keeps the real-time pace identical (see HEAVY_FIELD_CAP). Spawn trickle and
-      // hero reconcile still run every tick above — only the costly round is paced.
-      const everyTicks = DEV_HEAVY_EVERY ?? Math.max(1, Math.round(ROUND_TIME_SCALE / (battle.timeScale || ROUND_TIME_SCALE)))
+      // Heavy fields advance every 2 ticks (half the advanceRound work, half the
+      // logical pace); normal fields every tick (see cadenceFor / HEAVY_FIELD_CAP).
+      // Spawn trickle and hero reconcile still run every tick above — only the costly
+      // round is paced.
+      const everyTicks = cadenceFor(loc).everyTicks
       if (advance && newTicks % everyTicks === 0) {
         // Clear out enemy corpses from prior rounds before this one resolves —
         // a persistent battle never resets, so without this the combatant list
