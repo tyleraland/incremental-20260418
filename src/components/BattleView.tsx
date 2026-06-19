@@ -116,11 +116,25 @@ function autoFitSize(pts: Vec2[], cols: number, rows: number): number {
 // Encounters always worked this way (static camera + animatePos); open-world now
 // matches, dropping the per-frame React churn that dominated the mobile profile.
 //
-// A linear transition longer than the ~200 ms round interval means a token is still
+// A linear transition a hair longer than the round interval means a token is still
 // gliding toward its last target when the next round retargets it — continuous
-// motion, no "settle-then-go" parking, even when a round lands late under load.
+// motion, no "settle-then-go" parking. The interval is NOT a fixed 200ms though: it
+// jitters with per-tick load, so the glide duration tracks it adaptively (below).
 const CAM_MS = 400
-const CAM_TRANSITION = `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear, width ${CAM_MS}ms linear, height ${CAM_MS}ms linear`
+// Positional motion (tokens + every camera-following element) eases over `--seg-ms`,
+// a CSS var LiveBattle rewrites each round from an EMA of the *actual* wall-clock
+// round interval (see CADENCE_RUNWAY). The store advances on a 200ms setInterval,
+// but under load each tick's sim+render overruns and rounds arrive late and in
+// bursts — a fixed-duration glide then either parks early (stall-then-jump) or
+// sprints to cover a batched multi-cell step (slow-fast wobble). Sizing the glide
+// to the measured cadence keeps apparent velocity steady. This re-derives the old
+// useSmoothScene EMA win declaratively, without bringing back its per-frame rAF.
+// The `${CAM_MS}ms` fallback covers the first frame and the static world-map Arena.
+const SEG = `var(--seg-ms, ${CAM_MS}ms)`
+const CAM_TRANSITION = `left ${SEG} linear, top ${SEG} linear, width ${SEG} linear, height ${SEG} linear`
+// How much longer than the measured interval each glide runs: a hair of runway so a
+// momentarily-late round retargets a token while it's still moving, never parked.
+const CADENCE_RUNWAY = 1.7
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
@@ -248,8 +262,8 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
         {/* team-half tints, split at the arena's center line. The split eases with
             the camera (CSS) so it pans in sync with the tokens — the divs stay
             anchored to the viewport edges, so only the split line moves (no gap). */}
-        <div className="absolute inset-x-0 top-0 bg-red-500/10 pointer-events-none" style={{ height: `${centerTop}%`, transition: `height ${CAM_MS}ms linear` }} />
-        <div className="absolute inset-x-0 bottom-0 bg-blue-500/10 pointer-events-none" style={{ top: `${centerTop}%`, transition: `top ${CAM_MS}ms linear` }} />
+        <div className="absolute inset-x-0 top-0 bg-red-500/10 pointer-events-none" style={{ height: `${centerTop}%`, transition: `height ${SEG} linear` }} />
+        <div className="absolute inset-x-0 bottom-0 bg-blue-500/10 pointer-events-none" style={{ top: `${centerTop}%`, transition: `top ${SEG} linear` }} />
         {/* faint grid — world-anchored: backgroundPosition tracks the camera so
             the squares stay fixed to the ground and the party visibly moves
             across them (lines land exactly on world-integer cell boundaries).
@@ -264,7 +278,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, pan
             backgroundPosition: `${(-cam.x / cam.size) * 100}cqmin ${(cam.y / cam.size) * 100}cqmin`,
             // Ease the background scroll/zoom with the camera so the ground pans
             // smoothly between rounds (the pattern repeats, so no edge gap).
-            transition: `background-position ${CAM_MS}ms linear, background-size ${CAM_MS}ms linear`,
+            transition: `background-position ${SEG} linear, background-size ${SEG} linear`,
           }}
         />
         {/* terrain: walls solid (block movement + sight); cliffs translucent +
@@ -445,7 +459,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
       onClick={onSelect}
       data-chip
       className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
-      style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? 'left 380ms linear, top 380ms linear' : undefined }}
+      style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: animatePos ? `left ${SEG} linear, top ${SEG} linear` : undefined }}
     >
       {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
       {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
@@ -482,7 +496,7 @@ function EdgeMarker({ c, pos, cam }: { c: Combatant; pos: Vec2; cam: Cam }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI
   return (
-    <div className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-0.5" style={{ left: `${bx * 100}%`, top: `${by * 100}%`, transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear` }}>
+    <div className="absolute -translate-x-1/2 -translate-y-1/2 flex items-center gap-0.5" style={{ left: `${bx * 100}%`, top: `${by * 100}%`, transition: `left ${SEG} linear, top ${SEG} linear` }}>
       <div
         title={`${c.name} — ${Math.ceil(c.hp)}/${c.maxHp} (off-screen)`}
         className={`w-6 h-6 rounded-full bg-blue-900/90 border-2 flex items-center justify-center text-[8px] font-bold text-blue-50 shadow ${ratio >= 0.75 ? 'border-emerald-300/80' : ratio >= 0.4 ? 'border-amber-300/80' : 'border-red-300/80'}`}
@@ -500,7 +514,7 @@ function EdgeMarker({ c, pos, cam }: { c: Combatant; pos: Vec2; cam: Cam }) {
 // keyframes, so the Tailwind centering classes only matter before it kicks in.
 function Float({ cam, pos, className, text, k, anim = 'animate-dmg-float' }: { cam: Cam; pos: Vec2; className: string; text: string; k: string; anim?: string }) {
   return (
-    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow whitespace-nowrap ${anim} ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear` }}>
+    <div key={k} className={`absolute -translate-x-1/2 -translate-y-1/2 font-bold drop-shadow whitespace-nowrap ${anim} ${className}`} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)), transition: `left ${SEG} linear, top ${SEG} linear` }}>
       {text}
     </div>
   )
@@ -973,6 +987,28 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   const [floatNums, setFloatNums] = useState<{ id: string; pos: Vec2; text: string; className: string; anim: string; born: number }[]>([])
   const floatSeqRef = useRef(0)
   const lastFloatRoundRef = useRef(-1)
+  // Adaptive motion cadence. Each round we measure the real wall-clock gap since the
+  // last round-render, EMA-smooth it (per-tick load makes the raw gap jitter), and
+  // publish it as the `--seg-ms` CSS var that drives every positional transition (see
+  // SEG/CAM_TRANSITION). Written imperatively on the arena wrapper so it costs no
+  // React re-render — the read seam is pure CSS inheritance. arenaWrapRef is an
+  // ancestor of the tokens + camera elements, so the var reaches them all.
+  const arenaWrapRef = useRef<HTMLDivElement>(null)
+  const cadenceEmaRef = useRef(0)
+  const lastRoundTsRef = useRef(0)
+  useEffect(() => {
+    const el = arenaWrapRef.current
+    if (!el) return
+    const now = performance.now()
+    const raw = lastRoundTsRef.current ? now - lastRoundTsRef.current : ROUND_MS
+    lastRoundTsRef.current = now
+    const ema = cadenceEmaRef.current ? cadenceEmaRef.current * 0.8 + raw * 0.2 : raw
+    cadenceEmaRef.current = ema
+    // Clamp: floor keeps fast/desktop motion from going twitchy; ceil stops a long
+    // stall (hidden tab, GC pause) from leaving tokens crawling for seconds.
+    const seg = Math.min(900, Math.max(160, ema * CADENCE_RUNWAY))
+    el.style.setProperty('--seg-ms', `${seg}ms`)
+  }, [battle.round])
 
   // Harvest this round's cast events into lingering labels. cast_start (channel
   // begins) and skill_use (instant cast / channel resolves) both count. Keyed by
@@ -1300,7 +1336,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
           </div>
         </>
       )}
-      <div className="flex-1 min-h-0 flex justify-center items-start">
+      <div ref={arenaWrapRef} className="flex-1 min-h-0 flex justify-center items-start">
         <Arena
           cam={cam}
           barriers={battle.barriers}
@@ -1336,7 +1372,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
                 width: `${(2 * w.half / cam.size) * 100}%`,
                 height: `${(0.5 / cam.size) * 100}%`,
                 transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
-                transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear`,
+                transition: `left ${SEG} linear, top ${SEG} linear`,
               }}
             />
           ))}
@@ -1378,7 +1414,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
               <div
                 key={`cl-${sourceId}`}
                 className="absolute -translate-x-1/2 flex flex-col-reverse items-center gap-0.5 pointer-events-none"
-                style={{ left: px(cam, insetX(cam, sp.x)), top: py(cam, insetY(cam, sp.y)), transform: 'translate(-50%, -150%)', transition: `left ${CAM_MS}ms linear, top ${CAM_MS}ms linear` }}
+                style={{ left: px(cam, insetX(cam, sp.x)), top: py(cam, insetY(cam, sp.y)), transform: 'translate(-50%, -150%)', transition: `left ${SEG} linear, top ${SEG} linear` }}
               >
                 {labels.map((l) => (
                   <span key={l.id} className="px-1 rounded bg-black/45 text-amber-200 text-[10px] font-semibold leading-tight whitespace-nowrap drop-shadow animate-cast-label">
