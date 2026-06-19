@@ -581,7 +581,7 @@ function syncPlayerLoadouts(battle: BattleState, units: Unit[], equipment: Equip
 
 // Don't pop the "while you were away" modal for a brief background blip — only
 // after a real absence (≥ this many real seconds away).
-const OFFLINE_SUMMARY_MIN_SECS = 60
+export const OFFLINE_SUMMARY_MIN_SECS = 60
 
 interface PrimeResult {
   battle: BattleState

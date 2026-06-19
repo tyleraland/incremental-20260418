@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useGameStore, getDerivedStats, getInitials, type Unit } from '@/stores/useGameStore'
+import { useGameStore, getDerivedStats, getInitials, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
@@ -347,7 +347,14 @@ export function ProtoApp() {
         combatLocationId: hero.locationId ?? null,
         battleFollowId: hero.locationId ? hero.id : null,
       })
-      if (hero.locationId) requestZoom(2)
+      // Returning after a real absence pops the offline report. Don't ALSO dive the
+      // camera world→battle behind it — that rapid zoom under the modal is jarring.
+      // Land calm: selecting the hero's location just centers the world map there
+      // (no zoom), so the report reads over a still map and the player zooms in when
+      // ready. `lastTickAt` here is the restored `savedAt` (this runs after the save
+      // loads but before catch-up), so the gap matches when the report will show.
+      const awaySecs = (Date.now() - s.lastTickAt) / 1000
+      if (hero.locationId && awaySecs < OFFLINE_SUMMARY_MIN_SECS) requestZoom(2)
     }, 0)
     return () => clearTimeout(id)
   // run once on mount
