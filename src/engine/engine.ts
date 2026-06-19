@@ -13,7 +13,7 @@ import {
 import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat, onAttackBeat } from './timescale'
 import { SpatialHash, setSpatialHash } from './spatialhash'
-import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation, setDirectMove } from './grid'
+import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation, setDirectMove, setSeparationScale } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
@@ -246,6 +246,7 @@ export function createBattle(setup: CombatSetup): BattleState {
   const rows = setup.rows ?? ROWS
   const timeScale = Math.max(1, Math.floor(setup.timeScale ?? 1))
   const decisionInterval = Math.max(1, Math.floor(setup.decisionInterval ?? 1))
+  const separationScale = Math.max(0, setup.separationScale ?? 1)
   setArenaBounds(cols, rows)   // so startingPosition/clamp use this battle's bounds
   setTimeScale(timeScale)      // so per-round helpers (move/cooldown/status) scale
   const combatants: Combatant[] = []
@@ -272,6 +273,7 @@ export function createBattle(setup: CombatSetup): BattleState {
     rows,
     timeScale,
     decisionInterval,
+    separationScale,
     mode: setup.mode ?? 'encounter',
     plans: {},
     planner: setup.planner ?? defaultPlanner,
@@ -1690,6 +1692,7 @@ export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
   setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
   setTimeScale(state.timeScale)            // per-round helpers scale to finer rounds
+  setSeparationScale(state.separationScale)   // crowd-shove strength (default 1)
   // Bucket combatants once (round-start positions) so separation / target-acquisition
   // do O(local) neighbour queries this round instead of O(N²). Cleared at the end so
   // between-round work (spawns) and other call paths fall back to a brute scan.

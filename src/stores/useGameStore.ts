@@ -260,6 +260,7 @@ const DEV_HEAVY_TS    = devNum('hts')
 const DEV_HEAVY_EVERY = devNum('hevery')
 const DEV_BASE_TS     = devNum('ts')
 const DEV_DECIDE      = devNum('decide')   // re-decide targeting/planner every N engine rounds (prototype)
+const DEV_SEP         = devNum('sep')       // scale crowd separation push (prototype; default 1)
 // Per-field engine cadence: `timeScale` (granularity — higher = finer/smaller steps =
 // smoother) and `everyTicks` (how many 200ms ticks between rounds — tempo and CPU).
 // A large open-world field is the costly one to full-sim and the one that reads jerky
@@ -482,7 +483,7 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   const size = openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
   const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? 1 })
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? 1, separationScale: DEV_SEP ?? 1 })
   party.forEach((u, i) => {
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
     const cinp = companionToEngineInput(u)

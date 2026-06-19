@@ -20,6 +20,14 @@ import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
 let directMoveActive = false
 export function setDirectMove(v: boolean): void { directMoveActive = v }
 
+// Separation-strength ambient. The per-round overlap push is the dominant source of
+// the moving-step jitter in a dense crowd (each unit shoved a varying amount every
+// round → fast-slow). Scaling it < 1 softens the shove (smoother motion) at the cost
+// of tighter packing. Default 1 = unchanged (byte-identical). Set per-battle in
+// advanceRound (like timeScale). One battle steps at a time.
+let separationScale = 1
+export function setSeparationScale(v: number): void { separationScale = v }
+
 export function distance(a: Vec2, b: Vec2): number {
   const dx = a.x - b.x
   const dy = a.y - b.y
@@ -175,7 +183,7 @@ export function enforceSeparation(mover: Combatant, all: Combatant[], barriers: 
     }
     // Resolve overlap gradually at a finer time scale (÷ scale), so a separation
     // shove doesn't add a big fixed jump on top of the smaller per-round move.
-    const overlap = (SEPARATION - d) / 2 / timeScale()
+    const overlap = (SEPARATION - d) / 2 / timeScale() * separationScale
     const ux = dx / d
     const uy = dy / d
     // Push apart, but slide the push along any wall so crowded units against
