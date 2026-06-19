@@ -128,10 +128,16 @@ What's left:
     — grid `backgroundSize` is `%` of the ground layer (scales WITH it) not `cqmin`.
     (d) **explicit follow-hero-vs-party toggle** — done (the 3-state cycle above).
     Still open:
-    - *Live-pan re-render cost.* The live pan re-renders the battle subtree per
-      pointermove (glide suppressed, so paint is cheap, but React reconcile of 50+
-      tokens each move can dip fps during a drag in a very crowded field). Add an rAF
-      coalesce (one `setManualCenter` per frame) if a heavy-field pan reads janky.
+    - *Live-pan re-render cost — ✅ rAF-coalesced.* The live pan re-renders the battle
+      subtree per pointermove (glide is suppressed so paint is cheap, but React
+      reconcile of 50+ tokens each move can lag the camera behind the finger when a
+      120 Hz touch panel fires moves faster than frames). Now coalesced to ONE
+      `setManualCenter` per animation frame (`Arena` `panRafRef`/`flushPan`; final
+      position applied exactly on release). If a very crowded field still drags
+      heavily, the next lever is a single compositor wrapper transform during the drag
+      (the tokens wouldn't re-render at all) — tried once and backed out because the
+      edge-clamp on commit was finicky (snap-back near the map edge); revisit with a
+      camera snapshot captured at drag-start used for BOTH the move-clamp and commit.
     - *Zoom feel — choppy + slow.* Auto-fit changes `cam.size` per round (discrete
       steps) and eases each over `--seg-ms` (up to 900 ms), so a zoom reads as slow,
       stepped breathing. Options to paper over: a snappier fixed transition for

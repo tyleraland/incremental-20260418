@@ -192,6 +192,24 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   const pinchRef = useRef<{ startDist: number; startSize: number } | null>(null)
   const suppressClickRef = useRef(false)
   const [pan, setPan] = useState<Vec2>({ x: 0, y: 0 })
+  // Live-pan coalescing: pointermove can fire faster than the screen refreshes (e.g.
+  // a 120Hz touch panel), and each move drives a setManualCenter → full battle
+  // re-render. Coalesce to ONE update per animation frame so a crowded field can't
+  // build a render backlog that lags the camera behind the finger.
+  const panRafRef = useRef<number | null>(null)
+  const panLatestRef = useRef<Vec2 | null>(null)
+  // total drag px, latest
+  const applyPan = (dx: number, dy: number) => {
+    if (!onPanMove || !ref.current || ref.current.clientWidth <= 0) return
+    const cells = cam.size / ref.current.clientWidth
+    onPanMove(-dx * cells, dy * cells)   // screen +x → look left; screen y is flipped
+  }
+  const flushPan = () => {
+    panRafRef.current = null
+    const p = panLatestRef.current
+    if (p) applyPan(p.x, p.y)
+  }
+  useEffect(() => () => { if (panRafRef.current != null) cancelAnimationFrame(panRafRef.current) }, [])
 
   // The pixel pan is a finger-drag nudge layered on top of the camera. When the
   // camera *retargets* (follow a hero / minimap free-look / auto-fit) a leftover
@@ -248,13 +266,13 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
       onPanStart?.()
     }
     if (d.moved) {
-      if (onPanMove && ref.current && ref.current.clientWidth > 0) {
-        // Live world-space pan (open-world): drive the look-point directly off the
-        // TOTAL drag delta (absolute from start, so no accumulation drift). The
-        // caller clamps to the map and the camera moves instantly (glide held at 0),
-        // so the board can't over-drag and there's nothing to snap back on release.
-        const cells = cam.size / ref.current.clientWidth
-        onPanMove(-dx * cells, dy * cells)   // screen +x → look left; screen y is flipped
+      if (onPanMove) {
+        // Live world-space pan (open-world): record the TOTAL drag delta (absolute
+        // from start, so no accumulation drift) and apply it at most once per frame.
+        // The look-point is clamped to the map by the caller, so the board can't
+        // over-drag and there's nothing to snap back on release.
+        panLatestRef.current = { x: dx, y: dy }
+        if (panRafRef.current == null) panRafRef.current = requestAnimationFrame(flushPan)
       } else {
         setPan({ x: d.basePan.x + dx, y: d.basePan.y + dy })   // pixel nudge (encounter only)
       }
@@ -266,9 +284,10 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
     const d = dragRef.current
     if (d?.moved) {
       suppressClickRef.current = true
-      // Live pan already left the look-point where the finger released — just end the
-      // drag (re-enables the normal glide). The pixel-nudge path (encounter) has no
-      // commit; its offset persists harmlessly under the static arena camera.
+      // Apply the FINAL position exactly (cancel any frame still pending) so the
+      // release lands where the finger lifted, then end the drag (restores the glide).
+      if (panRafRef.current != null) { cancelAnimationFrame(panRafRef.current); panRafRef.current = null }
+      if (onPanMove) applyPan(e.clientX - d.startX, e.clientY - d.startY)
       onPanEnd?.()
     }
     dragRef.current = null
@@ -414,8 +433,12 @@ const ROUND_MS = 400
 
 // Floating label: name/HP/cast sit BELOW the circle for *every* unit (players
 // and enemies alike) so health bars read consistently across the field.
+// Heroes hide their HP bar until they're actually hurt — only show it below this
+// fraction (declutters a healthy party; enemies always show theirs).
+const HERO_HP_BAR_BELOW = 0.30
 function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer: boolean; casting: boolean; scale: number }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
+  const showHpBar = !isPlayer || ratio < HERO_HP_BAR_BELOW
   // Cast bar driven by the live channel (roundsLeft), NOT wall-clock: a round is
   // gated to game ticks, and under load they advance in jumps — a wall-clock
   // animation then runs ahead and fills before the spell fires. Mapping
@@ -432,9 +455,11 @@ function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer
       <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
         {shortName(c.name)}
       </span>
-      <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
-        <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
-      </div>
+      {showHpBar && (
+        <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+          <div className={`h-full ${hpColor(ratio)} opacity-90`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+        </div>
+      )}
       {ch && (
         <>
           <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
