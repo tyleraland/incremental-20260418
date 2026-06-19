@@ -780,9 +780,19 @@ right spot a beat later"). Still open if it shows on-device:
   (above the circle), so they inherit the chip's compositor glide exactly (zero drift)
   and cost no separate positioned/transitioned element or per-token `byId`/`isOnScreen`
   scan (`castLabelsBySource` map → `BattleChip castLabels` prop). Still snap-on-mount,
-  but harmless because they're not unit-anchored: ground **zones** / world-anchored
-  **floats** (fixed world point) and the one-shot **AoE/hit/spawn/rally rings**
-  (no position transition, ~1 round life). Fold those in only if they read wrong.
+  but harmless because they're not unit-anchored: world-anchored **floats** (fixed
+  world point) and the one-shot **AoE/hit/spawn/rally rings** (no position
+  transition, ~1 round life). Fold those in only if they read wrong.
+- *Centred ground effects must NOT bake `-50%` into the eased transform.* Ground
+  **zones** (the AoE circle) and **firewalls** briefly slid to their final spot
+  after a camera change because they centred via `transform: translate(calc(…cqw -
+  50%), …)` on the *same* transform that eases position+size — a `calc()` mixing a
+  container unit and a box-relative `%` doesn't interpolate cleanly on every browser
+  (fine on desktop Chromium, drifts on mobile). Fixed by the **outer-position /
+  inner-centred split** (plain `translate(…cqw,…cqh)` outer that eases; static
+  `-translate-x/y-1/2` inner that doesn't) — the same pattern chips/floats already
+  use. Rule of thumb: never put a box-relative `%` inside a transitioned transform;
+  centre on a separate static layer.
 - *Round-boundary reconcile.* The remaining long-tasks (~260–440 ms / 4 s) are the
   per-round React re-render of 50+ tokens. The next ceiling if more headroom is
   needed (fewer per-token nodes / a value-mirror memo — see the `React.memo` note

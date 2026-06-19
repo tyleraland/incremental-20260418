@@ -1415,26 +1415,44 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
           {battle.zones.map((z) => (
             <div
               key={z.id}
-              className="absolute rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
-              style={{ left: 0, top: 0, transform: `translate(calc(${fxPct(cam, z.pos.x)}cqw - 50%), calc(${fyPct(cam, z.pos.y)}cqh - 50%))`, width: `${(2 * z.radius / cam.size) * 100}%`, height: `${(2 * z.radius / cam.size) * 100}%`, transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }}
-            />
+              className="absolute pointer-events-none"
+              style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, z.pos.x)}cqw, ${fyPct(cam, z.pos.y)}cqh)`, transition: XFORM_TRANSITION }}
+            >
+              {/* Inner = the circle, centred via a STATIC -50% transform that is NOT
+                  transitioned. Keeping the `-50%` off the gliding (and size-easing)
+                  transform is what holds the zone locked to its ground point — a
+                  `calc(…cqw - 50%)` on a transform that's easing position AND size at
+                  once desyncs the centre, so the circle slides to its final spot a
+                  beat after the camera changes. Size in cqw (resolves against the
+                  arena, not the 0-box parent). */}
+              <div
+                className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse"
+                style={{ width: `${(2 * z.radius / cam.size) * 100}cqw`, height: `${(2 * z.radius / cam.size) * 100}cqw`, transition: `width ${SEG} linear, height ${SEG} linear` }}
+              />
+            </div>
           ))}
 
           {/* firewalls: a bar of flame along the wall's tangent (perpendicular to
               its normal). Screen-space flips y, so the bar angle is atan2(nx, ny). */}
           {battle.firewalls.map((w) => (
+            // Outer = world position (plain translate, glided); inner = the flame bar,
+            // centred + rotated by a STATIC transform that isn't eased — same split as
+            // zones, so the bar stays locked to the ground through camera changes.
             <div
               key={w.id}
-              className="absolute rounded-sm bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)] animate-pulse pointer-events-none"
-              style={{
-                left: 0,
-                top: 0,
-                width: `${(2 * w.half / cam.size) * 100}%`,
-                height: `${(0.5 / cam.size) * 100}%`,
-                transform: `translate(calc(${fxPct(cam, w.pos.x)}cqw - 50%), calc(${fyPct(cam, w.pos.y)}cqh - 50%)) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
-                transition: XFORM_TRANSITION,
-              }}
-            />
+              className="absolute pointer-events-none"
+              style={{ left: 0, top: 0, transform: `translate(${fxPct(cam, w.pos.x)}cqw, ${fyPct(cam, w.pos.y)}cqh)`, transition: XFORM_TRANSITION }}
+            >
+              <div
+                className="absolute rounded-sm bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)] animate-pulse"
+                style={{
+                  width: `${(2 * w.half / cam.size) * 100}cqw`,
+                  height: `${(0.5 / cam.size) * 100}cqw`,
+                  transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)`,
+                  transition: `width ${SEG} linear, height ${SEG} linear`,
+                }}
+              />
+            </div>
           ))}
 
           {/* attack arc lines for this round */}
