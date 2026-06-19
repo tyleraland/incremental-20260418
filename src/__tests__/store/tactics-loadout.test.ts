@@ -118,7 +118,10 @@ describe('combat reads the loadout', () => {
       units: [makeUnit({ id: 'u1', locationId: 'geffen-dungeon-2', health: 100, tactics: [{ id: 'tank-buster', rank: 1 }] })],
       partyTactics: [],
     })
-    tick(); tick()   // spawn, then advance a round so targeting resolves
+    tick()   // first tick spawns the battle
+    // A round lands every ROUND_EVERY_TICKS ticks — don't assume a fixed count.
+    // Advance until the engine has run a round so targeting resolves.
+    for (let i = 0; i < 12 && (useGameStore.getState().battles['geffen-dungeon-2']?.round ?? 0) < 1; i++) tick()
     const battle = useGameStore.getState().battles['geffen-dungeon-2']
     const self = battle.combatants.find((c) => c.id === 'u1')!
     const locked = battle.combatants.find((c) => c.id === self.lockedTargetId)!
