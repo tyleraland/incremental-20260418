@@ -277,7 +277,7 @@ const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs the
 // Heavy-field granularity, stepped every HEAVY_FIELD_EVERY ticks. timeScale 2 = the
 // fine "half pace" trade; bump to 4 for "quarter pace" (smoother still, slower). This
 // is the A/B knob (pace-compare PRs); base = the coarse timeScale-1 throttle.
-const HEAVY_FIELD_TIMESCALE = 1
+const HEAVY_FIELD_TIMESCALE = 4   // QUARTER PACE: much finer steps, ~CoV 0.55–0.61
 const HEAVY_FIELD_EVERY      = 2
 function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
