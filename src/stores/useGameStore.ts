@@ -274,9 +274,14 @@ const DEV_BASE_TS     = devNum('ts')
 // (from the cap at creation) so timeScale never thrashes mid-battle and snapshot
 // replays stay byte-identical. DEV `?hts=`/`?hevery=`/`?ts=` override for tuning sweeps.
 const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs the trade
+// Heavy-field granularity, stepped every HEAVY_FIELD_EVERY ticks. timeScale 2 = the
+// fine "half pace" trade; bump to 4 for "quarter pace" (smoother still, slower). This
+// is the A/B knob (pace-compare PRs); base = the coarse timeScale-1 throttle.
+const HEAVY_FIELD_TIMESCALE = 1
+const HEAVY_FIELD_EVERY      = 2
 function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
-  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? 2 }
+  if (heavy) return { timeScale: DEV_HEAVY_TS ?? HEAVY_FIELD_TIMESCALE, everyTicks: DEV_HEAVY_EVERY ?? HEAVY_FIELD_EVERY }
   return { timeScale: DEV_BASE_TS ?? ROUND_TIME_SCALE, everyTicks: ROUND_EVERY_TICKS }
 }
 // Off-screen / offline simulation budgets are centralized in `@/lib/sampling`
