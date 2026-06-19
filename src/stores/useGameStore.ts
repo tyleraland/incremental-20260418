@@ -244,7 +244,7 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 // stepped finer and combat events spread out. Bumping ROUND_TIME_SCALE makes the
 // sim finer/smoother at the same pace (it's the lever to tune feel).
 const ROUND_TIME_SCALE    = 2    // engine rounds per logical round (finer = smoother)
-const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (~200ms/round at scale 2)
+const ROUND_EVERY_TICKS   = 2    // advance one engine round every 2 ticks (~400ms/round). Halved from 1 once the tick-clock fix let ticks land on time: at full pace combat ran twice as fast as the old (silently tick-dropping) build felt. Also drives the offline rounds↔ticks conversion, so live + offline pace stay in sync.
 
 // DEV-only cadence overrides for the "slower rounds" exploration. `?hts=N` sets the
 // heavy-field timeScale (granularity: higher = smaller steps), `?hevery=M` the ticks
@@ -283,7 +283,7 @@ const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs the
 const DECISION_INTERVAL_HEAVY = 5
 function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
-  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? 1 }
+  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? ROUND_EVERY_TICKS }
   return { timeScale: DEV_BASE_TS ?? ROUND_TIME_SCALE, everyTicks: ROUND_EVERY_TICKS }
 }
 function decisionIntervalFor(loc: Location): number {
