@@ -42,12 +42,30 @@ export function PerfPanel() {
     setPaceEveryTicks(v)
     setPace(v)
   }
-  const ts = (() => {
+  // Granularity (timeScale): finer = smoother motion at the same pace (the jerk
+  // harness showed granularity, not tempo, is the smoothness lever). Mutates the
+  // watched battle's timeScale live — fine for a feel-test (determinism only matters
+  // for snapshot replay, not live play).
+  const readTs = () => {
     const s = useGameStore.getState()
     const b = s.combatLocationId ? s.battles[s.combatLocationId] : undefined
     return b?.timeScale ?? 2
-  })()
-  const logicalPerSec = 5 / (pace * ts)
+  }
+  const [gran, setGran] = useState(readTs)
+  const changeGran = (next: number) => {
+    const v = Math.min(8, Math.max(1, next))
+    const s = useGameStore.getState()
+    const id = s.combatLocationId
+    if (id && s.battles[id]) {
+      s.battles[id].timeScale = v
+      useGameStore.setState({ battles: { ...s.battles, [id]: { ...s.battles[id] } } })
+    }
+    setGran(v)
+  }
+  // Jerk-harness winner: advance every tick (locked to the clock) at the finest
+  // granularity that holds the chosen pace — smoothest motion at ~0.83 rounds/s.
+  const applySmoothPreset = () => { changePace(1); changeGran(6) }
+  const logicalPerSec = 5 / (pace * gran)
 
   const copy = () => {
     const text = perfProbe.report()
@@ -129,6 +147,14 @@ export function PerfPanel() {
           <span className="flex-1 text-center text-[10px] text-game-text-dim tabular-nums">every {pace} tick{pace === 1 ? '' : 's'}</span>
           <button onClick={() => changePace(pace - 1)} className="h-6 px-2 rounded border border-emerald-600/60 bg-emerald-950/50 text-emerald-200 hover:bg-emerald-900/50" title="faster (fewer ticks per round)">faster</button>
         </div>
+        <div className="mt-1 flex items-center gap-1">
+          <button onClick={() => changeGran(gran - 1)} className="h-6 px-2 rounded border border-game-border text-game-text-dim hover:bg-white/5" title="coarser steps (less smooth)">coarser</button>
+          <span className="flex-1 text-center text-[10px] text-game-text-dim tabular-nums">timeScale {gran}</span>
+          <button onClick={() => changeGran(gran + 1)} className="h-6 px-2 rounded border border-sky-600/60 bg-sky-950/50 text-sky-200 hover:bg-sky-900/50" title="finer steps (smoother, same pace)">smoother</button>
+        </div>
+        <button onClick={applySmoothPreset} className="mt-1 w-full h-6 rounded border border-amber-500/60 bg-amber-950/50 text-amber-200 text-[10px] hover:bg-amber-900/50" title="every tick + timeScale 6 — the jerk-harness smoothest at 0.83 rounds/s">
+          ★ apply smoothest 0.83/s (every tick · ts6)
+        </button>
       </div>
 
       <div className="mt-2 border-t border-game-border/60 pt-1.5">
