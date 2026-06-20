@@ -54,5 +54,21 @@ export function seedPerfBattle(targetHeroes = numParam('heroes', 12)): void {
 
   get().assignUnits(roster.map((u) => u.id), base.id)
   get().tick()                  // stands up the open battle + scatters cap monsters
+
+  // `?sustain` — hold the field at full density for the whole run. A full party
+  // shreds the scattered monsters faster than the 1-per-30-tick respawn trickle
+  // refills, so the genuinely heavy ~50-token burst lasts only seconds and any
+  // fps/A-B measurement is dominated by the drained aftermath. Pumping enemy HP to
+  // effectively unkillable means nothing dies → no respawn churn → the crowd (and
+  // its render/compositor load) persists indefinitely, so the GPU-bound case can
+  // actually be observed and A/B-toggled. Render-only hack; combat numbers are
+  // meaningless under it (that's fine — this harness measures pixels, not balance).
+  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('sustain')) {
+    const battle = get().battles[base.id]
+    if (battle) for (const c of battle.combatants) {
+      if (c.team === 'enemy') { c.maxHp = 1e12; c.hp = 1e12 }
+    }
+  }
+
   get().enterBattleView(base.id) // drop straight into the battlefield view
 }

@@ -25,11 +25,13 @@ import {
 } from '@/engine/profile'
 
 const JANK_FRAME_MS = 50   // a frame longer than this reads as a visible hitch (~< 20fps)
+const DENSE_TOKENS = 24    // ≥ this many on-screen tokens = "crowded" — the case we care about
 
 export interface ProbeLive {
   running: boolean
   elapsedMs: number
   fps: number          // sustained over the run
+  denseFps: number     // fps while ≥ DENSE_TOKENS were on-screen (the case that matters)
   worstFrameMs: number
   jankFrames: number
   commits: number
@@ -68,6 +70,12 @@ class PerfProbe {
   private frames = 0
   private worstFrameMs = 0
   private jankFrames = 0
+  // Frames sampled while the field was crowded (≥ DENSE_TOKENS on-screen) — the fps
+  // that actually matters, separated from the calm/drained aftermath that otherwise
+  // dominates a whole-run average.
+  private denseFrames = 0
+  private denseMs = 0
+  private denseWorstFrameMs = 0
 
   // long tasks
   private longTaskMs = 0
@@ -108,6 +116,7 @@ class PerfProbe {
       running: this.running,
       elapsedMs,
       fps: secs > 0 ? this.frames / secs : 0,
+      denseFps: this.denseMs > 0 ? this.denseFrames / (this.denseMs / 1000) : 0,
       worstFrameMs: this.worstFrameMs,
       jankFrames: this.jankFrames,
       commits: this.commits,
@@ -155,6 +164,9 @@ class PerfProbe {
     this.frames = 0
     this.worstFrameMs = 0
     this.jankFrames = 0
+    this.denseFrames = 0
+    this.denseMs = 0
+    this.denseWorstFrameMs = 0
     this.longTaskMs = 0
     this.longTaskCount = 0
     this.commits = 0
@@ -190,6 +202,11 @@ class PerfProbe {
       if (dt > this.worstFrameMs) this.worstFrameMs = dt
       if (dt > JANK_FRAME_MS) this.jankFrames++
       const tokens = countTokens()
+      if (tokens >= DENSE_TOKENS) {
+        this.denseFrames++
+        this.denseMs += dt
+        if (dt > this.denseWorstFrameMs) this.denseWorstFrameMs = dt
+      }
       if (tokens > this.peakTokens) this.peakTokens = tokens
       const nodes = countArenaNodes()
       if (nodes > this.peakArenaNodes) this.peakArenaNodes = nodes
@@ -274,6 +291,11 @@ class PerfProbe {
     const frames = {
       sampledFrames: this.frames,
       fps: +live.fps.toFixed(1),
+      // The number that matters: fps measured only while ≥ DENSE_TOKENS were
+      // on-screen, so a brief crowd isn't washed out by the calm aftermath.
+      denseFps: +(this.denseMs > 0 ? this.denseFrames / (this.denseMs / 1000) : 0).toFixed(1),
+      denseSeconds: +(this.denseMs / 1000).toFixed(1),
+      denseWorstFrameMs: +this.denseWorstFrameMs.toFixed(1),
       worstFrameMs: +this.worstFrameMs.toFixed(1),
       jankFrames: this.jankFrames,
       jankPct: +((this.jankFrames / Math.max(1, this.frames)) * 100).toFixed(1),
@@ -324,7 +346,8 @@ class PerfProbe {
     L.push(`tokens on-screen ${sc.tokensOnScreen} (peak ${sc.peakTokensOnScreen})   arena DOM nodes ${sc.arenaDomNodes} (peak ${sc.peakArenaDomNodes})`)
     L.push('')
     L.push('## Frames (the lag signal)')
-    L.push(`fps ${frames.fps}   worst frame ${frames.worstFrameMs}ms   jank frames ${frames.jankFrames} (${frames.jankPct}%)   long-tasks ${frames.longTasks} (${frames.longTaskMs}ms)`)
+    L.push(`fps ${frames.fps} overall   |   DENSE fps ${frames.denseFps} (≥${DENSE_TOKENS} tokens, ${frames.denseSeconds}s, worst ${frames.denseWorstFrameMs}ms)`)
+    L.push(`worst frame ${frames.worstFrameMs}ms   jank frames ${frames.jankFrames} (${frames.jankPct}%)   long-tasks ${frames.longTasks} (${frames.longTaskMs}ms)`)
     L.push('')
     L.push('## Render (React commit of the battle subtree)')
     L.push(`avg ${render.avgCommitMs}ms/commit   worst ${render.worstCommitMs}ms   ${render.commitsPerSec} commits/s   ${render.pctOfWallClock}% of wall clock`)

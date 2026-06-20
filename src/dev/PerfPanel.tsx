@@ -72,6 +72,7 @@ export function PerfPanel() {
 
       <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 tabular-nums">
         <Stat label="fps" value={num(live.fps, 0)} bad={live.running && live.fps < 30} />
+        <Stat label="dense fps" value={live.denseFps > 0 ? num(live.denseFps, 0) : '—'} bad={live.denseFps > 0 && live.denseFps < 30} />
         <Stat label="worst frame" value={`${num(live.worstFrameMs, 0)}ms`} bad={live.worstFrameMs > 60} />
         <Stat label="render/commit" value={`${num(live.renderMsAvg, 1)}ms`} />
         <Stat label="commits" value={String(live.commits)} />
