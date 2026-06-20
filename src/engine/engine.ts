@@ -12,6 +12,7 @@ import {
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat, onAttackBeat } from './timescale'
+import { profStart, profEnd, profCountRound } from './profile'   // throwaway dev probe; default off + determinism-neutral
 import { SpatialHash, setSpatialHash } from './spatialhash'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation, setDirectMove } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
@@ -1606,6 +1607,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // round we SKIP the expensive re-target (vision/threat/tactics) and keep the
   // committed lock — just drop it cheaply if the target died, so movement stays
   // valid (the unit holds/wanders until the next decision round re-aims).
+  const _tDecide = profStart()   // §profile: the "AI" — targeting + pack decisions
   const decideNow = isDecisionRound(state)
   const lockBefore = self.lockedTargetId
   if (decideNow) {
@@ -1615,11 +1617,13 @@ function takeTurn(state: BattleState, self: Combatant): void {
     if (!lt || !lt.alive) self.lockedTargetId = null
   }
   if (decideNow) rallyPack(state, self)   // §pack tactics: call kin (a decision)
+  profEnd('decide', _tDecide)
   const tgtText = self.lockedTargetId
     ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`
     : (state.mode === 'open' || !self.provoked ? 'no target · wander' : 'no target')
 
   const posBefore = { ...self.pos }
+  const _tMove = profStart()   // §profile: movement (evalMovement + steerAround + execute)
   // Between decisions, execute committed movement without the steerAround Dijkstra
   // (slide straight; re-route at the next decision round). No-op when decideNow.
   if (!decideNow) setDirectMove(true)
@@ -1628,6 +1632,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   applyFirewalls(state, self, posBefore)   // §firewall: bounce a foe that tried to cross
   const moved = self.pos.x !== posBefore.x || self.pos.y !== posBefore.y
   updateFacing(state, self, posBefore, moved)
+  profEnd('move', _tMove)
   const moveText = moved
     ? `move (${posBefore.x.toFixed(1)},${posBefore.y.toFixed(1)})→(${self.pos.x.toFixed(1)},${self.pos.y.toFixed(1)})`
     : 'hold'
@@ -1635,6 +1640,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // (3.5) target-aware attack ranking — promote the hardest-hitting attack vs
   // the locked enemy (element matrix + magic/physical mitigation) so the action
   // channel's first-match opens with it. See reorderAttacksForTarget.
+  const _tAct = profStart()   // §profile: action — attack ranking + skill cast / basic attack
   const lockedTarget = self.lockedTargetId ? findCombatant(state, self.lockedTargetId) : null
   const exploitNote = lockedTarget ? reorderAttacksForTarget(self, lockedTarget) : null
 
@@ -1658,6 +1664,8 @@ function takeTurn(state: BattleState, self: Combatant): void {
       : 'idle'
     executeNaiveAction(state, self)
   }
+
+  profEnd('act', _tAct)
 
   pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}${exploitNote ? ` · ⚡${exploitNote}` : ''}`)
   // consume "hit since last turn" so Counterattacker only fires on fresh hits
@@ -1688,6 +1696,7 @@ function isDecisionRound(state: BattleState): boolean {
 
 export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
+  const _r0 = profStart()   // §profile (throwaway): whole-round wall time
   setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
   setTimeScale(state.timeScale)            // per-round helpers scale to finer rounds
   // Bucket combatants once (round-start positions) so separation / target-acquisition
@@ -1705,7 +1714,9 @@ export function advanceRound(state: BattleState): BattleState {
   // §coordination: refresh every team's blackboard (shared waypoint, focus,
   // threat) before any unit acts; tactics/wander read it this round. Throttled to
   // decision rounds (default every round) — between them teams hold their plan.
+  const _tPlan = profStart()
   if (isDecisionRound(state)) runPlanners(state)
+  profEnd('plan', _tPlan)
 
   // §9.1.1 tick status effects (apply DoT, then age out)
   for (const c of state.combatants) {
@@ -1779,17 +1790,25 @@ export function advanceRound(state: BattleState): BattleState {
   // §9.1.4 each living unit acts once (dead-mid-round units are skipped). After
   // each turn, auras track their just-moved caster and pick up anyone who stepped
   // into a zone (enters-during-turn).
+  const _tTurns = profStart()
   for (const c of order) {
     if (!c.alive) continue
     takeTurn(state, c)
     trackZones(state, zoneElig)
   }
+  profEnd('turns', _tTurns)
 
   // §2 zone effects land now, once, on everyone who began/entered/ends inside.
+  const _tZa = profStart()
   applyZoneEffects(state, zoneElig)
+  profEnd('zoneApply', _tZa)
 
   // §9.1.5 win condition
+  const _tOut = profStart()
   state.outcome = evalOutcome(state)
+  profEnd('outcome', _tOut)
+  profEnd('round', _r0)
+  profCountRound()
   setSpatialHash(null)   // live only during the round; between rounds → brute scan
   return state
 }

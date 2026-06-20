@@ -765,6 +765,31 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
     locks in one roster pass instead of one-per-crumble (was O(minions × N),
     `advanceRound`). Non-spatial, so the hash doesn't apply.
 
+### 🔬 On-device perf probe (throwaway branch `claude/battlefield-perf-profiling-f5xg6s`)
+
+The harnesses above measure on Playwright's **4× CPU-throttled desktop** — they
+can't tell you what a *real phone* spends time on. The probe closes that gap: an
+in-app ⏱ button on the battlefield (gated behind `?probe=1`, also works in DEV)
+that captures, over a Start→Stop window, and copies a gist-ready report:
+- **Engine** per-phase ms from `advanceRound` (`src/engine/profile.ts`, an ambient
+  matching `timescale.ts`/`arena.ts` — default off, determinism-neutral, so
+  snapshot replays stay byte-identical): `plan` (team AI), and inside `turns`:
+  `decide` (targeting/tactics = the per-unit "AI"), `move` (pathing), `act`
+  (skills/attacks), plus `zoneApply`/`outcome`/`round` total.
+- **Render** — a React `<Profiler>` around the battle subtree (commit ms/rate).
+- **Frames** — rAF fps + worst frame + long-tasks (the actual lag signal).
+- **Scene + device** — entity/token/DOM counts, UA, cores, DPR, memory, viewport.
+
+Collector: `src/dev/perfProbe.ts` (also on `window.__perf` under `?probe`); UI:
+`src/dev/PerfPanel.tsx`; smoke/usage: `e2e/probe-smoke.spec.ts`. On-device repro:
+open the PR preview at `?perf=1&probe=1&heroes=15&cap=40` (perfMode is allowed in a
+prod build *only* when `?probe` is also set, and still skips save load/autosave).
+Early throttled-mobile reading (15 heroes / 34 enemies): engine ~13ms/round and
+only ~1% of wall clock, render ~7ms/commit, but worst frame ~100ms with several
+~60ms long-tasks/window — i.e. the felt lag is **round-boundary long-tasks**
+(reconcile/paint), not the AI. Confirms the render-bound finding below on real
+mobile; `decide` (AI) is a small slice. **Throwaway — delete before merge to main.**
+
 ### ✅ "Many entities" is RENDER-bound, not engine-bound — composited transforms (2026-06)
 
 A focused pass on the *many-entities* case (15 casters + 30–40 monsters = 40–57
