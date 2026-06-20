@@ -494,6 +494,19 @@ interface ProtoState {
   clearPack: (unitId: string) => void
   depositPack: (unitId: string) => void                    // pack → shared storage
   depositAllPacks: () => void
+
+  // ── Cards & sockets (mock, display-only) ──────────────────────────────────────
+  // ownedCards: how many of each card the guild holds. sockets: per equipment
+  // INSTANCE, a fixed-length slot array (cardId | null). Socketing moves a card
+  // from the owned pool into a slot; removing returns it. Display-only for now —
+  // getDerivedStats doesn't read these yet (the real itemSockets slice will host
+  // them when the math is wired).
+  ownedCards: Record<string, number>
+  sockets: Record<string, (string | null)[]>
+  cardsSeeded: boolean
+  seedCards: (owned: Record<string, number>, sockets: Record<string, (string | null)[]>) => void
+  insertCard: (instanceId: string, slotIdx: number, cardId: string, slotCount: number) => void
+  removeCard: (instanceId: string, slotIdx: number) => void
 }
 
 export const useProtoStore = create<ProtoState>((set) => ({
@@ -517,6 +530,9 @@ export const useProtoStore = create<ProtoState>((set) => ({
   questCompletions: {},
   packs: {},
   packsSeeded: false,
+  ownedCards: {},
+  sockets: {},
+  cardsSeeded: false,
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
@@ -665,6 +681,28 @@ export const useProtoStore = create<ProtoState>((set) => ({
     for (const pack of Object.values(s.packs))
       for (const [id, qty] of Object.entries(pack)) if (qty > 0) g.grantMiscItem(id, qty)
     return { packs: {} }
+  }),
+
+  seedCards: (owned, sockets) => set((s) => (s.cardsSeeded ? s : { ownedCards: owned, sockets, cardsSeeded: true })),
+  insertCard: (instanceId, slotIdx, cardId, slotCount) => set((s) => {
+    if ((s.ownedCards[cardId] ?? 0) <= 0) return s
+    const arr = (s.sockets[instanceId] ?? Array<string | null>(slotCount).fill(null)).slice()
+    if (slotIdx < 0 || slotIdx >= arr.length) return s
+    const owned = { ...s.ownedCards }
+    const prev = arr[slotIdx]
+    if (prev) owned[prev] = (owned[prev] ?? 0) + 1            // swap: return the old card
+    owned[cardId] = (owned[cardId] ?? 0) - 1
+    if (owned[cardId] <= 0) delete owned[cardId]
+    arr[slotIdx] = cardId
+    return { ownedCards: owned, sockets: { ...s.sockets, [instanceId]: arr } }
+  }),
+  removeCard: (instanceId, slotIdx) => set((s) => {
+    const arr = s.sockets[instanceId]?.slice()
+    if (!arr) return s
+    const cardId = arr[slotIdx]
+    if (!cardId) return s
+    arr[slotIdx] = null
+    return { ownedCards: { ...s.ownedCards, [cardId]: (s.ownedCards[cardId] ?? 0) + 1 }, sockets: { ...s.sockets, [instanceId]: arr } }
   }),
 }))
 
