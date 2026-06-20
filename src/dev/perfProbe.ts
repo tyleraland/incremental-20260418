@@ -288,9 +288,15 @@ class PerfProbe {
       pctOfWallClock: +((roundTotal / elapsedMs) * 100).toFixed(1),
     }
 
+    const visualToggles =
+      typeof document !== 'undefined'
+        ? Array.from(document.documentElement.classList).filter((c) => c.startsWith('perf-'))
+        : []
+
     const json = {
       capturedAt: new Date().toISOString(),
       elapsedMs: +elapsedMs.toFixed(0),
+      visualToggles,
       device: this.deviceInfo(),
       scene: this.sceneInfo(),
       frames,
@@ -305,6 +311,7 @@ class PerfProbe {
     const L: string[] = []
     L.push('# Battlefield perf probe')
     L.push(`captured ${json.capturedAt}   window ${(elapsedMs / 1000).toFixed(1)}s`)
+    if (visualToggles.length) L.push(`A/B effects stripped: ${visualToggles.join(', ')}`)
     L.push('')
     L.push('## Device')
     L.push(`ua: ${d.userAgent}`)

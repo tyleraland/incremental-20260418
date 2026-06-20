@@ -10,11 +10,28 @@ function useProbeLive(): ProbeLive {
   return useSyncExternalStore(perfProbe.subscribe, perfProbe.getLive, perfProbe.getLive)
 }
 
+// A/B toggles: each strips one GPU-expensive effect (via an <html> class + CSS in
+// index.css) so we can watch fps recover and pin the compositor hog. Order =
+// likeliest-first for this GPU-bound case.
+const TOGGLES: { cls: string; label: string; title: string }[] = [
+  { cls: 'perf-noblur', label: 'blur', title: 'Strip backdrop-blur (re-blurs the moving battlefield every frame)' },
+  { cls: 'perf-noshadow', label: 'shadow', title: 'Strip box/drop shadows' },
+  { cls: 'perf-notransition', label: 'glide', title: 'Strip CSS transitions (the known ~2× fps ceiling)' },
+  { cls: 'perf-flat', label: 'flat', title: 'Hide token labels/nubs — bare circles only' },
+]
+
 export function PerfPanel() {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [raw, setRaw] = useState<string | null>(null)
+  const [active, setActive] = useState<string[]>([])
   const live = useProbeLive()
+
+  const toggleEffect = (cls: string) => {
+    const root = document.documentElement
+    root.classList.toggle(cls)
+    setActive(TOGGLES.map((t) => t.cls).filter((c) => root.classList.contains(c)))
+  }
 
   const copy = () => {
     const text = perfProbe.report()
@@ -83,6 +100,29 @@ export function PerfPanel() {
           onClick={copy}
           className="h-7 px-2 rounded-md border border-game-border text-game-text-dim hover:bg-white/5"
         >{copied ? '✓' : '⎘ Copy'}</button>
+      </div>
+
+      <div className="mt-2 border-t border-game-border/60 pt-1.5">
+        <div className="text-[9px] text-game-text-dim mb-1">A/B — strip an effect, watch fps:</div>
+        <div className="flex flex-wrap gap-1">
+          {TOGGLES.map((t) => {
+            const on = active.includes(t.cls)
+            return (
+              <button
+                key={t.cls}
+                onClick={() => toggleEffect(t.cls)}
+                title={t.title}
+                className={`px-1.5 h-6 rounded border text-[10px] ${
+                  on
+                    ? 'border-amber-500/70 bg-amber-950/70 text-amber-200'
+                    : 'border-game-border text-game-text-dim hover:bg-white/5'
+                }`}
+              >
+                {on ? `−${t.label}` : t.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <p className="mt-1.5 text-[9px] leading-tight text-game-text-dim">
