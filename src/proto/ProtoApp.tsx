@@ -5,6 +5,7 @@ import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
 import { QuestJournal, useQuestBoard } from './QuestJournal'
+import { Town } from './Town'
 import { Guild } from '@/pages/Guild'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
@@ -179,8 +180,8 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
 }
 
 // ── Top-bar global nav ─────────────────────────────────────────────────────--
-type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests'
-const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests' }
+type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'town'
+const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', town: 'Town' }
 
 function NavBtn({ icon, label, active, disabled, badge, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; badge?: number; onClick?: () => void }) {
   return (
@@ -401,6 +402,7 @@ export function ProtoApp() {
       {/* global nav bar — guild/reports/time + settings (placeholders) */}
       <header className="shrink-0 flex items-center gap-1.5 px-2 h-11 border-b border-game-border bg-game-surface/70">
         <NavBtn icon="⚜" label="Guild"   active={panel === 'guild'}   onClick={() => setPanel('guild')} />
+        <NavBtn icon="🏪" label="Town"    active={panel === 'town'}    onClick={() => setPanel('town')} />
         <QuestsNavButton active={panel === 'quests'} onClick={() => setPanel('quests')} />
         <NavBtn icon="📊" label="Reports" active={panel === 'reports'} onClick={() => setPanel('reports')} />
         <NavBtn icon="⏳" label="Time"    active={panel === 'time'}    onClick={() => setPanel('time')} />
@@ -489,6 +491,8 @@ export function ProtoApp() {
 
       {panel === 'quests'
         ? <QuestJournal onClose={() => setPanel(null)} onGoto={gotoQuest} />
+        : panel === 'town'
+        ? <Town onClose={() => setPanel(null)} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
     </div>
   )

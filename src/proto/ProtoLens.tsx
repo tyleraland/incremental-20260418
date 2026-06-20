@@ -10,6 +10,7 @@ import { TraitRow } from '@/components/TraitBubble'
 import { ACTION_SLOT_COUNT } from '@/types'
 import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait, ActionSlotEntry } from '@/types'
 import { useProtoStore } from './protoStore'
+import { GOLD_ID, materialValue, equipmentValue } from './economy'
 import { buildSaga } from './lore'
 import { ArmyMatrix } from './ArmyMatrix'
 import { LocationDetail } from './LocationDetail'
@@ -851,6 +852,22 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
   const miscItems = useGameStore((s) => s.miscItems)
   const equipItem = useGameStore((s) => s.equipItem)
   const units     = useGameStore((s) => s.units)
+  const consumeMiscItem = useGameStore((s) => s.consumeMiscItem)
+  const grantMiscItem   = useGameStore((s) => s.grantMiscItem)
+  const gold = miscItems.find((m) => m.id === GOLD_ID)?.quantity ?? 0
+  // Quick-sell mode: turns free gear + materials into sell buttons (full Market
+  // with ×1/×10/×100 lives in the Town overlay). Held gear is never sellable.
+  const [sellMode, setSellMode] = useState(false)
+  function sellMaterial(id: string, have: number, n: number) {
+    const count = Math.min(n, have)
+    if (count <= 0) return
+    consumeMiscItem(id, count)
+    grantMiscItem(GOLD_ID, materialValue(id) * count)
+  }
+  function sellGear(it: EquipmentItem) {
+    useGameStore.setState((s) => ({ equipment: s.equipment.filter((e) => e.id !== it.id) }))
+    grantMiscItem(GOLD_ID, equipmentValue(it))
+  }
   // Who holds what (worn/reserved) — held gear is labelled, not hidden; the
   // equip action is still blocked for gear reserved by *another* hero.
   const heldBy = heldByMap(units)
@@ -877,6 +894,12 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
       {/* slim header line + scope toggle */}
       <div className="flex items-center gap-2 text-[10px] text-game-text-dim">
         <span className="truncate">Stash · {equipment.length} gear · {miscItems.length} mat{unit ? <> · vs <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : null}</span>
+        <span className="ml-auto shrink-0 text-game-gold tabular-nums">◈ {gold.toLocaleString()}</span>
+        <button
+          onClick={() => setSellMode((v) => !v)}
+          title={sellMode ? 'Exit sell mode' : 'Quick-sell loose loot for gold'}
+          className={`px-2 py-0.5 rounded-md border shrink-0 ${sellMode ? 'border-game-gold/60 bg-game-gold/15 text-game-gold' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
+        >$ Sell</button>
         <button
           onClick={() => setEquipFilter((f) => EQUIP_FILTER_NEXT[f])}
           title={`Equipped state: ${EQUIP_FILTER_LABEL[equipFilter]}`}
@@ -942,7 +965,9 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-game-text font-medium truncate flex-1">{it.name}</span>
                         {it.slots ? <span className="text-[9px] text-game-text-dim" title={`${it.slots} card sockets`}>◳{it.slots}</span> : null}
-                        {unit && slot
+                        {sellMode && !heldBy.has(it.id)
+                          ? <button onClick={() => sellGear(it)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-gold/50 text-game-text hover:bg-game-gold/10 shrink-0">sell <span className="text-game-gold font-semibold">{equipmentValue(it)}g</span></button>
+                          : unit && slot
                           ? (worn
                             ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
                             : otherHolds
@@ -978,7 +1003,23 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
             <span>{usable ? 'Consumables' : 'Materials & consumables'}</span>
             <span className="text-game-muted normal-case tracking-normal">({mats.length})</span>
           </button>
-          {!collapsed.has('__mats') && (
+          {!collapsed.has('__mats') && (sellMode ? (
+            <div className="space-y-1">
+              {mats.filter((m) => m.id !== GOLD_ID).map((m) => (
+                <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}>
+                  <span className="text-xs text-game-text truncate flex-1">{m.name}</span>
+                  <span className="text-[10px] text-game-muted">{materialValue(m.id)}g ea</span>
+                  <span className="text-[10px] text-game-text-dim tabular-nums">×{m.quantity}</span>
+                  {[1, 10].map((n) => (
+                    <button key={n} disabled={m.quantity < n} onClick={() => sellMaterial(m.id, m.quantity, n)}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${m.quantity >= n ? 'border-game-gold/50 text-game-text hover:bg-game-gold/10' : 'border-game-border text-game-muted cursor-not-allowed'}`}>×{n}</button>
+                  ))}
+                  <button onClick={() => sellMaterial(m.id, m.quantity, m.quantity)}
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/10 shrink-0">all</button>
+                </div>
+              ))}
+            </div>
+          ) : (
             <div className="grid grid-cols-2 gap-1">
               {mats.map((m) => (
                 <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}>
@@ -987,7 +1028,7 @@ function ItemsLens({ unit }: { unit: Unit | null }) {
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>

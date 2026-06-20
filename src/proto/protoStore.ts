@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
 import type { UnitCombatStats, QuestDropRule, Unit } from '@/types'
+import { type Pack, packRoom } from './economy'
 
 // ── Prototype-only mock state ───────────────────────────────────────────────--
 //
@@ -479,6 +480,20 @@ interface ProtoState {
   // Lifetime quest/bounty completion tally (questId → times completed), for a
   // future "quests completed" report. Repeatable bounty claims increment too.
   questCompletions: Record<string, number>
+
+  // ── Per-hero carry (mock) ────────────────────────────────────────────────────
+  // The "every hero carries their own loot until they reach town" exploration.
+  // packs[unitId] is what that hero is carrying; capacity-gated (economy.ts).
+  // Unpersisted + not wired into the combat loop — `simulateHunt` fakes drops so
+  // we can feel packs fill, deposit emptying them into shared storage (miscItems).
+  packs: Record<string, Pack>
+  packsSeeded: boolean
+  seedPacks: (seed: Record<string, Pack>) => void          // one-time mock fill
+  addToPack: (unitId: string, itemId: string, qty: number) => void // capacity-gated
+  simulateHunt: (unitId: string, drops: { itemId: string; qty: number }[]) => void
+  clearPack: (unitId: string) => void
+  depositPack: (unitId: string) => void                    // pack → shared storage
+  depositAllPacks: () => void
 }
 
 export const useProtoStore = create<ProtoState>((set) => ({
@@ -500,6 +515,8 @@ export const useProtoStore = create<ProtoState>((set) => ({
   bountyDone: [],
   bountyClaimed: {},
   questCompletions: {},
+  packs: {},
+  packsSeeded: false,
 
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
@@ -607,6 +624,47 @@ export const useProtoStore = create<ProtoState>((set) => ({
     }
     if (def.repeatable) return { questCompletions: completions }
     return { bountyDone: [...s.bountyDone, bountyId], questCompletions: completions }
+  }),
+
+  seedPacks: (seed) => set((s) => (s.packsSeeded ? s : { packs: seed, packsSeeded: true })),
+  // Add to a hero's pack, but never past capacity — excess is "left on the
+  // ground" (the carry-full mechanic). Drops are added in id order, oldest-room
+  // first, so a full pack silently refuses extras.
+  addToPack: (unitId, itemId, qty) => set((s) => {
+    const pack = s.packs[unitId] ?? {}
+    const add = Math.min(qty, packRoom(pack))
+    if (add <= 0) return s
+    return { packs: { ...s.packs, [unitId]: { ...pack, [itemId]: (pack[itemId] ?? 0) + add } } }
+  }),
+  simulateHunt: (unitId, drops) => set((s) => {
+    const pack = { ...(s.packs[unitId] ?? {}) }
+    let room = packRoom(pack)
+    for (const d of drops) {
+      if (room <= 0) break
+      const add = Math.min(d.qty, room)
+      pack[d.itemId] = (pack[d.itemId] ?? 0) + add
+      room -= add
+    }
+    return { packs: { ...s.packs, [unitId]: pack } }
+  }),
+  clearPack: (unitId) => set((s) => {
+    if (!s.packs[unitId]) return s
+    const next = { ...s.packs }; delete next[unitId]
+    return { packs: next }
+  }),
+  depositPack: (unitId) => set((s) => {
+    const pack = s.packs[unitId]
+    if (!pack) return s
+    const g = useGameStore.getState()
+    for (const [id, qty] of Object.entries(pack)) if (qty > 0) g.grantMiscItem(id, qty)
+    const next = { ...s.packs }; delete next[unitId]
+    return { packs: next }
+  }),
+  depositAllPacks: () => set((s) => {
+    const g = useGameStore.getState()
+    for (const pack of Object.values(s.packs))
+      for (const [id, qty] of Object.entries(pack)) if (qty > 0) g.grantMiscItem(id, qty)
+    return { packs: {} }
   }),
 }))
 
