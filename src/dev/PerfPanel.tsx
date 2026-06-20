@@ -67,6 +67,44 @@ export function PerfPanel() {
   const applySmoothPreset = () => { changePace(1); changeGran(6) }
   const logicalPerSec = 5 / (pace * gran)
 
+  // Live enemy density for the GPU-ceiling sweep — add/remove monsters in the watched
+  // battle without hunting for `?cap=` in the URL on a phone. Clones a living enemy
+  // (combatants are fully serializable — the snapshot system proves it) and makes the
+  // whole crowd unkillable so the field holds density across rounds (no `?sustain`
+  // needed). Throwaway render-stress hack; combat balance is meaningless under it.
+  const readEnemies = () => {
+    const s = useGameStore.getState()
+    const b = s.combatLocationId ? s.battles[s.combatLocationId] : undefined
+    return b ? b.combatants.filter((c) => c.team === 'enemy' && c.alive).length : 0
+  }
+  const [enemies, setEnemies] = useState(readEnemies)
+  const changeDensity = (delta: number) => {
+    const s = useGameStore.getState()
+    const id = s.combatLocationId
+    const b = id ? s.battles[id] : undefined
+    if (!b) return
+    if (delta > 0) {
+      const tmpl = b.combatants.find((c) => c.team === 'enemy')
+      if (!tmpl) return
+      for (let i = 0; i < delta; i++) {
+        const c = structuredClone(tmpl)
+        c.id = `dev-en-${Date.now().toString(36)}-${i}-${Math.floor(Math.random() * 1e4)}`
+        c.alive = true; c.maxHp = 1e12; c.hp = 1e12
+        c.pos = { x: Math.random() * b.cols, y: Math.random() * b.rows }
+        c.statuses = []; c.channel = null; c.lockedTargetId = null; c.moveOrder = null
+        b.combatants.push(c)
+      }
+    } else {
+      let n = -delta
+      for (let i = b.combatants.length - 1; i >= 0 && n > 0; i--) {
+        if (b.combatants[i].team === 'enemy') { b.combatants.splice(i, 1); n-- }
+      }
+    }
+    for (const c of b.combatants) if (c.team === 'enemy') { c.maxHp = 1e12; c.hp = 1e12 }
+    useGameStore.setState({ battles: { ...s.battles, [id!]: { ...b } } })
+    setEnemies(readEnemies())
+  }
+
   const copy = () => {
     const text = perfProbe.report()
     try {
@@ -155,6 +193,15 @@ export function PerfPanel() {
         <button onClick={applySmoothPreset} className="mt-1 w-full h-6 rounded border border-amber-500/60 bg-amber-950/50 text-amber-200 text-[10px] hover:bg-amber-900/50" title="every tick + timeScale 6 — the jerk-harness smoothest at 0.83 rounds/s">
           ★ apply smoothest 0.83/s (every tick · ts6)
         </button>
+        <div className="mt-1.5 flex items-center justify-between">
+          <span className="text-[9px] text-game-text-dim">density (GPU stress)</span>
+          <span className="text-[10px] text-game-text tabular-nums">{enemies} enemies</span>
+        </div>
+        <div className="mt-1 flex items-center gap-1">
+          <button onClick={() => changeDensity(-20)} className="h-6 px-2 rounded border border-game-border text-game-text-dim hover:bg-white/5" title="remove 20 enemies">−20</button>
+          <span className="flex-1 text-center text-[10px] text-game-text-dim tabular-nums">tokens {live.tokens}</span>
+          <button onClick={() => changeDensity(20)} className="h-6 px-2 rounded border border-rose-600/60 bg-rose-950/50 text-rose-200 hover:bg-rose-900/50" title="add 20 unkillable enemies (holds density)">+20</button>
+        </div>
       </div>
 
       <div className="mt-2 border-t border-game-border/60 pt-1.5">
