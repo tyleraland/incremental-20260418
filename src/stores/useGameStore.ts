@@ -239,12 +239,12 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 
 // ── Combat lifecycle (drives the engine from the tick loop) ────────────────────
 
-// Finer rounds: run the engine every tick at timeScale = ROUND_EVERY_TICKS, so the
-// real-time pace is unchanged (timeScale × rounds/sec is constant) but motion is
-// stepped finer and combat events spread out. Bumping ROUND_TIME_SCALE makes the
-// sim finer/smoother at the same pace (it's the lever to tune feel).
-const ROUND_TIME_SCALE    = 2    // engine rounds per logical round (finer = smoother)
-const ROUND_EVERY_TICKS   = 5    // advance one engine round every 5 ticks = ~1 round/sec (ticks run 5/sec). Slowed from 1 once the tick-clock fix let ticks land on time: at full pace combat ran much faster than the old (silently tick-dropping) build felt. Also drives the offline rounds↔ticks conversion, so live + offline pace stay in sync.
+// Finer rounds: run the engine every tick at timeScale = ROUND_TIME_SCALE, so the
+// real-time pace is unchanged by timeScale alone (it only sub-steps motion) while
+// the tick cadence (ROUND_EVERY_TICKS) sets how often a round actually lands.
+// Logical rounds/sec = TICKS_PER_SECOND(5) / (ROUND_EVERY_TICKS × ROUND_TIME_SCALE).
+const ROUND_TIME_SCALE    = 6    // engine rounds per logical round (finer = smoother motion)
+const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (5/sec). Locked to the 200ms tick clock — no batching jitter — which the on-device probe (jerk harness) measured as ~2× smoother than stepping every 3 ticks at a coarser timeScale. With ROUND_TIME_SCALE=6 that's ~0.83 logical rounds/sec. Also drives the offline rounds↔ticks conversion, so live + offline pace stay in sync.
 
 // DEV-only cadence overrides for the "slower rounds" exploration. `?hts=N` sets the
 // heavy-field timeScale (granularity: higher = smaller steps), `?hevery=M` the ticks
@@ -261,20 +261,21 @@ const DEV_HEAVY_EVERY = devNum('hevery')
 const DEV_BASE_TS     = devNum('ts')
 const DEV_DECIDE      = devNum('decide')   // re-decide targeting/planner every N engine rounds (prototype)
 // Per-field engine cadence: `timeScale` (granularity — higher = finer/smaller steps =
-// smoother) and `everyTicks` (how many 200ms ticks between rounds — tempo and CPU).
-// A large open-world field is the costly one to full-sim and the one that reads jerky
-// on mobile. We keep the *fine* granularity (timeScale 2, same as normal fields — the
-// jerk-metric sweep in e2e/jerk.spec.ts showed granularity, NOT tempo, is the lever)
-// but step it every 2 ticks: that halves the advanceRound work (the long-tasks behind
-// the choppiness) AND halves the field's logical pace — a deliberate trade (crowded
-// watched fights resolve slower but glide smoothly; off-screen/offline rewards are
-// rate-extrapolated regardless). An earlier version threw the granularity away instead
-// (timeScale 1, full pace) to keep pace identical, but timeScale 1 is the *coarsest*,
-// jerkiest step — measurably worse. The `--seg-ms` glide (BattleView) stretches to the
-// ~400ms cadence so the every-2-ticks step still reads continuous. Static per battle
-// (from the cap at creation) so timeScale never thrashes mid-battle and snapshot
-// replays stay byte-identical. DEV `?hts=`/`?hevery=`/`?ts=` override for tuning sweeps.
-const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which a field runs the trade
+// smoother motion; it sub-steps a round and does NOT change per-round CPU) and
+// `everyTicks` (how many 200ms ticks between rounds — the real CPU/throughput lever,
+// since each landed round runs one advanceRound + one React commit + repaint of every
+// token). Granularity is the smoothness lever (the on-device jerk sweep, e2e/jerk.spec
+// .ts), so we run the finest practical timeScale every tick (ROUND_EVERY_TICKS=1). The
+// only place that backs off is a genuinely huge open-world crowd, where per-round
+// advanceRound + repaint of hundreds of tokens overruns the frame budget (measured on
+// a real phone: ~75 tokens = 59fps, ~130 = 46fps, ~250 = 13fps) — there we step LESS
+// often (openWorldEveryTicks) so each expensive round gets more budget; motion stays
+// fine-stepped, the field just resolves slower under a mob (graceful degradation —
+// off-screen/offline rewards are rate-extrapolated regardless). timeScale is static
+// per battle (from creation) so it never thrashes mid-battle and snapshot replays stay
+// byte-identical; everyTicks is a store-side scheduling choice, outside the engine, so
+// adapting it per-tick is replay-safe. DEV `?hts=`/`?hevery=`/`?ts=` override for sweeps.
+const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which decisions throttle (DECISION_INTERVAL_HEAVY)
 // Heavy fields run at FULL pace (one round every tick) but re-decide targeting +
 // the team planner only every DECISION_INTERVAL_HEAVY engine rounds — units execute
 // their committed lock/movement in between. This kills the fast-slow jerk without
@@ -289,6 +290,20 @@ function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
 function decisionIntervalFor(loc: Location): number {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
   return heavy ? DECISION_INTERVAL_HEAVY : 1
+}
+// Density-adaptive step cadence for the live, watched open-world field. Normal play
+// is a handful of tokens → step every tick (smoothest). A huge crowd makes each round
+// (advanceRound + the React commit/repaint of every token) overrun the frame budget,
+// so we step less often above comfortable counts — fewer expensive rounds/sec keeps
+// the main thread and compositor from saturating. Tuned from on-device measurements
+// (≤~80 tokens runs every-tick at ~59fps; ~250 every-tick collapsed to ~13fps). Keyed
+// on live alive count, evaluated each tick, and outside the engine — so it never
+// affects snapshot replay (which only re-runs advanceRound on a frozen battle).
+function openWorldEveryTicks(aliveCount: number): number {
+  if (aliveCount >= 200) return 5
+  if (aliveCount >= 140) return 3
+  if (aliveCount >= 90)  return 2
+  return 1
 }
 // Off-screen / offline simulation budgets are centralized in `@/lib/sampling`
 // (SAMPLING) — the one place to tune cost-vs-fidelity. SAMPLING.offscreenCreditTicks
@@ -1061,11 +1076,12 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // Live-edit: push any loadout changes onto the heroes already fighting.
       syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
 
-      // Heavy fields advance every 2 ticks (half the advanceRound work, half the
-      // logical pace); normal fields every tick (see cadenceFor / HEAVY_FIELD_CAP).
-      // Spawn trickle and hero reconcile still run every tick above — only the costly
-      // round is paced.
-      const everyTicks = cadenceFor(loc).everyTicks
+      // Step cadence: every tick normally (smoothest), backing off only when the live
+      // crowd is large enough that a per-tick round + repaint overruns the frame budget
+      // (openWorldEveryTicks). Spawn trickle and hero reconcile still run every tick
+      // above — only the costly round is paced.
+      const aliveCount = battle.combatants.reduce((n, c) => n + (c.alive ? 1 : 0), 0)
+      const everyTicks = Math.max(cadenceFor(loc).everyTicks, openWorldEveryTicks(aliveCount))
       if (advance && newTicks % everyTicks === 0) {
         // Clear out enemy corpses from prior rounds before this one resolves —
         // a persistent battle never resets, so without this the combatant list

@@ -8,9 +8,12 @@ import {
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
 } from '@/engine'
 
-// The sim advances ~2.5 *logical* rounds/sec (5 engine rounds/sec ÷ timeScale=2),
-// so status durations (in logical rounds) read back to real seconds.
-const ROUNDS_PER_SEC = 2.5
+// Status/channel durations are stored in ENGINE rounds (buildStatus applies
+// scaleRounds), and the engine runs one round per tick = TICKS_PER_SECOND engine
+// rounds/sec, so dividing a duration by that yields real seconds. (Logical pace is
+// 5 / ROUND_TIME_SCALE ≈ 0.83 rounds/s, but the displayed durations are in engine
+// rounds, so this is the engine-round rate, not the logical one.)
+const ROUNDS_PER_SEC = 5
 
 // Battle rendering for the Map tab's "drop-in" view. The arena fills the space
 // it's given (square, centred) so the battle is showcased; the selected-unit
@@ -875,7 +878,11 @@ function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
       <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
         <div className="text-game-text-dim uppercase tracking-wide mb-1">Blackboard · {c.team}</div>
         <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-game-text-dim">
-          <div>round <span className="text-game-text tabular-nums">{battle.round}</span></div>
+          {/* Logical round is the player-meaningful unit (one "round" of combat); the
+              engine sub-steps it timeScale× for smooth motion, so show the logical
+              count as the headline and the raw engine round (what the trace logs)
+              muted alongside — they used to read as two different numbers. */}
+          <div>round <span className="text-game-text tabular-nums">{Math.floor(battle.round / battle.timeScale)}</span> <span className="text-game-muted tabular-nums">· engine R{battle.round}</span></div>
           <div>mood <span className={c.provoked ? 'text-game-text' : 'text-amber-300'}>{c.provoked ? 'hostile' : 'passive (until hit/called)'}</span></div>
           <div>pos <span className="text-game-text tabular-nums">({c.pos.x.toFixed(1)},{c.pos.y.toFixed(1)})</span></div>
           <div>lock <span className={!c.lockedTargetId ? 'text-game-muted' : lock.beyond ? 'text-amber-300' : 'text-game-text'}>{lock.text}</span></div>
