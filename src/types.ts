@@ -45,9 +45,9 @@ export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armo
 export type TabId        = 'map' | 'units' | 'inventory' | 'guild' | 'reports' | 'time'
 
 // Each unit has a 6-slot action bar; entries either reference an equipment
-// item id or an active-skill id.
+// item id, an active-skill id, or a consumable (miscItem) id.
 export interface ActionSlotEntry {
-  kind: 'item' | 'skill'
+  kind: 'item' | 'skill' | 'consumable'
   id: string
 }
 export const ACTION_SLOT_COUNT = 6

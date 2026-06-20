@@ -1,10 +1,10 @@
 import { test } from '@playwright/test'
 
-// Temp visual check for the redesigned Town (Market bulk / Cards / Stash) + the
-// per-hero Cards (sockets) board and pack. Not part of CI.
+// Temp visual check: merchant-shop Market, Stash equipment sockets (in-town
+// gating), Cards, and the hero consumable action slot. Not part of CI.
 const BASE = '/incremental-20260418/'
 
-test('town + hero cards/sockets', async ({ page }, testInfo) => {
+test('merchant market + stash sockets + consumable slot', async ({ page }, testInfo) => {
   const proj = testInfo.project.name
   const shot = (name: string) => page.screenshot({ path: `e2e/__shots__/town-${proj}-${name}.png` })
 
@@ -12,47 +12,41 @@ test('town + hero cards/sockets', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
   await page.waitForTimeout(2000)
 
+  // Put a hero in a city (so a merchant is open) and the rest on a field.
   await page.evaluate(() => {
     const g = (window as unknown as { __game: { getState: () => { units: { id: string }[]; assignUnits: (ids: string[], loc: string) => void } } }).__game.getState()
-    g.assignUnits(g.units.map((u) => u.id), 'prontera-field-1')
+    const ids = g.units.map((u) => u.id)
+    g.assignUnits(ids.slice(1), 'prontera-field-1')
+    g.assignUnits([ids[0]], 'prontera-city')
   })
   await page.waitForTimeout(500)
 
-  // Town: Market (bulk) → Cards → Stash
+  // Town → Market: merchant grouped by location; open the Prontera shop.
   await page.getByRole('button', { name: 'Town', exact: true }).click()
   await page.waitForTimeout(400)
-  await page.getByRole('button', { name: 'Select junk' }).click().catch(() => {})
-  await page.waitForTimeout(200)
-  await shot('01-market-bulk')
-
-  await page.getByRole('button', { name: 'Cards', exact: true }).click()
+  await shot('01-market-merchants')
+  await page.getByText('Prontera General Store').first().click().catch(() => {})
   await page.waitForTimeout(300)
-  await shot('02-cards')
-  await page.getByText('Wolf Card', { exact: false }).first().click().catch(() => {})
-  await page.waitForTimeout(250)
-  await shot('02b-card-codex')
-  await page.keyboard.press('Escape').catch(() => {})
-  await page.locator('body').click({ position: { x: 5, y: 400 } }).catch(() => {})
+  await shot('01b-shop-open')
 
+  // Stash → Equipment sockets (in-town gating).
   await page.getByRole('button', { name: 'Stash', exact: true }).click()
   await page.waitForTimeout(300)
-  await shot('03-stash')
+  await shot('02-stash-equipment')
+  await page.locator('button', { hasText: /Knife|Sword|Bow|Armor/ }).first().click().catch(() => {})
+  await page.waitForTimeout(300)
+  await shot('02b-stash-socket-editor')
+
   await page.getByRole('button', { name: /Close/ }).click()
   await page.waitForTimeout(200)
 
-  // Hero board: Cards (sockets) sub-tab
-  await page.getByRole('button', { name: /Miri/ }).first().dblclick()
-  await page.waitForTimeout(600)
-  await page.getByRole('button', { name: 'Cards', exact: true }).click().catch(() => {})
+  // Hero → Skills: consumable in the action bar.
+  await page.getByRole('button', { name: /Aldric/ }).first().dblclick().catch(() => {})
+  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: 'Skills', exact: true }).click().catch(() => {})
   await page.waitForTimeout(300)
-  await shot('04-hero-sockets')
-  // Tap an empty slot to open the picker.
-  await page.getByText(/empty slot/).first().click().catch(() => {})
+  // Tap an empty action slot, then assign a consumable.
+  await page.getByRole('button', { name: '＋', exact: true }).first().click().catch(() => {})
   await page.waitForTimeout(250)
-  await shot('04b-hero-socket-picker')
-
-  // Hero Gear sub-tab shows pack strip + socket pips.
-  await page.getByRole('button', { name: 'Gear', exact: true }).click().catch(() => {})
-  await page.waitForTimeout(300)
-  await shot('05-hero-gear-pack')
+  await shot('03-action-slot-picker')
 })

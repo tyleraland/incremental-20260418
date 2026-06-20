@@ -56,5 +56,17 @@ export function seedProtoMocks(): void {
   const g = useGameStore.getState()
   const p = useProtoStore.getState()
   if (!p.packsSeeded) p.seedPacks(buildPackSeed(g.units, g.locations))
-  if (!p.cardsSeeded) { const c = buildCardSeed(g.equipment); p.seedCards(c.owned, c.sockets) }
+  if (!p.cardsSeeded) {
+    const c = buildCardSeed(g.equipment)
+    p.seedCards(c.owned, c.sockets)
+    // Give a couple of starter consumables (kind:'consumable') so the action-bar
+    // consumable slot has something to assign in the prototype.
+    useGameStore.setState((s) => {
+      const has = (id: string) => s.miscItems.some((m) => m.id === id)
+      const add = []
+      if (!has('craft-herb-salve')) add.push({ id: 'craft-herb-salve', name: 'Herb Salve', quantity: 3, kind: 'consumable' as const, description: 'Soothing ointment for minor wounds.' })
+      if (!has('craft-fish-stew')) add.push({ id: 'craft-fish-stew', name: 'Fish Stew', quantity: 2, kind: 'consumable' as const, description: 'Hearty meal. Restores health.' })
+      return add.length ? { miscItems: [...s.miscItems, ...add] } : {}
+    })
+  }
 }

@@ -11,10 +11,7 @@ import { ACTION_SLOT_COUNT } from '@/types'
 import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait, ActionSlotEntry } from '@/types'
 import { useProtoStore } from './protoStore'
 import { GOLD_ID, materialValue, equipmentValue } from './economy'
-import {
-  CARD_REGISTRY, CARD_FIT_OF, CARD_FIT_LABEL, CARD_RARITY_CLS, cardBonusTotal, cardBonusLine,
-} from '@/data/cards'
-import { SocketPips, CardChip, CardCodex, socketsOf } from './CardBits'
+import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
 import { seedProtoMocks } from './seed'
 import { buildSaga } from './lore'
@@ -34,7 +31,7 @@ import { LocationDetail } from './LocationDetail'
 // drives navigation, not the lens.
 
 type Top = 'location' | 'hero' | 'party' | 'items'
-type HeroSub = 'summary' | 'skills' | 'gear' | 'sockets' | 'tactics' | 'pet' | 'saga'
+type HeroSub = 'summary' | 'skills' | 'gear' | 'tactics' | 'pet' | 'saga'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location', label: 'Location', icon: '⌖' },
   { id: 'hero',     label: 'Hero',     icon: '◈' },
@@ -43,7 +40,7 @@ const TOP_TABS: { id: Top; label: string; icon: string }[] = [
 ]
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
   { id: 'summary', label: 'Summary' }, { id: 'skills', label: 'Skills' }, { id: 'gear', label: 'Gear' },
-  { id: 'sockets', label: 'Cards' }, { id: 'tactics', label: 'Tactics' }, { id: 'saga', label: 'Saga' },
+  { id: 'tactics', label: 'Tactics' }, { id: 'saga', label: 'Saga' },
 ]
 // The Pet sub only appears once a hero has a beast companion.
 const PET_SUB: { id: HeroSub; label: string } = { id: 'pet', label: 'Pet' }
@@ -314,106 +311,6 @@ function GearLens({ unit }: { unit: Unit }) {
       ) : (
         <div className="text-xs text-game-muted italic">Tap a slot to compare gear — each option shows how it moves this hero's stats (and it updates live on the battlefield).</div>
       )}
-    </div>
-  )
-}
-
-// ── Sockets lens (this hero's card slots) ─────────────────────────────────────--
-// The per-hero card board: every piece of the hero's gear that has sockets, what
-// each slot holds, and an inline picker to insert/swap/remove cards (display-only
-// stat preview for now). Glanceable pips up top; detail on tap.
-function heroSocketGear(unit: Unit, equipment: EquipmentItem[]): EquipmentItem[] {
-  const ws = unit.weaponSets[unit.activeWeaponSet]
-  const ids = [ws.mainHand, ws.offHand, unit.equipment.armor, unit.equipment.accessory, unit.equipment.sideboard1, unit.equipment.sideboard2]
-    .filter((x): x is string => !!x)
-  const seen = new Set<string>()
-  const out: EquipmentItem[] = []
-  for (const id of ids) {
-    if (seen.has(id)) continue
-    seen.add(id)
-    const it = equipment.find((e) => e.id === id)
-    if (it && (it.slots ?? 0) > 0) out.push(it)
-  }
-  return out
-}
-
-function SocketsLens({ unit }: { unit: Unit }) {
-  const equipment  = useGameStore((s) => s.equipment)
-  const sockets    = useProtoStore((s) => s.sockets)
-  const ownedCards = useProtoStore((s) => s.ownedCards)
-  const insertCard = useProtoStore((s) => s.insertCard)
-  const removeCard = useProtoStore((s) => s.removeCard)
-  const [active, setActive] = useState<{ itemId: string; idx: number } | null>(null)
-  const [inspect, setInspect] = useState<string | null>(null)
-
-  const items = heroSocketGear(unit, equipment)
-  if (items.length === 0) {
-    return <div className="text-xs text-game-muted italic">None of {unit.name.split(' ')[0]}'s gear has card sockets. Slotted gear (◳) takes cards that modify its stats — craft or find some, or socket from the stash.</div>
-  }
-
-  return (
-    <div className="space-y-3">
-      <p className="text-[11px] text-game-text-dim">Slot cards into {unit.name.split(' ')[0]}'s gear. <span className="text-game-muted">Stat preview only — combat math is wired in a later pass.</span></p>
-      {items.map((it) => {
-        const slots = socketsOf(sockets, it)
-        const line = cardBonusLine(cardBonusTotal(slots))
-        const fit = CARD_FIT_OF[it.category]
-        const fitting = Object.keys(ownedCards).filter((id) => (ownedCards[id] ?? 0) > 0 && CARD_REGISTRY[id]?.fit === fit)
-        return (
-          <div key={it.id} className="rounded-lg border border-game-border bg-game-bg p-2.5 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-game-text truncate flex-1">{it.name}</span>
-              <span className="text-[9px] text-game-muted">{CATEGORY_LABELS[it.category]}</span>
-              <SocketPips slots={slots} showCount />
-            </div>
-            {line && <div className="text-[10px] text-game-green font-mono">Cards: {line}</div>}
-
-            <div className="flex flex-wrap gap-1.5">
-              {slots.map((cid, idx) => {
-                const card = cid ? CARD_REGISTRY[cid] : null
-                const isActive = active?.itemId === it.id && active.idx === idx
-                return (
-                  <button key={idx} onClick={() => setActive(isActive ? null : { itemId: it.id, idx })}
-                    className={['flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] transition-colors',
-                      isActive ? 'border-game-primary bg-game-primary/15 text-game-text'
-                        : card ? `${CARD_RARITY_CLS[card.rarity]} bg-game-bg`
-                        : 'border-dashed border-game-border/70 text-game-muted'].join(' ')}>
-                    <span>{card ? '◆' : '◇'}</span>
-                    <span className="truncate max-w-[7rem]">{card ? card.name : `empty slot ${idx + 1}`}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {active?.itemId === it.id && (() => {
-              const idx = active.idx
-              const cur = slots[idx]
-              return (
-                <div className="rounded-md border border-game-border/70 bg-game-surface/40 p-2 space-y-1.5">
-                  {cur && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-game-text-dim flex-1">Slot {idx + 1}: <span className="text-game-text">{CARD_REGISTRY[cur]?.name}</span></span>
-                      <button onClick={() => setInspect(cur)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text">inspect</button>
-                      <button onClick={() => removeCard(it.id, idx)} className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/50 text-red-300 hover:bg-red-500/10">remove</button>
-                    </div>
-                  )}
-                  <div className="text-[9px] uppercase tracking-widest text-game-text-dim">{cur ? 'Swap for' : 'Insert a card'} · {CARD_FIT_LABEL[fit]}</div>
-                  {fitting.length === 0 ? (
-                    <div className="text-[10px] text-game-muted italic">No fitting cards owned. {CARD_FIT_LABEL[fit]} cards go here.</div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      {fitting.map((id) => (
-                        <CardChip key={id} cardId={id} count={ownedCards[id]} onClick={() => { insertCard(it.id, idx, id, it.slots ?? 1); setActive(null) }} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-        )
-      })}
-      {inspect && <CardCodex cardId={inspect} onClose={() => setInspect(null)} />}
     </div>
   )
 }
@@ -753,6 +650,7 @@ function SagaLens({ unit }: { unit: Unit }) {
 function SkillsLens({ unit }: { unit: Unit }) {
   const setActionSlot   = useGameStore((s) => s.setActionSlot)
   const equipment       = useGameStore((s) => s.equipment)
+  const miscItems       = useGameStore((s) => s.miscItems)
   const units           = useGameStore((s) => s.units)
   const openStageOverlay = useProtoStore((s) => s.openStageOverlay)
   const [slotIdx, setSlotIdx] = useState<number | null>(null)
@@ -760,6 +658,7 @@ function SkillsLens({ unit }: { unit: Unit }) {
   const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
   const onBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'skill').map((e) => e.id))
   const itemsOnBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'item').map((e) => e.id))
+  const consumablesOnBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'consumable').map((e) => e.id))
   // Learned ACTIVE skills are the assignable pool (passives are always-on).
   const learnedActive = getAvailableSkills(unit).filter((e) => e.current > 0 && e.skill.type === 'active')
   const pool = learnedActive.filter((e) => !onBar.has(e.skill.id))
@@ -767,10 +666,13 @@ function SkillsLens({ unit }: { unit: Unit }) {
   // inactive) so they're carried, not worn. Hide gear another hero holds.
   const reserved = reservedByOthers(units, unit.id)
   const itemPool = equipment.filter((it) => canUse(it, unit) && !reserved.has(it.id) && !itemsOnBar.has(it.id))
+  // Consumables (potions/food) the hero can carry on the bar to use in battle.
+  const consumablePool = miscItems.filter((i) => i.kind === 'consumable' && i.quantity > 0 && !consumablesOnBar.has(i.id))
 
   function label(e: ActionSlotEntry | null): string {
     if (!e) return ''
     if (e.kind === 'skill') return SKILL_REGISTRY[e.id]?.name ?? e.id
+    if (e.kind === 'consumable') return miscItems.find((i) => i.id === e.id)?.name ?? 'item'
     return equipment.find((it) => it.id === e.id)?.name ?? 'item'
   }
 
@@ -802,7 +704,7 @@ function SkillsLens({ unit }: { unit: Unit }) {
 
       {slotIdx !== null && (
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Slot {slotIdx + 1} — assign a skill</div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Slot {slotIdx + 1} — skill, consumable, or item</div>
           <div className="space-y-1">
             {slots[slotIdx] && (
               <button onClick={() => { setActionSlot(unit.id, slotIdx, null); setSlotIdx(null) }}
@@ -824,6 +726,25 @@ function SkillsLens({ unit }: { unit: Unit }) {
                 <div className="text-[10px] text-game-text-dim leading-snug">{skill.description(current)}</div>
               </button>
             ))}
+            {consumablePool.length > 0 && (
+              <>
+                <div className="text-[9px] uppercase tracking-widest text-game-muted pt-1.5 px-1">Consumables — carry to use in battle</div>
+                {consumablePool.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setActionSlot(unit.id, slotIdx, { kind: 'consumable', id: c.id }); setSlotIdx(null) }}
+                    className="w-full text-left rounded-md border border-game-border/70 bg-game-bg/60 px-2.5 py-1.5 hover:border-game-green/50"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm leading-none">🫙</span>
+                      <span className="text-xs font-medium text-game-text">{c.name}</span>
+                      <span className="text-[9px] text-game-text-dim tabular-nums">×{c.quantity}</span>
+                    </div>
+                    {c.description && <div className="text-[10px] text-game-text-dim leading-snug truncate">{c.description}</div>}
+                  </button>
+                ))}
+              </>
+            )}
             {itemPool.length > 0 && (
               <>
                 <div className="text-[9px] uppercase tracking-widest text-game-muted pt-1.5 px-1">Items — reserve to sideboard</div>
@@ -845,7 +766,7 @@ function SkillsLens({ unit }: { unit: Unit }) {
           </div>
         </div>
       )}
-      {slotIdx === null && <div className="text-[10px] text-game-muted italic">Tap a slot to assign a learned active skill — or stage an item (it's reserved to the sideboard).</div>}
+      {slotIdx === null && <div className="text-[10px] text-game-muted italic">Tap a slot to assign a skill, a consumable (carried to use in battle), or stage an item (reserved to the sideboard).</div>}
     </div>
   )
 }
@@ -1271,7 +1192,6 @@ export function ProtoLens() {
               {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
               {effSub === 'skills'  && <SkillsLens unit={unit} />}
               {effSub === 'gear'    && <><PackStrip unit={unit} /><GearLens unit={unit} /></>}
-              {effSub === 'sockets' && <SocketsLens unit={unit} />}
               {effSub === 'tactics' && <TacticianLens unit={unit} />}
               {effSub === 'pet'     && <CompanionLens unit={unit} />}
               {effSub === 'saga'    && <SagaLens unit={unit} />}
