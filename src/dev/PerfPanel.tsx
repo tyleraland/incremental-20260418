@@ -4,6 +4,7 @@
 // probe is enabled (`?probe=1` or DEV), so normal production never renders it.
 
 import { useState, useSyncExternalStore } from 'react'
+import { useGameStore, setPaceEveryTicks, paceEveryTicks } from '@/stores/useGameStore'
 import { perfProbe, type ProbeLive } from './perfProbe'
 
 function useProbeLive(): ProbeLive {
@@ -25,6 +26,7 @@ export function PerfPanel() {
   const [copied, setCopied] = useState(false)
   const [raw, setRaw] = useState<string | null>(null)
   const [active, setActive] = useState<string[]>([])
+  const [pace, setPace] = useState(paceEveryTicks())
   const live = useProbeLive()
 
   const toggleEffect = (cls: string) => {
@@ -32,6 +34,20 @@ export function PerfPanel() {
     root.classList.toggle(cls)
     setActive(TOGGLES.map((t) => t.cls).filter((c) => root.classList.contains(c)))
   }
+
+  // Live combat-pace dial. logical rounds/sec = TICKS_PER_SECOND(5) / (everyTicks ×
+  // battle.timeScale). Lower everyTicks → faster, smoother motion (engine is ~free).
+  const changePace = (next: number) => {
+    const v = Math.min(8, Math.max(1, next))
+    setPaceEveryTicks(v)
+    setPace(v)
+  }
+  const ts = (() => {
+    const s = useGameStore.getState()
+    const b = s.combatLocationId ? s.battles[s.combatLocationId] : undefined
+    return b?.timeScale ?? 2
+  })()
+  const logicalPerSec = 5 / (pace * ts)
 
   const copy = () => {
     const text = perfProbe.report()
@@ -101,6 +117,18 @@ export function PerfPanel() {
           onClick={copy}
           className="h-7 px-2 rounded-md border border-game-border text-game-text-dim hover:bg-white/5"
         >{copied ? '✓' : '⎘ Copy'}</button>
+      </div>
+
+      <div className="mt-2 border-t border-game-border/60 pt-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[9px] text-game-text-dim">combat pace (the real "lag")</span>
+          <span className="text-[10px] text-game-text tabular-nums">{logicalPerSec.toFixed(2)} rounds/s</span>
+        </div>
+        <div className="mt-1 flex items-center gap-1">
+          <button onClick={() => changePace(pace + 1)} className="h-6 px-2 rounded border border-game-border text-game-text-dim hover:bg-white/5" title="slower (more ticks per round)">slower</button>
+          <span className="flex-1 text-center text-[10px] text-game-text-dim tabular-nums">every {pace} tick{pace === 1 ? '' : 's'}</span>
+          <button onClick={() => changePace(pace - 1)} className="h-6 px-2 rounded border border-emerald-600/60 bg-emerald-950/50 text-emerald-200 hover:bg-emerald-900/50" title="faster (fewer ticks per round)">faster</button>
+        </div>
       </div>
 
       <div className="mt-2 border-t border-game-border/60 pt-1.5">

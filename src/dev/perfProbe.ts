@@ -16,7 +16,7 @@
 //
 // Gated behind `?probe=1` (or DEV) by the caller, so normal production pays nothing.
 
-import { useGameStore } from '@/stores/useGameStore'
+import { useGameStore, paceEveryTicks } from '@/stores/useGameStore'
 import {
   setEngineProfiling,
   resetEngineProfile,
@@ -252,6 +252,8 @@ class PerfProbe {
       timeScale: battle?.timeScale ?? null,
       cols: battle?.cols ?? null,
       rows: battle?.rows ?? null,
+      paceEveryTicks: paceEveryTicks(),
+      logicalRoundsPerSec: battle ? +(5 / (paceEveryTicks() * (battle.timeScale || 1))).toFixed(2) : null,
       combatants: combatants.length,
       alive: combatants.filter((c) => c.alive).length,
       heroes: combatants.filter((c) => c.team === 'player').length,
@@ -342,6 +344,7 @@ class PerfProbe {
     L.push('')
     L.push('## Scene')
     L.push(`location ${sc.combatLocationId ?? '—'}  mode ${sc.mode ?? '—'}  grid ${sc.cols ?? '?'}×${sc.rows ?? '?'}  timeScale ${sc.timeScale ?? '?'}`)
+    L.push(`combat pace: every ${sc.paceEveryTicks} ticks → ${sc.logicalRoundsPerSec ?? '?'} logical rounds/s  (shipped default 0.5 = the "crawl")`)
     L.push(`combatants ${sc.combatants} (alive ${sc.alive}: ${sc.heroes} heroes / ${sc.enemies} enemies)`)
     L.push(`tokens on-screen ${sc.tokensOnScreen} (peak ${sc.peakTokensOnScreen})   arena DOM nodes ${sc.arenaDomNodes} (peak ${sc.peakArenaDomNodes})`)
     L.push('')
