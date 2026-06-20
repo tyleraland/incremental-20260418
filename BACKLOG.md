@@ -902,6 +902,96 @@ Deferred / not worth it:
   distance issue, above). So: 1.1 is the cheap smoothness win now; the worker is the
   throughput ceiling for very high entity counts; the two are complementary.
 
+### ✅ On-device perf probe — what it found, and where it lives (2026-06)
+
+The Playwright harnesses (`many-entities`/`jerk`) only measure a **4× CPU-throttled
+desktop** — they can't say what a *real phone* spends time on in a crowded battle.
+PR #54 (**throwaway**, branch `claude/battlefield-perf-profiling-f5xg6s`, never
+merged to `main`) added an **in-app probe you run on the actual device** to settle
+the long-running question directly: is the lag the engine's **decision-making AI**,
+the per-round **React render**, or raw **frame/paint** cost?
+
+- **How it measured.** An ambient engine profiler (`src/engine/profile.ts`, same
+  pattern as `timescale.ts`/`arena.ts` — **default-off + determinism-neutral**, so
+  snapshot replays stay byte-identical) timed each phase inside `advanceRound`:
+  `plan` (team-coordination AI) and, per `takeTurn`, `decide` (targeting/tactics =
+  the per-unit "AI"), `move` (pathing/steering), `act` (skills/attacks), plus
+  `zoneApply`/`outcome`. A React `<Profiler>` around the battle subtree gave commit
+  ms/rate; a rAF+long-task sampler gave the real on-device frame signal; the report
+  also captured scene + device (entity/token/DOM counts, UA, cores, DPR, memory).
+  Run via `?perf=1&probe=1&heroes=N&cap=M` → ⏱ panel → Start / play ~20s / Stop /
+  ⎘ Copy → paste into a gist. (Files: `engine/profile.ts`, phase marks in
+  `engine.ts`, `dev/perfProbe.ts` collector on `window.__perf`, `dev/PerfPanel.tsx`,
+  a `<Profiler>` mount in `BattleView.tsx`, `?probe` plumbing in `App.tsx`,
+  `e2e/probe-smoke.spec.ts`.)
+- **The finding (real throttled Android, 15 heroes / 34 enemies).** Engine **~13
+  ms/round = ~1 % of wall clock**; React render **~7 ms/commit**; but worst frame
+  **~100 ms** with several **~60 ms long-tasks** per window. So the felt lag is
+  **round-boundary reconcile/paint long-tasks, NOT the AI** — `decide`/`plan` are a
+  tiny slice. This **confirms the "many-entities is render-bound" finding on real
+  hardware**, and means the Web Worker (Phase 4) is *not* the lever at these counts
+  (the engine already fits the budget with room to spare); fewer per-token nodes /
+  a value-mirror memo is the render ceiling if more headroom is ever needed.
+- **What shipped from it.** The probe was the evidence base for **PR #55** (merged
+  to `main`): since pace, not compute, was the felt problem, advance the sim **every
+  tick** at a finer `ROUND_TIME_SCALE=6` (~0.83 logical rounds/s, ~1.67× faster +
+  smoother), with a **density-adaptive step cadence** (`openWorldEveryTicks`) that
+  backs off only for a genuinely huge crowd. The probe branch itself stays unmerged.
+- **If revived:** the ambient-profiler pattern is the reusable part — re-cut
+  `profile.ts` + the phase marks off `main` (they're determinism-neutral) and
+  re-add the `?probe` panel; don't merge the throwaway branch wholesale (it predates
+  the #55 pacing changes).
+
+## Graphics / visual evolution (sprites + detailed backgrounds)
+
+Raised 2026-06. Goal: replace the circle tokens with **animated sprites** and the
+flat color-tint arena with a **detailed background**. The render architecture is
+DOM + CSS-`transform` (see the two Performance blocks above), and that decides what's
+cheap vs. what's a new bottleneck. **The one rule that governs all of this: keep
+per-round motion on `transform` (compositor-only) and keep *idle* tokens from
+continuously repainting** — that's the property that makes the current renderer fast,
+and the easiest thing to accidentally throw away.
+
+Cost of each change, against today's substrate (full-detail token ≈ 8–10 DOM nodes;
+the `?perf` scene ≈ 460 nodes; fps cliff ≈ 75 tok=59 / 130=46 / 250=13 on a real
+phone; engine ~1 % of wall clock):
+
+- **Detailed *static* background → essentially free.** One paint, promoted to a GPU
+  layer, then the camera just `translate`s it on the compositor exactly like the grid
+  does today (`Arena` ground layer). Replaces the red/blue tint overlays + gradient
+  grid. Only costs: art + download size + texture memory (keep ≲2–4k px). *Only* gets
+  expensive if the background itself animates (rippling water / drifting fog =
+  continuous paint) — gate any such effect behind LOD or skip it.
+- **Static sprite instead of a circle → roughly node-neutral, maybe cheaper.** The
+  circle is already a div with a background; swap it for an atlas-backed sprite. If
+  one sprite subsumes the circle + facing nub + chevron, node count *drops*. Share a
+  few atlases across classes/monsters (not per-unit textures) to keep GPU memory small.
+- **Frame-animated sprites (idle/walk/attack) → the real new bottleneck.** CSS
+  `steps()` + `background-position` **repaints that element every animation frame**,
+  even when the unit stands still — converting today's zero-cost idle tokens into N
+  elements painting continuously. DOM/CSS holds a *handful*; it falls over with a mob.
+
+Phased plan (measure each step with the existing `perf`/`jerk`/`many-entities`
+harnesses — they already separate engine vs render cost):
+
+1. **Background + static sprites (stay on DOM, no risk).** Drop a detailed bg into
+   the ground layer; replace circles with atlas sprites. Big visual jump, node-neutral.
+2. **Animation gated by the existing LOD (stay on DOM, controlled cost).** Add
+   `steps()` frame animation **only** for on-screen, zoomed-in, low-count tokens —
+   reuse the exact `LOD_CAM_SIZE`/`LOD_TOKEN_COUNT` thresholds that already strip token
+   detail. Crowd or zoom-out → freeze to a single static frame. The watched party
+   animates; the 200-token mob doesn't. Glide stays on `transform`.
+3. **Only if the mob itself must animate at scale → port the arena to WebGL (PixiJS).**
+   The codebase is unusually well-placed for this: **the engine is pure and
+   substrate-agnostic** (it emits positions; it knows nothing about divs), so swap
+   `BattleView`'s div tokens for a Pixi stage that batches thousands of animated
+   sprites into a few draw calls (the thing DOM fundamentally can't do) and leave the
+   engine, store, tick loop, and snapshots untouched. Keep text/UI (floating numbers,
+   HP bars, cast labels, the detail sheet) as a **DOM overlay on top** — DOM is good at
+   text, Pixi at sprites. Pixi also unlocks cheap particles/shaders for spell FX. Don't
+   pay this complexity until Phase 2 demonstrably isn't enough (matches "no abstraction
+   the current code doesn't need").
+
 ## Heuristic shortcuts
 
 - `HERD_BIAS = 4` — numeric fudge for path side-picking. The team blackboard
