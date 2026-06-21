@@ -421,7 +421,7 @@ export function ProtoStage() {
         {/* battlefield — mounted once we're zooming in, crossfaded over the map */}
         {focusLoc && zoom > 1.2 && (
           <div
-            className="absolute inset-0 pt-12 bg-game-bg"
+            className="absolute inset-0 bg-game-bg"
             style={{
               opacity: battleOpacity,
               transform: `scale(${battleScaleFor(zoom)})`,
