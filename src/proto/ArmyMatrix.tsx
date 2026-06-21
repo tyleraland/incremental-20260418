@@ -182,9 +182,9 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
         <div className="min-w-max">
           {/* column header row: hero label + facet-type columns */}
           <div className="flex border-b-2 border-game-border">
-            <div className="w-40 shrink-0 py-2.5 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface z-10">Hero</div>
+            <div className="w-32 shrink-0 py-2.5 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface z-10">Hero</div>
             {cols.map((col) => (
-              <div key={col.id} className="w-36 shrink-0 px-2.5 py-2.5 text-xs uppercase tracking-wider text-game-text-dim border-l border-game-border/40">{col.label}</div>
+              <div key={col.id} className="w-28 shrink-0 px-2.5 py-2.5 text-xs uppercase tracking-wider text-game-text-dim border-l border-game-border/40">{col.label}</div>
             ))}
           </div>
 
@@ -193,15 +193,15 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
           <div key={g.k}>
             {/* location group header (label parked in the sticky hero column) */}
             <div className="flex border-t-2 border-game-border">
-              <div className="w-40 shrink-0 px-2 py-1.5 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg z-10">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
-              {cols.map((col) => <div key={col.id} className="w-36 shrink-0 bg-game-bg/40" />)}
+              <div className="w-32 shrink-0 px-2 py-1.5 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg z-10">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
+              {cols.map((col) => <div key={col.id} className="w-28 shrink-0 bg-game-bg/40" />)}
             </div>
             {g.units.map((u) => {
             const locked = heroLocks.includes(u.id)
             return (
               <div key={u.id} className={['flex border-t border-game-border/50', locked ? 'bg-game-gold/5' : ''].join(' ')}>
                 {/* hero cell (sticky on horizontal scroll) */}
-                <div className="w-40 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 z-10 bg-game-surface">
+                <div className="w-32 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 z-10 bg-game-surface">
                   <div className="relative shrink-0">
                     <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
                       className={['w-10 h-10 rounded-full bg-game-bg border flex items-center justify-center text-lg', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
@@ -210,7 +210,7 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
                     <button
                       onClick={() => toggleLock(u.id)}
                       title={locked ? 'Locked — Optimize skips this hero' : 'Lock this hero'}
-                      className={['absolute -top-1 -right-1 w-4 h-4 rounded-full border border-game-bg flex items-center justify-center text-[8px] leading-none', locked ? 'bg-game-gold text-game-bg' : 'bg-game-surface text-game-muted hover:text-game-text'].join(' ')}
+                      className={['absolute -top-1 -right-1 w-5 h-5 rounded-full border border-game-bg flex items-center justify-center text-[10px] leading-none', locked ? 'bg-game-gold text-game-bg' : 'bg-game-surface text-game-muted hover:text-game-text'].join(' ')}
                     >{locked ? '🔒' : '🔓'}</button>
                   </div>
                   <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="min-w-0 flex-1 text-left">
@@ -265,7 +265,7 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
                       key={col.id}
                       data-cell={`${u.id}:${col.id}`}
                       onClick={() => setPicker({ unit: u, key: col.id })}
-                      className="w-36 shrink-0 min-h-[3rem] py-2 px-2 text-left space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors"
+                      className="w-28 shrink-0 min-h-[3rem] py-2 px-2 text-left space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors"
                     >{body}</button>
                   )
                 })}
