@@ -59,8 +59,12 @@ function Gold({ className = '' }: { className?: string }) {
 
 const TONE_CLS: Record<OfferTone, string> = { want: 'text-sky-300', market: 'text-game-text', dislike: 'text-red-400' }
 
-// ── A merchant's shop (buy + sell) ────────────────────────────────────────────--
-type ShopFilter = 'all' | 'mats' | 'gear'
+// ── A merchant's shop (buy with a cart + tone-sorted selling) ─────────────────--
+const TONE_LABEL: Record<OfferTone, string> = { want: 'Wanted', market: 'Market', dislike: 'Unwanted' }
+const TONE_NEXT: Record<OfferTone, OfferTone> = { want: 'market', market: 'dislike', dislike: 'want' }
+const TONE_DOT: Record<OfferTone, string> = { want: 'bg-sky-400', market: 'bg-game-text-dim', dislike: 'bg-red-400' }
+type SellRow = { id: string; name: string; qty: number; offer: ReturnType<typeof sellOffer>; gear?: EquipmentItem }
+
 function Shop({ m, visiting }: { m: MerchantDef; visiting: Unit | null }) {
   const miscItems = useGameStore((s) => s.miscItems)
   const equipment = useGameStore((s) => s.equipment)
@@ -68,116 +72,124 @@ function Shop({ m, visiting }: { m: MerchantDef; visiting: Unit | null }) {
   const consumeMiscItem = useGameStore((s) => s.consumeMiscItem)
   const grantMiscItem   = useGameStore((s) => s.grantMiscItem)
   const grantEquipment  = useGameStore((s) => s.grantEquipment)
-  const [filter, setFilter] = useState<ShopFilter>('all')
-  const [bought, setBought] = useState<Record<string, number>>({})   // stock depletion (session)
-  const [soldWant, setSoldWant] = useState<Record<string, number>>({}) // want-cap tracking (session)
+  const [cart, setCart] = useState<Record<string, number>>({})
+  const [tone, setTone] = useState<OfferTone>('want')
+  const [soldWant, setSoldWant] = useState<Record<string, number>>({})
+  const [bought, setBought] = useState<Record<string, number>>({})
   const [inspectGear, setInspectGear] = useState<EquipmentItem | null>(null)
   const [inspectCard, setInspectCard] = useState<string | null>(null)
 
   const held = heldMaps(units).name
-  const baseValue = (id: string, isGear: boolean, gear?: EquipmentItem) => isGear && gear ? equipmentValue(gear) : materialValue(id)
+  const stockLeft = (s: MerchantStock) => s.stock != null ? s.stock - (bought[s.id] ?? 0) : Infinity
+  const priceOf = (s: MerchantStock) => buyPriceFor(m, s.price, visiting)
 
-  function buy(s: MerchantStock) {
-    const price = buyPriceFor(m, s.price, visiting)
-    const left = s.stock != null ? s.stock - (bought[s.id] ?? 0) : Infinity
-    if (left <= 0 || goldNow() < price) return
-    changeGold(-price)
-    if (s.kind === 'material') grantMiscItem(s.id, 1)
-    else if (s.kind === 'equipment') grantEquipment(s.id)
-    else useProtoStore.setState((st) => ({ ownedCards: { ...st.ownedCards, [s.id]: (st.ownedCards[s.id] ?? 0) + 1 } }))
-    setBought((b) => ({ ...b, [s.id]: (b[s.id] ?? 0) + 1 }))
+  const cartCount = Object.values(cart).reduce((a, b) => a + b, 0)
+  const cartTotal = Object.entries(cart).reduce((sum, [id, q]) => { const s = m.stock.find((x) => x.id === id); return sum + (s ? priceOf(s) * q : 0) }, 0)
+  const addCart = (s: MerchantStock, d: number) => setCart((c) => {
+    const next = Math.max(0, Math.min((c[s.id] ?? 0) + d, stockLeft(s)))
+    const nc = { ...c }; if (next <= 0) delete nc[s.id]; else nc[s.id] = next; return nc
+  })
+  function checkout() {
+    if (goldNow() < cartTotal || cartCount <= 0) return
+    for (const [id, q] of Object.entries(cart)) {
+      const s = m.stock.find((x) => x.id === id); if (!s) continue
+      for (let i = 0; i < q; i++) {
+        changeGold(-priceOf(s))
+        if (s.kind === 'material') grantMiscItem(s.id, 1)
+        else if (s.kind === 'equipment') grantEquipment(s.id)
+        else useProtoStore.setState((st) => ({ ownedCards: { ...st.ownedCards, [s.id]: (st.ownedCards[s.id] ?? 0) + 1 } }))
+      }
+      setBought((b) => ({ ...b, [id]: (b[id] ?? 0) + q }))
+    }
+    setCart({})
   }
 
-  function sellMaterial(id: string, qty: number) {
-    const off = sellOffer(m, id, materialValue(id), visiting)
-    const capLeft = off.cap != null ? Math.max(0, off.cap - (soldWant[id] ?? 0)) : Infinity
-    const count = off.tone === 'want' ? Math.min(qty, capLeft) : qty
-    if (count <= 0) return
-    consumeMiscItem(id, count)
-    changeGold(off.price * count)
-    if (off.tone === 'want') setSoldWant((s) => ({ ...s, [id]: (s[id] ?? 0) + count }))
-  }
-  function sellGear(it: EquipmentItem) {
-    const off = sellOffer(m, it.id, equipmentValue(it), visiting)
-    useGameStore.setState((s) => ({ equipment: s.equipment.filter((e) => e.id !== it.id) }))
-    changeGold(off.price)
-  }
+  // Unified sell list (materials + spare gear), priced by this merchant, filtered
+  // to the toggled tone and sorted by gold value.
+  const sellRows: SellRow[] = [
+    ...miscItems.filter((i) => i.id !== GOLD_ID && i.quantity > 0).map((i) => ({ id: i.id, name: i.name, qty: i.quantity, offer: sellOffer(m, i.id, materialValue(i.id), visiting) })),
+    ...equipment.filter((e) => !held.has(e.id)).map((e) => ({ id: e.id, name: e.name, qty: 1, offer: sellOffer(m, e.id, equipmentValue(e), visiting), gear: e })),
+  ].filter((r) => r.offer.tone === tone).sort((a, b) => b.offer.price * b.qty - a.offer.price * a.qty)
 
-  const mats = miscItems.filter((i) => i.id !== GOLD_ID && i.quantity > 0)
-  const gear = equipment.filter((e) => !held.has(e.id))
+  function sellRow(r: SellRow) {
+    if (r.gear) { useGameStore.setState((s) => ({ equipment: s.equipment.filter((e) => e.id !== r.gear!.id) })); changeGold(r.offer.price) }
+    else {
+      const capLeft = r.offer.cap != null ? Math.max(0, r.offer.cap - (soldWant[r.id] ?? 0)) : Infinity
+      const count = r.offer.tone === 'want' ? Math.min(r.qty, capLeft) : r.qty
+      if (count <= 0) return
+      consumeMiscItem(r.id, count); changeGold(r.offer.price * count)
+      if (r.offer.tone === 'want') setSoldWant((s) => ({ ...s, [r.id]: (s[r.id] ?? 0) + count }))
+    }
+  }
 
   return (
     <div className="px-2.5 pb-3 pt-1 space-y-3 border-t border-game-border/50">
       {visiting && <div className="text-[10px] text-game-text-dim">Visiting: <span className="text-game-text">{visiting.name}</span>{m.favorClass && (visiting.class ?? 'Novice') === m.favorClass && <span className="text-game-green"> · favored ({m.favorClass})</span>}</div>}
 
-      {/* BUY */}
+      {/* BUY — whole row inspects; +/- builds a cart; checkout at the bottom */}
       <div>
         <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">For sale</div>
         <div className="space-y-1.5">
           {m.stock.map((s) => {
-            const price = buyPriceFor(m, s.price, visiting)
-            const left = s.stock != null ? s.stock - (bought[s.id] ?? 0) : Infinity
-            const sold = left <= 0
+            const left = stockLeft(s); const sold = left <= 0
             const card = s.kind === 'card' ? CARD_REGISTRY[s.id] : null
             const eq = s.kind === 'equipment' ? EQUIPMENT_DEF[s.id] : null
+            const inspectable = !!(card || eq)
+            const qty = cart[s.id] ?? 0
             return (
               <div key={s.id} className={['flex items-center gap-2 rounded-lg border border-game-border bg-game-bg px-2.5 py-2', sold ? 'opacity-50' : ''].join(' ')}>
-                <span className="text-sm leading-none shrink-0">{s.kind === 'card' ? '◆' : s.kind === 'equipment' ? '⚔' : '📦'}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm text-game-text font-medium truncate">{itemName(s.id)}</div>
-                  <div className="text-[10px] text-game-text-dim truncate">
-                    {card ? (cardBonusLine(card.bonus) || 'card') : eq ? `${CATEGORY_LABELS[eq.category]}${eq.slots ? ` · ${eq.slots} sockets` : ''}` : 'material'}
-                    {s.stock != null && <span className="text-game-muted"> · {sold ? 'sold out' : `${left} left`}</span>}
-                  </div>
+                <button disabled={!inspectable} onClick={() => card ? setInspectCard(s.id) : setInspectGear(eq!)} className={['flex items-center gap-2 min-w-0 flex-1 text-left', inspectable ? '' : 'cursor-default'].join(' ')}>
+                  <span className="text-sm leading-none shrink-0">{s.kind === 'card' ? '◆' : s.kind === 'equipment' ? '⚔' : '📦'}</span>
+                  <span className="min-w-0">
+                    <span className="text-sm text-game-text font-medium truncate block">{itemName(s.id)} {inspectable && <span className="text-[9px] text-game-text-dim">· inspect</span>}</span>
+                    <span className="text-[10px] text-game-text-dim truncate block">{card ? (cardBonusLine(card.bonus) || 'card') : eq ? `${CATEGORY_LABELS[eq.category]}${eq.slots ? ` · ${eq.slots} sockets` : ''}` : 'material'}{s.stock != null && <span className="text-game-muted"> · {sold ? 'sold out' : `${left} left`}</span>}</span>
+                  </span>
+                </button>
+                <span className="text-[11px] text-game-gold font-semibold tabular-nums shrink-0">{priceOf(s)}g</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button disabled={qty <= 0} onClick={() => addCart(s, -1)} className={['w-7 h-7 rounded-md border text-sm', qty > 0 ? 'border-game-border text-game-text hover:bg-white/5' : 'border-game-border/50 text-game-muted cursor-not-allowed'].join(' ')}>−</button>
+                  <span className="w-5 text-center text-xs tabular-nums">{qty}</span>
+                  <button disabled={sold || qty >= left} onClick={() => addCart(s, 1)} className={['w-7 h-7 rounded-md border text-sm', !sold && qty < left ? 'border-game-primary/50 text-game-text hover:bg-game-primary/10' : 'border-game-border/50 text-game-muted cursor-not-allowed'].join(' ')}>＋</button>
                 </div>
-                {(card || eq) && <button onClick={() => card ? setInspectCard(s.id) : setInspectGear(eq!)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text shrink-0">inspect</button>}
-                <button disabled={sold || goldNow() < price} onClick={() => buy(s)} className={['text-[10px] px-2 py-0.5 rounded border shrink-0', sold || goldNow() < price ? 'border-game-border text-game-muted cursor-not-allowed' : 'border-game-primary/50 text-game-text hover:bg-game-primary/10'].join(' ')}>buy <span className="text-game-gold font-semibold">{price}g</span></button>
               </div>
             )
           })}
         </div>
+        {cartCount > 0 && (
+          <button disabled={goldNow() < cartTotal} onClick={checkout} className={['w-full mt-2 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium', goldNow() >= cartTotal ? 'bg-game-primary text-white hover:bg-game-primary/80' : 'bg-game-border/40 text-game-muted cursor-not-allowed'].join(' ')}>
+            Buy {cartCount} item{cartCount === 1 ? '' : 's'} <span className="bg-white/20 rounded px-1.5 py-0.5 text-xs tabular-nums">{cartTotal.toLocaleString()}g</span>{goldNow() < cartTotal && <span className="text-[10px]">· not enough gold</span>}
+          </button>
+        )}
       </div>
 
-      {/* SELL — your stuff */}
+      {/* SELL — tone tri-toggle (blue → white → red); whole row inspects gear */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Your goods</span>
-          <div className="flex rounded-md border border-game-border overflow-hidden text-[10px]">
-            {(['all', 'mats', 'gear'] as ShopFilter[]).map((f) => (
-              <button key={f} onClick={() => setFilter(f)} className={`px-2 py-0.5 capitalize ${filter === f ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text'} ${f !== 'all' ? 'border-l border-game-border' : ''}`}>{f === 'mats' ? 'Materials' : f === 'gear' ? 'Gear' : 'All'}</button>
-            ))}
-          </div>
+          <button onClick={() => setTone(TONE_NEXT[tone])} title="Cycle: Wanted → Market → Unwanted" className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-game-border text-[11px] text-game-text hover:bg-white/5">
+            <span className={`w-2 h-2 rounded-full ${TONE_DOT[tone]}`} /><span className={TONE_CLS[tone]}>{TONE_LABEL[tone]}</span><span className="text-game-muted">⇄</span>
+          </button>
         </div>
         <div className="space-y-1">
-          {(filter !== 'gear') && mats.map((it) => {
-            const off = sellOffer(m, it.id, materialValue(it.id), visiting)
-            const capLeft = off.cap != null ? Math.max(0, off.cap - (soldWant[it.id] ?? 0)) : Infinity
-            const blocked = off.tone === 'want' && capLeft <= 0
+          {sellRows.length === 0 && <div className="text-xs text-game-muted italic">Nothing {TONE_LABEL[tone].toLowerCase()} to sell here.</div>}
+          {sellRows.map((r) => {
+            const capLeft = r.offer.cap != null ? Math.max(0, r.offer.cap - (soldWant[r.id] ?? 0)) : Infinity
+            const blocked = r.offer.tone === 'want' && capLeft <= 0
             return (
-              <div key={it.id} className="flex items-center gap-2 px-2 py-1 rounded border border-game-border/60 bg-game-bg">
-                <span className="text-sm text-game-text truncate flex-1">{it.name}</span>
-                {off.tone === 'want' && <span className="text-[9px] text-sky-300/80">wants {capLeft}</span>}
-                <span className="text-[11px] text-game-text-dim tabular-nums">×{it.quantity.toLocaleString()}</span>
-                <span className={`text-[11px] tabular-nums ${TONE_CLS[off.tone]}`}>{off.price}g</span>
-                <button disabled={blocked} onClick={() => sellMaterial(it.id, it.quantity)} className={['text-[10px] px-1.5 py-0.5 rounded border shrink-0', blocked ? 'border-game-border text-game-muted cursor-not-allowed' : 'border-game-gold/40 text-game-text-dim hover:text-game-text hover:bg-game-gold/10'].join(' ')}>sell</button>
+              <div key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded border border-game-border/60 bg-game-bg">
+                <button disabled={!r.gear} onClick={() => r.gear && setInspectGear(r.gear)} className={['flex items-center gap-2 min-w-0 flex-1 text-left', r.gear ? '' : 'cursor-default'].join(' ')}>
+                  <span className="text-sm text-game-text truncate">{r.name}{r.gear && <span className="text-[9px] text-game-text-dim"> · inspect</span>}</span>
+                  {r.gear && <SocketPips slots={socketsOf(useProtoStore.getState().sockets, r.gear)} />}
+                </button>
+                {r.offer.tone === 'want' && <span className="text-[9px] text-sky-300/80 shrink-0">wants {capLeft}</span>}
+                {!r.gear && <span className="text-[11px] text-game-text-dim tabular-nums shrink-0">×{r.qty.toLocaleString()}</span>}
+                <span className={`text-[11px] tabular-nums shrink-0 ${TONE_CLS[r.offer.tone]}`}>{r.offer.price}g</span>
+                <button disabled={blocked} onClick={() => sellRow(r)} className={['text-xs px-3 py-1 rounded-md border shrink-0 font-medium', blocked ? 'border-game-border text-game-muted cursor-not-allowed' : 'border-game-gold/50 text-game-text hover:bg-game-gold/10'].join(' ')}>Sell</button>
               </div>
             )
           })}
-          {(filter !== 'mats') && gear.map((it) => {
-            const off = sellOffer(m, it.id, equipmentValue(it), visiting)
-            return (
-              <div key={it.id} className="flex items-center gap-2 px-2 py-1 rounded border border-game-border/60 bg-game-bg">
-                <span className="text-sm text-game-text truncate flex-1">{it.name}</span>
-                <SocketPips slots={socketsOf(useProtoStore.getState().sockets, it)} />
-                <span className="text-[9px] text-game-muted">{CATEGORY_LABELS[it.category]}</span>
-                <span className={`text-[11px] tabular-nums ${TONE_CLS[off.tone]}`}>{off.price}g</span>
-                <button onClick={() => sellGear(it)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-gold/40 text-game-text-dim hover:text-game-text hover:bg-game-gold/10 shrink-0">sell</button>
-              </div>
-            )
-          })}
-          {mats.length === 0 && gear.length === 0 && <div className="text-xs text-game-muted italic">Nothing to sell.</div>}
         </div>
-        <div className="text-[9px] text-game-muted mt-1"><span className="text-sky-300">blue</span> = wanted · <span className="text-game-text">white</span> = market · <span className="text-red-400">red</span> = unwanted</div>
+        <div className="text-[9px] text-game-muted mt-1">Tone: <span className="text-sky-300">wanted</span> (premium) · <span className="text-game-text">market</span> · <span className="text-red-400">unwanted</span> (low/negative)</div>
       </div>
 
       {inspectGear && <ItemCodex item={inspectGear} onClose={() => setInspectGear(null)} />}
@@ -186,6 +198,7 @@ function Shop({ m, visiting }: { m: MerchantDef; visiting: Unit | null }) {
   )
 }
 
+// ── A merchant section (expandable shop) ───────────────────────────────────────--
 function MerchantSection({ m, locId, present, visiting, open, onToggle }: { m: MerchantDef; locId: string; present: boolean; visiting: Unit | null; open: boolean; onToggle: () => void }) {
   const ticks = useGameStore((s) => s.ticks)
   const leavesMin = m.kind === 'wandering' ? Math.ceil(wanderTicksLeft(ticks) / 5 / 60) : null
@@ -400,7 +413,7 @@ function Stash() {
   const packs     = useProtoStore((s) => s.packs)
   const depositAllPacks = useProtoStore((s) => s.depositAllPacks)
   const [open, setOpen] = useState<string | null>(null)
-  const [tab, setTab] = useState<'gear' | 'mats' | 'craft'>('gear')
+  const [tab, setTab] = useState<'gear' | 'cards' | 'mats' | 'craft'>('gear')
 
   const { unit: holderUnit } = heldMaps(units)
   const carried = Object.values(packs).reduce((n, p) => n + Object.values(p).reduce((a, b) => a + b, 0), 0)
@@ -420,10 +433,12 @@ function Stash() {
   return (
     <div className="space-y-3">
       <div className="flex rounded-lg border border-game-border overflow-hidden text-xs">
-        {([['gear', 'Equipment'], ['mats', 'Materials'], ['craft', 'Craft']] as const).map(([id, label], i) => (
+        {([['gear', 'Equipment'], ['cards', 'Cards'], ['mats', 'Materials'], ['craft', 'Craft']] as const).map(([id, label], i) => (
           <button key={id} onClick={() => setTab(id)} className={`flex-1 px-2.5 py-1.5 ${tab === id ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text'} ${i > 0 ? 'border-l border-game-border' : ''}`}>{label}</button>
         ))}
       </div>
+
+      {tab === 'cards' && <CardsTab />}
 
       {tab === 'gear' && (
         <div className="space-y-1.5">
@@ -468,9 +483,9 @@ function Stash() {
 }
 
 // ── Town shell ─────────────────────────────────────────────────────────────────
-type TownTab = 'market' | 'cards' | 'stash'
+type TownTab = 'market' | 'stash'
 const TOWN_TABS: { id: TownTab; label: string; icon: string }[] = [
-  { id: 'market', label: 'Market', icon: '🏪' }, { id: 'cards', label: 'Cards', icon: '◆' }, { id: 'stash', label: 'Stash', icon: '📦' },
+  { id: 'market', label: 'Market', icon: '🏪' }, { id: 'stash', label: 'Stash', icon: '📦' },
 ]
 export function Town({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<TownTab>('market')
@@ -493,7 +508,6 @@ export function Town({ onClose }: { onClose: () => void }) {
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-3 max-w-2xl w-full mx-auto">
         {tab === 'market' && <Market />}
-        {tab === 'cards' && <CardsTab />}
         {tab === 'stash' && <Stash />}
       </div>
     </div>,

@@ -6,6 +6,7 @@ import { ProtoLens } from './ProtoLens'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
 import { QuestJournal, useQuestBoard } from './QuestJournal'
 import { Town } from './Town'
+import { ArmyMatrix } from './ArmyMatrix'
 import { Guild } from '@/pages/Guild'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
@@ -180,8 +181,31 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
 }
 
 // ── Top-bar global nav ─────────────────────────────────────────────────────--
-type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'town'
-const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', town: 'Town' }
+type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'town' | 'party'
+const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', town: 'Town', party: 'Party' }
+
+// Party is a multi-unit board, so it lives in the top nav (not the per-hero lens).
+// It shows the squad on the currently-focused battlefield.
+function PartyOverlay({ onClose }: { onClose: () => void }) {
+  const units        = useGameStore((s) => s.units)
+  const locations    = useGameStore((s) => s.locations)
+  const selectedLocId = useGameStore((s) => s.selectedLocationId)
+  const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
+  const squad = location ? units.filter((u) => u.locationId === location.id) : []
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
+      <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
+        <span className="text-sm font-semibold text-game-text">☷ Party</span>
+        <span className="text-[10px] text-game-muted hidden sm:inline">— {location ? location.name : 'no battlefield focused'}</span>
+        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+      </header>
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 max-w-2xl w-full mx-auto">
+        <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />
+      </div>
+    </div>,
+    document.body,
+  )
+}
 
 function NavBtn({ icon, label, active, disabled, badge, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; badge?: number; onClick?: () => void }) {
   return (
@@ -403,6 +427,7 @@ export function ProtoApp() {
       <header className="shrink-0 flex items-center gap-1.5 px-2 h-11 border-b border-game-border bg-game-surface/70">
         <NavBtn icon="⚜" label="Guild"   active={panel === 'guild'}   onClick={() => setPanel('guild')} />
         <NavBtn icon="🏪" label="Town"    active={panel === 'town'}    onClick={() => setPanel('town')} />
+        <NavBtn icon="☷" label="Party"   active={panel === 'party'}   onClick={() => setPanel('party')} />
         <QuestsNavButton active={panel === 'quests'} onClick={() => setPanel('quests')} />
         <NavBtn icon="📊" label="Reports" active={panel === 'reports'} onClick={() => setPanel('reports')} />
         <NavBtn icon="⏳" label="Time"    active={panel === 'time'}    onClick={() => setPanel('time')} />
@@ -493,6 +518,8 @@ export function ProtoApp() {
         ? <QuestJournal onClose={() => setPanel(null)} onGoto={gotoQuest} />
         : panel === 'town'
         ? <Town onClose={() => setPanel(null)} />
+        : panel === 'party'
+        ? <PartyOverlay onClose={() => setPanel(null)} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
     </div>
   )

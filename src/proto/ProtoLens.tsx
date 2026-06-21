@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   useGameStore, getDerivedStats, getInitials, getItemTraits, getAvailableSkills, SKILL_REGISTRY,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS, SKILL_TACTICS, inheritedTacticIds,
@@ -15,7 +16,6 @@ import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
 import { seedProtoMocks } from './seed'
 import { buildSaga } from './lore'
-import { ArmyMatrix } from './ArmyMatrix'
 import { LocationDetail } from './LocationDetail'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
@@ -30,17 +30,20 @@ import { LocationDetail } from './LocationDetail'
 // matrix) drills to Hero; otherwise the tabs are manual — the stage's zoom slider
 // drives navigation, not the lens.
 
-type Top = 'location' | 'hero' | 'party' | 'items'
-type HeroSub = 'summary' | 'skills' | 'gear' | 'tactics' | 'pet' | 'saga'
+// Skills & Tactics are now top-level (sit beside Location / Equipment); Party
+// moved to the global top nav (it spans multiple units). Equipment (the gutted
+// "Items") is this hero's gear + personal inventory.
+type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics'
+type HeroSub = 'summary' | 'pet' | 'saga'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
-  { id: 'location', label: 'Location', icon: '⌖' },
-  { id: 'hero',     label: 'Hero',     icon: '◈' },
-  { id: 'party',    label: 'Party',    icon: '☷' },
-  { id: 'items',    label: 'Items',    icon: '🎒' },
+  { id: 'location',  label: 'Location',  icon: '⌖' },
+  { id: 'hero',      label: 'Hero',      icon: '◈' },
+  { id: 'equipment', label: 'Equipment', icon: '🎒' },
+  { id: 'skills',    label: 'Skills',    icon: '✦' },
+  { id: 'tactics',   label: 'Tactics',   icon: '☷' },
 ]
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
-  { id: 'summary', label: 'Summary' }, { id: 'skills', label: 'Skills' }, { id: 'gear', label: 'Gear' },
-  { id: 'tactics', label: 'Tactics' }, { id: 'saga', label: 'Saga' },
+  { id: 'summary', label: 'Summary' }, { id: 'saga', label: 'Saga' },
 ]
 // The Pet sub only appears once a hero has a beast companion.
 const PET_SUB: { id: HeroSub; label: string } = { id: 'pet', label: 'Pet' }
@@ -206,111 +209,118 @@ function DeltaChips({ before, after }: { before: DerivedStats; after: DerivedSta
   )
 }
 
-function GearLens({ unit }: { unit: Unit }) {
+// ── Swap menu (full-cover) ────────────────────────────────────────────────────
+// The relative-bonus comparison for one slot, as a menu that covers the screen
+// top-to-bottom (a portal) rather than an inline expand — tap a candidate to see
+// how it moves this hero's stats and equip it.
+function SwapMenu({ unit, slot, onClose }: { unit: Unit; slot: EquipSlot; onClose: () => void }) {
   const equipment = useGameStore((s) => s.equipment)
   const equipItem = useGameStore((s) => s.equipItem)
   const units     = useGameStore((s) => s.units)
+  const base = getDerivedStats(unit, equipment)
+  const currentId = slot === 'mainHand' || slot === 'offHand' ? unit.weaponSets[unit.activeWeaponSet][slot] : unit.equipment[slot]
+  const current = equipment.find((e) => e.id === currentId)
+  const reserved = reservedByOthers(units, unit.id)
+  const candidates = equipment.filter((e) => SLOT_COMPATIBLE[slot].includes(e.category) && (e.id === current?.id || !reserved.has(e.id)))
+  const doEquip = (id: string | null) => { equipItem(unit.id, slot, id); onClose() }
+  return createPortal(
+    <div className="fixed inset-0 z-[55] flex flex-col bg-game-bg">
+      <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
+        <span className="text-sm font-semibold text-game-text">{SLOT_LABELS[slot]}</span>
+        <span className="text-[10px] text-game-muted">— {unit.name} · relative bonuses</span>
+        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+      </header>
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 max-w-xl w-full mx-auto space-y-1.5">
+        {current && (
+          <button onClick={() => doEquip(null)} className="w-full rounded-md border border-game-border/60 bg-game-bg px-2.5 py-2 text-left hover:border-red-500/50">
+            <div className="flex items-center justify-between mb-1"><span className="text-xs text-game-text-dim italic">Unequip {current.name}</span><span className="text-[10px] text-red-300">remove</span></div>
+            <DeltaChips before={base} after={getDerivedStats(withItem(unit, slot, null), equipment)} />
+          </button>
+        )}
+        {candidates.length === 0 && <div className="text-xs text-game-muted italic px-1">No compatible items in the stash.</div>}
+        {candidates.map((it) => {
+          const equipped = current?.id === it.id
+          const restriction = equipped ? null : equipRestriction(it, unit)
+          const locked = !!restriction
+          const after = getDerivedStats(withItem(unit, slot, it.id), equipment)
+          return (
+            <button key={it.id} disabled={locked} onClick={() => !locked && doEquip(it.id)}
+              className={['w-full rounded-md border px-2.5 py-2 text-left transition-colors',
+                equipped ? 'border-game-primary/60 bg-game-primary/10' : locked ? 'border-game-border/40 bg-game-bg/40 opacity-50 cursor-not-allowed' : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-game-text font-medium truncate">{it.name}</span>
+                {equipped ? <span className="text-[10px] text-game-primary shrink-0">equipped</span> : locked ? <span className="text-[10px] text-game-muted shrink-0">{restriction}</span> : <span className="text-[10px] text-game-text-dim shrink-0">equip ›</span>}
+              </div>
+              {equipped ? <span className="text-[10px] text-game-muted">currently worn</span> : locked ? <span className="text-[10px] text-game-muted italic">can't equip</span> : <DeltaChips before={base} after={after} />}
+            </button>
+          )
+        })}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// ── Equipment lens (gutted "Items") — this hero's gear + personal inventory ────--
+// Equipped slots (with socket pips), the personal pack, and what they carry into
+// battle. Tapping a slot opens the full-cover relative-bonus SwapMenu.
+function EquipmentLens({ unit }: { unit: Unit }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const miscItems = useGameStore((s) => s.miscItems)
   const sockets   = useProtoStore((s) => s.sockets)
-  const [activeSlot, setActiveSlot] = useState<EquipSlot | null>(null)
+  const [swapSlot, setSwapSlot] = useState<EquipSlot | null>(null)
 
   const itemFor = (slot: EquipSlot): EquipmentItem | undefined => {
     const id = slot === 'mainHand' || slot === 'offHand' ? unit.weaponSets[unit.activeWeaponSet][slot] : unit.equipment[slot]
     return equipment.find((e) => e.id === id)
   }
   const mainHand = equipment.find((e) => e.id === unit.weaponSets[unit.activeWeaponSet].mainHand)
-  const base = getDerivedStats(unit, equipment)
-  const current = activeSlot ? itemFor(activeSlot) : undefined
-  const reserved = reservedByOthers(units, unit.id)
-  // Hide gear reserved by other heroes (but keep this hero's own worn item).
-  const candidates = activeSlot
-    ? equipment.filter((e) => SLOT_COMPATIBLE[activeSlot].includes(e.category) && (e.id === current?.id || !reserved.has(e.id)))
-    : []
+
+  // Personal inventory carried into battle: action-bar consumables + staged items.
+  const carried = (unit.actionSlots ?? []).filter((e): e is ActionSlotEntry => !!e && (e.kind === 'consumable' || e.kind === 'item'))
+  const carriedLabel = (e: ActionSlotEntry) => e.kind === 'consumable' ? (miscItems.find((m) => m.id === e.id)?.name ?? e.id) : (equipment.find((i) => i.id === e.id)?.name ?? e.id)
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-1.5">
-        {GEAR_SLOTS.map((slot) => {
-          const it = itemFor(slot)
-          const locked = slot === 'offHand' && mainHand?.category === 'weapon-2h'
-          const isSide = slot === 'sideboard1' || slot === 'sideboard2'
-          return (
-            <button
-              key={slot}
-              disabled={locked}
-              onClick={() => setActiveSlot(activeSlot === slot ? null : slot)}
-              className={[
-                'rounded-lg border p-2 text-left transition-colors',
-                activeSlot === slot ? 'border-game-primary bg-game-primary/15'
-                  : locked ? 'border-game-border opacity-40'
-                  : isSide ? 'border-game-border/60 bg-game-bg/40 hover:border-game-primary/50'
-                  : 'border-game-border hover:border-game-primary/50',
-              ].join(' ')}
-            >
-              <div className="text-[9px] uppercase tracking-wider text-game-text-dim">{SLOT_LABELS[slot]}</div>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className={['text-xs leading-snug min-w-0 truncate', it ? 'text-game-text font-medium' : 'text-game-muted italic'].join(' ')}>
-                  {locked ? '2H locked' : it?.name ?? 'empty'}
-                </span>
-                {it && <SocketPips slots={socketsOf(sockets, it)} className="shrink-0" />}
-              </div>
-            </button>
-          )
-        })}
+      <PackStrip unit={unit} />
+
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Equipped</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {GEAR_SLOTS.map((slot) => {
+            const it = itemFor(slot)
+            const locked = slot === 'offHand' && mainHand?.category === 'weapon-2h'
+            const isSide = slot === 'sideboard1' || slot === 'sideboard2'
+            return (
+              <button key={slot} disabled={locked} onClick={() => setSwapSlot(slot)}
+                className={['rounded-lg border p-2 text-left transition-colors',
+                  locked ? 'border-game-border opacity-40' : isSide ? 'border-game-border/60 bg-game-bg/40 hover:border-game-primary/50' : 'border-game-border hover:border-game-primary/50'].join(' ')}>
+                <div className="text-[9px] uppercase tracking-wider text-game-text-dim">{SLOT_LABELS[slot]}</div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={['text-xs leading-snug min-w-0 truncate', it ? 'text-game-text font-medium' : 'text-game-muted italic'].join(' ')}>{locked ? '2H locked' : it?.name ?? 'empty'}</span>
+                  {it && <SocketPips slots={socketsOf(sockets, it)} className="shrink-0" />}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+        <div className="text-[10px] text-game-muted italic mt-1.5">Tap a slot to compare gear (opens a full menu with the stat impact).</div>
       </div>
 
-      {activeSlot ? (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">
-            {SLOT_LABELS[activeSlot]} — pick to see the impact
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Carried <span className="text-game-muted normal-case tracking-normal">— into battle</span></div>
+        {carried.length === 0 ? (
+          <div className="text-[11px] text-game-muted italic">Nothing staged. Add consumables/items on the Skills bar.</div>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {carried.map((e, i) => (
+              <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60">{e.kind === 'consumable' ? '🫙 ' : '⚔ '}{carriedLabel(e)}</span>
+            ))}
           </div>
-          <div className="space-y-1.5">
-            {current && (
-              <button
-                onClick={() => equipItem(unit.id, activeSlot, null)}
-                className="w-full rounded-md border border-game-border/60 bg-game-bg px-2.5 py-2 text-left hover:border-red-500/50"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-game-text-dim italic">Unequip {current.name}</span>
-                  <span className="text-[10px] text-red-300">remove</span>
-                </div>
-                <DeltaChips before={base} after={getDerivedStats(withItem(unit, activeSlot, null), equipment)} />
-              </button>
-            )}
-            {candidates.length === 0 && <div className="text-xs text-game-muted italic px-1">No compatible items in stash.</div>}
-            {candidates.map((it) => {
-              const equipped = current?.id === it.id
-              const restriction = equipped ? null : equipRestriction(it, unit)
-              const locked = !!restriction
-              const after = getDerivedStats(withItem(unit, activeSlot, it.id), equipment)
-              return (
-                <button
-                  key={it.id}
-                  disabled={locked}
-                  onClick={() => !locked && equipItem(unit.id, activeSlot, it.id)}
-                  className={[
-                    'w-full rounded-md border px-2.5 py-2 text-left transition-colors',
-                    equipped ? 'border-game-primary/60 bg-game-primary/10'
-                      : locked ? 'border-game-border/40 bg-game-bg/40 opacity-50 cursor-not-allowed'
-                      : 'border-game-border bg-game-bg hover:border-game-primary/50',
-                  ].join(' ')}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-game-text font-medium truncate">{it.name}</span>
-                    {equipped ? <span className="text-[10px] text-game-primary shrink-0">equipped</span>
-                      : locked ? <span className="text-[10px] text-game-muted shrink-0">{restriction}</span>
-                      : <span className="text-[10px] text-game-text-dim shrink-0">equip ›</span>}
-                  </div>
-                  {equipped ? <span className="text-[10px] text-game-muted">currently worn</span>
-                    : locked ? <span className="text-[10px] text-game-muted italic">can't equip</span>
-                    : <DeltaChips before={base} after={after} />}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      ) : (
-        <div className="text-xs text-game-muted italic">Tap a slot to compare gear — each option shows how it moves this hero's stats (and it updates live on the battlefield).</div>
-      )}
+        )}
+      </div>
+
+      {swapSlot && <SwapMenu unit={unit} slot={swapSlot} onClose={() => setSwapSlot(null)} />}
     </div>
   )
 }
@@ -878,194 +888,6 @@ type EquipFilter = 'both' | 'equipped' | 'unequipped'
 const EQUIP_FILTER_NEXT: Record<EquipFilter, EquipFilter> = { both: 'equipped', equipped: 'unequipped', unequipped: 'both' }
 const EQUIP_FILTER_LABEL: Record<EquipFilter, string> = { both: 'All', equipped: 'Held', unequipped: 'Free' }
 
-function ItemsLens({ unit }: { unit: Unit | null }) {
-  const equipment = useGameStore((s) => s.equipment)
-  const miscItems = useGameStore((s) => s.miscItems)
-  const equipItem = useGameStore((s) => s.equipItem)
-  const units     = useGameStore((s) => s.units)
-  const consumeMiscItem = useGameStore((s) => s.consumeMiscItem)
-  const grantMiscItem   = useGameStore((s) => s.grantMiscItem)
-  const gold = miscItems.find((m) => m.id === GOLD_ID)?.quantity ?? 0
-  // Quick-sell mode: turns free gear + materials into sell buttons (full Market
-  // with ×1/×10/×100 lives in the Town overlay). Held gear is never sellable.
-  const [sellMode, setSellMode] = useState(false)
-  function sellMaterial(id: string, have: number, n: number) {
-    const count = Math.min(n, have)
-    if (count <= 0) return
-    consumeMiscItem(id, count)
-    grantMiscItem(GOLD_ID, materialValue(id) * count)
-  }
-  function sellGear(it: EquipmentItem) {
-    useGameStore.setState((s) => ({ equipment: s.equipment.filter((e) => e.id !== it.id) }))
-    grantMiscItem(GOLD_ID, equipmentValue(it))
-  }
-  // Who holds what (worn/reserved) — held gear is labelled, not hidden; the
-  // equip action is still blocked for gear reserved by *another* hero.
-  const heldBy = heldByMap(units)
-  const reserved = unit ? reservedByOthers(units, unit.id) : null
-  const [filters, setFilters] = useState<Record<FilterKey, FilterState>>({ weapon: 'off', armor: 'off', accessory: 'off', tool: 'off', material: 'off' })
-  // Scope: everything in the stash, vs only what THIS hero can equip/use.
-  const [scope, setScope] = useState<'all' | 'usable'>('all')
-  // Equipped-state filter: all gear ↔ only held ↔ only free.
-  const [equipFilter, setEquipFilter] = useState<EquipFilter>('both')
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-
-  const usable = scope === 'usable' && !!unit
-  const includes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'include')
-  const excludes = FILTERS.map((f) => f.key).filter((k) => filters[k] === 'exclude')
-  const visible = (k: FilterKey) => (includes.length === 0 || includes.includes(k)) && !excludes.includes(k)
-  const passesEquip = (id: string) => equipFilter === 'both' || (equipFilter === 'equipped' ? heldBy.has(id) : !heldBy.has(id))
-  const cycle = (k: FilterKey) => setFilters((f) => ({ ...f, [k]: nextState(f[k]) }))
-  const toggle = (id: string) => setCollapsed((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
-
-  const mats = usable ? miscItems.filter((m) => m.kind === 'consumable') : miscItems
-
-  return (
-    <div className="space-y-2">
-      {/* slim header line + scope toggle */}
-      <div className="flex items-center gap-2 text-[10px] text-game-text-dim">
-        <span className="truncate">Stash · {equipment.length} gear · {miscItems.length} mat{unit ? <> · vs <span className="text-game-primary">{unit.name.split(' ')[0]}</span></> : null}</span>
-        <span className="ml-auto shrink-0 text-game-gold tabular-nums">◈ {gold.toLocaleString()}</span>
-        <button
-          onClick={() => setSellMode((v) => !v)}
-          title={sellMode ? 'Exit sell mode' : 'Quick-sell loose loot for gold'}
-          className={`px-2 py-0.5 rounded-md border shrink-0 ${sellMode ? 'border-game-gold/60 bg-game-gold/15 text-game-gold' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
-        >$ Sell</button>
-        <button
-          onClick={() => setEquipFilter((f) => EQUIP_FILTER_NEXT[f])}
-          title={`Equipped state: ${EQUIP_FILTER_LABEL[equipFilter]}`}
-          className={`px-2 py-0.5 rounded-md border shrink-0 ${equipFilter === 'both' ? 'border-game-border text-game-text-dim hover:text-game-text' : 'border-game-primary/50 bg-game-primary/15 text-game-text'}`}
-        >{equipFilter === 'equipped' ? '◉' : equipFilter === 'unequipped' ? '○' : '◐'} {EQUIP_FILTER_LABEL[equipFilter]}</button>
-        <div className="flex rounded-md border border-game-border overflow-hidden shrink-0">
-          <button onClick={() => setScope('all')} className={`px-2 py-0.5 ${scope === 'all' ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text'}`}>All</button>
-          <button onClick={() => unit && setScope('usable')} disabled={!unit} className={`px-2 py-0.5 border-l border-game-border ${usable ? 'bg-game-primary/20 text-game-text' : unit ? 'text-game-text-dim hover:text-game-text' : 'text-game-muted cursor-not-allowed'}`}>{unit ? `${unit.name.split(' ')[0]} can use` : 'Usable'}</button>
-        </div>
-      </div>
-
-      {/* tri-state type filters: off → include (✓) → exclude (✕) */}
-      <div className="flex flex-wrap gap-1">
-        {FILTERS.map((f) => {
-          const st = filters[f.key]
-          return (
-            <button
-              key={f.key}
-              onClick={() => cycle(f.key)}
-              title={`${f.label}: ${st}`}
-              className={[
-                'flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] transition-colors',
-                st === 'include' ? 'border-game-green/60 bg-game-green/10 text-game-green'
-                  : st === 'exclude' ? 'border-red-500/60 bg-red-500/10 text-red-300 line-through'
-                  : 'border-game-border text-game-text-dim hover:text-game-text',
-              ].join(' ')}
-            >
-              <span>{st === 'include' ? '✓' : st === 'exclude' ? '✕' : f.icon}</span>
-              {f.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {ITEM_CATEGORIES.map((cat) => {
-        if (!visible(filterKeyOf(cat))) return null
-        let items = equipment.filter((e) => e.category === cat && passesEquip(e.id))
-        if (usable && unit) items = items.filter((it) => canUse(it, unit))
-        // Held gear sinks to the bottom of its group (available first).
-        items = [...items].sort((a, b) => (heldBy.has(a.id) ? 1 : 0) - (heldBy.has(b.id) ? 1 : 0))
-        if (items.length === 0) return null
-        const slot = CAT_SLOT[cat]
-        const currentId = unit && slot ? (slot === 'mainHand' ? unit.weaponSets[unit.activeWeaponSet].mainHand : unit.equipment[slot as keyof typeof unit.equipment]) : null
-        const current = currentId ? equipment.find((e) => e.id === currentId) ?? null : null
-        const isCollapsed = collapsed.has(cat)
-        return (
-          <div key={cat}>
-            <button onClick={() => toggle(cat)} className="w-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text py-1">
-              <span className="w-3 text-center">{isCollapsed ? '▸' : '▾'}</span>
-              <span>{CATEGORY_LABELS[cat]}</span>
-              <span className="text-game-muted normal-case tracking-normal">({items.length})</span>
-            </button>
-            {!isCollapsed && (
-              <div className="space-y-1.5">
-                {items.map((it) => {
-                  const worn = current?.id === it.id
-                  const holder = heldBy.get(it.id)
-                  const otherHolds = !!reserved && reserved.has(it.id)   // held by a hero that isn't the focused one
-                  const restriction = unit && !worn ? equipRestriction(it, unit) : null
-                  const rel = unit && slot && !worn && !restriction && !otherHolds ? relativeDeltas(it, current) : []
-                  return (
-                    <div key={it.id} className="rounded-md border border-game-border bg-game-bg px-2.5 py-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-game-text font-medium truncate flex-1">{it.name}</span>
-                        {it.slots ? <span className="text-[9px] text-game-text-dim" title={`${it.slots} card sockets`}>◳{it.slots}</span> : null}
-                        {sellMode && !heldBy.has(it.id)
-                          ? <button onClick={() => sellGear(it)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-gold/50 text-game-text hover:bg-game-gold/10 shrink-0">sell <span className="text-game-gold font-semibold">{equipmentValue(it)}g</span></button>
-                          : unit && slot
-                          ? (worn
-                            ? <span className="text-[10px] text-game-primary shrink-0">worn</span>
-                            : otherHolds
-                            ? <span className="text-[10px] text-game-muted shrink-0 truncate max-w-[8rem]" title={`Held by ${holder}`}>held · {holder?.split(' ')[0]}</span>
-                            : restriction
-                            ? <span className="text-[10px] text-game-muted shrink-0" title={`Can't equip — ${restriction}`}>{restriction}</span>
-                            : <button onClick={() => equipItem(unit.id, slot, it.id)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15 shrink-0">equip ›</button>)
-                          : holder
-                          ? <span className="text-[10px] text-game-muted shrink-0 truncate max-w-[8rem]" title={`Held by ${holder}`}>held · {holder.split(' ')[0]}</span>
-                          : <span className="text-[10px] text-game-muted shrink-0">free</span>}
-                      </div>
-                      <TraitRow traits={objectiveChips(it)} className="mt-1" />
-                      {rel.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-1">
-                          {rel.map((x) => (
-                            <span key={x.l} className={`text-[11px] font-mono ${x.d > 0 ? 'text-game-green' : 'text-red-400'}`}>{x.d > 0 ? '+' : ''}{x.d} {x.l}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      {visible('material') && mats.length > 0 && (
-        <div>
-          <button onClick={() => toggle('__mats')} className="w-full flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text py-1">
-            <span className="w-3 text-center">{collapsed.has('__mats') ? '▸' : '▾'}</span>
-            <span>{usable ? 'Consumables' : 'Materials & consumables'}</span>
-            <span className="text-game-muted normal-case tracking-normal">({mats.length})</span>
-          </button>
-          {!collapsed.has('__mats') && (sellMode ? (
-            <div className="space-y-1">
-              {mats.filter((m) => m.id !== GOLD_ID).map((m) => (
-                <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}>
-                  <span className="text-xs text-game-text truncate flex-1">{m.name}</span>
-                  <span className="text-[10px] text-game-muted">{materialValue(m.id)}g ea</span>
-                  <span className="text-[10px] text-game-text-dim tabular-nums">×{m.quantity}</span>
-                  {[1, 10].map((n) => (
-                    <button key={n} disabled={m.quantity < n} onClick={() => sellMaterial(m.id, m.quantity, n)}
-                      className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${m.quantity >= n ? 'border-game-gold/50 text-game-text hover:bg-game-gold/10' : 'border-game-border text-game-muted cursor-not-allowed'}`}>×{n}</button>
-                  ))}
-                  <button onClick={() => sellMaterial(m.id, m.quantity, m.quantity)}
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/10 shrink-0">all</button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-1">
-              {mats.map((m) => (
-                <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}>
-                  <span className="text-xs text-game-text truncate flex-1">{m.name}</span>
-                  <span className="text-[10px] text-game-text-dim tabular-nums">×{m.quantity}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── ProtoLens shell ─────────────────────────────────────────────────────────--
 export function ProtoLens() {
   const units            = useGameStore((s) => s.units)
@@ -1124,9 +946,6 @@ export function ProtoLens() {
     if (top === 'hero' && unit) markUnitViewed(unit.id)
   }, [top, unit?.id, unit?.level, markUnitViewed])
 
-  // Party = the party currently on the focused battlefield (empty → matrix shows
-  // a prompt to deploy / focus a location).
-  const squad = location ? units.filter((u) => u.locationId === location.id) : []
 
   // Hero sub-tabs: the Pet tab only appears once this hero has a companion.
   const heroSubs = unit?.companion ? [...HERO_SUBS, PET_SUB] : HERO_SUBS
@@ -1190,9 +1009,6 @@ export function ProtoLens() {
             <>
               <FocusCue unit={unit} location={location} />
               {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
-              {effSub === 'skills'  && <SkillsLens unit={unit} />}
-              {effSub === 'gear'    && <><PackStrip unit={unit} /><GearLens unit={unit} /></>}
-              {effSub === 'tactics' && <TacticianLens unit={unit} />}
               {effSub === 'pet'     && <CompanionLens unit={unit} />}
               {effSub === 'saga'    && <SagaLens unit={unit} />}
             </>
@@ -1202,9 +1018,9 @@ export function ProtoLens() {
             ? <LocationDetail location={location} />
             : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
 
-          {top === 'party' && <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />}
-
-          {top === 'items' && <ItemsLens unit={unit} />}
+          {top === 'equipment' && (unit ? <EquipmentLens unit={unit} /> : <Empty icon="🎒" title="Select a hero" sub="Equipment & personal inventory belong to a hero — pick one." />)}
+          {top === 'skills'    && (unit ? <SkillsLens unit={unit} /> : <Empty icon="✦" title="Select a hero" sub="Pick a hero to set their battle skills." />)}
+          {top === 'tactics'   && (unit ? <TacticianLens unit={unit} /> : <Empty icon="☷" title="Select a hero" sub="Pick a hero to tune their tactics." />)}
         </div>
       </div>
     </div>
