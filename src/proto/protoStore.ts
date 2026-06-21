@@ -465,6 +465,11 @@ interface ProtoState {
   selectedFoe: { locId: string; combatantId: string } | null
   inspectFoe: (locId: string, combatantId: string) => void
   clearFoe: () => void
+  // The roomy Hero Detail overlay (stats/abilities) — opened from the Unit tab
+  // or the Guild. Null = closed.
+  heroDetailId: string | null
+  openHeroDetail: (unitId: string) => void
+  closeHeroDetail: () => void
   requestLocationTab: () => void
   requestBattleInspect: (unitId: string) => void
   dismissBattleCard: () => void
@@ -551,6 +556,9 @@ export const useProtoStore = create<ProtoState>((set) => ({
   selectedFoe: null,
   inspectFoe: (locId, combatantId) => set((s) => ({ selectedFoe: { locId, combatantId }, heroBattleRequest: s.heroBattleRequest + 1 })),
   clearFoe: () => set((s) => (s.selectedFoe ? { selectedFoe: null } : s)),
+  heroDetailId: null,
+  openHeroDetail: (unitId) => set({ heroDetailId: unitId }),
+  closeHeroDetail: () => set({ heroDetailId: null }),
   requestLocationTab: () => set((s) => ({ locationTabRequest: s.locationTabRequest + 1 })),
   requestBattleInspect: (unitId) => set((s) => ({ battleInspectRequest: { unitId, nonce: (s.battleInspectRequest?.nonce ?? 0) + 1 } })),
   dismissBattleCard: () => set((s) => ({ battleCardDismiss: s.battleCardDismiss + 1 })),

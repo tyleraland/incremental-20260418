@@ -746,7 +746,7 @@ function statusEffectLines(s: StatusEffect): string[] {
 
 // Tappable status chips with a per-status detail drawer (effects + time left).
 // Tapping a chip toggles its detail; tapping again (or another chip) closes it.
-function StatusList({ statuses }: { statuses: StatusEffect[] }) {
+export function StatusList({ statuses }: { statuses: StatusEffect[] }) {
   const [open, setOpen] = useState<number | null>(null)
   const sel = open != null ? statuses[open] : null
   return (

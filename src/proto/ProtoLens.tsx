@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   useGameStore, getDerivedStats, getInitials, getItemTraits, getAvailableSkills, SKILL_REGISTRY,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS, SKILL_TACTICS, inheritedTacticIds,
+  MONSTER_REGISTRY,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
@@ -14,7 +15,8 @@ import { GOLD_ID, materialValue, equipmentValue } from './economy'
 import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
 import { seedProtoMocks } from './seed'
-import { StatsTab, DebugTab } from '@/components/BattleView'
+import { StatsTab, DebugTab, StatusList } from '@/components/BattleView'
+import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationDetail } from './LocationDetail'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
@@ -54,127 +56,105 @@ const CHANNELS: { id: string; label: string }[] = [
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'Reaction' }, { id: 'passive', label: 'Passive' },
 ]
 
-// ── Unit lens (unified) ────────────────────────────────────────────────────────
-// One container for everything about a hero: vitals (live HP when fighting),
-// live cooldowns + buffs/casting from the battle, abilities, and the combat
-// profile — plus an optional live Debug + camera Follow. Replaces the old
-// Summary/Battle split.
+// ── Shared bits for the compact Unit card ──────────────────────────────────────
+// A space-efficient bar with the value printed on it.
+function StatBar({ label, cur, max, color }: { label: string; cur: number; max: number; color: string }) {
+  const pct = Math.min(100, max > 0 ? (cur / max) * 100 : 0)
+  return (
+    <div className="relative h-4 rounded-full bg-game-border overflow-hidden">
+      <div className={`absolute inset-y-0 left-0 ${color}`} style={{ width: `${pct}%`, transition: 'width 380ms linear' }} />
+      <div className="absolute inset-0 flex items-center justify-between px-2 text-[10px] font-medium">
+        <span className="text-white/90" style={{ textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>{label}</span>
+        <span className="text-white/90 tabular-nums" style={{ textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>{Math.floor(cur)} / {max}</span>
+      </div>
+    </div>
+  )
+}
+
+// The action bar as a 2×3 grid: each slot's name above a cooldown bar (skills) +
+// time remaining. Consumables/items show as labels; empty slots are dashed.
+type GridCell = { empty?: boolean; name: string; icon?: string; bar?: { frac: number; time: string } }
+function CooldownGrid({ cells }: { cells: GridCell[] }) {
+  if (cells.length === 0) return null
+  return (
+    <div className="grid grid-cols-3 gap-1.5">
+      {cells.map((cell, i) => cell.empty ? (
+        <div key={i} className="rounded-md border border-dashed border-game-border/50 min-h-[2.6rem]" />
+      ) : (
+        <div key={i} className="rounded-md border border-game-border bg-game-bg px-1.5 py-1 min-h-[2.6rem] flex flex-col justify-center">
+          <div className="text-[10px] text-game-text truncate leading-tight">{cell.icon ? `${cell.icon} ` : ''}{cell.name}</div>
+          {cell.bar && (
+            <>
+              <div className="h-1 rounded-sm bg-black/50 overflow-hidden my-0.5"><div className={`h-full ${cell.bar.frac >= 1 ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${cell.bar.frac * 100}%`, transition: 'width 380ms linear' }} /></div>
+              <div className="text-[9px] text-game-text-dim text-right tabular-nums leading-none">{cell.bar.time}</div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Unit lens (the compact, combat-first card) ─────────────────────────────────--
+// Order: identity + statuses, the action bar with cooldowns, vitals, and a link
+// to the roomy Hero Detail. Heavy stats/abilities live in Hero Detail now.
 function UnitLens({ unit }: { unit: Unit }) {
-  const locations = useGameStore((s) => s.locations)
   const equipment = useGameStore((s) => s.equipment)
-  const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
+  const miscItems = useGameStore((s) => s.miscItems)
   const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
   const battleFollowId = useGameStore((s) => s.battleFollowId)
-  const [showDebug, setShowDebug] = useState(false)
+  const openHeroDetail = useProtoStore((s) => s.openHeroDetail)
 
   const ds = getDerivedStats(unit, equipment)
   const c = battle?.combatants.find((x) => x.id === unit.id)
   const live = !!(c && battle)
   const hp = c ? c.hp : unit.health
   const maxHp = c ? c.maxHp : ds.maxHp
-  const hpPct = Math.min(100, (hp / maxHp) * 100)
-  const xpPct = Math.min(100, (unit.exp / unit.expToNext) * 100)
-  const loc = unit.locationId ? locations.find((l) => l.id === unit.locationId) : null
   const following = battleFollowId === unit.id
-  const status = unit.recoveryTicksLeft > 0 ? { t: 'Recovering', c: 'text-purple-300' }
-    : unit.isResting ? { t: 'Resting', c: 'text-sky-300' }
-    : live ? { t: 'In battle', c: 'text-game-accent' }
-    : loc ? { t: `Deployed · ${loc.name}`, c: 'text-game-green' }
-    : { t: 'Idle at the guild', c: 'text-game-text-dim' }
 
-  const abilities: [keyof Unit['abilities'], string][] = [
-    ['strength', 'STR'], ['agility', 'AGI'], ['dexterity', 'DEX'], ['constitution', 'CON'], ['intelligence', 'INT'],
-  ]
-  const stats: [string, number][] = [
-    ['ATK', ds.attack], ['DEF', ds.defense], ['M.ATK', ds.magicAttack], ['M.DEF', ds.magicDefense],
-    ['SPD', ds.attackSpeed], ['ACC', ds.accuracy], ['DODGE', ds.dodge], ['RANGE', ds.attackRange],
-  ]
+  // Action bar → grid cells (skills carry a live cooldown bar; otherwise rdy).
+  const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
+  const cells: GridCell[] = slots.map((e) => {
+    if (!e) return { empty: true, name: '' }
+    if (e.kind === 'skill') {
+      const liveSkill = c?.skills.find((s) => s.id === e.id)
+      const left = liveSkill ? (c!.skillCooldowns[e.id] ?? 0) : 0
+      const cd = liveSkill?.cooldown ?? 1
+      const ready = left <= 0
+      return { name: SKILL_REGISTRY[e.id]?.name ?? e.id, bar: { frac: ready ? 1 : 1 - left / Math.max(1, cd), time: ready ? 'rdy' : String(left) } }
+    }
+    if (e.kind === 'consumable') return { name: miscItems.find((m) => m.id === e.id)?.name ?? e.id, icon: '🫙' }
+    return { name: equipment.find((it) => it.id === e.id)?.name ?? e.id, icon: '⚔' }
+  })
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-16 h-16 rounded-2xl bg-game-surface border border-game-primary/40 flex items-center justify-center text-3xl shrink-0">
-          {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-lg font-semibold text-game-text leading-tight truncate">{unit.name}</div>
-          <div className="text-xs text-game-text-dim">{unit.class ?? 'Novice'} · Lv {unit.level} · {unit.age}y</div>
-          <div className={`text-[11px] mt-0.5 ${status.c}`}>● {status.t}</div>
-        </div>
-        {live && (
-          <button
-            onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
-            title="Lock the camera onto this hero"
-            className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
-          >🎥 {following ? 'Following' : 'Follow'}</button>
-        )}
-      </div>
-
-      {/* vitals */}
-      <div className="space-y-2">
-        <div>
-          <div className="flex justify-between text-[10px] mb-0.5"><span className="uppercase tracking-wider text-game-text-dim">Health</span><span className="text-game-text tabular-nums">{Math.floor(hp)} / {maxHp}</span></div>
-          <div className="h-2 rounded-full bg-game-border overflow-hidden"><div className={`h-full rounded-full ${hpPct > 60 ? 'bg-game-green' : hpPct > 30 ? 'bg-amber-400' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} /></div>
-        </div>
-        <div>
-          <div className="flex justify-between text-[10px] mb-0.5"><span className="uppercase tracking-wider text-game-text-dim">Experience</span><span className="text-game-text tabular-nums">{Math.floor(unit.exp)} / {unit.expToNext}</span></div>
-          <div className="h-2 rounded-full bg-game-border overflow-hidden"><div className="h-full rounded-full bg-game-accent" style={{ width: `${xpPct}%` }} /></div>
-        </div>
-      </div>
-
-      {/* live combat — cooldowns, buffs/statuses, casting (only while fighting) */}
-      {live && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1">Combat · live</div>
-          <StatsTab c={c!} battle={battle!} battleOnly />
-        </div>
-      )}
-
-      {/* abilities */}
+    <div className="space-y-3">
       <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Abilities</span>
-          {unit.abilityPoints > 0 && <span className="text-[10px] text-game-gold">{unit.abilityPoints} pts to spend</span>}
-        </div>
-        <div className="grid grid-cols-5 gap-1.5">
-          {abilities.map(([k, label]) => (
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-semibold text-game-text truncate">{unit.name}</span>
+          <span className="text-xs text-game-text-dim shrink-0">Lv {unit.level} · {unit.class ?? 'Novice'}</span>
+          {live && (
             <button
-              key={k}
-              disabled={unit.abilityPoints <= 0}
-              onClick={() => spendAbilityPoint(unit.id, k)}
-              className={['rounded-lg border py-1.5 flex flex-col items-center transition-colors',
-                unit.abilityPoints > 0 ? 'border-game-gold/40 hover:bg-game-gold/10 cursor-pointer' : 'border-game-border cursor-default'].join(' ')}
-            >
-              <span className="text-[9px] text-game-text-dim">{label}</span>
-              <span className="text-base font-semibold text-game-text leading-none">{unit.abilities[k]}</span>
-              {unit.abilityPoints > 0 && <span className="text-[8px] text-game-gold leading-none mt-0.5">＋</span>}
-            </button>
-          ))}
+              onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
+              title="Lock the camera onto this hero"
+              className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
+            >🎥 {following ? 'Following' : 'Follow'}</button>
+          )}
         </div>
+        {live && c!.statuses.length > 0 && <StatusList statuses={c!.statuses} />}
       </div>
 
-      {/* combat profile (derived stats) */}
-      <div>
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Combat profile</div>
-        <div className="grid grid-cols-4 gap-1.5">
-          {stats.map(([label, v]) => (
-            <div key={label} className="rounded-lg bg-game-bg border border-game-border py-1.5 flex flex-col items-center">
-              <span className="text-[9px] text-game-text-dim">{label}</span>
-              <span className="text-sm font-semibold text-game-text tabular-nums leading-none mt-0.5">{Math.round(v)}</span>
-            </div>
-          ))}
-        </div>
+      <CooldownGrid cells={cells} />
+
+      <div className="space-y-1.5">
+        <StatBar label="HP" cur={hp} max={maxHp} color="bg-game-green" />
+        <StatBar label="EXP" cur={unit.exp} max={unit.expToNext} color="bg-game-accent" />
       </div>
 
-      {/* live debug (collapsed) */}
-      {live && (
-        <div>
-          <button onClick={() => setShowDebug((v) => !v)} className="text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text flex items-center gap-1.5">
-            <span className="w-3 text-center">{showDebug ? '▾' : '▸'}</span>Debug
-          </button>
-          {showDebug && <DebugTab c={c!} battle={battle!} />}
-        </div>
-      )}
+      <button
+        onClick={() => openHeroDetail(unit.id)}
+        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-game-border text-sm text-game-text-dim hover:text-game-text hover:bg-white/5"
+      >◈ Hero Detail ▸</button>
     </div>
   )
 }
@@ -895,20 +875,36 @@ const EQUIP_FILTER_LABEL: Record<EquipFilter, string> = { both: 'All', equipped:
 // ── Foe card — a monster inspected on the battlefield, shown in the Unit tab ───--
 function FoeCard({ locId, combatantId }: { locId: string; combatantId: string }) {
   const battle = useGameStore((s) => s.battles[locId])
-  const [tab, setTab] = useState<'stats' | 'debug'>('stats')
+  const monsterSeen = useGameStore((s) => s.monsterSeen)
+  const [codex, setCodex] = useState(false)
   const c = battle?.combatants.find((x) => x.id === combatantId)
   if (!battle || !c) return <Empty icon="☠" title="Foe is gone" sub="This monster left the battlefield. Tap another, or pick a hero." />
+  const monsterId = c.id.split('#')[0]
+  const def = MONSTER_REGISTRY[monsterId]
+  const cells: GridCell[] = c.skills.map((s) => {
+    const left = c.skillCooldowns[s.id] ?? 0
+    const ready = left <= 0
+    return { name: s.name, bar: { frac: ready ? 1 : 1 - left / Math.max(1, s.cooldown), time: ready ? 'rdy' : String(left) } }
+  })
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-red-200 truncate">{c.name}</span>
-        <span className="text-[10px] text-game-text-dim uppercase tracking-wide">{c.team}{c.alive ? '' : ' · KO'}</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
-          <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
+    <div className="space-y-3">
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-semibold text-red-200 truncate">{c.name}</span>
+          {def && <span className="text-xs text-game-text-dim shrink-0">Lv {def.level}</span>}
+          <span className={`text-[10px] uppercase tracking-wide shrink-0 ${c.provoked ? 'text-red-300' : 'text-amber-300'}`}>{c.alive ? (c.provoked ? 'hostile' : 'passive') : 'KO'}</span>
         </div>
+        {c.statuses.length > 0 && <StatusList statuses={c.statuses} />}
       </div>
-      {tab === 'stats' ? <StatsTab c={c} battle={battle} /> : <DebugTab c={c} battle={battle} />}
+
+      <CooldownGrid cells={cells} />
+
+      <StatBar label="HP" cur={c.hp} max={c.maxHp} color="bg-red-600" />
+
+      {def && (
+        <button onClick={() => setCodex(true)} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-game-border text-sm text-game-text-dim hover:text-game-text hover:bg-white/5">📖 Codex Entry ▸</button>
+      )}
+      {codex && def && <MonsterCodex monster={def} seenCount={monsterSeen[monsterId] ?? 0} onClose={() => setCodex(false)} />}
     </div>
   )
 }
@@ -986,10 +982,11 @@ export function ProtoLens() {
         ))}
       </div>
 
-      {/* Hero sub-tabs only appear on the Unit altitude for a hero (not a foe). */}
-      {top === 'hero' && unit && !selectedFoe && (
+      {/* Hero sub-tabs only appear when there's a Pet (Report otherwise lives in
+          Hero Detail). Hidden for a foe. */}
+      {top === 'hero' && unit && !selectedFoe && heroSubs.length > 1 && (
         <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
-          {heroSubs.length > 1 && heroSubs.map((s) => (
+          {heroSubs.map((s) => (
             <button
               key={s.id}
               onClick={() => setHeroSub(s.id)}

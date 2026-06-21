@@ -62,7 +62,7 @@ function bestInSlot(unit: Unit, slot: EquipSlot, equipment: EquipmentItem[]): Eq
   return best
 }
 
-export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationName: string }) {
+export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; locationName: string; onHero?: (id: string) => void }) {
   const equipment     = useGameStore((s) => s.equipment)
   const locations     = useGameStore((s) => s.locations)
   const partyTactics  = useGameStore((s) => s.partyTactics)
@@ -203,7 +203,8 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
                 {/* hero cell (sticky on horizontal scroll) */}
                 <div className="w-32 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 z-10 bg-game-surface">
                   <div className="relative shrink-0">
-                    <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
+                    <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
+                      title={onHero ? 'Open Hero Detail' : undefined}
                       className={['w-10 h-10 rounded-full bg-game-bg border flex items-center justify-center text-lg', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
                       {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
                     </button>
@@ -213,7 +214,7 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
                       className={['absolute -top-1 -right-1 w-5 h-5 rounded-full border border-game-bg flex items-center justify-center text-[10px] leading-none', locked ? 'bg-game-gold text-game-bg' : 'bg-game-surface text-game-muted hover:text-game-text'].join(' ')}
                     >{locked ? '🔒' : '🔓'}</button>
                   </div>
-                  <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="min-w-0 flex-1 text-left">
+                  <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="min-w-0 flex-1 text-left">
                     <span className="text-sm font-medium text-game-text truncate block">{u.name.split(' ')[0]}</span>
                     <span className="text-[11px] text-game-text-dim truncate block">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : ''}</span>
                   </button>
