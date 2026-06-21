@@ -169,6 +169,7 @@ export function ProtoStage() {
   }
 
   const [zoom, setZoom] = useState(0)       // continuous 0..2
+  const [navOpen, setNavOpen] = useState(false)   // breadcrumb collapsed → top-left chip
   const [focus, setFocus] = useState({ x: 6 * CELL, y: 3.5 * CELL })
   const [drag, setDrag] = useState({ x: 0, y: 0 })
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -325,63 +326,67 @@ export function ProtoStage() {
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-game-bg via-[#0b0b14] to-[#0d0d18]">
-      {/* zoom breadcrumb + occupied-location stepper — the nav controls, above the view */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 text-[11px]">
-        {/* ‹ prev occupied location */}
-        <button
-          onClick={() => stepLocation(-1)}
-          disabled={occupied.length < 2}
-          title="Previous location with units"
-          aria-label="Previous location with units"
-          className="w-7 h-7 flex items-center justify-center rounded-lg border border-game-border bg-game-bg/85 text-game-text-dim hover:text-game-text disabled:opacity-30 backdrop-blur-sm"
-        >‹</button>
-
-        <div className="flex items-center bg-game-bg/85 border border-game-border rounded-lg px-1 py-0.5 backdrop-blur-sm">
-          {/* In a dungeon page, a leading Exit chip pops back to the world. */}
-          {mapPageId !== 'world' && (
-            <button
-              onClick={leaveDungeon}
-              title={`Leave ${region.name}`}
-              aria-label={`Leave ${region.name}`}
-              className="mr-0.5 px-2 py-1 rounded-md flex items-center gap-1 font-medium text-rose-300 hover:text-rose-200 hover:bg-rose-500/10"
-            ><span aria-hidden>↩</span><span>Exit</span></button>
-          )}
-          {([0, 1, 2] as const).map((z, i) => {
-            const label = z === 0 ? region.name : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
-            const icon = z === 0 ? region.icon : (['🗺', '⌖', '⚔'][z])
-            const disabled = z > 0 && !focusLoc
-            return (
-              <span key={z} className="flex items-center">
-                {i > 0 && <span className="px-0.5 text-game-muted">›</span>}
+      {/* nav breadcrumb — collapsed to a compact top-LEFT chip so the battlefield
+          reclaims the top of the stage; tap to expand the full World›Locale›Battle
+          chain + the occupied-location stepper. */}
+      <div className="absolute top-2 left-2 z-30 text-[11px]">
+        {!navOpen ? (
+          <button
+            onClick={() => setNavOpen(true)}
+            title="Navigate" aria-label="Navigate"
+            className="flex items-center gap-1 bg-game-bg/85 border border-game-border rounded-lg px-2 py-1 backdrop-blur-sm text-game-text-dim hover:text-game-text"
+          >
+            <span aria-hidden>{nearest === 0 ? region.icon : nearest === 1 ? '⌖' : '⚔'}</span>
+            <span className="truncate max-w-[40vw]">{nearest === 0 ? region.name : nearest === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'}</span>
+            <span className="text-game-muted">⌄</span>
+          </button>
+        ) : (
+          <div className="flex flex-col gap-1 items-start">
+            <div className="flex items-center bg-game-bg/90 border border-game-border rounded-lg px-1 py-0.5 backdrop-blur-sm">
+              {/* In a dungeon page, a leading Exit chip pops back to the world. */}
+              {mapPageId !== 'world' && (
                 <button
-                  onClick={() => { if (!disabled) gotoStop(z) }}
-                  disabled={disabled}
-                  className={[
-                    'px-2 py-1 rounded-md flex items-center gap-1 transition-colors max-w-[34vw] truncate',
-                    nearest === z ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text',
-                    disabled ? 'opacity-40 cursor-not-allowed' : '',
-                  ].join(' ')}
-                >
-                  <span aria-hidden>{icon}</span>
-                  <span className="truncate">{label}</span>
-                </button>
-              </span>
-            )
-          })}
-        </div>
+                  onClick={() => { leaveDungeon(); setNavOpen(false) }}
+                  title={`Leave ${region.name}`}
+                  aria-label={`Leave ${region.name}`}
+                  className="mr-0.5 px-2 py-1 rounded-md flex items-center gap-1 font-medium text-rose-300 hover:text-rose-200 hover:bg-rose-500/10"
+                ><span aria-hidden>↩</span><span>Exit</span></button>
+              )}
+              {([0, 1, 2] as const).map((z, i) => {
+                const label = z === 0 ? region.name : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
+                const icon = z === 0 ? region.icon : (['🗺', '⌖', '⚔'][z])
+                const disabled = z > 0 && !focusLoc
+                return (
+                  <span key={z} className="flex items-center">
+                    {i > 0 && <span className="px-0.5 text-game-muted">›</span>}
+                    <button
+                      onClick={() => { if (!disabled) { gotoStop(z); setNavOpen(false) } }}
+                      disabled={disabled}
+                      className={[
+                        'px-2 py-1 rounded-md flex items-center gap-1 transition-colors max-w-[34vw] truncate',
+                        nearest === z ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text',
+                        disabled ? 'opacity-40 cursor-not-allowed' : '',
+                      ].join(' ')}
+                    >
+                      <span aria-hidden>{icon}</span>
+                      <span className="truncate">{label}</span>
+                    </button>
+                  </span>
+                )
+              })}
+              <button onClick={() => setNavOpen(false)} title="Collapse" aria-label="Collapse navigation" className="ml-0.5 px-1.5 py-1 rounded-md text-game-muted hover:text-game-text">✕</button>
+            </div>
 
-        {/* › next occupied location */}
-        <button
-          onClick={() => stepLocation(1)}
-          disabled={occupied.length < 2}
-          title="Next location with units"
-          aria-label="Next location with units"
-          className="relative w-7 h-7 flex items-center justify-center rounded-lg border border-game-border bg-game-bg/85 text-game-text-dim hover:text-game-text disabled:opacity-30 backdrop-blur-sm"
-        >›
-          {occupied.length > 0 && (
-            <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[8px] text-game-muted tabular-nums whitespace-nowrap">{occIdx >= 0 ? occIdx + 1 : '–'}/{occupied.length}</span>
-          )}
-        </button>
+            {/* occupied-location stepper (‹ N/M ›) */}
+            {occupied.length > 1 && (
+              <div className="flex items-center gap-1 bg-game-bg/85 border border-game-border rounded-lg px-1 py-0.5 backdrop-blur-sm">
+                <button onClick={() => stepLocation(-1)} title="Previous location with units" aria-label="Previous location with units" className="w-6 h-6 flex items-center justify-center rounded-md text-game-text-dim hover:text-game-text">‹</button>
+                <span className="text-[9px] text-game-muted tabular-nums px-0.5">{occIdx >= 0 ? occIdx + 1 : '–'}/{occupied.length}</span>
+                <button onClick={() => stepLocation(1)} title="Next location with units" aria-label="Next location with units" className="w-6 h-6 flex items-center justify-center rounded-md text-game-text-dim hover:text-game-text">›</button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* viewport: map layer (always) + battle layer (crossfades in) */}
