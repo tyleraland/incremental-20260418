@@ -38,7 +38,7 @@ type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics'
 type HeroSub = 'stats' | 'pet'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location',  label: 'Location',  icon: '⌖' },
-  { id: 'hero',      label: 'Unit',      icon: '◈' },
+  { id: 'hero',      label: 'Hero',      icon: '◈' },
   { id: 'equipment', label: 'Equipment', icon: '🎒' },
   { id: 'skills',    label: 'Skills',    icon: '✦' },
   { id: 'tactics',   label: 'Tactics',   icon: '☷' },
@@ -95,12 +95,14 @@ function CooldownGrid({ cells }: { cells: GridCell[] }) {
   )
 }
 
-// ── Unit lens (the compact, combat-first card) ─────────────────────────────────--
-// Order: identity + statuses, the action bar with cooldowns, vitals, and a link
-// to the roomy Hero Detail. Heavy stats/abilities live in Hero Detail now.
-function UnitLens({ unit }: { unit: Unit }) {
+// ── Hero lens (the Hero tab) ───────────────────────────────────────────────────--
+// Combat-first: identity + statuses, the action bar with cooldowns, vitals, then
+// the COMBAT STATS (derived) in the upper section and the UPGRADEABLE abilities
+// lower. A link opens the roomy Hero Detail.
+function HeroLens({ unit }: { unit: Unit }) {
   const equipment = useGameStore((s) => s.equipment)
   const miscItems = useGameStore((s) => s.miscItems)
+  const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
   const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
   const battleFollowId = useGameStore((s) => s.battleFollowId)
   const openHeroDetail = useProtoStore((s) => s.openHeroDetail)
@@ -127,6 +129,14 @@ function UnitLens({ unit }: { unit: Unit }) {
     return { name: equipment.find((it) => it.id === e.id)?.name ?? e.id, icon: '⚔' }
   })
 
+  const combatStats: [string, number][] = [
+    ['ATK', ds.attack], ['DEF', ds.defense], ['M.ATK', ds.magicAttack], ['M.DEF', ds.magicDefense],
+    ['SPD', ds.attackSpeed], ['ACC', ds.accuracy], ['DODGE', ds.dodge], ['RANGE', ds.attackRange],
+  ]
+  const abilities: [keyof Unit['abilities'], string][] = [
+    ['strength', 'STR'], ['agility', 'AGI'], ['dexterity', 'DEX'], ['constitution', 'CON'], ['intelligence', 'INT'],
+  ]
+
   return (
     <div className="space-y-3">
       <div>
@@ -151,10 +161,43 @@ function UnitLens({ unit }: { unit: Unit }) {
         <StatBar label="EXP" cur={unit.exp} max={unit.expToNext} color="bg-game-accent" />
       </div>
 
-      <button
-        onClick={() => openHeroDetail(unit.id)}
-        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-game-border text-sm text-game-text-dim hover:text-game-text hover:bg-white/5"
-      >◈ Hero Detail ▸</button>
+      {/* Upper: combat (derived) stats */}
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Combat stats</div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {combatStats.map(([label, v]) => (
+            <div key={label} className="rounded-lg bg-game-bg border border-game-border py-1.5 flex flex-col items-center">
+              <span className="text-[9px] text-game-text-dim">{label}</span>
+              <span className="text-sm font-semibold text-game-text tabular-nums leading-none mt-0.5">{Math.round(v)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Lower: upgradeable abilities */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Upgradeable</span>
+          {unit.abilityPoints > 0 && <span className="text-[10px] text-game-gold">{unit.abilityPoints} pts to spend</span>}
+        </div>
+        <div className="grid grid-cols-5 gap-1.5">
+          {abilities.map(([k, label]) => (
+            <button
+              key={k}
+              disabled={unit.abilityPoints <= 0}
+              onClick={() => spendAbilityPoint(unit.id, k)}
+              className={['rounded-lg border py-1.5 flex flex-col items-center transition-colors',
+                unit.abilityPoints > 0 ? 'border-game-gold/40 hover:bg-game-gold/10 cursor-pointer' : 'border-game-border cursor-default'].join(' ')}
+            >
+              <span className="text-[9px] text-game-text-dim">{label}</span>
+              <span className="text-base font-semibold text-game-text leading-none">{unit.abilities[k]}</span>
+              {unit.abilityPoints > 0 && <span className="text-[8px] text-game-gold leading-none mt-0.5">＋</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={() => openHeroDetail(unit.id)} className="text-[11px] text-game-text-dim hover:text-game-text">Full detail ▸</button>
     </div>
   )
 }
@@ -666,14 +709,14 @@ function SkillsLens({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-3">
-      {/* Prominent entry to the skill tree (where points are spent / skills learned) */}
+      {/* Entry to the skill tree (where points are spent / skills learned) */}
       <button
         onClick={() => openStageOverlay({ kind: 'skill-tree', unitId: unit.id })}
-        className={['w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-semibold text-sm transition-colors',
+        className={['inline-flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-sm transition-colors self-start',
           unit.skillPoints > 0 ? 'bg-game-gold text-game-bg hover:bg-game-gold/90 shadow' : 'bg-game-primary text-white hover:bg-game-primary/80 shadow'].join(' ')}
       >
         <span className="text-base leading-none">🌳</span> Skill Tree
-        {unit.skillPoints > 0 && <span className="bg-black/20 rounded px-1.5 py-0.5 text-[11px] tabular-nums">{unit.skillPoints} pt to spend</span>}
+        {unit.skillPoints > 0 && <span className="bg-black/20 rounded px-1.5 py-0.5 text-[11px] tabular-nums">{unit.skillPoints} pt</span>}
         <span className="opacity-70">▸</span>
       </button>
 
@@ -919,6 +962,7 @@ export function ProtoLens() {
   const markUnitViewed   = useGameStore((s) => s.markUnitViewed)
   const openReport       = useGameStore((s) => s.openReport)
   const selectedFoe      = useProtoStore((s) => s.selectedFoe)
+  const clearFoe         = useProtoStore((s) => s.clearFoe)
   const [top, setTop] = useState<Top>('location')
   const [heroSub, setHeroSub] = useState<HeroSub>('stats')
   // Seed the mock pack/card economy once (idempotent) so the hero board has cards
@@ -963,7 +1007,7 @@ export function ProtoLens() {
   const effSub: HeroSub = heroSub === 'pet' && !unit?.companion ? 'stats' : heroSub
 
   return (
-    <div className="h-full flex flex-col bg-game-surface/40 min-h-0">
+    <div className="relative h-full flex flex-col bg-game-surface/40 min-h-0">
       <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
         {TOP_TABS.map((t) => (
           <button
@@ -1007,14 +1051,12 @@ export function ProtoLens() {
           states centred; overflow is handled by the scroll container above). */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         <div className="h-full" style={{ zoom: 1.08 }}>
-          {top === 'hero' && (selectedFoe ? (
-            <FoeCard locId={selectedFoe.locId} combatantId={selectedFoe.combatantId} />
-          ) : unit ? (
+          {top === 'hero' && (unit ? (
             <>
               <FocusCue unit={unit} location={location} />
-              {effSub === 'pet' ? <CompanionLens unit={unit} /> : <UnitLens unit={unit} />}
+              {effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />}
             </>
-          ) : <Empty icon="◈" title="Select a unit" sub="Pick a hero from the roster, or tap a combatant on the battlefield." />)}
+          ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />)}
 
           {top === 'location' && (location
             ? <LocationDetail location={location} />
@@ -1025,6 +1067,22 @@ export function ProtoLens() {
           {top === 'tactics'   && (unit ? <TacticianLens unit={unit} /> : <Empty icon="☷" title="Select a hero" sub="Pick a hero to tune their tactics." />)}
         </div>
       </div>
+
+      {/* Battlefield inspect (monsters now; NPCs/etc. later) — a separate view
+          that covers the lens tabs. The stage stays live on the other half. */}
+      {selectedFoe && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-game-surface">
+          <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border bg-game-surface/80">
+            <span className="text-xs font-semibold text-game-text">🔍 Inspect</span>
+            <button onClick={() => clearFoe()} className="ml-auto flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Back</button>
+          </header>
+          <div className="flex-1 min-h-0 overflow-y-auto p-3">
+            <div className="h-full" style={{ zoom: 1.08 }}>
+              <FoeCard locId={selectedFoe.locId} combatantId={selectedFoe.combatantId} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

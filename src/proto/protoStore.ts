@@ -554,7 +554,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   requestHeroTab: () => set((s) => ({ heroTabRequest: s.heroTabRequest + 1 })),
   requestHeroBattle: () => set((s) => ({ heroBattleRequest: s.heroBattleRequest + 1 })),
   selectedFoe: null,
-  inspectFoe: (locId, combatantId) => set((s) => ({ selectedFoe: { locId, combatantId }, heroBattleRequest: s.heroBattleRequest + 1 })),
+  inspectFoe: (locId, combatantId) => set({ selectedFoe: { locId, combatantId } }),
   clearFoe: () => set((s) => (s.selectedFoe ? { selectedFoe: null } : s)),
   heroDetailId: null,
   openHeroDetail: (unitId) => set({ heroDetailId: unitId }),
