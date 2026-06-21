@@ -788,22 +788,26 @@ function StatusList({ statuses }: { statuses: StatusEffect[] }) {
   )
 }
 
-export function StatsTab({ c, battle }: { c: Combatant; battle: BattleState }) {
+export function StatsTab({ c, battle, battleOnly = false }: { c: Combatant; battle: BattleState; battleOnly?: boolean }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   return (
     <>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden">
-          <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+      {!battleOnly && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex-1 h-1.5 rounded-full bg-black/50 overflow-hidden">
+            <div className={`h-full ${hpColor(ratio)}`} style={{ width: `${ratio * 100}%`, transition: 'width 380ms linear' }} />
+          </div>
+          <div className="text-game-text-dim tabular-nums">{Math.ceil(c.hp)}/{c.maxHp}</div>
         </div>
-        <div className="text-game-text-dim tabular-nums">{Math.ceil(c.hp)}/{c.maxHp}</div>
-      </div>
-      <div className="mt-2 grid grid-cols-4 gap-1 text-[10px] text-game-text-dim">
-        <div>STR <span className="text-game-text tabular-nums">{c.str}</span></div>
-        <div>DEF <span className="text-game-text tabular-nums">{c.def}</span></div>
-        <div>INT <span className="text-game-text tabular-nums">{c.int}</span></div>
-        <div>SPD <span className="text-game-text tabular-nums">{c.spd}</span></div>
-      </div>
+      )}
+      {!battleOnly && (
+        <div className="mt-2 grid grid-cols-4 gap-1 text-[10px] text-game-text-dim">
+          <div>STR <span className="text-game-text tabular-nums">{c.str}</span></div>
+          <div>DEF <span className="text-game-text tabular-nums">{c.def}</span></div>
+          <div>INT <span className="text-game-text tabular-nums">{c.int}</span></div>
+          <div>SPD <span className="text-game-text tabular-nums">{c.spd}</span></div>
+        </div>
+      )}
       {c.skills.length > 0 && (
         <div className="mt-2">
           <div className="text-[10px] text-game-text-dim mb-1">Skills</div>

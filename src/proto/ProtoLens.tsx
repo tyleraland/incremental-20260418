@@ -33,7 +33,7 @@ import { LocationDetail } from './LocationDetail'
 // moved to the global top nav (it spans multiple units). Equipment (the gutted
 // "Items") is this hero's gear + personal inventory.
 type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics'
-type HeroSub = 'summary' | 'battle' | 'pet'
+type HeroSub = 'stats' | 'pet'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location',  label: 'Location',  icon: '⌖' },
   { id: 'hero',      label: 'Unit',      icon: '◈' },
@@ -41,10 +41,11 @@ const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'skills',    label: 'Skills',    icon: '✦' },
   { id: 'tactics',   label: 'Tactics',   icon: '☷' },
 ]
+// The hero's whole dossier is one container (UnitLens); a Pet sub appears only
+// once a hero has a beast companion.
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
-  { id: 'summary', label: 'Summary' },
+  { id: 'stats', label: 'Stats' },
 ]
-// The Pet sub only appears once a hero has a beast companion.
 const PET_SUB: { id: HeroSub; label: string } = { id: 'pet', label: 'Pet' }
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
@@ -53,17 +54,33 @@ const CHANNELS: { id: string; label: string }[] = [
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'Reaction' }, { id: 'passive', label: 'Passive' },
 ]
 
-// ── Summary lens ──────────────────────────────────────────────────────────────
-function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
+// ── Unit lens (unified) ────────────────────────────────────────────────────────
+// One container for everything about a hero: vitals (live HP when fighting),
+// live cooldowns + buffs/casting from the battle, abilities, and the combat
+// profile — plus an optional live Debug + camera Follow. Replaces the old
+// Summary/Battle split.
+function UnitLens({ unit }: { unit: Unit }) {
   const locations = useGameStore((s) => s.locations)
+  const equipment = useGameStore((s) => s.equipment)
   const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
+  const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
+  const battleFollowId = useGameStore((s) => s.battleFollowId)
+  const [showDebug, setShowDebug] = useState(false)
+
+  const ds = getDerivedStats(unit, equipment)
+  const c = battle?.combatants.find((x) => x.id === unit.id)
+  const live = !!(c && battle)
+  const hp = c ? c.hp : unit.health
+  const maxHp = c ? c.maxHp : ds.maxHp
+  const hpPct = Math.min(100, (hp / maxHp) * 100)
+  const xpPct = Math.min(100, (unit.exp / unit.expToNext) * 100)
   const loc = unit.locationId ? locations.find((l) => l.id === unit.locationId) : null
+  const following = battleFollowId === unit.id
   const status = unit.recoveryTicksLeft > 0 ? { t: 'Recovering', c: 'text-purple-300' }
     : unit.isResting ? { t: 'Resting', c: 'text-sky-300' }
+    : live ? { t: 'In battle', c: 'text-game-accent' }
     : loc ? { t: `Deployed · ${loc.name}`, c: 'text-game-green' }
     : { t: 'Idle at the guild', c: 'text-game-text-dim' }
-  const xpPct = Math.min(100, (unit.exp / unit.expToNext) * 100)
-  const hpPct = Math.min(100, (unit.health / ds.maxHp) * 100)
 
   const abilities: [keyof Unit['abilities'], string][] = [
     ['strength', 'STR'], ['agility', 'AGI'], ['dexterity', 'DEX'], ['constitution', 'CON'], ['intelligence', 'INT'],
@@ -76,20 +93,28 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <div className="w-16 h-16 rounded-2xl bg-game-surface border border-game-primary/40 flex items-center justify-center text-3xl">
+        <div className="w-16 h-16 rounded-2xl bg-game-surface border border-game-primary/40 flex items-center justify-center text-3xl shrink-0">
           {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-lg font-semibold text-game-text leading-tight truncate">{unit.name}</div>
           <div className="text-xs text-game-text-dim">{unit.class ?? 'Novice'} · Lv {unit.level} · {unit.age}y</div>
           <div className={`text-[11px] mt-0.5 ${status.c}`}>● {status.t}</div>
         </div>
+        {live && (
+          <button
+            onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
+            title="Lock the camera onto this hero"
+            className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
+          >🎥 {following ? 'Following' : 'Follow'}</button>
+        )}
       </div>
 
+      {/* vitals */}
       <div className="space-y-2">
         <div>
-          <div className="flex justify-between text-[10px] mb-0.5"><span className="uppercase tracking-wider text-game-text-dim">Health</span><span className="text-game-text tabular-nums">{Math.floor(unit.health)} / {ds.maxHp}</span></div>
-          <div className="h-2 rounded-full bg-game-border overflow-hidden"><div className="h-full rounded-full bg-game-green" style={{ width: `${hpPct}%` }} /></div>
+          <div className="flex justify-between text-[10px] mb-0.5"><span className="uppercase tracking-wider text-game-text-dim">Health</span><span className="text-game-text tabular-nums">{Math.floor(hp)} / {maxHp}</span></div>
+          <div className="h-2 rounded-full bg-game-border overflow-hidden"><div className={`h-full rounded-full ${hpPct > 60 ? 'bg-game-green' : hpPct > 30 ? 'bg-amber-400' : 'bg-red-500'}`} style={{ width: `${hpPct}%` }} /></div>
         </div>
         <div>
           <div className="flex justify-between text-[10px] mb-0.5"><span className="uppercase tracking-wider text-game-text-dim">Experience</span><span className="text-game-text tabular-nums">{Math.floor(unit.exp)} / {unit.expToNext}</span></div>
@@ -97,6 +122,15 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
         </div>
       </div>
 
+      {/* live combat — cooldowns, buffs/statuses, casting (only while fighting) */}
+      {live && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1">Combat · live</div>
+          <StatsTab c={c!} battle={battle!} battleOnly />
+        </div>
+      )}
+
+      {/* abilities */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Abilities</span>
@@ -108,10 +142,8 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
               key={k}
               disabled={unit.abilityPoints <= 0}
               onClick={() => spendAbilityPoint(unit.id, k)}
-              className={[
-                'rounded-lg border py-1.5 flex flex-col items-center transition-colors',
-                unit.abilityPoints > 0 ? 'border-game-gold/40 hover:bg-game-gold/10 cursor-pointer' : 'border-game-border cursor-default',
-              ].join(' ')}
+              className={['rounded-lg border py-1.5 flex flex-col items-center transition-colors',
+                unit.abilityPoints > 0 ? 'border-game-gold/40 hover:bg-game-gold/10 cursor-pointer' : 'border-game-border cursor-default'].join(' ')}
             >
               <span className="text-[9px] text-game-text-dim">{label}</span>
               <span className="text-base font-semibold text-game-text leading-none">{unit.abilities[k]}</span>
@@ -121,6 +153,7 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
         </div>
       </div>
 
+      {/* combat profile (derived stats) */}
       <div>
         <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Combat profile</div>
         <div className="grid grid-cols-4 gap-1.5">
@@ -132,6 +165,16 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
           ))}
         </div>
       </div>
+
+      {/* live debug (collapsed) */}
+      {live && (
+        <div>
+          <button onClick={() => setShowDebug((v) => !v)} className="text-[10px] uppercase tracking-widest text-game-text-dim hover:text-game-text flex items-center gap-1.5">
+            <span className="w-3 text-center">{showDebug ? '▾' : '▸'}</span>Debug
+          </button>
+          {showDebug && <DebugTab c={c!} battle={battle!} />}
+        </div>
+      )}
     </div>
   )
 }
@@ -870,33 +913,6 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
   )
 }
 
-// ── Battle lens (the unified hero/battle card) ─────────────────────────────────--
-// The live combat readout — formerly a floating sheet over the battlefield — now
-// lives in the Unit tab. Reuses BattleView's Stats / Debug panels for the hero's
-// own combatant, plus a Follow shortcut.
-function BattleLens({ unit }: { unit: Unit }) {
-  const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
-  const battleFollowId = useGameStore((s) => s.battleFollowId)
-  const [tab, setTab] = useState<'stats' | 'debug'>('stats')
-  const c = battle?.combatants.find((x) => x.id === unit.id)
-  if (!battle || !c) return <div className="text-xs text-game-muted italic">{unit.name.split(' ')[0]} isn't in a live battle right now.</div>
-  const following = battleFollowId === unit.id
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-1.5">
-        <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
-        <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
-        <button
-          onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
-          title="Lock the camera onto this hero"
-          className={`ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
-        >🎥 {following ? 'Following' : 'Follow'}</button>
-      </div>
-      {tab === 'stats' ? <StatsTab c={c} battle={battle} /> : <DebugTab c={c} battle={battle} />}
-    </div>
-  )
-}
-
 // ── ProtoLens shell ─────────────────────────────────────────────────────────--
 export function ProtoLens() {
   const units            = useGameStore((s) => s.units)
@@ -907,15 +923,8 @@ export function ProtoLens() {
   const markUnitViewed   = useGameStore((s) => s.markUnitViewed)
   const openReport       = useGameStore((s) => s.openReport)
   const selectedFoe      = useProtoStore((s) => s.selectedFoe)
-  // The live battle the selected hero is fighting in (if any) — drives the
-  // unified Battle sub-tab on the Unit altitude.
-  const heroBattle = useGameStore((s) => {
-    const u = s.units.find((x) => x.id === selectedUnitIds[0])
-    return u?.locationId ? s.battles[u.locationId] : undefined
-  })
-
   const [top, setTop] = useState<Top>('location')
-  const [heroSub, setHeroSub] = useState<HeroSub>('summary')
+  const [heroSub, setHeroSub] = useState<HeroSub>('stats')
   // Seed the mock pack/card economy once (idempotent) so the hero board has cards
   // even before the Town overlay is opened.
   useEffect(() => { seedProtoMocks() }, [])
@@ -936,16 +945,16 @@ export function ProtoLens() {
     if (locationTabRequest !== prevLocReq.current) { setTop('location'); prevLocReq.current = locationTabRequest }
   }, [locationTabRequest])
 
-  // A battlefield chip tap routes here → Hero tab, Battle sub-tab (unified card).
+  // A battlefield chip tap routes here → Unit tab (the unified card shows the
+  // live combat info automatically when the hero is fighting).
   const heroBattleRequest = useProtoStore((s) => s.heroBattleRequest)
   const prevBattleReq = useRef(heroBattleRequest)
   useEffect(() => {
-    if (heroBattleRequest !== prevBattleReq.current) { setTop('hero'); setHeroSub('battle'); prevBattleReq.current = heroBattleRequest }
+    if (heroBattleRequest !== prevBattleReq.current) { setTop('hero'); setHeroSub('stats'); prevBattleReq.current = heroBattleRequest }
   }, [heroBattleRequest])
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
-  const unitInBattle = !!unit && !!heroBattle?.combatants.some((c) => c.id === unit.id)
 
   // Viewing a hero's dossier clears their "to-do" cue (new level / unspent pts) —
   // same rule as the production unit detail (re-fires when the level changes).
@@ -953,15 +962,9 @@ export function ProtoLens() {
     if (top === 'hero' && unit) markUnitViewed(unit.id)
   }, [top, unit?.id, unit?.level, markUnitViewed])
 
-  // Hero sub-tabs: Battle leads while this hero is a live combatant; Pet appears
-  // only with a companion.
-  const heroSubs = [
-    ...(unitInBattle ? [{ id: 'battle' as HeroSub, label: 'Battle' }] : []),
-    ...HERO_SUBS,
-    ...(unit?.companion ? [PET_SUB] : []),
-  ]
-  // Guard stale selections (hero left battle / has no companion).
-  const effSub: HeroSub = (heroSub === 'battle' && !unitInBattle) || (heroSub === 'pet' && !unit?.companion) ? 'summary' : heroSub
+  // The Unit dossier is one container; a Pet sub-tab appears only with a companion.
+  const heroSubs = unit?.companion ? [...HERO_SUBS, PET_SUB] : HERO_SUBS
+  const effSub: HeroSub = heroSub === 'pet' && !unit?.companion ? 'stats' : heroSub
 
   return (
     <div className="h-full flex flex-col bg-game-surface/40 min-h-0">
@@ -986,7 +989,7 @@ export function ProtoLens() {
       {/* Hero sub-tabs only appear on the Unit altitude for a hero (not a foe). */}
       {top === 'hero' && unit && !selectedFoe && (
         <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
-          {heroSubs.map((s) => (
+          {heroSubs.length > 1 && heroSubs.map((s) => (
             <button
               key={s.id}
               onClick={() => setHeroSub(s.id)}
@@ -1012,9 +1015,7 @@ export function ProtoLens() {
           ) : unit ? (
             <>
               <FocusCue unit={unit} location={location} />
-              {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
-              {effSub === 'battle'  && <BattleLens unit={unit} />}
-              {effSub === 'pet'     && <CompanionLens unit={unit} />}
+              {effSub === 'pet' ? <CompanionLens unit={unit} /> : <UnitLens unit={unit} />}
             </>
           ) : <Empty icon="◈" title="Select a unit" sub="Pick a hero from the roster, or tap a combatant on the battlefield." />)}
 
