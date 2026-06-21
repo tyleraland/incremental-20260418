@@ -182,7 +182,7 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
         <div className="min-w-max">
           {/* column header row: hero label + facet-type columns */}
           <div className="flex border-b-2 border-game-border">
-            <div className="w-44 shrink-0 py-2.5 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface/60 z-10">Hero</div>
+            <div className="w-40 shrink-0 py-2.5 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface z-10">Hero</div>
             {cols.map((col) => (
               <div key={col.id} className="w-36 shrink-0 px-2.5 py-2.5 text-xs uppercase tracking-wider text-game-text-dim border-l border-game-border/40">{col.label}</div>
             ))}
@@ -192,16 +192,16 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
           {heroGroups.map((g) => (
           <div key={g.k}>
             {/* location group header (label parked in the sticky hero column) */}
-            <div className="flex border-t-2 border-game-border bg-game-bg/40">
-              <div className="w-44 shrink-0 px-2 py-1.5 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg/70 z-10">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
-              {cols.map((col) => <div key={col.id} className="w-36 shrink-0" />)}
+            <div className="flex border-t-2 border-game-border">
+              <div className="w-40 shrink-0 px-2 py-1.5 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg z-10">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
+              {cols.map((col) => <div key={col.id} className="w-36 shrink-0 bg-game-bg/40" />)}
             </div>
             {g.units.map((u) => {
             const locked = heroLocks.includes(u.id)
             return (
               <div key={u.id} className={['flex border-t border-game-border/50', locked ? 'bg-game-gold/5' : ''].join(' ')}>
                 {/* hero cell (sticky on horizontal scroll) */}
-                <div className="w-44 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 bg-game-surface/60 z-10">
+                <div className="w-40 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 z-10 bg-game-surface">
                   <div className="relative shrink-0">
                     <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
                       className={['w-10 h-10 rounded-full bg-game-bg border flex items-center justify-center text-lg', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
