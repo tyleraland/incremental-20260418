@@ -127,30 +127,32 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
   }
   function tapAuto() { if (armed) apply(); else if (hasProps) setArmed(true) }
 
-  const rows = facet === 'tactics' ? CHANNELS.map((c) => ({ id: c.id, label: c.label })) : GEAR_ROWS.map((s) => ({ id: s, label: SLOT_LABELS[s] }))
+  // Columns = the facet types (tactic channels / gear slots), laid out
+  // horizontally; heroes are the rows and scroll vertically.
+  const cols = facet === 'tactics' ? CHANNELS.map((c) => ({ id: c.id, label: c.label })) : GEAR_ROWS.map((s) => ({ id: s, label: SLOT_LABELS[s] }))
 
   return (
     <div className="space-y-3">
       {/* command bar: facet toggle + Auto (two-tap) */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         {(['tactics', 'gear'] as Facet[]).map((f) => (
           <button
             key={f}
             onClick={() => pickFacet(f)}
-            className={['text-[11px] px-3 py-1 rounded-full border transition-colors capitalize', facet === f
+            className={['text-sm px-4 py-1.5 rounded-full border transition-colors capitalize', facet === f
               ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
               : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
           >{f === 'tactics' ? '⚑ Tactics' : '⚙ Gear'}</button>
         ))}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1.5">
           {armed && (
-            <button onClick={() => setArmed(false)} className="text-[11px] px-2 py-1 rounded-full border border-game-border text-game-text-dim hover:text-game-text">Cancel</button>
+            <button onClick={() => setArmed(false)} className="text-sm px-3 py-1.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text">Cancel</button>
           )}
           <button
             onClick={tapAuto}
             disabled={!hasProps && !armed}
             title={armed ? 'Tap again to apply the highlighted loadout' : 'Auto-assign a recommended loadout (preview first)'}
-            className={['text-[11px] px-3 py-1 rounded-full border transition-colors',
+            className={['text-sm px-4 py-1.5 rounded-full border transition-colors',
               armed ? 'border-game-accent bg-game-accent/20 text-game-accent ring-2 ring-game-accent/50 animate-pulse'
                 : hasProps ? 'border-game-accent/60 bg-game-accent/10 text-game-accent hover:bg-game-accent/20'
                 : 'border-game-border text-game-muted cursor-not-allowed'].join(' ')}
@@ -159,103 +161,103 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
       </div>
 
       {partyTactics.length > 0 && facet === 'tactics' && (
-        <div className="flex items-center gap-1.5 flex-wrap rounded-md border border-game-secondary/30 bg-game-secondary/5 px-2 py-1.5">
-          <span className="text-[9px] uppercase tracking-wider text-game-secondary">Party</span>
+        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-game-secondary/30 bg-game-secondary/5 px-3 py-2">
+          <span className="text-[11px] uppercase tracking-wider text-game-secondary">Party</span>
           {partyTactics.map((t) => (
-            <span key={t.id} className="text-[10px] px-1.5 py-0.5 rounded bg-game-secondary/15 text-game-text" title={TACTIC_REGISTRY[t.id]?.description}>{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
+            <span key={t.id} className="text-xs px-2 py-1 rounded bg-game-secondary/15 text-game-text" title={TACTIC_REGISTRY[t.id]?.description}>{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
           ))}
         </div>
       )}
 
-      {/* matrix */}
+      {/* matrix — heroes are rows (vertical scroll); facet types are columns */}
       <div className="overflow-x-auto -mx-3 px-3">
         <div className="min-w-max">
-          {/* hero header row */}
-          <div className="flex">
-            <div className="w-14 shrink-0" />
-            {squad.map((u) => {
-              const locked = heroLocks.includes(u.id)
-              return (
-                <div key={u.id} className={['w-28 shrink-0 px-1.5 pb-2 border-b-2', locked ? 'border-game-gold/60' : 'border-game-border'].join(' ')}>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="flex items-center gap-1 min-w-0">
-                      <span className="text-sm">{u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}</span>
-                      <span className="text-[11px] font-medium text-game-text truncate">{u.name.split(' ')[0]}</span>
-                    </button>
-                    <button
-                      onClick={() => toggleLock(u.id)}
-                      title={locked ? 'Locked — Optimize skips this hero' : 'Lock this hero'}
-                      className={['ml-auto text-xs leading-none', locked ? 'text-game-gold' : 'text-game-muted hover:text-game-text-dim'].join(' ')}
-                    >{locked ? '🔒' : '🔓'}</button>
-                  </div>
-                  <div className="text-[9px] text-game-text-dim truncate">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : ''}</div>
-                </div>
-              )
-            })}
+          {/* column header row: hero label + facet-type columns */}
+          <div className="flex border-b-2 border-game-border">
+            <div className="w-44 shrink-0 py-2.5 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface/60 z-10">Hero</div>
+            {cols.map((col) => (
+              <div key={col.id} className="w-36 shrink-0 px-2.5 py-2.5 text-xs uppercase tracking-wider text-game-text-dim border-l border-game-border/40">{col.label}</div>
+            ))}
           </div>
 
-          {/* facet rows */}
-          {rows.map((row) => (
-            <div key={row.id} className="flex border-t border-game-border/50">
-              <div className="w-14 shrink-0 py-1.5 text-[9px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface/40">{row.label}</div>
-              {squad.map((u) => {
-                const locked = heroLocks.includes(u.id)
-                const cellKey = facet === 'tactics' ? row.id : row.id
-                let body: React.ReactNode
-                if (facet === 'tactics') {
-                  const inCh = u.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === row.id)
-                  const prop = (tacticProps[u.id] ?? []).filter((id) => TACTIC_REGISTRY[id]?.channel === row.id)
-                  body = (
-                    <>
-                      {inCh.length === 0 && (!armed || prop.length === 0) && <span className="text-[10px] text-game-muted">＋</span>}
-                      {inCh.map((t, i) => (
-                        <div key={t.id} className="flex items-center gap-1">
-                          <span className="text-[8px] text-game-muted tabular-nums">{i + 1}</span>
-                          <span className="text-[10px] text-game-text leading-tight">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
-                        </div>
-                      ))}
-                      {armed && prop.map((id) => (
-                        <div key={id} className="flex items-center gap-1 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
-                          <span className="text-[8px] text-game-accent">+</span>
-                          <span className="text-[10px] text-game-accent leading-tight">{TACTIC_REGISTRY[id]?.name ?? id}</span>
-                        </div>
-                      ))}
-                    </>
-                  )
-                } else {
-                  const slot = row.id as EquipSlot
-                  const mh = itemFor(u, 'mainHand', equipment)
-                  const slotLocked = slot === 'offHand' && mh?.category === 'weapon-2h'
-                  const it = itemFor(u, slot, equipment)
-                  const propId = armed ? gearProps[u.id]?.[slot] : undefined
-                  const propItem = propId ? equipment.find((e) => e.id === propId) : undefined
-                  body = slotLocked ? <span className="text-[10px] text-game-muted italic">2H</span> : (
-                    <>
-                      <span className={['text-[10px] leading-tight', it ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{it?.name ?? '＋'}</span>
-                      {propItem && (
-                        <div className="flex items-center gap-1 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1 mt-0.5">
-                          <span className="text-[8px] text-game-accent">→</span>
-                          <span className="text-[10px] text-game-accent leading-tight">{propItem.name}</span>
-                        </div>
-                      )}
-                    </>
-                  )
-                }
-                return (
+          {/* one row per hero */}
+          {squad.map((u) => {
+            const locked = heroLocks.includes(u.id)
+            return (
+              <div key={u.id} className={['flex border-t border-game-border/50', locked ? 'bg-game-gold/5' : ''].join(' ')}>
+                {/* hero cell (sticky on horizontal scroll) */}
+                <div className="w-44 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 bg-game-surface/60 z-10">
+                  <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="w-9 h-9 rounded-full bg-game-bg border border-game-border flex items-center justify-center text-lg shrink-0">{u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}</span>
+                    <span className="min-w-0">
+                      <span className="text-sm font-medium text-game-text truncate block">{u.name.split(' ')[0]}</span>
+                      <span className="text-[11px] text-game-text-dim truncate block">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : ''}</span>
+                    </span>
+                  </button>
                   <button
-                    key={u.id}
-                    data-cell={`${u.id}:${cellKey}`}
-                    onClick={() => setPicker({ unit: u, key: cellKey })}
-                    className={['w-28 shrink-0 py-1.5 px-1 text-left space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors', locked ? 'bg-game-gold/5' : ''].join(' ')}
-                  >{body}</button>
-                )
-              })}
-            </div>
-          ))}
+                    onClick={() => toggleLock(u.id)}
+                    title={locked ? 'Locked — Optimize skips this hero' : 'Lock this hero'}
+                    className={['text-base leading-none shrink-0', locked ? 'text-game-gold' : 'text-game-muted hover:text-game-text-dim'].join(' ')}
+                  >{locked ? '🔒' : '🔓'}</button>
+                </div>
+
+                {cols.map((col) => {
+                  let body: React.ReactNode
+                  if (facet === 'tactics') {
+                    const inCh = u.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === col.id)
+                    const prop = (tacticProps[u.id] ?? []).filter((id) => TACTIC_REGISTRY[id]?.channel === col.id)
+                    body = (
+                      <>
+                        {inCh.length === 0 && (!armed || prop.length === 0) && <span className="text-sm text-game-muted">＋</span>}
+                        {inCh.map((t, i) => (
+                          <div key={t.id} className="flex items-center gap-1">
+                            <span className="text-[10px] text-game-muted tabular-nums">{i + 1}</span>
+                            <span className="text-xs text-game-text leading-tight">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
+                          </div>
+                        ))}
+                        {armed && prop.map((id) => (
+                          <div key={id} className="flex items-center gap-1 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
+                            <span className="text-[10px] text-game-accent">+</span>
+                            <span className="text-xs text-game-accent leading-tight">{TACTIC_REGISTRY[id]?.name ?? id}</span>
+                          </div>
+                        ))}
+                      </>
+                    )
+                  } else {
+                    const slot = col.id as EquipSlot
+                    const mh = itemFor(u, 'mainHand', equipment)
+                    const slotLocked = slot === 'offHand' && mh?.category === 'weapon-2h'
+                    const it = itemFor(u, slot, equipment)
+                    const propId = armed ? gearProps[u.id]?.[slot] : undefined
+                    const propItem = propId ? equipment.find((e) => e.id === propId) : undefined
+                    body = slotLocked ? <span className="text-xs text-game-muted italic">2H</span> : (
+                      <>
+                        <span className={['text-xs leading-tight', it ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{it?.name ?? '＋'}</span>
+                        {propItem && (
+                          <div className="flex items-center gap-1 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1 mt-0.5">
+                            <span className="text-[10px] text-game-accent">→</span>
+                            <span className="text-xs text-game-accent leading-tight">{propItem.name}</span>
+                          </div>
+                        )}
+                      </>
+                    )
+                  }
+                  return (
+                    <button
+                      key={col.id}
+                      data-cell={`${u.id}:${col.id}`}
+                      onClick={() => setPicker({ unit: u, key: col.id })}
+                      className="w-36 shrink-0 min-h-[3rem] py-2 px-2 text-left space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors"
+                    >{body}</button>
+                  )
+                })}
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      <div className="text-[10px] text-game-muted italic">
+      <div className="text-xs text-game-muted italic">
         Tap a cell to assign · ⚡ Auto previews a loadout (ghosts); tap Apply to commit · 🔒 protects a hero.
       </div>
 

@@ -154,16 +154,18 @@ export function QuestJournal({ onClose, onGoto }: { onClose: () => void; onGoto:
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2">
-        {filtered.length === 0 && <div className="text-center text-[11px] text-game-muted py-8">No quests match these filters.</div>}
-        {groups.map((g) => (
-          <div key={g.id || 'flat'} className="space-y-1">
-            {grouped && (
-              <div className="text-[10px] uppercase tracking-widest text-game-text-dim px-1 pt-1">{g.name} <span className="text-game-muted normal-case tracking-normal">({g.entries.length})</span></div>
-            )}
-            {g.entries.map((e) => <JournalEntry key={e.id} e={e} onGoto={onGoto} />)}
-          </div>
-        ))}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="p-3 space-y-2 max-w-2xl w-full mx-auto" style={{ zoom: 1.15 }}>
+          {filtered.length === 0 && <div className="text-center text-[11px] text-game-muted py-8">No quests match these filters.</div>}
+          {groups.map((g) => (
+            <div key={g.id || 'flat'} className="space-y-1">
+              {grouped && (
+                <div className="text-[10px] uppercase tracking-widest text-game-text-dim px-1 pt-1">{g.name} <span className="text-game-muted normal-case tracking-normal">({g.entries.length})</span></div>
+              )}
+              {g.entries.map((e) => <JournalEntry key={e.id} e={e} onGoto={onGoto} />)}
+            </div>
+          ))}
+        </div>
       </div>
     </div>,
     document.body,

@@ -199,8 +199,10 @@ function PartyOverlay({ onClose }: { onClose: () => void }) {
         <span className="text-[10px] text-game-muted hidden sm:inline">— {location ? location.name : 'no battlefield focused'}</span>
         <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
       </header>
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 max-w-2xl w-full mx-auto">
-        <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="p-3 max-w-3xl w-full mx-auto" style={{ zoom: 1.12 }}>
+          <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />
+        </div>
       </div>
     </div>,
     document.body,
@@ -249,7 +251,7 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
         <span className="text-sm font-semibold text-game-text">{PANEL_TITLE[panel]}</span>
         <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
       </header>
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto" style={{ zoom: 1.15 }}>
         {panel === 'guild'   && <Guild />}
         {panel === 'reports' && <Reports />}
         {panel === 'time'    && <Time />}

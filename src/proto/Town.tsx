@@ -506,9 +506,11 @@ export function Town({ onClose }: { onClose: () => void }) {
           </button>
         ))}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 max-w-2xl w-full mx-auto">
-        {tab === 'market' && <Market />}
-        {tab === 'stash' && <Stash />}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="p-3 max-w-2xl w-full mx-auto" style={{ zoom: 1.12 }}>
+          {tab === 'market' && <Market />}
+          {tab === 'stash' && <Stash />}
+        </div>
       </div>
     </div>,
     document.body,
