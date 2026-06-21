@@ -460,6 +460,11 @@ interface ProtoState {
   requestZoom: (level: ZoomLevel) => void
   requestHeroTab: () => void
   requestHeroBattle: () => void
+  // A monster combatant inspected on the battlefield → shown in the Unit tab.
+  // Cleared whenever a hero is selected.
+  selectedFoe: { locId: string; combatantId: string } | null
+  inspectFoe: (locId: string, combatantId: string) => void
+  clearFoe: () => void
   requestLocationTab: () => void
   requestBattleInspect: (unitId: string) => void
   dismissBattleCard: () => void
@@ -543,6 +548,9 @@ export const useProtoStore = create<ProtoState>((set) => ({
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
   requestHeroTab: () => set((s) => ({ heroTabRequest: s.heroTabRequest + 1 })),
   requestHeroBattle: () => set((s) => ({ heroBattleRequest: s.heroBattleRequest + 1 })),
+  selectedFoe: null,
+  inspectFoe: (locId, combatantId) => set((s) => ({ selectedFoe: { locId, combatantId }, heroBattleRequest: s.heroBattleRequest + 1 })),
+  clearFoe: () => set((s) => (s.selectedFoe ? { selectedFoe: null } : s)),
   requestLocationTab: () => set((s) => ({ locationTabRequest: s.locationTabRequest + 1 })),
   requestBattleInspect: (unitId) => set((s) => ({ battleInspectRequest: { unitId, nonce: (s.battleInspectRequest?.nonce ?? 0) + 1 } })),
   dismissBattleCard: () => set((s) => ({ battleCardDismiss: s.battleCardDismiss + 1 })),

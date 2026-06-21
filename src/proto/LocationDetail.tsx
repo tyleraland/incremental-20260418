@@ -624,7 +624,6 @@ export function LocationDetail({ location }: { location: Location }) {
     <div className="space-y-4">
       <div>
         <div className="text-base font-semibold text-game-text">{location.name}</div>
-        <p className="text-xs text-game-text-dim leading-snug mt-0.5">{location.description}</p>
       </div>
 
       {/* enter a dungeon sub-region (its own map page) */}
@@ -708,6 +707,14 @@ export function LocationDetail({ location }: { location: Location }) {
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* Lore — flavor text, parked near the bottom to keep the top actionable */}
+      {location.description && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Lore</div>
+          <p className="text-xs text-game-text-dim italic leading-snug">{location.description}</p>
         </div>
       )}
 

@@ -15,7 +15,6 @@ import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
 import { seedProtoMocks } from './seed'
 import { StatsTab, DebugTab } from '@/components/BattleView'
-import { buildSaga } from './lore'
 import { LocationDetail } from './LocationDetail'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
@@ -34,16 +33,16 @@ import { LocationDetail } from './LocationDetail'
 // moved to the global top nav (it spans multiple units). Equipment (the gutted
 // "Items") is this hero's gear + personal inventory.
 type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics'
-type HeroSub = 'summary' | 'battle' | 'pet' | 'saga'
+type HeroSub = 'summary' | 'battle' | 'pet'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location',  label: 'Location',  icon: '⌖' },
-  { id: 'hero',      label: 'Hero',      icon: '◈' },
+  { id: 'hero',      label: 'Unit',      icon: '◈' },
   { id: 'equipment', label: 'Equipment', icon: '🎒' },
   { id: 'skills',    label: 'Skills',    icon: '✦' },
   { id: 'tactics',   label: 'Tactics',   icon: '☷' },
 ]
 const HERO_SUBS: { id: HeroSub; label: string }[] = [
-  { id: 'summary', label: 'Summary' }, { id: 'saga', label: 'Saga' },
+  { id: 'summary', label: 'Summary' },
 ]
 // The Pet sub only appears once a hero has a beast companion.
 const PET_SUB: { id: HeroSub; label: string } = { id: 'pet', label: 'Pet' }
@@ -608,38 +607,6 @@ function CompanionLens({ unit }: { unit: Unit }) {
   )
 }
 
-// ── Saga lens ─────────────────────────────────────────────────────────────────
-function SagaLens({ unit }: { unit: Unit }) {
-  const eventLog = useGameStore((s) => s.eventLog)
-  const saga = buildSaga(unit, eventLog)
-  return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-game-border bg-game-surface/60 p-4">
-        <div className="text-[10px] uppercase tracking-[0.25em] text-game-secondary mb-1">{saga.epithet}</div>
-        <div className="text-xl font-semibold text-game-text">{saga.title}</div>
-        <p className="text-sm text-game-text-dim italic mt-2 leading-relaxed">{saga.opening}</p>
-      </div>
-      <p className="text-sm text-game-text leading-relaxed">{saga.body}</p>
-      <div>
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Recent deeds</div>
-        {saga.deeds.length === 0 ? (
-          <div className="text-xs text-game-muted italic">No deeds recorded yet — the saga is unwritten.</div>
-        ) : (
-          <ol className="relative border-l border-game-border ml-1.5 space-y-2.5 pl-3">
-            {saga.deeds.map((d, i) => (
-              <li key={i} className="relative">
-                <span className="absolute -left-[1.05rem] top-1 w-2 h-2 rounded-full bg-game-accent ring-2 ring-game-bg" />
-                <div className="text-xs text-game-text leading-snug">{d.text}</div>
-                <div className="text-[9px] text-game-muted">tick {d.tick}</div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Skills lens (bottom = quick decisions: the action bar) ────────────────────--
 // Assign learned active skills to the 6-slot action bar — the loadout the hero
 // casts in battle. Learning new skills / spending points is "research" and lives
@@ -783,9 +750,9 @@ function FocusCue({ unit, location }: { unit: Unit; location: { id: string; name
   const assignUnits = useGameStore((s) => s.assignUnits)
   const requestZoom = useProtoStore((s) => s.requestZoom)
   const here = !!location && unit.locationId === location.id
-  if (here) {
-    return <div className="mb-2 text-[10px] text-game-accent flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-game-accent" /> On the battlefield you're viewing</div>
-  }
+  // When the hero is on the viewed battlefield, say nothing (reclaim the space);
+  // only surface the cue when they're elsewhere.
+  if (here) return null
   function jump() {
     if (!unit.locationId) return
     useGameStore.setState({ selectedLocationId: unit.locationId, combatLocationId: unit.locationId, battleFollowId: unit.id })
@@ -882,9 +849,30 @@ type EquipFilter = 'both' | 'equipped' | 'unequipped'
 const EQUIP_FILTER_NEXT: Record<EquipFilter, EquipFilter> = { both: 'equipped', equipped: 'unequipped', unequipped: 'both' }
 const EQUIP_FILTER_LABEL: Record<EquipFilter, string> = { both: 'All', equipped: 'Held', unequipped: 'Free' }
 
+// ── Foe card — a monster inspected on the battlefield, shown in the Unit tab ───--
+function FoeCard({ locId, combatantId }: { locId: string; combatantId: string }) {
+  const battle = useGameStore((s) => s.battles[locId])
+  const [tab, setTab] = useState<'stats' | 'debug'>('stats')
+  const c = battle?.combatants.find((x) => x.id === combatantId)
+  if (!battle || !c) return <Empty icon="☠" title="Foe is gone" sub="This monster left the battlefield. Tap another, or pick a hero." />
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-red-200 truncate">{c.name}</span>
+        <span className="text-[10px] text-game-text-dim uppercase tracking-wide">{c.team}{c.alive ? '' : ' · KO'}</span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
+          <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
+        </div>
+      </div>
+      {tab === 'stats' ? <StatsTab c={c} battle={battle} /> : <DebugTab c={c} battle={battle} />}
+    </div>
+  )
+}
+
 // ── Battle lens (the unified hero/battle card) ─────────────────────────────────--
 // The live combat readout — formerly a floating sheet over the battlefield — now
-// lives in the Hero tab. Reuses BattleView's Stats / Debug panels for the hero's
+// lives in the Unit tab. Reuses BattleView's Stats / Debug panels for the hero's
 // own combatant, plus a Follow shortcut.
 function BattleLens({ unit }: { unit: Unit }) {
   const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
@@ -918,8 +906,9 @@ export function ProtoLens() {
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
   const markUnitViewed   = useGameStore((s) => s.markUnitViewed)
   const openReport       = useGameStore((s) => s.openReport)
+  const selectedFoe      = useProtoStore((s) => s.selectedFoe)
   // The live battle the selected hero is fighting in (if any) — drives the
-  // unified Battle sub-tab on the Hero altitude.
+  // unified Battle sub-tab on the Unit altitude.
   const heroBattle = useGameStore((s) => {
     const u = s.units.find((x) => x.id === selectedUnitIds[0])
     return u?.locationId ? s.battles[u.locationId] : undefined
@@ -994,8 +983,8 @@ export function ProtoLens() {
         ))}
       </div>
 
-      {/* Hero sub-tabs only appear on the Hero altitude. */}
-      {top === 'hero' && unit && (
+      {/* Hero sub-tabs only appear on the Unit altitude for a hero (not a foe). */}
+      {top === 'hero' && unit && !selectedFoe && (
         <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
           {heroSubs.map((s) => (
             <button
@@ -1018,15 +1007,16 @@ export function ProtoLens() {
           states centred; overflow is handled by the scroll container above). */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         <div className="h-full" style={{ zoom: 1.08 }}>
-          {top === 'hero' && (unit ? (
+          {top === 'hero' && (selectedFoe ? (
+            <FoeCard locId={selectedFoe.locId} combatantId={selectedFoe.combatantId} />
+          ) : unit ? (
             <>
               <FocusCue unit={unit} location={location} />
               {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
               {effSub === 'battle'  && <BattleLens unit={unit} />}
               {effSub === 'pet'     && <CompanionLens unit={unit} />}
-              {effSub === 'saga'    && <SagaLens unit={unit} />}
             </>
-          ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster to see their dossier." />)}
+          ) : <Empty icon="◈" title="Select a unit" sub="Pick a hero from the roster, or tap a combatant on the battlefield." />)}
 
           {top === 'location' && (location
             ? <LocationDetail location={location} />

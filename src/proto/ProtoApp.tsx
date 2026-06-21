@@ -399,8 +399,10 @@ export function ProtoApp() {
     } else {
       useGameStore.setState({ selectedUnitIds: [u.id] })
     }
-    // A roster pick dismisses any open battlefield detail card (it isn't a modal).
+    // A roster pick dismisses any open battlefield detail card (it isn't a modal)
+    // and clears an inspected foe so the Unit tab shows the picked hero.
     dismissBattleCard()
+    useProtoStore.getState().clearFoe()
   }
   // Double-tap: focus — fly the stage to the hero's battlefield, follow the
   // camera, and drill the lens into Hero.
@@ -412,6 +414,7 @@ export function ProtoApp() {
     if (u.locationId) requestZoom(2)
     requestHeroTab()
     dismissBattleCard()
+    useProtoStore.getState().clearFoe()
   }
 
   // Drop to the legacy tab-bar UI (kept as a fallback behind ?classic=1).

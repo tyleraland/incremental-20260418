@@ -161,11 +161,18 @@ export function ProtoStage() {
     requestZoom(2)
   }
 
-  // Tapping a combatant on the battlefield selects them and opens the unified
-  // hero/battle card in the lens (the floating sheet is gone in proto).
-  function inspectOnBattlefield(unitId: string) {
-    useGameStore.setState({ selectedUnitIds: [unitId] })
-    requestHeroBattle()
+  // Tapping a combatant on the battlefield opens the unified Unit card in the
+  // lens (the floating sheet is gone in proto). Heroes select in the roster;
+  // monsters route to the Unit tab as an inspected foe.
+  function inspectOnBattlefield(combatantId: string) {
+    const isHero = useGameStore.getState().units.some((u) => u.id === combatantId)
+    if (isHero) {
+      useGameStore.setState({ selectedUnitIds: [combatantId] })
+      useProtoStore.getState().clearFoe()
+      requestHeroBattle()
+    } else if (focusLoc) {
+      useProtoStore.getState().inspectFoe(focusLoc.id, combatantId)
+    }
   }
 
   const [zoom, setZoom] = useState(0)       // continuous 0..2
