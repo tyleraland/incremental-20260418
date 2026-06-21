@@ -5,7 +5,6 @@ import {
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS, SKILL_TACTICS, inheritedTacticIds,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
-import { getUnitTraits } from '@/data/traits'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
 import { TraitRow } from '@/components/TraitBubble'
 import { ACTION_SLOT_COUNT } from '@/types'
@@ -65,7 +64,6 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
     : { t: 'Idle at the guild', c: 'text-game-text-dim' }
   const xpPct = Math.min(100, (unit.exp / unit.expToNext) * 100)
   const hpPct = Math.min(100, (unit.health / ds.maxHp) * 100)
-  const traits = getUnitTraits(unit)
 
   const abilities: [keyof Unit['abilities'], string][] = [
     ['strength', 'STR'], ['agility', 'AGI'], ['dexterity', 'DEX'], ['constitution', 'CON'], ['intelligence', 'INT'],
@@ -134,17 +132,6 @@ function SummaryLens({ unit, ds }: { unit: Unit; ds: DerivedStats }) {
           ))}
         </div>
       </div>
-
-      {traits.length > 0 && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Traits</div>
-          <div className="flex flex-wrap gap-1">
-            {traits.map((t) => (
-              <span key={t.id} className="text-[10px] px-2 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60" title={t.description}>{t.label}</span>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -688,12 +675,18 @@ function SkillsLens({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Action bar — battle skills</span>
-        <button onClick={() => openStageOverlay({ kind: 'skill-tree', unitId: unit.id })} className="text-[11px] px-2 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text">
-          Skill tree ▸{unit.skillPoints > 0 ? <span className="text-game-gold"> · {unit.skillPoints} pt</span> : null}
-        </button>
-      </div>
+      {/* Prominent entry to the skill tree (where points are spent / skills learned) */}
+      <button
+        onClick={() => openStageOverlay({ kind: 'skill-tree', unitId: unit.id })}
+        className={['w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-semibold text-sm transition-colors',
+          unit.skillPoints > 0 ? 'bg-game-gold text-game-bg hover:bg-game-gold/90 shadow' : 'bg-game-primary text-white hover:bg-game-primary/80 shadow'].join(' ')}
+      >
+        <span className="text-base leading-none">🌳</span> Skill Tree
+        {unit.skillPoints > 0 && <span className="bg-black/20 rounded px-1.5 py-0.5 text-[11px] tabular-nums">{unit.skillPoints} pt to spend</span>}
+        <span className="opacity-70">▸</span>
+      </button>
+
+      <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Action bar — battle skills</div>
 
       <div className="grid grid-cols-3 gap-1.5">
         {slots.map((entry, i) => (
