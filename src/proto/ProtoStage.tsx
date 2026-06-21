@@ -152,14 +152,20 @@ export function ProtoStage() {
   const stageOverlay        = useProtoStore((s) => s.stageOverlay)
   const closeStageOverlay   = useProtoStore((s) => s.closeStageOverlay)
   const requestZoom         = useProtoStore((s) => s.requestZoom)
-  const battleInspectRequest = useProtoStore((s) => s.battleInspectRequest)
-  const battleCardDismiss    = useProtoStore((s) => s.battleCardDismiss)
+  const requestHeroBattle   = useProtoStore((s) => s.requestHeroBattle)
 
   // Follow from the battlefield detail card: select the hero in the roster and
   // lock the camera onto them (battleFollowId), staying on the battlefield.
   function followFromCard(unitId: string) {
     useGameStore.setState({ selectedUnitIds: [unitId], battleFollowId: unitId })
     requestZoom(2)
+  }
+
+  // Tapping a combatant on the battlefield selects them and opens the unified
+  // hero/battle card in the lens (the floating sheet is gone in proto).
+  function inspectOnBattlefield(unitId: string) {
+    useGameStore.setState({ selectedUnitIds: [unitId] })
+    requestHeroBattle()
   }
 
   const [zoom, setZoom] = useState(0)       // continuous 0..2
@@ -417,7 +423,7 @@ export function ProtoStage() {
               pointerEvents: mapActive ? 'none' : 'auto',
             }}
           >
-            <div className="h-full"><BattleView locationId={focusLoc.id} onFollow={followFromCard} inspectRequest={battleInspectRequest} closeNonce={battleCardDismiss} /></div>
+            <div className="h-full"><BattleView locationId={focusLoc.id} onFollow={followFromCard} onInspect={inspectOnBattlefield} /></div>
             {!battleLive && (
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] text-game-text-dim bg-game-bg/80 border border-game-border rounded-full px-3 py-1">
                 Formation preview — deploy heroes here to begin the fight

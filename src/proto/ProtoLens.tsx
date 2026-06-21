@@ -14,6 +14,7 @@ import { GOLD_ID, materialValue, equipmentValue } from './economy'
 import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
 import { seedProtoMocks } from './seed'
+import { StatsTab, DebugTab } from '@/components/BattleView'
 import { buildSaga } from './lore'
 import { LocationDetail } from './LocationDetail'
 
@@ -33,7 +34,7 @@ import { LocationDetail } from './LocationDetail'
 // moved to the global top nav (it spans multiple units). Equipment (the gutted
 // "Items") is this hero's gear + personal inventory.
 type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics'
-type HeroSub = 'summary' | 'pet' | 'saga'
+type HeroSub = 'summary' | 'battle' | 'pet' | 'saga'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'location',  label: 'Location',  icon: '⌖' },
   { id: 'hero',      label: 'Hero',      icon: '◈' },
@@ -881,6 +882,33 @@ type EquipFilter = 'both' | 'equipped' | 'unequipped'
 const EQUIP_FILTER_NEXT: Record<EquipFilter, EquipFilter> = { both: 'equipped', equipped: 'unequipped', unequipped: 'both' }
 const EQUIP_FILTER_LABEL: Record<EquipFilter, string> = { both: 'All', equipped: 'Held', unequipped: 'Free' }
 
+// ── Battle lens (the unified hero/battle card) ─────────────────────────────────--
+// The live combat readout — formerly a floating sheet over the battlefield — now
+// lives in the Hero tab. Reuses BattleView's Stats / Debug panels for the hero's
+// own combatant, plus a Follow shortcut.
+function BattleLens({ unit }: { unit: Unit }) {
+  const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
+  const battleFollowId = useGameStore((s) => s.battleFollowId)
+  const [tab, setTab] = useState<'stats' | 'debug'>('stats')
+  const c = battle?.combatants.find((x) => x.id === unit.id)
+  if (!battle || !c) return <div className="text-xs text-game-muted italic">{unit.name.split(' ')[0]} isn't in a live battle right now.</div>
+  const following = battleFollowId === unit.id
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5">
+        <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
+        <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[11px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
+        <button
+          onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
+          title="Lock the camera onto this hero"
+          className={`ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
+        >🎥 {following ? 'Following' : 'Follow'}</button>
+      </div>
+      {tab === 'stats' ? <StatsTab c={c} battle={battle} /> : <DebugTab c={c} battle={battle} />}
+    </div>
+  )
+}
+
 // ── ProtoLens shell ─────────────────────────────────────────────────────────--
 export function ProtoLens() {
   const units            = useGameStore((s) => s.units)
@@ -890,10 +918,8 @@ export function ProtoLens() {
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
   const markUnitViewed   = useGameStore((s) => s.markUnitViewed)
   const openReport       = useGameStore((s) => s.openReport)
-  const requestZoom          = useProtoStore((s) => s.requestZoom)
-  const requestBattleInspect = useProtoStore((s) => s.requestBattleInspect)
-  // The live battle the selected hero is fighting in (if any) — gates the
-  // "⚔ Card" shortcut in the sub-tab bar.
+  // The live battle the selected hero is fighting in (if any) — drives the
+  // unified Battle sub-tab on the Hero altitude.
   const heroBattle = useGameStore((s) => {
     const u = s.units.find((x) => x.id === selectedUnitIds[0])
     return u?.locationId ? s.battles[u.locationId] : undefined
@@ -921,17 +947,16 @@ export function ProtoLens() {
     if (locationTabRequest !== prevLocReq.current) { setTop('location'); prevLocReq.current = locationTabRequest }
   }, [locationTabRequest])
 
+  // A battlefield chip tap routes here → Hero tab, Battle sub-tab (unified card).
+  const heroBattleRequest = useProtoStore((s) => s.heroBattleRequest)
+  const prevBattleReq = useRef(heroBattleRequest)
+  useEffect(() => {
+    if (heroBattleRequest !== prevBattleReq.current) { setTop('hero'); setHeroSub('battle'); prevBattleReq.current = heroBattleRequest }
+  }, [heroBattleRequest])
+
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
   const unitInBattle = !!unit && !!heroBattle?.combatants.some((c) => c.id === unit.id)
-  // Drop onto this hero's battlefield and pop their detail card (the big
-  // bottom-half live readout — where HP/casting/target now live).
-  function openHeroCard() {
-    if (!unit?.locationId) return
-    useGameStore.setState({ selectedLocationId: unit.locationId, combatLocationId: unit.locationId })
-    requestZoom(2)
-    requestBattleInspect(unit.id)
-  }
 
   // Viewing a hero's dossier clears their "to-do" cue (new level / unspent pts) —
   // same rule as the production unit detail (re-fires when the level changes).
@@ -939,11 +964,15 @@ export function ProtoLens() {
     if (top === 'hero' && unit) markUnitViewed(unit.id)
   }, [top, unit?.id, unit?.level, markUnitViewed])
 
-
-  // Hero sub-tabs: the Pet tab only appears once this hero has a companion.
-  const heroSubs = unit?.companion ? [...HERO_SUBS, PET_SUB] : HERO_SUBS
-  // Guard a stale 'pet' selection (switched to a companionless hero).
-  const effSub: HeroSub = heroSub === 'pet' && !unit?.companion ? 'summary' : heroSub
+  // Hero sub-tabs: Battle leads while this hero is a live combatant; Pet appears
+  // only with a companion.
+  const heroSubs = [
+    ...(unitInBattle ? [{ id: 'battle' as HeroSub, label: 'Battle' }] : []),
+    ...HERO_SUBS,
+    ...(unit?.companion ? [PET_SUB] : []),
+  ]
+  // Guard stale selections (hero left battle / has no companion).
+  const effSub: HeroSub = (heroSub === 'battle' && !unitInBattle) || (heroSub === 'pet' && !unit?.companion) ? 'summary' : heroSub
 
   return (
     <div className="h-full flex flex-col bg-game-surface/40 min-h-0">
@@ -976,20 +1005,11 @@ export function ProtoLens() {
                 effSub === s.id ? 'bg-game-primary/20 text-game-text border border-game-primary/40' : 'text-game-text-dim hover:text-game-text border border-transparent'].join(' ')}
             >{s.label}</button>
           ))}
-          <div className="ml-auto flex items-center gap-1">
-            {unitInBattle && (
-              <button
-                onClick={openHeroCard}
-                title="Open this hero's battlefield detail card"
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-game-accent/60 bg-game-accent/15 text-game-accent text-[11px] font-semibold hover:bg-game-accent/25 transition-colors"
-              >⚔ Card</button>
-            )}
-            <button
-              onClick={() => openReport(unit.id)}
-              title="Open full report"
-              className="text-[11px] px-2 py-0.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5"
-            >Report ▸</button>
-          </div>
+          <button
+            onClick={() => openReport(unit.id)}
+            title="Open full report"
+            className="ml-auto text-[11px] px-2 py-0.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5"
+          >Report ▸</button>
         </div>
       )}
 
@@ -1002,6 +1022,7 @@ export function ProtoLens() {
             <>
               <FocusCue unit={unit} location={location} />
               {effSub === 'summary' && <SummaryLens unit={unit} ds={getDerivedStats(unit, equipment)} />}
+              {effSub === 'battle'  && <BattleLens unit={unit} />}
               {effSub === 'pet'     && <CompanionLens unit={unit} />}
               {effSub === 'saga'    && <SagaLens unit={unit} />}
             </>

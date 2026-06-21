@@ -788,7 +788,7 @@ function StatusList({ statuses }: { statuses: StatusEffect[] }) {
   )
 }
 
-function StatsTab({ c, battle }: { c: Combatant; battle: BattleState }) {
+export function StatsTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   return (
     <>
@@ -855,7 +855,7 @@ const OUTCOME_META: Record<string, { dot: string; cls: string; note: string }> =
 }
 const DEBUG_CHANNEL_ORDER = ['targeting', 'movement', 'action', 'reaction', 'passive'] as const
 
-function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
+export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const plan = battle.plans[c.team]
   const wp = plan?.waypoint
   const lock = targetSight(battle, c, c.lockedTargetId)
@@ -1074,7 +1074,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number }) {
+function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void }) {
   const units = useGameStore((s) => s.units)
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
@@ -1221,6 +1221,9 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
   }
 
   const handleSelect = (c: Combatant) => {
+    // When the host wants the card elsewhere (proto → Hero tab), route the id out
+    // and don't open the in-view sheet.
+    if (onInspect) { onInspect(c.id); return }
     // Inspecting a chip is orthogonal to following — keep the current camera lock.
     if (selectedId === c.id) {
       setSelectedId(null)
@@ -1699,7 +1702,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
       </div>
 
       <Legend players={playersAlive} enemies={enemiesAlive} openWorld={isOpen} />
-      {selected && <UnitDetailOverlay c={selected} battle={battle} onClose={closeDetail} onFollow={onFollow} />}
+      {!onInspect && selected && <UnitDetailOverlay c={selected} battle={battle} onClose={closeDetail} onFollow={onFollow} />}
     </div>
   )
 }
@@ -1781,17 +1784,21 @@ export function Preview({ location }: { location: Location | null }) {
 // re-fire. `onFollow` (when provided) surfaces a Follow action in the card.
 export interface BattleInspectRequest { unitId: string; nonce: number }
 
-export function BattleView({ locationId, onFollow, inspectRequest, closeNonce }: {
+export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect }: {
   locationId: string | null
   onFollow?: (unitId: string) => void
   inspectRequest?: BattleInspectRequest | null
   closeNonce?: number   // bump to dismiss any open detail card (e.g. roster tap)
+  // When provided, a chip tap routes the combatant id OUT (e.g. proto → Hero tab)
+  // instead of opening the in-view detail sheet. Used to unify the battle card
+  // into the Hero lens.
+  onInspect?: (unitId: string) => void
 }) {
   const battle    = useGameStore((s) => (locationId ? s.battles[locationId] : undefined))
   const locations = useGameStore((s) => s.locations)
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
   return battle
-    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} />
+    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} />
     : <Preview location={location} />
 }

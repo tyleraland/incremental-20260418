@@ -430,6 +430,9 @@ interface ProtoState {
   // Bumped when the lens should drill into the Hero tab (double-tap a roster
   // hero / initial focus). A plain single-tap selects without bumping this.
   heroTabRequest: number
+  // Bumped to drill the lens into the Hero tab's Battle sub-tab (a battlefield
+  // chip tap routes here — the unified hero/battle card).
+  heroBattleRequest: number
   // Bumped to drill the lens into the Location tab (Quest Journal "go to location").
   locationTabRequest: number
   // A request to open a combatant's battlefield detail card (Hero lens →
@@ -456,6 +459,7 @@ interface ProtoState {
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
   requestHeroTab: () => void
+  requestHeroBattle: () => void
   requestLocationTab: () => void
   requestBattleInspect: (unitId: string) => void
   dismissBattleCard: () => void
@@ -513,6 +517,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   zoomLevel: 0,
   zoomRequest: null,
   heroTabRequest: 0,
+  heroBattleRequest: 0,
   locationTabRequest: 0,
   battleInspectRequest: null,
   battleCardDismiss: 0,
@@ -537,6 +542,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   setZoomLevel: (z) => set((s) => (s.zoomLevel === z ? s : { zoomLevel: z })),
   requestZoom: (level) => set((s) => ({ zoomRequest: { level, nonce: (s.zoomRequest?.nonce ?? 0) + 1 } })),
   requestHeroTab: () => set((s) => ({ heroTabRequest: s.heroTabRequest + 1 })),
+  requestHeroBattle: () => set((s) => ({ heroBattleRequest: s.heroBattleRequest + 1 })),
   requestLocationTab: () => set((s) => ({ locationTabRequest: s.locationTabRequest + 1 })),
   requestBattleInspect: (unitId) => set((s) => ({ battleInspectRequest: { unitId, nonce: (s.battleInspectRequest?.nonce ?? 0) + 1 } })),
   dismissBattleCard: () => set((s) => ({ battleCardDismiss: s.battleCardDismiss + 1 })),
