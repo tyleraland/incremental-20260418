@@ -246,6 +246,20 @@ function applyLevelUps(unit: Unit, tick: number, log: LogEntry[]): { unit: Unit;
 const ROUND_TIME_SCALE    = 6    // engine rounds per logical round (finer = smoother motion)
 const ROUND_EVERY_TICKS   = 1    // advance one engine round every tick (5/sec). Locked to the 200ms tick clock — no batching jitter — which the on-device probe (jerk harness) measured as ~2× smoother than stepping every 3 ticks at a coarser timeScale. With ROUND_TIME_SCALE=6 that's ~0.83 logical rounds/sec. Also drives the offline rounds↔ticks conversion, so live + offline pace stay in sync.
 
+// THROWAWAY (perf-probe branch): live-tunable pace override for the on-device
+// probe. The visible "laggy crawl" is sim PACE, not fps: logical combat rate =
+// TICKS_PER_SECOND / (everyTicks × timeScale) = 5/(5×2) = 0.5 logical rounds/sec,
+// so units take one half-step per second. Lowering everyTicks speeds the whole
+// field up (engine is ~0.2% of frame budget, so it's free). null → shipped default.
+// Only the LIVE tick path reads this (offline conversion stays on the const).
+let paceEveryOverride: number | null = null
+export function setPaceEveryTicks(n: number | null): void {
+  paceEveryOverride = n == null ? null : Math.max(1, Math.floor(n))
+}
+export function paceEveryTicks(): number {
+  return paceEveryOverride ?? ROUND_EVERY_TICKS
+}
+
 // DEV-only cadence overrides for the "slower rounds" exploration. `?hts=N` sets the
 // heavy-field timeScale (granularity: higher = smaller steps), `?hevery=M` the ticks
 // between its rounds (tempo/CPU), `?ts=N` the base (non-heavy) timeScale. Read once at
@@ -284,8 +298,8 @@ const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which decisions thrott
 const DECISION_INTERVAL_HEAVY = 5
 function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
-  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? ROUND_EVERY_TICKS }
-  return { timeScale: DEV_BASE_TS ?? ROUND_TIME_SCALE, everyTicks: ROUND_EVERY_TICKS }
+  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? paceEveryTicks() }
+  return { timeScale: DEV_BASE_TS ?? ROUND_TIME_SCALE, everyTicks: paceEveryTicks() }
 }
 function decisionIntervalFor(loc: Location): number {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
@@ -1228,7 +1242,7 @@ export const useGameStore = create<GameState>((set) => ({
     let newLog = s.eventLog
 
     // Drive the engine: one round per ROUND_EVERY_TICKS ticks, live per location.
-    const combat = advanceBattles(s, newTicks, newTicks % ROUND_EVERY_TICKS === 0)
+    const combat = advanceBattles(s, newTicks, newTicks % paceEveryTicks() === 0)
     for (const l of combat.logs) newLog = appendLog(newLog, l.category, l.message, newTicks)
 
     // Where each unit fought this tick (1:1) — routes its tally delta into the

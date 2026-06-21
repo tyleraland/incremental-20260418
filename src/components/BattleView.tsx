@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, Profiler } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
+import { perfProbe } from '@/dev/perfProbe'
+import { PerfPanel } from '@/dev/PerfPanel'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import {
@@ -14,6 +16,14 @@ import {
 // 5 / ROUND_TIME_SCALE ≈ 0.83 rounds/s, but the displayed durations are in engine
 // rounds, so this is the engine-round rate, not the logical one.)
 const ROUNDS_PER_SEC = 5
+
+// Throwaway perf probe (src/dev/perfProbe.ts): the in-app ⏱ button + the React
+// <Profiler> around the battle subtree only mount when explicitly opted in via
+// `?probe=1` (works in the deployed prod preview, for on-device measurement) or in
+// DEV. Off → zero extra DOM, no Profiler overhead, in normal play.
+const PROBE_ON =
+  typeof window !== 'undefined' &&
+  (import.meta.env.DEV || new URLSearchParams(window.location.search).has('probe'))
 
 // Battle rendering for the Map tab's "drop-in" view. The arena fills the space
 // it's given (square, centred) so the battle is showcased; the selected-unit
@@ -1525,6 +1535,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce }: { battle: 
       >
         {snapCopied ? '✓ state copied' : '⎘ state'}
       </button>
+      {PROBE_ON && <PerfPanel />}
       {isOpen && (
         <>
           {/* Zoom (top-left; minimap owns the top-right). Pinch the arena too. The
@@ -1791,7 +1802,13 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce }:
   const locations = useGameStore((s) => s.locations)
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
-  return battle
+  const inner = battle
     ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} />
     : <Preview location={location} />
+  // Throwaway probe: time the battle subtree's React commits. The Profiler is always
+  // present when PROBE_ON (consistent tree → no remount when Start/Stop is toggled);
+  // its onRender early-returns unless the probe is actively running.
+  return PROBE_ON
+    ? <Profiler id="battle" onRender={perfProbe.onRender}>{inner}</Profiler>
+    : inner
 }

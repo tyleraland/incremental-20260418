@@ -91,3 +91,15 @@
   100% { opacity: 0; }
 }
 .animate-cast-label { animation: cast-label 3s ease-out forwards; }
+
+/* ── THROWAWAY perf-probe A/B overrides (toggled by src/dev/PerfPanel.tsx) ──────
+   The on-device probe proved the crowded battlefield is GPU/compositor-bound (main
+   thread ~idle, zero long-tasks, fps still drops). These classes — toggled on
+   <html> by the probe panel — strip one GPU-expensive effect at a time so we can
+   watch fps recover and pin the hog. Delete with the rest of the probe. */
+.perf-noblur [class*="backdrop-blur"] { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.perf-noshadow [class*="shadow-"],
+.perf-noshadow [class*="drop-shadow"] { box-shadow: none !important; filter: none !important; }
+.perf-notransition * { transition: none !important; }
+.perf-flat [data-chip] > *:not(:last-child) { display: none !important; }
+.perf-flat [data-chip] > :last-child { box-shadow: none !important; }

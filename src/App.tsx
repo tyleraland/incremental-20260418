@@ -14,12 +14,20 @@ import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
 import { ProtoApp } from '@/proto/ProtoApp'
 
-// Dev-only: expose the store on `window.__game` so a Playwright (or devtools)
-// session can read and drive live game state — `page.evaluate(() => __game.getState())`
-// to assert on it, or `__game.getState().enterBattleView(id)` to poke it. The DEV
-// gate dead-code-strips this from production bundles.
-if (import.meta.env.DEV && typeof window !== 'undefined') {
+// Expose the store on `window.__game` so a Playwright (or devtools) session can
+// read and drive live game state — `page.evaluate(() => __game.getState())` to
+// assert on it, or `__game.getState().enterBattleView(id)` to poke it. Normally
+// DEV-only (dead-code-stripped from prod), but also enabled under `?probe` so the
+// throwaway on-device perf probe can be driven from the console / a script.
+const PROBE_QS =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('probe')
+if ((import.meta.env.DEV || PROBE_QS) && typeof window !== 'undefined') {
   ;(window as unknown as { __game?: typeof useGameStore }).__game = useGameStore
+  if (PROBE_QS) {
+    import('@/dev/perfProbe').then((m) => {
+      ;(window as unknown as { __perf?: typeof m.perfProbe }).__perf = m.perfProbe
+    })
+  }
 }
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
@@ -42,10 +50,15 @@ function App() {
   // carries between Map, Heroes, and Inventory.
   const showRoster = activeTab === 'map' || activeTab === 'units' || activeTab === 'inventory'
 
-  // Dev-only perf harness: `?perf` deterministically drops into a heavy
-  // open-world battle for a Playwright/profiler run (see src/dev/perfSeed.ts).
-  // The import.meta.env.DEV gate dead-code-strips it from production bundles.
-  const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
+  // Perf harness: `?perf` deterministically drops into a heavy open-world battle
+  // for a Playwright/profiler run (see src/dev/perfSeed.ts). Normally DEV-only
+  // (dead-code-stripped from prod), but also allowed in a prod build when `?probe`
+  // is set, so the heavy synthetic scene is reproducible ON-DEVICE via the deployed
+  // PR preview. perfMode still skips autosave/load, so it never clobbers a real save.
+  const perfMode =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('perf') &&
+    (import.meta.env.DEV || new URLSearchParams(window.location.search).has('probe'))
 
   // The split-screen "Tactician" shell (src/proto) is now the DEFAULT UI. The
   // legacy tab-bar UI is kept as a fallback behind `?classic=1` (and the perf
