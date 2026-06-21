@@ -7,6 +7,7 @@ import {
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
+import { getUnitTraits } from '@/data/traits'
 import { TraitRow } from '@/components/TraitBubble'
 import { ACTION_SLOT_COUNT } from '@/types'
 import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait, ActionSlotEntry } from '@/types'
@@ -104,15 +105,13 @@ function HeroLens({ unit }: { unit: Unit }) {
   const miscItems = useGameStore((s) => s.miscItems)
   const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
   const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
-  const battleFollowId = useGameStore((s) => s.battleFollowId)
-  const openHeroDetail = useProtoStore((s) => s.openHeroDetail)
 
   const ds = getDerivedStats(unit, equipment)
   const c = battle?.combatants.find((x) => x.id === unit.id)
   const live = !!(c && battle)
   const hp = c ? c.hp : unit.health
   const maxHp = c ? c.maxHp : ds.maxHp
-  const following = battleFollowId === unit.id
+  const traits = getUnitTraits(unit)
 
   // Action bar → grid cells (skills carry a live cooldown bar; otherwise rdy).
   const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
@@ -139,20 +138,9 @@ function HeroLens({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-3">
-      <div>
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-semibold text-game-text truncate">{unit.name}</span>
-          <span className="text-xs text-game-text-dim shrink-0">Lv {unit.level} · {unit.class ?? 'Novice'}</span>
-          {live && (
-            <button
-              onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
-              title="Lock the camera onto this hero"
-              className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
-            >🎥 {following ? 'Following' : 'Follow'}</button>
-          )}
-        </div>
-        {live && c!.statuses.length > 0 && <StatusList statuses={c!.statuses} />}
-      </div>
+      {/* Identity + follow now live in the persistent HeroScopeBar above; the card
+          opens straight onto the action bar. Live statuses still surface here. */}
+      {live && c!.statuses.length > 0 && <StatusList statuses={c!.statuses} />}
 
       <CooldownGrid cells={cells} />
 
@@ -197,7 +185,59 @@ function HeroLens({ unit }: { unit: Unit }) {
         </div>
       </div>
 
-      <button onClick={() => openHeroDetail(unit.id)} className="text-[11px] text-game-text-dim hover:text-game-text">Full detail ▸</button>
+      {/* Traits — folded in from the retired Hero Detail overlay so the lens is the
+          single hero deep-dive (nothing lost). */}
+      {traits.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Traits</div>
+          <div className="flex flex-wrap gap-1.5">
+            {traits.map((t) => (
+              <span key={t.id} title={t.description} className="text-[10px] px-2 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60">{t.label}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Persistent hero scope-bar ──────────────────────────────────────────────────
+// One identity strip that rides above the four hero-scoped tabs (Hero / Equipment
+// / Skills / Tactics) so it's always obvious WHOSE dossier you're editing as you
+// switch tabs — the lens's answer to "wait, whose stats are these?". Owns the
+// avatar, name/level/HP, and the camera-follow toggle (lifted out of HeroLens).
+function HeroScopeBar({ unit }: { unit: Unit }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
+  const battleFollowId = useGameStore((s) => s.battleFollowId)
+  const ds = getDerivedStats(unit, equipment)
+  const c = battle?.combatants.find((x) => x.id === unit.id)
+  const live = !!(c && battle)
+  const hp = c ? c.hp : unit.health
+  const maxHp = c ? c.maxHp : ds.maxHp
+  const hpPct = Math.max(0, Math.min(100, (hp / maxHp) * 100))
+  const following = battleFollowId === unit.id
+  const ring = `conic-gradient(${hpPct > 60 ? '#10b981' : hpPct > 30 ? '#f59e0b' : '#ef4444'} ${hpPct}%, #2a2a3a 0)`
+  return (
+    <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/40">
+      <div className="relative w-7 h-7 rounded-full p-[2px] shrink-0" style={{ background: ring }}>
+        <div className="w-full h-full rounded-full bg-game-surface border border-game-border flex items-center justify-center text-xs">
+          {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-game-text leading-none truncate">{unit.name}</div>
+        <div className="text-[10px] text-game-text-dim leading-none mt-0.5 truncate">
+          Lv {unit.level} · {unit.class ?? 'Novice'} · {Math.round(hp)}/{Math.round(maxHp)} HP
+        </div>
+      </div>
+      {live && (
+        <button
+          onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
+          title="Lock the camera onto this hero"
+          className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
+        >🎥 {following ? 'Following' : 'Follow'}</button>
+      )}
     </div>
   )
 }
@@ -975,7 +1015,15 @@ export function ProtoLens() {
   const heroTabRequest = useProtoStore((s) => s.heroTabRequest)
   const prevReq = useRef(heroTabRequest)
   useEffect(() => {
-    if (heroTabRequest !== prevReq.current) { setTop('hero'); prevReq.current = heroTabRequest }
+    if (heroTabRequest !== prevReq.current) {
+      // Badge-driven routing: a focus that's answering an attention "!" lands on
+      // the tab that holds the unspent resource — skill points → Skills, otherwise
+      // (ability points / a fresh level / nothing) → Hero.
+      const s = useGameStore.getState()
+      const u = s.units.find((x) => x.id === s.selectedUnitIds[0])
+      setTop(u && u.abilityPoints <= 0 && u.skillPoints > 0 ? 'skills' : 'hero')
+      prevReq.current = heroTabRequest
+    }
   }, [heroTabRequest])
 
   // The Quest Journal's "go to location" drills the lens into the Location tab.
@@ -1006,6 +1054,12 @@ export function ProtoLens() {
   const heroSubs = unit?.companion ? [...HERO_SUBS, PET_SUB] : HERO_SUBS
   const effSub: HeroSub = heroSub === 'pet' && !unit?.companion ? 'stats' : heroSub
 
+  // A gold pip on the tab that holds an unspent resource for the selected hero —
+  // the same attention signal the roster chips carry, mirrored onto the lens so
+  // you can see (and reach) the pending decision without leaving the current tab.
+  const tabPip = (id: Top): boolean =>
+    !!unit && ((id === 'hero' && unit.abilityPoints > 0) || (id === 'skills' && unit.skillPoints > 0))
+
   return (
     <div className="relative h-full flex flex-col bg-game-surface/40 min-h-0">
       <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
@@ -1019,12 +1073,19 @@ export function ProtoLens() {
               top === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
             ].join(' ')}
           >
-            <span className="text-base leading-none">{t.icon}</span>
+            <span className="text-base leading-none relative">
+              {t.icon}
+              {tabPip(t.id) && <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-game-gold border border-game-bg" />}
+            </span>
             <span className="text-[11px] font-medium">{t.label}</span>
             {top === t.id && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-primary" />}
           </button>
         ))}
       </div>
+
+      {/* Persistent hero identity across the four hero-scoped tabs. Location is
+          site-scoped, so it owns its own header (the location name) instead. */}
+      {top !== 'location' && unit && !selectedFoe && <HeroScopeBar unit={unit} />}
 
       {/* Hero sub-tabs only appear when there's a Pet (Report otherwise lives in
           Hero Detail). Hidden for a foe. */}

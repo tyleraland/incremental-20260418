@@ -7,7 +7,6 @@ import { useProtoStore, type QuestBoardEntry } from './protoStore'
 import { QuestJournal, useQuestBoard } from './QuestJournal'
 import { Town } from './Town'
 import { ArmyMatrix } from './ArmyMatrix'
-import { HeroDetail } from './HeroDetail'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
 
@@ -184,15 +183,16 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
 type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'town'
 const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', town: 'Town' }
 
-// The Guild board folds in the Party spreadsheet (all heroes grouped by location)
-// — tapping a hero opens their Hero Detail — with Recruit parked at the bottom.
-function GuildBoard() {
+// The Guild board folds in the Party spreadsheet (all heroes grouped by location).
+// Tapping a hero now drills straight into the lens's Hero tab (the single hero
+// deep-dive) rather than a separate overlay — the aggregate→deep-dive bridge.
+// Recruit is parked at the bottom.
+function GuildBoard({ onHero }: { onHero: (id: string) => void }) {
   const units = useGameStore((s) => s.units)
   const recruitUnit = useGameStore((s) => s.recruitUnit)
-  const openHeroDetail = useProtoStore((s) => s.openHeroDetail)
   return (
     <div className="p-3 max-w-3xl w-full mx-auto space-y-4">
-      <ArmyMatrix squad={units} locationName="Guild" onHero={openHeroDetail} />
+      <ArmyMatrix squad={units} locationName="Guild" onHero={onHero} />
       <div className="flex items-center justify-between border-t border-game-border pt-3">
         <span className="text-xs text-game-text-dim">{units.length} member{units.length !== 1 ? 's' : ''} in the guild</span>
         <button onClick={recruitUnit} className="px-4 py-2 rounded-lg bg-game-primary text-white text-sm font-medium hover:bg-game-primary/80">＋ Recruit a member</button>
@@ -237,6 +237,14 @@ function QuestsNavButton({ active, onClick }: { active: boolean; onClick: () => 
 function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose: () => void; onExit: () => void }) {
   const paused      = useGameStore((s) => s.paused)
   const togglePause = useGameStore((s) => s.togglePause)
+  // Aggregate → deep-dive: a Guild-matrix hero tap selects them, drills the lens
+  // into Hero, and dismisses the board so the split is revealed beneath it.
+  function openHeroInLens(id: string) {
+    const u = useGameStore.getState().units.find((x) => x.id === id)
+    useGameStore.setState({ selectedUnitIds: [id], ...(u?.locationId ? { selectedLocationId: u.locationId } : {}) })
+    useProtoStore.getState().requestHeroTab()
+    onClose()
+  }
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
@@ -244,7 +252,7 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
         <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ zoom: 1.15 }}>
-        {panel === 'guild'   && <GuildBoard />}
+        {panel === 'guild'   && <GuildBoard onHero={openHeroInLens} />}
         {panel === 'reports' && <Reports />}
         {panel === 'time'    && <Time />}
         {panel === 'settings' && (
@@ -298,6 +306,12 @@ export function ProtoApp() {
   const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
+  // Split emphasis: lean the layout toward the battlefield (Field) or the dossier
+  // (Lens) without ever hiding either — the field stays watchable while you do
+  // deep-edit work, and vice versa. 50/50 by default.
+  const [emphasis, setEmphasis] = useState<'field' | 'split' | 'lens'>('split')
+  const stageBasis = emphasis === 'field' ? '72%' : emphasis === 'lens' ? '28%' : '50%'
+  const lensBasis  = emphasis === 'field' ? '28%' : emphasis === 'lens' ? '72%' : '50%'
   // Multi-select: when on, single-tap toggles a hero in/out of the selection for
   // bulk deploy (Location lens). Off = single-select (tap replaces).
   const [multi, setMulti] = useState(false)
@@ -500,13 +514,28 @@ export function ProtoApp() {
         </div>
       </div>
 
-      {/* split: world/battle stage  |  context lens */}
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        <div className="basis-1/2 md:basis-[58%] min-h-0 border-b md:border-b-0 md:border-r border-game-border">
+      {/* split: world/battle stage  |  context lens. Basis is driven by the
+          emphasis control so either half can lean larger while both stay live. */}
+      <div className="relative flex-1 min-h-0 flex flex-col md:flex-row">
+        <div style={{ flexBasis: stageBasis }} className="min-h-0 min-w-0 border-b md:border-b-0 md:border-r border-game-border transition-[flex-basis] duration-200">
           <ProtoStage />
         </div>
-        <div className="basis-1/2 md:basis-[42%] min-h-0">
+        <div style={{ flexBasis: lensBasis }} className="min-h-0 min-w-0 transition-[flex-basis] duration-200">
           <ProtoLens />
+        </div>
+
+        {/* Emphasis toggle — parked on the split seam (centered on mobile's
+            horizontal divider, right edge on desktop's vertical one). */}
+        <div className="absolute z-30 top-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-lg border border-game-border bg-game-surface/90 backdrop-blur px-0.5 py-0.5 shadow">
+          {([['field', 'Field'], ['split', 'Split'], ['lens', 'Lens']] as const).map(([e, label]) => (
+            <button
+              key={e}
+              onClick={() => setEmphasis(e)}
+              title={`Favor the ${label}`}
+              className={['px-2 h-5 rounded-md text-[10px] font-medium leading-none transition-colors',
+                emphasis === e ? 'bg-game-primary/25 text-game-text' : 'text-game-text-dim hover:text-game-text'].join(' ')}
+            >{label}</button>
+          ))}
         </div>
       </div>
 
@@ -515,9 +544,6 @@ export function ProtoApp() {
         : panel === 'town'
         ? <Town onClose={() => setPanel(null)} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
-
-      {/* Hero Detail overlay — opened from the Unit tab or the Guild board */}
-      <HeroDetail />
     </div>
   )
 }

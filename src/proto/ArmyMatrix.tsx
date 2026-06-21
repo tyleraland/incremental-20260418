@@ -204,7 +204,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                 <div className="w-32 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 z-10 bg-game-surface">
                   <div className="relative shrink-0">
                     <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
-                      title={onHero ? 'Open Hero Detail' : undefined}
+                      title={onHero ? 'Open in the Hero lens' : undefined}
                       className={['w-10 h-10 rounded-full bg-game-bg border flex items-center justify-center text-lg', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
                       {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
                     </button>
