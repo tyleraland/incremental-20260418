@@ -191,17 +191,16 @@ function PartyOverlay({ onClose }: { onClose: () => void }) {
   const locations    = useGameStore((s) => s.locations)
   const selectedLocId = useGameStore((s) => s.selectedLocationId)
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
-  const squad = location ? units.filter((u) => u.locationId === location.id) : []
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
         <span className="text-sm font-semibold text-game-text">☷ Party</span>
-        <span className="text-[10px] text-game-muted hidden sm:inline">— {location ? location.name : 'no battlefield focused'}</span>
+        <span className="text-[10px] text-game-muted hidden sm:inline">— all heroes, grouped by location</span>
         <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-3 max-w-3xl w-full mx-auto" style={{ zoom: 1.12 }}>
-          <ArmyMatrix squad={squad} locationName={location?.name ?? 'No battlefield focused'} />
+          <ArmyMatrix squad={units} locationName={location?.name ?? 'No battlefield focused'} />
         </div>
       </div>
     </div>,

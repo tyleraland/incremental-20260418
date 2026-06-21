@@ -64,6 +64,7 @@ function bestInSlot(unit: Unit, slot: EquipSlot, equipment: EquipmentItem[]): Eq
 
 export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationName: string }) {
   const equipment     = useGameStore((s) => s.equipment)
+  const locations     = useGameStore((s) => s.locations)
   const partyTactics  = useGameStore((s) => s.partyTactics)
   const equipTactic   = useGameStore((s) => s.equipTactic)
   const unequipTactic = useGameStore((s) => s.unequipTactic)
@@ -131,6 +132,13 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
   // horizontally; heroes are the rows and scroll vertically.
   const cols = facet === 'tactics' ? CHANNELS.map((c) => ({ id: c.id, label: c.label })) : GEAR_ROWS.map((s) => ({ id: s, label: SLOT_LABELS[s] }))
 
+  // Hero rows grouped by where they are (deployed locations, then idle at guild).
+  const groupMap = new Map<string, Unit[]>()
+  for (const u of squad) { const k = u.locationId ?? '__guild__'; const a = groupMap.get(k); if (a) a.push(u); else groupMap.set(k, [u]) }
+  const heroGroups = [...groupMap.entries()]
+    .map(([k, us]) => ({ k, name: k === '__guild__' ? 'Guild · idle' : (locations.find((l) => l.id === k)?.name ?? k), units: us }))
+    .sort((a, b) => (a.k === '__guild__' ? 1 : 0) - (b.k === '__guild__' ? 1 : 0) || a.name.localeCompare(b.name))
+
   return (
     <div className="space-y-3">
       {/* command bar: facet toggle + Auto (two-tap) */}
@@ -180,25 +188,35 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
             ))}
           </div>
 
-          {/* one row per hero */}
-          {squad.map((u) => {
+          {/* heroes grouped by location; one row per hero */}
+          {heroGroups.map((g) => (
+          <div key={g.k}>
+            {/* location group header (label parked in the sticky hero column) */}
+            <div className="flex border-t-2 border-game-border bg-game-bg/40">
+              <div className="w-44 shrink-0 px-2 py-1.5 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg/70 z-10">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
+              {cols.map((col) => <div key={col.id} className="w-36 shrink-0" />)}
+            </div>
+            {g.units.map((u) => {
             const locked = heroLocks.includes(u.id)
             return (
               <div key={u.id} className={['flex border-t border-game-border/50', locked ? 'bg-game-gold/5' : ''].join(' ')}>
                 {/* hero cell (sticky on horizontal scroll) */}
                 <div className="w-44 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 bg-game-surface/60 z-10">
-                  <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="w-9 h-9 rounded-full bg-game-bg border border-game-border flex items-center justify-center text-lg shrink-0">{u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}</span>
-                    <span className="min-w-0">
-                      <span className="text-sm font-medium text-game-text truncate block">{u.name.split(' ')[0]}</span>
-                      <span className="text-[11px] text-game-text-dim truncate block">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : ''}</span>
-                    </span>
+                  <div className="relative shrink-0">
+                    <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
+                      className={['w-10 h-10 rounded-full bg-game-bg border flex items-center justify-center text-lg', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
+                      {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
+                    </button>
+                    <button
+                      onClick={() => toggleLock(u.id)}
+                      title={locked ? 'Locked — Optimize skips this hero' : 'Lock this hero'}
+                      className={['absolute -top-1 -right-1 w-4 h-4 rounded-full border border-game-bg flex items-center justify-center text-[8px] leading-none', locked ? 'bg-game-gold text-game-bg' : 'bg-game-surface text-game-muted hover:text-game-text'].join(' ')}
+                    >{locked ? '🔒' : '🔓'}</button>
+                  </div>
+                  <button onClick={() => useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="min-w-0 flex-1 text-left">
+                    <span className="text-sm font-medium text-game-text truncate block">{u.name.split(' ')[0]}</span>
+                    <span className="text-[11px] text-game-text-dim truncate block">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : ''}</span>
                   </button>
-                  <button
-                    onClick={() => toggleLock(u.id)}
-                    title={locked ? 'Locked — Optimize skips this hero' : 'Lock this hero'}
-                    className={['text-base leading-none shrink-0', locked ? 'text-game-gold' : 'text-game-muted hover:text-game-text-dim'].join(' ')}
-                  >{locked ? '🔒' : '🔓'}</button>
                 </div>
 
                 {cols.map((col) => {
@@ -253,7 +271,9 @@ export function ArmyMatrix({ squad, locationName }: { squad: Unit[]; locationNam
                 })}
               </div>
             )
-          })}
+            })}
+          </div>
+          ))}
         </div>
       </div>
 
