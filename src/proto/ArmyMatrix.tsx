@@ -185,7 +185,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
           <div className="flex border-b-2 border-game-border">
             <div className="w-24 shrink-0 py-2 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface z-10">Hero</div>
             {cols.map((col) => (
-              <div key={col.id} className="w-20 shrink-0 px-1.5 py-1.5 text-[10px] uppercase tracking-wider text-game-text-dim border-l border-game-border/40 leading-tight">
+              <div key={col.id} className="w-20 shrink-0 px-1.5 py-1.5 text-[10px] uppercase tracking-wider text-game-text-dim border-l border-game-border/40 leading-tight text-center">
                 {col.label.split(' ').map((w) => <div key={w}>{w}</div>)}
               </div>
             ))}
@@ -232,13 +232,13 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                       <>
                         {inCh.length === 0 && (!suggesting || prop.length === 0) && <span className="text-sm text-game-muted">＋</span>}
                         {inCh.map((t, i) => (
-                          <div key={t.id} className="flex items-center gap-1 min-w-0">
+                          <div key={t.id} className="flex items-center justify-center gap-1 min-w-0">
                             <span className="text-[10px] text-game-muted tabular-nums shrink-0">{i + 1}</span>
                             <span className="text-xs text-game-text leading-tight truncate">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
                           </div>
                         ))}
                         {suggesting && prop.map((id) => (
-                          <div key={id} className="flex items-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
+                          <div key={id} className="flex items-center justify-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
                             <span className="text-[10px] text-game-accent shrink-0">+</span>
                             <span className="text-xs text-game-accent leading-tight truncate">{TACTIC_REGISTRY[id]?.name ?? id}</span>
                           </div>
@@ -256,7 +256,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                       <>
                         <span className={['text-xs leading-tight block truncate', it ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{it?.name ?? '＋'}</span>
                         {propItem && (
-                          <div className="flex items-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1 mt-0.5">
+                          <div className="flex items-center justify-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1 mt-0.5">
                             <span className="text-[10px] text-game-accent shrink-0">→</span>
                             <span className="text-xs text-game-accent leading-tight truncate">{propItem.name}</span>
                           </div>
@@ -277,7 +277,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                       key={col.id}
                       data-cell={`${u.id}:${col.id}`}
                       onClick={() => setPicker({ unit: u, key: col.id })}
-                      className="w-20 shrink-0 min-h-[2.25rem] py-1.5 px-2 text-left space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors overflow-hidden"
+                      className="w-20 shrink-0 min-h-[2.25rem] py-1.5 px-2 text-center space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors overflow-hidden"
                     >{body}</button>
                   )
                 })}
