@@ -447,7 +447,6 @@ interface ProtoState {
   attunementSpent: number
   upgrades: Record<string, Record<string, number>>   // locId → upgradeId → level
   storyChoice: Record<string, string>                // locId → chosen path id
-  heroLocks: string[]                                // hero ids the matrix won't overwrite
   // Quests (mock): per-location commitment, progress, and completion archive.
   activeQuest: Record<string, string | null>         // locId → committed quest id
   questProgress: Record<string, Record<string, number>> // locId → questId → count
@@ -472,7 +471,6 @@ interface ProtoState {
   closeStageOverlay: () => void
   buyUpgrade: (locId: string, upId: string, cost: number, max: number) => void
   chooseStory: (locId: string, pathId: string) => void
-  toggleLock: (heroId: string) => void
   acceptQuest: (locId: string, questId: string) => void
   advanceQuest: (locId: string, questId: string, by: number) => void  // mock progress
   turnInQuest: (locId: string, questId: string) => void
@@ -530,7 +528,6 @@ export const useProtoStore = create<ProtoState>((set) => ({
   attunementSpent: 0,
   upgrades: {},
   storyChoice: {},
-  heroLocks: [],
   activeQuest: {},
   questProgress: {},
   completedQuests: {},
@@ -565,9 +562,6 @@ export const useProtoStore = create<ProtoState>((set) => ({
     }
   }),
   chooseStory: (locId, pathId) => set((s) => ({ storyChoice: { ...s.storyChoice, [locId]: pathId } })),
-  toggleLock: (heroId) => set((s) => ({
-    heroLocks: s.heroLocks.includes(heroId) ? s.heroLocks.filter((x) => x !== heroId) : [...s.heroLocks, heroId],
-  })),
   acceptQuest: (locId, questId) => set((s) => {
     if (s.activeQuest[locId]) return s // one commitment at a time
     return {

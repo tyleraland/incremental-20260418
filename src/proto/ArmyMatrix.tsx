@@ -7,16 +7,13 @@ import {
 import { SLOT_LABELS, SLOT_COMPATIBLE } from '@/data/equipment'
 import { ACTION_SLOT_COUNT } from '@/types'
 import type { EquipSlot, EquipmentItem, WeaponRecord, ActionSlotEntry } from '@/types'
-import { useProtoStore } from './protoStore'
-
 // ── Army Matrix ────────────────────────────────────────────────────────────--
 //
 // The squad command surface beside the battlefield. One grid, three facets you
 // toggle between — Equipment (gear slots), Skills (action-bar slots), and Tactics
 // (channel rows) — with the battlefield party as columns. Every cell is tappable
 // to assign. ✨ Suggest ghosts a recommended pick per cell (class-fit tactics /
-// best-scoring gear); the player taps an individual ghost cell to apply just that
-// one, and a per-hero 🔒 Lock keeps a hand-tuned hero out of the suggestions.
+// best-scoring gear); the player taps an individual ghost cell to apply just that one.
 
 type Facet = 'gear' | 'skills' | 'tactics'
 const FACETS: { id: Facet; label: string }[] = [
@@ -76,8 +73,6 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
   const unequipTactic = useGameStore((s) => s.unequipTactic)
   const equipItem     = useGameStore((s) => s.equipItem)
   const setActionSlot = useGameStore((s) => s.setActionSlot)
-  const heroLocks     = useProtoStore((s) => s.heroLocks)
-  const toggleLock    = useProtoStore((s) => s.toggleLock)
 
   const [facet, setFacet] = useState<Facet>('gear')
   // Suggest just ghosts one recommended pick per cell; the player taps an
@@ -103,7 +98,6 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
   const tacticProps: Record<string, string[]> = {}
   const gearProps: Record<string, Partial<Record<EquipSlot, string>>> = {}
   for (const u of squad) {
-    if (heroLocks.includes(u.id)) continue
     if (facet === 'tactics') {
       // Placeholder "intelligence": casters kite, everyone else charges. The real
       // recommendation engine lands later (see BACKLOG.md → UI Tactician shell).
@@ -199,24 +193,15 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
               <div className="w-24 shrink-0 px-2 py-1 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg z-10 truncate">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
               {cols.map((col) => <div key={col.id} className="w-20 shrink-0 bg-game-bg/40" />)}
             </div>
-            {g.units.map((u) => {
-            const locked = heroLocks.includes(u.id)
-            return (
-              <div key={u.id} className={['flex border-t border-game-border/50', locked ? 'bg-game-gold/5' : ''].join(' ')}>
+            {g.units.map((u) => (
+              <div key={u.id} className="flex border-t border-game-border/50">
                 {/* hero cell (sticky on horizontal scroll) */}
                 <div className="w-24 shrink-0 py-1.5 pr-1 flex items-center gap-1.5 sticky left-0 z-10 bg-game-surface">
-                  <div className="relative shrink-0">
-                    <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
-                      title={onHero ? 'Open in the Hero lens' : undefined}
-                      className={['w-9 h-9 rounded-full bg-game-bg border flex items-center justify-center text-base', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
-                      {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
-                    </button>
-                    <button
-                      onClick={() => toggleLock(u.id)}
-                      title={locked ? 'Locked — Suggest skips this hero' : 'Lock this hero'}
-                      className={['absolute -top-1 -right-1 w-5 h-5 rounded-full border border-game-bg flex items-center justify-center text-[10px] leading-none', locked ? 'bg-game-gold text-game-bg' : 'bg-game-surface text-game-muted hover:text-game-text'].join(' ')}
-                    >{locked ? '🔒' : '🔓'}</button>
-                  </div>
+                  <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
+                    title={onHero ? 'Open in the Hero lens' : undefined}
+                    className="w-9 h-9 rounded-full bg-game-bg border border-game-border flex items-center justify-center text-base shrink-0">
+                    {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
+                  </button>
                   <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="min-w-0 flex-1 text-left">
                     <span className="text-sm font-medium text-game-text truncate block">{u.name.split(' ')[0]}</span>
                     <span className="text-[11px] text-game-text-dim truncate block">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : facet === 'skills' ? ` · ${(u.actionSlots ?? []).filter(Boolean).length}/${ACTION_SLOT_COUNT}` : ''}</span>
@@ -282,15 +267,14 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                   )
                 })}
               </div>
-            )
-            })}
+            ))}
           </div>
           ))}
         </div>
       </div>
 
       <div className="text-xs text-game-muted italic">
-        Tap a cell to assign · ✨ Suggest ghosts a pick per cell; tap a ghost to apply just it · 🔒 protects a hero.
+        Tap a cell to assign · ✨ Suggest ghosts a pick per cell; tap a ghost to apply just it.
       </div>
 
       {picker && facet === 'tactics' && createPortal(
