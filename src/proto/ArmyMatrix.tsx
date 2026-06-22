@@ -1,23 +1,29 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  useGameStore, getInitials, getDerivedStats,
+  useGameStore, getInitials, getDerivedStats, getAvailableSkills, SKILL_REGISTRY,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
 import { SLOT_LABELS, SLOT_COMPATIBLE } from '@/data/equipment'
-import type { EquipSlot, EquipmentItem, WeaponRecord } from '@/types'
+import { ACTION_SLOT_COUNT } from '@/types'
+import type { EquipSlot, EquipmentItem, WeaponRecord, ActionSlotEntry } from '@/types'
 import { useProtoStore } from './protoStore'
 
 // ── Army Matrix ────────────────────────────────────────────────────────────--
 //
-// The squad command surface beside the battlefield. One grid, two facets you
-// toggle between — Tactics (channel rows) and Gear (slot rows) — with the
-// battlefield party as columns. Every cell is tappable to assign. A standing
-// "what-if" overlay ghosts the loadout Optimize would pick (class-fit tactics /
-// best-scoring gear); Optimize applies it instantly, and a per-hero 🔒 Lock
-// keeps a hand-tuned hero out of it.
+// The squad command surface beside the battlefield. One grid, three facets you
+// toggle between — Equipment (gear slots), Skills (action-bar slots), and Tactics
+// (channel rows) — with the battlefield party as columns. Every cell is tappable
+// to assign. A standing "what-if" overlay ghosts the loadout Optimize would pick
+// (class-fit tactics / best-scoring gear); Optimize applies it instantly, and a
+// per-hero 🔒 Lock keeps a hand-tuned hero out of it.
 
-type Facet = 'tactics' | 'gear'
+type Facet = 'gear' | 'skills' | 'tactics'
+const FACETS: { id: Facet; label: string }[] = [
+  { id: 'gear', label: '⚙ Equipment' }, { id: 'skills', label: '✦ Skills' }, { id: 'tactics', label: '⚑ Tactics' },
+]
+// Action-bar columns for the Skills facet (slot index → header label).
+const SKILL_COLS = Array.from({ length: ACTION_SLOT_COUNT }, (_, i) => ({ id: `slot:${i}`, label: `${i + 1}` }))
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
   { id: 'movement', label: 'Move' }, { id: 'targeting', label: 'Target' },
@@ -69,10 +75,11 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
   const equipTactic   = useGameStore((s) => s.equipTactic)
   const unequipTactic = useGameStore((s) => s.unequipTactic)
   const equipItem     = useGameStore((s) => s.equipItem)
+  const setActionSlot = useGameStore((s) => s.setActionSlot)
   const heroLocks     = useProtoStore((s) => s.heroLocks)
   const toggleLock    = useProtoStore((s) => s.toggleLock)
 
-  const [facet, setFacet] = useState<Facet>('tactics')
+  const [facet, setFacet] = useState<Facet>('gear')
   // Auto is a two-tap commit: 1st tap arms (shows ghosts + Cancel), 2nd applies.
   const [armed, setArmed] = useState(false)
   const [picker, setPicker] = useState<{ unit: Unit; key: string } | null>(null)
@@ -103,7 +110,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
       const equipped = new Set(u.tactics.map((t) => t.id))
       const free = MAX_UNIT_TACTICS - u.tactics.length
       if (TACTIC_REGISTRY[want] && !equipped.has(want) && free > 0) tacticProps[u.id] = [want]
-    } else {
+    } else if (facet === 'gear') {
       const g: Partial<Record<EquipSlot, string>> = {}
       for (const slot of GEAR_ROWS) {
         const mh = itemFor(u, 'mainHand', equipment)
@@ -113,24 +120,29 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
       }
       if (Object.keys(g).length) gearProps[u.id] = g
     }
+    // skills: no auto proposal yet (the bar is hand-tuned).
   }
   const hasProps = facet === 'tactics'
     ? Object.values(tacticProps).some((a) => a.length)
-    : Object.values(gearProps).some((g) => Object.keys(g).length)
+    : facet === 'gear'
+    ? Object.values(gearProps).some((g) => Object.keys(g).length)
+    : false
 
   function apply() {
     for (const u of squad) {
       if (heroLocks.includes(u.id)) continue
       if (facet === 'tactics') for (const id of tacticProps[u.id] ?? []) equipTactic(u.id, id)
-      else for (const [slot, id] of Object.entries(gearProps[u.id] ?? {})) equipItem(u.id, slot as EquipSlot, id)
+      else if (facet === 'gear') for (const [slot, id] of Object.entries(gearProps[u.id] ?? {})) equipItem(u.id, slot as EquipSlot, id)
     }
     setArmed(false)
   }
   function tapAuto() { if (armed) apply(); else if (hasProps) setArmed(true) }
 
-  // Columns = the facet types (tactic channels / gear slots), laid out
-  // horizontally; heroes are the rows and scroll vertically.
-  const cols = facet === 'tactics' ? CHANNELS.map((c) => ({ id: c.id, label: c.label })) : GEAR_ROWS.map((s) => ({ id: s, label: SLOT_LABELS[s] }))
+  // Columns = the facet types (gear slots / action-bar slots / tactic channels),
+  // laid out horizontally; heroes are the rows and scroll vertically.
+  const cols = facet === 'tactics' ? CHANNELS.map((c) => ({ id: c.id, label: c.label }))
+    : facet === 'gear' ? GEAR_ROWS.map((s) => ({ id: s, label: SLOT_LABELS[s] }))
+    : SKILL_COLS
 
   // Hero rows grouped by where they are (deployed locations, then idle at guild).
   const groupMap = new Map<string, Unit[]>()
@@ -143,14 +155,14 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
     <div className="space-y-3">
       {/* command bar: facet toggle + Auto (two-tap) */}
       <div className="flex items-center gap-1.5">
-        {(['tactics', 'gear'] as Facet[]).map((f) => (
+        {FACETS.map((f) => (
           <button
-            key={f}
-            onClick={() => pickFacet(f)}
-            className={['text-sm px-4 py-1.5 rounded-full border transition-colors capitalize', facet === f
+            key={f.id}
+            onClick={() => pickFacet(f.id)}
+            className={['text-sm px-4 py-1.5 rounded-full border transition-colors', facet === f.id
               ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
               : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
-          >{f === 'tactics' ? '⚑ Tactics' : '⚙ Gear'}</button>
+          >{f.label}</button>
         ))}
         <div className="ml-auto flex items-center gap-1.5">
           {armed && (
@@ -216,7 +228,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                   </div>
                   <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })} className="min-w-0 flex-1 text-left">
                     <span className="text-sm font-medium text-game-text truncate block">{u.name.split(' ')[0]}</span>
-                    <span className="text-[11px] text-game-text-dim truncate block">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : ''}</span>
+                    <span className="text-[11px] text-game-text-dim truncate block">{u.class ?? 'Novice'}{facet === 'tactics' ? ` · ${u.tactics.length}/${MAX_UNIT_TACTICS}` : facet === 'skills' ? ` · ${(u.actionSlots ?? []).filter(Boolean).length}/${ACTION_SLOT_COUNT}` : ''}</span>
                   </button>
                 </div>
 
@@ -242,7 +254,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                         ))}
                       </>
                     )
-                  } else {
+                  } else if (facet === 'gear') {
                     const slot = col.id as EquipSlot
                     const mh = itemFor(u, 'mainHand', equipment)
                     const slotLocked = slot === 'offHand' && mh?.category === 'weapon-2h'
@@ -260,6 +272,14 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                         )}
                       </>
                     )
+                  } else {
+                    // skills: one column per action-bar slot — show what's loaded there.
+                    const idx = Number(col.id.split(':')[1])
+                    const entry = (u.actionSlots ?? [])[idx] ?? null
+                    const name = entry
+                      ? (entry.kind === 'skill' ? (SKILL_REGISTRY[entry.id]?.name ?? entry.id) : entry.id)
+                      : null
+                    body = <span className={['text-xs leading-tight', name ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{name ?? '＋'}</span>
                   }
                   return (
                     <button
@@ -289,6 +309,10 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
       {picker && facet === 'gear' && createPortal(
         <GearPicker unit={picker.unit} slot={picker.key as EquipSlot} equipment={equipment}
           onEquip={(id) => equipItem(picker.unit.id, picker.key as EquipSlot, id)}
+          onClose={() => setPicker(null)} />, document.body)}
+      {picker && facet === 'skills' && createPortal(
+        <SkillSlotPicker unit={picker.unit} slotIdx={Number(picker.key.split(':')[1])}
+          onAssign={(entry) => setActionSlot(picker.unit.id, Number(picker.key.split(':')[1]), entry)}
           onClose={() => setPicker(null)} />, document.body)}
     </div>
   )
@@ -353,6 +377,45 @@ function TacticPicker({ unit, channel, onAdd, onRemove, onClose }: {
           ))}
         </div>
       </div>
+    </Modal>
+  )
+}
+
+// Assign one of a hero's learned active skills to an action-bar slot (or clear
+// it). Mirrors the Skills lens's slot picker, scoped to skills for the matrix.
+function SkillSlotPicker({ unit, slotIdx, onAssign, onClose }: {
+  unit: Unit; slotIdx: number; onAssign: (entry: ActionSlotEntry | null) => void; onClose: () => void
+}) {
+  const live = useGameStore((s) => s.units.find((u) => u.id === unit.id)) ?? unit
+  const slots = live.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
+  const onBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'skill').map((e) => e.id))
+  const current = slots[slotIdx]
+  // Learned ACTIVE skills not already on another slot are the assignable pool.
+  const pool = getAvailableSkills(live)
+    .filter((e) => e.current > 0 && e.skill.type === 'active')
+    .filter((e) => !onBar.has(e.skill.id) || (current?.kind === 'skill' && current.id === e.skill.id))
+  return (
+    <Modal title={`Slot ${slotIdx + 1} · ${live.name.split(' ')[0]}`} sub="action-bar skill" onClose={onClose}>
+      {current && (
+        <button onClick={() => { onAssign(null); onClose() }} className="w-full flex items-center justify-between rounded-md border border-game-border/60 bg-game-bg px-2.5 py-1.5 hover:border-red-500/50">
+          <span className="text-xs text-game-text-dim italic">Clear {SKILL_REGISTRY[current.id]?.name ?? current.id}</span>
+          <span className="text-[10px] text-red-300">remove</span>
+        </button>
+      )}
+      {pool.length === 0 && <div className="text-xs text-game-muted italic">No learned active skills — learn some in the hero's Skill tree.</div>}
+      {pool.map(({ skill, current: lvl }) => {
+        const equipped = current?.kind === 'skill' && current.id === skill.id
+        return (
+          <button key={skill.id} onClick={() => { onAssign({ kind: 'skill', id: skill.id }); onClose() }}
+            className={['w-full rounded-md border px-2.5 py-2 text-left transition-colors', equipped ? 'border-game-primary/60 bg-game-primary/10' : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-game-text font-medium truncate">{skill.name}</span>
+              {equipped ? <span className="text-[10px] text-game-primary shrink-0">on bar</span> : <span className="text-[10px] text-game-text-dim shrink-0">assign ›</span>}
+            </div>
+            {skill.description && <div className="text-[10px] text-game-text-dim leading-snug mt-0.5">{skill.description(lvl)}</div>}
+          </button>
+        )
+      })}
     </Modal>
   )
 }

@@ -984,18 +984,18 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
   })
   return (
     <div className="space-y-3">
-      <div>
+      {/* identity block — name, HP, and any buffs/debuffs together up top */}
+      <div className="space-y-2">
         <div className="flex items-center gap-2">
           <span className="text-lg font-semibold text-red-200 truncate">{c.name}</span>
           {def && <span className="text-xs text-game-text-dim shrink-0">Lv {def.level}</span>}
           <span className={`text-[10px] uppercase tracking-wide shrink-0 ${c.provoked ? 'text-red-300' : 'text-amber-300'}`}>{c.alive ? (c.provoked ? 'hostile' : 'passive') : 'KO'}</span>
         </div>
-        {c.statuses.length > 0 && <div className="mt-2"><StatusList statuses={c.statuses} /></div>}
+        <StatBar label="HP" cur={c.hp} max={c.maxHp} color="bg-red-600" />
+        {c.statuses.length > 0 && <StatusList statuses={c.statuses} />}
       </div>
 
       <CooldownGrid cells={cells} />
-
-      <StatBar label="HP" cur={c.hp} max={c.maxHp} color="bg-red-600" />
 
       {def && (
         <button onClick={() => setCodex(true)} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-game-border text-sm text-game-text-dim hover:text-game-text hover:bg-white/5">📖 Codex Entry ▸</button>
