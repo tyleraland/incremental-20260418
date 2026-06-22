@@ -250,6 +250,12 @@ describe('worldCodec', () => {
     expect(worldCodec.roundTrip({ partyTactics: pt }).partyTactics).toEqual(pt)
   })
 
+  it('round-trips the progression mode, defaulting to sandbox', () => {
+    expect(worldCodec.roundTrip({ progressionMode: 'curated' }).progressionMode).toBe('curated')
+    expect(worldCodec.roundTrip({}).progressionMode).toBe('sandbox')              // legacy save → sandbox
+    expect(worldCodec.empty().progressionMode).toBe('sandbox')
+  })
+
   it('empty() seeds ticks 0 and the default party tactic', () => {
     const { ticks, partyTactics } = worldCodec.empty()
     expect({ ticks, partyTactics }).toEqual({ ticks: 0, partyTactics: [{ id: 'finish-them', rank: 1 }] })
@@ -257,6 +263,6 @@ describe('worldCodec', () => {
 
   it('restores lastTickAt from the saved wall-clock (drives offline catch-up)', () => {
     const savedAt = Date.now() - 60_000
-    expect(worldCodec.deserialize({ ticks: 5, partyTactics: [], savedAt }).lastTickAt).toBe(savedAt)
+    expect(worldCodec.deserialize({ ticks: 5, partyTactics: [], progressionMode: 'sandbox', savedAt }).lastTickAt).toBe(savedAt)
   })
 })

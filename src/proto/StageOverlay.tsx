@@ -39,9 +39,12 @@ function skillCapMax(skillId: string, level: number): number | null {
 function SkillTree({ unitId }: { unitId: string }) {
   const unit = useGameStore((s) => s.units.find((u) => u.id === unitId)) ?? null
   const learnSkill = useGameStore((s) => s.learnSkill)
+  const progressionMode = useGameStore((s) => s.progressionMode)
   if (!unit) return <div className="text-xs text-game-muted">Hero not found.</div>
 
-  const skills = getAvailableSkills(unit)
+  // Curated: only this hero's class kit (+ already-learned) is shown; a Novice has
+  // none until they pick a class. Sandbox: the full tree.
+  const skills = getAvailableSkills(unit, progressionMode).filter((e) => e.unlocked)
   // Learnable first (can spend now), then in-progress, then locked, then maxed.
   const rank = (e: ReturnType<typeof getAvailableSkills>[number]) =>
     e.maxed ? 3 : (!e.prereqsMet ? 2 : e.current > 0 ? 1 : 0)

@@ -22,6 +22,7 @@ import { INITIAL_LOCATIONS } from '@/data/locations'
 import { INITIAL_UNITS } from '@/data/units'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
 import { SAVE_KEY } from '@/lib/save'
+import { bootstrapProgressionMode, curatedStartUnits, CURATED_START, isSkillUnlocked, type ProgressionMode } from '@/lib/unlocks'
 
 // ── Re-exports (keeps existing import paths working) ──────────────────────────
 
@@ -39,6 +40,7 @@ export * from '@/data/monsters'
 export * from '@/data/recipes'
 export * from '@/data/equipment'
 export * from '@/data/locations'
+export * from '@/lib/unlocks'
 
 // ── Tactics catalog (UI reads this to list equippable tactics) ────────────────-
 
@@ -77,6 +79,10 @@ export interface GameState {
   unitStats:              Record<string, UnitCombatStats>      // unitId → lifetime combat tally (Report panel)
   unitStatHistory:        Record<string, StatBucket[]>         // unitId → rolling minute-buckets (battle-report 5m/1h windows)
   partyTactics:           TacticSlot[]                 // team-wide tactics injected into every unit (§5.5)
+  // Feature-unfolding stance (src/lib/unlocks.ts): 'sandbox' = everything open
+  // (the dev default), 'curated' = content gated + unfolded through play. Persisted
+  // via worldCodec.
+  progressionMode:        ProgressionMode
   ticks: number
 
   // MIXED TIER (see CLAUDE.md): `locations`, `eventLog`, `lastTickAt`, OfflineSummary
@@ -201,6 +207,9 @@ export interface GameState {
   unequipPartyTactic: (tacticId: string) => void
   recruitUnit: () => void
   craft: (recipeId: string) => void
+  // Switch the feature-unfolding stance. Flips the flag (persisted); call
+  // resetSave afterwards to re-seed a fresh game for the new mode.
+  setProgressionMode: (mode: ProgressionMode) => void
   // Tap-/drag-to-fill an action slot. When entry.kind === 'item', the item is
   // also added to the unit's sideboard (evicting the oldest sideboard entry if
   // both sideboards are full). Setting to null clears the slot AND removes the
@@ -1179,8 +1188,35 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
+// The fresh-start state slice for a mode. Sandbox = the full toy box (every hero,
+// the starter recipes, generous familiarity). Curated = a single Novice with a
+// slim seed; everything else unfolds through play. Used by both the initial store
+// state and resetSave so the two can't drift.
+function freshGameSeed(mode: ProgressionMode) {
+  if (mode === 'curated') return {
+    units:                curatedStartUnits(),
+    learnedRecipes:       [...CURATED_START.recipes],
+    locationFamiliarity:  { ...CURATED_START.locationFamiliarity },
+    locationMonstersSeen: Object.fromEntries(Object.entries(CURATED_START.locationMonstersSeen).map(([k, v]) => [k, [...v]])),
+    monsterSeen:          { ...CURATED_START.monsterSeen },
+  }
+  return {
+    units:                INITIAL_UNITS,
+    learnedRecipes:       ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
+    locationFamiliarity:  { 'geffen-city': 100, 'prontera-city': 80, 'beach-1': 60 },
+    locationMonstersSeen: { 'geffen-city': ['slime'], 'prontera-city': ['slime'], 'beach-1': ['rock-crab'] },
+    monsterSeen:          { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
+  }
+}
+
+// Brand-new-game mode (a persisted save's worldCodec overrides this on load) and
+// its matching seed.
+const BOOT_MODE = bootstrapProgressionMode()
+const BOOT_SEED = freshGameSeed(BOOT_MODE)
+
 export const useGameStore = create<GameState>((set) => ({
-  units:    INITIAL_UNITS,
+  units:    BOOT_SEED.units,
+  progressionMode: BOOT_MODE,
   locations: INITIAL_LOCATIONS,
   equipment: INITIAL_EQUIPMENT,
   miscItems: INITIAL_MISC,
@@ -1198,10 +1234,10 @@ export const useGameStore = create<GameState>((set) => ({
   expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
   expandedRegionIds:         (() => { try { return JSON.parse(localStorage.getItem('expandedRegionIds')         ?? '["world","geffen-dungeon"]') } catch { return ['world', 'geffen-dungeon'] } })(),
   equipContext: null,
-  learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
-  locationFamiliarity:  { 'geffen-city': 100, 'prontera-city': 80, 'beach-1': 60 },
-  locationMonstersSeen: { 'geffen-city': ['slime'], 'prontera-city': ['slime'], 'beach-1': ['rock-crab'] },
-  monsterSeen:          { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
+  learnedRecipes: BOOT_SEED.learnedRecipes,
+  locationFamiliarity:  BOOT_SEED.locationFamiliarity,
+  locationMonstersSeen: BOOT_SEED.locationMonstersSeen,
+  monsterSeen:          BOOT_SEED.monsterSeen,
   ticks: 0,
   monsterDefeated: {},
   locationStats: {},
@@ -1801,6 +1837,9 @@ export const useGameStore = create<GameState>((set) => ({
     if (current >= skill.maxLevel) return s
     const prereqsMet = skill.requires.every((r) => (unit.learnedSkills[r.skillId] ?? 0) >= r.minLevel)
     if (!prereqsMet) return s
+    // Curated mode gates learnable skills to the unit's class kit (a hard chokepoint
+    // so the gate holds regardless of which UI surfaced the skill). Sandbox: open.
+    if (!isSkillUnlocked(s.progressionMode, skillId, unit)) return s
     // Spending a skill point counts as engaging with this level's growth — clear
     // the attention cue (see spendAbilityPoint).
     const viewedUnitLevels = { ...s.viewedUnitLevels, [unitId]: unit.level }
@@ -1897,20 +1936,19 @@ export const useGameStore = create<GameState>((set) => ({
     partyTactics: (s.partyTactics ?? []).filter((t) => t.id !== tacticId),
   })),
 
+  setProgressionMode: (mode) => set((s) => (s.progressionMode === mode ? s : { progressionMode: mode })),
+
   resetSave: () => {
     // Wipe the persisted whole-game save too — not just the UI keys. Without this
     // the reset only updated in-memory state; the stale (leveled) save survived in
     // localStorage and the next page load (routine on mobile) restored it, so the
     // reset silently didn't stick.
     ;[SAVE_KEY, 'expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds', 'viewedUnitLevels'].forEach((k) => localStorage.removeItem(k))
-    set({
-      units:    INITIAL_UNITS,
+    // Re-seed for the *current* mode — a curated reset keeps you in curated.
+    set((s) => ({
+      ...freshGameSeed(s.progressionMode),
       equipment: INITIAL_EQUIPMENT,
       miscItems: INITIAL_MISC,
-      learnedRecipes: ['recipe-plank', 'recipe-iron-ingot', 'recipe-fish-stew', 'recipe-herb-salve', 'recipe-preserved-fish'],
-      locationFamiliarity:  { 'geffen-city': 100, 'prontera-city': 80, 'beach-1': 60 },
-      locationMonstersSeen: { 'geffen-city': ['slime'], 'prontera-city': ['slime'], 'beach-1': ['rock-crab'] },
-      monsterSeen:     { slime: 15, 'shadow-wolf': 5, 'giant-frog': 8, 'rock-crab': 5, 'stone-golem': 2 },
       monsterDefeated: {},
       locationStats:   {},
       unitStats:       {},
@@ -1942,6 +1980,6 @@ export const useGameStore = create<GameState>((set) => ({
       expandedInventorySections: ['equipment', 'misc', 'crafting'],
       expandedRegionIds: ['world', 'geffen-dungeon'],
       equipContext: null,
-    })
+    }))
   },
 }))

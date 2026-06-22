@@ -3,6 +3,42 @@
 Deferred work and known shortcuts for the combat engine (`src/engine`).
 Implemented behavior is in `CLAUDE.md` → Feature Specifications.
 
+## Feature unfolding (progression modes)
+
+A `progressionMode` (`'sandbox' | 'curated'`) now gates content so a new player
+isn't handed everything at once. **Scaffold + first slice are in** (`src/lib/unlocks.ts`,
+persisted via `worldCodec`, switchable in Time → Debug or `?mode=curated`):
+
+- **Sandbox** (default; the game as it always was): full party, all recipes, every
+  skill. The dev/“whole toy box” stance — gating is its *absence*.
+- **Curated**: starts a single unclassed **Novice** (`freshGameSeed` in the store);
+  slim recipe seed (`recipe-herb-salve`); trimmed location familiarity. The first
+  unfold is **picking a class** via the existing city class-change quests
+  (`protoStore` `CLASS_CHANGE_QUESTS`), which writes the real `unit.class`. Class
+  then opens that class's **skill kit** (`CLASS_SKILL_KITS`): gating is centralised
+  in `isSkillUnlocked`, enforced hard in the store's `learnSkill` chokepoint, and
+  reflected in both learn surfaces (`pages/Units` skill list, `proto/StageOverlay`
+  skill tree) via the new `unlocked` field on `getAvailableSkills(unit, mode)`.
+
+Still to unfold (next slices, in rough order):
+- **Recipe unfolding driver.** Curated seeds few recipes but nothing *grants* more
+  yet — wire recipe unlocks to quest completion / level / location familiarity
+  (add an `unlock` to `RECIPE_REGISTRY` + a `learnRecipe` grant). The crafting loop
+  is also still broken end-to-end (see *Economy & resources* / Crafting below).
+- **Location / map reveal.** Curated only trims familiarity today; the overworld
+  still draws every node. Gate visibility off familiarity/quest state in `Map.tsx`
+  (and the shell stage), with a “rumored” vs “revealed” state.
+- **Quest availability + dependency graph.** The proto quest layer
+  (`protoStore.ts`: `LOCATION_QUESTS`, `CLASS_CHANGE_QUESTS`, `LOCATION_BOUNTIES`)
+  is the natural unlock *driver*, but it persists to its own `protoQuests`
+  localStorage key — **graduate it into a real save slice** so completed-quest ids
+  can feed `isUnlocked` (and survive export/import + offline). Then express
+  quest→skill-tree→recipe prereqs as data.
+- **Tactics / equipment-slot / ability unfolding** — same pattern (`unlock` metadata
+  + mode-aware predicate) when those should ramp in rather than start fully open.
+- **New-game UX.** No in-game mode picker yet (only Time→Debug + `?mode=`); a real
+  curated game wants a front-door “new game” flow and onboarding copy.
+
 ## UI — "Tactician" shell (remaining work)
 
 The split-screen Tactician shell (`src/proto/`) is now the **default app UI**

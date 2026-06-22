@@ -1,4 +1,5 @@
 import type { SkillDef, Unit } from '@/types'
+import { isSkillUnlocked, DEFAULT_PROGRESSION_MODE, type ProgressionMode } from '@/lib/unlocks'
 
 export const SKILL_REGISTRY: Record<string, SkillDef> = {
   'sword-mastery-1h': {
@@ -233,11 +234,16 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
   },
 }
 
-export function getAvailableSkills(unit: Unit) {
+// `unlocked` reflects feature unfolding: sandbox → always true; curated → gated by
+// the unit's class kit (src/lib/unlocks.ts). Prereq gating (`prereqsMet`) is
+// orthogonal and still applies on top. The `mode` arg defaults to sandbox so
+// existing callers are unchanged.
+export function getAvailableSkills(unit: Unit, mode: ProgressionMode = DEFAULT_PROGRESSION_MODE) {
   return Object.values(SKILL_REGISTRY).map((skill) => {
     const current    = unit.learnedSkills[skill.id] ?? 0
     const prereqsMet = skill.requires.every((r) => (unit.learnedSkills[r.skillId] ?? 0) >= r.minLevel)
-    return { skill, current, prereqsMet, maxed: current >= skill.maxLevel }
+    const unlocked   = isSkillUnlocked(mode, skill.id, unit)
+    return { skill, current, prereqsMet, unlocked, maxed: current >= skill.maxLevel }
   })
 }
 

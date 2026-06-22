@@ -37,6 +37,49 @@ function ResetSaveButton() {
   )
 }
 
+// Feature-unfolding stance. Switching modes starts a fresh game (curated seeds a
+// single Novice with content gated; sandbox opens the full toy box), so it's
+// confirm-gated like a reset. See src/lib/unlocks.ts.
+function ProgressionModeControl() {
+  const mode = useGameStore((s) => s.progressionMode)
+  const setProgressionMode = useGameStore((s) => s.setProgressionMode)
+  const resetSave = useGameStore((s) => s.resetSave)
+  const [pending, setPending] = useState<'sandbox' | 'curated' | null>(null)
+
+  const start = (m: 'sandbox' | 'curated') => { setProgressionMode(m); resetSave(); setPending(null) }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-game-text-dim">Progression</span>
+        <span className="text-xs font-mono text-game-text capitalize">{mode}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {(['sandbox', 'curated'] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => (m === mode ? undefined : setPending(m))}
+            disabled={m === mode}
+            className={['text-xs px-3 py-1.5 rounded-lg border capitalize transition-colors',
+              m === mode
+                ? 'border-game-primary bg-game-primary/15 text-game-primary cursor-default'
+                : 'border-game-border text-game-text-dim hover:border-game-primary/50'].join(' ')}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+      {pending && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-game-text-dim">Start a fresh <span className="capitalize">{pending}</span> game? This resets your save.</span>
+          <button onClick={() => start(pending)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-500/60 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Yes, restart</button>
+          <button onClick={() => setPending(null)} className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors">Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Copy the whole-game save string out / paste one in. A player backup, and the
 // highest-fidelity bug-repro handoff (it includes live battles via battlesCodec,
 // so a pasted save reproduces the exact in-progress fights too).
@@ -302,6 +345,9 @@ export function Time() {
         </div>
         <div className="pt-2 border-t border-game-border/40">
           <SamplingControls />
+        </div>
+        <div className="pt-2 border-t border-game-border/40">
+          <ProgressionModeControl />
         </div>
         <SaveTransfer />
         <ResetSaveButton />

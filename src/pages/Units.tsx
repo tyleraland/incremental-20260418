@@ -208,9 +208,11 @@ function SkillsTab({ unit }: { unit: Unit }) {
   const [levelFilter, setLevelFilter] = useState<'learnable' | 'mastered' | null>(null)
   const [actionsOnly, setActionsOnly] = useState(false)
   const learnSkill = useGameStore((s) => s.learnSkill)
-  const available  = getAvailableSkills(unit)
+  const progressionMode = useGameStore((s) => s.progressionMode)
+  const available  = getAvailableSkills(unit, progressionMode)
 
-  const filtered = available.filter(({ skill, maxed }) => {
+  const filtered = available.filter(({ skill, maxed, unlocked }) => {
+    if (!unlocked) return false   // curated: skills outside this hero's class kit stay folded away
     if (levelFilter === 'learnable' && maxed) return false
     if (levelFilter === 'mastered' && !maxed) return false
     if (actionsOnly && skill.type !== 'active') return false

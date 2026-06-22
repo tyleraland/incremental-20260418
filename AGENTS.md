@@ -30,6 +30,10 @@ keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 - **Tiers** — *persistent*: units, inventory, learnedRecipes, location familiarity/seen, codex, locationStats, unitStats, unitHistory, partyTactics, ticks, **battles + battleCooldown + monsterSpawnTimers** (battlesCodec), **itemSockets** (socketsCodec), savedAt. *runtime*: locations, eventLog, lastTickAt, OfflineSummary. *ephemeral UI*: own localStorage keys (tabs, selections, expand state, camera nonces).
 - Battles persist via `battlesCodec` as the engine's `BSNAP.<base64>` token (`serializeBattle`) — serialization lives in one place; the save composes it. `exportSave`/`importSave` round-trip the whole envelope (Time tab → Debug).
 
+## Feature unfolding (`src/lib/unlocks.ts`)
+- `progressionMode: 'sandbox' | 'curated'` (persisted in `worldCodec`; switch in Time→Debug or `?mode=curated`). **Sandbox** = default/dev: everything open. **Curated** = a new-player onramp: gates content and unfolds it through play.
+- Gating is centralised in `unlocks.ts` as plain data + predicates (no unlock engine). `freshGameSeed(mode)` (store) seeds curated with a single Novice + slim recipes/familiarity; sandbox keeps the full INITIAL_* seeds. `isSkillUnlocked` gates skills by `CLASS_SKILL_KITS` — enforced in the store's `learnSkill` chokepoint, surfaced via the `unlocked` field on `getAvailableSkills(unit, mode)`. First unfold = picking a class (the city class-change quests write the real `unit.class`). See `BACKLOG.md` → *Feature unfolding* for the next slices (recipe/location/quest unfolding).
+
 ## Combat engine (`src/engine/`)
 Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounters; open-world default 50×50). One battle per location: `BattleState { combatants[], zones[], barriers[], mode, round, outcome, events[], plans, stats, cols/rows, timeScale }`. Combatants are cloned from inputs and **mutated in place** each round.
 
