@@ -14,9 +14,9 @@ import { useProtoStore } from './protoStore'
 // The squad command surface beside the battlefield. One grid, three facets you
 // toggle between — Equipment (gear slots), Skills (action-bar slots), and Tactics
 // (channel rows) — with the battlefield party as columns. Every cell is tappable
-// to assign. A standing "what-if" overlay ghosts the loadout Optimize would pick
-// (class-fit tactics / best-scoring gear); Optimize applies it instantly, and a
-// per-hero 🔒 Lock keeps a hand-tuned hero out of it.
+// to assign. ✨ Suggest ghosts a recommended pick per cell (class-fit tactics /
+// best-scoring gear); the player taps an individual ghost cell to apply just that
+// one, and a per-hero 🔒 Lock keeps a hand-tuned hero out of the suggestions.
 
 type Facet = 'gear' | 'skills' | 'tactics'
 const FACETS: { id: Facet; label: string }[] = [
@@ -80,10 +80,11 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
   const toggleLock    = useProtoStore((s) => s.toggleLock)
 
   const [facet, setFacet] = useState<Facet>('gear')
-  // Auto is a two-tap commit: 1st tap arms (shows ghosts + Cancel), 2nd applies.
-  const [armed, setArmed] = useState(false)
+  // Suggest just ghosts one recommended pick per cell; the player taps an
+  // individual ghost cell to apply (or change) it — no bulk commit.
+  const [suggesting, setSuggesting] = useState(false)
   const [picker, setPicker] = useState<{ unit: Unit; key: string } | null>(null)
-  const pickFacet = (f: Facet) => { setFacet(f); setArmed(false) }
+  const pickFacet = (f: Facet) => { setFacet(f); setSuggesting(false) }
 
   if (squad.length === 0) {
     return (
@@ -128,16 +129,6 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
     ? Object.values(gearProps).some((g) => Object.keys(g).length)
     : false
 
-  function apply() {
-    for (const u of squad) {
-      if (heroLocks.includes(u.id)) continue
-      if (facet === 'tactics') for (const id of tacticProps[u.id] ?? []) equipTactic(u.id, id)
-      else if (facet === 'gear') for (const [slot, id] of Object.entries(gearProps[u.id] ?? {})) equipItem(u.id, slot as EquipSlot, id)
-    }
-    setArmed(false)
-  }
-  function tapAuto() { if (armed) apply(); else if (hasProps) setArmed(true) }
-
   // Columns = the facet types (gear slots / action-bar slots / tactic channels),
   // laid out horizontally; heroes are the rows and scroll vertically.
   const cols = facet === 'tactics' ? CHANNELS.map((c) => ({ id: c.id, label: c.label }))
@@ -153,7 +144,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
 
   return (
     <div className="space-y-3">
-      {/* command bar: facet toggle + Auto (two-tap) */}
+      {/* command bar: facet toggle + Suggest (ghosts; tap a ghost cell to apply) */}
       <div className="flex items-center gap-1.5">
         {FACETS.map((f) => (
           <button
@@ -164,19 +155,16 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
               : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
           >{f.label}</button>
         ))}
-        <div className="ml-auto flex items-center gap-1.5">
-          {armed && (
-            <button onClick={() => setArmed(false)} className="text-sm px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:text-game-text">Cancel</button>
-          )}
+        <div className="ml-auto">
           <button
-            onClick={tapAuto}
-            disabled={!hasProps && !armed}
-            title={armed ? 'Tap again to apply the highlighted loadout' : 'Auto-assign a recommended loadout (preview first)'}
+            onClick={() => setSuggesting((v) => !v)}
+            disabled={!hasProps && !suggesting}
+            title={suggesting ? 'Hide suggestions' : 'Suggest a loadout — ghosts one pick per cell; tap a ghost cell to apply just that one'}
             className={['text-sm px-4 py-1.5 rounded-lg border transition-colors',
-              armed ? 'border-game-accent bg-game-accent/20 text-game-accent ring-2 ring-game-accent/50 animate-pulse'
+              suggesting ? 'border-game-accent bg-game-accent/20 text-game-accent'
                 : hasProps ? 'border-game-accent/60 bg-game-accent/10 text-game-accent hover:bg-game-accent/20'
                 : 'border-game-border text-game-muted cursor-not-allowed'].join(' ')}
-          >{armed ? '⚡ Apply' : '⚡ Auto'}</button>
+          >{suggesting ? '✨ Suggesting' : '✨ Suggest'}</button>
         </div>
       </div>
 
@@ -192,11 +180,14 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
       {/* matrix — heroes are rows (vertical scroll); facet types are columns */}
       <div className="overflow-x-auto -mx-3 px-3">
         <div className="min-w-max">
-          {/* column header row: hero label + facet-type columns */}
+          {/* column header row: hero label + facet-type columns (multi-word labels
+              like "Main Hand" stack to keep the columns narrow) */}
           <div className="flex border-b-2 border-game-border">
-            <div className="w-32 shrink-0 py-2.5 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface z-10">Hero</div>
+            <div className="w-24 shrink-0 py-2 text-xs uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-surface z-10">Hero</div>
             {cols.map((col) => (
-              <div key={col.id} className="w-28 shrink-0 px-2.5 py-2.5 text-xs uppercase tracking-wider text-game-text-dim border-l border-game-border/40">{col.label}</div>
+              <div key={col.id} className="w-20 shrink-0 px-1.5 py-1.5 text-[10px] uppercase tracking-wider text-game-text-dim border-l border-game-border/40 leading-tight">
+                {col.label.split(' ').map((w) => <div key={w}>{w}</div>)}
+              </div>
             ))}
           </div>
 
@@ -205,24 +196,24 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
           <div key={g.k}>
             {/* location group header (label parked in the sticky hero column) */}
             <div className="flex border-t-2 border-game-border">
-              <div className="w-32 shrink-0 px-2 py-1.5 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg z-10">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
-              {cols.map((col) => <div key={col.id} className="w-28 shrink-0 bg-game-bg/40" />)}
+              <div className="w-24 shrink-0 px-2 py-1 text-[11px] uppercase tracking-wider text-game-text-dim sticky left-0 bg-game-bg z-10 truncate">⌖ {g.name} <span className="text-game-muted normal-case tracking-normal">({g.units.length})</span></div>
+              {cols.map((col) => <div key={col.id} className="w-20 shrink-0 bg-game-bg/40" />)}
             </div>
             {g.units.map((u) => {
             const locked = heroLocks.includes(u.id)
             return (
               <div key={u.id} className={['flex border-t border-game-border/50', locked ? 'bg-game-gold/5' : ''].join(' ')}>
                 {/* hero cell (sticky on horizontal scroll) */}
-                <div className="w-32 shrink-0 py-2.5 pr-2 flex items-center gap-2 sticky left-0 z-10 bg-game-surface">
+                <div className="w-24 shrink-0 py-1.5 pr-1 flex items-center gap-1.5 sticky left-0 z-10 bg-game-surface">
                   <div className="relative shrink-0">
                     <button onClick={() => onHero ? onHero(u.id) : useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })}
                       title={onHero ? 'Open in the Hero lens' : undefined}
-                      className={['w-10 h-10 rounded-full bg-game-bg border flex items-center justify-center text-lg', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
+                      className={['w-9 h-9 rounded-full bg-game-bg border flex items-center justify-center text-base', locked ? 'border-game-gold/70 ring-1 ring-game-gold/40' : 'border-game-border'].join(' ')}>
                       {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
                     </button>
                     <button
                       onClick={() => toggleLock(u.id)}
-                      title={locked ? 'Locked — Optimize skips this hero' : 'Lock this hero'}
+                      title={locked ? 'Locked — Suggest skips this hero' : 'Lock this hero'}
                       className={['absolute -top-1 -right-1 w-5 h-5 rounded-full border border-game-bg flex items-center justify-center text-[10px] leading-none', locked ? 'bg-game-gold text-game-bg' : 'bg-game-surface text-game-muted hover:text-game-text'].join(' ')}
                     >{locked ? '🔒' : '🔓'}</button>
                   </div>
@@ -239,17 +230,17 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                     const prop = (tacticProps[u.id] ?? []).filter((id) => TACTIC_REGISTRY[id]?.channel === col.id)
                     body = (
                       <>
-                        {inCh.length === 0 && (!armed || prop.length === 0) && <span className="text-sm text-game-muted">＋</span>}
+                        {inCh.length === 0 && (!suggesting || prop.length === 0) && <span className="text-sm text-game-muted">＋</span>}
                         {inCh.map((t, i) => (
-                          <div key={t.id} className="flex items-center gap-1">
-                            <span className="text-[10px] text-game-muted tabular-nums">{i + 1}</span>
-                            <span className="text-xs text-game-text leading-tight">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
+                          <div key={t.id} className="flex items-center gap-1 min-w-0">
+                            <span className="text-[10px] text-game-muted tabular-nums shrink-0">{i + 1}</span>
+                            <span className="text-xs text-game-text leading-tight truncate">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
                           </div>
                         ))}
-                        {armed && prop.map((id) => (
-                          <div key={id} className="flex items-center gap-1 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
-                            <span className="text-[10px] text-game-accent">+</span>
-                            <span className="text-xs text-game-accent leading-tight">{TACTIC_REGISTRY[id]?.name ?? id}</span>
+                        {suggesting && prop.map((id) => (
+                          <div key={id} className="flex items-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
+                            <span className="text-[10px] text-game-accent shrink-0">+</span>
+                            <span className="text-xs text-game-accent leading-tight truncate">{TACTIC_REGISTRY[id]?.name ?? id}</span>
                           </div>
                         ))}
                       </>
@@ -259,15 +250,15 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                     const mh = itemFor(u, 'mainHand', equipment)
                     const slotLocked = slot === 'offHand' && mh?.category === 'weapon-2h'
                     const it = itemFor(u, slot, equipment)
-                    const propId = armed ? gearProps[u.id]?.[slot] : undefined
+                    const propId = suggesting ? gearProps[u.id]?.[slot] : undefined
                     const propItem = propId ? equipment.find((e) => e.id === propId) : undefined
                     body = slotLocked ? <span className="text-xs text-game-muted italic">2H</span> : (
                       <>
-                        <span className={['text-xs leading-tight', it ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{it?.name ?? '＋'}</span>
+                        <span className={['text-xs leading-tight block truncate', it ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{it?.name ?? '＋'}</span>
                         {propItem && (
-                          <div className="flex items-center gap-1 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1 mt-0.5">
-                            <span className="text-[10px] text-game-accent">→</span>
-                            <span className="text-xs text-game-accent leading-tight">{propItem.name}</span>
+                          <div className="flex items-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1 mt-0.5">
+                            <span className="text-[10px] text-game-accent shrink-0">→</span>
+                            <span className="text-xs text-game-accent leading-tight truncate">{propItem.name}</span>
                           </div>
                         )}
                       </>
@@ -279,14 +270,14 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                     const name = entry
                       ? (entry.kind === 'skill' ? (SKILL_REGISTRY[entry.id]?.name ?? entry.id) : entry.id)
                       : null
-                    body = <span className={['text-xs leading-tight', name ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{name ?? '＋'}</span>
+                    body = <span className={['text-xs leading-tight block truncate', name ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{name ?? '＋'}</span>
                   }
                   return (
                     <button
                       key={col.id}
                       data-cell={`${u.id}:${col.id}`}
                       onClick={() => setPicker({ unit: u, key: col.id })}
-                      className="w-28 shrink-0 min-h-[3rem] py-2 px-2 text-left space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors"
+                      className="w-20 shrink-0 min-h-[2.25rem] py-1.5 px-2 text-left space-y-0.5 border-l border-game-border/30 hover:bg-white/5 transition-colors overflow-hidden"
                     >{body}</button>
                   )
                 })}
@@ -299,15 +290,17 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
       </div>
 
       <div className="text-xs text-game-muted italic">
-        Tap a cell to assign · ⚡ Auto previews a loadout (ghosts); tap Apply to commit · 🔒 protects a hero.
+        Tap a cell to assign · ✨ Suggest ghosts a pick per cell; tap a ghost to apply just it · 🔒 protects a hero.
       </div>
 
       {picker && facet === 'tactics' && createPortal(
         <TacticPicker unit={picker.unit} channel={picker.key}
+          suggestedId={suggesting ? (tacticProps[picker.unit.id] ?? []).find((id) => TACTIC_REGISTRY[id]?.channel === picker.key) : undefined}
           onAdd={(id) => equipTactic(picker.unit.id, id)} onRemove={(id) => unequipTactic(picker.unit.id, id)}
           onClose={() => setPicker(null)} />, document.body)}
       {picker && facet === 'gear' && createPortal(
         <GearPicker unit={picker.unit} slot={picker.key as EquipSlot} equipment={equipment}
+          suggestedId={suggesting ? gearProps[picker.unit.id]?.[picker.key as EquipSlot] : undefined}
           onEquip={(id) => equipItem(picker.unit.id, picker.key as EquipSlot, id)}
           onClose={() => setPicker(null)} />, document.body)}
       {picker && facet === 'skills' && createPortal(
@@ -336,14 +329,16 @@ function Modal({ title, sub, onClose, children }: { title: string; sub: string; 
   )
 }
 
-function TacticPicker({ unit, channel, onAdd, onRemove, onClose }: {
-  unit: Unit; channel: string; onAdd: (id: string) => void; onRemove: (id: string) => void; onClose: () => void
+function TacticPicker({ unit, channel, suggestedId, onAdd, onRemove, onClose }: {
+  unit: Unit; channel: string; suggestedId?: string; onAdd: (id: string) => void; onRemove: (id: string) => void; onClose: () => void
 }) {
   const live = useGameStore((s) => s.units.find((u) => u.id === unit.id)) ?? unit
   const chLabel = CHANNELS.find((c) => c.id === channel)?.label ?? channel
   const equipped = live.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === channel)
   const equippedIds = new Set(live.tactics.map((t) => t.id))
+  // The suggested pick floats to the top so it's a single tap away.
   const available = listTactics('unit').filter((d) => d.channel === channel && !equippedIds.has(d.id))
+    .sort((a, b) => (a.id === suggestedId ? -1 : 0) - (b.id === suggestedId ? -1 : 0))
   const atCap = live.tactics.length >= MAX_UNIT_TACTICS
   return (
     <Modal title={`${chLabel} · ${live.name.split(' ')[0]}`} sub={`${live.tactics.length}/${MAX_UNIT_TACTICS} tactics`} onClose={onClose}>
@@ -367,9 +362,13 @@ function TacticPicker({ unit, channel, onAdd, onRemove, onClose }: {
           {available.length === 0 && <div className="text-xs text-game-muted italic">No more {chLabel.toLowerCase()} tactics.</div>}
           {available.map((d) => (
             <button key={d.id} disabled={atCap} onClick={() => onAdd(d.id)}
-              className={['w-full text-left rounded-md border px-2 py-1.5 transition-colors', atCap ? 'border-game-border opacity-40 cursor-not-allowed' : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}>
+              className={['w-full text-left rounded-md border px-2 py-1.5 transition-colors',
+                atCap ? 'border-game-border opacity-40 cursor-not-allowed'
+                  : d.id === suggestedId ? 'border-game-accent/60 bg-game-accent/10 hover:border-game-accent'
+                  : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-medium text-game-text">{d.name}</span>
+                {d.id === suggestedId && <span className="text-[8px] px-1 rounded bg-game-accent/20 text-game-accent">✨ suggested</span>}
                 {d.kind === 'floor' && <span className="text-[8px] px-1 rounded bg-game-border text-game-text-dim">floor</span>}
               </div>
               <div className="text-[10px] text-game-text-dim leading-snug">{d.description}</div>
@@ -423,13 +422,15 @@ function SkillSlotPicker({ unit, slotIdx, onAssign, onClose }: {
 const GEAR_DELTAS: [keyof DerivedStats, string][] = [
   ['attack', 'ATK'], ['defense', 'DEF'], ['magicAttack', 'M.ATK'], ['magicDefense', 'M.DEF'], ['attackRange', 'RNG'],
 ]
-function GearPicker({ unit, slot, equipment, onEquip, onClose }: {
-  unit: Unit; slot: EquipSlot; equipment: EquipmentItem[]; onEquip: (id: string | null) => void; onClose: () => void
+function GearPicker({ unit, slot, equipment, suggestedId, onEquip, onClose }: {
+  unit: Unit; slot: EquipSlot; equipment: EquipmentItem[]; suggestedId?: string; onEquip: (id: string | null) => void; onClose: () => void
 }) {
   const live = useGameStore((s) => s.units.find((u) => u.id === unit.id)) ?? unit
   const base = getDerivedStats(live, equipment)
   const current = itemFor(live, slot, equipment)
+  // The suggested pick floats to the top so it's a single tap away.
   const candidates = equipment.filter((e) => SLOT_COMPATIBLE[slot].includes(e.category))
+    .sort((a, b) => (a.id === suggestedId ? -1 : 0) - (b.id === suggestedId ? -1 : 0))
   return (
     <Modal title={`${SLOT_LABELS[slot]} · ${live.name.split(' ')[0]}`} sub={current ? `worn: ${current.name}` : 'empty'} onClose={onClose}>
       {current && (
@@ -446,11 +447,15 @@ function GearPicker({ unit, slot, equipment, onEquip, onClose }: {
           const d = Math.round(after[k] as number) - Math.round(base[k] as number)
           return d !== 0 ? { l, d } : null
         }).filter(Boolean) as { l: string; d: number }[]
+        const suggested = it.id === suggestedId && !equipped
         return (
           <button key={it.id} onClick={() => onEquip(it.id)}
-            className={['w-full rounded-md border px-2.5 py-2 text-left transition-colors', equipped ? 'border-game-primary/60 bg-game-primary/10' : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-game-text font-medium truncate">{it.name}</span>
+            className={['w-full rounded-md border px-2.5 py-2 text-left transition-colors',
+              equipped ? 'border-game-primary/60 bg-game-primary/10'
+                : suggested ? 'border-game-accent/60 bg-game-accent/10 hover:border-game-accent'
+                : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}>
+            <div className="flex items-center justify-between mb-1 gap-1.5">
+              <span className="text-xs text-game-text font-medium truncate">{it.name}{suggested && <span className="ml-1.5 text-[8px] px-1 rounded bg-game-accent/20 text-game-accent align-middle">✨ suggested</span>}</span>
               {equipped ? <span className="text-[10px] text-game-primary shrink-0">equipped</span> : <span className="text-[10px] text-game-text-dim shrink-0">equip ›</span>}
             </div>
             {equipped ? <span className="text-[10px] text-game-muted">currently worn</span> : chips.length === 0 ? <span className="text-[10px] text-game-muted">no stat change</span> : (
