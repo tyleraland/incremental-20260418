@@ -990,7 +990,7 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
           {def && <span className="text-xs text-game-text-dim shrink-0">Lv {def.level}</span>}
           <span className={`text-[10px] uppercase tracking-wide shrink-0 ${c.provoked ? 'text-red-300' : 'text-amber-300'}`}>{c.alive ? (c.provoked ? 'hostile' : 'passive') : 'KO'}</span>
         </div>
-        {c.statuses.length > 0 && <StatusList statuses={c.statuses} />}
+        {c.statuses.length > 0 && <div className="mt-2"><StatusList statuses={c.statuses} /></div>}
       </div>
 
       <CooldownGrid cells={cells} />

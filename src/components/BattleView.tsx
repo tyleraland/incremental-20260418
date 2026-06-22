@@ -750,18 +750,18 @@ export function StatusList({ statuses }: { statuses: StatusEffect[] }) {
   const [open, setOpen] = useState<number | null>(null)
   const sel = open != null ? statuses[open] : null
   return (
-    <div className="mt-2">
+    <div>
       <div className="text-[10px] text-game-text-dim mb-1">Status</div>
       <div className="flex flex-wrap gap-1">
         {statuses.map((s, i) => (
           <button
             key={i}
             onClick={() => setOpen(open === i ? null : i)}
-            className={`px-1.5 py-0.5 rounded bg-game-bg border text-[10px] flex items-center gap-1 ${statusTone(s)} ${open === i ? 'ring-1 ring-game-primary' : ''}`}
+            title={`${s.name} — tap for details`}
+            aria-label={s.name}
+            className={`w-8 h-8 rounded-xl bg-game-bg border flex items-center justify-center text-sm ${statusTone(s)} ${open === i ? 'ring-1 ring-game-primary' : ''}`}
           >
-            <span>{statusIcon(s)}</span>
-            <span>{s.name}</span>
-            <span className="text-game-text-dim tabular-nums">{roundsToSecs(s.duration)}</span>
+            <span aria-hidden>{statusIcon(s)}</span>
           </button>
         ))}
       </div>
@@ -835,7 +835,7 @@ export function StatsTab({ c, battle, battleOnly = false }: { c: Combatant; batt
           </div>
         </div>
       )}
-      {c.statuses.length > 0 && <StatusList statuses={c.statuses} />}
+      {c.statuses.length > 0 && <div className="mt-2"><StatusList statuses={c.statuses} /></div>}
       {c.channel && (
         <div className="mt-2 text-[10px] text-amber-300">
           ✦ Casting {skillName(c.channel.skillId)} — {c.channel.roundsLeft} round{c.channel.roundsLeft === 1 ? '' : 's'} left
