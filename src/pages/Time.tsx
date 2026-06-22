@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR, type LogCategory } from '@/stores/useGameStore'
-import { exportSave, importSave, persistSave } from '@/save'
+import { exportSave, importSave, persistSave, switchProgressionMode } from '@/save'
 import { CatchUpReadout, SamplingControls } from '@/components/SamplingDebug'
 
 function ResetSaveButton() {
@@ -37,16 +37,12 @@ function ResetSaveButton() {
   )
 }
 
-// Feature-unfolding stance. Switching modes starts a fresh game (curated seeds a
-// single Novice with content gated; sandbox opens the full toy box), so it's
-// confirm-gated like a reset. See src/lib/unlocks.ts.
+// Feature-unfolding stance. Sandbox and curated have *separate saves*, so
+// switching is non-destructive: it flushes the current game to its slot and loads
+// the other (or starts a fresh one for it the first time). Resetting (the Reset
+// Save button below) only wipes the active mode's slot. See src/lib/unlocks.ts.
 function ProgressionModeControl() {
   const mode = useGameStore((s) => s.progressionMode)
-  const setProgressionMode = useGameStore((s) => s.setProgressionMode)
-  const resetSave = useGameStore((s) => s.resetSave)
-  const [pending, setPending] = useState<'sandbox' | 'curated' | null>(null)
-
-  const start = (m: 'sandbox' | 'curated') => { setProgressionMode(m); resetSave(); setPending(null) }
 
   return (
     <div className="space-y-2">
@@ -58,8 +54,9 @@ function ProgressionModeControl() {
         {(['sandbox', 'curated'] as const).map((m) => (
           <button
             key={m}
-            onClick={() => (m === mode ? undefined : setPending(m))}
+            onClick={() => switchProgressionMode(m)}
             disabled={m === mode}
+            title={m === mode ? `Currently in ${m}` : `Switch to your ${m} save (your ${mode} game is saved first)`}
             className={['text-xs px-3 py-1.5 rounded-lg border capitalize transition-colors',
               m === mode
                 ? 'border-game-primary bg-game-primary/15 text-game-primary cursor-default'
@@ -69,13 +66,9 @@ function ProgressionModeControl() {
           </button>
         ))}
       </div>
-      {pending && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-game-text-dim">Start a fresh <span className="capitalize">{pending}</span> game? This resets your save.</span>
-          <button onClick={() => start(pending)} className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-500/60 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Yes, restart</button>
-          <button onClick={() => setPending(null)} className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors">Cancel</button>
-        </div>
-      )}
+      <p className="text-[10px] text-game-muted leading-snug">
+        Sandbox and curated keep separate saves — switching never overwrites the other.
+      </p>
     </div>
   )
 }

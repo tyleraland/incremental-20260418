@@ -1,5 +1,6 @@
 import type { Unit } from '@/types'
 import { INITIAL_UNITS } from '@/data/units'
+import { ACTIVE_MODE_KEY } from '@/lib/save'
 
 // ── Progression modes (feature unfolding) ─────────────────────────────────────--
 //
@@ -22,11 +23,19 @@ export type ProgressionMode = 'sandbox' | 'curated'
 
 export const DEFAULT_PROGRESSION_MODE: ProgressionMode = 'sandbox'
 
-// Bootstrap the mode for a brand-new game (no save yet) from `?mode=curated`. A
-// persisted save's worldCodec wins over this on load.
+// Which mode the store should boot into: an explicit `?mode=` URL override wins,
+// else the last-active mode marker (the slot a reload should restore), else the
+// default. loadPersistedSave resolves the same way, so boot seed and loaded slot
+// agree. A `?mode=` value other than sandbox/curated is ignored.
 export function bootstrapProgressionMode(): ProgressionMode {
   if (typeof window === 'undefined') return DEFAULT_PROGRESSION_MODE
-  return new URLSearchParams(window.location.search).get('mode') === 'curated' ? 'curated' : DEFAULT_PROGRESSION_MODE
+  const url = new URLSearchParams(window.location.search).get('mode')
+  if (url === 'curated' || url === 'sandbox') return url
+  try {
+    const saved = localStorage.getItem(ACTIVE_MODE_KEY)
+    if (saved === 'curated' || saved === 'sandbox') return saved
+  } catch { /* localStorage unavailable */ }
+  return DEFAULT_PROGRESSION_MODE
 }
 
 // ── Curated starting state ────────────────────────────────────────────────────--

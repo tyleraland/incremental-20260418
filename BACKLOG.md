@@ -19,6 +19,13 @@ persisted via `worldCodec`, switchable in Time → Debug or `?mode=curated`):
   in `isSkillUnlocked`, enforced hard in the store's `learnSkill` chokepoint, and
   reflected in both learn surfaces (`pages/Units` skill list, `proto/StageOverlay`
   skill tree) via the new `unlocked` field on `getAvailableSkills(unit, mode)`.
+- **Separate saves per mode** (`save:sandbox` / `save:curated` + a `save-active-mode`
+  marker). `persistSave`/`resetSave` only touch the active slot; `switchProgressionMode`
+  is non-destructive (flush current → load other, or fresh-seed). Legacy single
+  saves migrate into the matching slot on first load. *Note:* switching loads the
+  target's saved `savedAt`, so the normal offline catch-up runs for the time since
+  that mode was last played (may pop an OfflineSummary on switch — fine for now;
+  revisit if it feels noisy).
 
 Still to unfold (next slices, in rough order):
 - **Recipe unfolding driver.** Curated seeds few recipes but nothing *grants* more

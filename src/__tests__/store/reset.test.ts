@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
 import { persistSave } from '@/save'
-import { SAVE_KEY } from '@/lib/save'
+import { saveKeyFor } from '@/lib/save'
 import { makeUnit, resetStore } from '../helpers'
 
 describe('store: resetSave', () => {
@@ -13,14 +13,16 @@ describe('store: resetSave', () => {
 
   it('wipes the persisted save and restores the level-1 starter baseline', () => {
     // A leveled save sitting in localStorage (what a played-in save looks like).
+    // resetStore leaves progressionMode at its sandbox default, so it persists to
+    // the sandbox slot.
     resetStore({ units: [makeUnit({ id: 'x', learnedSkills: { 'fire-bolt': 5 } })] })
     persistSave()
-    expect(localStorage.getItem(SAVE_KEY)).not.toBeNull()
+    expect(localStorage.getItem(saveKeyFor('sandbox'))).not.toBeNull()
 
     useGameStore.getState().resetSave()
 
     // The stale save is gone, so a reload now falls back to fresh INITIAL_UNITS.
-    expect(localStorage.getItem(SAVE_KEY)).toBeNull()
+    expect(localStorage.getItem(saveKeyFor('sandbox'))).toBeNull()
     // ...and in-memory units are the starter party, all skills at level 1.
     const units = useGameStore.getState().units
     expect(units.length).toBeGreaterThan(0)

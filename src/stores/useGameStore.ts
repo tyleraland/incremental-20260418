@@ -21,7 +21,7 @@ import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
 import { INITIAL_UNITS } from '@/data/units'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
-import { SAVE_KEY } from '@/lib/save'
+import { SAVE_KEY, saveKeyFor } from '@/lib/save'
 import { bootstrapProgressionMode, curatedStartUnits, CURATED_START, isSkillUnlocked, type ProgressionMode } from '@/lib/unlocks'
 
 // ── Re-exports (keeps existing import paths working) ──────────────────────────
@@ -1939,13 +1939,16 @@ export const useGameStore = create<GameState>((set) => ({
   setProgressionMode: (mode) => set((s) => (s.progressionMode === mode ? s : { progressionMode: mode })),
 
   resetSave: () => {
-    // Wipe the persisted whole-game save too — not just the UI keys. Without this
-    // the reset only updated in-memory state; the stale (leveled) save survived in
+    // Wipe the persisted save too — not just the UI keys. Without this the reset
+    // only updated in-memory state; the stale (leveled) save survived in
     // localStorage and the next page load (routine on mobile) restored it, so the
-    // reset silently didn't stick.
-    ;[SAVE_KEY, 'expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds', 'viewedUnitLevels'].forEach((k) => localStorage.removeItem(k))
+    // reset silently didn't stick. Only THIS mode's slot is wiped — the other
+    // mode's game is left untouched (SAVE_KEY = the legacy pre-split key).
+    ;['expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds', 'viewedUnitLevels', SAVE_KEY].forEach((k) => localStorage.removeItem(k))
     // Re-seed for the *current* mode — a curated reset keeps you in curated.
-    set((s) => ({
+    set((s) => {
+      localStorage.removeItem(saveKeyFor(s.progressionMode))
+      return ({
       ...freshGameSeed(s.progressionMode),
       equipment: INITIAL_EQUIPMENT,
       miscItems: INITIAL_MISC,
@@ -1980,6 +1983,7 @@ export const useGameStore = create<GameState>((set) => ({
       expandedInventorySections: ['equipment', 'misc', 'crafting'],
       expandedRegionIds: ['world', 'geffen-dungeon'],
       equipContext: null,
-    }))
+    })
+    })
   },
 }))

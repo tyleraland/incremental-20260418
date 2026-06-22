@@ -1,6 +1,13 @@
 import type { GameState } from '@/stores/useGameStore'
 
+// Saves are split per progression mode (sandbox vs curated) so the two games never
+// clobber each other: each lives under its own slot key, and a small marker key
+// records which mode was last active (so a reload restores the right one).
+// `SAVE_KEY` is kept as the *legacy* pre-split single-save key — read once on load
+// and migrated into the matching slot.
 export const SAVE_KEY = 'save'
+export const ACTIVE_MODE_KEY = 'save-active-mode'
+export function saveKeyFor(mode: string): string { return `${SAVE_KEY}:${mode}` }
 const ENVELOPE_VERSION = 1
 
 interface SaveEnvelope {
