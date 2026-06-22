@@ -159,20 +159,20 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
           <button
             key={f.id}
             onClick={() => pickFacet(f.id)}
-            className={['text-sm px-4 py-1.5 rounded-full border transition-colors', facet === f.id
+            className={['text-sm px-4 py-1.5 rounded-lg border transition-colors', facet === f.id
               ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
               : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
           >{f.label}</button>
         ))}
         <div className="ml-auto flex items-center gap-1.5">
           {armed && (
-            <button onClick={() => setArmed(false)} className="text-sm px-3 py-1.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text">Cancel</button>
+            <button onClick={() => setArmed(false)} className="text-sm px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:text-game-text">Cancel</button>
           )}
           <button
             onClick={tapAuto}
             disabled={!hasProps && !armed}
             title={armed ? 'Tap again to apply the highlighted loadout' : 'Auto-assign a recommended loadout (preview first)'}
-            className={['text-sm px-4 py-1.5 rounded-full border transition-colors',
+            className={['text-sm px-4 py-1.5 rounded-lg border transition-colors',
               armed ? 'border-game-accent bg-game-accent/20 text-game-accent ring-2 ring-game-accent/50 animate-pulse'
                 : hasProps ? 'border-game-accent/60 bg-game-accent/10 text-game-accent hover:bg-game-accent/20'
                 : 'border-game-border text-game-muted cursor-not-allowed'].join(' ')}
