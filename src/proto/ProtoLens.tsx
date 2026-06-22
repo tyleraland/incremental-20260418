@@ -8,6 +8,7 @@ import {
 } from '@/stores/useGameStore'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
 import { getUnitTraits } from '@/data/traits'
+import { ELEMENT_LABELS, ELEMENT_COLORS, type Element } from '@/lib/elements'
 import { TraitRow } from '@/components/TraitBubble'
 import { ACTION_SLOT_COUNT } from '@/types'
 import type { EquipSlot, EquipmentItem, WeaponRecord, ItemCategory, Trait, ActionSlotEntry } from '@/types'
@@ -72,27 +73,41 @@ function StatBar({ label, cur, max, color }: { label: string; cur: number; max: 
   )
 }
 
-// The action bar as a 2×3 grid: each slot's name above a cooldown bar (skills) +
-// time remaining. Consumables/items show as labels; empty slots are dashed.
+// The action bar as a compact 2×3 grid: skill name + time on one line, a thin
+// cooldown bar beneath. Consumables/items show as labels; empty slots are dashed.
 type GridCell = { empty?: boolean; name: string; icon?: string; bar?: { frac: number; time: string } }
 function CooldownGrid({ cells }: { cells: GridCell[] }) {
   if (cells.length === 0) return null
   return (
-    <div className="grid grid-cols-3 gap-1.5">
+    <div className="grid grid-cols-3 gap-1">
       {cells.map((cell, i) => cell.empty ? (
-        <div key={i} className="rounded-md border border-dashed border-game-border/50 min-h-[2.6rem]" />
+        <div key={i} className="rounded border border-dashed border-game-border/40 h-7" />
       ) : (
-        <div key={i} className="rounded-md border border-game-border bg-game-bg px-1.5 py-1 min-h-[2.6rem] flex flex-col justify-center">
-          <div className="text-[10px] text-game-text truncate leading-tight">{cell.icon ? `${cell.icon} ` : ''}{cell.name}</div>
+        <div key={i} className="rounded border border-game-border bg-game-bg px-1.5 py-0.5 h-7 flex flex-col justify-center">
+          <div className="flex items-baseline gap-1">
+            <span className="text-[9px] text-game-text truncate leading-none flex-1">{cell.icon ? `${cell.icon} ` : ''}{cell.name}</span>
+            {cell.bar && <span className="text-[8px] text-game-text-dim tabular-nums leading-none shrink-0">{cell.bar.time}</span>}
+          </div>
           {cell.bar && (
-            <>
-              <div className="h-1 rounded-sm bg-black/50 overflow-hidden my-0.5"><div className={`h-full ${cell.bar.frac >= 1 ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${cell.bar.frac * 100}%`, transition: 'width 380ms linear' }} /></div>
-              <div className="text-[9px] text-game-text-dim text-right tabular-nums leading-none">{cell.bar.time}</div>
-            </>
+            <div className="h-0.5 rounded-sm bg-black/50 overflow-hidden mt-0.5"><div className={`h-full ${cell.bar.frac >= 1 ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${cell.bar.frac * 100}%`, transition: 'width 380ms linear' }} /></div>
           )}
         </div>
       ))}
     </div>
+  )
+}
+
+// A combat "buff" reflecting the hero's final attack element (display-only — it
+// just surfaces the imbue; neutral shows nothing).
+const ELEMENT_ICON: Record<Element, string> = {
+  neutral: '', fire: '🔥', water: '💧', earth: '🪨', wind: '🌪', poison: '☠', radiant: '✦', undead: '💀', ghost: '👻',
+}
+function ElementChip({ element }: { element: Element }) {
+  if (element === 'neutral') return null
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border ${ELEMENT_COLORS[element]}`} title={`Attacks deal ${ELEMENT_LABELS[element]} damage`}>
+      <span>{ELEMENT_ICON[element]}</span>{ELEMENT_LABELS[element]}
+    </span>
   )
 }
 
@@ -139,8 +154,14 @@ function HeroLens({ unit }: { unit: Unit }) {
   return (
     <div className="space-y-3">
       {/* Identity + follow now live in the persistent HeroScopeBar above; the card
-          opens straight onto the action bar. Live statuses still surface here. */}
-      {live && c!.statuses.length > 0 && <StatusList statuses={c!.statuses} />}
+          opens straight onto the action bar. The attack-element chip and live
+          statuses still surface here. */}
+      {(ds.attackElement !== 'neutral' || (live && c!.statuses.length > 0)) && (
+        <div className="space-y-1.5">
+          {ds.attackElement !== 'neutral' && <ElementChip element={ds.attackElement} />}
+          {live && c!.statuses.length > 0 && <StatusList statuses={c!.statuses} />}
+        </div>
+      )}
 
       <CooldownGrid cells={cells} />
 
