@@ -186,7 +186,7 @@ function HeroLens({ unit }: { unit: Unit }) {
       {/* Lower: upgradeable abilities */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Upgradeable</span>
+          <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Ability scores</span>
           {unit.abilityPoints > 0 && <span className="text-[10px] text-game-gold">{unit.abilityPoints} pts to spend</span>}
         </div>
         <div className="grid grid-cols-5 gap-1.5">
@@ -225,31 +225,23 @@ function HeroLens({ unit }: { unit: Unit }) {
 // ── Persistent hero scope-bar ──────────────────────────────────────────────────
 // One identity strip that rides above the four hero-scoped tabs (Hero / Equipment
 // / Skills / Tactics) so it's always obvious WHOSE dossier you're editing as you
-// switch tabs — the lens's answer to "wait, whose stats are these?". Owns the
-// avatar, name/level/HP, and the camera-follow toggle (lifted out of HeroLens).
+// switch tabs — the lens's answer to "wait, whose stats are these?". Identity +
+// camera-follow only; HP is read on the Hero tab and the battlefield (not repeated
+// here).
 function HeroScopeBar({ unit }: { unit: Unit }) {
-  const equipment = useGameStore((s) => s.equipment)
   const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
   const battleFollowId = useGameStore((s) => s.battleFollowId)
-  const ds = getDerivedStats(unit, equipment)
-  const c = battle?.combatants.find((x) => x.id === unit.id)
-  const live = !!(c && battle)
-  const hp = c ? c.hp : unit.health
-  const maxHp = c ? c.maxHp : ds.maxHp
-  const hpPct = Math.max(0, Math.min(100, (hp / maxHp) * 100))
+  const live = !!(battle?.combatants.find((x) => x.id === unit.id))
   const following = battleFollowId === unit.id
-  const ring = `conic-gradient(${hpPct > 60 ? '#10b981' : hpPct > 30 ? '#f59e0b' : '#ef4444'} ${hpPct}%, #2a2a3a 0)`
   return (
     <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/40">
-      <div className="relative w-7 h-7 rounded-full p-[2px] shrink-0" style={{ background: ring }}>
-        <div className="w-full h-full rounded-full bg-game-surface border border-game-border flex items-center justify-center text-xs">
-          {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
-        </div>
+      <div className="w-7 h-7 rounded-full bg-game-surface border border-game-border flex items-center justify-center text-xs shrink-0">
+        {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
       </div>
       <div className="min-w-0">
         <div className="text-sm font-semibold text-game-text leading-none truncate">{unit.name}</div>
         <div className="text-[10px] text-game-text-dim leading-none mt-0.5 truncate">
-          Lv {unit.level} · {unit.class ?? 'Novice'} · {Math.round(hp)}/{Math.round(maxHp)} HP
+          Lv {unit.level} · {unit.class ?? 'Novice'}
         </div>
       </div>
       {live && (
@@ -1020,7 +1012,7 @@ export function ProtoLens() {
   const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
-  const markUnitViewed   = useGameStore((s) => s.markUnitViewed)
+  const viewedUnitLevels = useGameStore((s) => s.viewedUnitLevels)
   const openReport       = useGameStore((s) => s.openReport)
   const selectedFoe      = useProtoStore((s) => s.selectedFoe)
   const clearFoe         = useProtoStore((s) => s.clearFoe)
@@ -1065,21 +1057,20 @@ export function ProtoLens() {
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
 
-  // Viewing a hero's dossier clears their "to-do" cue (new level / unspent pts) —
-  // same rule as the production unit detail (re-fires when the level changes).
-  useEffect(() => {
-    if (top === 'hero' && unit) markUnitViewed(unit.id)
-  }, [top, unit?.id, unit?.level, markUnitViewed])
+  // NOTE: viewing a hero no longer clears their attention cue — only *spending* a
+  // resource does (recorded in the store on spend). So merely opening the dossier
+  // doesn't dismiss the "you have growth to allocate" nudge.
 
   // The Unit dossier is one container; a Pet sub-tab appears only with a companion.
   const heroSubs = unit?.companion ? [...HERO_SUBS, PET_SUB] : HERO_SUBS
   const effSub: HeroSub = heroSub === 'pet' && !unit?.companion ? 'stats' : heroSub
 
-  // A gold pip on the tab that holds an unspent resource for the selected hero —
-  // the same attention signal the roster chips carry, mirrored onto the lens so
-  // you can see (and reach) the pending decision without leaving the current tab.
-  const tabPip = (id: Top): boolean =>
-    !!unit && ((id === 'hero' && unit.abilityPoints > 0) || (id === 'skills' && unit.skillPoints > 0))
+  // A gold pip on the two growth tabs (Hero = ability scores, Skills = skill tree)
+  // when the hero has leveled since you last spent on them — the same signal the
+  // roster chips carry. Spending anything clears it (see needsAttention), so it
+  // nudges fresh growth without nagging about leftover points.
+  const grew = !!unit && unit.level > (viewedUnitLevels[unit.id] ?? 0)
+  const tabPip = (id: Top): boolean => grew && (id === 'hero' || id === 'skills')
 
   return (
     <div className="relative h-full flex flex-col bg-game-surface/40 min-h-0">

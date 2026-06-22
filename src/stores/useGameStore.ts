@@ -1746,7 +1746,14 @@ export const useGameStore = create<GameState>((set) => ({
     if (current >= 99) return s
     const cost = Math.floor((current - 1) / 10) + 1
     if (unit.abilityPoints < cost) return s
-    return { units: s.units.map((u) => u.id === unitId ? { ...u, abilityPoints: u.abilityPoints - cost, abilities: { ...u.abilities, [ability]: current + 1 } } : u) }
+    // Spending is the "I've engaged with this level's growth" signal — record the
+    // current level so the attention cue clears (until the next level-up).
+    const viewedUnitLevels = { ...s.viewedUnitLevels, [unitId]: unit.level }
+    localStorage.setItem('viewedUnitLevels', JSON.stringify(viewedUnitLevels))
+    return {
+      units: s.units.map((u) => u.id === unitId ? { ...u, abilityPoints: u.abilityPoints - cost, abilities: { ...u.abilities, [ability]: current + 1 } } : u),
+      viewedUnitLevels,
+    }
   }),
 
   recruitUnit: () => set((s) => {
@@ -1794,7 +1801,11 @@ export const useGameStore = create<GameState>((set) => ({
     if (current >= skill.maxLevel) return s
     const prereqsMet = skill.requires.every((r) => (unit.learnedSkills[r.skillId] ?? 0) >= r.minLevel)
     if (!prereqsMet) return s
-    return { units: s.units.map((u) => {
+    // Spending a skill point counts as engaging with this level's growth — clear
+    // the attention cue (see spendAbilityPoint).
+    const viewedUnitLevels = { ...s.viewedUnitLevels, [unitId]: unit.level }
+    localStorage.setItem('viewedUnitLevels', JSON.stringify(viewedUnitLevels))
+    return { viewedUnitLevels, units: s.units.map((u) => {
       if (u.id !== unitId) return u
       // §minions: learning Beast Companion grants the pet (a tankish default
       // loadout the player can retune on the Pet tab).

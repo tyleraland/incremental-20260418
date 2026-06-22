@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useGameStore, getDerivedStats, getInitials, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
+import { useGameStore, getInitials, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
@@ -119,22 +119,22 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
+// "Needs attention" = the hero has gained a level since you last spent a resource
+// on them (ability point or skill). `viewedUnitLevels[id]` records the level at the
+// last spend; once you spend *anything* it clears until the next level-up — so we
+// nudge on fresh growth without nagging about leftover/remainder points.
 function needsAttention(u: Unit, viewed: Record<string, number>): boolean {
-  const v = viewed[u.id]
-  return u.abilityPoints > 0 || u.skillPoints > 0 || (v !== undefined && u.level > v)
+  return u.level > (viewed[u.id] ?? 0)
 }
 
 function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
-  const equipment = useGameStore((s) => s.equipment)
   const viewed    = useGameStore((s) => s.viewedUnitLevels)
-  const ds = getDerivedStats(unit, equipment)
-  const hpPct = Math.min(100, (unit.health / ds.maxHp) * 100)
+  // Status dot only (deployed / resting / recovering) — HP is read on the Hero
+  // tab and the battlefield, so the roster doesn't repeat it.
   const statusColor = unit.recoveryTicksLeft > 0 ? 'bg-purple-500'
     : unit.isResting ? 'bg-sky-500'
     : unit.locationId ? 'bg-game-green'
     : 'bg-game-muted'
-  // ring stroke for HP
-  const ring = `conic-gradient(${hpPct > 60 ? '#10b981' : hpPct > 30 ? '#f59e0b' : '#ef4444'} ${hpPct}%, #2a2a3a 0)`
   // Single tap = quiet select; double tap (within 300ms) = focus (fly camera).
   const lastTap = useRef(0)
   function tap() {
@@ -157,10 +157,8 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
           : 'border-transparent hover:bg-white/5',
       ].join(' ')}
     >
-      <div className="relative w-9 h-9 rounded-full p-[2px]" style={{ background: ring }}>
-        <div className="w-full h-full rounded-full bg-game-surface border border-game-border flex items-center justify-center text-base">
-          {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
-        </div>
+      <div className="relative w-9 h-9 rounded-full bg-game-surface border border-game-border flex items-center justify-center text-base">
+        {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
         <span className={`absolute -bottom-0 -right-0 w-2.5 h-2.5 rounded-full border-2 border-game-bg ${statusColor}`} />
         {following && (
           <span
@@ -306,12 +304,6 @@ export function ProtoApp() {
   const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
-  // Split emphasis: lean the layout toward the battlefield (Field) or the dossier
-  // (Lens) without ever hiding either — the field stays watchable while you do
-  // deep-edit work, and vice versa. 50/50 by default.
-  const [emphasis, setEmphasis] = useState<'field' | 'split' | 'lens'>('split')
-  const stageBasis = emphasis === 'field' ? '72%' : emphasis === 'lens' ? '28%' : '50%'
-  const lensBasis  = emphasis === 'field' ? '28%' : emphasis === 'lens' ? '72%' : '50%'
   // Multi-select: when on, single-tap toggles a hero in/out of the selection for
   // bulk deploy (Location lens). Off = single-select (tap replaces).
   const [multi, setMulti] = useState(false)
@@ -514,28 +506,13 @@ export function ProtoApp() {
         </div>
       </div>
 
-      {/* split: world/battle stage  |  context lens. Basis is driven by the
-          emphasis control so either half can lean larger while both stay live. */}
-      <div className="relative flex-1 min-h-0 flex flex-col md:flex-row">
-        <div style={{ flexBasis: stageBasis }} className="min-h-0 min-w-0 border-b md:border-b-0 md:border-r border-game-border transition-[flex-basis] duration-200">
+      {/* split: world/battle stage  |  context lens */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        <div className="basis-1/2 md:basis-[58%] min-h-0 border-b md:border-b-0 md:border-r border-game-border">
           <ProtoStage />
         </div>
-        <div style={{ flexBasis: lensBasis }} className="min-h-0 min-w-0 transition-[flex-basis] duration-200">
+        <div className="basis-1/2 md:basis-[42%] min-h-0">
           <ProtoLens />
-        </div>
-
-        {/* Emphasis toggle — parked on the split seam (centered on mobile's
-            horizontal divider, right edge on desktop's vertical one). */}
-        <div className="absolute z-30 top-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-lg border border-game-border bg-game-surface/90 backdrop-blur px-0.5 py-0.5 shadow">
-          {([['field', 'Field'], ['split', 'Split'], ['lens', 'Lens']] as const).map(([e, label]) => (
-            <button
-              key={e}
-              onClick={() => setEmphasis(e)}
-              title={`Favor the ${label}`}
-              className={['px-2 h-5 rounded-md text-[10px] font-medium leading-none transition-colors',
-                emphasis === e ? 'bg-game-primary/25 text-game-text' : 'text-game-text-dim hover:text-game-text'].join(' ')}
-            >{label}</button>
-          ))}
         </div>
       </div>
 
