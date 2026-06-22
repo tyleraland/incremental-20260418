@@ -516,6 +516,34 @@ interface ProtoState {
   removeCard: (instanceId: string, slotIdx: number) => void
 }
 
+// ── Quest persistence (interim) ─────────────────────────────────────────────--
+// The proto quest layer — class-change commitments + bounty progress/completions
+// (plus the older per-location board) — is the one bit of proto state a player
+// would hate to lose on reload, so we persist just that slice to its own
+// localStorage key and hydrate it on load. Deliberately NOT folded into the main
+// save envelope yet (no export/import round-trip or offline advance) — see
+// gaps.md §2 for graduating quest state into a real save slice.
+const QUEST_KEY = 'protoQuests'
+type QuestSlice = Pick<ProtoState,
+  | 'activeQuest' | 'questProgress' | 'completedQuests'
+  | 'classQuestCommit' | 'bountyDone' | 'bountyClaimed' | 'questCompletions'>
+const QUEST_DEFAULTS: QuestSlice = {
+  activeQuest: {}, questProgress: {}, completedQuests: {},
+  classQuestCommit: {}, bountyDone: [], bountyClaimed: {}, questCompletions: {},
+}
+function loadQuests(): QuestSlice {
+  try { return { ...QUEST_DEFAULTS, ...JSON.parse(localStorage.getItem(QUEST_KEY) ?? '{}') } }
+  catch { return { ...QUEST_DEFAULTS } }
+}
+function pickQuests(s: ProtoState): QuestSlice {
+  return {
+    activeQuest: s.activeQuest, questProgress: s.questProgress, completedQuests: s.completedQuests,
+    classQuestCommit: s.classQuestCommit, bountyDone: s.bountyDone,
+    bountyClaimed: s.bountyClaimed, questCompletions: s.questCompletions,
+  }
+}
+const PERSISTED_QUESTS = loadQuests()
+
 export const useProtoStore = create<ProtoState>((set) => ({
   zoomLevel: 0,
   zoomRequest: null,
@@ -528,13 +556,15 @@ export const useProtoStore = create<ProtoState>((set) => ({
   attunementSpent: 0,
   upgrades: {},
   storyChoice: {},
-  activeQuest: {},
-  questProgress: {},
-  completedQuests: {},
-  classQuestCommit: {},
-  bountyDone: [],
-  bountyClaimed: {},
-  questCompletions: {},
+  // Quest state hydrates from localStorage so an in-flight class change / bounty
+  // survives a reload (persistence wired by the subscribe below).
+  activeQuest: PERSISTED_QUESTS.activeQuest,
+  questProgress: PERSISTED_QUESTS.questProgress,
+  completedQuests: PERSISTED_QUESTS.completedQuests,
+  classQuestCommit: PERSISTED_QUESTS.classQuestCommit,
+  bountyDone: PERSISTED_QUESTS.bountyDone,
+  bountyClaimed: PERSISTED_QUESTS.bountyClaimed,
+  questCompletions: PERSISTED_QUESTS.questCompletions,
   packs: {},
   packsSeeded: false,
   ownedCards: {},
@@ -713,6 +743,16 @@ export const useProtoStore = create<ProtoState>((set) => ({
     return { ownedCards: { ...s.ownedCards, [cardId]: (s.ownedCards[cardId] ?? 0) + 1 }, sockets: { ...s.sockets, [instanceId]: arr } }
   }),
 }))
+
+// Persist the quest slice whenever it changes. A cheap serialized-diff guard
+// skips the frequent unrelated UI churn (zoom, tab requests, foe inspect).
+let lastQuestJson = JSON.stringify(pickQuests(useProtoStore.getState()))
+useProtoStore.subscribe((s) => {
+  try {
+    const json = JSON.stringify(pickQuests(s))
+    if (json !== lastQuestJson) { lastQuestJson = json; localStorage.setItem(QUEST_KEY, json) }
+  } catch { /* localStorage unavailable — skip persistence */ }
+})
 
 // A small starting pool so the upgrade economy is playable immediately in the
 // mock (a real save would start at 0 and earn it all from play time).

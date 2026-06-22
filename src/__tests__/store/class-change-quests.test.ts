@@ -281,3 +281,22 @@ describe('buildQuestBoard (journal)', () => {
     expect(r.status).toBe('ready'); expect(r.repeatable).toBe(true)
   })
 })
+
+// Quest commitments / bounty progress persist to localStorage so a reload doesn't
+// drop an in-flight class change (interim — not yet in the main save envelope).
+describe('quest persistence', () => {
+  it('writes the quest slice to localStorage on change', () => {
+    useProtoStore.setState({
+      classQuestCommit: { 'path-fighter': { heroId: 'h1', killBaseline: 2 } },
+      bountyDone: ['boar-hides-20'],
+      questCompletions: { 'boar-hides-20': 1 },
+    })
+    const raw = localStorage.getItem('protoQuests')
+    expect(raw).toBeTruthy()
+    const parsed = JSON.parse(raw!)
+    expect(parsed.classQuestCommit['path-fighter']).toEqual({ heroId: 'h1', killBaseline: 2 })
+    expect(parsed.bountyDone).toContain('boar-hides-20')
+    expect(parsed.questCompletions['boar-hides-20']).toBe(1)
+    useProtoStore.setState({ classQuestCommit: {}, bountyDone: [], questCompletions: {} })
+  })
+})

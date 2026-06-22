@@ -7,6 +7,12 @@ doc is the punch-list for turning each mock surface into real, persisted,
 loop-connected data. It complements `BACKLOG.md` (which holds design intent);
 this file is the **plumbing checklist**.
 
+> **Status (PR #57):** Guild gear/tactics/skills assignment is already real and
+> persisted (the Army Matrix pickers call `equipItem`/`equipTactic`/`setActionSlot`,
+> which save on the `Unit` via `unitsCodec`). Quest commitments/progress now persist
+> across reloads (interim localStorage key — see §2). Everything else below remains
+> **backlogged** for follow-up PRs.
+
 ## The bridging pattern (apply to every subsystem below)
 
 A subsystem is "production-plumbed" when all five hold:
@@ -85,16 +91,21 @@ reload and a cold restart; upgrade effects change real numbers.
   the real store — that part is production-shaped.
 
 **To plumb**
-- [ ] `questsCodec`: persist `classQuestCommit`, `bountyDone`, `bountyClaimed`,
-  `questCompletions` (and retire `LOCATION_QUESTS`/`activeQuest` mock or fold it in).
+- [x] **Reload durability (done, interim).** `useProtoStore` hydrates the quest slice
+  (`classQuestCommit`, `bountyDone`, `bountyClaimed`, `questCompletions`, + the older
+  board fields) from a `protoQuests` localStorage key and persists it on change, so
+  an in-flight class change / bounty survives a reload. Covered by a round-trip test.
+- [ ] **Graduate into the save envelope.** Replace the localStorage key with a real
+  `questsCodec` so quests round-trip through `exportSave`/`importSave` like every
+  other slice (needs the live state to read from `GameState`).
 - [ ] Move the quest *definitions* (`CLASS_CHANGE_QUESTS`, `LOCATION_BOUNTIES`) from
   `protoStore.ts` into `src/data/quests.ts` (registry), leaving only live state in
   the store.
 - [ ] Move the live state out of `useProtoStore` into `useGameStore` so offline
   catch-up can advance kill/collect objectives during `batchTick`.
 
-**Acceptance**: an in-flight class change or bounty survives reload/restart and
-advances correctly through an offline absence.
+**Acceptance (interim met)**: an in-flight class change or bounty survives reload.
+**Remaining**: export/import round-trip + correct advance through an offline absence.
 
 ---
 
