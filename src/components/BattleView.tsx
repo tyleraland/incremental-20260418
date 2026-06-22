@@ -1078,7 +1078,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void }) {
+function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
@@ -1536,8 +1536,9 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect }:
         <>
           {/* Zoom (top-left; minimap owns the top-right). Pinch the arena too. The
               middle chip is the camera-mode toggle: tap to cycle party → hero →
-              free. In 'free' you drag the board to pan. */}
-          <div className="absolute top-1.5 left-1.5 z-20 flex items-center gap-1">
+              free. In 'free' you drag the board to pan. `insetTopControls` drops the
+              cluster below a host's top-left chrome (the proto stage breadcrumb). */}
+          <div className={`absolute ${insetTopControls ? 'top-11' : 'top-1.5'} left-1.5 z-20 flex items-center gap-1`}>
             <button
               onClick={() => zoomBy(1 / 0.8)}
               aria-label="Zoom out"
@@ -1788,7 +1789,7 @@ export function Preview({ location }: { location: Location | null }) {
 // re-fire. `onFollow` (when provided) surfaces a Follow action in the card.
 export interface BattleInspectRequest { unitId: string; nonce: number }
 
-export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect }: {
+export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: {
   locationId: string | null
   onFollow?: (unitId: string) => void
   inspectRequest?: BattleInspectRequest | null
@@ -1797,12 +1798,15 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   // instead of opening the in-view detail sheet. Used to unify the battle card
   // into the Hero lens.
   onInspect?: (unitId: string) => void
+  // Push the top-LEFT camera cluster down so a host can reserve that corner (the
+  // proto stage parks its World›Locale›Battle breadcrumb there).
+  insetTopControls?: boolean
 }) {
   const battle    = useGameStore((s) => (locationId ? s.battles[locationId] : undefined))
   const locations = useGameStore((s) => s.locations)
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
   return battle
-    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} />
+    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />
 }

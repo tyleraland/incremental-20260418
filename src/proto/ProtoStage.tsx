@@ -435,7 +435,7 @@ export function ProtoStage() {
               pointerEvents: mapActive ? 'none' : 'auto',
             }}
           >
-            <div className="h-full"><BattleView locationId={focusLoc.id} onFollow={followFromCard} onInspect={inspectOnBattlefield} /></div>
+            <div className="h-full"><BattleView locationId={focusLoc.id} onFollow={followFromCard} onInspect={inspectOnBattlefield} insetTopControls /></div>
             {!battleLive && (
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-[11px] text-game-text-dim bg-game-bg/80 border border-game-border rounded-full px-3 py-1">
                 Formation preview — deploy heroes here to begin the fight
