@@ -8,7 +8,10 @@
 import type { Element } from './elements'
 export type { Element } from './elements'
 
-export type Team = 'player' | 'enemy'
+// 'neutral' is a non-combatant faction (town NPCs — merchants, questgivers): it
+// is nobody's enemy (excluded from every targeting/AoE query) and nobody's ally,
+// and a neutral combatant never takes a turn (it just stands where it spawned).
+export type Team = 'player' | 'enemy' | 'neutral'
 export type Rank = 'front' | 'mid' | 'back'
 
 export interface Vec2 {
@@ -446,6 +449,10 @@ export interface CombatSetup {
   // self-terminates; the host trickles reinforcements in via `addCombatant`
   // and owns teardown. See the open-world model in CLAUDE.md.
   mode?: BattleMode
+  // A peaceful town (a city open-world field): heroes mill about individually
+  // with long pauses (§town wander) instead of roaming as a party. No effect on
+  // monsters/encounters. Default false.
+  peaceful?: boolean
 }
 
 export type BattleMode = 'encounter' | 'open'
@@ -514,7 +521,8 @@ export interface BattleState {
   cols: number
   rows: number
   mode: BattleMode
-  timeScale: number                         // finer-rounds factor: N engine rounds == 1 logical round (default 1)
+  peaceful: boolean                         // §town wander: a city field — heroes mill individually, not as a party (default false)
+  timeScale: number                       // finer-rounds factor: N engine rounds == 1 logical round (default 1)
   decisionInterval: number                  // re-decide targeting/planner every N rounds (default 1); execute committed plan in between
   plans: Partial<Record<Team, TeamPlan>>   // §coordination: per-team blackboard, recomputed each round
   planner: Planner                          // produces the plans (pluggable)

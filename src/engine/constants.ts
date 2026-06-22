@@ -66,6 +66,17 @@ export const WANDER_SPEED_MULT = 1
 export const WANDER_MARGIN = 12
 export const MONSTER_EDGE_MARGIN = 4
 
+// §town wander (BattleState.peaceful): heroes posted to a peaceful city mill
+// about INDIVIDUALLY (not as a party) with long pauses between short shuffles —
+// a town idle, not a patrol. Longer dwell + shorter hops + a slower stroll than
+// the monster lurk-hop, so a city reads as relaxed milling. Reuses the monster
+// lurk-then-hop machinery (lurkAndHop) with these gentler numbers.
+export const TOWN_WANDER_MIN = 15
+export const TOWN_WANDER_MAX = 40
+export const TOWN_WANDER_NEAR = 2
+export const TOWN_WANDER_FAR = 5
+export const TOWN_WANDER_SPEED_MULT = 0.5
+
 // §Charger — a melee "dive" movement behaviour (no speed/damage modifier). It
 // aims at the centroid of the enemy pack within CHARGER_DIVE_RADIUS of its target
 // (crashing into the group to set up a melee AoE), and *leashes*: if a fleeing foe

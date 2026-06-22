@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
+import { NPC_REGISTRY } from '@/data/npcs'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
@@ -427,6 +428,8 @@ function chipGlyph(c: Combatant, classFor: (id: string) => string | null): strin
     const cls = classFor(c.id)
     if (cls && CLASS_ICON[cls]) return CLASS_ICON[cls]
   }
+  // Town NPCs (neutral): show their own icon (🛡️/⚔️) rather than initials.
+  if (c.team === 'neutral') return NPC_REGISTRY[c.id]?.icon ?? initials(c.name)
   return initials(c.name)
 }
 
@@ -549,6 +552,7 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
 // drop them and render just the circle. Full detail returns as you zoom/follow in.
 function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale, detail, castLabels }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number; detail: boolean; castLabels?: CastLabelEntry[] }) {
   const isPlayer = c.team === 'player'
+  const isNeutral = c.team === 'neutral'   // town NPC: stationary, no facing/HP bar
   const casting = c.alive && !!c.channel
   // Outer layer owns ONLY the world position, glided via a compositor transform
   // (no layout per frame). The inner layer keeps the spawn pop + centering (which
@@ -581,7 +585,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
           </div>
         )}
         {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
-        {detail && c.alive && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
+        {detail && c.alive && !isNeutral && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
         {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
         <div
           title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
@@ -590,6 +594,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
             'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
             casting ? 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100'
               : isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50'
+                : isNeutral ? 'bg-amber-900/80 border-amber-300/70 text-amber-50'
                          : 'bg-red-900  border-red-300/80  text-red-50',
             selected ? 'ring-2 ring-emerald-300' : '',
             c.alive ? '' : 'opacity-25 grayscale',

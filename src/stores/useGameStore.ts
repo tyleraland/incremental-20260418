@@ -19,6 +19,7 @@ import { createBattle, addCombatant, relinkCombatant, advanceRound, unitToEngine
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
+import { npcsAt, npcToEngineInput } from '@/data/npcs'
 import { INITIAL_UNITS } from '@/data/units'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
 import { SAVE_KEY, saveKeyFor } from '@/lib/save'
@@ -516,7 +517,15 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   const size = openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
   const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? decisionIntervalFor(loc) })
+  // A city is a peaceful field: heroes mill about individually (§town wander) and
+  // its NPCs stand around for them to cross paths with.
+  const peaceful = loc.traits.includes('city')
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', peaceful, cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? decisionIntervalFor(loc) })
+  // Town NPCs (merchants/questgivers): stationary, non-combatant, on the neutral
+  // team — nobody fights them and they never fight. They stand where they spawn.
+  for (const npc of npcsAt(loc.id)) {
+    addCombatant(battle, npcToEngineInput(npc), 'neutral', undefined, npc.pos)
+  }
   party.forEach((u, i) => {
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
     const cinp = companionToEngineInput(u)
@@ -1050,8 +1059,10 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       (u) => u.locationId === locationId && u.health > 0 && u.recoveryTicksLeft === 0 && !u.isResting,
     )
 
-    // No party or no monsters → tear down any stale battle/cooldown for this loc.
-    if (eligible.length === 0 || loc.monsterIds.length === 0) {
+    // No party → tear down any stale battle/cooldown for this loc. A monster-less
+    // location also tears down UNLESS it's an open-world city: there heroes wander
+    // a peaceful field (and cross paths with its NPCs) even with nothing to fight.
+    if (eligible.length === 0 || (loc.monsterIds.length === 0 && !loc.openWorld)) {
       if (battles[locationId]) delete battles[locationId]
       if (battleCooldown[locationId]) delete battleCooldown[locationId]
       if (monsterSpawnTimers[locationId]) delete monsterSpawnTimers[locationId]
@@ -1078,6 +1089,10 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         monsterSpawnTimers[locationId] = OPEN_WORLD_SPAWN_TICKS
         markSeen(loc, enemyMonsterIds(battle))
       }
+      // §town wander: peaceful is a property of the location (a city), not the
+      // snapshot — re-apply it here so a reloaded city battle (deserialized with
+      // peaceful=false) still has its heroes mill about individually.
+      battle.peaceful = loc.traits.includes('city')
       // Field the right heroes (fresh deploys, KO removals, recovery returnees).
       if (reconcileOpenPlayers(battle, eligible, s.equipment, s.partyTactics ?? [])) {
         battles[locationId] = { ...battle }

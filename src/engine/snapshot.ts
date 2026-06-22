@@ -113,6 +113,9 @@ export function serializeBattle(state: BattleState): string {
     timeScale: state.timeScale,
     // decisionInterval intentionally NOT serialized (prototype): keeps tokens
     // byte-identical; a restored battle defaults to 1 (re-decide every round).
+    // peaceful intentionally NOT serialized (like decisionInterval): keeps tokens
+    // byte-identical. It's a property of the *location* (a city), so the host
+    // re-applies it from the location each tick; a restored battle defaults false.
     mode: state.mode,
     plans: state.plans,
     round: state.round,
@@ -199,6 +202,7 @@ export function deserializeBattle(token: string): BattleState {
     timeScale: snap.timeScale ?? 1,   // legacy tokens predate finer rounds
     decisionInterval: snap.decisionInterval ?? 1,   // legacy tokens predate decision throttling
     mode: snap.mode,
+    peaceful: false,   // not serialized; the host re-applies it from the location (see serializeBattle)
     plans: snap.plans,
     planner: defaultPlanner,
     round: snap.round,

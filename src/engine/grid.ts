@@ -178,6 +178,13 @@ export function enforceSeparation(mover: Combatant, all: Combatant[], barriers: 
     const overlap = (SEPARATION - d) / 2 / timeScale()
     const ux = dx / d
     const uy = dy / d
+    // A neutral NPC is an immovable fixture (a merchant at their stall): it's
+    // never shoved — the mover absorbs the whole separation and slides around it.
+    // (Neutrals never move on their own, so `mover` is never neutral here.)
+    if (other.team === 'neutral') {
+      mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * overlap * 2, y: mover.pos.y + uy * overlap * 2 }, barriers)
+      continue
+    }
     // Push apart, but slide the push along any wall so crowded units against
     // terrain spread out instead of freezing into a blob.
     mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * overlap, y: mover.pos.y + uy * overlap }, barriers)

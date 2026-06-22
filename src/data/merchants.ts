@@ -48,6 +48,40 @@ export const MERCHANT_REGISTRY: Record<string, MerchantDef> = {
       { kind: 'equipment', id: 'eq-shield-wood', price: 30 },
     ],
   },
+  'arnold-armorsmith': {
+    id: 'arnold-armorsmith', name: 'Arnold the Armorsmith', kind: 'shop', icon: '🛡️',
+    blurb: 'Prontera\'s plate-and-mail smith. Buys hides and pelts; sells what he forges.',
+    locationId: 'prontera-city', sellMult: 1.0, buyMult: 1.3,
+    wants: [
+      { itemId: 'drop-boar-hide', pricePer: 14, quantity: 30 },
+      { itemId: 'drop-wolf-pelt', pricePer: 12, quantity: 20 },
+      { itemId: 'drop-dark-pelt', pricePer: 18, quantity: 12 },
+    ],
+    dislikes: ['drop-slime-gel', 'drop-bat-wing'],
+    stock: [
+      { kind: 'equipment', id: 'eq-leather', price: 70 },
+      { kind: 'equipment', id: 'eq-chainmail', price: 180 },
+      { kind: 'equipment', id: 'eq-shield-wood', price: 30 },
+      { kind: 'equipment', id: 'eq-shield-iron', price: 110 },
+    ],
+  },
+  'paul-weaponsmith': {
+    id: 'paul-weaponsmith', name: 'Paul the Weaponsmith', kind: 'shop', icon: '⚔️',
+    blurb: 'Prontera\'s bladesmith, next stall to Arnold. Pays for fangs and talons.',
+    locationId: 'prontera-city', sellMult: 1.0, buyMult: 1.3, favorClass: 'Fighter',
+    wants: [
+      { itemId: 'drop-wolf-fang', pricePer: 16, quantity: 20 },
+      { itemId: 'drop-talon', pricePer: 16, quantity: 20 },
+      { itemId: 'drop-tusk', pricePer: 20, quantity: 12 },
+    ],
+    dislikes: ['drop-slime-gel', 'drop-harpy-feather'],
+    stock: [
+      { kind: 'equipment', id: 'eq-shortsword', price: 45 },
+      { kind: 'equipment', id: 'eq-sword', price: 90 },
+      { kind: 'equipment', id: 'eq-greatsword', price: 160 },
+      { kind: 'equipment', id: 'eq-handaxe', price: 75 },
+    ],
+  },
   'payon-lodge': {
     id: 'payon-lodge', name: 'Payon Hunting Lodge', kind: 'shop', icon: '🏹',
     blurb: 'Trappers and tanners. They pay well for fresh hides and pelts.',

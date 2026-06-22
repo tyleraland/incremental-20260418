@@ -71,7 +71,7 @@ export function visibleEnemiesOf(state: BattleState, self: Combatant): Combatant
   // hash is active (tests, between-round spawns). All three are byte-identical.
   const grid = r === Infinity ? null : hash
   const pool = grid ? grid.near(self.pos, r + SPATIAL_MARGIN) : state.combatants
-  const result = pool.filter((c) => c.alive && c.team !== self.team && !isHidden(c) && distance(self.pos, c.pos) <= r)
+  const result = pool.filter((c) => c.alive && c.team !== self.team && c.team !== 'neutral' && !isHidden(c) && distance(self.pos, c.pos) <= r)
   if (hash) visionCache.set(self.id, { gen: visionGen, x: self.pos.x, y: self.pos.y, result })
   return result
 }

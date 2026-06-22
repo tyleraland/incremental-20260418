@@ -266,6 +266,21 @@ export interface BountyDef {
   repeatable?: boolean             // never archives; can be claimed again and again
 }
 export const LOCATION_BOUNTIES: BountyDef[] = [
+  // Prontera market-square orders from Arnold the Armorsmith and Paul the
+  // Weaponsmith (the city's two NPC merchants). One-time starter orders — for now
+  // a token 1-gold reward; they'll grow into real material orders later.
+  {
+    id: 'prontera-arnold-hides', locationId: 'prontera-city', title: 'Boar Hide Order',
+    story: 'Arnold the Armorsmith needs a boar hide to line a new jerkin. Bring him one to open an account.',
+    objective: HANDIN('drop-boar-hide', 'Boar Hide', 1, 'Hand in a Boar Hide'),
+    rewards: [{ kind: 'gold', amount: 1 }], requires: [],
+  },
+  {
+    id: 'prontera-paul-fangs', locationId: 'prontera-city', title: 'Fang and Talon Order',
+    story: 'Paul the Weaponsmith sets fangs and talons into his blades. Bring him a talon to start.',
+    objective: HANDIN('drop-talon', 'Talon', 1, 'Hand in a Talon'),
+    rewards: [{ kind: 'gold', amount: 1 }], requires: [],
+  },
   {
     id: 'boar-hides-20', locationId: 'boar-meadow', title: 'Trapper\'s Order',
     story: 'The Boar Meadow trapper pays well for fresh hides. Bring him twenty to open an account.',

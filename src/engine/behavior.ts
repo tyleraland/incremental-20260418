@@ -13,8 +13,10 @@ import { EPS } from './constants'
 // AoE splash (hits whoever's in the blast), blast-count, and the win-check. For
 // "who can this unit target/engage", use visibleEnemiesOf (spatial.ts), the
 // single fog-of-war-gated predicate. Don't add a vision/stealth filter here.
+// Neutral NPCs (town merchants/questgivers) are nobody's foe — never splashed,
+// never counted — so they're excluded here too.
 export function livingEnemies(state: BattleState, self: Combatant): Combatant[] {
-  return state.combatants.filter((c) => c.alive && c.team !== self.team)
+  return state.combatants.filter((c) => c.alive && c.team !== self.team && c.team !== 'neutral')
 }
 
 export function isStealthed(c: Combatant): boolean {

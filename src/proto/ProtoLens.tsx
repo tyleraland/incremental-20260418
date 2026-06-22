@@ -20,6 +20,8 @@ import { seedProtoMocks } from './seed'
 import { StatsTab, DebugTab, StatusList } from '@/components/BattleView'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationDetail } from './LocationDetail'
+import { NPC_REGISTRY } from '@/data/npcs'
+import { MERCHANT_REGISTRY } from '@/data/merchants'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
@@ -975,6 +977,27 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
   const [codex, setCodex] = useState(false)
   const c = battle?.combatants.find((x) => x.id === combatantId)
   if (!battle || !c) return <Empty icon="☠" title="Foe is gone" sub="This monster left the battlefield. Tap another, or pick a hero." />
+  // A neutral town NPC (merchant / questgiver): not a foe — show who they are and
+  // where to interact, not an HP/cooldown combat card.
+  if (c.team === 'neutral') {
+    const npc = NPC_REGISTRY[c.id]
+    const merchant = npc?.merchantId ? MERCHANT_REGISTRY[npc.merchantId] : undefined
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xl shrink-0" aria-hidden>{npc?.icon ?? '🧍'}</span>
+          <span className="text-lg font-semibold text-amber-200 truncate">{c.name}</span>
+          <span className="text-[10px] uppercase tracking-wide shrink-0 text-amber-300">NPC</span>
+        </div>
+        {npc?.blurb && <p className="text-[12px] text-game-text-dim leading-snug">{npc.blurb}</p>}
+        {merchant && (
+          <div className="text-[12px] text-game-text-dim">
+            <span className="text-amber-300">🏪 Merchant</span> — visit the <span className="text-game-text">Market</span> to trade with {merchant.name}.
+          </div>
+        )}
+      </div>
+    )
+  }
   const monsterId = c.id.split('#')[0]
   const def = MONSTER_REGISTRY[monsterId]
   const cells: GridCell[] = c.skills.map((s) => {

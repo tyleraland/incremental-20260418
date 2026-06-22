@@ -1,5 +1,11 @@
 import type { Location } from '@/types'
 
+// Cities are peaceful open-world fields: a hero posted to one wanders the town
+// (milling about individually — see §town wander) even though no monster spawns
+// there. A compact square so heroes (and the town's NPCs) stay close enough to
+// cross paths. `openWorldCap: 0` keeps the field monster-free.
+const CITY_FIELD_SIZE = 24
+
 // World shape: a single chain of cells from Geffen → Prontera → Kanto, with
 // Geffen Dungeon as a separate sub-area branching off Geffen City. We're
 // deliberately sparse here while content is in flux — each cell exists to
@@ -14,6 +20,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     traits: ['city', 'arcane'], monsterIds: [],
     familiarityMax: 100, connections: [],
     dungeonEntryRegion: 'geffen-dungeon',
+    openWorld: true, openWorldCap: 0, openWorldSize: CITY_FIELD_SIZE,
   },
   {
     id: 'elite-four', region: 'world', name: 'Elite Four',
@@ -38,15 +45,17 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
   {
     id: 'prontera-city', region: 'world', name: 'Prontera City',
-    description: 'Capital of the Prontera kingdom — a walled, peaceful city. Its guild halls train Novices on the Path of the Fighter and the Path of the Cleric.',
+    description: 'Capital of the Prontera kingdom — a walled, peaceful city. Its guild halls train Novices on the Path of the Fighter and the Path of the Cleric, and its market square hosts Arnold the Armorsmith and Paul the Weaponsmith.',
     traits: ['city'], monsterIds: [],
     familiarityMax: 100, connections: [],
+    openWorld: true, openWorldCap: 0, openWorldSize: CITY_FIELD_SIZE,
   },
   {
     id: 'payon-city', region: 'world', name: 'Payon Town',
     description: 'A forest town of archers and shadowy dealings — no monster walks its streets. Its hunters and thieves take Novices onto the Path of the Ranger or the Path of the Rogue.',
     traits: ['city', 'forest'], monsterIds: [],
     familiarityMax: 100, connections: [],
+    openWorld: true, openWorldCap: 0, openWorldSize: CITY_FIELD_SIZE,
   },
   {
     id: 'prontera-field-3', region: 'world', name: 'Prontera Field',

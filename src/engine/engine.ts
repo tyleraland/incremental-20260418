@@ -9,6 +9,7 @@ import {
   COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
   WANDER_REPATH, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
   WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN, WARY_INTERRUPT_DECAY,
+  TOWN_WANDER_MIN, TOWN_WANDER_MAX, TOWN_WANDER_NEAR, TOWN_WANDER_FAR, TOWN_WANDER_SPEED_MULT,
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat, onAttackBeat } from './timescale'
@@ -58,6 +59,12 @@ function hash01(n: number): number {
 function monsterDwell(seed: number): number {
   const span = MONSTER_WANDER_MAX - MONSTER_WANDER_MIN + 1
   return scaleRounds(MONSTER_WANDER_MIN + Math.floor(hash01(seed) * span))
+}
+// §town wander: a much longer idle between shuffles than monsterDwell — city
+// heroes loiter, they don't patrol.
+function townDwell(seed: number): number {
+  const span = TOWN_WANDER_MAX - TOWN_WANDER_MIN + 1
+  return scaleRounds(TOWN_WANDER_MIN + Math.floor(hash01(seed) * span))
 }
 
 function emptyStats(): BattleStats {
@@ -273,6 +280,7 @@ export function createBattle(setup: CombatSetup): BattleState {
     timeScale,
     decisionInterval,
     mode: setup.mode ?? 'encounter',
+    peaceful: setup.peaceful ?? false,
     plans: {},
     planner: setup.planner ?? defaultPlanner,
     round: 0,
@@ -1192,34 +1200,54 @@ function roamTowardWaypoint(state: BattleState, self: Combatant): void {
   }
 }
 
+// Lurk-then-hop wander: dwell in place for a (deterministic) spell, then shuffle
+// a short hop to a new local spot and dwell again. Used by idle monsters (short
+// dwell, normal pace) and — in a peaceful town — by individual heroes (long
+// dwell, gentle stroll). `dwellFor`/`near`/`far`/`speed` are the only knobs; the
+// hop geometry is identical for both, so monster replays stay byte-identical.
+function lurkAndHop(
+  state: BattleState, self: Combatant,
+  speed: number, dwellFor: (seed: number) => number, near: number, far: number,
+): void {
+  if (self.wanderTarget) {
+    if (moveTowardPoint(self, self.wanderTarget, speed, state.combatants, state.barriers)) {
+      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    }
+    if (distance(self.pos, self.wanderTarget) < 0.6) {
+      self.wanderTarget = null
+      self.wanderDwell = dwellFor(state.round + self.index)
+    }
+    return
+  }
+  if (self.wanderDwell > 0) { self.wanderDwell -= 1; return }
+  // Pick a hop: a deterministic direction + a near–far cell distance, kept a few
+  // cells off the edges so a wanderer doesn't lurk jammed in a corner.
+  const ang = hash01(state.round * 3 + self.index) * Math.PI * 2
+  const dist = near + hash01(state.round * 3 + self.index + 7) * (far - near)
+  const m = Math.min(MONSTER_EDGE_MARGIN, state.cols / 2 - 0.5, state.rows / 2 - 0.5)
+  self.wanderTarget = {
+    x: Math.max(m, Math.min(state.cols - m, self.pos.x + Math.cos(ang) * dist)),
+    y: Math.max(m, Math.min(state.rows - m, self.pos.y + Math.sin(ang) * dist)),
+  }
+}
+
 function executeWander(state: BattleState, self: Combatant): void {
   if (self.statuses.some((s) => s.flags.includes('rooted'))) return
+
+  // §town wander: in a peaceful city heroes mill about INDIVIDUALLY — each lurks
+  // and hops on its own (long pause, short stroll), so a town reads as relaxed
+  // milling rather than a party marching in formation.
+  if (state.peaceful && self.team === 'player') {
+    lurkAndHop(state, self, moveSpeedOf(self) * TOWN_WANDER_SPEED_MULT, townDwell, TOWN_WANDER_NEAR, TOWN_WANDER_FAR)
+    return
+  }
 
   // Heroes always roam as a party; pack-hunter monsters do the same (§pack wander)
   // so they travel as a group instead of each lurking alone.
   if (self.team === 'player' || hasTactic(self, 'pack-hunter')) { roamTowardWaypoint(state, self); return }
 
   // Other monsters: lurk, then hop a short distance to a new local spot.
-  if (self.wanderTarget) {
-    if (moveTowardPoint(self, self.wanderTarget, moveSpeedOf(self), state.combatants, state.barriers)) {
-      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
-    }
-    if (distance(self.pos, self.wanderTarget) < 0.6) {
-      self.wanderTarget = null
-      self.wanderDwell = monsterDwell(state.round + self.index)
-    }
-    return
-  }
-  if (self.wanderDwell > 0) { self.wanderDwell -= 1; return }
-  // Pick a hop: a deterministic direction + a 5–8 cell distance, kept a few
-  // cells off the edges so monsters don't lurk jammed in a corner.
-  const ang = hash01(state.round * 3 + self.index) * Math.PI * 2
-  const dist = MONSTER_WANDER_NEAR + hash01(state.round * 3 + self.index + 7) * (MONSTER_WANDER_FAR - MONSTER_WANDER_NEAR)
-  const m = Math.min(MONSTER_EDGE_MARGIN, state.cols / 2 - 0.5, state.rows / 2 - 0.5)
-  self.wanderTarget = {
-    x: Math.max(m, Math.min(state.cols - m, self.pos.x + Math.cos(ang) * dist)),
-    y: Math.max(m, Math.min(state.rows - m, self.pos.y + Math.sin(ang) * dist)),
-  }
+  lurkAndHop(state, self, moveSpeedOf(self), monsterDwell, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR)
 }
 
 // Pick a retreat heading for a kiter that's been closed on. We score sampled
@@ -1766,9 +1794,10 @@ export function advanceRound(state: BattleState): BattleState {
     if (c.interruptedCount > 0 && state.round % scaleRounds(WARY_INTERRUPT_DECAY) === 0) c.interruptedCount -= 1
   }
 
-  // §9.1.3 turn order: SPD desc, tiebreak by id (§10, §16)
+  // §9.1.3 turn order: SPD desc, tiebreak by id (§10, §16). Neutral NPCs never
+  // act — they just stand where they spawned — so they're left out of the order.
   const order = state.combatants
-    .filter((c) => c.alive)
+    .filter((c) => c.alive && c.team !== 'neutral')
     .sort((a, b) => {
       const sa = effectiveStat(a, 'spd')
       const sb = effectiveStat(b, 'spd')
