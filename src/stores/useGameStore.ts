@@ -1707,9 +1707,11 @@ export const useGameStore = create<GameState>((set) => ({
   }),
   openReport: (unitId) => set({ reportUnitId: unitId }),
   closeReport: () => set({ reportUnitId: null }),
+  // Deploy keeps the current selection — you've just acted ON these heroes, so
+  // they stay selected (follow them, open a dossier, redeploy) rather than the
+  // selection clearing out from under you.
   assignUnits: (unitIds, locationId) => set((s) => ({
     units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u),
-    selectedUnitIds: [],
   })),
 
   setActionSlot: (unitId, slotIdx, entry) => set((s) => ({
