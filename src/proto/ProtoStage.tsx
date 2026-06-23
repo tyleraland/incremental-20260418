@@ -79,11 +79,10 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 // World 0.55× → Locale 1.4× → keep growing to 3.6× as the node fills the frame.
 function mapScaleFor(z: number) {
-  return z <= 1 ? lerp(0.55, 1.4, clamp(z, 0, 1)) : lerp(1.4, 3.6, clamp(z - 1, 0, 1))
+  return z <= 1 ? lerp(0.85, 1.4, clamp(z, 0, 1)) : lerp(1.4, 3.6, clamp(z - 1, 0, 1))
 }
 const battleOpacityFor = (z: number) => clamp((z - 1.3) / 0.45, 0, 1) // fades in over 1.3 → 1.75
 const battleScaleFor   = (z: number) => lerp(0.94, 1, clamp((z - 1.25) / 0.55, 0, 1))
-const ZOOM_NAMES = ['World', 'Locale', 'Battle']
 
 // ── WorldNode ───────────────────────────────────────────────────────────────
 function WorldNode({ loc, units, equipment, selected, questReady, onTap, onDive }: {
@@ -344,8 +343,8 @@ export function ProtoStage() {
             title="Navigate" aria-label="Navigate"
             className="flex items-center gap-1 bg-game-bg/85 border border-game-border rounded-lg px-2 py-1 backdrop-blur-sm text-game-text-dim hover:text-game-text"
           >
-            <span aria-hidden>{nearest === 0 ? region.icon : nearest === 1 ? '⌖' : '⚔'}</span>
-            <span className="truncate max-w-[40vw]">{nearest === 0 ? region.name : nearest === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'}</span>
+            <span aria-hidden>{nearest === 2 ? '⚔' : region.icon}</span>
+            <span className="truncate max-w-[40vw]">{nearest === 2 && focusLoc ? `${region.name} › ${focusLoc.name}` : region.name}</span>
             <span className="text-game-muted">⌄</span>
           </button>
         ) : (
@@ -360,9 +359,9 @@ export function ProtoStage() {
                   className="mr-0.5 px-2 py-1 rounded-md flex items-center gap-1 font-medium text-rose-300 hover:text-rose-200 hover:bg-rose-500/10"
                 ><span aria-hidden>↩</span><span>Exit</span></button>
               )}
-              {([0, 1, 2] as const).map((z, i) => {
-                const label = z === 0 ? region.name : z === 1 ? (focusLoc?.name ?? 'Locale') : 'Battle'
-                const icon = z === 0 ? region.icon : (['🗺', '⌖', '⚔'][z])
+              {([0, 2] as const).map((z, i) => {
+                const label = z === 0 ? region.name : (focusLoc?.name ?? 'Battle')
+                const icon = z === 0 ? region.icon : '⚔'
                 const disabled = z > 0 && !focusLoc
                 return (
                   <span key={z} className="flex items-center">

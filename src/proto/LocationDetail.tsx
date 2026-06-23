@@ -625,10 +625,10 @@ export function LocationDetail({ location }: { location: Location }) {
 
   return (
     <div className="space-y-4">
-      {/* Name row — the dungeon "Enter …" entry (if any) rides the right side. */}
-      <div className="flex items-center gap-2">
-        <div className="text-base font-semibold text-game-text min-w-0 truncate">{location.name}</div>
-        {entryRegion && (
+      {/* The location name lives in the stage breadcrumb, not here. A dungeon
+          "Enter …" entry (if any) sits right-aligned on its own row. */}
+      {entryRegion && (
+        <div className="flex">
           <button
             onClick={enterRegion}
             className="ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-md border border-rose-700/50 bg-rose-950/20 px-2.5 py-1 text-left hover:border-rose-600/70"
@@ -636,8 +636,8 @@ export function LocationDetail({ location }: { location: Location }) {
             <span className="text-sm">◆</span>
             <span className="text-xs text-game-text">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Heroes here — no label, just the chips present. Deploying selected-
           elsewhere heroes lives in the persistent scope bar, so it isn't repeated
