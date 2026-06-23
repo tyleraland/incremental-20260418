@@ -92,3 +92,16 @@ export function isSkillUnlocked(
   const kit = unit.class ? CLASS_SKILL_KITS[unit.class] : undefined
   return kit ? kit.includes(skillId) : false
 }
+
+// ── Region unfolding (map pages) ──────────────────────────────────────────────--
+//
+// Some map pages are dev/testing-only and never shown in a normal game: the
+// fixed-round encounter arenas live in a `'fixed-encounters'` dungeon reached
+// from Prontera, but only in sandbox. In curated the normal overworld is just the
+// open-world locations. Gating the *entry* (the only way into the page) keeps the
+// whole region out of curated.
+export const SANDBOX_ONLY_REGIONS = ['fixed-encounters']
+
+export function isRegionUnlocked(mode: ProgressionMode, region: string): boolean {
+  return mode === 'sandbox' || !SANDBOX_ONLY_REGIONS.includes(region)
+}

@@ -10,6 +10,7 @@ import {
   LOCATION_BOUNTIES, bountyVisible, bountyProgress, rewardGoldTotal,
   type ClassChangeQuestDef, type ClassQuestStatus, type BountyDef,
 } from './protoStore'
+import { isRegionUnlocked } from '@/lib/unlocks'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
@@ -29,7 +30,7 @@ const EQUIP_BY_ID: Record<string, EquipmentItem> = Object.fromEntries(INITIAL_EQ
 // eventual location-management screen.
 
 // Friendly names for the dungeon sub-regions a world location can open into.
-const REGION_NAMES: Record<string, string> = { 'geffen-dungeon': 'Geffen Dungeon', aerie: 'Sky Aerie' }
+const REGION_NAMES: Record<string, string> = { 'geffen-dungeon': 'Geffen Dungeon', aerie: 'Sky Aerie', 'fixed-encounters': 'Fixed Encounters' }
 
 // ── Quest board ───────────────────────────────────────────────────────────────
 // WoW-style status glyph + color. Yellow = actionable right now (accept / turn
@@ -572,8 +573,13 @@ export function LocationDetail({ location }: { location: Location }) {
   // Heroes in the current selection that aren't already stationed here.
   const toDeploy = units.filter((u) => selectedUnitIds.includes(u.id) && u.locationId !== location.id)
 
-  // "Enter <Region>" — a world location can open into a dungeon map page.
-  const entryRegion = location.dungeonEntryRegion
+  // "Enter <Region>" — a world location can open into a dungeon map page. Some
+  // pages are sandbox-only (the fixed-encounters test dungeon): hide the entry
+  // entirely in curated so the region is unreachable there.
+  const progressionMode     = useGameStore((s) => s.progressionMode)
+  const entryRegion = location.dungeonEntryRegion && isRegionUnlocked(progressionMode, location.dungeonEntryRegion)
+    ? location.dungeonEntryRegion
+    : undefined
   function enterRegion() {
     if (!entryRegion) return
     const first = locations.find((l) => l.region === entryRegion)

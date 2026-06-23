@@ -118,7 +118,7 @@ export const MERCHANT_REGISTRY: Record<string, MerchantDef> = {
   'hadiya-wanderer': {
     id: 'hadiya-wanderer', name: 'Hadiya the Wanderer', kind: 'wandering', icon: '🐫',
     blurb: 'A travelling trader with an odd, rotating stock. Here today…',
-    locationId: 'prontera-field-1', sellMult: 1.05, buyMult: 1.35,
+    locationId: 'prontera-field-3', sellMult: 1.05, buyMult: 1.35,
     wants: [
       { itemId: 'drop-golem-core', pricePer: 60, quantity: 3 },
       { itemId: 'drop-ancient-coin', pricePer: 30, quantity: 10 },
@@ -136,7 +136,7 @@ export const MERCHANT_REGISTRY: Record<string, MerchantDef> = {
 // ── Wandering presence (clock-driven) ─────────────────────────────────────────--
 // The wanderer's current stop cycles deterministically with the game tick, so it
 // "moves" on its own and a returning player may find it somewhere new.
-const WANDER_STOPS = ['prontera-field-1', 'geffen-field-1', 'boar-meadow', 'beach-1', 'prontera-field-2']
+const WANDER_STOPS = ['prontera-field-3', 'wolf-den', 'boar-meadow', 'beach-1', 'prontera-field-2']
 const WANDER_WINDOW = 900 // ticks per stop (~3 min at 5 ticks/s)
 export function wanderLocation(ticks: number): string {
   return WANDER_STOPS[Math.floor(ticks / WANDER_WINDOW) % WANDER_STOPS.length]

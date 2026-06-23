@@ -23,21 +23,21 @@ export const INITIAL_LOCATIONS: Location[] = [
     openWorld: true, openWorldCap: 0, openWorldSize: CITY_FIELD_SIZE,
   },
   {
-    id: 'elite-four', region: 'world', name: 'Elite Four',
+    id: 'elite-four', region: 'fixed-encounters', name: 'Elite Four',
     description: 'A walled arena north of Geffen where four champions — a Fighter, a Rogue, a Cleric, and a Ranger — test all comers.',
     traits: ['plains', 'dangerous'],
     monsterIds: ['elite-fighter', 'elite-rogue', 'elite-cleric', 'elite-ranger'],
     familiarityMax: 100, connections: [],
   },
   {
-    id: 'geffen-field-1', region: 'world', name: 'Geffen Outskirts',
+    id: 'geffen-field-1', region: 'fixed-encounters', name: 'Geffen Outskirts',
     description: 'A windswept plain east of Geffen — first proving ground on the road to Prontera.',
     traits: ['plains'], monsterIds: ['hornet', 'egg-sac'],
     familiarityMax: 100, connections: [],
     testScenarioId: 'open-field',
   },
   {
-    id: 'prontera-field-1', region: 'world', name: 'Western Approach',
+    id: 'prontera-field-1', region: 'fixed-encounters', name: 'Western Approach',
     description: 'Rolling hills west of Prontera ringed by ruined walls — a natural perimeter for kiting tests.',
     traits: ['plains'], monsterIds: ['tough-slime'],
     familiarityMax: 100, connections: [],
@@ -49,6 +49,9 @@ export const INITIAL_LOCATIONS: Location[] = [
     traits: ['city'], monsterIds: [],
     familiarityMax: 100, connections: [],
     openWorld: true, openWorldCap: 0, openWorldSize: CITY_FIELD_SIZE,
+    // Sandbox-only: the fixed-round test encounters live in their own dungeon
+    // page, entered here (gated to sandbox — see isRegionUnlocked).
+    dungeonEntryRegion: 'fixed-encounters',
   },
   {
     id: 'payon-city', region: 'world', name: 'Payon Town',
@@ -111,47 +114,50 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 10, openWorldSize: 30,
   },
 
-  // ── Proving Grounds (sandbox arenas, east of the world path) ─────────────
-  // Each stages one tactic / terrain idea so it can be watched in the browser;
-  // see SCENARIO_REGISTRY (pg-*) and the movement-* engine tests.
+  // ── Proving Grounds (region 'fixed-encounters' — the sandbox-only test dungeon) ──
+  // These (plus the Pathing Grounds, Elemental Circle, Elemental Frontier, Elite
+  // Four, and the early discrete fields) are the fixed-round encounters: they live
+  // off the overworld in the 'fixed-encounters' dungeon page, reached from Prontera
+  // in sandbox only (see isRegionUnlocked). Each stages one tactic / terrain idea
+  // to watch in the browser; see SCENARIO_REGISTRY (pg-*) and the movement-* tests.
   {
-    id: 'pg-guardian-stand', region: 'world', name: 'The Last Line',
+    id: 'pg-guardian-stand', region: 'fixed-encounters', name: 'The Last Line',
     description: 'A bare arena where a lone bruiser tests whether your Guardian can body-block for the back line.',
     traits: ['arena'], monsterIds: ['elite-fighter', 'wolf'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-guardian-stand',
   },
   {
-    id: 'pg-threat-trial', region: 'world', name: 'The Threat Trial',
+    id: 'pg-threat-trial', region: 'fixed-encounters', name: 'The Threat Trial',
     description: 'A bare arena for practising aggro control: three slow, sponge-tough Stone Sentinels that barely hit but chase whoever angers them most. Field a tank with Defensive Stance + Taunt beside a ranged kiter and watch the threat tug-of-war.',
     traits: ['arena'], monsterIds: ['stone-sentinel'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-threat-trial',
   },
   {
-    id: 'pg-veiled-approach', region: 'world', name: 'Veiled Approach',
+    id: 'pg-veiled-approach', region: 'fixed-encounters', name: 'Veiled Approach',
     description: 'A screened caster begging to be ambushed — a stage for Cloak, Back Stab and the Ambusher flank.',
     traits: ['arena'], monsterIds: ['stone-golem', 'harpy'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-veiled-approach',
   },
   {
-    id: 'pg-wolf-pack', region: 'world', name: 'Wolf Pack',
+    id: 'pg-wolf-pack', region: 'fixed-encounters', name: 'Wolf Pack',
     description: 'Three fast wolves that punish a stationary caster — bring Kiter and Wary Caster.',
     traits: ['arena'], monsterIds: ['wolf'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-wolf-pack',
   },
   {
-    id: 'pg-divided-hall', region: 'world', name: 'The Divided Hall',
+    id: 'pg-divided-hall', region: 'fixed-encounters', name: 'The Divided Hall',
     description: 'A wall splits the field with the enemy behind it — a flank-around-terrain and line-of-sight test.',
     traits: ['arena', 'ruins'], monsterIds: ['elite-cleric', 'animated-armor'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-divided-hall',
   },
   {
-    id: 'pg-ravine', region: 'world', name: 'The Ravine',
+    id: 'pg-ravine', region: 'fixed-encounters', name: 'The Ravine',
     description: 'A cliff blocks movement but not sight — snipe over it while melee routes around.',
     traits: ['arena', 'cliff'], monsterIds: ['harpy'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-ravine',
   },
   {
-    id: 'pg-slime-huddle', region: 'world', name: 'Slime Huddle',
+    id: 'pg-slime-huddle', region: 'fixed-encounters', name: 'Slime Huddle',
     description: 'A tight knot of crabs — the cleanest target in the world for Lightning Storm.',
     traits: ['arena'], monsterIds: ['rock-crab'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-slime-huddle',
@@ -161,25 +167,25 @@ export const INITIAL_LOCATIONS: Location[] = [
   // Stage the known-terrain pathing work. The last one is open-world
   // (persistent, vision-limited, wandering); the rest are discrete encounters.
   {
-    id: 'pg-bottleneck', region: 'world', name: 'The Bottleneck',
+    id: 'pg-bottleneck', region: 'fixed-encounters', name: 'The Bottleneck',
     description: 'Two mid-field walls leave one narrow centre gap — the whole fight funnels through a single chokepoint.',
     traits: ['arena', 'ruins'], monsterIds: ['stone-golem', 'harpy'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-bottleneck',
   },
   {
-    id: 'pg-serpentine', region: 'world', name: 'The Serpentine',
+    id: 'pg-serpentine', region: 'fixed-encounters', name: 'The Serpentine',
     description: 'A zig-zag S of offset wall stubs guarding a back-line caster — a route-and-flank weave.',
     traits: ['arena', 'ruins'], monsterIds: ['living-nightshade', 'rock-crab'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-serpentine',
   },
   {
-    id: 'pg-pillared-hall', region: 'world', name: 'The Pillared Hall',
+    id: 'pg-pillared-hall', region: 'fixed-encounters', name: 'The Pillared Hall',
     description: 'Four pillars in an open hall — a body-block + line-of-sight weave.',
     traits: ['arena', 'ruins'], monsterIds: ['harpy', 'skeleton-archer'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-pillared-hall',
   },
   {
-    id: 'pg-moat', region: 'world', name: 'The Moat',
+    id: 'pg-moat', region: 'fixed-encounters', name: 'The Moat',
     description: 'A wide cliff cuts mid-field — it blocks movement, not sight. Snipe across while melee detours.',
     traits: ['arena', 'cliff'], monsterIds: ['poacher', 'skeleton-archer'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-moat',
@@ -196,7 +202,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     // wind, poison, undead) formed up as a single wave — a clean testbed for
     // target-aware attack selection: an elemental caster locks each foe in turn
     // and leads with whatever bolt exploits that armor.
-    id: 'pg-elemental-circle', region: 'world', name: 'The Elemental Circle',
+    id: 'pg-elemental-circle', region: 'fixed-encounters', name: 'The Elemental Circle',
     description: 'A ring of six wards, each binding a beast of a different element — wolf, frog, crab, harpy, hornet, and bat — a sampler arena for testing which attack bites hardest into which armor.',
     traits: ['arena'],
     monsterIds: ['wolf', 'giant-frog', 'rock-crab', 'harpy', 'hornet', 'bat'],
@@ -208,25 +214,25 @@ export const INITIAL_LOCATIONS: Location[] = [
   // the new fire / ghost / radiant fauna have a home — and a place to watch the
   // Mutant Lizard's radiant Consecration aura chew on the party.
   {
-    id: 'ember-hollow', region: 'world', name: 'Emberpool Hollow',
+    id: 'ember-hollow', region: 'fixed-encounters', name: 'Emberpool Hollow',
     description: 'A steaming hollow where fire slimes bubble up from cracks in the scorched rock.',
     traits: ['mountain', 'volcanic'], monsterIds: ['fire-slime'],
     familiarityMax: 100, connections: ['cinder-dunes'],
   },
   {
-    id: 'cinder-dunes', region: 'world', name: 'Cinder Dunes',
+    id: 'cinder-dunes', region: 'fixed-encounters', name: 'Cinder Dunes',
     description: 'Black-glass dunes where adderwallas slither — fast fire-snakes that pay you no mind until you draw blood, then dart in and strike like a whip.',
     traits: ['plains', 'desert'], monsterIds: ['adderwalla'],
     familiarityMax: 100, connections: ['ember-hollow', 'hollow-barrow'],
   },
   {
-    id: 'hollow-barrow', region: 'world', name: 'Hollow Barrow',
+    id: 'hollow-barrow', region: 'fixed-encounters', name: 'Hollow Barrow',
     description: 'A sunken graveyard mound where wraiths drift between the toppled headstones.',
     traits: ['dungeon', 'haunted'], monsterIds: ['wraith'],
     familiarityMax: 100, connections: ['cinder-dunes', 'irradiated-marsh'],
   },
   {
-    id: 'irradiated-marsh', region: 'world', name: 'Irradiated Marsh',
+    id: 'irradiated-marsh', region: 'fixed-encounters', name: 'Irradiated Marsh',
     description: 'A glowing fen where mutant lizards bask in hallowed light — step into the radiance and it sears, round after round.',
     traits: ['plains', 'arcane'], monsterIds: ['mutant-lizard'],
     familiarityMax: 100, connections: ['hollow-barrow'],

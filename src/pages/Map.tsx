@@ -3,6 +3,7 @@ import { useGameStore, MONSTER_REGISTRY, getDerivedStats, type Unit, type Locati
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { BattleView } from '@/components/BattleView'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
+import { isRegionUnlocked } from '@/lib/unlocks'
 
 // ── Pages ────────────────────────────────────────────────────────────────────
 //
@@ -26,6 +27,8 @@ const PAGES: PageDef[] = [
   { id: 'world',          name: 'World', focusLocationId: 'geffen-city' },
   { id: 'geffen-dungeon', name: 'Geffen Dungeon', isDungeon: true, entryLocationId: 'geffen-city', focusLocationId: 'geffen-dungeon-1' },
   { id: 'aerie',          name: 'Sky Aerie',      isDungeon: true, entryLocationId: 'harpy-roost', focusLocationId: 'aerie-1' },
+  // Sandbox-only: the fixed-round test encounters, entered from Prontera.
+  { id: 'fixed-encounters', name: 'Fixed Encounters', isDungeon: true, entryLocationId: 'prontera-city', focusLocationId: 'prontera-field-1' },
 ]
 
 const PAGE_BY_ID: Record<string, PageDef> = Object.fromEntries(PAGES.map((p) => [p.id, p]))
@@ -37,47 +40,45 @@ const PAGE_GRID: Record<string, { cols: number; rows: number }> = {
   'world':          { cols: 12, rows: 8 },
   'geffen-dungeon': { cols: 6,  rows: 5 },
   'aerie':          { cols: 4,  rows: 4 },
+  'fixed-encounters': { cols: 9, rows: 6 },
 }
 
 // Grid coords for cells that ARE on the path. Adjacent path cells are also
 // adjacent on the grid (no jumps), so the chain reads as a connected route.
 const LOCATION_COORDS: Record<string, [number, number]> = {
-  // World — path runs east through the middle, then turns south.
+  // World — open-world locations only (cities + open fields).
   'geffen-city':      [2, 3],
-  'elite-four':       [2, 2],   // Elite Four arena (north of Geffen)
-  'geffen-field-1':   [3, 3],   // Geffen Outskirts
-  'prontera-field-1': [4, 3],   // Western Approach
   'prontera-city':    [5, 3],
   'payon-city':       [5, 2],   // Payon Town (forest town — archers & rogues)
   'prontera-field-3': [6, 3],   // Prontera Field (east)
   'harpy-roost':      [7, 3],   // Harpy Roost (continues east; dense open-world)
+  'pg-overgrown-maze':[8, 4],   // The Overgrown Ruins (persistent open-world)
   'boar-meadow':      [6, 4],   // Boar Meadow (passive herd — aggression showcase)
   'wolf-den':         [7, 4],   // Dire Wolf Den (aggressive pack — aggression showcase)
   'prontera-field-2': [5, 4],   // Southern Road
   'beach-1':          [5, 5],   // Kanto Beach
 
-  // Proving Grounds — a sandbox cluster east of the path (no path connections).
-  'pg-guardian-stand': [8, 2],
-  'pg-veiled-approach': [9, 2],
-  'pg-wolf-pack':       [10, 2],
-  'pg-threat-trial':    [11, 2],   // §threat showcase (tank vs kiter aggro)
-  'pg-divided-hall':    [8, 3],
-  'pg-ravine':          [9, 3],
-  'pg-slime-huddle':    [10, 3],
-
-  // Pathing Grounds — a second sandbox row below the proving grounds.
-  'pg-bottleneck':      [8, 5],
-  'pg-serpentine':      [9, 5],
-  'pg-pillared-hall':   [10, 5],
-  'pg-moat':            [8, 6],
-  'pg-overgrown-maze':  [9, 6],
-  'pg-elemental-circle': [10, 6],
-
-  // Elemental Frontier — a connected line below the pathing grounds (new-element foes).
-  'ember-hollow':     [7, 7],
-  'cinder-dunes':     [8, 7],
-  'hollow-barrow':    [9, 7],
-  'irradiated-marsh': [10, 7],
+  // Fixed Encounters — sandbox-only test dungeon (entered from Prontera): the
+  // discrete-wave arenas + early fields + Elemental Frontier, off the overworld.
+  'geffen-field-1':   [1, 1],   // Geffen Outskirts
+  'prontera-field-1': [2, 1],   // Western Approach
+  'elite-four':       [3, 1],   // Elite Four arena
+  'pg-guardian-stand': [1, 2],
+  'pg-veiled-approach': [2, 2],
+  'pg-wolf-pack':       [3, 2],
+  'pg-threat-trial':    [4, 2],   // §threat showcase (tank vs kiter aggro)
+  'pg-divided-hall':    [5, 2],
+  'pg-ravine':          [6, 2],
+  'pg-slime-huddle':    [7, 2],
+  'pg-bottleneck':      [1, 3],
+  'pg-serpentine':      [2, 3],
+  'pg-pillared-hall':   [3, 3],
+  'pg-moat':            [4, 3],
+  'pg-elemental-circle': [5, 3],
+  'ember-hollow':     [1, 4],
+  'cinder-dunes':     [2, 4],
+  'hollow-barrow':    [3, 4],
+  'irradiated-marsh': [4, 4],
 
   // Geffen Dungeon — L-shape (top row + right column), Floor 1 → Floor 5.
   'geffen-dungeon-1': [1, 1],
@@ -521,6 +522,7 @@ function LocationDetailPanel() {
   const units               = useGameStore((s) => s.units)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
+  const progressionMode     = useGameStore((s) => s.progressionMode)
 
   const [codexMonsterId, setCodexMonsterId] = useState<string | null>(null)
   const codexSeenCount = useGameStore((s) => codexMonsterId ? (s.monsterSeen[codexMonsterId] ?? 0) : 0)
@@ -529,7 +531,7 @@ function LocationDetailPanel() {
   const hasLoc   = location !== null
   const scenario = location?.testScenarioId ? SCENARIO_REGISTRY[location.testScenarioId] ?? null : null
 
-  const dungeonEntry = location?.dungeonEntryRegion
+  const dungeonEntry = location?.dungeonEntryRegion && isRegionUnlocked(progressionMode, location.dungeonEntryRegion)
     ? { regionId: location.dungeonEntryRegion, regionName: PAGE_BY_ID[location.dungeonEntryRegion]?.name ?? location.dungeonEntryRegion }
     : null
 

@@ -18,18 +18,18 @@ import { StageOverlay } from './StageOverlay'
 // continuously; the zoom rail / breadcrumb tween to the named stops.
 
 const LOCATION_COORDS: Record<string, [number, number]> = {
-  // World page
-  'geffen-city': [2, 3], 'elite-four': [2, 2], 'geffen-field-1': [3, 3],
-  'prontera-field-1': [4, 3], 'prontera-city': [5, 3], 'prontera-field-3': [6, 3],
-  'payon-city': [5, 2],
-  'harpy-roost': [7, 3], 'boar-meadow': [6, 4], 'wolf-den': [7, 4],
-  'prontera-field-2': [5, 4], 'beach-1': [5, 5],
-  'pg-guardian-stand': [8, 2], 'pg-veiled-approach': [9, 2], 'pg-wolf-pack': [10, 2],
-  'pg-threat-trial': [11, 2], 'pg-divided-hall': [8, 3], 'pg-ravine': [9, 3],
-  'pg-slime-huddle': [10, 3], 'pg-bottleneck': [8, 5], 'pg-serpentine': [9, 5],
-  'pg-pillared-hall': [10, 5], 'pg-moat': [8, 6], 'pg-overgrown-maze': [9, 6],
-  'pg-elemental-circle': [10, 6], 'ember-hollow': [7, 7], 'cinder-dunes': [8, 7],
-  'hollow-barrow': [9, 7], 'irradiated-marsh': [10, 7],
+  // World page — open-world locations only (cities + open fields).
+  'geffen-city': [2, 3], 'payon-city': [5, 2], 'prontera-city': [5, 3],
+  'prontera-field-3': [6, 3], 'harpy-roost': [7, 3], 'pg-overgrown-maze': [8, 4],
+  'boar-meadow': [6, 4], 'wolf-den': [7, 4], 'prontera-field-2': [5, 4], 'beach-1': [5, 5],
+  // Fixed Encounters page (sandbox-only test dungeon, entered from Prontera) —
+  // discrete-wave arenas + the early fields + the Elemental Frontier chain.
+  'geffen-field-1': [1, 1], 'prontera-field-1': [2, 1], 'elite-four': [3, 1],
+  'pg-guardian-stand': [1, 2], 'pg-veiled-approach': [2, 2], 'pg-wolf-pack': [3, 2],
+  'pg-threat-trial': [4, 2], 'pg-divided-hall': [5, 2], 'pg-ravine': [6, 2], 'pg-slime-huddle': [7, 2],
+  'pg-bottleneck': [1, 3], 'pg-serpentine': [2, 3], 'pg-pillared-hall': [3, 3],
+  'pg-moat': [4, 3], 'pg-elemental-circle': [5, 3],
+  'ember-hollow': [1, 4], 'cinder-dunes': [2, 4], 'hollow-barrow': [3, 4], 'irradiated-marsh': [4, 4],
   // Geffen Dungeon page — L-shape (Floor 1 → Floor 5)
   'geffen-dungeon-1': [2, 2], 'geffen-dungeon-2': [3, 2], 'geffen-dungeon-3': [4, 2],
   'geffen-dungeon-4': [4, 3], 'geffen-dungeon-5': [4, 4],
@@ -41,9 +41,10 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
 // location's `dungeonEntryRegion` (LocationDetail) and exited back to their
 // `entryLocationId`. Mirrors PAGES in the production Map.
 const REGIONS: Record<string, { name: string; icon: string; entryLocationId?: string }> = {
-  world:            { name: 'World',          icon: '🗺' },
-  'geffen-dungeon': { name: 'Geffen Dungeon', icon: '◆', entryLocationId: 'geffen-city' },
-  aerie:            { name: 'Sky Aerie',      icon: '▲', entryLocationId: 'harpy-roost' },
+  world:              { name: 'World',           icon: '🗺' },
+  'geffen-dungeon':   { name: 'Geffen Dungeon',  icon: '◆', entryLocationId: 'geffen-city' },
+  aerie:              { name: 'Sky Aerie',       icon: '▲', entryLocationId: 'harpy-roost' },
+  'fixed-encounters': { name: 'Fixed Encounters', icon: '⚔', entryLocationId: 'prontera-city' },
 }
 
 const CELL = 96 // world-space px per grid step

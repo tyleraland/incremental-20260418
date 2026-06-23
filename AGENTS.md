@@ -83,7 +83,8 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 - 1 XP per kill into a pool, split across the *surviving* party **proportional to level** (`splitExpByLevel`) — anti-power-leveling. Fractional shares; floored only at display. Same rule offline.
 
 ## Map & locations
-- Map tab is a pannable overworld (`LOCATION_COORDS` in `Map.tsx`), not a list. `region` names the map page (`'world'`, `'geffen-dungeon'`); `mapPageId` selects it. Dungeons (`isDungeon`) are entered from `entryLocationId`.
+- Map tab is a pannable overworld (`LOCATION_COORDS` in `Map.tsx` + `ProtoStage.tsx` — keep both in sync), not a list. `region` names the map page (`'world'`, `'geffen-dungeon'`, `'fixed-encounters'`); `mapPageId` selects it. Dungeons (`isDungeon`) are entered from `entryLocationId`.
+- **Overworld = open-world locations only.** Every `region: 'world'` location is `openWorld` (cities included). The fixed-round **discrete-wave encounters** (proving/pathing arenas, Elemental Circle/Frontier, Elite Four, the early discrete fields) live in the **`'fixed-encounters'`** dungeon, entered from Prontera — but **sandbox-only** (`isRegionUnlocked`/`SANDBOX_ONLY_REGIONS` in `unlocks.ts`; the entry is hidden in curated). Curated class-change quests therefore must target monsters on the overworld (guarded by `world-map.test.ts`).
 - Tap a location → select + detail panel (units present, monsters, Familiarity = `locationFamiliarity[id]/familiarityMax`, deploy).
 
 ## Equipment & crafting

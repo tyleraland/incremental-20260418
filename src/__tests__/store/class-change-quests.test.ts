@@ -84,11 +84,11 @@ describe('class-change quest lifecycle', () => {
 
   it('kill path: completes only once the cull objective is met', () => {
     const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
-    beginClassQuest('path-fighter', 'u7')           // cull 3 tough-slime
-    setTypeKills('u7', 'tough-slime', 2)
+    beginClassQuest('path-fighter', 'u7')           // cull 3 wild-boar
+    setTypeKills('u7', 'wild-boar', 2)
     completeClassQuest('path-fighter')
     expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBeNull()
-    setTypeKills('u7', 'tough-slime', 3)
+    setTypeKills('u7', 'wild-boar', 3)
     completeClassQuest('path-fighter')
     expect(useGameStore.getState().units.find((u) => u.id === 'u7')!.class).toBe('Fighter')
   })
