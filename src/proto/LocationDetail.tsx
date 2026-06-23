@@ -566,7 +566,7 @@ export function LocationDetail({ location }: { location: Location }) {
   const locations           = useGameStore((s) => s.locations)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const setMapPage          = useGameStore((s) => s.setMapPage)
-  const battle              = useGameStore((s) => s.battles[location.id])
+  const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
   const assignUnits         = useGameStore((s) => s.assignUnits)
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
@@ -619,12 +619,12 @@ export function LocationDetail({ location }: { location: Location }) {
     </button>
   )
 
-  // Foes: live count per monster type on the field now, else the location's pool.
-  const liveCount: Record<string, number> = {}
-  for (const c of battle?.combatants ?? []) {
-    if (c.team === 'enemy' && c.alive) { const mid = c.id.split('#')[0]; liveCount[mid] = (liveCount[mid] ?? 0) + 1 }
-  }
-  const foeIds = (battle ? Object.keys(liveCount) : location.monsterIds).filter((id) => MONSTER_REGISTRY[id])
+  // Inhabitants: the KNOWN enemies that inhabit this map — the location's monster
+  // pool, filtered to those already discovered here. A static bestiary (it grows
+  // as you meet new foes, then settles once all are known), NOT who's on the field
+  // right now.
+  const seenHere = new Set(locationMonstersSeen[location.id] ?? [])
+  const foeIds = location.monsterIds.filter((id) => MONSTER_REGISTRY[id] && seenHere.has(id))
 
   return (
     <div className="space-y-4">
@@ -643,14 +643,14 @@ export function LocationDetail({ location }: { location: Location }) {
         </button>
       )}
 
-      {/* Heroes — three positional columns: present-but-unselected (left),
-          selected & already here (middle), and the staged-deploy column on the
-          right — a compact Deploy button stacked above the blue ghost chips for
-          selected-elsewhere heroes. Tap any chip to add/remove it. */}
-      {(here.length > 0 || toDeploy.length > 0) && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Heroes</div>
+      {/* Heroes here — no label, just the chips present (three positional columns:
+          present-but-unselected, selected & already here, and the staged-deploy
+          column with selected-elsewhere ghost chips). "No Heroes Here" when empty. */}
+      <div>
           <div className="flex items-start gap-x-3 gap-y-1.5 flex-wrap">
+            {here.length === 0 && (
+              <span className="self-center text-[11px] text-game-text-dim italic">No Heroes Here</span>
+            )}
             {presentUnsel.length > 0 && (
               <div className="flex flex-wrap gap-1.5">{presentUnsel.map((u) => hereChip(u, false))}</div>
             )}
@@ -680,8 +680,7 @@ export function LocationDetail({ location }: { location: Location }) {
               </div>
             )}
           </div>
-        </div>
-      )}
+      </div>
 
       {/* class-change quests — hero-relative paths offered in the cities */}
       <ClassQuestBoard location={location} />
