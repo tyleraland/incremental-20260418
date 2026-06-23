@@ -628,20 +628,19 @@ export function LocationDetail({ location }: { location: Location }) {
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="text-base font-semibold text-game-text">{location.name}</div>
+      {/* Name row — the dungeon "Enter …" entry (if any) rides the right side. */}
+      <div className="flex items-center gap-2">
+        <div className="text-base font-semibold text-game-text min-w-0 truncate">{location.name}</div>
+        {entryRegion && (
+          <button
+            onClick={enterRegion}
+            className="ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-md border border-rose-700/50 bg-rose-950/20 px-2.5 py-1 text-left hover:border-rose-600/70"
+          >
+            <span className="text-sm">◆</span>
+            <span className="text-xs text-game-text">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
+          </button>
+        )}
       </div>
-
-      {/* enter a dungeon sub-region (its own map page) */}
-      {entryRegion && (
-        <button
-          onClick={enterRegion}
-          className="inline-flex items-center gap-2 rounded-md border border-rose-700/50 bg-rose-950/20 px-3 py-2 text-left hover:border-rose-600/70"
-        >
-          <span className="text-base">◆</span>
-          <span className="text-sm text-game-text">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
-        </button>
-      )}
 
       {/* Heroes here — no label, just the chips present (three positional columns:
           present-but-unselected, selected & already here, and the staged-deploy
