@@ -99,6 +99,30 @@ function CooldownGrid({ cells }: { cells: GridCell[] }) {
   )
 }
 
+// The hero's action bar → cooldown-grid cells. Skills carry a live cooldown bar
+// (from the combatant `c`, when in a battle); consumables/items show as labels;
+// empty slots are dashed. Shared by the Hero tab card and the scope-bar readout.
+function actionCells(
+  unit: Unit,
+  c: { skills: { id: string; cooldown: number }[]; skillCooldowns: Record<string, number> } | undefined,
+  equipment: { id: string; name: string }[],
+  miscItems: { id: string; name: string }[],
+): GridCell[] {
+  const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
+  return slots.map((e) => {
+    if (!e) return { empty: true, name: '' }
+    if (e.kind === 'skill') {
+      const liveSkill = c?.skills.find((s) => s.id === e.id)
+      const left = liveSkill ? (c!.skillCooldowns[e.id] ?? 0) : 0
+      const cd = liveSkill?.cooldown ?? 1
+      const ready = left <= 0
+      return { name: SKILL_REGISTRY[e.id]?.name ?? e.id, bar: { frac: ready ? 1 : 1 - left / Math.max(1, cd), time: ready ? 'rdy' : String(left) } }
+    }
+    if (e.kind === 'consumable') return { name: miscItems.find((m) => m.id === e.id)?.name ?? e.id, icon: '🫙' }
+    return { name: equipment.find((it) => it.id === e.id)?.name ?? e.id, icon: '⚔' }
+  })
+}
+
 // A combat "buff" reflecting the hero's final attack element (display-only — it
 // just surfaces the imbue; neutral shows nothing).
 const ELEMENT_ICON: Record<Element, string> = {
@@ -131,19 +155,7 @@ function HeroLens({ unit }: { unit: Unit }) {
   const traits = getUnitTraits(unit)
 
   // Action bar → grid cells (skills carry a live cooldown bar; otherwise rdy).
-  const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
-  const cells: GridCell[] = slots.map((e) => {
-    if (!e) return { empty: true, name: '' }
-    if (e.kind === 'skill') {
-      const liveSkill = c?.skills.find((s) => s.id === e.id)
-      const left = liveSkill ? (c!.skillCooldowns[e.id] ?? 0) : 0
-      const cd = liveSkill?.cooldown ?? 1
-      const ready = left <= 0
-      return { name: SKILL_REGISTRY[e.id]?.name ?? e.id, bar: { frac: ready ? 1 : 1 - left / Math.max(1, cd), time: ready ? 'rdy' : String(left) } }
-    }
-    if (e.kind === 'consumable') return { name: miscItems.find((m) => m.id === e.id)?.name ?? e.id, icon: '🫙' }
-    return { name: equipment.find((it) => it.id === e.id)?.name ?? e.id, icon: '⚔' }
-  })
+  const cells = actionCells(unit, c, equipment, miscItems)
 
   const combatStats: [string, number][] = [
     ['ATK', ds.attack], ['DEF', ds.defense], ['M.ATK', ds.magicAttack], ['M.DEF', ds.magicDefense],
@@ -229,17 +241,27 @@ function HeroLens({ unit }: { unit: Unit }) {
 // dossier you're acting on. It carries the whole current selection (multi-select
 // rides here as chips), and the cross-location actions for it: a "somewhere else"
 // tip, Deploy here (bring the elsewhere heroes to the focused location), Jump (fly
-// the camera to a lone selected hero), and Follow (camera-lock a live hero).
-function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: string; name: string } | null }) {
+// the camera to a lone selected hero), and Follow (camera-lock a live hero). For a
+// SINGLE selected hero in a battle it also surfaces a compact live readout —
+// statuses + action cooldowns — on every tab except Hero (whose card shows them in
+// full), so they're visible whether or not you're following.
+function HeroScopeBar({ units, location, activeTab }: { units: Unit[]; location: { id: string; name: string } | null; activeTab: Top }) {
   const assignUnits    = useGameStore((s) => s.assignUnits)
   const requestZoom    = useProtoStore((s) => s.requestZoom)
   const battleFollowId = useGameStore((s) => s.battleFollowId)
   const battles        = useGameStore((s) => s.battles)
+  const equipment      = useGameStore((s) => s.equipment)
+  const miscItems      = useGameStore((s) => s.miscItems)
   if (units.length === 0) return null
   const primary = units[0]
   const single  = units.length === 1
-  const primaryLive = !!(primary.locationId && battles[primary.locationId]?.combatants.some((c) => c.id === primary.id))
+  const liveC = single && primary.locationId ? battles[primary.locationId]?.combatants.find((c) => c.id === primary.id) : undefined
+  const primaryLive = !!liveC
   const following = battleFollowId === primary.id
+  // Compact live combat readout for a lone selected hero — shown everywhere but
+  // the Hero tab (HeroLens already shows the full version there).
+  const showCombat = primaryLive && activeTab !== 'hero'
+  const cells = showCombat ? actionCells(primary, liveC, equipment, miscItems) : []
   // Selected heroes not already at the location you're viewing — Deploy here brings
   // exactly these in (and the tip flags them).
   const elsewhere = location ? units.filter((u) => u.locationId !== location.id) : []
@@ -253,7 +275,8 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
     requestZoom(2)
   }
   return (
-    <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/40">
+    <div className="shrink-0 border-b border-game-border/60 bg-game-bg/40">
+      <div className="flex items-center gap-2 px-3 py-1.5">
       {/* Selected hero chip(s) — the whole multi-selection rides this row. */}
       <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
         {units.map((u) => {
@@ -306,6 +329,16 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
           >🎥 {following ? 'Following' : 'Follow'}</button>
         )}
       </div>
+      </div>
+
+      {/* Live combat readout for a lone selected hero — statuses + cooldowns,
+          shown regardless of follow state (Hero tab shows the full card instead). */}
+      {showCombat && (
+        <div className="px-3 pb-2 space-y-1.5">
+          {liveC!.statuses.length > 0 && <StatusList statuses={liveC!.statuses} />}
+          <CooldownGrid cells={cells} />
+        </div>
+      )}
     </div>
   )
 }
@@ -1143,7 +1176,7 @@ export function ProtoLens() {
       {/* Persistent selected-hero strip — rides every tab (incl. Location) so the
           selection's chips + cross-location actions (Deploy here / Jump / Follow)
           are always in reach. Hidden only when inspecting a foe. */}
-      {!selectedFoe && selUnits.length > 0 && <HeroScopeBar units={selUnits} location={location} />}
+      {!selectedFoe && selUnits.length > 0 && <HeroScopeBar units={selUnits} location={location} activeTab={top} />}
 
       {/* Hero sub-tabs only appear when there's a Pet (Report otherwise lives in
           Hero Detail). Hidden for a foe. */}
