@@ -4,6 +4,10 @@ Mobile-first incremental auto-battler. Vite + React 18 + TS + Tailwind + Zustand
 @dnd-kit. Deploys to GitHub Pages on push to `main`. This file is a map/reference —
 keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 
+## Response style
+- Be succinct. Lead with the result; skip preamble, restating the task, and "still watching" boilerplate.
+- PR-preview bot (`pr-preview-action`) events: reply with **only** the preview URL — nothing else.
+
 ## Priorities
 - Playable feel on mobile first; visual iteration speed over correctness.
 - Tests/refactoring come later. No error boundaries, no abstraction the current code doesn't need.
