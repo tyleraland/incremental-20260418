@@ -260,9 +260,9 @@ function BsnapButton({ battle }: { battle: BattleState | undefined }) {
 // One identity strip that rides above every lens tab so it's always obvious WHOSE
 // dossier you're acting on. It carries the whole current selection (multi-select
 // rides here as chips), and the cross-location actions for it: a "somewhere else"
-// tip, Deploy here (bring the elsewhere heroes to the focused location), Jump (fly
-// the camera to a lone selected hero), and Follow (camera-lock a live hero).
-// Statuses + cooldowns live on the Hero tab, not here.
+// tip, Deploy here (bring the elsewhere heroes to the focused location), and Follow
+// (fly the camera to a live hero AND lock onto them). Statuses + cooldowns live on
+// the Hero tab, not here.
 function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: string; name: string } | null }) {
   const assignUnits    = useGameStore((s) => s.assignUnits)
   const requestZoom    = useProtoStore((s) => s.requestZoom)
@@ -283,13 +283,15 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
   const focusHero = (id: string) => useGameStore.setState((s) => ({
     selectedUnitIds: [id, ...s.selectedUnitIds.filter((x) => x !== id)],
   }))
-  const jump = () => {
-    if (!primary.locationId) return
+  // Follow flies the camera to the hero AND camera-locks onto them (toggles off
+  // if already following) — the old standalone "Jump" is folded in here.
+  const toggleFollow = () => {
+    if (following) { useGameStore.setState({ battleFollowId: null }); return }
     useGameStore.setState({ selectedLocationId: primary.locationId, combatLocationId: primary.locationId, battleFollowId: primary.id })
     requestZoom(2)
   }
   return (
-    <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/40">
+    <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-game-bg/40">
       {/* Selected hero chip(s) — the whole multi-selection rides this row. */}
       <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
         {units.map((u) => {
@@ -331,13 +333,10 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
             className="flex items-center gap-1 px-2 py-0.5 rounded-md border border-game-primary/50 text-[11px] text-game-text hover:bg-game-primary/15"
           >➤ Deploy here{elsewhere.length > 1 ? ` (${elsewhere.length})` : ''}</button>
         )}
-        {single && primary.locationId && location && primary.locationId !== location.id && (
-          <button onClick={jump} title="Jump the camera to this hero" className="px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⌖ Jump</button>
-        )}
         {single && primaryLive && (
           <button
-            onClick={() => useGameStore.setState({ battleFollowId: following ? null : primary.id })}
-            title="Lock the camera onto this hero"
+            onClick={toggleFollow}
+            title="Jump the camera to this hero and lock onto them"
             className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
           >🎥 {following ? 'Following' : 'Follow'}</button>
         )}
