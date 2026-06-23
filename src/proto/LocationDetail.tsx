@@ -587,28 +587,22 @@ export function LocationDetail({ location }: { location: Location }) {
   const [codexId, setCodexId] = useState<string | null>(null)
 
   const here = units.filter((u) => u.locationId === location.id)
-  // Two positional groups for the Heroes row: present-but-unselected (left) and
-  // selected & already here (middle). Deploying elsewhere-selected heroes lives in
-  // the scope bar, not here.
-  const selectedHere = here.filter((u) => selectedUnitIds.includes(u.id))
+  // Only on-site heroes that AREN'T selected show here — selected ones move up to
+  // the scope bar.
   const presentUnsel = here.filter((u) => !selectedUnitIds.includes(u.id))
   // Tap a hero chip to add/remove them from the current selection (so this group
   // doubles as a selection surface — you can see who's picked and adjust).
   const toggleSel = (id: string) => useGameStore.setState((s) => ({
     selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id],
   }))
-  // A stationed-here chip (green when just present, primary ring when selected).
-  const hereChip = (u: Unit, sel: boolean) => (
+  // An on-site, unselected hero chip. Tap to select — which moves it up into the
+  // scope bar (selected heroes live there, not in this list).
+  const hereChip = (u: Unit) => (
     <button
       key={u.id}
       onClick={() => toggleSel(u.id)}
-      title={sel ? 'On site · selected' : 'On site'}
-      className={[
-        'flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors',
-        sel
-          ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
-          : 'border-game-green/40 bg-game-green/10 text-game-text hover:border-game-green/70',
-      ].join(' ')}
+      title="On site — tap to select"
+      className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-green/40 bg-game-green/10 text-game-text hover:border-game-green/70 transition-colors"
     >
       <span className="w-1.5 h-1.5 rounded-full bg-game-green shrink-0" />
       <span className="truncate">{u.name.split(' ')[0]}</span>
@@ -639,22 +633,16 @@ export function LocationDetail({ location }: { location: Location }) {
         </div>
       )}
 
-      {/* Heroes here — no label, just the chips present. Deploying selected-
-          elsewhere heroes lives in the persistent scope bar, so it isn't repeated
-          here. "No Heroes Here" when none are stationed. */}
-      <div>
-          <div className="flex items-start gap-x-3 gap-y-1.5 flex-wrap">
-            {here.length === 0 && (
-              <span className="self-center text-[11px] text-game-text-dim italic">No Heroes Here</span>
-            )}
-            {presentUnsel.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">{presentUnsel.map((u) => hereChip(u, false))}</div>
-            )}
-            {selectedHere.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">{selectedHere.map((u) => hereChip(u, true))}</div>
-            )}
-          </div>
-      </div>
+      {/* Heroes here — no label, just the on-site chips that AREN'T selected
+          (selected heroes ride the scope bar instead). "No Heroes Here" only when
+          none are stationed at all. */}
+      {(here.length === 0 || presentUnsel.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {here.length === 0
+            ? <span className="text-[11px] text-game-text-dim italic">No Heroes Here</span>
+            : presentUnsel.map((u) => hereChip(u))}
+        </div>
+      )}
 
       {/* class-change quests — hero-relative paths offered in the cities */}
       <ClassQuestBoard location={location} />

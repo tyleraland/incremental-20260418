@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  useGameStore, getDerivedStats, getInitials, getItemTraits, getAvailableSkills, SKILL_REGISTRY,
+  useGameStore, getDerivedStats, getItemTraits, getAvailableSkills, SKILL_REGISTRY,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS, SKILL_TACTICS, inheritedTacticIds,
   MONSTER_REGISTRY,
   type Unit, type DerivedStats,
@@ -55,7 +55,6 @@ const HERO_SUBS: { id: HeroSub; label: string }[] = [
 ]
 const PET_SUB: { id: HeroSub; label: string } = { id: 'pet', label: 'Pet' }
 
-const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
   { id: 'movement', label: 'Movement' }, { id: 'targeting', label: 'Targeting' },
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'Reaction' }, { id: 'passive', label: 'Passive' },
@@ -292,7 +291,10 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
   }
   return (
     <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-game-bg/40">
-      {/* Selected hero chip(s) — the whole multi-selection rides this row. */}
+      {/* Selected hero chip(s) — the whole multi-selection rides this row. Same
+          compact chip as the Location panel; selected heroes live here (and leave
+          the Location list); the primary one (drives the hero-scoped tabs) is
+          ringed. Tap to focus a different selected hero. */}
       <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
         {units.map((u) => {
           const isPrimary = u.id === primary.id
@@ -300,19 +302,17 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
             <button
               key={u.id}
               onClick={() => focusHero(u.id)}
-              title={single ? undefined : `Focus ${u.name.split(' ')[0]}`}
+              title={`${u.name.split(' ')[0]} — selected${single ? '' : ' · tap to focus'}`}
               className={[
-                'flex items-center gap-1.5 shrink-0 rounded-md border px-1.5 py-0.5 transition-colors',
-                isPrimary ? 'border-game-primary/50 bg-game-primary/10' : 'border-game-border bg-game-surface/40 hover:border-game-primary/40',
+                'flex items-center gap-1.5 shrink-0 text-[11px] px-2 py-1 rounded border transition-colors',
+                isPrimary
+                  ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
+                  : 'border-game-border text-game-text hover:border-game-primary/50',
               ].join(' ')}
             >
-              <span className="w-6 h-6 rounded-full bg-game-surface border border-game-border flex items-center justify-center text-[11px] shrink-0">
-                {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
-              </span>
-              <span className="min-w-0 text-left">
-                <span className="block text-xs font-semibold text-game-text leading-none truncate max-w-[7rem]">{single ? u.name : u.name.split(' ')[0]}</span>
-                {single && <span className="block text-[10px] text-game-text-dim leading-none mt-0.5 truncate">Lv {u.level} · {u.class ?? 'Novice'}</span>}
-              </span>
+              <span className="w-1.5 h-1.5 rounded-full bg-game-green shrink-0" />
+              <span className="truncate">{u.name.split(' ')[0]}</span>
+              <span className="text-game-text-dim">Lv {u.level}</span>
             </button>
           )
         })}
