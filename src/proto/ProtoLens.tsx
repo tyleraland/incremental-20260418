@@ -241,27 +241,18 @@ function HeroLens({ unit }: { unit: Unit }) {
 // dossier you're acting on. It carries the whole current selection (multi-select
 // rides here as chips), and the cross-location actions for it: a "somewhere else"
 // tip, Deploy here (bring the elsewhere heroes to the focused location), Jump (fly
-// the camera to a lone selected hero), and Follow (camera-lock a live hero). For a
-// SINGLE selected hero in a battle it also surfaces a compact live cooldown
-// readout on every tab except Hero (whose card shows the full version), so action
-// readiness is visible whether or not you're following. (Statuses stay on Hero.)
-function HeroScopeBar({ units, location, activeTab }: { units: Unit[]; location: { id: string; name: string } | null; activeTab: Top }) {
+// the camera to a lone selected hero), and Follow (camera-lock a live hero).
+// Statuses + cooldowns live on the Hero tab, not here.
+function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: string; name: string } | null }) {
   const assignUnits    = useGameStore((s) => s.assignUnits)
   const requestZoom    = useProtoStore((s) => s.requestZoom)
   const battleFollowId = useGameStore((s) => s.battleFollowId)
   const battles        = useGameStore((s) => s.battles)
-  const equipment      = useGameStore((s) => s.equipment)
-  const miscItems      = useGameStore((s) => s.miscItems)
   if (units.length === 0) return null
   const primary = units[0]
   const single  = units.length === 1
-  const liveC = single && primary.locationId ? battles[primary.locationId]?.combatants.find((c) => c.id === primary.id) : undefined
-  const primaryLive = !!liveC
+  const primaryLive = !!(primary.locationId && battles[primary.locationId]?.combatants.some((c) => c.id === primary.id))
   const following = battleFollowId === primary.id
-  // Compact live combat readout for a lone selected hero — shown everywhere but
-  // the Hero tab (HeroLens already shows the full version there).
-  const showCombat = primaryLive && activeTab !== 'hero'
-  const cells = showCombat ? actionCells(primary, liveC, equipment, miscItems) : []
   // Selected heroes not already at the location you're viewing — Deploy here brings
   // exactly these in (and the tip flags them).
   const elsewhere = location ? units.filter((u) => u.locationId !== location.id) : []
@@ -275,8 +266,7 @@ function HeroScopeBar({ units, location, activeTab }: { units: Unit[]; location:
     requestZoom(2)
   }
   return (
-    <div className="shrink-0 border-b border-game-border/60 bg-game-bg/40">
-      <div className="flex items-center gap-2 px-3 py-1.5">
+    <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/40">
       {/* Selected hero chip(s) — the whole multi-selection rides this row. */}
       <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
         {units.map((u) => {
@@ -329,15 +319,6 @@ function HeroScopeBar({ units, location, activeTab }: { units: Unit[]; location:
           >🎥 {following ? 'Following' : 'Follow'}</button>
         )}
       </div>
-      </div>
-
-      {/* Live cooldown readout for a lone selected hero, shown regardless of
-          follow state. Statuses stay on the Hero tab. */}
-      {showCombat && (
-        <div className="px-3 pb-2">
-          <CooldownGrid cells={cells} />
-        </div>
-      )}
     </div>
   )
 }
@@ -1189,7 +1170,7 @@ export function ProtoLens() {
       {/* Persistent selected-hero strip — rides every tab (incl. Location) so the
           selection's chips + cross-location actions (Deploy here / Jump / Follow)
           are always in reach. Hidden only when inspecting a foe. */}
-      {!selectedFoe && selUnits.length > 0 && <HeroScopeBar units={selUnits} location={location} activeTab={top} />}
+      {!selectedFoe && selUnits.length > 0 && <HeroScopeBar units={selUnits} location={location} />}
 
       {/* Hero sub-tabs only appear when there's a Pet (Report otherwise lives in
           Hero Detail). Hidden for a foe. */}
