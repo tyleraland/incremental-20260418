@@ -1652,6 +1652,12 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // (slide straight; re-route at the next decision round). No-op when decideNow.
   if (!decideNow) setDirectMove(true)
   executeMovement(state, self, applyLeash(state, self, evalMovement(state, self)))
+  // §spacing: a final separation pass each turn — whatever the movement path
+  // (approach, kite, hold, wander, or a movement tactic), the unit must not END
+  // its turn sitting on a neighbour, and especially not on an IMMOVABLE foe it
+  // can't push (a Living Nightshade) and so would otherwise attack from on top.
+  // Units that already moved are ≥ SEPARATION apart, so this is a no-op for them.
+  enforceSeparation(self, state.combatants, state.barriers)
   setDirectMove(false)
   applyFirewalls(state, self, posBefore)   // §firewall: bounce a foe that tried to cross
   const moved = self.pos.x !== posBefore.x || self.pos.y !== posBefore.y

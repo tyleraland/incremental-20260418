@@ -3,7 +3,7 @@
 // can be larger for open-world, read via engine/arena.ts). Euclidean distance only.
 
 import {
-  COLS, ROWS, SEPARATION, FRONT_ROWS, MID_ROWS,
+  COLS, ROWS, SEPARATION, IMMOVABLE_CLEARANCE, FRONT_ROWS, MID_ROWS,
   PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
 import { slideMove, steerAround } from './barriers'
@@ -160,33 +160,51 @@ export function enforceSeparation(mover: Combatant, all: Combatant[], barriers: 
   // margin + the `d >= SEPARATION` skip below make the set identical too. No hash
   // (tests / between-round spawns) → scan `all`, same result.
   const grid = spatialHashFor(all)
-  const others = grid ? grid.near(mover.pos, SEPARATION + SPATIAL_MARGIN) : all
+  // Query out to the WIDER of the two thresholds so immovable neighbours (clearance
+  // > SEPARATION) aren't missed by the spatial pre-filter.
+  const queryR = Math.max(SEPARATION, IMMOVABLE_CLEARANCE)
+  const others = grid ? grid.near(mover.pos, queryR + SPATIAL_MARGIN) : all
   for (const other of others) {
     if (other === mover || !other.alive) continue
+    // A fixture — a neutral town NPC, or any immobile unit (moveSpeed 0, e.g. a
+    // rooted caster like a Living Nightshade) — never gives way: the mover is
+    // pushed FULLY clear of it in one step (no gradual/timeScale easing) so a fast
+    // mover can't tunnel onto it and end up attacking "on top". Its clearance is a
+    // touch wider than a token so the attacker stops visibly in front. (An
+    // immovable unit never moves on its own, so `mover` is never one of these.)
+    const immovable = other.team === 'neutral' || other.moveSpeed <= EPS
+    const sep = immovable ? IMMOVABLE_CLEARANCE : SEPARATION
     let dx = mover.pos.x - other.pos.x
     let dy = mover.pos.y - other.pos.y
     let d = Math.sqrt(dx * dx + dy * dy)
-    if (d >= SEPARATION - EPS) continue
+    if (d >= sep - EPS) continue
+    // How far apart to push — captured BEFORE the degenerate fix-up below, which
+    // resets `d` to 1 purely to normalise the fallback direction. Using that reset
+    // `d` for the magnitude would zero the push when two units exactly overlap (the
+    // "Charger dives on top of an immobile foe and never separates" bug).
+    const gap = sep - d
     if (d < EPS) {
       // Exactly overlapping: separate along a deterministic axis (by index).
       dx = mover.index < other.index ? -1 : 1
       dy = 0
       d = 1
     }
-    // Resolve overlap gradually at a finer time scale (÷ scale), so a separation
-    // shove doesn't add a big fixed jump on top of the smaller per-round move.
-    const overlap = (SEPARATION - d) / 2 / timeScale()
     const ux = dx / d
     const uy = dy / d
-    // A neutral NPC is an immovable fixture (a merchant at their stall): it's
-    // never shoved — the mover absorbs the whole separation and slides around it.
-    // (Neutrals never move on their own, so `mover` is never neutral here.)
-    if (other.team === 'neutral') {
-      mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * overlap * 2, y: mover.pos.y + uy * overlap * 2 }, barriers)
+    if (immovable) {
+      // A unit under an explicit move order is marching THROUGH on purpose — don't
+      // wall it (a head-on full push would cancel its step and stall it); let it
+      // ease past with the gentle gradual nudge instead. Normal AI movers get the
+      // full push so they can't tunnel onto a fixture and attack from on top.
+      const push = mover.moveOrder ? gap / 2 / timeScale() : gap
+      mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * push, y: mover.pos.y + uy * push }, barriers)
       continue
     }
+    // Resolve overlap gradually at a finer time scale (÷ scale), so a separation
+    // shove doesn't add a big fixed jump on top of the smaller per-round move.
     // Push apart, but slide the push along any wall so crowded units against
     // terrain spread out instead of freezing into a blob.
+    const overlap = gap / 2 / timeScale()
     mover.pos = slideMove(mover.pos, { x: mover.pos.x + ux * overlap, y: mover.pos.y + uy * overlap }, barriers)
     other.pos = slideMove(other.pos, { x: other.pos.x - ux * overlap, y: other.pos.y - uy * overlap }, barriers)
   }

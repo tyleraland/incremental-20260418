@@ -6,7 +6,13 @@ export const COLS = 15           // §2.1 grid columns (x ∈ [0, COLS])
 export const ROWS = 15           // §2.1 grid rows    (y ∈ [0, ROWS])
 
 export const BASE_MOVE_SPEED = 0.9   // §2.5 grid units per round
-export const SEPARATION = 0.7        // §2.4 minimum distance between two units
+export const SEPARATION = 0.7        // §2.4 minimum distance between two (mobile) units
+// Wider standoff a mover keeps from an IMMOVABLE unit — a neutral town NPC or any
+// immobile combatant (moveSpeed 0, e.g. a rooted caster like a Living Nightshade).
+// Just above a rendered token (~0.9 cell) so an attacker stops clear of (not on
+// top of) a stationary foe, yet below the smallest melee reach in play so it never
+// shoves an attacker out of its own attack range. See enforceSeparation.
+export const IMMOVABLE_CLEARANCE = 1.0
 export const MAX_ROUNDS = 200        // §9.2 draw if unresolved by this round
 
 // §3 "sneak attack" / ambush: a strike made from stealth lands for +25% extra
