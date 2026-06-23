@@ -40,8 +40,11 @@ function equippedCombatSkills(unit: Unit): EngineSkill[] {
 // spitters like Living Nightshade or Giant Frog) reach 4. The cleric's Rod is
 // a melee focus (≤5 ft ⇒ melee), so a cleric fights at contact and heals from
 // there. Melee reach must stay above SEPARATION (0.7) so an attacker isn't
-// pushed back out of range by the spacing rule.
-const MELEE_GRID_RANGE = 1.1
+// pushed back out of range by the spacing rule — and a bit above a token's own
+// width (~0.9 cell, CHIP_CELL_FRACTION) so a melee attacker stops clearly IN
+// FRONT of its target instead of crowding onto it (the old 1.1 left only a ~0.2
+// cell sliver, which read as standing on top of a stationary foe).
+const MELEE_GRID_RANGE = 1.4
 const RANGED_FEET_THRESHOLD = 5   // game attackRange > this ⇒ ranged
 
 // Map a game-feet attack range to an engine grid range. The threshold at 25 ft

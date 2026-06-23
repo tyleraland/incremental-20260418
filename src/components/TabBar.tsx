@@ -21,6 +21,14 @@ export function TabBar() {
     setActiveTab(id)
   }
 
+  // Leave the classic tab-bar UI for the default "Tactician" shell — classic is
+  // opt-in via `?classic=1`, so drop the flag and reload into the default render.
+  function exitClassic() {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('classic')
+    window.location.href = url.toString()
+  }
+
   return (
     <nav className="fixed top-0 inset-x-0 z-40 bg-game-surface border-b border-game-border">
       <div className="flex">
@@ -39,6 +47,16 @@ export function TabBar() {
             <span className="text-xs font-medium">{tab.label}</span>
           </button>
         ))}
+        {/* Settings — leave the classic UI for the default shell. */}
+        <button
+          onClick={exitClassic}
+          title="Settings — switch to the default UI"
+          aria-label="Settings — switch to the default UI"
+          className="flex flex-col items-center gap-0.5 py-2 px-4 text-game-muted hover:text-game-text-dim transition-colors"
+        >
+          <span className="text-lg leading-none">⚙</span>
+          <span className="text-xs font-medium">Settings</span>
+        </button>
       </div>
     </nav>
   )
