@@ -1134,12 +1134,26 @@ export function ProtoLens() {
   // space for reading); scrolling back up — or reaching the top — brings it back.
   const [tabsHidden, setTabsHidden] = useState(false)
   const lastScrollY = useRef(0)
+  // Collapsing the row resizes the scroll area, so the browser clamps scrollTop and
+  // fires a follow-up scroll event. Without a guard that bounces the state straight
+  // back, the tabs flicker (and the strip "shakes" at the bottom). So: only toggle
+  // on a real direction change past a deadzone, and ignore scroll events for a beat
+  // after each toggle so the reflow's own scroll can't undo it.
+  const settleUntil = useRef(0)
   const onLensScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const y = e.currentTarget.scrollTop
-    if (y <= 4) setTabsHidden(false)
-    else if (y > lastScrollY.current + 6) setTabsHidden(true)
-    else if (y < lastScrollY.current - 6) setTabsHidden(false)
+    const now = performance.now()
+    const prev = lastScrollY.current
     lastScrollY.current = y
+    if (now < settleUntil.current) return
+    const set = (hide: boolean) => { setTabsHidden(hide); settleUntil.current = now + 350 }
+    // Only hide when there's clearly more overflow than the row's own height, so
+    // reclaiming its space can't shrink the content to a fits-exactly, can't-scroll
+    // state that strands the tabs hidden.
+    const overflow = e.currentTarget.scrollHeight - e.currentTarget.clientHeight
+    if (y <= 4) { if (tabsHidden) set(false) }
+    else if (y > prev + 8) { if (!tabsHidden && overflow > 96) set(true) }
+    else if (y < prev - 8) { if (tabsHidden) set(false) }
   }
 
   return (
