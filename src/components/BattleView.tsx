@@ -756,7 +756,6 @@ export function StatusList({ statuses }: { statuses: StatusEffect[] }) {
   const sel = open != null ? statuses[open] : null
   return (
     <div>
-      <div className="text-[10px] text-game-text-dim mb-1">Status</div>
       <div className="flex flex-wrap gap-1">
         {statuses.map((s, i) => (
           <button

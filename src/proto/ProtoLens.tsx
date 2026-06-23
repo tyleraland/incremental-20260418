@@ -242,9 +242,9 @@ function HeroLens({ unit }: { unit: Unit }) {
 // rides here as chips), and the cross-location actions for it: a "somewhere else"
 // tip, Deploy here (bring the elsewhere heroes to the focused location), Jump (fly
 // the camera to a lone selected hero), and Follow (camera-lock a live hero). For a
-// SINGLE selected hero in a battle it also surfaces a compact live readout —
-// statuses + action cooldowns — on every tab except Hero (whose card shows them in
-// full), so they're visible whether or not you're following.
+// SINGLE selected hero in a battle it also surfaces a compact live cooldown
+// readout on every tab except Hero (whose card shows the full version), so action
+// readiness is visible whether or not you're following. (Statuses stay on Hero.)
 function HeroScopeBar({ units, location, activeTab }: { units: Unit[]; location: { id: string; name: string } | null; activeTab: Top }) {
   const assignUnits    = useGameStore((s) => s.assignUnits)
   const requestZoom    = useProtoStore((s) => s.requestZoom)
@@ -331,11 +331,10 @@ function HeroScopeBar({ units, location, activeTab }: { units: Unit[]; location:
       </div>
       </div>
 
-      {/* Live combat readout for a lone selected hero — statuses + cooldowns,
-          shown regardless of follow state (Hero tab shows the full card instead). */}
+      {/* Live cooldown readout for a lone selected hero, shown regardless of
+          follow state. Statuses stay on the Hero tab. */}
       {showCombat && (
-        <div className="px-3 pb-2 space-y-1.5">
-          {liveC!.statuses.length > 0 && <StatusList statuses={liveC!.statuses} />}
+        <div className="px-3 pb-2">
           <CooldownGrid cells={cells} />
         </div>
       )}
@@ -1150,27 +1149,41 @@ export function ProtoLens() {
   const grew = !!unit && unit.level > (viewedUnitLevels[unit.id] ?? 0)
   const tabPip = (id: Top): boolean => grew && (id === 'hero' || id === 'skills')
 
+  // Collapse the top tab row as you scroll the lens content DOWN (reclaim the
+  // space for reading); scrolling back up — or reaching the top — brings it back.
+  const [tabsHidden, setTabsHidden] = useState(false)
+  const lastScrollY = useRef(0)
+  const onLensScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const y = e.currentTarget.scrollTop
+    if (y <= 4) setTabsHidden(false)
+    else if (y > lastScrollY.current + 6) setTabsHidden(true)
+    else if (y < lastScrollY.current - 6) setTabsHidden(false)
+    lastScrollY.current = y
+  }
+
   return (
     <div className="relative h-full flex flex-col bg-game-surface/40 min-h-0">
-      <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
-        {TOP_TABS.map((t) => (
-          <button
-            key={t.id}
-            aria-label={t.label}
-            onClick={() => setTop(t.id)}
-            className={[
-              'flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors relative',
-              top === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
-            ].join(' ')}
-          >
-            <span className="text-base leading-none relative">
-              {t.icon}
-              {tabPip(t.id) && <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-game-gold border border-game-bg" />}
-            </span>
-            <span className="text-[11px] font-medium">{t.label}</span>
-            {top === t.id && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-primary" />}
-          </button>
-        ))}
+      <div className={['shrink-0 overflow-hidden transition-[max-height] duration-200 ease-out', tabsHidden ? 'max-h-0' : 'max-h-20'].join(' ')}>
+        <div className="flex border-b border-game-border bg-game-surface/60">
+          {TOP_TABS.map((t) => (
+            <button
+              key={t.id}
+              aria-label={t.label}
+              onClick={() => setTop(t.id)}
+              className={[
+                'flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors relative',
+                top === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
+              ].join(' ')}
+            >
+              <span className="text-base leading-none relative">
+                {t.icon}
+                {tabPip(t.id) && <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-game-gold border border-game-bg" />}
+              </span>
+              <span className="text-[11px] font-medium">{t.label}</span>
+              {top === t.id && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-primary" />}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Persistent selected-hero strip — rides every tab (incl. Location) so the
@@ -1201,7 +1214,7 @@ export function ProtoLens() {
       {/* Content. A modest zoom nudges every nested text size up a touch without
           rewriting dozens of explicit `text-[*]` classes (h-full keeps Empty
           states centred; overflow is handled by the scroll container above). */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3" onScroll={onLensScroll}>
         <div className="h-full" style={{ zoom: 1.08 }}>
           {top === 'hero' && (unit
             ? (effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />)
