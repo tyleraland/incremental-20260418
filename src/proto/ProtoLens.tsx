@@ -225,34 +225,87 @@ function HeroLens({ unit }: { unit: Unit }) {
 }
 
 // ── Persistent hero scope-bar ──────────────────────────────────────────────────
-// One identity strip that rides above the four hero-scoped tabs (Hero / Equipment
-// / Skills / Tactics) so it's always obvious WHOSE dossier you're editing as you
-// switch tabs — the lens's answer to "wait, whose stats are these?". Identity +
-// camera-follow only; HP is read on the Hero tab and the battlefield (not repeated
-// here).
-function HeroScopeBar({ unit }: { unit: Unit }) {
-  const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
+// One identity strip that rides above every lens tab so it's always obvious WHOSE
+// dossier you're acting on. It carries the whole current selection (multi-select
+// rides here as chips), and the cross-location actions for it: a "somewhere else"
+// tip, Deploy here (bring the elsewhere heroes to the focused location), Jump (fly
+// the camera to a lone selected hero), and Follow (camera-lock a live hero).
+function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: string; name: string } | null }) {
+  const assignUnits    = useGameStore((s) => s.assignUnits)
+  const requestZoom    = useProtoStore((s) => s.requestZoom)
   const battleFollowId = useGameStore((s) => s.battleFollowId)
-  const live = !!(battle?.combatants.find((x) => x.id === unit.id))
-  const following = battleFollowId === unit.id
+  const battles        = useGameStore((s) => s.battles)
+  if (units.length === 0) return null
+  const primary = units[0]
+  const single  = units.length === 1
+  const primaryLive = !!(primary.locationId && battles[primary.locationId]?.combatants.some((c) => c.id === primary.id))
+  const following = battleFollowId === primary.id
+  // Selected heroes not already at the location you're viewing — Deploy here brings
+  // exactly these in (and the tip flags them).
+  const elsewhere = location ? units.filter((u) => u.locationId !== location.id) : []
+  // Tap a chip to focus that hero (make it primary) without dropping the selection.
+  const focusHero = (id: string) => useGameStore.setState((s) => ({
+    selectedUnitIds: [id, ...s.selectedUnitIds.filter((x) => x !== id)],
+  }))
+  const jump = () => {
+    if (!primary.locationId) return
+    useGameStore.setState({ selectedLocationId: primary.locationId, combatLocationId: primary.locationId, battleFollowId: primary.id })
+    requestZoom(2)
+  }
   return (
     <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/40">
-      <div className="w-7 h-7 rounded-full bg-game-surface border border-game-border flex items-center justify-center text-xs shrink-0">
-        {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
+      {/* Selected hero chip(s) — the whole multi-selection rides this row. */}
+      <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
+        {units.map((u) => {
+          const isPrimary = u.id === primary.id
+          return (
+            <button
+              key={u.id}
+              onClick={() => focusHero(u.id)}
+              title={single ? undefined : `Focus ${u.name.split(' ')[0]}`}
+              className={[
+                'flex items-center gap-1.5 shrink-0 rounded-md border px-1.5 py-0.5 transition-colors',
+                isPrimary ? 'border-game-primary/50 bg-game-primary/10' : 'border-game-border bg-game-surface/40 hover:border-game-primary/40',
+              ].join(' ')}
+            >
+              <span className="w-6 h-6 rounded-full bg-game-surface border border-game-border flex items-center justify-center text-[11px] shrink-0">
+                {u.class && CLASS_ICON[u.class] ? CLASS_ICON[u.class] : getInitials(u.name)}
+              </span>
+              <span className="min-w-0 text-left">
+                <span className="block text-xs font-semibold text-game-text leading-none truncate max-w-[7rem]">{single ? u.name : u.name.split(' ')[0]}</span>
+                {single && <span className="block text-[10px] text-game-text-dim leading-none mt-0.5 truncate">Lv {u.level} · {u.class ?? 'Novice'}</span>}
+              </span>
+            </button>
+          )
+        })}
       </div>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold text-game-text leading-none truncate">{unit.name}</div>
-        <div className="text-[10px] text-game-text-dim leading-none mt-0.5 truncate">
-          Lv {unit.level} · {unit.class ?? 'Novice'}
-        </div>
-      </div>
-      {live && (
-        <button
-          onClick={() => useGameStore.setState({ battleFollowId: following ? null : unit.id })}
-          title="Lock the camera onto this hero"
-          className={`ml-auto shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
-        >🎥 {following ? 'Following' : 'Follow'}</button>
+
+      {/* "somewhere else" tip — the selection isn't on the location you're viewing. */}
+      {location && elsewhere.length > 0 && (
+        <span className="hidden sm:block text-[10px] text-amber-200/80 truncate">
+          {elsewhere.length === 1 ? `${elsewhere[0].name.split(' ')[0]} is elsewhere` : `${elsewhere.length} selected are elsewhere`} · viewing {location.name}
+        </span>
       )}
+
+      <div className="ml-auto shrink-0 flex items-center gap-1.5">
+        {location && elsewhere.length > 0 && (
+          <button
+            onClick={() => assignUnits(elsewhere.map((u) => u.id), location.id)}
+            title={`Deploy ${elsewhere.length === 1 ? elsewhere[0].name.split(' ')[0] : `${elsewhere.length} heroes`} to ${location.name}`}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md border border-game-primary/50 text-[11px] text-game-text hover:bg-game-primary/15"
+          >➤ Deploy here{elsewhere.length > 1 ? ` (${elsewhere.length})` : ''}</button>
+        )}
+        {single && primary.locationId && location && primary.locationId !== location.id && (
+          <button onClick={jump} title="Jump the camera to this hero" className="px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⌖ Jump</button>
+        )}
+        {single && primaryLive && (
+          <button
+            onClick={() => useGameStore.setState({ battleFollowId: following ? null : primary.id })}
+            title="Lock the camera onto this hero"
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
+          >🎥 {following ? 'Following' : 'Follow'}</button>
+        )}
+      </div>
     </div>
   )
 }
@@ -863,40 +916,6 @@ function SkillsLens({ unit }: { unit: Unit }) {
   )
 }
 
-// ── Focus cue ─────────────────────────────────────────────────────────────────
-// Whether the selected hero is on the battlefield you're currently viewing, with
-// shortcuts: bring them HERE (deploy to the focused location) or JUMP the camera
-// to where they are. Resolves the "I selected someone elsewhere" ambiguity.
-function FocusCue({ unit, location }: { unit: Unit; location: { id: string; name: string } | null }) {
-  const assignUnits = useGameStore((s) => s.assignUnits)
-  const requestZoom = useProtoStore((s) => s.requestZoom)
-  const here = !!location && unit.locationId === location.id
-  // When the hero is on the viewed battlefield, say nothing (reclaim the space);
-  // only surface the cue when they're elsewhere.
-  if (here) return null
-  function jump() {
-    if (!unit.locationId) return
-    useGameStore.setState({ selectedLocationId: unit.locationId, combatLocationId: unit.locationId, battleFollowId: unit.id })
-    requestZoom(2)
-  }
-  return (
-    <div className="mb-2 rounded-md border border-amber-600/40 bg-amber-950/20 px-2.5 py-1.5">
-      <div className="text-[10px] text-amber-200/90">
-        {unit.name.split(' ')[0]} is {unit.locationId ? 'elsewhere' : 'at the guild'}
-        {location ? <> — you're viewing <span className="text-game-text">{location.name}</span></> : null}
-      </div>
-      <div className="flex gap-1.5 mt-1">
-        {location && (
-          <button onClick={() => assignUnits([unit.id], location.id)} className="text-[10px] px-2 py-0.5 rounded border border-game-primary/50 text-game-text hover:bg-game-primary/15">➤ Deploy here</button>
-        )}
-        {unit.locationId && (
-          <button onClick={jump} className="text-[10px] px-2 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text">⌖ Jump to them</button>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ── Items lens (guild stash, n=all ↔ per-hero n=1 diffs) ───────────────────────
 const CAT_SLOT: Partial<Record<ItemCategory, EquipSlot>> = {
   'weapon-1h': 'mainHand', 'weapon-2h': 'mainHand', shield: 'offHand', armor: 'armor', accessory: 'accessory',
@@ -1078,6 +1097,9 @@ export function ProtoLens() {
   }, [heroBattleRequest])
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
+  // The whole current selection (in selection order) — the scope bar carries all
+  // of it as chips, so a multi-select can be deployed/followed from one row.
+  const selUnits = selectedUnitIds.map((id) => units.find((u) => u.id === id)).filter((u): u is Unit => !!u)
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
 
   // NOTE: viewing a hero no longer clears their attention cue — only *spending* a
@@ -1118,9 +1140,10 @@ export function ProtoLens() {
         ))}
       </div>
 
-      {/* Persistent hero identity across the four hero-scoped tabs. Location is
-          site-scoped, so it owns its own header (the location name) instead. */}
-      {top !== 'location' && unit && !selectedFoe && <HeroScopeBar unit={unit} />}
+      {/* Persistent selected-hero strip — rides every tab (incl. Location) so the
+          selection's chips + cross-location actions (Deploy here / Jump / Follow)
+          are always in reach. Hidden only when inspecting a foe. */}
+      {!selectedFoe && selUnits.length > 0 && <HeroScopeBar units={selUnits} location={location} />}
 
       {/* Hero sub-tabs only appear when there's a Pet (Report otherwise lives in
           Hero Detail). Hidden for a foe. */}
@@ -1147,12 +1170,9 @@ export function ProtoLens() {
           states centred; overflow is handled by the scroll container above). */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         <div className="h-full" style={{ zoom: 1.08 }}>
-          {top === 'hero' && (unit ? (
-            <>
-              <FocusCue unit={unit} location={location} />
-              {effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />}
-            </>
-          ) : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />)}
+          {top === 'hero' && (unit
+            ? (effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />)
+            : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />)}
 
           {top === 'location' && (location
             ? <LocationDetail location={location} />
