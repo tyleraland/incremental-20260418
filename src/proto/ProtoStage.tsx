@@ -446,13 +446,6 @@ export function ProtoStage() {
         )}
       </div>
 
-      {/* dive hint while in the locale band */}
-      {focusLoc && zoom >= 0.85 && battleOpacity < 0.15 && !stageOverlay && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full border border-game-border bg-game-bg/80 text-[11px] text-game-text-dim pointer-events-none">
-          Pinch / scroll in to drop into {focusLoc.name}
-        </div>
-      )}
-
       {/* details/research overlay (skill tree, …) — in front of the battlefield */}
       {stageOverlay && <StageOverlay overlay={stageOverlay} onClose={closeStageOverlay} />}
     </div>

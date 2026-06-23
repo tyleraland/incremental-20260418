@@ -335,14 +335,15 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
           <button onClick={jump} title="Jump the camera to this hero" className="px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⌖ Jump</button>
         )}
         {single && primaryLive && (
-          <button onClick={() => setDebugOpen(true)} title="Open the unit debug panel" className="px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⛭ Debug</button>
-        )}
-        {single && primaryLive && (
           <button
             onClick={() => useGameStore.setState({ battleFollowId: following ? null : primary.id })}
             title="Lock the camera onto this hero"
             className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
           >🎥 {following ? 'Following' : 'Follow'}</button>
+        )}
+        {/* Debug pushed to the far right, set off from the action buttons. */}
+        {single && primaryLive && (
+          <button onClick={() => setDebugOpen(true)} title="Open the unit debug panel" className="ml-1 px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⛭ Debug</button>
         )}
       </div>
       {debugOpen && liveC && battle && (

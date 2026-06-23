@@ -568,10 +568,7 @@ export function LocationDetail({ location }: { location: Location }) {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
-  const assignUnits         = useGameStore((s) => s.assignUnits)
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
-  // Heroes in the current selection that aren't already stationed here.
-  const toDeploy = units.filter((u) => selectedUnitIds.includes(u.id) && u.locationId !== location.id)
 
   // "Enter <Region>" — a world location can open into a dungeon map page. Some
   // pages are sandbox-only (the fixed-encounters test dungeon): hide the entry
@@ -590,9 +587,9 @@ export function LocationDetail({ location }: { location: Location }) {
   const [codexId, setCodexId] = useState<string | null>(null)
 
   const here = units.filter((u) => u.locationId === location.id)
-  // Three positional groups for the Heroes row: present-but-unselected (left),
-  // selected & already here (middle), and toDeploy (selected elsewhere) which
-  // rides next to the Deploy button on the right.
+  // Two positional groups for the Heroes row: present-but-unselected (left) and
+  // selected & already here (middle). Deploying elsewhere-selected heroes lives in
+  // the scope bar, not here.
   const selectedHere = here.filter((u) => selectedUnitIds.includes(u.id))
   const presentUnsel = here.filter((u) => !selectedUnitIds.includes(u.id))
   // Tap a hero chip to add/remove them from the current selection (so this group
@@ -642,9 +639,9 @@ export function LocationDetail({ location }: { location: Location }) {
         )}
       </div>
 
-      {/* Heroes here — no label, just the chips present (three positional columns:
-          present-but-unselected, selected & already here, and the staged-deploy
-          column with selected-elsewhere ghost chips). "No Heroes Here" when empty. */}
+      {/* Heroes here — no label, just the chips present. Deploying selected-
+          elsewhere heroes lives in the persistent scope bar, so it isn't repeated
+          here. "No Heroes Here" when none are stationed. */}
       <div>
           <div className="flex items-start gap-x-3 gap-y-1.5 flex-wrap">
             {here.length === 0 && (
@@ -655,28 +652,6 @@ export function LocationDetail({ location }: { location: Location }) {
             )}
             {selectedHere.length > 0 && (
               <div className="flex flex-wrap gap-1.5">{selectedHere.map((u) => hereChip(u, true))}</div>
-            )}
-            {toDeploy.length > 0 && (
-              <div className="ml-auto flex flex-col items-end gap-1.5">
-                <button
-                  onClick={() => assignUnits(toDeploy.map((u) => u.id), location.id)}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-md border border-blue-400/70 bg-blue-500/25 text-blue-50 hover:bg-blue-500/40 hover:border-blue-300 transition-colors shadow-sm"
-                >
-                  ➤ Deploy {toDeploy.length > 1 ? `${toDeploy.length} ` : ''}here
-                </button>
-                {toDeploy.map((u) => (
-                  <button
-                    key={u.id}
-                    onClick={() => toggleSel(u.id)}
-                    title={`${u.name.split(' ')[0]} is elsewhere — Deploy here to bring them in (tap to unselect)`}
-                    className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-dashed border-blue-400/60 bg-blue-500/10 text-blue-100 hover:border-blue-300 transition-colors"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" />
-                    <span className="truncate">{u.name.split(' ')[0]}</span>
-                    <span className="text-blue-300/80">Lv {u.level}</span>
-                  </button>
-                ))}
-              </div>
             )}
           </div>
       </div>
