@@ -17,7 +17,8 @@ import { GOLD_ID, materialValue, equipmentValue } from './economy'
 import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
 import { seedProtoMocks } from './seed'
-import { StatsTab, DebugTab, StatusList } from '@/components/BattleView'
+import { UnitDetailOverlay, StatusList } from '@/components/BattleView'
+import { serializeBattle, type BattleState } from '@/engine'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationDetail } from './LocationDetail'
 import { NPC_REGISTRY } from '@/data/npcs'
@@ -236,6 +237,25 @@ function HeroLens({ unit }: { unit: Unit }) {
   )
 }
 
+// Copy a 1:1 BSNAP token of a battle to the clipboard (bug reports / `npm run
+// bsnap` replay) — the proto-shell equivalent of the classic BattleView's
+// "⎘ state" button. Renders nothing when there's no battle to copy.
+function BsnapButton({ battle }: { battle: BattleState | undefined }) {
+  const [copied, setCopied] = useState(false)
+  if (!battle) return null
+  const copy = () => {
+    try { navigator.clipboard?.writeText(serializeBattle(battle)) } catch { /* clipboard unavailable */ }
+    setCopied(true); setTimeout(() => setCopied(false), 1200)
+  }
+  return (
+    <button
+      onClick={copy}
+      title="Copy a snapshot of this location's battle (for bug reports / replay)"
+      className="px-2.5 py-1 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text hover:bg-white/5"
+    >{copied ? '✓ state copied' : '⎘ copy battle state'}</button>
+  )
+}
+
 // ── Persistent hero scope-bar ──────────────────────────────────────────────────
 // One identity strip that rides above every lens tab so it's always obvious WHOSE
 // dossier you're acting on. It carries the whole current selection (multi-select
@@ -248,10 +268,13 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
   const requestZoom    = useProtoStore((s) => s.requestZoom)
   const battleFollowId = useGameStore((s) => s.battleFollowId)
   const battles        = useGameStore((s) => s.battles)
+  const [debugOpen, setDebugOpen] = useState(false)
   if (units.length === 0) return null
   const primary = units[0]
   const single  = units.length === 1
-  const primaryLive = !!(primary.locationId && battles[primary.locationId]?.combatants.some((c) => c.id === primary.id))
+  const battle = primary.locationId ? battles[primary.locationId] : undefined
+  const liveC = single ? battle?.combatants.find((c) => c.id === primary.id) : undefined
+  const primaryLive = !!liveC
   const following = battleFollowId === primary.id
   // Selected heroes not already at the location you're viewing — Deploy here brings
   // exactly these in (and the tip flags them).
@@ -312,6 +335,9 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
           <button onClick={jump} title="Jump the camera to this hero" className="px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⌖ Jump</button>
         )}
         {single && primaryLive && (
+          <button onClick={() => setDebugOpen(true)} title="Open the unit debug panel" className="px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⛭ Debug</button>
+        )}
+        {single && primaryLive && (
           <button
             onClick={() => useGameStore.setState({ battleFollowId: following ? null : primary.id })}
             title="Lock the camera onto this hero"
@@ -319,6 +345,9 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
           >🎥 {following ? 'Following' : 'Follow'}</button>
         )}
       </div>
+      {debugOpen && liveC && battle && (
+        <UnitDetailOverlay c={liveC} battle={battle} initialTab="debug" onClose={() => setDebugOpen(false)} />
+      )}
     </div>
   )
 }
@@ -1007,6 +1036,7 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
   const battle = useGameStore((s) => s.battles[locId])
   const monsterSeen = useGameStore((s) => s.monsterSeen)
   const [codex, setCodex] = useState(false)
+  const [debug, setDebug] = useState(false)
   const c = battle?.combatants.find((x) => x.id === combatantId)
   if (!battle || !c) return <Empty icon="☠" title="Foe is gone" sub="This monster left the battlefield. Tap another, or pick a hero." />
   // A neutral town NPC (merchant / questgiver): not a foe — show who they are and
@@ -1045,6 +1075,7 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
           <span className="text-lg font-semibold text-red-200 truncate">{c.name}</span>
           {def && <span className="text-xs text-game-text-dim shrink-0">Lv {def.level}</span>}
           <span className={`text-[10px] uppercase tracking-wide shrink-0 ${c.provoked ? 'text-red-300' : 'text-amber-300'}`}>{c.alive ? (c.provoked ? 'hostile' : 'passive') : 'KO'}</span>
+          <button onClick={() => setDebug(true)} title="Open the unit debug panel" className="ml-auto shrink-0 px-2 py-0.5 rounded-md border border-game-border text-[10px] text-game-text-dim hover:text-game-text">⛭ Debug</button>
         </div>
         <StatBar label="HP" cur={c.hp} max={c.maxHp} color="bg-red-600" />
         {c.statuses.length > 0 && <StatusList statuses={c.statuses} />}
@@ -1056,6 +1087,7 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
         <button onClick={() => setCodex(true)} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-game-border text-sm text-game-text-dim hover:text-game-text hover:bg-white/5">📖 Codex Entry ▸</button>
       )}
       {codex && def && <MonsterCodex monster={def} seenCount={monsterSeen[monsterId] ?? 0} onClose={() => setCodex(false)} />}
+      {debug && <UnitDetailOverlay c={c} battle={battle} initialTab="debug" onClose={() => setDebug(false)} />}
     </div>
   )
 }
@@ -1067,6 +1099,7 @@ export function ProtoLens() {
   const locations        = useGameStore((s) => s.locations)
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
+  const battles          = useGameStore((s) => s.battles)
   const viewedUnitLevels = useGameStore((s) => s.viewedUnitLevels)
   const openReport       = useGameStore((s) => s.openReport)
   const selectedFoe      = useProtoStore((s) => s.selectedFoe)
@@ -1213,7 +1246,16 @@ export function ProtoLens() {
         <div className="h-full" style={{ zoom: 1.08 }}>
           {top === 'hero' && (unit
             ? (effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />)
-            : <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />)}
+            : (
+              <div className="relative h-full">
+                <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />
+                {selectedLocId && battles[selectedLocId] && (
+                  <div className="absolute inset-x-0 bottom-2 flex justify-center">
+                    <BsnapButton battle={battles[selectedLocId]} />
+                  </div>
+                )}
+              </div>
+            ))}
 
           {top === 'location' && (location
             ? <LocationDetail location={location} />

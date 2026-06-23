@@ -954,9 +954,9 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
 // Selected-unit detail as a dismissable bottom-sheet overlay. Floats over the
 // arena so the board keeps its full height regardless of screen size. Two tabs:
 // Stats (the card) and Debug (blackboard + tactics + trace, with copy-to-share).
-function UnitDetailOverlay({ c, battle, onClose, onFollow }: { c: Combatant; battle: BattleState; onClose: () => void; onFollow?: (unitId: string) => void }) {
+export function UnitDetailOverlay({ c, battle, onClose, onFollow, initialTab = 'stats' }: { c: Combatant; battle: BattleState; onClose: () => void; onFollow?: (unitId: string) => void; initialTab?: 'stats' | 'debug' }) {
   const isPlayer = c.team === 'player'
-  const [tab, setTab] = useState<'stats' | 'debug'>('stats')
+  const [tab, setTab] = useState<'stats' | 'debug'>(initialTab)
   const [copied, setCopied] = useState(false)
 
   const copy = () => {
