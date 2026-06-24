@@ -282,6 +282,7 @@ export function ProtoApp() {
   const selectedUnitIds  = useGameStore((s) => s.selectedUnitIds)
   const selectedLocId    = useGameStore((s) => s.selectedLocationId)
   const battleFollowId   = useGameStore((s) => s.battleFollowId)
+  const offlineSummary   = useGameStore((s) => s.offlineSummary)
   const viewed           = useGameStore((s) => s.viewedUnitLevels)
   const requestZoom      = useProtoStore((s) => s.requestZoom)
   const requestHeroTab   = useProtoStore((s) => s.requestHeroTab)
@@ -372,18 +373,32 @@ export function ProtoApp() {
         combatLocationId: hero.locationId ?? null,
         battleFollowId: hero.locationId ? hero.id : null,
       })
-      // Returning after a real absence pops the offline report. Don't ALSO dive the
-      // camera world→battle behind it — that rapid zoom under the modal is jarring.
-      // Land calm: selecting the hero's location just centers the world map there
-      // (no zoom), so the report reads over a still map and the player zooms in when
-      // ready. `lastTickAt` here is the restored `savedAt` (this runs after the save
-      // loads but before catch-up), so the gap matches when the report will show.
+      // Returning after a real absence pops the offline report. Don't dive the
+      // camera world→battle BEHIND the modal — that rapid zoom under the report is
+      // jarring. Land calm: selecting the hero's location centers the world map
+      // there (no zoom) so the report reads over a still map; the dive into the
+      // followed hero's battlefield fires when the report is dismissed (effect
+      // below). A short absence has no report, so dive straight in here.
+      // `lastTickAt` here is the restored `savedAt` (this runs after the save loads
+      // but before catch-up), so the gap matches when the report will show.
       const awaySecs = (Date.now() - s.lastTickAt) / 1000
       if (hero.locationId && awaySecs < OFFLINE_SUMMARY_MIN_SECS) requestZoom(2)
     }, 0)
     return () => clearTimeout(id)
   // run once on mount
   }, [])
+
+  // Dismissing the offline report drops into the followed hero's battlefield —
+  // the dive we deferred above so it didn't animate behind the modal. Fires only
+  // on the report's open→closed edge, and only when a deployed hero is followed.
+  const reportWasOpen = useRef(false)
+  useEffect(() => {
+    const wasOpen = reportWasOpen.current
+    reportWasOpen.current = !!offlineSummary
+    if (!wasOpen || offlineSummary) return
+    const s = useGameStore.getState()
+    if (s.battleFollowId && s.combatLocationId) requestZoom(2)
+  }, [offlineSummary, requestZoom])
 
   // Single-tap: quiet select — change the active hero WITHOUT moving the camera
   // or the focused location, so you can pick someone to deploy/compare while
