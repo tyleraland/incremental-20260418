@@ -817,9 +817,12 @@ export function StatsTab({ c, battle, battleOnly = false }: { c: Combatant; batt
           <div className="text-[10px] text-game-text-dim mb-1">Skills</div>
           <div className="space-y-0.5">
             {c.skills.map((s) => {
+              const scale = battle.timeScale || 1
               const left = c.skillCooldowns[s.id] ?? 0
               const ready = left <= 0
-              const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown)
+              // skillCooldowns are stored in engine rounds (cooldown × timeScale);
+              // scale the denominator and the readout back to logical rounds.
+              const frac = ready ? 1 : 1 - left / Math.max(1, s.cooldown * scale)
               // Skills capped to N simultaneous effects (Firewall walls, Agility
               // buff) show how many are active out of the max next to the name.
               const cap = skillActiveCap(battle, c, s)
@@ -832,7 +835,7 @@ export function StatsTab({ c, battle, battleOnly = false }: { c: Combatant; batt
                   <div className="w-20 h-1 rounded-sm bg-black/50 overflow-hidden">
                     <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
                   </div>
-                  <div className="w-6 text-right tabular-nums text-game-text-dim">{ready ? 'rdy' : left}</div>
+                  <div className="w-6 text-right tabular-nums text-game-text-dim">{ready ? 'rdy' : Math.ceil(left / scale)}</div>
                 </div>
               )
             })}
@@ -958,12 +961,20 @@ export function UnitDetailOverlay({ c, battle, onClose, onFollow, initialTab = '
   const isPlayer = c.team === 'player'
   const [tab, setTab] = useState<'stats' | 'debug'>(initialTab)
   const [copied, setCopied] = useState(false)
+  const [snapCopied, setSnapCopied] = useState(false)
 
   const copy = () => {
     const text = buildDebugText(c, battle)
     try { navigator.clipboard?.writeText(text) } catch { /* clipboard unavailable */ }
     setCopied(true)
     setTimeout(() => setCopied(false), 1200)
+  }
+  // Copy a 1:1 BSNAP token of the whole battle (bug reports / `npm run bsnap`
+  // replay). Lives here in the unit debug menu so the battlefield stays clean.
+  const copySnapshot = () => {
+    try { navigator.clipboard?.writeText(serializeBattle(battle)) } catch { /* clipboard unavailable */ }
+    setSnapCopied(true)
+    setTimeout(() => setSnapCopied(false), 1200)
   }
 
   return createPortal(
@@ -994,9 +1005,14 @@ export function UnitDetailOverlay({ c, battle, onClose, onFollow, initialTab = '
             <button onClick={() => setTab('stats')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'stats' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Stats</button>
             <button onClick={() => setTab('debug')} className={`px-2 py-0.5 rounded text-[10px] border ${tab === 'debug' ? 'border-game-primary bg-game-primary/20 text-game-text' : 'border-game-border text-game-text-dim hover:bg-white/5'}`}>Debug</button>
             {tab === 'debug' && (
-              <button onClick={copy} className="ml-auto px-2 py-0.5 rounded text-[10px] border border-game-border text-game-text-dim hover:bg-white/5" aria-label="Copy debug info">
-                {copied ? '✓ copied' : '⧉ copy last 15'}
-              </button>
+              <div className="ml-auto flex items-center gap-1">
+                <button onClick={copySnapshot} title="Copy a 1:1 snapshot of this battle's state (bug reports / npm run bsnap replay)" className="px-2 py-0.5 rounded text-[10px] border border-game-border text-game-text-dim hover:bg-white/5" aria-label="Copy battle state snapshot">
+                  {snapCopied ? '✓ state copied' : '⎘ battle state'}
+                </button>
+                <button onClick={copy} className="px-2 py-0.5 rounded text-[10px] border border-game-border text-game-text-dim hover:bg-white/5" aria-label="Copy debug info">
+                  {copied ? '✓ copied' : '⧉ copy last 15'}
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1506,15 +1522,8 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
     setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, cam.size * factor)))
   }
 
-  // Debug: copy a 1:1 snapshot token of this battle's state. A dev can reload it
-  // (deserializeBattle) to reproduce the exact scenario. Available for any live
-  // battle, no unit selection required.
-  const [snapCopied, setSnapCopied] = useState(false)
-  const copySnapshot = () => {
-    try { navigator.clipboard?.writeText(serializeBattle(battle)) } catch { /* clipboard unavailable */ }
-    setSnapCopied(true)
-    setTimeout(() => setSnapCopied(false), 1200)
-  }
+  // The battle-state snapshot copy now lives in the unit debug menu
+  // (UnitDetailOverlay → Debug), keeping the battlefield itself uncluttered.
 
   return (
     <div
@@ -1528,14 +1537,6 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
         closeDetail()
       }}
     >
-      <button
-        onClick={copySnapshot}
-        title="Copy a snapshot of this battle's state (for bug reports / reproduction)"
-        aria-label="Copy battle state snapshot"
-        className="absolute bottom-1.5 left-1.5 z-20 px-2 h-6 flex items-center rounded-md border border-game-border bg-game-surface/90 text-[10px] text-game-text-dim backdrop-blur-sm hover:bg-white/5"
-      >
-        {snapCopied ? '✓ state copied' : '⎘ state'}
-      </button>
       {isOpen && (
         <>
           {/* Zoom (top-left; minimap owns the top-right). Pinch the arena too. The

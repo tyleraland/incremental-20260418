@@ -18,7 +18,6 @@ import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
 import { seedProtoMocks } from './seed'
 import { UnitDetailOverlay, StatusList } from '@/components/BattleView'
-import { serializeBattle, type BattleState } from '@/engine'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationDetail } from './LocationDetail'
 import { NPC_REGISTRY } from '@/data/npcs'
@@ -107,6 +106,7 @@ function actionCells(
   c: { skills: { id: string; cooldown: number }[]; skillCooldowns: Record<string, number> } | undefined,
   equipment: { id: string; name: string }[],
   miscItems: { id: string; name: string }[],
+  scale = 1,
 ): GridCell[] {
   const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
   return slots.map((e) => {
@@ -116,7 +116,9 @@ function actionCells(
       const left = liveSkill ? (c!.skillCooldowns[e.id] ?? 0) : 0
       const cd = liveSkill?.cooldown ?? 1
       const ready = left <= 0
-      return { name: SKILL_REGISTRY[e.id]?.name ?? e.id, bar: { frac: ready ? 1 : 1 - left / Math.max(1, cd), time: ready ? 'rdy' : String(left) } }
+      // skillCooldowns are in engine rounds (cooldown × timeScale); scale back to
+      // logical rounds for both the bar and the readout.
+      return { name: SKILL_REGISTRY[e.id]?.name ?? e.id, bar: { frac: ready ? 1 : 1 - left / Math.max(1, cd * scale), time: ready ? 'rdy' : String(Math.ceil(left / scale)) } }
     }
     if (e.kind === 'consumable') return { name: miscItems.find((m) => m.id === e.id)?.name ?? e.id, icon: '🫙' }
     return { name: equipment.find((it) => it.id === e.id)?.name ?? e.id, icon: '⚔' }
@@ -155,7 +157,7 @@ function HeroLens({ unit }: { unit: Unit }) {
   const traits = getUnitTraits(unit)
 
   // Action bar → grid cells (skills carry a live cooldown bar; otherwise rdy).
-  const cells = actionCells(unit, c, equipment, miscItems)
+  const cells = actionCells(unit, c, equipment, miscItems, battle?.timeScale || 1)
 
   const combatStats: [string, number][] = [
     ['ATK', ds.attack], ['DEF', ds.defense], ['M.ATK', ds.magicAttack], ['M.DEF', ds.magicDefense],
@@ -233,25 +235,6 @@ function HeroLens({ unit }: { unit: Unit }) {
         </div>
       )}
     </div>
-  )
-}
-
-// Copy a 1:1 BSNAP token of a battle to the clipboard (bug reports / `npm run
-// bsnap` replay) — the proto-shell equivalent of the classic BattleView's
-// "⎘ state" button. Renders nothing when there's no battle to copy.
-function BsnapButton({ battle }: { battle: BattleState | undefined }) {
-  const [copied, setCopied] = useState(false)
-  if (!battle) return null
-  const copy = () => {
-    try { navigator.clipboard?.writeText(serializeBattle(battle)) } catch { /* clipboard unavailable */ }
-    setCopied(true); setTimeout(() => setCopied(false), 1200)
-  }
-  return (
-    <button
-      onClick={copy}
-      title="Copy a snapshot of this location's battle (for bug reports / replay)"
-      className="px-2.5 py-1 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text hover:bg-white/5"
-    >{copied ? '✓ state copied' : '⎘ copy battle state'}</button>
   )
 }
 
@@ -1062,10 +1045,12 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
   }
   const monsterId = c.id.split('#')[0]
   const def = MONSTER_REGISTRY[monsterId]
+  const scale = battle.timeScale || 1
   const cells: GridCell[] = c.skills.map((s) => {
     const left = c.skillCooldowns[s.id] ?? 0
     const ready = left <= 0
-    return { name: s.name, bar: { frac: ready ? 1 : 1 - left / Math.max(1, s.cooldown), time: ready ? 'rdy' : String(left) } }
+    // skillCooldowns are in engine rounds (cooldown × timeScale) — scale back.
+    return { name: s.name, bar: { frac: ready ? 1 : 1 - left / Math.max(1, s.cooldown * scale), time: ready ? 'rdy' : String(Math.ceil(left / scale)) } }
   })
   return (
     <div className="space-y-3">
@@ -1247,14 +1232,7 @@ export function ProtoLens() {
           {top === 'hero' && (unit
             ? (effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />)
             : (
-              <div className="relative h-full">
-                <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />
-                {selectedLocId && battles[selectedLocId] && (
-                  <div className="absolute inset-x-0 bottom-2 flex justify-center">
-                    <BsnapButton battle={battles[selectedLocId]} />
-                  </div>
-                )}
-              </div>
+              <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />
             ))}
 
           {top === 'location' && (location
