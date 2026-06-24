@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
@@ -446,17 +446,12 @@ const HERO_HP_BAR_BELOW = 0.30
 function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer: boolean; casting: boolean; scale: number }) {
   const ratio = Math.max(0, c.hp / c.maxHp)
   const showHpBar = isPlayer && ratio < HERO_HP_BAR_BELOW
-  // Cast bar driven by the live channel (roundsLeft), NOT wall-clock: a round is
-  // gated to game ticks, and under load they advance in jumps — a wall-clock
-  // animation then runs ahead and fills before the spell fires. Mapping
-  // roundsLeft total…1 → 0…1 keeps it locked to the real cast, so it finishes
-  // exactly as the spell lands. A round-long width transition ramps each step so
-  // it reads smoothly (it only ever looks "stepped" if rounds stall under load).
-  // The channel lasts channelTime × timeScale finer rounds (finer rounds), so the
-  // bar's total is scaled to match.
+  // The channel lasts channelTime × timeScale engine rounds; each engine round is
+  // ROUND_MS / timeScale of wall-clock. The CastBar uses those to estimate the
+  // finish and glide there smoothly (see CastBar) rather than stepping per round.
   const ch = casting ? c.channel : null
-  const chTime = (ch ? (c.skills.find((s) => s.id === ch.skillId)?.channelTime ?? 1) : 1) * scale
-  const castFill = ch ? (chTime <= 1 ? 1 : Math.max(0, Math.min(1, (chTime - ch.roundsLeft) / (chTime - 1)))) : 0
+  const totalRounds = (ch ? (c.skills.find((s) => s.id === ch.skillId)?.channelTime ?? 1) : 1) * scale
+  const engineRoundMs = ROUND_MS / Math.max(1, scale)
   return (
     <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
       <span className={`text-[9px] font-semibold leading-none whitespace-nowrap drop-shadow ${isPlayer ? 'text-blue-100/85' : 'text-red-100/85'}`}>
@@ -472,12 +467,77 @@ function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer
           <span className="text-[8px] leading-none whitespace-nowrap text-amber-200/90 drop-shadow animate-pulse">
             ✦ {skillName(ch.skillId)}
           </span>
-          {/* Cast-progress bar: blue, ramps over each round, finishes as the spell lands. */}
-          <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
-            <div className="h-full bg-sky-400" style={{ width: `${castFill * 100}%`, transition: `width ${ROUND_MS}ms linear` }} />
-          </div>
+          {/* Cast-progress bar: glides smoothly toward the estimated finish (CastBar). */}
+          <CastBar skillId={ch.skillId} roundsLeft={ch.roundsLeft} totalRounds={totalRounds} engineRoundMs={engineRoundMs} />
         </>
       )}
+    </div>
+  )
+}
+
+// Cast-progress bar, decoupled from the round cadence. Driving the fill straight
+// off `roundsLeft` makes it step once per round (and lurch under load, when several
+// rounds land between paints). Instead we estimate the cast's finish and let a single
+// CSS width transition glide the fill there. The estimate can't trust the *nominal*
+// round length: on a busy battlefield rounds land far slower than ROUND_MS, so a
+// nominal estimate fills the bar early and then sits full while the spell grinds out
+// (the "done, but nothing happens" feel). So we MEASURE this cast's realized cadence —
+// EMA of wall-clock ms per round actually observed — and project remaining = roundsLeft
+// × measured cadence. Each round we re-target: pin the bar's currently-rendered width,
+// then animate to 100% over that remaining estimate. The measurement adapts within a
+// round of a load change, so the fill tracks the *real* pace and lands as the spell
+// fires. A re-cast (skill change or roundsLeft jumping back up) restarts from the
+// elapsed fraction; on interrupt/resolve the channel clears and this unmounts.
+function CastBar({ skillId, roundsLeft, totalRounds, engineRoundMs }: {
+  skillId: string; roundsLeft: number; totalRounds: number; engineRoundMs: number
+}) {
+  const fillRef = useRef<HTMLDivElement>(null)
+  const skillRef = useRef('')
+  const prevRoundsRef = useRef(Infinity)
+  // Realized cadence (ms per round), measured live and EMA-smoothed. Seeded to the
+  // nominal round length and carried across casts so the first round of a new cast
+  // already reflects the board's current pace. lastTs/lastRounds anchor each sample.
+  const cadenceRef = useRef(engineRoundMs)
+  const lastTsRef = useRef(0)
+  const lastRoundsRef = useRef(0)
+  useLayoutEffect(() => {
+    const el = fillRef.current
+    if (!el) return
+    const now = performance.now()
+    const isNewCast = skillId !== skillRef.current || roundsLeft > prevRoundsRef.current
+    skillRef.current = skillId
+    prevRoundsRef.current = roundsLeft
+    if (isNewCast) {
+      lastTsRef.current = now
+      lastRoundsRef.current = roundsLeft
+    } else {
+      // Measure ms-per-round actually observed since the last round, fold into the EMA.
+      // Clamp the sample so a one-off stall (hidden tab, GC pause) can't poison it.
+      const dRounds = lastRoundsRef.current - roundsLeft
+      if (dRounds > 0) {
+        const sample = Math.min(1500, Math.max(80, (now - lastTsRef.current) / dRounds))
+        cadenceRef.current = cadenceRef.current * 0.5 + sample * 0.5
+        lastTsRef.current = now
+        lastRoundsRef.current = roundsLeft
+      }
+    }
+    const remainingMs = Math.max(0, roundsLeft * cadenceRef.current)
+    el.style.transition = 'none'
+    if (isNewCast) {
+      // Start from the fraction already elapsed (usually 0) rather than snapping back.
+      const startFrac = totalRounds > 0 ? Math.max(0, (totalRounds - roundsLeft) / totalRounds) : 0
+      el.style.width = `${startFrac * 100}%`
+    } else {
+      // Pin the current rendered width so re-targeting continues smoothly (no jump).
+      el.style.width = getComputedStyle(el).width
+    }
+    void el.offsetWidth   // reflow so the new transition starts from the pinned width
+    el.style.transition = `width ${remainingMs}ms linear`
+    el.style.width = '100%'
+  }, [skillId, roundsLeft, totalRounds, engineRoundMs])
+  return (
+    <div className="w-full h-1 rounded-sm bg-black/50 overflow-hidden">
+      <div ref={fillRef} className="h-full bg-sky-400" style={{ width: 0 }} />
     </div>
   )
 }
