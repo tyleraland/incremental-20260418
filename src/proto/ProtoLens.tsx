@@ -90,7 +90,7 @@ function CooldownGrid({ cells }: { cells: GridCell[] }) {
             {cell.bar && <span className="text-[8px] text-game-text-dim tabular-nums leading-none shrink-0">{cell.bar.time}</span>}
           </div>
           {cell.bar && (
-            <div className="h-0.5 rounded-sm bg-black/50 overflow-hidden mt-0.5"><div className={`h-full ${cell.bar.frac >= 1 ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${cell.bar.frac * 100}%`, transition: 'width 380ms linear' }} /></div>
+            <div className="h-0.5 rounded-sm bg-black/50 overflow-hidden mt-0.5"><div className={`h-full ${cell.bar.frac >= 1 ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${cell.bar.frac * 100}%`, transition: 'width 150ms linear' }} /></div>
           )}
         </div>
       ))}

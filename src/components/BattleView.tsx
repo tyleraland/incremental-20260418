@@ -833,7 +833,7 @@ export function StatsTab({ c, battle, battleOnly = false }: { c: Combatant; batt
                     {cap && <span className={`ml-1 tabular-nums ${cap.active >= cap.max ? 'text-amber-400' : 'text-game-text-dim'}`}>({cap.active}/{cap.max})</span>}
                   </div>
                   <div className="w-20 h-1 rounded-sm bg-black/50 overflow-hidden">
-                    <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 380ms linear' }} />
+                    <div className={`h-full ${ready ? 'bg-emerald-400' : 'bg-sky-500/80'}`} style={{ width: `${frac * 100}%`, transition: 'width 150ms linear' }} />
                   </div>
                   <div className="w-6 text-right tabular-nums text-game-text-dim">{ready ? 'rdy' : Math.ceil(left / scale)}</div>
                 </div>
