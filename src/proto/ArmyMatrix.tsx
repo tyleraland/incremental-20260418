@@ -17,7 +17,7 @@ import type { EquipSlot, EquipmentItem, WeaponRecord, ActionSlotEntry } from '@/
 
 type Facet = 'gear' | 'skills' | 'tactics'
 const FACETS: { id: Facet; label: string }[] = [
-  { id: 'gear', label: '⚙ Equipment' }, { id: 'skills', label: '✦ Skills' }, { id: 'tactics', label: '⚑ Tactics' },
+  { id: 'gear', label: 'Equipment' }, { id: 'skills', label: 'Skills' }, { id: 'tactics', label: 'Tactics' },
 ]
 // Action-bar columns for the Skills facet (slot index → header label).
 const SKILL_COLS = Array.from({ length: ACTION_SLOT_COUNT }, (_, i) => ({ id: `slot:${i}`, label: `${i + 1}` }))
@@ -144,7 +144,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
           <button
             key={f.id}
             onClick={() => pickFacet(f.id)}
-            className={['text-sm px-4 py-1.5 rounded-lg border transition-colors', facet === f.id
+            className={['text-xs px-3 py-1 rounded-lg border transition-colors', facet === f.id
               ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
               : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
           >{f.label}</button>
@@ -154,11 +154,11 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
             onClick={() => setSuggesting((v) => !v)}
             disabled={!hasProps && !suggesting}
             title={suggesting ? 'Hide suggestions' : 'Suggest a loadout — ghosts one pick per cell; tap a ghost cell to apply just that one'}
-            className={['text-sm px-4 py-1.5 rounded-lg border transition-colors',
+            className={['text-xs px-3 py-1 rounded-lg border transition-colors',
               suggesting ? 'border-game-accent bg-game-accent/20 text-game-accent'
                 : hasProps ? 'border-game-accent/60 bg-game-accent/10 text-game-accent hover:bg-game-accent/20'
                 : 'border-game-border text-game-muted cursor-not-allowed'].join(' ')}
-          >{suggesting ? '✨ Suggesting' : '✨ Suggest'}</button>
+          >{suggesting ? 'Suggesting' : 'Suggest'}</button>
         </div>
       </div>
 
@@ -219,13 +219,13 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                         {inCh.map((t, i) => (
                           <div key={t.id} className="flex items-center justify-center gap-1 min-w-0">
                             <span className="text-[10px] text-game-muted tabular-nums shrink-0">{i + 1}</span>
-                            <span className="text-xs text-game-text leading-tight truncate">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
+                            <span className="text-xs text-game-text leading-tight line-clamp-2">{TACTIC_REGISTRY[t.id]?.name ?? t.id}</span>
                           </div>
                         ))}
                         {suggesting && prop.map((id) => (
                           <div key={id} className="flex items-center justify-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1">
                             <span className="text-[10px] text-game-accent shrink-0">+</span>
-                            <span className="text-xs text-game-accent leading-tight truncate">{TACTIC_REGISTRY[id]?.name ?? id}</span>
+                            <span className="text-xs text-game-accent leading-tight line-clamp-2">{TACTIC_REGISTRY[id]?.name ?? id}</span>
                           </div>
                         ))}
                       </>
@@ -239,11 +239,11 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                     const propItem = propId ? equipment.find((e) => e.id === propId) : undefined
                     body = slotLocked ? <span className="text-xs text-game-muted italic">2H</span> : (
                       <>
-                        <span className={['text-xs leading-tight block truncate', it ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{it?.name ?? '＋'}</span>
+                        <span className={['text-xs leading-tight block line-clamp-2', it ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{it?.name ?? '＋'}</span>
                         {propItem && (
                           <div className="flex items-center justify-center gap-1 min-w-0 rounded border border-dashed border-game-accent/60 bg-game-accent/5 px-1 mt-0.5">
                             <span className="text-[10px] text-game-accent shrink-0">→</span>
-                            <span className="text-xs text-game-accent leading-tight truncate">{propItem.name}</span>
+                            <span className="text-xs text-game-accent leading-tight line-clamp-2">{propItem.name}</span>
                           </div>
                         )}
                       </>
@@ -255,7 +255,7 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
                     const name = entry
                       ? (entry.kind === 'skill' ? (SKILL_REGISTRY[entry.id]?.name ?? entry.id) : entry.id)
                       : null
-                    body = <span className={['text-xs leading-tight block truncate', name ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{name ?? '＋'}</span>
+                    body = <span className={['text-xs leading-tight block line-clamp-2', name ? 'text-game-text' : 'text-game-muted italic'].join(' ')}>{name ?? '＋'}</span>
                   }
                   return (
                     <button
