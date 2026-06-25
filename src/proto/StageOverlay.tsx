@@ -12,17 +12,20 @@ import { type StageOverlay as Overlay } from './protoStore'
 // it sits in front of the stage but doesn't cover the lens.
 
 export function StageOverlay({ overlay, onClose }: { overlay: Overlay; onClose: () => void }) {
-  return (
-    <div className="absolute inset-0 z-40 flex flex-col bg-game-bg/97 backdrop-blur-sm">
-      <div className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border bg-game-surface/70">
+  // Full-screen, solid panel (no blur/transparency). Portaled to <body> so it
+  // covers the whole viewport — escaping the stage's transformed camera ancestor
+  // (a `fixed` child of a transformed element is clipped to that element, not the
+  // screen) — and sits above the lens beneath it.
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-game-bg" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border bg-game-surface">
         <span className="text-xs font-semibold text-game-text">{overlay.kind === 'skill-tree' ? 'Skill tree' : 'Details'}</span>
         <button onClick={onClose} className="ml-auto text-[11px] px-2.5 py-1 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5">✕ Close</button>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {overlay.kind === 'skill-tree' && <SkillTree unitId={overlay.unitId} />}
       </div>
-    </div>
-  )
+    </div>, document.body)
 }
 
 // ── Skill model helpers ───────────────────────────────────────────────────────
@@ -173,7 +176,9 @@ function SkillTree({ unitId }: { unitId: string }) {
         // Responsive masonry: bigger trees span more columns; dense flow fills the
         // gaps so the branches pack tightly on any width. The full tree (filter:
         // All) is the planning surface — locked goals stay visible to invest toward.
-        <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gridAutoFlow: 'dense' }}>
+        // Explicit column counts (2/3/4) so a branch's span never exceeds the
+        // available tracks — an over-span would spawn an implicit overflow column.
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 [grid-auto-flow:dense]">
           {branches.map((b) => (
             <BranchBlock key={b.root.skill.id} branch={b} hasPoints={hasPoints} selectedId={selectedId} onSelect={setSelectedId} />
           ))}
@@ -196,9 +201,13 @@ function SkillTree({ unitId }: { unitId: string }) {
 // laid out in equal columns so the connectors land on exact cell centres.
 function BranchBlock({ branch, hasPoints, selectedId, onSelect }: { branch: Branch; hasPoints: boolean; selectedId: string | null; onSelect: (id: string) => void }) {
   const { root, children } = branch
-  const span = children.length >= 3 ? 'span 3' : children.length >= 1 ? 'span 2' : 'span 1'
+  // Cap span to the column count at each breakpoint (base 2 / sm 3 / lg 4) so it
+  // never exceeds available tracks. A 3-child tree gets a wider span where it fits.
+  const span = children.length >= 3 ? 'col-span-2 sm:col-span-3'
+    : children.length >= 1 ? 'col-span-2'
+    : 'col-span-1'
   return (
-    <div style={{ gridColumn: span }} className="rounded-xl border border-game-border/40 bg-black/15 p-1.5">
+    <div className={`${span} rounded-xl border border-game-border/40 bg-black/15 p-1.5`}>
       <div className="flex justify-center">
         <SkillNode entry={root} hasPoints={hasPoints} selected={selectedId === root.skill.id} onSelect={onSelect} />
       </div>
