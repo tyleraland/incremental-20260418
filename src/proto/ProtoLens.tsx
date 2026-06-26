@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom'
 import {
   useGameStore, getDerivedStats, getItemTraits, getAvailableSkills, SKILL_REGISTRY,
   TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS, SKILL_TACTICS, inheritedTacticIds,
-  MONSTER_REGISTRY,
+  MONSTER_REGISTRY, PACK_SLOTS,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
+import { consumableDef, isConsumable } from '@/data/consumables'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
 import { getUnitTraits } from '@/data/traits'
 import { ELEMENT_LABELS, ELEMENT_COLORS, type Element } from '@/lib/elements'
@@ -447,6 +448,94 @@ function SwapMenu({ unit, slot, onClose }: { unit: Unit; slot: EquipSlot; onClos
   )
 }
 
+// ── Consumables config (§consumables) — carry targets + in-combat use rules ────--
+// Distinct from the loot-carry PackStrip above: this is the player's standing
+// order for *consumables* — what to keep stocked (filled from the stash in town)
+// and when to auto-use it mid-fight. Same store actions as the classic Pack UI.
+const CARRY_TARGETS = [50, 100, 200] as const
+const USE_THRESHOLDS = [0.25, 0.4, 0.5, 0.6] as const
+const cchip = (active: boolean) =>
+  `text-[10px] px-1.5 py-0.5 rounded border tabular-nums ${active
+    ? 'border-game-primary/60 bg-game-primary/10 text-game-text'
+    : 'border-game-border text-game-text-dim hover:text-game-text'}`
+
+function ConsumablesSection({ unit }: { unit: Unit }) {
+  const setCarryTarget    = useGameStore((s) => s.setCarryTarget)
+  const clearCarryTarget  = useGameStore((s) => s.clearCarryTarget)
+  const addConsumableRule = useGameStore((s) => s.addConsumableRule)
+  const removeConsumableRule = useGameStore((s) => s.removeConsumableRule)
+  const setRuleThreshold  = useGameStore((s) => s.setRuleThreshold)
+  const miscItems = useGameStore((s) => s.miscItems)
+
+  const pack = unit.pack ?? []
+  const ruleFor = new Map((unit.consumableRules ?? []).map((r) => [r.itemId, r]))
+  const inPack = new Set(pack.map((p) => p.itemId))
+  const addable = miscItems.filter((m) => isConsumable(m.id) && m.quantity > 0 && !inPack.has(m.id))
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Consumables</span>
+        <span className="text-game-muted normal-case text-[10px]">— auto-use · fills in town</span>
+        <span className="ml-auto text-[10px] text-game-text-dim tabular-nums">{pack.length}/{PACK_SLOTS}</span>
+      </div>
+
+      {pack.length === 0 && (
+        <div className="text-[11px] text-game-muted italic mb-1.5">None set — add one below to carry + auto-use it.</div>
+      )}
+
+      <div className="space-y-1.5">
+        {pack.map((p) => {
+          const def = consumableDef(p.itemId)
+          const rule = ruleFor.get(p.itemId)
+          return (
+            <div key={p.itemId} className="rounded-lg border border-game-border bg-game-bg/40 p-2 space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <span>{def?.icon ?? '•'}</span>
+                <span className="text-xs font-medium text-game-text flex-1 truncate">{def?.name ?? p.itemId}</span>
+                <span className="text-[10px] text-game-text-dim">carrying <span className="font-mono text-game-gold">{p.count}</span></span>
+                <button onClick={() => clearCarryTarget(unit.id, p.itemId)} title="Stop carrying" className="text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-muted hover:text-game-text">✕</button>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[9px] uppercase tracking-wider text-game-text-dim w-12">carry</span>
+                {CARRY_TARGETS.map((t) => (
+                  <button key={t} onClick={() => setCarryTarget(unit.id, p.itemId, t)} className={cchip(p.target === t)}>{t}</button>
+                ))}
+              </div>
+              {def && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[9px] uppercase tracking-wider text-game-text-dim w-12">use &lt;</span>
+                  {rule ? (
+                    <>
+                      {USE_THRESHOLDS.map((th) => (
+                        <button key={th} onClick={() => setRuleThreshold(unit.id, p.itemId, th)} className={cchip(Math.abs(rule.threshold - th) < 0.001)}>{Math.round(th * 100)}%</button>
+                      ))}
+                      <button onClick={() => removeConsumableRule(unit.id, p.itemId)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-muted hover:text-game-text">off</button>
+                    </>
+                  ) : (
+                    <button onClick={() => addConsumableRule(unit.id, p.itemId, 0.4)} className="text-[10px] px-1.5 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text">+ auto-use</button>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {addable.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {addable.map((m) => (
+            <button key={m.id} onClick={() => setCarryTarget(unit.id, m.id, CARRY_TARGETS[1])} disabled={pack.length >= PACK_SLOTS}
+              className="text-[10px] px-2 py-0.5 rounded-full border border-game-border text-game-text-dim hover:text-game-text disabled:opacity-30">
+              + {consumableDef(m.id)?.name ?? m.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Equipment lens (gutted "Items") — this hero's gear + personal inventory ────--
 // Equipped slots (with socket pips), the personal pack, and what they carry into
 // battle. Tapping a slot opens the full-cover relative-bonus SwapMenu.
@@ -505,6 +594,8 @@ function EquipmentLens({ unit }: { unit: Unit }) {
           </div>
         )}
       </div>
+
+      <ConsumablesSection unit={unit} />
 
       {swapSlot && <SwapMenu unit={unit} slot={swapSlot} onClose={() => setSwapSlot(null)} />}
     </div>
