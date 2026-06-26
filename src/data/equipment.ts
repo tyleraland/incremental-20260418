@@ -61,4 +61,7 @@ export const INITIAL_MISC: MiscItem[] = [
   { id: 'm3',     name: 'Fish',     quantity:  7, description: 'Fresh catch.' },
   { id: 'm4',     name: 'Herbs',    quantity: 23, description: 'Medicinal herbs.' },
   { id: 'm-gold', name: 'Gold',     quantity:  0, description: 'Currency.' },
+  // §consumables: starter stash stock so a hero can load potions into their pack.
+  // (Loot / merchant sourcing arrives with the restock phase.)
+  { id: 'potion-hp', name: 'Health Potion', quantity: 250, description: 'Restores the drinker to full health.', kind: 'consumable' },
 ]

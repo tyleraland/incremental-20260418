@@ -23,6 +23,7 @@ import {
   resolveTactics, armoredFactor, nimblePeriod, hasTactic,
 } from './tactics'
 import { makeSkillTactic, isChanneledAoe } from './skills'
+import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
@@ -161,6 +162,13 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
   // (heal/buff/…) keep their slots so type priority is unchanged.
   const ordered = [...skills.filter(isChanneledAoe), ...orderAttacksByPower(input, skills.filter((s) => !isChanneledAoe(s)))]
   const skillTactics: ResolvedTactic[] = ordered.map((sk) => ({ def: makeSkillTactic(sk), rank: 1 }))
+  // §consumables: each player-allowed carried item becomes an action-channel
+  // tactic placed ABOVE skills, so an emergency potion wins the action channel
+  // over a ready nuke while the unit is below threshold (it only competes when
+  // hurt — its gate is HP < threshold). Empty for any unit with no rules, so a
+  // hero who never touched the feature is byte-identical to before.
+  const specs = input.consumableSpecs ?? []
+  const consumableTactics: ResolvedTactic[] = specs.map((spec) => ({ def: makeConsumableTactic(spec), rank: 1 }))
   return {
     id: input.id,
     name: input.name,
@@ -189,10 +197,12 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     statuses: [],
     lockedTargetId: null,
     potionsLeft: input.potions ?? 0,
+    pack: { ...(input.pack ?? {}) },   // §consumables: shallow-copy so the engine never mutates the input
+    consumableSpecs: specs,
     // §aggression: skittish monsters start non-hostile (won't acquire targets
     // until hit/called); everyone else is hostile from the start.
     provoked: !tactics.some((t) => t.def.id === 'skittish'),
-    tactics: [...tactics, ...skillTactics],
+    tactics: [...tactics, ...consumableTactics, ...skillTactics],
     tacticCooldowns: {},
     tacticsUsed: [],
     chargeUsed: false,
@@ -245,6 +255,11 @@ export function relinkCombatant(c: Combatant, input: EngineUnitInput, partyTacti
   if (c.hp > fresh.maxHp) c.hp = fresh.maxHp
   c.skills = fresh.skills
   c.tactics = fresh.tactics
+  // §consumables: refresh the allow-list (the player may have edited rules) and
+  // the injected use-item tactics, but NOT the carried counts — c.pack is runtime
+  // combat state (decremented as items are used), like hp/cooldowns. The store
+  // mirrors c.pack back to Unit.pack; a fresh deploy reseeds via makeCombatant.
+  c.consumableSpecs = fresh.consumableSpecs
   if (c.channel && !c.skills.some((s) => s.id === c.channel!.skillId)) c.channel = null
 }
 
@@ -1677,9 +1692,23 @@ function takeTurn(state: BattleState, self: Combatant): void {
   let actionText: string
   const act = evalActionTactics(state, self)
   if (act) {
+    if (act.useItemId && (self.pack[act.useItemId] ?? 0) > 0) {
+      // §consumables: drink/use a carried item (iteration 1: heal-to-max). The
+      // turn is spent using it. Decrement happens here so the count lives in the
+      // combatant (snapshot) and the store mirrors it back to Unit.pack.
+      self.pack[act.useItemId] -= 1
+      const healed = self.maxHp - self.hp
+      if (healed > 0) {
+        self.hp += healed
+        addStat(state.stats.totalHealingByUnit, self.id, healed)
+        emit(state, { round: state.round, type: 'heal', sourceId: self.id, targetId: self.id, value: healed })
+      }
+      state.stats.potionsConsumed += 1
+    }
     if (act.applyStatusToSelf) addStatus(self, act.applyStatusToSelf)
     if (act.castSkill && act.skillTarget) castSkill(state, self, act.castSkill, act.skillTarget)
-    actionText = act.castSkill ? `cast ${act.castSkill.name} @ ${traceName(state, act.skillTarget)}`
+    actionText = act.useItemId ? `use ${act.useItemId}`
+      : act.castSkill ? `cast ${act.castSkill.name} @ ${traceName(state, act.skillTarget)}`
       : act.applyStatusToSelf ? `self-buff ${act.applyStatusToSelf.name ?? act.applyStatusToSelf.id}`
       : act.skipAttack ? 'hold (banking)'
       : 'act'

@@ -401,6 +401,38 @@ prototype, but revisit stacking/dedupe if the inventory grows noisy.
     equip-picker flow). Stat deltas shown like the equip picker.
   (Mined from roadmap Tier 5 — the data fields were laid in for it but it's inert.)
 
+## Consumables — pack & use rules (iteration 1 shipped)
+
+The carried-consumable loop is in (the health-potion slice): a per-hero **pack**
+(`Unit.pack: PackItem[]`, separate from the `miscItems` stash), player-allowed
+**use rules** (`Unit.consumableRules` — "use `<item>` when HP < X%"), and the
+engine wiring (`src/engine/consumables.ts` `makeConsumableTactic` → an
+action-channel tactic; `Combatant.pack`/`consumableSpecs` decremented in-engine,
+mirrored back in the tick via `packByUnit`; snapshot round-trips them). Pack fills
+from the stash automatically while a hero is in a `'city'` location
+(`refillPackInTown`). UI: a **Pack** section in Units → Gear (`PackSection`).
+`CONSUMABLE_REGISTRY` (`src/data/consumables.ts`) holds one item (`potion-hp`,
+`effect: 'heal-max'`). Configure carry targets + thresholds, deploy to town to
+stock, deploy to a hunt to use. Deferred next slices:
+
+- **Restock, full version.** Iteration 1 only withdraws from the stash. Add
+  **merchant purchase** for the shortfall (`MERCHANT_REGISTRY`; needs a real
+  store-side buy action — currently proto-only), a **return-to-town trigger**
+  ("when out of `<item>`" / "when pack full"), and a *which town* policy (nearest
+  city vs a designated home). Pickup-into-pack → auto-deposit-to-stash on reaching
+  a city lands here too. (Offline `batchTick` doesn't run town auto-fill or
+  consume potions — it resumes on the live tick; revisit if it matters.)
+- **More effects.** Only `heal-max` exists; the apply branch in `takeTurn`
+  hardcodes heal-to-max. Generalize via the `ConsumableEffect` union (fixed-heal,
+  cure-status, buff) — the effect descriptor already crosses the engine boundary
+  on `ConsumableSpec`.
+- **Loot policy (blocklist / priority).** Hero- or guild-wide rules to ignore/drop
+  some drops and prioritize others by name / rarity / item-level (item-level not
+  modelled yet). Sits beside the pack as a shared policy object.
+- **Saved loadout templates.** Save a hero's pack + use rules (+ future restock
+  targets) as a named template; apply/tweak on any other hero to cut per-hero
+  monotony. New small persisted registry + apply action.
+
 ## Inventory UX (at scale)
 
 - **Search / pagination / sell / recipe-plan.** Inventory already has **category

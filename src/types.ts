@@ -86,6 +86,18 @@ export interface DerivedStats {
 // engine's TacticRef so it passes straight through the adapter.
 export interface TacticSlot { id: string; rank: number }
 
+// §consumables: a hero's personal pack — carried consumable items, separate from
+// the global guild stash (`miscItems`). One entry per item id (stacked). `count`
+// is what the hero is currently carrying; `target` is the configured carry goal
+// the in-town auto-fill reconciles toward (a target with no stock still reserves a
+// slot). Combat decrements `count` in the engine; the store mirrors it back here.
+export interface PackItem { itemId: string; count: number; target?: number }
+
+// §consumables: the player's explicit opt-in for in-combat item use — "when my HP
+// drops below `threshold`, use `itemId`". A hero only ever uses items it has a rule
+// for (and carries). `threshold` is a ratio 0..1 (e.g. 0.4 = 40%).
+export interface ConsumableRule { itemId: string; threshold: number }
+
 // §minions: a hero's persistent beast companion, granted by the Beast Companion
 // passive skill. It fights alongside the hero as an owned, leashed combatant; its
 // behaviour is the player's to tune via its own `tactics` loadout (tank, dps, …).
@@ -116,6 +128,8 @@ export interface Unit {
   tactics: TacticSlot[]                    // combat tactics in priority order (first = highest)
   suppressedTactics?: string[]             // skill-inherited tactic ids the player has decoupled (debug/tuning)
   companion?: CompanionInstance            // §minions: beast pet (granted by the Beast Companion passive)
+  pack?: PackItem[]                        // §consumables: carried consumables (separate from the guild stash)
+  consumableRules?: ConsumableRule[]       // §consumables: player-allowed in-combat item use (use-when-HP-low)
   recoveryTicksLeft: number               // >0: KO countdown; 0: active, resting, or idle
   isResting: boolean                      // true after KO countdown ends, until health reaches maxHp
 }

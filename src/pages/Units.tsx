@@ -5,9 +5,10 @@ import {
   SLOT_LABELS, getDerivedStats,
   getAvailableSkills, abilityPointCost, SKILL_REGISTRY,
   ACTION_SLOT_COUNT, TACTIC_REGISTRY, listTactics, MAX_UNIT_TACTICS, MAX_PARTY_TACTICS,
-  SKILL_TACTICS, inheritedTacticIds,
+  SKILL_TACTICS, inheritedTacticIds, PACK_SLOTS,
 } from '@/stores/useGameStore'
 import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core'
+import { consumableDef, isConsumable } from '@/data/consumables'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -590,6 +591,97 @@ function GearTab({ unit }: { unit: Unit }) {
         <EquipSlotBtn unit={unit} slot="sideboard1" />
         <EquipSlotBtn unit={unit} slot="sideboard2" />
       </div>
+      <PackSection unit={unit} />
+    </div>
+  )
+}
+
+// ── Pack: carried consumables + in-combat use rules (§consumables) ──────────────
+
+const TARGET_PRESETS = [50, 100, 200] as const
+const THRESHOLD_PRESETS = [0.25, 0.4, 0.5, 0.6] as const
+const chipCls = (active: boolean) =>
+  `px-1.5 py-0.5 rounded text-[10px] font-mono border ${active
+    ? 'border-game-primary bg-game-primary/15 text-game-text'
+    : 'border-game-border text-game-text-dim hover:bg-game-border/50'}`
+
+function PackSection({ unit }: { unit: Unit }) {
+  const { setCarryTarget, clearCarryTarget, addConsumableRule, removeConsumableRule, setRuleThreshold } = useGameStore((s) => ({
+    setCarryTarget: s.setCarryTarget, clearCarryTarget: s.clearCarryTarget,
+    addConsumableRule: s.addConsumableRule, removeConsumableRule: s.removeConsumableRule, setRuleThreshold: s.setRuleThreshold,
+  }))
+  const miscItems = useGameStore((s) => s.miscItems)
+  const pack = unit.pack ?? []
+  const rules = unit.consumableRules ?? []
+  const ruleFor = new Map(rules.map((r) => [r.itemId, r]))
+  const inPack = new Set(pack.map((p) => p.itemId))
+  // Carryable = known consumables the player holds in the stash, not already a
+  // carry intent. (Loot/merchant sourcing is deferred; the starter stash seeds these.)
+  const addable = miscItems.filter((m) => isConsumable(m.id) && m.quantity > 0 && !inPack.has(m.id))
+
+  return (
+    <div className="space-y-2 pt-3 mt-1 border-t border-game-border">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-widest text-game-text-dim">Pack</div>
+        <span className="text-[10px] text-game-text-dim">{pack.length}/{PACK_SLOTS} slots · fills in town</span>
+      </div>
+
+      {pack.length === 0 && (
+        <p className="text-xs text-game-muted italic px-1">Empty — add an item below to carry it into battle.</p>
+      )}
+
+      {pack.map((p) => {
+        const def = consumableDef(p.itemId)
+        const rule = ruleFor.get(p.itemId)
+        return (
+          <div key={p.itemId} className="bg-game-bg rounded-lg px-2.5 py-2 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="shrink-0">{def?.icon ?? '•'}</span>
+              <span className="text-sm font-medium text-game-text flex-1 truncate">{def?.name ?? p.itemId}</span>
+              <span className="text-[11px] text-game-text-dim">carrying <span className="font-mono text-game-gold">{p.count}</span></span>
+              <button
+                onClick={() => clearCarryTarget(unit.id, p.itemId)}
+                title="Stop carrying (returns stock to the stash)"
+                className="w-6 h-6 rounded flex items-center justify-center text-xs bg-game-border/60 text-game-text hover:bg-game-border shrink-0"
+              >✕</button>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] text-game-text-dim w-10">target</span>
+              {TARGET_PRESETS.map((t) => (
+                <button key={t} onClick={() => setCarryTarget(unit.id, p.itemId, t)} className={chipCls(p.target === t)}>{t}</button>
+              ))}
+            </div>
+            {def && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] text-game-text-dim w-10">use &lt;</span>
+                {rule ? (
+                  <>
+                    {THRESHOLD_PRESETS.map((th) => (
+                      <button key={th} onClick={() => setRuleThreshold(unit.id, p.itemId, th)} className={chipCls(Math.abs(rule.threshold - th) < 0.001)}>{Math.round(th * 100)}%</button>
+                    ))}
+                    <button onClick={() => removeConsumableRule(unit.id, p.itemId)} className="px-1.5 py-0.5 rounded text-[10px] border border-game-border text-game-muted hover:bg-game-border/50">off</button>
+                  </>
+                ) : (
+                  <button onClick={() => addConsumableRule(unit.id, p.itemId, 0.4)} className="px-1.5 py-0.5 rounded text-[10px] border border-game-border text-game-text-dim hover:bg-game-border/50">+ auto-use rule</button>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
+
+      {addable.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-0.5">
+          {addable.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setCarryTarget(unit.id, m.id, TARGET_PRESETS[1])}
+              disabled={pack.length >= PACK_SLOTS}
+              className="px-2 py-1 rounded text-[11px] border border-game-border text-game-text-dim hover:bg-game-border/50 disabled:opacity-30"
+            >+ {consumableDef(m.id)?.name ?? m.name}</button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

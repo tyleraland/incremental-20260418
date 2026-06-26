@@ -127,6 +127,18 @@ export interface ActionResult {
   applyStatusToSelf?: StatusEffect
   castSkill?: EngineSkill        // a skill the unit wants to cast this turn
   skillTarget?: string          // combatant id the skill is aimed at (primary target)
+  useItemId?: string            // §consumables: a carried item the unit uses on itself this turn (heals per its spec, decrements pack)
+}
+
+// §consumables: an in-combat use of a carried item the host (adapter) has wired
+// up from the player's allow-list. The effect descriptor travels across the
+// engine boundary so the engine never imports the item data registry; it's
+// serialized on the combatant so a reloaded BSNAP rebuilds the same tactic.
+export type ConsumableEffect = 'heal-max'
+export interface ConsumableSpec {
+  itemId: string
+  threshold: number             // HP ratio 0..1 below which the unit uses the item
+  effect: ConsumableEffect
 }
 
 export interface ReactionResult {
@@ -207,6 +219,11 @@ export interface EngineUnitInput {
 
   skills: EngineSkill[]
   potions?: number        // count of self-heal consumables available this fight
+  // §consumables: carried items by id (the hero's pack) and the player-allowed
+  // use rules. makeCombatant seeds the runtime pack and injects one action-channel
+  // tactic per spec whose item is actually carried.
+  pack?: Record<string, number>
+  consumableSpecs?: ConsumableSpec[]
   tactics?: TacticRef[]   // unit-level tactics, priority order (first = highest)
   // §open-world: max distance at which this unit can *acquire* a new target.
   // Default Infinity (unlimited — what encounters use). Open-world sets finite
@@ -268,6 +285,13 @@ export interface Combatant {
   statuses: StatusEffect[]
   lockedTargetId: string | null
   potionsLeft: number
+  // §consumables: carried items by id, decremented in-engine as use-item tactics
+  // fire (so the count lives in the snapshot and replays 1:1). The store mirrors
+  // this back to the hero's authoritative Unit.pack each tick. `consumableSpecs`
+  // is the player's allow-list, serialized so rebuildTactics can reconstruct the
+  // injected tactics on load. Both default empty on legacy tokens.
+  pack: Record<string, number>
+  consumableSpecs: ConsumableSpec[]
 
   // §aggression: is this unit currently hostile? Heroes and aggressive-on-sight
   // monsters start true. A "skittish" (non-aggressive) monster starts false and

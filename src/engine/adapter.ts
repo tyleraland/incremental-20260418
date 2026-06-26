@@ -3,8 +3,27 @@
 // owns no stat definitions; this is where the game's stats are projected in.
 
 import type { Unit, DerivedStats, MonsterDef } from '@/types'
-import type { EngineUnitInput, EngineSkill, Team, TacticRef } from './types'
+import type { EngineUnitInput, EngineSkill, Team, TacticRef, ConsumableSpec } from './types'
 import { buildEngineSkill, inheritedTacticIds } from './skills'
+import { consumableDef } from '@/data/consumables'
+
+// §consumables: seed the engine pack (carried counts by item id) and the
+// player's allow-list of use rules. A rule only crosses the boundary if its item
+// is a known consumable — the engine then injects one use-item tactic per spec.
+// This is the data→engine translation point; the engine never reads the registry.
+function packCounts(unit: Unit): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const p of unit.pack ?? []) if (p.count > 0) out[p.itemId] = p.count
+  return out
+}
+function consumableSpecsOf(unit: Unit): ConsumableSpec[] {
+  const out: ConsumableSpec[] = []
+  for (const rule of unit.consumableRules ?? []) {
+    const def = consumableDef(rule.itemId)
+    if (def) out.push({ itemId: rule.itemId, threshold: rule.threshold, effect: def.effect })
+  }
+  return out
+}
 
 // "Skills give you tactics" (behavioural flavour): append the tactics a unit's
 // equipped skills bring along, deduped against what it already runs explicitly
@@ -126,6 +145,8 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     attackElement: derived.attackElement,   // §3 weapon-imbued attack element
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
     skills,                               // action-bar skills → casts (each injects its usage tactic)
+    pack: packCounts(unit),               // §consumables: carried items by id
+    consumableSpecs: consumableSpecsOf(unit),  // §consumables: player-allowed use rules
     tactics: withInheritedTactics(unit.tactics ?? [], skills, unit.suppressedTactics),  // explicit + skill-inherited (§5)
     // §threat / §passive — defensive passives the skills granted (see getDerivedStats)
     threatMult: derived.threatMult,

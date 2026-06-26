@@ -13,6 +13,7 @@
 
 import { TACTIC_REGISTRY } from './tactics'
 import { makeSkillTactic } from './skills'
+import { makeConsumableTactic, CONSUMABLE_TACTIC_PREFIX } from './consumables'
 import { defaultCalculateDamage } from './damage'
 import { defaultPlanner } from './engine'
 import { MAX_ROUNDS } from './constants'
@@ -69,6 +70,12 @@ function rebuildTactics(snap: CombatantSnap): ResolvedTactic[] {
       const skillId = ref.id.slice('skill:'.length)
       const sk = snap.skills.find((s) => s.id === skillId)
       if (sk) out.push({ def: makeSkillTactic(sk), rank: ref.rank })
+    } else if (ref.id.startsWith(CONSUMABLE_TACTIC_PREFIX)) {
+      // §consumables: rebuilt from the combatant's own serialized specs (the
+      // player's allow-list), not a global registry — same approach as skills.
+      const itemId = ref.id.slice(CONSUMABLE_TACTIC_PREFIX.length)
+      const spec = (snap.consumableSpecs ?? []).find((s) => s.itemId === itemId)
+      if (spec) out.push({ def: makeConsumableTactic(spec), rank: ref.rank })
     } else {
       const def = TACTIC_REGISTRY[ref.id]
       if (def) out.push({ def, rank: ref.rank })
@@ -189,7 +196,11 @@ export function deserializeBattle(token: string): BattleState {
     const leashRange = rest.leashRange ?? null
     const summonTtl = rest.summonTtl ?? null
     const summonTag = rest.summonTag ?? null
-    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, ownerId, leashRange, summonTtl, summonTag, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    // §consumables: legacy tokens predate carried items — empty pack (use-item
+    // tactics never fire) and empty specs, so the replay is identical to before.
+    const pack = rest.pack ?? {}
+    const consumableSpecs = rest.consumableSpecs ?? []
+    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, ownerId, leashRange, summonTtl, summonTag, pack, consumableSpecs, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {

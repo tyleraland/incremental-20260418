@@ -3,7 +3,7 @@ import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
   LocationCombatStats, UnitCombatStats, CombatTally, StatBucket, ActionSlotEntry, TacticSlot, CompanionInstance,
-  QuestDropRule,
+  QuestDropRule, PackItem, ConsumableRule,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
@@ -197,6 +197,15 @@ export interface GameState {
   equipTactic: (unitId: string, tacticId: string) => void
   unequipTactic: (unitId: string, tacticId: string) => void
   moveTactic: (unitId: string, tacticId: string, dir: -1 | 1) => void
+  // §consumables: configure a hero's pack (carry intents) and use rules. The
+  // player only sets intent — no manual item moving; in-town auto-fill does the
+  // logistics. setCarryTarget adds/updates a carry intent (target 0 holds a slot);
+  // a rule is the explicit allow-list entry for in-combat use.
+  setCarryTarget: (unitId: string, itemId: string, target: number) => void
+  clearCarryTarget: (unitId: string, itemId: string) => void
+  addConsumableRule: (unitId: string, itemId: string, threshold: number) => void
+  removeConsumableRule: (unitId: string, itemId: string) => void
+  setRuleThreshold: (unitId: string, itemId: string, threshold: number) => void
   // Decouple/recouple a tactic a unit inherits from one of its skills (debug/tuning).
   toggleInheritedTactic: (unitId: string, tacticId: string) => void
   // §minions: edit a hero's beast companion's tactic loadout (same per-channel
@@ -795,6 +804,40 @@ function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): Misc
   return out
 }
 
+// §consumables: max distinct stacks a hero's pack can hold.
+export const PACK_SLOTS = 20
+
+// §consumables: a use rule's HP threshold, kept in (0, 1).
+const clampThreshold = (t: number): number => Math.min(0.95, Math.max(0.05, t))
+
+// §consumables: fold the engine's live carried counts (mirrored each tick) back
+// into the hero's authoritative PackItem[], preserving carry `target`s and any
+// entry the engine didn't report (e.g. an item drained to 0, which the adapter
+// stops seeding). Items the engine never carried keep their stored count.
+function syncPackCounts(pack: PackItem[] | undefined, counts: Record<string, number>): PackItem[] {
+  return (pack ?? []).map((p) => (p.itemId in counts ? { ...p, count: counts[p.itemId] } : { ...p }))
+}
+
+// §consumables: in-town auto-fill. For each carry intent with a `target`, draw the
+// shortfall from the shared stash (mutating `stashAvail` so heroes don't double-
+// spend the same stock, and recording the withdrawal into `stashDraw` to fold into
+// miscItems). Stash-only for now; merchant buying is deferred (see BACKLOG).
+function refillPackInTown(
+  pack: PackItem[] | undefined,
+  stashAvail: Record<string, number>,
+  stashDraw: Record<string, number>,
+): PackItem[] {
+  return (pack ?? []).map((p) => {
+    const need = (p.target ?? 0) - p.count
+    if (need <= 0) return { ...p }
+    const take = Math.min(need, stashAvail[p.itemId] ?? 0)
+    if (take <= 0) return { ...p }
+    stashAvail[p.itemId] -= take
+    stashDraw[p.itemId] = (stashDraw[p.itemId] ?? 0) - take
+    return { ...p, count: p.count + take }
+  })
+}
+
 // Fold this tick's per-unit stat deltas into the persistent lifetime tally.
 function foldUnitStats(
   prev: Record<string, UnitCombatStats>,
@@ -847,6 +890,7 @@ interface CombatStep {
   battleCooldown: Record<string, number>
   monsterSpawnTimers: Record<string, number>   // open-world: locationId → ticks until next monster trickles in
   hpByUnit: Record<string, number>    // unitId → live HP for units in an active battle
+  packByUnit: Record<string, Record<string, number>>  // §consumables: unitId → live carried counts (mirrored back from the engine)
   koUnitIds: Set<string>              // player units that died this tick
   expByUnit: Record<string, number>
   goldEarned: number
@@ -873,6 +917,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const locationStats        = { ...s.locationStats }
   const unitLevel = new Map(s.units.map((u) => [u.id, u.level]))  // for level-weighted XP split
   const hpByUnit: Record<string, number> = {}
+  const packByUnit: Record<string, Record<string, number>> = {}
   const koUnitIds = new Set<string>()
   const expByUnit: Record<string, number> = {}
   const lootDelta: Record<string, number> = {}
@@ -1001,6 +1046,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     for (const c of battle.combatants) {
       if (c.team === 'player' && c.alive && c.ownerId == null) {   // real heroes only (not minions)
         hpByUnit[c.id] = c.hp
+        packByUnit[c.id] = c.pack   // §consumables: mirror live carried counts back to Unit.pack
         bumpUnit(c.id, 'combatTicks', 1)   // fighting time = the rate denominator
       }
     }
@@ -1196,7 +1242,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   }
 
   return {
-    battles, battleCooldown, monsterSpawnTimers, hpByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
+    battles, battleCooldown, monsterSpawnTimers, hpByUnit, packByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
     questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, logs,
   }
 }
@@ -1286,6 +1332,14 @@ export const useGameStore = create<GameState>((set) => ({
     // location's per-hero breakdown.
     const locationOf = new Map(s.units.map((u) => [u.id, u.locationId]))
 
+    // §consumables: in-town pack auto-fill. Track stash stock once, drawn down as
+    // heroes refill (so two heroes in town don't both claim the same potions); the
+    // net withdrawal is folded into miscItems below.
+    const cityLocs = new Set(s.locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
+    const stashAvail: Record<string, number> = {}
+    for (const m of s.miscItems) stashAvail[m.id] = m.quantity
+    const stashDraw: Record<string, number> = {}
+
     const units = s.units.map((u) => {
       let health = u.health
       let recoveryTicksLeft = Math.max(0, Math.round(u.recoveryTicksLeft ?? 0))
@@ -1313,9 +1367,16 @@ export const useGameStore = create<GameState>((set) => ({
         health = Math.min(maxHp, health + REGEN_RATE)
       }
 
+      // §consumables: mirror the engine's live carried counts back, then top up
+      // the pack from the stash while the hero is posted in a city.
+      let pack = u.id in combat.packByUnit ? syncPackCounts(u.pack, combat.packByUnit[u.id]) : u.pack
+      if (u.locationId && cityLocs.has(u.locationId) && (pack?.length ?? 0) > 0) {
+        pack = refillPackInTown(pack, stashAvail, stashDraw)
+      }
+
       const aged   = yearChanged ? { age: u.age + 1 } : {}
       const expAdd = combat.expByUnit[u.id] ?? 0
-      const withExp = { ...u, health, recoveryTicksLeft, isResting, ...aged, exp: u.exp + expAdd }
+      const withExp = { ...u, health, recoveryTicksLeft, isResting, ...aged, exp: u.exp + expAdd, ...(pack !== u.pack ? { pack } : {}) }
       const { unit: leveled, log: nextLog } = applyLevelUps(withExp, newTicks, newLog)
       newLog = nextLog
       // Record any level-ups into the unit's tally delta for this tick.
@@ -1324,8 +1385,10 @@ export const useGameStore = create<GameState>((set) => ({
       return leveled
     })
 
-    const miscItems = (combat.goldEarned > 0 || Object.keys(combat.lootDelta).length > 0)
-      ? applyMiscDeltas(s.miscItems, { 'm-gold': combat.goldEarned, ...combat.lootDelta })
+    // §consumables: stashDraw is negative (potions withdrawn into packs in town).
+    const miscDeltas = { 'm-gold': combat.goldEarned, ...combat.lootDelta, ...stashDraw }
+    const miscItems = (combat.goldEarned > 0 || Object.keys(combat.lootDelta).length > 0 || Object.keys(stashDraw).length > 0)
+      ? applyMiscDeltas(s.miscItems, miscDeltas).filter((m) => m.quantity > 0 || !(m.id in stashDraw))
       : s.miscItems
 
     // Fold quest-item drops into the ledger (kept out of miscItems on purpose).
@@ -1901,6 +1964,46 @@ export const useGameStore = create<GameState>((set) => ({
       ;[cur[i], cur[j]] = [cur[j], cur[i]]
       return { ...u, tactics: cur }
     }),
+  })),
+  // §consumables: pack carry intents + use rules. Pure config — the tick loop's
+  // in-town auto-fill reconciles counts toward `target`, and the engine reads the
+  // rules (via the adapter) to fire use-item tactics in combat.
+  setCarryTarget: (unitId, itemId, target) => set((s) => ({
+    units: s.units.map((u) => {
+      if (u.id !== unitId) return u
+      const cur = u.pack ?? []
+      const t = Math.max(0, Math.floor(target))
+      const existing = cur.find((p) => p.itemId === itemId)
+      if (existing) return { ...u, pack: cur.map((p) => p.itemId === itemId ? { ...p, target: t } : p) }
+      if (cur.length >= PACK_SLOTS) return u   // pack full — can't add another stack
+      return { ...u, pack: [...cur, { itemId, count: 0, target: t }] }
+    }),
+  })),
+  clearCarryTarget: (unitId, itemId) => set((s) => ({
+    // Drop the carry intent. Any carried stock is returned to the stash so it
+    // isn't lost; the slot frees up.
+    units: s.units.map((u) => u.id === unitId ? { ...u, pack: (u.pack ?? []).filter((p) => p.itemId !== itemId) } : u),
+    miscItems: (() => {
+      const u = s.units.find((x) => x.id === unitId)
+      const held = u?.pack?.find((p) => p.itemId === itemId)?.count ?? 0
+      return held > 0 ? applyMiscDeltas(s.miscItems, { [itemId]: held }) : s.miscItems
+    })(),
+  })),
+  addConsumableRule: (unitId, itemId, threshold) => set((s) => ({
+    units: s.units.map((u) => {
+      if (u.id !== unitId) return u
+      const cur = u.consumableRules ?? []
+      if (cur.some((r) => r.itemId === itemId)) return u
+      return { ...u, consumableRules: [...cur, { itemId, threshold: clampThreshold(threshold) }] }
+    }),
+  })),
+  removeConsumableRule: (unitId, itemId) => set((s) => ({
+    units: s.units.map((u) => u.id === unitId ? { ...u, consumableRules: (u.consumableRules ?? []).filter((r) => r.itemId !== itemId) } : u),
+  })),
+  setRuleThreshold: (unitId, itemId, threshold) => set((s) => ({
+    units: s.units.map((u) => u.id === unitId
+      ? { ...u, consumableRules: (u.consumableRules ?? []).map((r) => r.itemId === itemId ? { ...r, threshold: clampThreshold(threshold) } : r) }
+      : u),
   })),
   toggleInheritedTactic: (unitId, tacticId) => set((s) => ({
     units: s.units.map((u) => {
