@@ -134,11 +134,14 @@ export interface ActionResult {
 // up from the player's allow-list. The effect descriptor travels across the
 // engine boundary so the engine never imports the item data registry; it's
 // serialized on the combatant so a reloaded BSNAP rebuilds the same tactic.
-export type ConsumableEffect = 'heal-max'
+//   'heal-max' — restore to full.
+//   'heal'     — restore `healAmount` HP (capped at the missing HP).
+export type ConsumableEffect = 'heal-max' | 'heal'
 export interface ConsumableSpec {
   itemId: string
   threshold: number             // HP ratio 0..1 below which the unit uses the item
   effect: ConsumableEffect
+  healAmount?: number           // for effect 'heal': HP restored per use
 }
 
 export interface ReactionResult {

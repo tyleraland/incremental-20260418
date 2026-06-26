@@ -28,7 +28,7 @@ export const INITIAL_UNITS: Unit[] = [
     // Last Stand is now a skill (it buffs stats); it brings its own "use near
     // death" tactic, so the manual slots are pure behaviour.
     actionSlots: bar('bash', 'hammer-fall', 'boost-agility', 'last-stand'),
-    tactics: [t('opportunist'), t('charger'), t('tank-buster')],
+    tactics: [t('opportunist'), t('tank-buster')],
   },
   // ── Ranger (kiting archer) ──────────────────────────────────────────────────
   {

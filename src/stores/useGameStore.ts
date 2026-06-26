@@ -1894,7 +1894,7 @@ export const useGameStore = create<GameState>((set) => ({
       activeWeaponSet: 0,
       equipment: { armor: null, sideboard1: null, sideboard2: null, accessory: null },
       actionSlots: Array(ACTION_SLOT_COUNT).fill(null),
-      tactics: [{ id: 'charger', rank: 1 }],
+      tactics: [],   // recruits start with no tactics — the player assigns them
     }
     return { units: [...s.units, { ...unit, health: getDerivedStats(unit, s.equipment).maxHp }] }
   }),

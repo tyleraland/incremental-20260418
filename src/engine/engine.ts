@@ -1693,11 +1693,14 @@ function takeTurn(state: BattleState, self: Combatant): void {
   const act = evalActionTactics(state, self)
   if (act) {
     if (act.useItemId && (self.pack[act.useItemId] ?? 0) > 0) {
-      // §consumables: drink/use a carried item (iteration 1: heal-to-max). The
-      // turn is spent using it. Decrement happens here so the count lives in the
-      // combatant (snapshot) and the store mirrors it back to Unit.pack.
+      // §consumables: drink/use a carried item. The turn is spent using it.
+      // Decrement happens here so the count lives in the combatant (snapshot) and
+      // the store mirrors it back to Unit.pack. The effect comes from the unit's
+      // own serialized spec — heal-to-max, or a fixed amount capped at missing HP.
       self.pack[act.useItemId] -= 1
-      const healed = self.maxHp - self.hp
+      const spec = self.consumableSpecs.find((s) => s.itemId === act.useItemId)
+      const missing = self.maxHp - self.hp
+      const healed = spec?.effect === 'heal' ? Math.min(spec.healAmount ?? 0, missing) : missing
       if (healed > 0) {
         self.hp += healed
         addStat(state.stats.totalHealingByUnit, self.id, healed)

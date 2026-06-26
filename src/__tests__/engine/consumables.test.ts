@@ -11,6 +11,7 @@ import { eu } from './helpers'
 
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
 const SPEC: ConsumableSpec = { itemId: 'potion-hp', threshold: 0.4, effect: 'heal-max' }
+const HEAL = (itemId: string, healAmount: number): ConsumableSpec => ({ itemId, threshold: 0.5, effect: 'heal', healAmount })
 
 function woundedHeroBattle(pack: Record<string, number>, specs: ConsumableSpec[]): BattleState {
   const b = createBattle({
@@ -56,6 +57,34 @@ describe('consumables', () => {
     find(noRule, 'hero').hp = 10
     advanceRound(noRule)
     expect(find(noRule, 'hero').pack['potion-hp']).toBe(5)   // untouched
+  })
+
+  it('a fixed-amount heal restores its amount, capped at the missing HP', () => {
+    // maxHp 200, hp 50 → missing 150. A Health Potion (80) heals 80 → 130.
+    const b = createBattle({
+      playerUnits: [eu({ id: 'hero', name: 'Hero', maxHp: 200, hp: 50, pack: { 'potion-hp': 1 }, consumableSpecs: [HEAL('potion-hp', 80)] })],
+      enemyUnits: [eu({ id: 'slime#0', name: 'Slime', team: 'enemy', maxHp: 80, hp: 80 })],
+      mode: 'open', cols: 20, rows: 20,
+    })
+    find(b, 'hero').pos = { x: 5, y: 5 }
+    find(b, 'slime#0').pos = { x: 17, y: 5 }
+    advanceRound(b)
+    expect(find(b, 'hero').hp).toBe(130)
+  })
+
+  it('the greater potion heals more than the basic one from the same wound', () => {
+    const mk = (itemId: string, amount: number) => {
+      const b = createBattle({
+        playerUnits: [eu({ id: 'hero', name: 'Hero', maxHp: 400, hp: 100, pack: { [itemId]: 1 }, consumableSpecs: [HEAL(itemId, amount)] })],
+        enemyUnits: [eu({ id: 'slime#0', name: 'Slime', team: 'enemy', maxHp: 80, hp: 80 })],
+        mode: 'open', cols: 20, rows: 20,
+      })
+      find(b, 'hero').pos = { x: 5, y: 5 }
+      find(b, 'slime#0').pos = { x: 17, y: 5 }
+      advanceRound(b)
+      return find(b, 'hero').hp
+    }
+    expect(mk('potion-hp-greater', 220)).toBeGreaterThan(mk('potion-hp', 80))
   })
 
   it('round-trips the pack through a snapshot and replays identically', () => {

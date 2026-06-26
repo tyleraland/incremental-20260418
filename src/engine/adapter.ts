@@ -20,7 +20,7 @@ function consumableSpecsOf(unit: Unit): ConsumableSpec[] {
   const out: ConsumableSpec[] = []
   for (const rule of unit.consumableRules ?? []) {
     const def = consumableDef(rule.itemId)
-    if (def) out.push({ itemId: rule.itemId, threshold: rule.threshold, effect: def.effect })
+    if (def) out.push({ itemId: rule.itemId, threshold: rule.threshold, effect: def.effect, healAmount: def.healAmount })
   }
   return out
 }
