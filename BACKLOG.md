@@ -408,9 +408,11 @@ The carried-consumable loop is in (the health-potion slice): a per-hero **pack**
 **use rules** (`Unit.consumableRules` — "use `<item>` when HP < X%"), and the
 engine wiring (`src/engine/consumables.ts` `makeConsumableTactic` → an
 action-channel tactic; `Combatant.pack`/`consumableSpecs` decremented in-engine,
-mirrored back in the tick via `packByUnit`; snapshot round-trips them). Pack fills
-from the stash automatically while a hero is in a `'city'` location
-(`refillPackInTown`). UI: a **Pack** section in Units → Gear (`PackSection`).
+mirrored back in the tick via `packByUnit`; snapshot round-trips them). Pack
+reconciles to its carry targets from the stash automatically while a hero is in a
+`'city'` location (`reconcilePackInTown` — withdraws the shortfall or deposits the
+surplus so the carried count matches the target). UI: a **Pack** section in Units →
+Gear (`PackSection`) and a **Consumables** section in the proto Equipment lens.
 `CONSUMABLE_REGISTRY` (`src/data/consumables.ts`) holds one item (`potion-hp`,
 `effect: 'heal-max'`). Configure carry targets + thresholds, deploy to town to
 stock, deploy to a hunt to use. Deferred next slices:

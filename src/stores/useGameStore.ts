@@ -818,23 +818,32 @@ function syncPackCounts(pack: PackItem[] | undefined, counts: Record<string, num
   return (pack ?? []).map((p) => (p.itemId in counts ? { ...p, count: counts[p.itemId] } : { ...p }))
 }
 
-// §consumables: in-town auto-fill. For each carry intent with a `target`, draw the
-// shortfall from the shared stash (mutating `stashAvail` so heroes don't double-
-// spend the same stock, and recording the withdrawal into `stashDraw` to fold into
-// miscItems). Stash-only for now; merchant buying is deferred (see BACKLOG).
-function refillPackInTown(
+// §consumables: in-town reconcile. For each carry intent with a `target`, bring the
+// carried count to *exactly* the target — withdraw the shortfall from the shared
+// stash (limited by stock), OR deposit the excess back (always succeeds). Mutates
+// `stashAvail` so heroes don't double-spend the same stock, and records the net
+// movement into `stashDraw` (negative = drawn out, positive = deposited) to fold
+// into miscItems. Entries with no explicit target are left untouched. Stash-only
+// for now; merchant buying is deferred (see BACKLOG).
+export function reconcilePackInTown(
   pack: PackItem[] | undefined,
   stashAvail: Record<string, number>,
   stashDraw: Record<string, number>,
 ): PackItem[] {
   return (pack ?? []).map((p) => {
-    const need = (p.target ?? 0) - p.count
-    if (need <= 0) return { ...p }
-    const take = Math.min(need, stashAvail[p.itemId] ?? 0)
-    if (take <= 0) return { ...p }
-    stashAvail[p.itemId] -= take
-    stashDraw[p.itemId] = (stashDraw[p.itemId] ?? 0) - take
-    return { ...p, count: p.count + take }
+    if (p.target == null || p.count === p.target) return { ...p }
+    if (p.count < p.target) {
+      const take = Math.min(p.target - p.count, stashAvail[p.itemId] ?? 0)
+      if (take <= 0) return { ...p }
+      stashAvail[p.itemId] -= take
+      stashDraw[p.itemId] = (stashDraw[p.itemId] ?? 0) - take
+      return { ...p, count: p.count + take }
+    }
+    // Over target — deposit the surplus back to the stash.
+    const give = p.count - p.target
+    stashAvail[p.itemId] = (stashAvail[p.itemId] ?? 0) + give
+    stashDraw[p.itemId] = (stashDraw[p.itemId] ?? 0) + give
+    return { ...p, count: p.target }
   })
 }
 
@@ -1367,11 +1376,11 @@ export const useGameStore = create<GameState>((set) => ({
         health = Math.min(maxHp, health + REGEN_RATE)
       }
 
-      // §consumables: mirror the engine's live carried counts back, then top up
-      // the pack from the stash while the hero is posted in a city.
+      // §consumables: mirror the engine's live carried counts back, then reconcile
+      // the pack to its carry targets (withdraw OR deposit) while posted in a city.
       let pack = u.id in combat.packByUnit ? syncPackCounts(u.pack, combat.packByUnit[u.id]) : u.pack
       if (u.locationId && cityLocs.has(u.locationId) && (pack?.length ?? 0) > 0) {
-        pack = refillPackInTown(pack, stashAvail, stashDraw)
+        pack = reconcilePackInTown(pack, stashAvail, stashDraw)
       }
 
       const aged   = yearChanged ? { age: u.age + 1 } : {}
