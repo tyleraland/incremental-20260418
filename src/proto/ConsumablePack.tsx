@@ -202,28 +202,28 @@ export function ConsumablePack({ unit }: { unit: Unit }) {
 
       {expanded && (
         <div className="mt-2.5 space-y-2">
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className="grid grid-cols-10 gap-1">
             {cells.map((p, i) => {
               if (!p) {
                 return (
                   <button key={`e${i}`} onClick={() => setAdding(true)}
-                    className="aspect-square rounded-lg border border-dashed border-game-border/50 text-game-muted/60 hover:border-game-primary/50 hover:text-game-text flex items-center justify-center text-lg">+</button>
+                    className="aspect-square rounded border border-dashed border-game-border/50 text-game-muted/50 hover:border-game-primary/50 hover:text-game-text flex items-center justify-center text-xs">+</button>
                 )
               }
               const def = consumableDef(p.itemId)
+              const ruled = rules.has(p.itemId)
               return (
                 <button key={p.itemId} onClick={() => setEditing(p.itemId)}
-                  className="relative aspect-square rounded-lg border border-game-primary/40 bg-game-primary/10 hover:border-game-primary flex items-center justify-center">
-                  <span className="text-xl leading-none">{def?.icon ?? '•'}</span>
-                  <span className="absolute bottom-0.5 right-1 text-[9px] font-mono text-game-text tabular-nums">{p.count}</span>
-                  {rules.has(p.itemId) && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-game-green" title="auto-use rule set" />}
-                  {p.target ? <span className="absolute top-0.5 left-1 text-[8px] text-game-text-dim tabular-nums">/{p.target}</span> : null}
+                  title={`${def?.name ?? p.itemId} — ${p.count}${p.target ? `/${p.target}` : ''}${ruled ? ' · auto-use' : ''}`}
+                  className={`relative aspect-square rounded border bg-game-primary/10 flex items-center justify-center ${ruled ? 'border-game-green/60 hover:border-game-green' : 'border-game-primary/40 hover:border-game-primary'}`}>
+                  <span className="text-base leading-none">{def?.icon ?? '•'}</span>
+                  <span className="absolute -bottom-0.5 right-0 text-[8px] font-mono text-game-text tabular-nums bg-game-bg/80 px-0.5 rounded-sm">{p.count}</span>
                 </button>
               )
             })}
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-game-muted">Tap a slot to set carry amount + auto-use rule. <span className="inline-block w-1.5 h-1.5 rounded-full bg-game-green align-middle" /> = rule set.</span>
+            <span className="text-[10px] text-game-muted">Tap a slot to set carry amount + auto-use rule. <span className="inline-block w-2 h-2 rounded-sm border border-game-green/70 align-middle" /> = rule set.</span>
             <button onClick={() => setAdding(true)} className="text-[10px] px-2 py-0.5 rounded border border-game-border text-game-text-dim hover:text-game-text shrink-0">+ Add</button>
           </div>
         </div>

@@ -1168,14 +1168,18 @@ export function ProtoLens() {
     const prev = lastScrollY.current
     lastScrollY.current = y
     if (now < settleUntil.current) return
-    const set = (hide: boolean) => { setTabsHidden(hide); settleUntil.current = now + 350 }
-    // Only hide when there's clearly more overflow than the row's own height, so
-    // reclaiming its space can't shrink the content to a fits-exactly, can't-scroll
-    // state that strands the tabs hidden.
+    const set = (hide: boolean) => { setTabsHidden(hide); settleUntil.current = now + 300 }
+    // Hide once the content is scrolled a little off the top — keyed off the
+    // ABSOLUTE position, not the per-event delta, so a slow/gentle scroll triggers
+    // it too (the old `y > prev + 8` needed 8px between consecutive events, so a
+    // soft scroll never accumulated and the row stayed put). Reveal at the very top
+    // or on a deliberate upward flick. The overflow gate stays clearly above the
+    // row's own height (max-h-20 = 80px) so reclaiming its space can't shrink the
+    // content to a fits-exactly state that strands the tabs hidden.
     const overflow = e.currentTarget.scrollHeight - e.currentTarget.clientHeight
     if (y <= 4) { if (tabsHidden) set(false) }
-    else if (y > prev + 8) { if (!tabsHidden && overflow > 96) set(true) }
-    else if (y < prev - 8) { if (tabsHidden) set(false) }
+    else if (!tabsHidden && y > 24 && overflow > 120) set(true)
+    else if (tabsHidden && y < prev - 24) set(false)
   }
 
   return (
