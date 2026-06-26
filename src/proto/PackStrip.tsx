@@ -34,7 +34,7 @@ export function PackStrip({ unit }: { unit: Unit }) {
   return (
     <div className="rounded-lg border border-game-border bg-game-bg/60 p-2.5 mb-3">
       <div className="flex items-center gap-2 mb-1.5">
-        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Pack</span>
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Field Loot</span>
         <span className={`text-[11px] tabular-nums ${full ? 'text-red-400 font-semibold' : 'text-game-text-dim'}`}>{count}/{CARRY_CAPACITY}</span>
         {packValue(pack) > 0 && <span className="text-[10px] text-game-gold tabular-nums">· {packValue(pack).toLocaleString()}g</span>}
         <div className="ml-auto flex items-center gap-1.5">
