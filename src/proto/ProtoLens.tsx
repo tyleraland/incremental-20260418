@@ -845,12 +845,14 @@ function SkillsLens({ unit }: { unit: Unit }) {
       {/* Entry to the skill tree (where points are spent / skills learned) */}
       <button
         onClick={() => openStageOverlay({ kind: 'skill-tree', unitId: unit.id })}
-        className={['inline-flex items-center gap-2 px-3 py-1.5 rounded-lg font-semibold text-sm transition-colors self-start',
-          unit.skillPoints > 0 ? 'bg-game-gold text-game-bg hover:bg-game-gold/90 shadow' : 'bg-game-primary text-white hover:bg-game-primary/80 shadow'].join(' ')}
+        className={['inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors',
+          unit.skillPoints > 0
+            ? 'border-game-gold/60 bg-game-gold/10 text-game-gold hover:bg-game-gold/20'
+            : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
       >
-        <span className="text-base leading-none">🌳</span> Skill Tree
-        {unit.skillPoints > 0 && <span className="bg-black/20 rounded px-1.5 py-0.5 text-[11px] tabular-nums">{unit.skillPoints} pt</span>}
-        <span className="opacity-70">▸</span>
+        <span className="leading-none">🌳</span> Skill Tree
+        {unit.skillPoints > 0 && <span className="rounded bg-game-gold/20 px-1 text-[10px] tabular-nums">{unit.skillPoints} pt</span>}
+        <span className="opacity-60 text-[10px]">▸</span>
       </button>
 
       <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Action bar — battle skills</div>
