@@ -850,7 +850,7 @@ function SkillsLens({ unit }: { unit: Unit }) {
             ? 'border-game-gold/60 bg-game-gold/10 text-game-gold hover:bg-game-gold/20'
             : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
       >
-        <span className="leading-none">🌳</span> Skill Tree
+        Skill Tree
         {unit.skillPoints > 0 && <span className="rounded bg-game-gold/20 px-1 text-[10px] tabular-nums">{unit.skillPoints} pt</span>}
         <span className="opacity-60 text-[10px]">▸</span>
       </button>
