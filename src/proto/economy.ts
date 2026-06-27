@@ -32,12 +32,16 @@ export function materialValue(id: string): number {
   return MATERIAL_VALUE[id] ?? DEFAULT_MATERIAL_VALUE
 }
 
-// Per-item weight (of one). Capacity is a flat item count for now, so this is 1
-// for everything bar a few bulky drops — surfaced in the item detail popup; a
-// weight-based capacity can read it later.
-const ITEM_WEIGHT: Record<string, number> = { 'drop-golem-core': 3, 'drop-crab-shell': 2, 'drop-plate-scrap': 2 }
+// Per-item weight (of one). The pack's capacity is a total weight (see
+// WEIGHT_LIMIT); bulky drops eat the limit faster. Prototype values — a real
+// table comes later.
+const ITEM_WEIGHT: Record<string, number> = {
+  'drop-slime-gel': 8, 'drop-wolf-pelt': 25, 'drop-boar-hide': 30,
+  'drop-plate-scrap': 40, 'drop-crab-shell': 45, 'drop-dark-core': 60, 'drop-golem-core': 80,
+}
+const DEFAULT_ITEM_WEIGHT = 20
 export function itemWeight(id: string): number {
-  return ITEM_WEIGHT[id] ?? 1
+  return ITEM_WEIGHT[id] ?? DEFAULT_ITEM_WEIGHT
 }
 
 // Equipment has no authored price, so we price it off its stat budget: a flat
@@ -62,9 +66,9 @@ export const EQUIPMENT_DEF: Record<string, EquipmentItem> =
 // ── Carry model (mock) ────────────────────────────────────────────────────────
 //
 // Each hero carries kills in a personal pack until they return to town and
-// deposit into shared storage. Capacity is a flat item count for the prototype
-// (a slot/weight system can replace packCount later).
-export const CARRY_CAPACITY = 20
+// deposit into shared storage. Capacity is a total WEIGHT for the prototype —
+// flat 1000 for everyone now; a real formula (off strength) comes later.
+export const WEIGHT_LIMIT = 1000
 
 export type Pack = Record<string, number> // itemId → qty carried
 
@@ -75,13 +79,21 @@ export function packCount(p: Pack | undefined): number {
   return n
 }
 
-export function packFull(p: Pack | undefined): boolean {
-  return packCount(p) >= CARRY_CAPACITY
+// Total carried weight = Σ qty × itemWeight.
+export function packWeight(p: Pack | undefined): number {
+  if (!p) return 0
+  let w = 0
+  for (const [id, q] of Object.entries(p)) w += itemWeight(id) * q
+  return w
 }
 
-// Room left in a pack (never negative).
+export function packFull(p: Pack | undefined): boolean {
+  return packWeight(p) >= WEIGHT_LIMIT
+}
+
+// Remaining weight room (never negative).
 export function packRoom(p: Pack | undefined): number {
-  return Math.max(0, CARRY_CAPACITY - packCount(p))
+  return Math.max(0, WEIGHT_LIMIT - packWeight(p))
 }
 
 // Total gold a pack's contents are worth (materials only — packs hold drops).

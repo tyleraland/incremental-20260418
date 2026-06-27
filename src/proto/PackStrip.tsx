@@ -3,14 +3,15 @@ import { createPortal } from 'react-dom'
 import { DROP_ITEMS } from '@/data/monsters'
 import { consumableDef } from '@/data/consumables'
 import { useProtoStore } from './protoStore'
-import { CARRY_CAPACITY, packCount, packFull, materialValue, itemWeight } from './economy'
+import { WEIGHT_LIMIT, packWeight, packFull, materialValue, itemWeight } from './economy'
 import { categorize } from './expedition'
 import type { Unit } from '@/types'
 
-// A hero's personal pack — a read-only inventory grid of the item stacks they're
-// carrying. Filled by the logistics driver as they hunt; this is just the view.
+// A hero's personal pack — a read-only, collapsible inventory grid of the item
+// stacks they're carrying. Filled by the logistics driver; capacity is a total
+// weight (WEIGHT_LIMIT). 8 columns; grows + scrolls as more types are picked up.
 
-const GRID = 20   // 10 × 2 inventory slots
+const COLS = 8
 const itemName = (id: string) => DROP_ITEMS[id] ?? consumableDef(id)?.name ?? id
 const abbrev = (id: string) => itemName(id).replace(/[^A-Za-z ]/g, '').split(' ').map((w) => w[0]).join('').slice(0, 3).toUpperCase()
 
@@ -43,35 +44,43 @@ function ItemDetail({ itemId, qty, onClose }: { itemId: string; qty: number; onC
 
 export function PackStrip({ unit }: { unit: Unit }) {
   const pack = useProtoStore((s) => s.packs[unit.id])
+  const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
 
-  const count = packCount(pack)
-  const pct = Math.round((count / CARRY_CAPACITY) * 100)
+  const weight = packWeight(pack)
+  const pct = Math.round((weight / WEIGHT_LIMIT) * 100)
   const full = packFull(pack)
   const entries = pack ? Object.entries(pack).filter(([, q]) => q > 0) : []
-  const cells = Array.from({ length: GRID }, (_, i) => entries[i] ?? null)
+  // 8 cols; at least one row, padded with empty slots; grows + scrolls.
+  const rows = Math.max(1, Math.ceil(entries.length / COLS))
+  const cells = Array.from({ length: rows * COLS }, (_, i) => entries[i] ?? null)
 
   return (
     <div className="rounded-lg border border-game-border bg-game-bg/60 p-2.5 mb-3">
-      <div className="flex items-center gap-2 mb-2">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2">
         <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Field Loot</span>
-        <span className={`text-[11px] font-mono tabular-nums ${full ? 'text-red-400 font-semibold' : 'text-game-text-dim'}`}>{count} / {CARRY_CAPACITY} ({pct}%)</span>
-      </div>
+        <span className={`text-[11px] font-mono tabular-nums ${full ? 'text-red-400 font-semibold' : 'text-game-text-dim'}`}>{weight} / {WEIGHT_LIMIT} ({pct}%)</span>
+        <span className="ml-auto text-game-text-dim text-xs">{open ? '▾' : '▸'}</span>
+      </button>
 
-      <div className="grid grid-cols-10 gap-1">
-        {cells.map((entry, i) => {
-          if (!entry) return <div key={`e${i}`} className="aspect-square rounded border border-dashed border-game-border/40" />
-          const [id, q] = entry
-          return (
-            <button key={id} onClick={() => setDetail(id)} title={`${itemName(id)} ×${q}`}
-              className="relative aspect-square rounded border border-game-border bg-game-bg/40 hover:border-game-primary/50 flex flex-col items-center justify-center leading-none">
-              <span className="text-[7px] text-game-text-dim">{abbrev(id)}</span>
-              <span className="text-[10px] font-mono tabular-nums text-game-text">{q}</span>
-            </button>
-          )
-        })}
-      </div>
-      {entries.length === 0 && <div className="text-[10px] text-game-muted italic mt-1">Empty — fills with loot in the field.</div>}
+      {open && (
+        <div className="mt-2 max-h-32 overflow-y-auto">
+          <div className="grid grid-cols-8 gap-1">
+            {cells.map((entry, i) => {
+              if (!entry) return <div key={`e${i}`} className="aspect-square rounded border border-dashed border-game-border/40" />
+              const [id, q] = entry
+              return (
+                <button key={id} onClick={() => setDetail(id)} title={`${itemName(id)} ×${q}`}
+                  className="relative aspect-square rounded border border-game-border bg-game-bg/40 hover:border-game-primary/50 flex flex-col items-center justify-center leading-none">
+                  <span className="text-[7px] text-game-text-dim">{abbrev(id)}</span>
+                  <span className="text-[10px] font-mono tabular-nums text-game-text">{q}</span>
+                </button>
+              )
+            })}
+          </div>
+          {entries.length === 0 && <div className="text-[10px] text-game-muted italic mt-1">Empty — fills with loot in the field.</div>}
+        </div>
+      )}
 
       {detail && <ItemDetail itemId={detail} qty={pack?.[detail] ?? 0} onClose={() => setDetail(null)} />}
     </div>

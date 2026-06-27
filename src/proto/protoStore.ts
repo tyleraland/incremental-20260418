@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
 import type { UnitCombatStats, QuestDropRule, Unit } from '@/types'
-import { type Pack, packRoom } from './economy'
+import { type Pack, packRoom, itemWeight } from './economy'
 
 // ── Prototype-only mock state ───────────────────────────────────────────────--
 //
@@ -701,7 +701,7 @@ export const useProtoStore = create<ProtoState>((set) => ({
   // first, so a full pack silently refuses extras.
   addToPack: (unitId, itemId, qty) => set((s) => {
     const pack = s.packs[unitId] ?? {}
-    const add = Math.min(qty, packRoom(pack))
+    const add = Math.min(qty, Math.floor(packRoom(pack) / itemWeight(itemId)))   // weight-gated
     if (add <= 0) return s
     return { packs: { ...s.packs, [unitId]: { ...pack, [itemId]: (pack[itemId] ?? 0) + add } } }
   }),
@@ -709,10 +709,11 @@ export const useProtoStore = create<ProtoState>((set) => ({
     const pack = { ...(s.packs[unitId] ?? {}) }
     let room = packRoom(pack)
     for (const d of drops) {
-      if (room <= 0) break
-      const add = Math.min(d.qty, room)
+      const w = itemWeight(d.itemId)
+      const add = Math.min(d.qty, Math.floor(room / w))
+      if (add <= 0) continue
       pack[d.itemId] = (pack[d.itemId] ?? 0) + add
-      room -= add
+      room -= add * w
     }
     return { packs: { ...s.packs, [unitId]: pack } }
   }),

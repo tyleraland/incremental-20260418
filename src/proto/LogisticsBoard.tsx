@@ -1,6 +1,6 @@
 import { useGameStore } from '@/stores/useGameStore'
 import { useProtoStore } from './protoStore'
-import { packCount, CARRY_CAPACITY } from './economy'
+import { packWeight, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero } from './expeditionStore'
 import { ALL_LOOT_CATEGORIES, supplyOption, supplyPool } from './expedition'
 
@@ -55,7 +55,7 @@ export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
             {units.map((u) => {
               const he = heroes[u.id] ?? freshHero()
               const supplies = supplyPool(he.loadout)
-              const carried = packCount(packs[u.id])
+              const carried = packWeight(packs[u.id])
               const keepAll = he.lootCats.length === ALL_LOOT_CATEGORIES.length
               const loadoutChips = Object.entries(he.loadout)
               return (
@@ -85,7 +85,7 @@ export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
                   <td className="px-2 py-1.5 text-center"><Box on={he.shareSupplies} title="Share supplies with party" onClick={() => toggleShareFlag(u.id, 'shareSupplies')} /></td>
                   {/* carried loot x / y */}
                   <td className="px-2 py-1.5 text-right text-[10px] font-mono tabular-nums whitespace-nowrap">
-                    <span className={carried >= CARRY_CAPACITY ? 'text-red-400' : 'text-game-text-dim'}>{carried} / {CARRY_CAPACITY}</span>
+                    <span className={carried >= WEIGHT_LIMIT ? 'text-red-400' : 'text-game-text-dim'}>{carried} / {WEIGHT_LIMIT}</span>
                     {he.status === 'returning' && <span className="text-game-gold"> ⌂</span>}
                   </td>
                 </tr>

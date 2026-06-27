@@ -2,7 +2,7 @@ import { useGameStore } from '@/stores/useGameStore'
 import { useProtoStore } from './protoStore'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { CARD_FIT_OF } from '@/data/cards'
-import { CARRY_CAPACITY, type Pack } from './economy'
+import { WEIGHT_LIMIT, itemWeight, type Pack } from './economy'
 import type { Unit, Location, EquipmentItem } from '@/types'
 
 // ── One-time mock seeding for the proto economy ──────────────────────────────--
@@ -16,16 +16,17 @@ export function buildPackSeed(units: Unit[], locations: Location[]): Record<stri
     if (!u.locationId) continue
     const loc = locations.find((l) => l.id === u.locationId)
     if (!loc || loc.monsterIds.length === 0) continue
-    const cap = Math.floor(CARRY_CAPACITY * (0.3 + Math.random() * 0.55))
+    const cap = Math.floor(WEIGHT_LIMIT * (0.1 + Math.random() * 0.4))   // weight
     const pack: Pack = {}
     let filled = 0
     const drops = loc.monsterIds.flatMap((mid) => MONSTER_REGISTRY[mid]?.drops ?? [])
     for (const d of drops) {
       if (filled >= cap) break
       if (Math.random() < d.dropRate) {
+        const w = itemWeight(d.itemId)
         const want = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
-        const q = Math.min(want, cap - filled)
-        if (q > 0) { pack[d.itemId] = (pack[d.itemId] ?? 0) + q; filled += q }
+        const q = Math.min(want, Math.floor((cap - filled) / w))
+        if (q > 0) { pack[d.itemId] = (pack[d.itemId] ?? 0) + q; filled += q * w }
       }
     }
     if (filled > 0) seed[u.id] = pack

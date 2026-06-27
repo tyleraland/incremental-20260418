@@ -4,7 +4,7 @@ import { TICKS_PER_SECOND } from '@/lib/time'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import type { Location, Unit } from '@/types'
 import { useProtoStore } from './protoStore'
-import { packFull, packRoom, packCount, CARRY_CAPACITY } from './economy'
+import { packFull, packRoom, packWeight, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero, type HeroExpedition } from './expeditionStore'
 import {
   locationProfile, isHuntable, categorize, supplyPool, supplyEndurance, BASE_SUPPLY_BURN,
@@ -31,8 +31,8 @@ function distribute(pool: Drop[], accepterIds: string[]) {
     let best: string | null = null
     let bestFill = Infinity
     for (const id of accepterIds) {
-      const c = packCount(useProtoStore.getState().packs[id])
-      if (c < CARRY_CAPACITY && c < bestFill) { bestFill = c; best = id }
+      const w = packWeight(useProtoStore.getState().packs[id])
+      if (w < WEIGHT_LIMIT && w < bestFill) { bestFill = w; best = id }
     }
     if (!best) break
     proto.simulateHunt(best, [item])

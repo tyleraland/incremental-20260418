@@ -8,7 +8,7 @@ import {
 } from './expedition'
 import { useExpeditionStore } from './expeditionStore'
 import { useProtoStore } from './protoStore'
-import { packCount, CARRY_CAPACITY } from './economy'
+import { packWeight, WEIGHT_LIMIT } from './economy'
 
 const toggleChip = (on: boolean) =>
   `text-[11px] px-1.5 py-0.5 rounded border transition-colors ${on
@@ -130,8 +130,8 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const huntable = !!loc && isHuntable(loc)
   const party = huntable ? units.filter((u) => u.locationId === loc!.id) : []
 
-  const capCount = packCount(packs[unit.id])
-  const cap = (capCount / CARRY_CAPACITY) * 100
+  const capWeight = packWeight(packs[unit.id])
+  const cap = (capWeight / WEIGHT_LIMIT) * 100
   const sup = (he.suppliesLeft ?? 1) * 100
   const hasSup = supplyPool(he.loadout) > 0
   const firstName = (u: Unit) => u.name.split(' ')[0]
@@ -165,7 +165,7 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
           {huntable && (
             <div className="text-right shrink-0 space-y-0.5">
               <div className="text-[12px] text-game-text-dim">
-                Capacity <span className={`font-mono tabular-nums ${cap >= 100 ? 'text-red-400' : 'text-game-text'}`}>{capCount} / {CARRY_CAPACITY} ({Math.round(cap)}%)</span>
+                Capacity <span className={`font-mono tabular-nums ${cap >= 100 ? 'text-red-400' : 'text-game-text'}`}>{capWeight} / {WEIGHT_LIMIT} ({Math.round(cap)}%)</span>
               </div>
               <div className="text-[12px] text-game-text-dim">
                 Supplies {hasSup
