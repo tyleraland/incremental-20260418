@@ -1,24 +1,21 @@
 import { useGameStore } from '@/stores/useGameStore'
-import type { Unit } from '@/types'
 import { useProtoStore } from './protoStore'
 import { packCount, CARRY_CAPACITY } from './economy'
 import { useExpeditionStore, freshHero } from './expeditionStore'
-import { ALL_LOOT_CATEGORIES, isHuntable, supplyPool } from './expedition'
+import { ALL_LOOT_CATEGORIES, supplyOption, supplyPool } from './expedition'
 
-// §logistics — the cross-hero overview (Guild → Logistics). A spreadsheet of every
-// hero's plan side by side, with the quick toggles inline; the deep edits (loadout,
-// categories) live in the per-hero Logistics lens (tap the hero).
+// §logistics — the cross-hero overview (Guild). A spreadsheet of every hero's plan
+// side by side: the column headers say what each box means, the cells are just
+// boxes you tick. Deep edits (loadout items, loot categories) live in the per-hero
+// Logistics lens — tap the hero.
 
-const Tg = ({ on, label, title, onClick }: { on: boolean; label: string; title: string; onClick: () => void }) => (
+const Box = ({ on, title, onClick }: { on: boolean; title: string; onClick: () => void }) => (
   <button onClick={onClick} title={title}
-    className={`text-[9px] px-1 py-0.5 rounded border tabular-nums ${on ? 'border-game-primary/60 bg-game-primary/15 text-game-text' : 'border-game-border text-game-muted hover:text-game-text'}`}>
-    {label}
-  </button>
+    className={`w-5 h-5 rounded border transition-colors ${on ? 'border-game-primary bg-game-primary/70' : 'border-game-border hover:border-game-primary/50'}`} />
 )
 
-const Th = ({ children }: { children: React.ReactNode }) => (
-  <th className="text-left font-medium text-[9px] uppercase tracking-wider text-game-text-dim px-2 py-1 whitespace-nowrap">{children}</th>
-)
+const colHead = 'text-[9px] uppercase tracking-wider text-game-text-dim font-medium px-2 py-1 whitespace-nowrap'
+const sub = 'text-[9px] text-game-text-dim font-normal px-2 py-1 text-center whitespace-nowrap'
 
 export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
   const units = useGameStore((s) => s.units)
@@ -29,10 +26,6 @@ export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
   const toggleShareFlag = useExpeditionStore((s) => s.toggleShareFlag)
 
   const locName = (id: string | null) => (id ? locations.find((l) => l.id === id)?.name ?? '—' : '—')
-  const deployedHuntable = (u: Unit) => {
-    const loc = u.locationId ? locations.find((l) => l.id === u.locationId) : null
-    return !!loc && isHuntable(loc)
-  }
 
   return (
     <div className="space-y-2">
@@ -40,61 +33,60 @@ export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
       <div className="overflow-x-auto -mx-1 px-1">
         <table className="w-full border-collapse">
           <thead>
+            <tr className="border-b border-game-border/50">
+              <th rowSpan={2} className={`${colHead} text-left`}>Hero</th>
+              <th rowSpan={2} className={`${colHead} text-left`}>Loadout</th>
+              <th rowSpan={2} className={colHead}>Keep</th>
+              <th colSpan={2} className={`${colHead} text-center border-l border-game-border/40`}>Return on</th>
+              <th colSpan={2} className={`${colHead} text-center border-l border-game-border/40`}>Share loot</th>
+              <th colSpan={2} className={`${colHead} text-center border-l border-game-border/40`}>Share supplies</th>
+              <th rowSpan={2} className={`${colHead} text-right border-l border-game-border/40`}>Carried</th>
+            </tr>
             <tr className="border-b border-game-border">
-              <Th>Hero</Th>
-              <Th>Supplies</Th>
-              <Th>Keep</Th>
-              <Th>Return</Th>
-              <Th>Loot share</Th>
-              <Th>Supply share</Th>
-              <Th>Pack</Th>
+              <th className={`${sub} border-l border-game-border/40`}>full</th>
+              <th className={sub}>dry</th>
+              <th className={`${sub} border-l border-game-border/40`}>take</th>
+              <th className={sub}>give</th>
+              <th className={`${sub} border-l border-game-border/40`}>take</th>
+              <th className={sub}>give</th>
             </tr>
           </thead>
           <tbody>
             {units.map((u) => {
               const he = heroes[u.id] ?? freshHero()
               const supplies = supplyPool(he.loadout)
-              const cap = Math.round((packCount(packs[u.id]) / CARRY_CAPACITY) * 100)
-              const status = he.status
+              const carried = packCount(packs[u.id])
+              const keepAll = he.lootCats.length === ALL_LOOT_CATEGORIES.length
+              const loadoutChips = Object.entries(he.loadout)
               return (
-                <tr key={u.id} className="border-b border-game-border/40 align-middle">
-                  {/* hero — tap to open their logistics lens */}
+                <tr key={u.id} className="border-b border-game-border/40">
                   <td className="px-2 py-1.5">
                     <button onClick={() => onHero(u.id)} className="text-left hover:text-game-primary">
                       <div className="text-[11px] text-game-text leading-tight">{u.name.split(' ')[0]}</div>
                       <div className="text-[9px] text-game-muted leading-tight">{locName(u.locationId)}</div>
                     </button>
                   </td>
-                  {/* supplies loadout total */}
-                  <td className="px-2 py-1.5 text-[10px] font-mono tabular-nums text-game-text-dim">{supplies || '—'}</td>
+                  {/* loadout supply items */}
+                  <td className="px-2 py-1.5 whitespace-nowrap">
+                    {loadoutChips.length === 0
+                      ? <span className="text-[10px] text-game-muted">none</span>
+                      : <span className="text-[10px] text-game-text-dim">{loadoutChips.map(([id, e]) => `${supplyOption(id)?.icon ?? '•'}${e.qty}`).join(' ')}</span>}
+                  </td>
                   {/* loot categories kept */}
-                  <td className="px-2 py-1.5 text-[10px] font-mono tabular-nums text-game-text-dim">{he.lootCats.length}/{ALL_LOOT_CATEGORIES.length}</td>
-                  {/* return conditions */}
-                  <td className="px-2 py-1.5">
-                    <div className="flex gap-1">
-                      <Tg on={he.returnOn.includes('pack-full')} label="Pack" title="Return when pack full" onClick={() => toggleReturnOn(u.id, 'pack-full')} />
-                      <Tg on={he.returnOn.includes('supplies-out')} label="Sup" title="Return when supplies out" onClick={() => toggleReturnOn(u.id, 'supplies-out')} />
-                    </div>
-                  </td>
-                  {/* loot sharing */}
-                  <td className="px-2 py-1.5">
-                    <div className="flex gap-1">
-                      <Tg on={he.acceptLoot} label="Acc" title="Accept loot from party" onClick={() => toggleShareFlag(u.id, 'acceptLoot')} />
-                      <Tg on={he.shareLoot} label="Shr" title="Share loot with party" onClick={() => toggleShareFlag(u.id, 'shareLoot')} />
-                    </div>
-                  </td>
-                  {/* supply sharing */}
-                  <td className="px-2 py-1.5">
-                    <div className="flex gap-1">
-                      <Tg on={he.acceptSupplies} label="Acc" title="Accept supplies from party" onClick={() => toggleShareFlag(u.id, 'acceptSupplies')} />
-                      <Tg on={he.shareSupplies} label="Shr" title="Share supplies with party" onClick={() => toggleShareFlag(u.id, 'shareSupplies')} />
-                    </div>
-                  </td>
-                  {/* capacity */}
-                  <td className="px-2 py-1.5 text-[10px] font-mono tabular-nums whitespace-nowrap">
-                    {deployedHuntable(u)
-                      ? <span className={cap >= 100 ? 'text-red-400' : 'text-game-text-dim'}>{cap}%{status === 'returning' ? ' ⌂' : ''}</span>
-                      : <span className="text-game-muted">—</span>}
+                  <td className="px-2 py-1.5 text-center text-[10px] tabular-nums text-game-text-dim">{keepAll ? 'all' : `${he.lootCats.length}/${ALL_LOOT_CATEGORIES.length}`}</td>
+                  {/* return on: pack full / supplies dry */}
+                  <td className="px-2 py-1.5 text-center border-l border-game-border/40"><Box on={he.returnOn.includes('pack-full')} title="Return when pack full" onClick={() => toggleReturnOn(u.id, 'pack-full')} /></td>
+                  <td className="px-2 py-1.5 text-center"><Box on={he.returnOn.includes('supplies-out')} title="Return when supplies out" onClick={() => toggleReturnOn(u.id, 'supplies-out')} /></td>
+                  {/* share loot: take / give */}
+                  <td className="px-2 py-1.5 text-center border-l border-game-border/40"><Box on={he.acceptLoot} title="Accept loot from party" onClick={() => toggleShareFlag(u.id, 'acceptLoot')} /></td>
+                  <td className="px-2 py-1.5 text-center"><Box on={he.shareLoot} title="Share loot with party" onClick={() => toggleShareFlag(u.id, 'shareLoot')} /></td>
+                  {/* share supplies: take / give */}
+                  <td className="px-2 py-1.5 text-center border-l border-game-border/40"><Box on={he.acceptSupplies} title="Accept supplies from party" onClick={() => toggleShareFlag(u.id, 'acceptSupplies')} /></td>
+                  <td className="px-2 py-1.5 text-center"><Box on={he.shareSupplies} title="Share supplies with party" onClick={() => toggleShareFlag(u.id, 'shareSupplies')} /></td>
+                  {/* carried loot x / y */}
+                  <td className="px-2 py-1.5 text-right text-[10px] font-mono tabular-nums whitespace-nowrap">
+                    <span className={carried >= CARRY_CAPACITY ? 'text-red-400' : 'text-game-text-dim'}>{carried} / {CARRY_CAPACITY}</span>
+                    {he.status === 'returning' && <span className="text-game-gold"> ⌂</span>}
                   </td>
                 </tr>
               )
@@ -102,7 +94,7 @@ export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[10px] text-game-muted">Tap a hero to edit their loadout + loot categories in detail.</p>
+      <p className="text-[10px] text-game-muted">Loadout = supplies carried (icon×qty). Keep = loot categories kept. Tap a hero to edit those in detail.</p>
     </div>
   )
 }

@@ -8,7 +8,6 @@ import { LogisticsBoard } from './LogisticsBoard'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
 import { QuestJournal, useQuestBoard } from './QuestJournal'
 import { Town } from './Town'
-import { ArmyMatrix } from './ArmyMatrix'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
 
@@ -190,21 +189,9 @@ const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Rep
 function GuildBoard({ onHero }: { onHero: (id: string) => void }) {
   const units = useGameStore((s) => s.units)
   const recruitUnit = useGameStore((s) => s.recruitUnit)
-  const [view, setView] = useState<'army' | 'logistics'>('army')
   return (
     <div className="p-3 max-w-3xl w-full mx-auto space-y-4">
-      <div className="flex items-center gap-1">
-        {(['army', 'logistics'] as const).map((v) => (
-          <button key={v} onClick={() => setView(v)}
-            className={['text-xs px-3 py-1.5 rounded-lg border capitalize transition-colors',
-              v === view ? 'border-game-primary bg-game-primary/15 text-game-primary' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}>
-            {v}
-          </button>
-        ))}
-      </div>
-      {view === 'army'
-        ? <ArmyMatrix squad={units} locationName="Guild" onHero={onHero} />
-        : <LogisticsBoard onHero={onHero} />}
+      <LogisticsBoard onHero={onHero} />
       <div className="flex items-center justify-between border-t border-game-border pt-3">
         <span className="text-xs text-game-text-dim">{units.length} member{units.length !== 1 ? 's' : ''} in the guild</span>
         <button onClick={recruitUnit} className="px-4 py-2 rounded-lg bg-game-primary text-white text-sm font-medium hover:bg-game-primary/80">＋ Recruit a member</button>
