@@ -6,7 +6,6 @@ import {
   MONSTER_REGISTRY,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
-import { ConsumablePack } from './ConsumablePack'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
 import { getUnitTraits } from '@/data/traits'
 import { ELEMENT_LABELS, ELEMENT_COLORS, type Element } from '@/lib/elements'
@@ -469,7 +468,6 @@ function EquipmentLens({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-4">
-      <ConsumablePack unit={unit} />
       <PackStrip unit={unit} />
 
       <div>

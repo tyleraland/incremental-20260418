@@ -11,6 +11,7 @@ import {
   type ClassChangeQuestDef, type ClassQuestStatus, type BountyDef,
 } from './protoStore'
 import { isRegionUnlocked } from '@/lib/unlocks'
+import { ExpeditionPanel } from './ExpeditionPanel'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
@@ -643,6 +644,9 @@ export function LocationDetail({ location }: { location: Location }) {
             : presentUnsel.map((u) => hereChip(u))}
         </div>
       )}
+
+      {/* §expedition — logistics for the party hunting here (hidden in cities) */}
+      <ExpeditionPanel location={location} heroes={here} />
 
       {/* class-change quests — hero-relative paths offered in the cities */}
       <ClassQuestBoard location={location} />
