@@ -8,7 +8,7 @@ import {
 } from './expedition'
 import { useExpeditionStore } from './expeditionStore'
 import { useProtoStore } from './protoStore'
-import { packWeight, WEIGHT_LIMIT } from './economy'
+import { heroCarried, WEIGHT_LIMIT } from './economy'
 
 const toggleChip = (on: boolean) =>
   `text-[11px] px-1.5 py-0.5 rounded border transition-colors ${on
@@ -130,7 +130,7 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const huntable = !!loc && isHuntable(loc)
   const party = huntable ? units.filter((u) => u.locationId === loc!.id) : []
 
-  const capWeight = packWeight(packs[unit.id])
+  const capWeight = heroCarried(packs[unit.id], unit.pack)
   const cap = (capWeight / WEIGHT_LIMIT) * 100
   const sup = (he.suppliesLeft ?? 1) * 100
   const hasSup = supplyPool(he.loadout) > 0

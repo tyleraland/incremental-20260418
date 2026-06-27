@@ -12,8 +12,9 @@ import {
 } from '@/data/merchants'
 import { TraitRow } from '@/components/TraitBubble'
 import { ItemCodex } from '@/components/ItemCodex'
+import { consumableDef, CONSUMABLE_REGISTRY } from '@/data/consumables'
 import { useProtoStore } from './protoStore'
-import { GOLD_ID, materialValue, equipmentValue, EQUIPMENT_DEF } from './economy'
+import { GOLD_ID, materialValue, equipmentValue, EQUIPMENT_DEF, itemWeight } from './economy'
 import { SocketPips, CardChip, CardCodex, SocketEditor, socketsOf } from './CardBits'
 import { seedProtoMocks } from './seed'
 
@@ -403,20 +404,24 @@ function Craft() {
   )
 }
 
-// ── Stash (the in-town workbench: equipment + sockets, materials, craft) ───────--
+// ── Stash (the in-town workbench: equipment + sockets, materials, consumables) ──--
+type WhereFilter = 'all' | 'town' | 'hero'
+type EquipFilter = 'all' | 'equipped' | 'unequipped'
+const FILTER_CHIP = (on: boolean) =>
+  `text-[10px] px-2 py-0.5 rounded-full border transition-colors ${on ? 'border-game-primary bg-game-primary/15 text-game-primary' : 'border-game-border text-game-text-dim hover:text-game-text'}`
+
 function Stash() {
   const equipment = useGameStore((s) => s.equipment)
   const units     = useGameStore((s) => s.units)
   const locations = useGameStore((s) => s.locations)
   const miscItems = useGameStore((s) => s.miscItems)
   const sockets   = useProtoStore((s) => s.sockets)
-  const packs     = useProtoStore((s) => s.packs)
-  const depositAllPacks = useProtoStore((s) => s.depositAllPacks)
   const [open, setOpen] = useState<string | null>(null)
-  const [tab, setTab] = useState<'gear' | 'cards' | 'mats' | 'craft'>('gear')
+  const [tab, setTab] = useState<'gear' | 'cards' | 'mats' | 'consumables' | 'craft'>('gear')
+  const [equipFilter, setEquipFilter] = useState<EquipFilter>('all')
+  const [where, setWhere] = useState<WhereFilter>('all')
 
   const { unit: holderUnit } = heldMaps(units)
-  const carried = Object.values(packs).reduce((n, p) => n + Object.values(p).reduce((a, b) => a + b, 0), 0)
   const stored = miscItems.filter((m) => m.id !== GOLD_ID && m.quantity > 0)
   const socketable = equipment.filter((e) => (e.slots ?? 0) > 0)
 
@@ -430,20 +435,66 @@ function Stash() {
     return { ok: false, reason: `${u.name.split(' ')[0]} is away — equipped/in use`, holder: u.name }
   }
 
+  // Equipped = held in a hero's slots; in town = sitting in the stash (no holder).
+  const visibleGear = socketable.filter((it) => {
+    const held = holderUnit.has(it.id)
+    if (equipFilter === 'equipped' && !held) return false
+    if (equipFilter === 'unequipped' && held) return false
+    if (where === 'town' && held) return false
+    if (where === 'hero' && !held) return false
+    return true
+  })
+
+  // ── Consumables: in town (guild stash) + on hero (carried in Unit.pack) ──
+  const consumableIds = [...new Set([
+    ...Object.keys(CONSUMABLE_REGISTRY),
+    ...miscItems.filter((m) => m.kind === 'consumable' && m.quantity > 0).map((m) => m.id),
+    ...units.flatMap((u) => (u.pack ?? []).filter((p) => p.count > 0).map((p) => p.itemId)),
+  ])]
+  const stashQty = (id: string) => miscItems.find((m) => m.id === id)?.quantity ?? 0
+  const carriers = (id: string) => units
+    .map((u) => ({ u, n: u.pack?.find((p) => p.itemId === id)?.count ?? 0 }))
+    .filter((x) => x.n > 0)
+  const cName = (id: string) => consumableDef(id)?.name ?? miscItems.find((m) => m.id === id)?.name ?? id
+  const cIcon = (id: string) => consumableDef(id)?.icon ?? '🫙'
+  const consumableRows = consumableIds.map((id) => ({ id, inTown: stashQty(id), onHero: carriers(id) }))
+    .filter((r) => {
+      const heroTotal = r.onHero.reduce((a, b) => a + b.n, 0)
+      if (where === 'town') return r.inTown > 0
+      if (where === 'hero') return heroTotal > 0
+      return r.inTown > 0 || heroTotal > 0
+    })
+
   return (
     <div className="space-y-3">
       <div className="flex rounded-lg border border-game-border overflow-hidden text-xs">
-        {([['gear', 'Equipment'], ['cards', 'Cards'], ['mats', 'Materials'], ['craft', 'Craft']] as const).map(([id, label], i) => (
-          <button key={id} onClick={() => setTab(id)} className={`flex-1 px-2.5 py-1.5 ${tab === id ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text'} ${i > 0 ? 'border-l border-game-border' : ''}`}>{label}</button>
+        {([['gear', 'Equipment'], ['cards', 'Cards'], ['mats', 'Materials'], ['consumables', 'Consumables'], ['craft', 'Craft']] as const).map(([id, label], i) => (
+          <button key={id} onClick={() => setTab(id)} className={`flex-1 px-2 py-1.5 ${tab === id ? 'bg-game-primary/20 text-game-text' : 'text-game-text-dim hover:text-game-text'} ${i > 0 ? 'border-l border-game-border' : ''}`}>{label}</button>
         ))}
       </div>
+
+      {/* Filters — where an item is, and (for gear) whether it's equipped */}
+      {(tab === 'gear' || tab === 'consumables') && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] uppercase tracking-wider text-game-muted mr-0.5">Where</span>
+          {(['all', 'town', 'hero'] as const).map((w) => (
+            <button key={w} onClick={() => setWhere(w)} className={FILTER_CHIP(where === w)}>{w === 'all' ? 'All' : w === 'town' ? 'In town' : 'On hero'}</button>
+          ))}
+          {tab === 'gear' && <>
+            <span className="text-[9px] uppercase tracking-wider text-game-muted ml-2 mr-0.5">Status</span>
+            {(['all', 'equipped', 'unequipped'] as const).map((e) => (
+              <button key={e} onClick={() => setEquipFilter(e)} className={FILTER_CHIP(equipFilter === e)}>{e === 'all' ? 'All' : e === 'equipped' ? 'Equipped' : 'Unequipped'}</button>
+            ))}
+          </>}
+        </div>
+      )}
 
       {tab === 'cards' && <CardsTab />}
 
       {tab === 'gear' && (
         <div className="space-y-1.5">
           <p className="text-[11px] text-game-text-dim">Socket cards into any equipment. Gear in the stash (or carried by a hero in town) can be reworked; gear in the field is locked.</p>
-          {socketable.map((it) => {
+          {visibleGear.map((it) => {
             const mod = modInfo(it)
             const isOpen = open === it.id
             const slots = socketsOf(sockets, it)
@@ -460,7 +511,7 @@ function Stash() {
               </div>
             )
           })}
-          {socketable.length === 0 && <div className="text-xs text-game-muted italic">No socketed equipment yet — craft or buy gear with sockets.</div>}
+          {visibleGear.length === 0 && <div className="text-xs text-game-muted italic">{socketable.length === 0 ? 'No socketed equipment yet — craft or buy gear with sockets.' : 'No equipment matches the filter.'}</div>}
         </div>
       )}
 
@@ -468,12 +519,37 @@ function Stash() {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Shared storage ({stored.length})</span>
-            <button onClick={depositAllPacks} disabled={carried <= 0} className={['text-[11px] px-2 py-1 rounded-md border', carried > 0 ? 'border-game-primary/50 text-game-text hover:bg-game-primary/10' : 'border-game-border text-game-muted cursor-not-allowed'].join(' ')}>⇩ Deposit hero packs ({carried})</button>
           </div>
           <div className="grid grid-cols-2 gap-1">
             {stored.map((m) => <div key={m.id} className="flex items-center gap-1.5 rounded border border-game-border bg-game-bg px-2 py-1" title={m.description}><span className="text-xs text-game-text truncate flex-1">{m.name}</span><span className="text-[10px] text-game-text-dim tabular-nums">×{m.quantity.toLocaleString()}</span></div>)}
             {stored.length === 0 && <div className="col-span-2 text-xs text-game-muted italic">Storage is empty.</div>}
           </div>
+        </div>
+      )}
+
+      {tab === 'consumables' && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] text-game-text-dim">Healing potions &amp; other consumables — in the guild stash and carried by heroes. Heroes withdraw toward their logistics loadout when in town.</p>
+          {consumableRows.map((r) => (
+            <div key={r.id} className="rounded-lg border border-game-border bg-game-bg px-2.5 py-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">{cIcon(r.id)}</span>
+                <span className="text-xs text-game-text font-medium flex-1 truncate">{cName(r.id)}</span>
+                <span className="text-[10px] text-game-text-dim tabular-nums">{itemWeight(r.id)}w</span>
+                <span className="text-[11px] text-game-text-dim tabular-nums">in town <span className="text-game-text font-mono">{r.inTown.toLocaleString()}</span></span>
+              </div>
+              {r.onHero.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-game-border/50">
+                  {r.onHero.map(({ u, n }) => (
+                    <span key={u.id} className="text-[10px] px-1.5 py-0.5 rounded border border-game-secondary/30 bg-game-secondary/5 text-game-text-dim">
+                      {u.name.split(' ')[0]} <span className="font-mono text-game-text">{n}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+          {consumableRows.length === 0 && <div className="text-xs text-game-muted italic">No consumables {where === 'hero' ? 'carried by any hero' : where === 'town' ? 'in the stash' : 'anywhere'} yet.</div>}
         </div>
       )}
 

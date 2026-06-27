@@ -1,4 +1,4 @@
-import type { EquipmentItem } from '@/types'
+import type { EquipmentItem, PackItem } from '@/types'
 import { INITIAL_EQUIPMENT } from '@/data/equipment'
 
 // ── Prototype economy (sell prices + carry weight) ───────────────────────────--
@@ -38,6 +38,8 @@ export function materialValue(id: string): number {
 const ITEM_WEIGHT: Record<string, number> = {
   'drop-slime-gel': 8, 'drop-wolf-pelt': 25, 'drop-boar-hide': 30,
   'drop-plate-scrap': 40, 'drop-crab-shell': 45, 'drop-dark-core': 60, 'drop-golem-core': 80,
+  // consumables a hero carries (Unit.pack) — light, so they barely dent loot room
+  'potion-hp': 3, 'potion-hp-greater': 5,
 }
 const DEFAULT_ITEM_WEIGHT = 20
 export function itemWeight(id: string): number {
@@ -102,4 +104,25 @@ export function packValue(p: Pack | undefined): number {
   let v = 0
   for (const [id, q] of Object.entries(p)) v += materialValue(id) * q
   return v
+}
+
+// ── Combined carry (loot pack + carried consumables) ───────────────────────────
+//
+// A hero's real carry is their field-loot pack (protoStore.packs) PLUS the
+// consumables they're carrying (Unit.pack). Both eat the same WEIGHT_LIMIT, so
+// loaded-up supplies leave less room for loot. These helpers fold the two.
+export function consumablesWeight(pack: PackItem[] | undefined): number {
+  if (!pack) return 0
+  let w = 0
+  for (const p of pack) w += itemWeight(p.itemId) * p.count
+  return w
+}
+export function heroCarried(loot: Pack | undefined, pack?: PackItem[]): number {
+  return packWeight(loot) + consumablesWeight(pack)
+}
+export function heroRoom(loot: Pack | undefined, pack?: PackItem[]): number {
+  return Math.max(0, WEIGHT_LIMIT - heroCarried(loot, pack))
+}
+export function heroFull(loot: Pack | undefined, pack?: PackItem[]): boolean {
+  return heroCarried(loot, pack) >= WEIGHT_LIMIT
 }

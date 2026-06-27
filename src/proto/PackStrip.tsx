@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { DROP_ITEMS } from '@/data/monsters'
 import { consumableDef } from '@/data/consumables'
 import { useProtoStore } from './protoStore'
-import { WEIGHT_LIMIT, packWeight, packFull, materialValue, itemWeight } from './economy'
+import { WEIGHT_LIMIT, heroCarried, heroFull, materialValue, itemWeight } from './economy'
 import { categorize } from './expedition'
 import type { Unit } from '@/types'
 
@@ -47,10 +47,13 @@ export function PackStrip({ unit }: { unit: Unit }) {
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
 
-  const weight = packWeight(pack)
+  const weight = heroCarried(pack, unit.pack)
   const pct = Math.round((weight / WEIGHT_LIMIT) * 100)
-  const full = packFull(pack)
-  const entries = pack ? Object.entries(pack).filter(([, q]) => q > 0) : []
+  const full = heroFull(pack, unit.pack)
+  // Everything the hero is carrying: field loot (protoStore) + consumables (Unit.pack).
+  const merged: Record<string, number> = { ...(pack ?? {}) }
+  for (const p of unit.pack ?? []) if (p.count > 0) merged[p.itemId] = (merged[p.itemId] ?? 0) + p.count
+  const entries = Object.entries(merged).filter(([, q]) => q > 0)
   // 8 cols; at least one row, padded with empty slots; grows + scrolls.
   const rows = Math.max(1, Math.ceil(entries.length / COLS))
   const cells = Array.from({ length: rows * COLS }, (_, i) => entries[i] ?? null)
@@ -82,7 +85,7 @@ export function PackStrip({ unit }: { unit: Unit }) {
         </div>
       )}
 
-      {detail && <ItemDetail itemId={detail} qty={pack?.[detail] ?? 0} onClose={() => setDetail(null)} />}
+      {detail && <ItemDetail itemId={detail} qty={merged[detail] ?? 0} onClose={() => setDetail(null)} />}
     </div>
   )
 }

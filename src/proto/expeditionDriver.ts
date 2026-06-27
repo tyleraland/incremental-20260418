@@ -4,10 +4,10 @@ import { TICKS_PER_SECOND } from '@/lib/time'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import type { Location, Unit } from '@/types'
 import { useProtoStore } from './protoStore'
-import { packFull, packRoom, packWeight, WEIGHT_LIMIT } from './economy'
+import { heroFull, heroRoom, heroCarried, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero, type HeroExpedition } from './expeditionStore'
 import {
-  locationProfile, isHuntable, categorize, supplyPool, supplyEndurance, BASE_SUPPLY_BURN,
+  locationProfile, isHuntable, isCity, categorize, supplyPool, supplyEndurance, BASE_SUPPLY_BURN,
 } from './expedition'
 
 type Drop = { itemId: string; qty: number }
@@ -23,19 +23,19 @@ function oneDrop(loc: Location, he: HeroExpedition): Drop | null {
 }
 
 // Hand pooled loot to the accepters, always topping up the least-full first so the
-// party fills evenly (the "share the burden" behaviour). Items with no accepter /
-// no room are left behind.
-function distribute(pool: Drop[], accepterIds: string[]) {
+// party fills evenly (the "share the burden" behaviour). Fill is total carry (loot
+// pack + carried consumables). Items with no accepter / no room are left behind.
+function distribute(pool: Drop[], accepters: Member[]) {
   const proto = useProtoStore.getState()
   for (const item of pool) {
-    let best: string | null = null
+    let best: Member | null = null
     let bestFill = Infinity
-    for (const id of accepterIds) {
-      const w = packWeight(useProtoStore.getState().packs[id])
-      if (w < WEIGHT_LIMIT && w < bestFill) { bestFill = w; best = id }
+    for (const m of accepters) {
+      const w = heroCarried(useProtoStore.getState().packs[m.u.id], m.u.pack)
+      if (w < WEIGHT_LIMIT && w < bestFill) { bestFill = w; best = m }
     }
     if (!best) break
-    proto.simulateHunt(best, [item])
+    proto.simulateHunt(best.u.id, [item])
   }
 }
 
@@ -71,6 +71,16 @@ export function useExpeditionDriver() {
     const locById = new Map(g.locations.map((l) => [l.id, l]))
     const groupReturnLocs = new Set<string>()
     const groups = new Map<string, Member[]>()
+
+    // Phase 0: any hero standing in a city auto-deposits their field loot into the
+    // guild stash (heroes deposit on return to town — no manual button). Consumables
+    // (Unit.pack) reconcile to the loadout separately in the game tick.
+    for (const u of g.units) {
+      if (!u.locationId) continue
+      const loc = locById.get(u.locationId)
+      const lootPack = proto.packs[u.id]
+      if (loc && isCity(loc) && lootPack && Object.keys(lootPack).length > 0) proto.depositPack(u.id)
+    }
 
     // Phase 1: classify each deployed hero; collect the active hunters per location.
     for (const u of g.units) {
@@ -113,7 +123,7 @@ export function useExpeditionDriver() {
       const pool: Drop[] = []
       for (const { u, he } of members) {
         progress.current[u.id] = (progress.current[u.id] ?? 0) + profile.lootItemsPerSec * dt
-        const cap = he.shareLoot ? Infinity : packRoom(useProtoStore.getState().packs[u.id])
+        const cap = he.shareLoot ? Infinity : heroRoom(useProtoStore.getState().packs[u.id], u.pack)
         const drops: Drop[] = []
         while (progress.current[u.id] >= 1 && drops.length < cap) {
           progress.current[u.id] -= 1
@@ -125,11 +135,11 @@ export function useExpeditionDriver() {
         else proto.simulateHunt(u.id, drops)
       }
       // 2d. hand the pooled loot to accepters, least-full first
-      distribute(pool, members.filter((m) => m.he.acceptLoot).map((m) => m.u.id))
+      distribute(pool, members.filter((m) => m.he.acceptLoot))
 
       // 2e. commit supplies + evaluate the return conditions
       for (const { u, he } of members) {
-        const full = packFull(useProtoStore.getState().packs[u.id])
+        const full = heroFull(useProtoStore.getState().packs[u.id], u.pack)
         const dry = supplyPool(he.loadout) > 0 && newSup[u.id] <= 0.03
         const triggered = (he.returnOn.includes('pack-full') && full) || (he.returnOn.includes('supplies-out') && dry)
         if (triggered) {

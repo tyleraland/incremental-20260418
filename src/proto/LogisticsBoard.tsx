@@ -1,6 +1,6 @@
 import { useGameStore } from '@/stores/useGameStore'
 import { useProtoStore } from './protoStore'
-import { packWeight, WEIGHT_LIMIT } from './economy'
+import { heroCarried, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero } from './expeditionStore'
 import { ALL_LOOT_CATEGORIES, supplyOption, supplyPool } from './expedition'
 
@@ -55,7 +55,7 @@ export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
             {units.map((u) => {
               const he = heroes[u.id] ?? freshHero()
               const supplies = supplyPool(he.loadout)
-              const carried = packWeight(packs[u.id])
+              const carried = heroCarried(packs[u.id], u.pack)
               const keepAll = he.lootCats.length === ALL_LOOT_CATEGORIES.length
               const loadoutChips = Object.entries(he.loadout)
               return (

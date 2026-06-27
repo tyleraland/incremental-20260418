@@ -1,8 +1,27 @@
 import { create } from 'zustand'
+import { useGameStore } from '@/stores/useGameStore'
+import { isConsumable } from '@/data/consumables'
 import {
   DEFAULT_LOADOUT, DEFAULT_LOOT_CATS, DEFAULT_RETURN_ON, newSupplyEntry,
   type Loadout, type LootCategory, type ReturnConditionId, type ReturnModeId,
 } from './expedition'
+
+// §logistics ⇄ §consumables bridge — the loadout is the *target* (what a hero
+// should carry); Unit.pack is the *real* carried inventory. Push the loadout's
+// quantities into each hero's pack carry-targets so the game's in-town reconcile
+// (reconcilePackInTown) withdraws/deposits from the guild stash toward them, and
+// the carried weight counts against capacity. Removed supplies clear their intent
+// (returning any carried stock to the stash).
+function syncTargets(unitId: string, loadout: Loadout): void {
+  const g = useGameStore.getState()
+  const wanted = new Map<string, number>()
+  for (const [id, e] of Object.entries(loadout)) if (e.qty > 0) wanted.set(id, e.qty)
+  for (const [id, qty] of wanted) g.setCarryTarget(unitId, id, qty)
+  const unit = g.units.find((u) => u.id === unitId)
+  for (const p of unit?.pack ?? []) {
+    if (p.target != null && isConsumable(p.itemId) && !wanted.has(p.itemId)) g.clearCarryTarget(unitId, p.itemId)
+  }
+}
 
 // §logistics — proto-only per-hero state. Each hero carries their own plan
 // (supplies loadout + loot categories + return conditions) plus runtime (supplies
@@ -59,26 +78,41 @@ export const freshHero = (e: Partial<HeroExpedition> = {}): HeroExpedition => ({
   locationId: e.locationId ?? null,
 })
 
-export const useExpeditionStore = create<ExpState>((set) => ({
+export const useExpeditionStore = create<ExpState>((set, get) => ({
   heroes: {},
   returnMode: 'individual',
 
-  ensure: (unitId) => set((s) => (s.heroes[unitId] ? s : { heroes: { ...s.heroes, [unitId]: freshHero() } })),
+  ensure: (unitId) => {
+    if (get().heroes[unitId]) return
+    set((s) => (s.heroes[unitId] ? s : { heroes: { ...s.heroes, [unitId]: freshHero() } }))
+    const he = get().heroes[unitId]
+    if (he) syncTargets(unitId, he.loadout)
+  },
 
-  addSupply: (unitId, itemId) => set((s) => {
-    const cur = s.heroes[unitId] ?? freshHero()
-    if (cur.loadout[itemId]) return s
-    return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout: { ...cur.loadout, [itemId]: newSupplyEntry() } } } }
-  }),
+  addSupply: (unitId, itemId) => {
+    set((s) => {
+      const cur = s.heroes[unitId] ?? freshHero()
+      // Always persist the hero, even if the item is already present (a fresh hero
+      // whose default loadout already lists it), so the bridge can read it back.
+      const loadout = cur.loadout[itemId] ? cur.loadout : { ...cur.loadout, [itemId]: newSupplyEntry() }
+      return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().heroes[unitId]
+    if (he) syncTargets(unitId, he.loadout)
+  },
 
-  setSupplyQty: (unitId, itemId, qty) => set((s) => {
-    const cur = s.heroes[unitId] ?? freshHero()
-    const loadout = { ...cur.loadout }
-    const n = Math.max(0, Math.floor(qty))
-    if (n <= 0) delete loadout[itemId]
-    else loadout[itemId] = { ...(loadout[itemId] ?? newSupplyEntry(n)), qty: n }
-    return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
-  }),
+  setSupplyQty: (unitId, itemId, qty) => {
+    set((s) => {
+      const cur = s.heroes[unitId] ?? freshHero()
+      const loadout = { ...cur.loadout }
+      const n = Math.max(0, Math.floor(qty))
+      if (n <= 0) delete loadout[itemId]
+      else loadout[itemId] = { ...(loadout[itemId] ?? newSupplyEntry(n)), qty: n }
+      return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().heroes[unitId]
+    if (he) syncTargets(unitId, he.loadout)
+  },
 
   toggleSupplySource: (unitId, itemId, source) => set((s) => {
     const cur = s.heroes[unitId] ?? freshHero()
@@ -86,12 +120,16 @@ export const useExpeditionStore = create<ExpState>((set) => ({
     return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout: { ...cur.loadout, [itemId]: { ...entry, [source]: !entry[source] } } } } }
   }),
 
-  removeSupply: (unitId, itemId) => set((s) => {
-    const cur = s.heroes[unitId] ?? freshHero()
-    const loadout = { ...cur.loadout }
-    delete loadout[itemId]
-    return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
-  }),
+  removeSupply: (unitId, itemId) => {
+    set((s) => {
+      const cur = s.heroes[unitId] ?? freshHero()
+      const loadout = { ...cur.loadout }
+      delete loadout[itemId]
+      return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().heroes[unitId]
+    if (he) syncTargets(unitId, he.loadout)
+  },
 
   toggleLootCat: (unitId, cat) => set((s) => {
     const cur = s.heroes[unitId] ?? freshHero()
@@ -117,20 +155,23 @@ export const useExpeditionStore = create<ExpState>((set) => ({
 
   setReturnMode: (mode) => set({ returnMode: mode }),
 
-  applyToParty: (srcId, targetIds) => set((s) => {
-    const src = s.heroes[srcId]
-    if (!src) return s
-    const heroes = { ...s.heroes }
-    const cloneLoadout = (l: Loadout): Loadout => Object.fromEntries(Object.entries(l).map(([k, e]) => [k, { ...e }]))
-    for (const id of targetIds) {
-      const cur = heroes[id] ?? freshHero()
-      heroes[id] = {
-        ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn],
-        shareLoot: src.shareLoot, acceptLoot: src.acceptLoot, shareSupplies: src.shareSupplies, acceptSupplies: src.acceptSupplies,
+  applyToParty: (srcId, targetIds) => {
+    set((s) => {
+      const src = s.heroes[srcId]
+      if (!src) return s
+      const heroes = { ...s.heroes }
+      const cloneLoadout = (l: Loadout): Loadout => Object.fromEntries(Object.entries(l).map(([k, e]) => [k, { ...e }]))
+      for (const id of targetIds) {
+        const cur = heroes[id] ?? freshHero()
+        heroes[id] = {
+          ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn],
+          shareLoot: src.shareLoot, acceptLoot: src.acceptLoot, shareSupplies: src.shareSupplies, acceptSupplies: src.acceptSupplies,
+        }
       }
-    }
-    return { heroes }
-  }),
+      return { heroes }
+    })
+    for (const id of targetIds) { const he = get().heroes[id]; if (he) syncTargets(id, he.loadout) }
+  },
 
   commitStep: (unitId, patch) => set((s) => {
     const cur = s.heroes[unitId] ?? freshHero()

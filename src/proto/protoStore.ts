@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
 import type { UnitCombatStats, QuestDropRule, Unit } from '@/types'
-import { type Pack, packRoom, itemWeight } from './economy'
+import { type Pack, packRoom, heroRoom, itemWeight } from './economy'
 
 // ── Prototype-only mock state ───────────────────────────────────────────────--
 //
@@ -707,7 +707,9 @@ export const useProtoStore = create<ProtoState>((set) => ({
   }),
   simulateHunt: (unitId, drops) => set((s) => {
     const pack = { ...(s.packs[unitId] ?? {}) }
-    let room = packRoom(pack)
+    // Room left = WEIGHT_LIMIT minus loot already carried minus carried consumables.
+    const unitPack = useGameStore.getState().units.find((u) => u.id === unitId)?.pack
+    let room = heroRoom(pack, unitPack)
     for (const d of drops) {
       const w = itemWeight(d.itemId)
       const add = Math.min(d.qty, Math.floor(room / w))

@@ -16,6 +16,8 @@ import { useProtoStore } from './protoStore'
 import { GOLD_ID, materialValue, equipmentValue } from './economy'
 import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
+import { useExpeditionStore } from './expeditionStore'
+import { supplyOption } from './expedition'
 import { seedProtoMocks } from './seed'
 import { UnitDetailOverlay, StatusList } from '@/components/BattleView'
 import { MonsterCodex } from '@/components/MonsterCodex'
@@ -23,7 +25,7 @@ import { LocationDetail } from './LocationDetail'
 import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
-import { consumableDef } from '@/data/consumables'
+import { consumableDef, isConsumable } from '@/data/consumables'
 import { sumWindow } from '@/lib/combatTally'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
@@ -541,7 +543,15 @@ function BattleItemBar({ unit }: { unit: Unit }) {
   const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
   const rules = unit.consumableRules ?? []
   const onBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'consumable').map((e) => e.id))
-  const pool = miscItems.filter((m) => m.kind === 'consumable' && m.quantity > 0 && !onBar.has(m.id))
+  // Equip-able consumables = what this hero already carries (Unit.pack) ∪ what's in
+  // the guild stash. The carried count comes from the pack; the stash count from
+  // miscItems. Either is enough to put it on the bar.
+  const carriedOf = (id: string) => unit.pack?.find((p) => p.itemId === id)?.count ?? 0
+  const stashOf = (id: string) => miscItems.find((m) => m.id === id)?.quantity ?? 0
+  const poolIds = [...new Set([
+    ...(unit.pack ?? []).filter((p) => isConsumable(p.itemId) && (p.count > 0 || p.target != null)).map((p) => p.itemId),
+    ...miscItems.filter((m) => m.kind === 'consumable' && m.quantity > 0).map((m) => m.id),
+  ])].filter((id) => !onBar.has(id))
   const cName = (id: string) => consumableDef(id)?.name ?? miscItems.find((m) => m.id === id)?.name ?? id
   const cIcon = (id: string) => consumableDef(id)?.icon ?? '🫙'
   const isHealing = (id: string) => consumableDef(id)?.effect === 'heal'
@@ -549,6 +559,14 @@ function BattleItemBar({ unit }: { unit: Unit }) {
   const addConsumable = (i: number, id: string) => {
     setActionSlot(unit.id, i, { kind: 'consumable', id })
     if (isHealing(id) && !rules.some((r) => r.itemId === id)) addConsumableRule(unit.id, id, 0.3)
+    // Wire the carry: make sure this item is in the hero's logistics loadout, so the
+    // in-town reconcile withdraws it from the stash and the engine actually has it
+    // to use. (Only items with a supply option are loadout-carryable.)
+    if (supplyOption(id)) {
+      const exp = useExpeditionStore.getState()
+      exp.ensure(unit.id)
+      if (!exp.heroes[unit.id]?.loadout[id]) exp.addSupply(unit.id, id)
+    }
     setPick(null)
   }
   const clearSlot = (i: number, entry: ActionSlotEntry) => {
@@ -583,16 +601,23 @@ function BattleItemBar({ unit }: { unit: Unit }) {
       {pick !== null && (
         <div className="space-y-1">
           {slots[pick] && <button onClick={() => clearSlot(pick, slots[pick]!)} className="w-full text-left rounded-md border border-game-border/60 bg-game-bg px-2.5 py-1.5 text-xs text-game-text-dim italic hover:border-red-500/50">Clear slot {pick + 1}</button>}
-          {pool.length === 0
-            ? <div className="text-[11px] text-game-muted italic px-1">No consumables in the stash yet.</div>
-            : pool.map((c) => (
-              <button key={c.id} onClick={() => addConsumable(pick, c.id)}
-                className="w-full flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-green/50">
-                <span className="text-base">{cIcon(c.id)}</span>
-                <span className="text-xs text-game-text flex-1 text-left">{cName(c.id)}</span>
-                <span className="text-[9px] text-game-text-dim tabular-nums">×{c.quantity}</span>
-              </button>
-            ))}
+          {poolIds.length === 0
+            ? <div className="text-[11px] text-game-muted italic px-1">No consumables carried or in the stash. Add some to this hero's logistics loadout.</div>
+            : poolIds.map((id) => {
+              const carried = carriedOf(id); const inStash = stashOf(id)
+              return (
+                <button key={id} onClick={() => addConsumable(pick, id)}
+                  className="w-full flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-green/50">
+                  <span className="text-base">{cIcon(id)}</span>
+                  <span className="text-xs text-game-text flex-1 text-left">{cName(id)}</span>
+                  <span className="text-[9px] text-game-text-dim tabular-nums">
+                    {carried > 0 && <span className="text-game-green">carrying {carried}</span>}
+                    {carried > 0 && inStash > 0 && ' · '}
+                    {inStash > 0 && <span>{inStash} in stash</span>}
+                  </span>
+                </button>
+              )
+            })}
         </div>
       )}
 
