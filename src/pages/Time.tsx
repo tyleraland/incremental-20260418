@@ -73,6 +73,40 @@ function ProgressionModeControl() {
   )
 }
 
+// §logistics — deploy mode toggle. Placeholder: not wired to anything yet. Once
+// open-world overworld travel lands, 'instant' will keep today's teleport-on-deploy
+// and 'open-world' will route heroes via travel; this toggle flips between them.
+function DeployModeControl() {
+  const mode = useGameStore((s) => s.deployMode)
+  const setMode = useGameStore((s) => s.setDeployMode)
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-game-text-dim">Deploy</span>
+        <span className="text-xs font-mono text-game-text">{mode === 'instant' ? 'Instant' : 'Open world'}</span>
+        <span className="text-[9px] uppercase tracking-widest text-game-muted">not wired</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {(['instant', 'open-world'] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={['text-xs px-3 py-1.5 rounded-lg border transition-colors',
+              m === mode
+                ? 'border-game-primary bg-game-primary/15 text-game-primary cursor-default'
+                : 'border-game-border text-game-text-dim hover:border-game-primary/50'].join(' ')}
+          >
+            {m === 'instant' ? 'Instant deploy' : 'Open-world travel'}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-game-muted leading-snug">
+        Placeholder — will toggle teleport-on-deploy vs overworld travel once that lands.
+      </p>
+    </div>
+  )
+}
+
 // Copy the whole-game save string out / paste one in. A player backup, and the
 // highest-fidelity bug-repro handoff (it includes live battles via battlesCodec,
 // so a pasted save reproduces the exact in-progress fights too).
@@ -341,6 +375,9 @@ export function Time() {
         </div>
         <div className="pt-2 border-t border-game-border/40">
           <ProgressionModeControl />
+        </div>
+        <div className="pt-2 border-t border-game-border/40">
+          <DeployModeControl />
         </div>
         <SaveTransfer />
         <ResetSaveButton />

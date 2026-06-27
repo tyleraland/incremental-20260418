@@ -121,6 +121,10 @@ export interface GameState {
   // drop-in battlefield viewer for `combatLocationId`.
   mapMode: 'world' | 'battle'
   mapPageId: string
+  // §logistics (placeholder, NOT wired yet): how deploying a hero moves them —
+  // 'instant' teleports (today's behaviour); 'open-world' will route them via
+  // overworld travel once that lands. Toggle lives in Time → Debug.
+  deployMode: 'instant' | 'open-world'
   // Bumped to ask the pannable overworld to recentre its camera on
   // `selectedLocationId` (e.g. roster double-tap / "Map" button). A nonce so
   // re-focusing the same location still fires.
@@ -223,6 +227,7 @@ export interface GameState {
   // Switch the feature-unfolding stance. Flips the flag (persisted); call
   // resetSave afterwards to re-seed a fresh game for the new mode.
   setProgressionMode: (mode: ProgressionMode) => void
+  setDeployMode: (mode: 'instant' | 'open-world') => void
   // Tap-/drag-to-fill an action slot. When entry.kind === 'item', the item is
   // also added to the unit's sideboard (evicting the oldest sideboard entry if
   // both sideboards are full). Setting to null clears the slot AND removes the
@@ -1299,6 +1304,7 @@ export const useGameStore = create<GameState>((set) => ({
   combatLocationId: null,
   mapMode: 'world',
   mapPageId: 'world',
+  deployMode: 'instant',
   mapFocusNonce: 0,
   battleFocus: null,
   battleFollowId: null,
@@ -2079,6 +2085,7 @@ export const useGameStore = create<GameState>((set) => ({
   })),
 
   setProgressionMode: (mode) => set((s) => (s.progressionMode === mode ? s : { progressionMode: mode })),
+  setDeployMode: (mode) => set((s) => (s.deployMode === mode ? s : { deployMode: mode })),
 
   resetSave: () => {
     // Wipe the persisted save too — not just the UI keys. Without this the reset
