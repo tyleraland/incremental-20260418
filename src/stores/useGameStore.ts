@@ -51,6 +51,9 @@ export type { TacticDef, TacticChannel }
 export const MAX_UNIT_TACTICS = 4
 export const MAX_PARTY_TACTICS = 2
 
+// §hero stats: the live "/s" readout averages damage over the last 5 seconds.
+export const DPS_WINDOW_TICKS = TICKS_PER_SECOND * 5
+
 // §minions: a fresh beast companion's default — a tankish front-line pet (body-
 // block + bite the beefiest foe). The player retunes these on the Pet tab.
 function DEFAULT_COMPANION(): CompanionInstance {
@@ -79,6 +82,9 @@ export interface GameState {
   locationStats:          Record<string, LocationCombatStats>  // locationId → cumulative combat stats
   unitStats:              Record<string, UnitCombatStats>      // unitId → lifetime combat tally (Report panel)
   unitStatHistory:        Record<string, StatBucket[]>         // unitId → rolling minute-buckets (battle-report 5m/1h windows)
+  // §hero stats: a short ring buffer of the last DPS_WINDOW_TICKS (5s) of damage
+  // dealt/taken per unit, for the live "/s" readout. Runtime only (not persisted).
+  dpsWindow:              Record<string, { dealt: number[]; taken: number[] }>
   partyTactics:           TacticSlot[]                 // team-wide tactics injected into every unit (§5.5)
   // Feature-unfolding stance (src/lib/unlocks.ts): 'sandbox' = everything open
   // (the dev default), 'curated' = content gated + unfolded through play. Persisted
@@ -1322,6 +1328,7 @@ export const useGameStore = create<GameState>((set) => ({
   locationStats: {},
   unitStats: {},
   unitStatHistory: {},
+  dpsWindow: {},
   viewedUnitLevels: (() => { try { return JSON.parse(localStorage.getItem('viewedUnitLevels') ?? '{}') } catch { return {} } })(),
   reportUnitId: null,
   partyTactics: [{ id: 'finish-them', rank: 1 }],
@@ -1415,9 +1422,20 @@ export const useGameStore = create<GameState>((set) => ({
       : s.questItems
     for (const [id, n] of Object.entries(combat.questDropDelta)) questItems[id] = (questItems[id] ?? 0) + n
 
+    // §hero stats: slide the 5s damage ring for every unit (drop idle all-zero ones).
+    const dpsWindow: Record<string, { dealt: number[]; taken: number[] }> = {}
+    for (const u of s.units) {
+      const d = combat.unitStatsDelta[u.id]
+      const prev = s.dpsWindow?.[u.id]
+      const dealt = [...(prev?.dealt ?? []), d?.damageDealt ?? 0].slice(-DPS_WINDOW_TICKS)
+      const taken = [...(prev?.taken ?? []), d?.damageTaken ?? 0].slice(-DPS_WINDOW_TICKS)
+      if (dealt.some((x) => x > 0) || taken.some((x) => x > 0)) dpsWindow[u.id] = { dealt, taken }
+    }
+
     return {
       ticks: newTicks,
       units,
+      dpsWindow,
       battles: combat.battles,
       battleCooldown: combat.battleCooldown,
       monsterSpawnTimers: combat.monsterSpawnTimers,

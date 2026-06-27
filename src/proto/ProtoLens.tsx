@@ -24,6 +24,7 @@ import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
 import { consumableDef } from '@/data/consumables'
+import { sumWindow } from '@/lib/combatTally'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
@@ -73,6 +74,50 @@ function StatBar({ label, cur, max, color }: { label: string; cur: number; max: 
         <span className="text-white/90" style={{ textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>{label}</span>
         <span className="text-white/90 tabular-nums" style={{ textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>{Math.floor(cur)} / {max}</span>
       </div>
+    </div>
+  )
+}
+
+// A slim HP/EXP bar — label + numbers above a thin track (less vertical real
+// estate than the big in-bar StatBar).
+function MiniBar({ label, cur, max, color }: { label: string; cur: number; max: number; color: string }) {
+  const pct = Math.min(100, max > 0 ? (cur / max) * 100 : 0)
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[10px] mb-0.5">
+        <span className="text-game-text-dim">{label}</span>
+        <span className="text-game-text tabular-nums">{Math.floor(cur)} / {max}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
+        <div className={color} style={{ width: `${pct}%`, height: '100%', transition: 'width 380ms linear' }} />
+      </div>
+    </div>
+  )
+}
+
+// d/h/m/s, top two units (e.g. "2h 13m"); '—' when the rate is zero.
+function fmtEta(secs: number): string {
+  if (!isFinite(secs) || secs <= 0) return '—'
+  let s = Math.round(secs)
+  const d = Math.floor(s / 86400); s %= 86400
+  const h = Math.floor(s / 3600); s %= 3600
+  const m = Math.floor(s / 60); s %= 60
+  const parts: string[] = []
+  if (d) parts.push(`${d}d`)
+  if (h) parts.push(`${h}h`)
+  if (m) parts.push(`${m}m`)
+  if (s || parts.length === 0) parts.push(`${s}s`)
+  return parts.slice(0, 2).join(' ')
+}
+
+const rnd = (n: number) => (n >= 100 ? Math.round(n) : Math.round(n * 10) / 10)
+
+function RateCell({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg bg-game-bg border border-game-border px-2 py-1.5">
+      <div className="text-[9px] uppercase tracking-wider text-game-text-dim">{label}</div>
+      <div className="text-[13px] font-semibold text-game-text tabular-nums leading-tight">{value}</div>
+      {sub && <div className="text-[8px] text-game-muted">{sub}</div>}
     </div>
   )
 }
@@ -152,12 +197,28 @@ function HeroLens({ unit }: { unit: Unit }) {
   const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
   const battle = useGameStore((s) => (unit.locationId ? s.battles[unit.locationId] : undefined))
 
+  const ticks = useGameStore((s) => s.ticks)
+  const history = useGameStore((s) => s.unitStatHistory[unit.id])
+  const dps = useGameStore((s) => s.dpsWindow?.[unit.id])
+
   const ds = getDerivedStats(unit, equipment)
   const c = battle?.combatants.find((x) => x.id === unit.id)
   const live = !!(c && battle)
   const hp = c ? c.hp : unit.health
   const maxHp = c ? c.maxHp : ds.maxHp
   const traits = getUnitTraits(unit)
+
+  // Recent performance: "/s" over the last 5s (ring), and /m·/h + xp/min + ETA
+  // over the last 5 minutes (history buckets).
+  const sum = (a: number[] | undefined) => (a ? a.reduce((x, y) => x + y, 0) : 0)
+  const dealtPerSec = sum(dps?.dealt) / 5
+  const takenPerSec = sum(dps?.taken) / 5
+  const win = sumWindow(history, ticks, 5)
+  const dealtPerMin = win.damageDealt / 5
+  const takenPerMin = win.damageTaken / 5
+  const xpPerMin = win.expGained / 5
+  const remaining = Math.max(0, unit.expToNext - unit.exp)
+  const etaSecs = xpPerMin > 0 ? remaining / (xpPerMin / 60) : Infinity
 
   // Action bar → grid cells (skills carry a live cooldown bar; otherwise rdy).
   const cells = actionCells(unit, c, equipment, miscItems, battle?.timeScale || 1)
@@ -184,9 +245,22 @@ function HeroLens({ unit }: { unit: Unit }) {
 
       <CooldownGrid cells={cells} />
 
-      <div className="space-y-1.5">
-        <StatBar label="HP" cur={hp} max={maxHp} color="bg-game-green" />
-        <StatBar label="EXP" cur={unit.exp} max={unit.expToNext} color="bg-game-accent" />
+      <div className="grid grid-cols-2 gap-2">
+        <MiniBar label="HP" cur={hp} max={maxHp} color="bg-game-green" />
+        <MiniBar label="EXP" cur={unit.exp} max={unit.expToNext} color="bg-game-accent" />
+      </div>
+
+      {/* Recent performance — live rates */}
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Performance</div>
+        <div className="grid grid-cols-3 gap-1.5">
+          <RateCell label="Dmg /s" value={`${rnd(dealtPerSec)}`} sub="dealt · 5s" />
+          <RateCell label="Taken /s" value={`${rnd(takenPerSec)}`} sub="5s" />
+          <RateCell label="XP / min" value={`${rnd(xpPerMin)}`} sub="5m avg" />
+          <RateCell label="Dmg dealt" value={`${rnd(dealtPerMin)}/m`} sub={`${rnd(dealtPerMin * 60)}/h`} />
+          <RateCell label="Dmg taken" value={`${rnd(takenPerMin)}/m`} sub={`${rnd(takenPerMin * 60)}/h`} />
+          <RateCell label="To level" value={fmtEta(etaSecs)} sub="at 5m rate" />
+        </div>
       </div>
 
       {/* Upper: combat (derived) stats */}

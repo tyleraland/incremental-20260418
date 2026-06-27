@@ -525,7 +525,6 @@ function QuestBoard({ location }: { location: Location }) {
 
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Quests</div>
       <div className="space-y-1">
         {board.length === 0
           ? <div className="text-[11px] text-game-muted italic">Every quest here is done.</div>
