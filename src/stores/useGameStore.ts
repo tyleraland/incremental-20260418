@@ -15,7 +15,7 @@ import { SAMPLING } from '@/lib/sampling'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { createBattle, addCombatant, relinkCombatant, advanceRound, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -187,6 +187,9 @@ export interface GameState {
   openReport: (unitId: string) => void
   closeReport: () => void
   assignUnits: (unitIds: string[], locationId: string | null) => void
+  // §expedition: send a deployed hero toward the bottom edge of their location's
+  // battlefield (simulates heading back to town). No-op if not in a live battle.
+  runToMapEdge: (unitId: string) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
   openEquipFor: (unitId: string, slot: EquipSlot) => void
   closeEquipContext: () => void
@@ -1785,6 +1788,16 @@ export const useGameStore = create<GameState>((set) => ({
   assignUnits: (unitIds, locationId) => set((s) => ({
     units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u),
   })),
+
+  runToMapEdge: (unitId) => set((s) => {
+    const u = s.units.find((x) => x.id === unitId)
+    const battle = u?.locationId ? s.battles[u.locationId] : null
+    if (!battle) return s
+    // Head to the bottom-centre (the "town" edge). issueMoveOrder mutates the
+    // battle in place; hand back a fresh battles ref so subscribers re-render.
+    issueMoveOrder(battle, unitId, { x: battle.cols / 2, y: battle.rows - 1 })
+    return { battles: { ...s.battles } }
+  }),
 
   setActionSlot: (unitId, slotIdx, entry) => set((s) => ({
     units: s.units.map((u) => {

@@ -1,13 +1,13 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
-import { TICKS_PER_SECOND } from '@/lib/time'
-import type { Location, Unit } from '@/types'
+import type { Unit } from '@/types'
 import {
-  LOADOUTS, POSTURES, LOOT_FOCUS, RETURN_RULES, LOADOUT_BASE_FILL,
-  DEFAULT_CHOICES, locationProfile, isHuntable, type Choice,
+  LOADOUTS, POSTURES, LOOT_FOCUS, RETURN_RULES, RETURN_MODES,
+  locationProfile, isHuntable, type Choice,
 } from './expedition'
 import { useExpeditionStore } from './expeditionStore'
-import { ReturnReport } from './ReturnReport'
+import { useProtoStore } from './protoStore'
+import { packCount, CARRY_CAPACITY } from './economy'
 
 const chip = (active: boolean) =>
   `text-[10px] px-2 py-0.5 rounded border transition-colors ${active
@@ -29,119 +29,107 @@ function Seg<T extends string>({ label, options, value, onChange }: {
   )
 }
 
-function Meter({ base, capacity }: { base: number; capacity: number }) {
-  const pct = Math.round(capacity * 100)
-  const loot = Math.max(0, capacity - base)
+function Bar({ label, pct, tone }: { label: string; pct: number; tone: 'loot' | 'supply' }) {
+  const full = pct >= 100
+  const color = tone === 'loot' ? (full ? 'bg-red-500' : 'bg-game-green') : (pct <= 20 ? 'bg-red-500' : 'bg-game-gold')
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Capacity</span>
-        <span className={`text-xs font-mono tabular-nums ${capacity >= 1 ? 'text-red-400' : 'text-game-text'}`}>{pct}%</span>
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">{label}</span>
+        <span className={`text-[10px] font-mono tabular-nums ${full && tone === 'loot' ? 'text-red-400' : 'text-game-text'}`}>{Math.round(pct)}%</span>
       </div>
-      <div className="h-3 rounded-full bg-game-border overflow-hidden flex">
-        <div className="h-full bg-game-muted/50" style={{ width: `${base * 100}%` }} title="supplies · tools · quest gear" />
-        <div className={`h-full ${capacity >= 1 ? 'bg-red-500' : 'bg-game-green'}`} style={{ width: `${loot * 100}%` }} title="loot" />
-      </div>
-      <div className="flex items-center gap-3 mt-1 text-[9px] text-game-muted">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-game-muted/50" /> supplies/tools/quest</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-game-green" /> loot</span>
+      <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
     </div>
   )
 }
 
-export function ExpeditionPanel({ location, heroes }: { location: Location; heroes: Unit[] }) {
-  const profile = useMemo(() => locationProfile(location), [location])
-  const ticks = useGameStore((s) => s.ticks)
-  const exp = useExpeditionStore((s) => s.expeditions[location.id])
-  const report = useExpeditionStore((s) => s.report)
+export function ExpeditionPanel({ unit }: { unit: Unit }) {
+  const units = useGameStore((s) => s.units)
+  const locations = useGameStore((s) => s.locations)
+  const packs = useProtoStore((s) => s.packs)
+  const heroes = useExpeditionStore((s) => s.heroes)
+  const returnMode = useExpeditionStore((s) => s.returnMode)
   const ensure = useExpeditionStore((s) => s.ensure)
   const setChoice = useExpeditionStore((s) => s.setChoice)
-  const advance = useExpeditionStore((s) => s.advance)
-  const returnNow = useExpeditionStore((s) => s.returnNow)
-  const dismissReport = useExpeditionStore((s) => s.dismissReport)
+  const setReturnMode = useExpeditionStore((s) => s.setReturnMode)
+  const applyToParty = useExpeditionStore((s) => s.applyToParty)
 
-  const party = heroes.length
-  const lastTicks = useRef(ticks)
+  useEffect(() => { ensure(unit.id) }, [unit.id, ensure])
 
-  useEffect(() => { if (isHuntable(location)) ensure(location.id) }, [location.id, ensure])
+  const he = heroes[unit.id]
+  const loc = unit.locationId ? locations.find((l) => l.id === unit.locationId) : null
+  const huntable = !!loc && isHuntable(loc)
+  const party = huntable ? units.filter((u) => u.locationId === loc!.id) : [unit]
 
-  // Drive the run off the real game tick (so it shares the pause/cadence). Each
-  // tick advances the meter by the elapsed seconds; a fired Return Rule sends the
-  // party home and produces the report.
-  useEffect(() => {
-    const dt = Math.min(2, Math.max(0, (ticks - lastTicks.current) / TICKS_PER_SECOND))
-    lastTicks.current = ticks
-    if (dt <= 0 || party <= 0 || !isHuntable(location)) return
-    const trigger = advance(location.id, dt, profile)
-    if (trigger) returnNow(location.id, trigger, profile, party, location.name)
-  }, [ticks, party, location, profile, advance, returnNow])
+  const capOf = (id: string) => (packCount(packs[id]) / CARRY_CAPACITY) * 100
+  const supOf = (id: string) => (heroes[id]?.supplies ?? 1) * 100
+  const avg = (ns: number[]) => (ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : 0)
 
-  if (!isHuntable(location)) return null
-
-  const view = exp ?? { ...DEFAULT_CHOICES, capacity: LOADOUT_BASE_FILL[DEFAULT_CHOICES.loadout], supplies: 1, danger: 0, elapsed: 0 }
-  const base = LOADOUT_BASE_FILL[view.loadout]
+  const status = he?.status ?? 'hunting'
 
   return (
-    <div className="rounded-lg border border-game-border bg-game-bg/60 p-3 space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Expedition</span>
-        <span className="text-[10px] text-game-muted">
-          {party === 0 ? 'no party — station heroes to begin' : `${party} hero${party === 1 ? '' : 'es'} hunting`}
-        </span>
-      </div>
-
-      <Meter base={base} capacity={view.capacity} />
-
-      {/* supplies + danger */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Supplies</span>
-            <span className="text-[10px] font-mono text-game-text tabular-nums">{Math.round(view.supplies * 100)}%</span>
+    <div className="space-y-4">
+      {/* Where things stand */}
+      {!unit.locationId ? (
+        <div className="text-[11px] text-game-muted italic">Not deployed. Configure below, then send this hero to a hunting ground.</div>
+      ) : !huntable ? (
+        <div className="text-[11px] text-game-muted italic">In town. Deploy to a hunting ground to run an expedition.</div>
+      ) : (
+        <>
+          {/* Party summary */}
+          <div className="rounded-lg border border-game-border bg-game-bg/60 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Party</span>
+              <span className="text-[10px] text-game-muted">{party.length} hero{party.length === 1 ? '' : 'es'} at {loc!.name}</span>
+            </div>
+            <Bar label="Capacity" pct={avg(party.map((u) => capOf(u.id)))} tone="loot" />
+            <Bar label="Supplies" pct={avg(party.map((u) => supOf(u.id)))} tone="supply" />
           </div>
-          <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
-            <div className={`h-full ${view.supplies < 0.2 ? 'bg-red-500' : 'bg-game-gold'}`} style={{ width: `${view.supplies * 100}%` }} />
-          </div>
-        </div>
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Danger</span>
-            <span className={`text-[10px] font-mono tabular-nums ${view.danger >= 0.7 ? 'text-red-400' : 'text-game-text-dim'}`}>{Math.round(view.danger * 100)}%</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
-            <div className={`h-full ${view.danger >= 0.7 ? 'bg-red-500' : 'bg-game-secondary'}`} style={{ width: `${view.danger * 100}%` }} />
-          </div>
-        </div>
-      </div>
 
-      {/* what this area yields */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Yields</span>
-        {profile.signatures.map((c) => (
-          <span key={c} className="text-[9px] px-1.5 py-0.5 rounded-full border border-game-border text-game-text-dim">{c}</span>
-        ))}
-      </div>
+          {/* Selected hero */}
+          <div className="rounded-lg border border-game-border bg-game-bg/40 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-game-text">{unit.name.split(' ')[0]}</span>
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${status === 'returning' ? 'border-game-gold/50 text-game-gold' : 'border-game-green/50 text-game-green'}`}>
+                {status === 'returning' ? 'heading to town' : 'hunting'}
+              </span>
+            </div>
+            <Bar label="Capacity" pct={capOf(unit.id)} tone="loot" />
+            <Bar label="Supplies" pct={supOf(unit.id)} tone="supply" />
+            <div className="text-[10px] text-game-muted">Loot collects in <span className="text-game-text-dim">Field Loot</span> (Equipment tab) — inspect what they're carrying there.</div>
+          </div>
 
-      {/* the four composable choices */}
+          {/* What this area yields */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Yields</span>
+            {locationProfile(loc!).signatures.map((c) => (
+              <span key={c} className="text-[9px] px-1.5 py-0.5 rounded-full border border-game-border text-game-text-dim">{c}</span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Per-hero configuration */}
       <div className="space-y-2.5 pt-1 border-t border-game-border/60">
-        <Seg label="Loadout"       options={LOADOUTS}     value={view.loadout}    onChange={(v) => setChoice(location.id, 'loadout', v)} />
-        <Seg label="Supply Posture" options={POSTURES}    value={view.posture}    onChange={(v) => setChoice(location.id, 'posture', v)} />
-        <Seg label="Loot Focus"    options={LOOT_FOCUS}   value={view.lootFocus}  onChange={(v) => setChoice(location.id, 'lootFocus', v)} />
-        <Seg label="Return Rule"   options={RETURN_RULES} value={view.returnRule} onChange={(v) => setChoice(location.id, 'returnRule', v)} />
+        <Seg label="Loadout"        options={LOADOUTS}     value={he?.loadout ?? 'standard'}   onChange={(v) => setChoice(unit.id, 'loadout', v)} />
+        <Seg label="Supply Posture" options={POSTURES}     value={he?.posture ?? 'normal'}     onChange={(v) => setChoice(unit.id, 'posture', v)} />
+        <Seg label="Loot Focus"     options={LOOT_FOCUS}   value={he?.lootFocus ?? 'everything'} onChange={(v) => setChoice(unit.id, 'lootFocus', v)} />
+        <Seg label="Return When"    options={RETURN_RULES} value={he?.returnRule ?? 'either'}   onChange={(v) => setChoice(unit.id, 'returnRule', v)} />
       </div>
 
-      {party > 0 && (
-        <button
-          onClick={() => returnNow(location.id, 'manual', profile, party, location.name)}
-          className="w-full py-1.5 rounded-lg border border-game-border text-[12px] text-game-text-dim hover:text-game-text hover:bg-white/5">
-          ⌂ Return to town now
-        </button>
-      )}
-
-      {report && report.locationId === location.id && (
-        <ReturnReport report={report} locationName={location.name} onClose={dismissReport} />
-      )}
+      {/* Party-level: return individually or together; copy this hero's plan */}
+      <div className="space-y-2.5 pt-1 border-t border-game-border/60">
+        <Seg label="Return Mode" options={RETURN_MODES} value={returnMode} onChange={(v) => setReturnMode(v)} />
+        {huntable && party.length > 1 && (
+          <button
+            onClick={() => applyToParty(unit.id, party.filter((u) => u.id !== unit.id).map((u) => u.id))}
+            className="w-full py-1.5 rounded-lg border border-game-border text-[11px] text-game-text-dim hover:text-game-text hover:bg-white/5">
+            Apply {unit.name.split(' ')[0]}'s plan to the whole party
+          </button>
+        )}
+      </div>
     </div>
   )
 }

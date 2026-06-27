@@ -20,6 +20,7 @@ import { seedProtoMocks } from './seed'
 import { UnitDetailOverlay, StatusList } from '@/components/BattleView'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { LocationDetail } from './LocationDetail'
+import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
 
@@ -38,14 +39,15 @@ import { MERCHANT_REGISTRY } from '@/data/merchants'
 // Skills & Tactics are now top-level (sit beside Location / Equipment); Party
 // moved to the global top nav (it spans multiple units). Equipment (the gutted
 // "Items") is this hero's gear + personal inventory.
-type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics'
+type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics' | 'expedition'
 type HeroSub = 'stats' | 'pet'
 const TOP_TABS: { id: Top; label: string; icon: string }[] = [
-  { id: 'location',  label: 'Location',  icon: '⌖' },
-  { id: 'hero',      label: 'Hero',      icon: '◈' },
-  { id: 'equipment', label: 'Equipment', icon: '🎒' },
-  { id: 'skills',    label: 'Skills',    icon: '✦' },
-  { id: 'tactics',   label: 'Tactics',   icon: '☷' },
+  { id: 'location',   label: 'Location',  icon: '⌖' },
+  { id: 'hero',       label: 'Hero',      icon: '◈' },
+  { id: 'equipment',  label: 'Equipment', icon: '🎒' },
+  { id: 'skills',     label: 'Skills',    icon: '✦' },
+  { id: 'tactics',    label: 'Tactics',   icon: '☷' },
+  { id: 'expedition', label: 'Expedition', icon: '🧭' },
 ]
 // The hero's whole dossier is one container (UnitLens); a Pet sub appears only
 // once a hero has a beast companion.
@@ -1248,6 +1250,7 @@ export function ProtoLens() {
           {top === 'equipment' && (unit ? <EquipmentLens unit={unit} /> : <Empty icon="🎒" title="Select a hero" sub="Equipment & personal inventory belong to a hero — pick one." />)}
           {top === 'skills'    && (unit ? <SkillsLens unit={unit} /> : <Empty icon="✦" title="Select a hero" sub="Pick a hero to set their battle skills." />)}
           {top === 'tactics'   && (unit ? <TacticianLens unit={unit} /> : <Empty icon="☷" title="Select a hero" sub="Pick a hero to tune their tactics." />)}
+          {top === 'expedition' && (unit ? <ExpeditionPanel unit={unit} /> : <Empty icon="🧭" title="Select a hero" sub="Pick a hero to plan their expedition." />)}
         </div>
       </div>
 

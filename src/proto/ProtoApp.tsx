@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useGameStore, getInitials, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
+import { useExpeditionDriver } from './expeditionDriver'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
 import { QuestJournal, useQuestBoard } from './QuestJournal'
 import { Town } from './Town'
@@ -305,6 +306,7 @@ export function ProtoApp() {
   const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
+  useExpeditionDriver()   // §expedition: advance deployed heroes' runs each tick
   // Multi-select: when on, single-tap toggles a hero in/out of the selection for
   // bulk deploy (Location lens). Off = single-select (tap replaces).
   const [multi, setMulti] = useState(false)
