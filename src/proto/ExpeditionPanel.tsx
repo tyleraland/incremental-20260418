@@ -10,18 +10,6 @@ import { useExpeditionStore } from './expeditionStore'
 import { useProtoStore } from './protoStore'
 import { packCount, CARRY_CAPACITY } from './economy'
 
-// Capacity/Supplies as the word + the % (no bar). Red at pack-full / low supplies.
-function Stat({ label, pct, tone, na }: { label: string; pct: number; tone: 'loot' | 'supply'; na?: boolean }) {
-  const danger = tone === 'loot' ? pct >= 100 : pct <= 20
-  return (
-    <span className="text-[12px] text-game-text-dim">
-      {label}{' '}
-      {na ? <span className="text-game-muted">—</span>
-        : <span className={`font-mono tabular-nums ${danger ? 'text-red-400' : 'text-game-text'}`}>{Math.round(pct)}%</span>}
-    </span>
-  )
-}
-
 const toggleChip = (on: boolean) =>
   `text-[11px] px-1.5 py-0.5 rounded border transition-colors ${on
     ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
@@ -162,26 +150,31 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   return (
     <div className="space-y-4">
       {/* Status + meters for the scoped hero (name is in the scope bar above) */}
-      <div className="rounded-lg border border-game-border bg-game-bg/60 p-3 space-y-1.5">
-        <div className="flex items-center gap-2">
-          {huntable ? (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${he.status === 'returning' ? 'border-game-gold/50 text-game-gold' : 'border-game-green/50 text-game-green'}`}>
-              {he.status === 'returning' ? '⌂ heading to town' : 'hunting'}
-            </span>
-          ) : (
-            <span className="text-[12px] text-game-muted italic">{!unit.locationId ? 'Not deployed' : 'In town'} — plan below</span>
-          )}
-          {party.length > 1 && <span className="ml-auto text-[11px] text-game-muted">+{party.length - 1} more here</span>}
-        </div>
-        {huntable && (
-          <div className="flex items-center gap-4">
-            <span className="text-[12px] text-game-text-dim">
-              Capacity <span className={`font-mono tabular-nums ${cap >= 100 ? 'text-red-400' : 'text-game-text'}`}>{capCount} / {CARRY_CAPACITY} ({Math.round(cap)}%)</span>
-            </span>
-            <Stat label="Supplies" pct={sup} tone="supply" na={!hasSup} />
-            <span className="text-[11px] text-game-muted ml-auto">loot → Field Loot</span>
+      <div className="rounded-lg border border-game-border bg-game-bg/60 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {huntable ? (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${he.status === 'returning' ? 'border-game-gold/50 text-game-gold' : 'border-game-green/50 text-game-green'}`}>
+                {he.status === 'returning' ? '⌂ heading to town' : 'hunting'}
+              </span>
+            ) : (
+              <span className="text-[12px] text-game-muted italic">{!unit.locationId ? 'Not deployed' : 'In town'} — plan below</span>
+            )}
+            {party.length > 1 && <span className="text-[11px] text-game-muted">+{party.length - 1} more here</span>}
           </div>
-        )}
+          {huntable && (
+            <div className="text-right shrink-0 space-y-0.5">
+              <div className="text-[12px] text-game-text-dim">
+                Capacity <span className={`font-mono tabular-nums ${cap >= 100 ? 'text-red-400' : 'text-game-text'}`}>{capCount} / {CARRY_CAPACITY} ({Math.round(cap)}%)</span>
+              </div>
+              <div className="text-[12px] text-game-text-dim">
+                Supplies {hasSup
+                  ? <span className={`font-mono tabular-nums ${sup <= 20 ? 'text-red-400' : 'text-game-text'}`}>{Math.round(sup)}%</span>
+                  : <span className="text-game-muted">—</span>}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Supplies loadout — a list + add via menu */}

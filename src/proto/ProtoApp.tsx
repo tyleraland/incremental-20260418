@@ -4,7 +4,7 @@ import { useGameStore, getInitials, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens } from './ProtoLens'
 import { useExpeditionDriver } from './expeditionDriver'
-import { LogisticsBoard } from './LogisticsBoard'
+import { ArmyMatrix } from './ArmyMatrix'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
 import { QuestJournal, useQuestBoard } from './QuestJournal'
 import { Town } from './Town'
@@ -191,7 +191,7 @@ function GuildBoard({ onHero }: { onHero: (id: string) => void }) {
   const recruitUnit = useGameStore((s) => s.recruitUnit)
   return (
     <div className="p-3 max-w-3xl w-full mx-auto space-y-4">
-      <LogisticsBoard onHero={onHero} />
+      <ArmyMatrix squad={units} locationName="Guild" onHero={onHero} />
       <div className="flex items-center justify-between border-t border-game-border pt-3">
         <span className="text-xs text-game-text-dim">{units.length} member{units.length !== 1 ? 's' : ''} in the guild</span>
         <button onClick={recruitUnit} className="px-4 py-2 rounded-lg bg-game-primary text-white text-sm font-medium hover:bg-game-primary/80">＋ Recruit a member</button>

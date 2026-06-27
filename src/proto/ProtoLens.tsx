@@ -518,12 +518,32 @@ function EquipmentLens({ unit }: { unit: Unit }) {
 // the hero's manual per-channel priority list, and the tactics inherited free from
 // equipped skills (decouple-able). Only skills change numbers — tactics are pure
 // behaviour, so everything here is a reorder/equip/decouple.
+// Tap-a-tactic detail: the explainer pulled out of the glance view into a popup.
+function TacticDetailModal({ tacticId, onClose }: { tacticId: string; onClose: () => void }) {
+  const def = TACTIC_REGISTRY[tacticId]
+  if (!def) return null
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-3" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl border border-game-border bg-game-surface p-4 space-y-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-game-text flex-1">{def.name}</span>
+          <span className="text-[10px] uppercase tracking-wider text-game-muted capitalize">{def.channel}{def.kind === 'floor' ? ' · floor' : ''}</span>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg border border-game-border text-game-text hover:bg-game-border/50">✕</button>
+        </div>
+        <div className="text-[12px] text-game-text-dim leading-snug">{def.description}</div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function TacticianLens({ unit }: { unit: Unit }) {
   const moveTactic    = useGameStore((s) => s.moveTactic)
   const equipTactic   = useGameStore((s) => s.equipTactic)
   const unequipTactic = useGameStore((s) => s.unequipTactic)
   const toggleInherited = useGameStore((s) => s.toggleInheritedTactic)
   const [adding, setAdding] = useState(false)
+  const [detail, setDetail] = useState<string | null>(null)
 
   const equippedIds = new Set(unit.tactics.map((t) => t.id))
   const byChannel = (ch: string) => unit.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch)
@@ -543,8 +563,8 @@ function TacticianLens({ unit }: { unit: Unit }) {
       <PartyDoctrine />
 
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Priority by channel</span>
-        <span className="text-[10px] text-game-text-dim">{unit.tactics.length}/{MAX_UNIT_TACTICS}</span>
+        <span className="text-[11px] uppercase tracking-widest text-game-text-dim">Priority by channel</span>
+        <span className="text-[11px] text-game-text-dim">{unit.tactics.length}/{MAX_UNIT_TACTICS}</span>
       </div>
 
       <div className="space-y-3">
@@ -553,25 +573,23 @@ function TacticianLens({ unit }: { unit: Unit }) {
           if (slots.length === 0) return null
           return (
             <div key={ch.id}>
-              <div className="text-[10px] text-game-muted mb-1">{ch.label}</div>
+              <div className="text-[11px] text-game-muted mb-1">{ch.label}</div>
               <div className="space-y-1">
                 {slots.map((t, i) => {
                   const def = TACTIC_REGISTRY[t.id]
                   return (
-                    <div key={t.id} className="flex items-start gap-1.5 rounded-md border border-game-border bg-game-bg px-2 py-1.5">
-                      <span className="text-[10px] text-game-muted w-4 text-center tabular-nums pt-0.5">{i + 1}</span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-medium text-game-text">{def?.name ?? t.id}</span>
-                          {def?.kind === 'floor' && <span className="text-[8px] px-1 rounded bg-game-border text-game-text-dim">floor</span>}
-                        </div>
-                        <div className="text-[10px] text-game-text-dim leading-snug">{def?.description}</div>
-                      </div>
+                    <div key={t.id} className="flex items-center gap-1.5 rounded-md border border-game-border bg-game-bg px-2 py-1.5">
+                      <span className="text-[11px] text-game-muted w-4 text-center tabular-nums">{i + 1}</span>
+                      <button onClick={() => setDetail(t.id)} className="min-w-0 flex-1 text-left flex items-center gap-1.5">
+                        <span className="text-[13px] font-medium text-game-text">{def?.name ?? t.id}</span>
+                        {def?.kind === 'floor' && <span className="text-[9px] px-1 rounded bg-game-border text-game-text-dim">floor</span>}
+                        <span className="text-game-muted text-[11px]">ⓘ</span>
+                      </button>
                       <div className="flex flex-col gap-0.5 shrink-0">
-                        <button onClick={() => moveTactic(unit.id, t.id, -1)} className="w-5 h-4 rounded bg-game-border/60 text-[9px] text-game-text-dim hover:text-game-text leading-none">▲</button>
-                        <button onClick={() => moveTactic(unit.id, t.id, 1)} className="w-5 h-4 rounded bg-game-border/60 text-[9px] text-game-text-dim hover:text-game-text leading-none">▼</button>
+                        <button onClick={() => moveTactic(unit.id, t.id, -1)} className="w-5 h-4 rounded bg-game-border/60 text-[10px] text-game-text-dim hover:text-game-text leading-none">▲</button>
+                        <button onClick={() => moveTactic(unit.id, t.id, 1)} className="w-5 h-4 rounded bg-game-border/60 text-[10px] text-game-text-dim hover:text-game-text leading-none">▼</button>
                       </div>
-                      <button onClick={() => unequipTactic(unit.id, t.id)} className="text-game-muted hover:text-red-300 text-xs shrink-0 pt-0.5">✕</button>
+                      <button onClick={() => unequipTactic(unit.id, t.id)} className="text-game-muted hover:text-red-300 text-xs shrink-0">✕</button>
                     </div>
                   )
                 })}
@@ -584,8 +602,8 @@ function TacticianLens({ unit }: { unit: Unit }) {
       {inherited.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Inherited from skills</span>
-            <span className="text-[9px] text-game-muted">free · auto</span>
+            <span className="text-[11px] uppercase tracking-widest text-game-text-dim">Inherited from skills</span>
+            <span className="text-[10px] text-game-muted">free · auto</span>
           </div>
           <div className="space-y-1">
             {inherited.map((id) => {
@@ -594,15 +612,13 @@ function TacticianLens({ unit }: { unit: Unit }) {
               const off = suppressed.has(id)
               const sources = (grantedBy[id] ?? []).join(', ')
               return (
-                <div key={id} className={['flex items-start gap-1.5 rounded-md border border-dashed px-2 py-1.5',
+                <div key={id} className={['flex items-center gap-1.5 rounded-md border border-dashed px-2 py-1.5',
                   off ? 'border-game-border bg-game-bg/40 opacity-60' : 'border-amber-400/40 bg-amber-400/5'].join(' ')}>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={['text-xs font-medium', off ? 'text-game-muted line-through' : 'text-game-text'].join(' ')}>{def.name}</span>
-                      <span className="text-[8px] px-1 rounded border border-amber-400/40 text-amber-300/90">from {sources}</span>
-                    </div>
-                    <div className="text-[10px] text-game-text-dim leading-snug">{def.description}</div>
-                  </div>
+                  <button onClick={() => setDetail(id)} className="min-w-0 flex-1 text-left flex items-center gap-1.5 flex-wrap">
+                    <span className={['text-[13px] font-medium', off ? 'text-game-muted line-through' : 'text-game-text'].join(' ')}>{def.name}</span>
+                    <span className="text-[9px] px-1 rounded border border-amber-400/40 text-amber-300/90">from {sources}</span>
+                    <span className="text-game-muted text-[11px]">ⓘ</span>
+                  </button>
                   <button
                     onClick={() => toggleInherited(unit.id, id)}
                     title={off ? `Re-couple ${def.name}` : `Decouple ${def.name}`}
@@ -640,6 +656,8 @@ function TacticianLens({ unit }: { unit: Unit }) {
           </div>
         )}
       </div>
+
+      {detail && <TacticDetailModal tacticId={detail} onClose={() => setDetail(null)} />}
     </div>
   )
 }
