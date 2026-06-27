@@ -9,21 +9,16 @@ import { useExpeditionStore } from './expeditionStore'
 import { useProtoStore } from './protoStore'
 import { packCount, CARRY_CAPACITY } from './economy'
 
-// A compact capacity/supplies readout — no big bars (a thin sliver + the number).
-function Mini({ label, pct, tone, na }: { label: string; pct: number; tone: 'loot' | 'supply'; na?: boolean }) {
-  const full = pct >= 100
-  const color = tone === 'loot' ? (full ? 'bg-red-500' : 'bg-game-green') : (pct <= 20 ? 'bg-red-500' : 'bg-game-gold')
+// A compact capacity/supplies readout — the word + the % (no bar; the number is
+// what matters). The % goes red at a notable threshold (pack full / supplies low).
+function Stat({ label, pct, tone, na }: { label: string; pct: number; tone: 'loot' | 'supply'; na?: boolean }) {
+  const danger = tone === 'loot' ? pct >= 100 : pct <= 20
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="text-[10px] text-game-text-dim">{label}</span>
-      {na ? <span className="text-[10px] text-game-muted">—</span> : (
-        <>
-          <span className="inline-block w-10 h-1 rounded-full bg-game-border overflow-hidden align-middle">
-            <span className={`block h-full ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
-          </span>
-          <span className="text-[10px] font-mono tabular-nums text-game-text">{Math.round(pct)}%</span>
-        </>
-      )}
+    <span className="text-[10px] text-game-text-dim">
+      {label}{' '}
+      {na
+        ? <span className="text-game-muted">—</span>
+        : <span className={`font-mono tabular-nums ${danger ? 'text-red-400' : 'text-game-text'}`}>{Math.round(pct)}%</span>}
     </span>
   )
 }
@@ -91,14 +86,14 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
             <span className="text-[10px] text-game-muted">{party.length} at {loc!.name}</span>
           </div>
           {party.map((u) => (
-            <div key={u.id} className={`flex items-center gap-2 ${u.id === unit.id ? '' : 'opacity-80'}`}>
+            <div key={u.id} className={`flex items-center gap-2 flex-wrap ${u.id === unit.id ? '' : 'opacity-80'}`}>
               <span className="text-[11px] text-game-text w-16 truncate">{firstName(u)}</span>
               <span className={`text-[9px] px-1.5 py-0.5 rounded-full border shrink-0 ${statusOf(u.id) === 'returning' ? 'border-game-gold/50 text-game-gold' : 'border-game-green/50 text-game-green'}`}>
                 {statusOf(u.id) === 'returning' ? '⌂ heading to town' : 'hunting'}
               </span>
-              <span className="ml-auto flex items-center gap-2.5">
-                <Mini label="cap" pct={capOf(u.id)} tone="loot" />
-                <Mini label="sup" pct={supOf(u.id)} tone="supply" na={!hasSup(u.id)} />
+              <span className="ml-auto flex items-center gap-3">
+                <Stat label="Capacity" pct={capOf(u.id)} tone="loot" />
+                <Stat label="Supplies" pct={supOf(u.id)} tone="supply" na={!hasSup(u.id)} />
               </span>
             </div>
           ))}
