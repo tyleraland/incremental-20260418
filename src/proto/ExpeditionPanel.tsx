@@ -125,6 +125,7 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const ensure = useExpeditionStore((s) => s.ensure)
   const toggleLootCat = useExpeditionStore((s) => s.toggleLootCat)
   const toggleReturnOn = useExpeditionStore((s) => s.toggleReturnOn)
+  const toggleShareFlag = useExpeditionStore((s) => s.toggleShareFlag)
   const setReturnMode = useExpeditionStore((s) => s.setReturnMode)
   const applyToParty = useExpeditionStore((s) => s.applyToParty)
 
@@ -132,12 +133,13 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
 
   useEffect(() => { ensure(unit.id) }, [unit.id, ensure])
 
-  const he = heroes[unit.id] ?? { loadout: {} as Loadout, lootCats: [...ALL_LOOT_CATEGORIES], returnOn: ['pack-full' as const], suppliesLeft: 1, status: 'hunting' as const, locationId: null }
+  const he = heroes[unit.id] ?? { loadout: {} as Loadout, lootCats: [...ALL_LOOT_CATEGORIES], returnOn: ['pack-full' as const], shareLoot: true, acceptLoot: true, shareSupplies: false, acceptSupplies: true, suppliesLeft: 1, status: 'hunting' as const, locationId: null }
   const loc = unit.locationId ? locations.find((l) => l.id === unit.locationId) : null
   const huntable = !!loc && isHuntable(loc)
   const party = huntable ? units.filter((u) => u.locationId === loc!.id) : []
 
-  const cap = (packCount(packs[unit.id]) / CARRY_CAPACITY) * 100
+  const capCount = packCount(packs[unit.id])
+  const cap = (capCount / CARRY_CAPACITY) * 100
   const sup = (he.suppliesLeft ?? 1) * 100
   const hasSup = supplyPool(he.loadout) > 0
   const firstName = (u: Unit) => u.name.split(' ')[0]
@@ -147,24 +149,23 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-4">
-      {/* Selected hero — the focus */}
+      {/* Status + meters for the scoped hero (name is in the scope bar above) */}
       <div className="rounded-lg border border-game-border bg-game-bg/60 p-3 space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-game-text">{firstName(unit)}</span>
-          {huntable && (
+          {huntable ? (
             <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${he.status === 'returning' ? 'border-game-gold/50 text-game-gold' : 'border-game-green/50 text-game-green'}`}>
               {he.status === 'returning' ? '⌂ heading to town' : 'hunting'}
             </span>
+          ) : (
+            <span className="text-[11px] text-game-muted italic">{!unit.locationId ? 'Not deployed' : 'In town'} — plan below</span>
           )}
           {party.length > 1 && <span className="ml-auto text-[10px] text-game-muted">+{party.length - 1} more here</span>}
         </div>
-        {!unit.locationId ? (
-          <div className="text-[11px] text-game-muted italic">Not deployed. Plan below, then send to a hunting ground.</div>
-        ) : !huntable ? (
-          <div className="text-[11px] text-game-muted italic">In town. Deploy to a hunting ground to begin.</div>
-        ) : (
+        {huntable && (
           <div className="flex items-center gap-4">
-            <Stat label="Capacity" pct={cap} tone="loot" />
+            <span className="text-[11px] text-game-text-dim">
+              Capacity <span className={`font-mono tabular-nums ${cap >= 100 ? 'text-red-400' : 'text-game-text'}`}>{capCount} / {CARRY_CAPACITY} ({Math.round(cap)}%)</span>
+            </span>
             <Stat label="Supplies" pct={sup} tone="supply" na={!hasSup} />
             <span className="text-[10px] text-game-muted ml-auto">loot → Field Loot</span>
           </div>
@@ -214,6 +215,19 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
             const on = he.returnOn.includes(c.id)
             return <button key={c.id} onClick={() => toggleReturnOn(unit.id, c.id)} className={toggleChip(on)} title={c.hint}>{on ? '✓ ' : ''}{c.label}</button>
           })}
+        </div>
+      </div>
+
+      {/* Party sharing — who pools loot / supplies with the party */}
+      <div className="space-y-1.5">
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Party Sharing</div>
+        <div className="flex gap-1 flex-wrap">
+          <button onClick={() => toggleShareFlag(unit.id, 'acceptLoot')} className={toggleChip(he.acceptLoot)} title="Take on loot from the party (fill evenly)">{he.acceptLoot ? '✓ ' : ''}Accept loot</button>
+          <button onClick={() => toggleShareFlag(unit.id, 'shareLoot')} className={toggleChip(he.shareLoot)} title="Hand loot to the party to balance fills">{he.shareLoot ? '✓ ' : ''}Share loot</button>
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          <button onClick={() => toggleShareFlag(unit.id, 'acceptSupplies')} className={toggleChip(he.acceptSupplies)} title="Draw supplies from the party">{he.acceptSupplies ? '✓ ' : ''}Accept supplies</button>
+          <button onClick={() => toggleShareFlag(unit.id, 'shareSupplies')} className={toggleChip(he.shareSupplies)} title="Give supplies to the party">{he.shareSupplies ? '✓ ' : ''}Share supplies</button>
         </div>
       </div>
 

@@ -10,10 +10,18 @@ import {
 // real proto loot pack (protoStore.packs); this holds the rest. The driver
 // (useExpeditionDriver) advances it each game tick.
 
+export type ShareFlag = 'shareLoot' | 'acceptLoot' | 'shareSupplies' | 'acceptSupplies'
+
 export interface HeroExpedition {
   loadout: Loadout                  // supply itemId → { qty, storage, merchant }
   lootCats: LootCategory[]          // categories to keep
   returnOn: ReturnConditionId[]     // checked return conditions
+  // §party sharing: loot defaults to give+take (the party fills evenly); supplies
+  // default to take-but-not-give. A hero that accepts but won't share becomes a mule.
+  shareLoot: boolean
+  acceptLoot: boolean
+  shareSupplies: boolean
+  acceptSupplies: boolean
   suppliesLeft: number              // 0..1 runtime
   status: 'hunting' | 'returning'
   locationId: string | null         // run anchor — a change resets the run
@@ -29,6 +37,7 @@ interface ExpState {
   removeSupply: (unitId: string, itemId: string) => void
   toggleLootCat: (unitId: string, cat: LootCategory) => void
   toggleReturnOn: (unitId: string, cond: ReturnConditionId) => void
+  toggleShareFlag: (unitId: string, flag: ShareFlag) => void
   setReturnMode: (mode: ReturnModeId) => void
   applyToParty: (srcId: string, targetIds: string[]) => void
   commitStep: (unitId: string, patch: Partial<HeroExpedition>) => void
@@ -38,6 +47,10 @@ export const freshHero = (e: Partial<HeroExpedition> = {}): HeroExpedition => ({
   loadout: e.loadout ?? { ...DEFAULT_LOADOUT },
   lootCats: e.lootCats ?? [...DEFAULT_LOOT_CATS],
   returnOn: e.returnOn ?? [...DEFAULT_RETURN_ON],
+  shareLoot: e.shareLoot ?? true,
+  acceptLoot: e.acceptLoot ?? true,
+  shareSupplies: e.shareSupplies ?? false,
+  acceptSupplies: e.acceptSupplies ?? true,
   suppliesLeft: 1,
   status: 'hunting',
   locationId: e.locationId ?? null,
@@ -89,6 +102,11 @@ export const useExpeditionStore = create<ExpState>((set) => ({
     return { heroes: { ...s.heroes, [unitId]: { ...cur, returnOn } } }
   }),
 
+  toggleShareFlag: (unitId, flag) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, [flag]: !cur[flag] } } }
+  }),
+
   setReturnMode: (mode) => set({ returnMode: mode }),
 
   applyToParty: (srcId, targetIds) => set((s) => {
@@ -98,7 +116,10 @@ export const useExpeditionStore = create<ExpState>((set) => ({
     const cloneLoadout = (l: Loadout): Loadout => Object.fromEntries(Object.entries(l).map(([k, e]) => [k, { ...e }]))
     for (const id of targetIds) {
       const cur = heroes[id] ?? freshHero()
-      heroes[id] = { ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn] }
+      heroes[id] = {
+        ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn],
+        shareLoot: src.shareLoot, acceptLoot: src.acceptLoot, shareSupplies: src.shareSupplies, acceptSupplies: src.acceptSupplies,
+      }
     }
     return { heroes }
   }),

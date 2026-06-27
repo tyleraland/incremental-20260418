@@ -32,6 +32,14 @@ export function materialValue(id: string): number {
   return MATERIAL_VALUE[id] ?? DEFAULT_MATERIAL_VALUE
 }
 
+// Per-item weight (of one). Capacity is a flat item count for now, so this is 1
+// for everything bar a few bulky drops — surfaced in the item detail popup; a
+// weight-based capacity can read it later.
+const ITEM_WEIGHT: Record<string, number> = { 'drop-golem-core': 3, 'drop-crab-shell': 2, 'drop-plate-scrap': 2 }
+export function itemWeight(id: string): number {
+  return ITEM_WEIGHT[id] ?? 1
+}
+
 // Equipment has no authored price, so we price it off its stat budget: a flat
 // base, a weighted stat sum, plus premiums for reach, card sockets, and the
 // level it's gated behind. Always ≥ 1.
