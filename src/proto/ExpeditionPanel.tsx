@@ -118,7 +118,6 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const setReturnMode = useExpeditionStore((s) => s.setReturnMode)
   const applyToParty = useExpeditionStore((s) => s.applyToParty)
   const commitStep = useExpeditionStore((s) => s.commitStep)
-  const runToMapEdge = useGameStore((s) => s.runToMapEdge)
 
   const [menu, setMenu] = useState<{ initial: string | null } | null>(null)
   const [townOpen, setTownOpen] = useState(false)
@@ -144,7 +143,8 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const chosenTown = he.returnTown ? locations.find((l) => l.id === he.returnTown) : null
   const returnNow = () => {
     const ids = (returnMode === 'group' && huntable) ? party.map((u) => u.id) : [unit.id]
-    for (const id of ids) { commitStep(id, { status: 'returning' }); runToMapEdge(id) }
+    // Flag the return; the driver's resupply phase whisks them to town and back.
+    for (const id of ids) commitStep(id, { status: 'returning', locationId: loc?.id ?? null })
   }
 
   return (

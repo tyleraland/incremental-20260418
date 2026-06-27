@@ -413,17 +413,40 @@ reconciles to its carry targets from the stash automatically while a hero is in 
 `'city'` location (`reconcilePackInTown` — withdraws the shortfall or deposits the
 surplus so the carried count matches the target). UI: a **Pack** section in Units →
 Gear (`PackSection`) and a **Consumables** section in the proto Equipment lens.
-`CONSUMABLE_REGISTRY` (`src/data/consumables.ts`) holds one item (`potion-hp`,
-`effect: 'heal-max'`). Configure carry targets + thresholds, deploy to town to
-stock, deploy to a hunt to use. Deferred next slices:
+`CONSUMABLE_REGISTRY` (`src/data/consumables.ts`) holds graded healing potions.
+Configure carry targets + thresholds, deploy to town to stock, deploy to a hunt
+to use.
 
-- **Restock, full version.** Iteration 1 only withdraws from the stash. Add
-  **merchant purchase** for the shortfall (`MERCHANT_REGISTRY`; needs a real
-  store-side buy action — currently proto-only), a **return-to-town trigger**
-  ("when out of `<item>`" / "when pack full"), and a *which town* policy (nearest
-  city vs a designated home). Pickup-into-pack → auto-deposit-to-stash on reaching
-  a city lands here too. (Offline `batchTick` doesn't run town auto-fill or
-  consume potions — it resumes on the live tick; revisit if it matters.)
+**Logistics ⇄ consumables bridge (shipped).** The proto logistics loadout
+(`expeditionStore`) is now the *target* that drives `Unit.pack` carry targets
+(`syncTargets` → `setCarryTarget`/`clearCarryTarget`); carried consumables count
+against carry weight (`economy.heroCarried`/`heroRoom`/`heroFull`); the Equipment
+action-bar picker sources from carried ∪ stash; the guild Stash has a Consumables
+view + where/equipped filters; and the return loop instant-deploys a returning
+hero to a town for `TOWN_RESUPPLY_TICKS` (~30s) — depositing loot + restocking —
+then redeploys to the hunt anchor (`expeditionDriver` phase R, gated on
+`deployMode === 'instant'`). Deferred next slices:
+
+- **Open-world routing for returns.** The resupply trip teleports for now; the
+  `deployMode` lever's `'open-world'` branch still just runs heroes to the map
+  edge (no town arrival). Replace with real land routing + travel time, and
+  interpolate the trip instead of instant-deploy.
+- **Loadout persistence.** `expeditionStore` is unpersisted; on reload `ensure`
+  rehydrates each hero's loadout from the surviving `Unit.pack` targets
+  (`loadoutFromPack`), so a hero who *deliberately* cleared all potions gets the
+  default re-seeded (can't distinguish "empty" from "never configured"). Persist
+  the loadout (its own slice) to fix this and the share-flag/return-rule churn.
+- **Merchant purchase + cost.** A loadout supply's `merchant` source flag only
+  feeds a cost display (`loadoutCost`); reconcile is stash-only, and the gold is
+  never charged. Wire **merchant purchase** for the shortfall (`MERCHANT_REGISTRY`;
+  needs a real store-side buy action — currently proto-only) and actually debit
+  gold, or hide the affordance until then.
+- **Action-bar equip quantity.** Putting a consumable on the action-bar `+`
+  auto-adds it to the loadout at the default supply qty (10), silently committing
+  the hero to carry+withdraw that many. Let the player pick the carry count at
+  equip time (or seed from a smarter default). (Offline `batchTick` doesn't run
+  town auto-fill or consume potions — it resumes on the live tick; revisit if it
+  matters.)
 - **More effects.** Only `heal-max` exists; the apply branch in `takeTurn`
   hardcodes heal-to-max. Generalize via the `ConsumableEffect` union (fixed-heal,
   cure-status, buff) — the effect descriptor already crosses the engine boundary

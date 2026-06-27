@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
 import { isConsumable } from '@/data/consumables'
+import { supplyOption } from './expedition'
+import type { PackItem } from '@/types'
 import {
   DEFAULT_LOADOUT, DEFAULT_LOOT_CATS, DEFAULT_RETURN_ON, newSupplyEntry,
   type Loadout, type LootCategory, type ReturnConditionId, type ReturnModeId,
@@ -21,6 +23,19 @@ function syncTargets(unitId: string, loadout: Loadout): void {
   for (const p of unit?.pack ?? []) {
     if (p.target != null && isConsumable(p.itemId) && !wanted.has(p.itemId)) g.clearCarryTarget(unitId, p.itemId)
   }
+}
+
+// Reverse of the bridge: rebuild a loadout FROM the hero's persisted pack targets.
+// `Unit.pack` is persisted but the loadout isn't, so on first `ensure` after a
+// reload we hydrate the loadout from the surviving targets instead of letting the
+// default loadout clobber them (which would dump carried stock + reset quantities).
+// Returns null when the hero carries no configured consumables → use the default.
+function loadoutFromPack(pack: PackItem[] | undefined): Loadout | null {
+  const entries = (pack ?? []).filter((p) => p.target != null && isConsumable(p.itemId) && supplyOption(p.itemId))
+  if (entries.length === 0) return null
+  const loadout: Loadout = {}
+  for (const p of entries) loadout[p.itemId] = newSupplyEntry(p.target!)
+  return loadout
 }
 
 // §logistics — proto-only per-hero state. Each hero carries their own plan
@@ -45,6 +60,11 @@ export interface HeroExpedition {
   suppliesLeft: number              // 0..1 runtime
   status: 'hunting' | 'returning'
   locationId: string | null         // run anchor — a change resets the run
+  // §resupply trip: while 'returning', the absolute game tick at which the hero
+  // (instant-deployed to a town to deposit loot + restock) redeploys back to the
+  // hunt anchor (`locationId`). Undefined until the trip starts. Open-world routing
+  // replaces the instant teleport later (gated on store deployMode).
+  resupplyUntil?: number
 }
 
 interface ExpState {
@@ -84,7 +104,11 @@ export const useExpeditionStore = create<ExpState>((set, get) => ({
 
   ensure: (unitId) => {
     if (get().heroes[unitId]) return
-    set((s) => (s.heroes[unitId] ? s : { heroes: { ...s.heroes, [unitId]: freshHero() } }))
+    // Hydrate from any surviving pack targets (reload-safe); else the default.
+    const unit = useGameStore.getState().units.find((u) => u.id === unitId)
+    const hydrated = loadoutFromPack(unit?.pack)
+    const hero = hydrated ? freshHero({ loadout: hydrated }) : freshHero()
+    set((s) => (s.heroes[unitId] ? s : { heroes: { ...s.heroes, [unitId]: hero } }))
     const he = get().heroes[unitId]
     if (he) syncTargets(unitId, he.loadout)
   },

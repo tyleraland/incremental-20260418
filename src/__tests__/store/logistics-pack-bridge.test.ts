@@ -47,6 +47,35 @@ describe('loadout → Unit.pack carry targets', () => {
   })
 })
 
+describe('reload safety — ensure() hydrates the loadout from persisted pack targets', () => {
+  it('does not clobber surviving pack targets with the default loadout', () => {
+    // Simulate a reload: the unit's pack (persisted) carries a configured greater
+    // potion (target 12), but the expedition store (unpersisted) is empty.
+    resetStore({ units: [makeUnit({ id: 'u1', pack: [{ itemId: 'potion-hp-greater', count: 8, target: 12 }] })] })
+    useExpeditionStore.setState({ heroes: {} })
+
+    useExpeditionStore.getState().ensure('u1')
+
+    // Loadout is rebuilt from the surviving target, NOT reset to the default potion-hp.
+    const lo = useExpeditionStore.getState().heroes['u1'].loadout
+    expect(lo['potion-hp-greater']?.qty).toBe(12)
+    expect(lo['potion-hp']).toBeUndefined()
+
+    // The persisted pack target + carried stock are untouched (no spurious deposit).
+    const p = unit().pack?.find((x) => x.itemId === 'potion-hp-greater')
+    expect(p?.target).toBe(12)
+    expect(p?.count).toBe(8)
+  })
+
+  it('falls back to the default loadout for a hero carrying no configured consumables', () => {
+    resetStore({ units: [makeUnit({ id: 'u1' })] })
+    useExpeditionStore.setState({ heroes: {} })
+    useExpeditionStore.getState().ensure('u1')
+    expect(useExpeditionStore.getState().heroes['u1'].loadout['potion-hp']?.qty).toBe(5)
+    expect(target('potion-hp')).toBe(5)
+  })
+})
+
 describe('combined carry weight (loot pack + carried consumables)', () => {
   it('consumablesWeight sums itemWeight × count', () => {
     // potion-hp weighs 3, potion-hp-greater weighs 5
