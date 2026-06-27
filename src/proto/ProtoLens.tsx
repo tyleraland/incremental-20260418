@@ -23,6 +23,7 @@ import { LocationDetail } from './LocationDetail'
 import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
+import { consumableDef } from '@/data/consumables'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
@@ -452,9 +453,92 @@ function SwapMenu({ unit, slot, onClose }: { unit: Unit; slot: EquipSlot; onClos
 // ── Equipment lens (gutted "Items") — this hero's gear + personal inventory ────--
 // Equipped slots (with socket pips), the personal pack, and what they carry into
 // battle. Tapping a slot opens the full-cover relative-bonus SwapMenu.
+// The battle action bar as seen from Equipment: skills are read-only (greyed —
+// managed in the Skills tab), but any slot can take a consumable to use mid-fight.
+// Adding a healing potion auto-couples a "use when HP < 30%" tactic (caveat: this
+// is hard-wired to healing for now; richer per-item rules come later).
+function BattleItemBar({ unit }: { unit: Unit }) {
+  const setActionSlot = useGameStore((s) => s.setActionSlot)
+  const addConsumableRule = useGameStore((s) => s.addConsumableRule)
+  const removeConsumableRule = useGameStore((s) => s.removeConsumableRule)
+  const miscItems = useGameStore((s) => s.miscItems)
+  const [pick, setPick] = useState<number | null>(null)
+
+  const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
+  const rules = unit.consumableRules ?? []
+  const onBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'consumable').map((e) => e.id))
+  const pool = miscItems.filter((m) => m.kind === 'consumable' && m.quantity > 0 && !onBar.has(m.id))
+  const cName = (id: string) => consumableDef(id)?.name ?? miscItems.find((m) => m.id === id)?.name ?? id
+  const cIcon = (id: string) => consumableDef(id)?.icon ?? '🫙'
+  const isHealing = (id: string) => consumableDef(id)?.effect === 'heal'
+
+  const addConsumable = (i: number, id: string) => {
+    setActionSlot(unit.id, i, { kind: 'consumable', id })
+    if (isHealing(id) && !rules.some((r) => r.itemId === id)) addConsumableRule(unit.id, id, 0.3)
+    setPick(null)
+  }
+  const clearSlot = (i: number, entry: ActionSlotEntry) => {
+    setActionSlot(unit.id, i, null)
+    if (entry.kind === 'consumable' && !slots.some((e, j) => j !== i && e?.kind === 'consumable' && e.id === entry.id)) removeConsumableRule(unit.id, entry.id)
+    setPick(null)
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Battle Items <span className="text-game-muted normal-case tracking-normal">— consumables for combat</span></div>
+      <div className="grid grid-cols-6 gap-1.5">
+        {slots.map((entry, i) => {
+          if (entry?.kind === 'skill') return (
+            <div key={i} title="Skill — manage in the Skills tab" className="h-11 rounded-lg border border-game-border/40 bg-game-bg/30 flex items-center justify-center px-1 opacity-50">
+              <span className="text-[9px] leading-tight text-game-muted text-center line-clamp-2">{SKILL_REGISTRY[entry.id]?.name ?? entry.id}</span>
+            </div>
+          )
+          const consumable = entry?.kind === 'consumable'
+          return (
+            <button key={i} onClick={() => setPick(pick === i ? null : i)}
+              className={['h-11 rounded-lg border flex items-center justify-center px-1 transition-colors',
+                pick === i ? 'border-game-primary bg-game-primary/15'
+                  : consumable ? 'border-game-green/50 bg-game-green/5 hover:border-game-green'
+                  : 'border-dashed border-game-border/60 bg-game-bg/40 hover:border-game-primary/40'].join(' ')}>
+              {consumable ? <span className="text-base leading-none">{cIcon(entry!.id)}</span> : <span className="text-game-muted text-sm">＋</span>}
+            </button>
+          )
+        })}
+      </div>
+
+      {pick !== null && (
+        <div className="space-y-1">
+          {slots[pick] && <button onClick={() => clearSlot(pick, slots[pick]!)} className="w-full text-left rounded-md border border-game-border/60 bg-game-bg px-2.5 py-1.5 text-xs text-game-text-dim italic hover:border-red-500/50">Clear slot {pick + 1}</button>}
+          {pool.length === 0
+            ? <div className="text-[11px] text-game-muted italic px-1">No consumables in the stash yet.</div>
+            : pool.map((c) => (
+              <button key={c.id} onClick={() => addConsumable(pick, c.id)}
+                className="w-full flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-green/50">
+                <span className="text-base">{cIcon(c.id)}</span>
+                <span className="text-xs text-game-text flex-1 text-left">{cName(c.id)}</span>
+                <span className="text-[9px] text-game-text-dim tabular-nums">×{c.quantity}</span>
+              </button>
+            ))}
+        </div>
+      )}
+
+      {rules.length > 0 && (
+        <div className="space-y-1 pt-0.5">
+          {rules.map((r) => (
+            <div key={r.itemId} className="flex items-center gap-1.5 rounded-md border border-game-secondary/30 bg-game-secondary/5 px-2 py-1">
+              <span className="text-[9px] px-1 rounded border border-game-secondary/40 text-game-secondary uppercase tracking-wider">auto</span>
+              <span className="text-[11px] text-game-text flex-1">Use {cName(r.itemId)} when HP &lt; {Math.round(r.threshold * 100)}%</span>
+              <button onClick={() => removeConsumableRule(unit.id, r.itemId)} title="Remove this use tactic" className="text-game-muted hover:text-red-300 text-xs">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EquipmentLens({ unit }: { unit: Unit }) {
   const equipment = useGameStore((s) => s.equipment)
-  const miscItems = useGameStore((s) => s.miscItems)
   const sockets   = useProtoStore((s) => s.sockets)
   const [swapSlot, setSwapSlot] = useState<EquipSlot | null>(null)
 
@@ -464,12 +548,9 @@ function EquipmentLens({ unit }: { unit: Unit }) {
   }
   const mainHand = equipment.find((e) => e.id === unit.weaponSets[unit.activeWeaponSet].mainHand)
 
-  // Personal inventory carried into battle: action-bar consumables + staged items.
-  const carried = (unit.actionSlots ?? []).filter((e): e is ActionSlotEntry => !!e && (e.kind === 'consumable' || e.kind === 'item'))
-  const carriedLabel = (e: ActionSlotEntry) => e.kind === 'consumable' ? (miscItems.find((m) => m.id === e.id)?.name ?? e.id) : (equipment.find((i) => i.id === e.id)?.name ?? e.id)
-
   return (
     <div className="space-y-4">
+      <BattleItemBar unit={unit} />
       <PackStrip unit={unit} />
 
       <div>
@@ -493,19 +574,6 @@ function EquipmentLens({ unit }: { unit: Unit }) {
           })}
         </div>
         <div className="text-[10px] text-game-muted italic mt-1.5">Tap a slot to compare gear (opens a full menu with the stat impact).</div>
-      </div>
-
-      <div>
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Carried <span className="text-game-muted normal-case tracking-normal">— into battle</span></div>
-        {carried.length === 0 ? (
-          <div className="text-[11px] text-game-muted italic">Nothing staged. Add consumables/items on the Skills bar.</div>
-        ) : (
-          <div className="flex flex-wrap gap-1">
-            {carried.map((e, i) => (
-              <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-game-border/40 text-game-text-dim border border-game-border/60">{e.kind === 'consumable' ? '🫙 ' : '⚔ '}{carriedLabel(e)}</span>
-            ))}
-          </div>
-        )}
       </div>
 
       {swapSlot && <SwapMenu unit={unit} slot={swapSlot} onClose={() => setSwapSlot(null)} />}

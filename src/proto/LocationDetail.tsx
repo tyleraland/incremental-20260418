@@ -561,6 +561,20 @@ function QuestBoard({ location }: { location: Location }) {
   )
 }
 
+// A collapsible labelled section (Quests / Inhabitants / Lore on the Location lens).
+function Section({ title, defaultOpen = true, children }: { title: string; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div>
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2 mb-1.5">
+        <span className="text-[10px] uppercase tracking-widest text-game-text-dim">{title}</span>
+        <span className="ml-auto text-game-text-dim text-xs">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && children}
+    </div>
+  )
+}
+
 export function LocationDetail({ location }: { location: Location }) {
   const units               = useGameStore((s) => s.units)
   const locations           = useGameStore((s) => s.locations)
@@ -644,20 +658,18 @@ export function LocationDetail({ location }: { location: Location }) {
         </div>
       )}
 
-      {/* class-change quests — hero-relative paths offered in the cities */}
-      <ClassQuestBoard location={location} />
-
-      {/* location bounties — hero-less, chained location quests (boar meadow) */}
-      <LocationBountyBoard location={location} />
-
-      {/* monster quests (legacy mock board) — only where there are foes and no
-          real bounty board yet. Suppressed in peaceful cities and at bounty sites. */}
-      {location.monsterIds.length > 0 && !LOCATION_BOUNTIES.some((b) => b.locationId === location.id) && <QuestBoard location={location} />}
+      {/* Quests — class-change paths (cities), location bounties, legacy monster board */}
+      <Section title="Quests">
+        <div className="space-y-4">
+          <ClassQuestBoard location={location} />
+          <LocationBountyBoard location={location} />
+          {location.monsterIds.length > 0 && !LOCATION_BOUNTIES.some((b) => b.locationId === location.id) && <QuestBoard location={location} />}
+        </div>
+      </Section>
 
       {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Inhabitants</div>
+        <Section title="Inhabitants">
           <div className="flex flex-wrap gap-1.5">
             {foeIds.map((id) => {
               const m = MONSTER_REGISTRY[id]
@@ -674,15 +686,14 @@ export function LocationDetail({ location }: { location: Location }) {
               )
             })}
           </div>
-        </div>
+        </Section>
       )}
 
-      {/* Lore — flavor text, parked near the bottom to keep the top actionable */}
+      {/* Lore — flavor text, collapsed by default to keep the top actionable */}
       {location.description && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Lore</div>
+        <Section title="Lore" defaultOpen={false}>
           <p className="text-xs text-game-text-dim italic leading-snug">{location.description}</p>
-        </div>
+        </Section>
       )}
 
       <button onClick={() => setSelectedLocation(null)} className="text-[11px] text-game-text-dim hover:text-game-text">clear selection</button>
