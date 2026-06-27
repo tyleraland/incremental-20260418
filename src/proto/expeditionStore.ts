@@ -22,6 +22,7 @@ export interface HeroExpedition {
   acceptLoot: boolean
   shareSupplies: boolean
   acceptSupplies: boolean
+  returnTown: string | null         // override town to return to; null = auto (nearest)
   suppliesLeft: number              // 0..1 runtime
   status: 'hunting' | 'returning'
   locationId: string | null         // run anchor — a change resets the run
@@ -38,6 +39,7 @@ interface ExpState {
   toggleLootCat: (unitId: string, cat: LootCategory) => void
   toggleReturnOn: (unitId: string, cond: ReturnConditionId) => void
   toggleShareFlag: (unitId: string, flag: ShareFlag) => void
+  setReturnTown: (unitId: string, townId: string | null) => void
   setReturnMode: (mode: ReturnModeId) => void
   applyToParty: (srcId: string, targetIds: string[]) => void
   commitStep: (unitId: string, patch: Partial<HeroExpedition>) => void
@@ -51,6 +53,7 @@ export const freshHero = (e: Partial<HeroExpedition> = {}): HeroExpedition => ({
   acceptLoot: e.acceptLoot ?? true,
   shareSupplies: e.shareSupplies ?? false,
   acceptSupplies: e.acceptSupplies ?? true,
+  returnTown: e.returnTown ?? null,
   suppliesLeft: 1,
   status: 'hunting',
   locationId: e.locationId ?? null,
@@ -105,6 +108,11 @@ export const useExpeditionStore = create<ExpState>((set) => ({
   toggleShareFlag: (unitId, flag) => set((s) => {
     const cur = s.heroes[unitId] ?? freshHero()
     return { heroes: { ...s.heroes, [unitId]: { ...cur, [flag]: !cur[flag] } } }
+  }),
+
+  setReturnTown: (unitId, townId) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, returnTown: townId } } }
   }),
 
   setReturnMode: (mode) => set({ returnMode: mode }),

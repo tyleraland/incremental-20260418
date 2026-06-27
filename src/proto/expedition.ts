@@ -111,3 +111,31 @@ export function locationProfile(loc: Location): LocationProfile {
 }
 
 export const isHuntable = (loc: Location): boolean => !loc.traits.includes('city')
+export const isCity = (loc: Location): boolean => loc.traits.includes('city')
+
+// The sane default return town: the nearest city to `fromId`, by hops over the
+// location connection graph. Falls back to the first city if none is reachable.
+export function nearestCity(fromId: string | null, locations: Location[]): Location | null {
+  const cities = locations.filter(isCity)
+  if (!fromId) return cities[0] ?? null
+  const byId = new Map(locations.map((l) => [l.id, l]))
+  const start = byId.get(fromId)
+  if (!start) return cities[0] ?? null
+  if (isCity(start)) return start
+  const seen = new Set([fromId])
+  let frontier = [fromId]
+  while (frontier.length) {
+    const next: string[] = []
+    for (const id of frontier) {
+      for (const c of byId.get(id)?.connections ?? []) {
+        if (seen.has(c)) continue
+        seen.add(c)
+        const cl = byId.get(c)
+        if (cl && isCity(cl)) return cl
+        next.push(c)
+      }
+    }
+    frontier = next
+  }
+  return cities[0] ?? null
+}

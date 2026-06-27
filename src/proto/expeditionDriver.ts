@@ -85,12 +85,9 @@ export function useExpeditionDriver() {
         continue
       }
       if (he.status === 'returning') {
-        if (packCount(useProtoStore.getState().packs[u.id]) === 0) {
-          exp.commitStep(u.id, { suppliesLeft: 1, status: 'hunting', locationId: u.locationId })
-          progress.current[u.id] = 0
-        } else if (g.ticks % 10 === 0) {
-          g.runToMapEdge(u.id)
-        }
+        // Parked at the town edge — keep heading down until redeployed (the
+        // locationId check above resets the run on redeploy).
+        if (g.ticks % 10 === 0) g.runToMapEdge(u.id)
         continue
       }
       const arr = groups.get(u.locationId) ?? []
