@@ -1,44 +1,41 @@
 import { create } from 'zustand'
 import {
-  DEFAULT_CHOICES,
-  type LoadoutId, type PostureId, type LootFocusId, type ReturnRuleId, type ReturnModeId,
+  DEFAULT_LOADOUT, DEFAULT_LOOT_CATS, DEFAULT_RETURN_ON,
+  type LootCategory, type ReturnConditionId, type ReturnModeId,
 } from './expedition'
 
-// §expedition — proto-only per-hero logistics state. Each hero carries their own
-// run (config + supplies + status); the party is just the heroes sharing a
-// location. Abstracted: pack/capacity is the existing proto loot pack
-// (protoStore.packs); supplies + status live here. The driver (useExpeditionDriver)
-// advances these each game tick.
+// §logistics — proto-only per-hero state. Each hero carries their own plan
+// (supplies loadout + loot categories + return conditions) plus runtime (supplies
+// left, status). The party is just the heroes sharing a location. Capacity is the
+// real proto loot pack (protoStore.packs); this holds the rest. The driver
+// (useExpeditionDriver) advances it each game tick.
 
 export interface HeroExpedition {
-  loadout: LoadoutId
-  posture: PostureId
-  lootFocus: LootFocusId
-  returnRule: ReturnRuleId
-  supplies: number              // 0..1 remaining
+  loadout: Record<string, number>   // supply itemId → qty carried
+  lootCats: LootCategory[]          // categories to keep
+  returnOn: ReturnConditionId[]     // checked return conditions
+  suppliesLeft: number              // 0..1 runtime
   status: 'hunting' | 'returning'
-  locationId: string | null     // run anchor — a change resets the run
+  locationId: string | null         // run anchor — a change resets the run
 }
-
-type ChoiceKey = 'loadout' | 'posture' | 'lootFocus' | 'returnRule'
 
 interface ExpState {
   heroes: Record<string, HeroExpedition>
   returnMode: ReturnModeId
   ensure: (unitId: string) => void
-  setChoice: (unitId: string, key: ChoiceKey, value: string) => void
+  setSupplyQty: (unitId: string, itemId: string, qty: number) => void
+  toggleLootCat: (unitId: string, cat: LootCategory) => void
+  toggleReturnOn: (unitId: string, cond: ReturnConditionId) => void
   setReturnMode: (mode: ReturnModeId) => void
   applyToParty: (srcId: string, targetIds: string[]) => void
-  // driver-facing: one update per hero per tick.
   commitStep: (unitId: string, patch: Partial<HeroExpedition>) => void
 }
 
 export const freshHero = (e: Partial<HeroExpedition> = {}): HeroExpedition => ({
-  loadout: e.loadout ?? DEFAULT_CHOICES.loadout,
-  posture: e.posture ?? DEFAULT_CHOICES.posture,
-  lootFocus: e.lootFocus ?? DEFAULT_CHOICES.lootFocus,
-  returnRule: e.returnRule ?? DEFAULT_CHOICES.returnRule,
-  supplies: 1,
+  loadout: e.loadout ?? { ...DEFAULT_LOADOUT },
+  lootCats: e.lootCats ?? [...DEFAULT_LOOT_CATS],
+  returnOn: e.returnOn ?? [...DEFAULT_RETURN_ON],
+  suppliesLeft: 1,
   status: 'hunting',
   locationId: e.locationId ?? null,
 })
@@ -49,9 +46,23 @@ export const useExpeditionStore = create<ExpState>((set) => ({
 
   ensure: (unitId) => set((s) => (s.heroes[unitId] ? s : { heroes: { ...s.heroes, [unitId]: freshHero() } })),
 
-  setChoice: (unitId, key, value) => set((s) => {
+  setSupplyQty: (unitId, itemId, qty) => set((s) => {
     const cur = s.heroes[unitId] ?? freshHero()
-    return { heroes: { ...s.heroes, [unitId]: { ...cur, [key]: value } } }
+    const loadout = { ...cur.loadout }
+    if (qty <= 0) delete loadout[itemId]; else loadout[itemId] = Math.floor(qty)
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
+  }),
+
+  toggleLootCat: (unitId, cat) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    const lootCats = cur.lootCats.includes(cat) ? cur.lootCats.filter((c) => c !== cat) : [...cur.lootCats, cat]
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, lootCats } } }
+  }),
+
+  toggleReturnOn: (unitId, cond) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    const returnOn = cur.returnOn.includes(cond) ? cur.returnOn.filter((c) => c !== cond) : [...cur.returnOn, cond]
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, returnOn } } }
   }),
 
   setReturnMode: (mode) => set({ returnMode: mode }),
@@ -62,7 +73,7 @@ export const useExpeditionStore = create<ExpState>((set) => ({
     const heroes = { ...s.heroes }
     for (const id of targetIds) {
       const cur = heroes[id] ?? freshHero()
-      heroes[id] = { ...cur, loadout: src.loadout, posture: src.posture, lootFocus: src.lootFocus, returnRule: src.returnRule }
+      heroes[id] = { ...cur, loadout: { ...src.loadout }, lootCats: [...src.lootCats], returnOn: [...src.returnOn] }
     }
     return { heroes }
   }),

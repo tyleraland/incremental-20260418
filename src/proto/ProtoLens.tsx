@@ -47,7 +47,7 @@ const TOP_TABS: { id: Top; label: string; icon: string }[] = [
   { id: 'equipment',  label: 'Equipment', icon: '🎒' },
   { id: 'skills',     label: 'Skills',    icon: '✦' },
   { id: 'tactics',    label: 'Tactics',   icon: '☷' },
-  { id: 'expedition', label: 'Expedition', icon: '🧭' },
+  { id: 'expedition', label: 'Logistics', icon: '🧭' },
 ]
 // The hero's whole dossier is one container (UnitLens); a Pet sub appears only
 // once a hero has a beast companion.
@@ -1250,7 +1250,7 @@ export function ProtoLens() {
           {top === 'equipment' && (unit ? <EquipmentLens unit={unit} /> : <Empty icon="🎒" title="Select a hero" sub="Equipment & personal inventory belong to a hero — pick one." />)}
           {top === 'skills'    && (unit ? <SkillsLens unit={unit} /> : <Empty icon="✦" title="Select a hero" sub="Pick a hero to set their battle skills." />)}
           {top === 'tactics'   && (unit ? <TacticianLens unit={unit} /> : <Empty icon="☷" title="Select a hero" sub="Pick a hero to tune their tactics." />)}
-          {top === 'expedition' && (unit ? <ExpeditionPanel unit={unit} /> : <Empty icon="🧭" title="Select a hero" sub="Pick a hero to plan their expedition." />)}
+          {top === 'expedition' && (unit ? <ExpeditionPanel unit={unit} /> : <Empty icon="🧭" title="Select a hero" sub="Pick a hero to plan their logistics." />)}
         </div>
       </div>
 

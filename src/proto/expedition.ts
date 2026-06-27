@@ -1,75 +1,84 @@
 import type { Location } from '@/types'
+import { CONSUMABLE_REGISTRY } from '@/data/consumables'
 
-// §expedition — a lightweight "logistics, not item-management" prototype. You
-// configure each hero (and the party); they act it out — hunting fills their pack
-// and burns supplies until a simple return rule sends them home (simulated by
-// running to the bottom edge of the map). Abstracted + proto-only. Tunables here.
+// §logistics — a lightweight "logistics, not item-management" prototype. You
+// configure each hero's *supplies loadout*, which loot *categories* to keep, and
+// *when* to return; they act it out — hunting fills their loot pack and burns
+// supplies until a return condition sends them home (simulated by running to the
+// bottom edge of the map). Abstracted + proto-only. Tunables live here.
 
-// Lightweight loot categories the logistics layer reasons about (vs per-item
-// allowlists). Loot Focus + the area's "yields" talk in these terms.
+// The levers the player gets:           What they get for FREE (automatic):
+//   • Supplies loadout (what to carry)    • consumable usage in the field
+//   • Loot categories to keep             • sell junk / store / restock in town
+//   • Return conditions (+ group/solo)    • the actual hunting & pathing
+
 export type LootCategory =
   | 'Equipment' | 'Consumable' | 'Crafting Material' | 'Quest Item'
   | 'Card' | 'Currency' | 'Vendor Loot' | 'Unique'
 
+export const ALL_LOOT_CATEGORIES: LootCategory[] = [
+  'Equipment', 'Consumable', 'Crafting Material', 'Card', 'Unique', 'Currency', 'Vendor Loot', 'Quest Item',
+]
+
 export interface Choice<T extends string> { id: T; label: string; hint: string }
 
-// ── The composable choices (per hero) ──────────────────────────────────────────
-export type LoadoutId = 'light' | 'standard' | 'heavy'
-export const LOADOUTS: Choice<LoadoutId>[] = [
-  { id: 'light',    label: 'Light',    hint: 'Few supplies — short, frequent runs.' },
-  { id: 'standard', label: 'Standard', hint: 'Balanced supplies and tools.' },
-  { id: 'heavy',    label: 'Heavy',    hint: 'Lots of supplies — long endurance.' },
+// Return conditions are checkboxes (any checked → that condition can send them home).
+export type ReturnConditionId = 'pack-full' | 'supplies-out'
+export const RETURN_CONDITIONS: Choice<ReturnConditionId>[] = [
+  { id: 'pack-full',    label: 'Pack full',    hint: 'Come home when the loot pack is full.' },
+  { id: 'supplies-out', label: 'Supplies out', hint: 'Come home when carried supplies run dry.' },
 ]
 
-export type PostureId = 'conserve' | 'normal' | 'push' | 'burn'
-export const POSTURES: Choice<PostureId>[] = [
-  { id: 'conserve', label: 'Conserve',      hint: 'Sip supplies. Safer, slower.' },
-  { id: 'normal',   label: 'Normal',        hint: 'Use consumables sensibly.' },
-  { id: 'push',     label: 'Push Hard',     hint: 'Spend freely for more loot.' },
-  { id: 'burn',     label: 'Burn Supplies', hint: 'Everything now — max loot, shortest run.' },
-]
-
-export type LootFocusId = 'everything' | 'valuables' | 'materials' | 'rare'
-export const LOOT_FOCUS: Choice<LootFocusId>[] = [
-  { id: 'everything', label: 'Everything', hint: 'Grab it all — fills fast.' },
-  { id: 'valuables',  label: 'Valuables',  hint: 'Skip trash; keep gold-worthy finds.' },
-  { id: 'materials',  label: 'Materials',  hint: 'Prioritize crafting mats.' },
-  { id: 'rare',       label: 'Cards & Unique', hint: 'Only the exciting stuff. Rarely fills.' },
-]
-
-// Return when the pack is full, when supplies run out, or either-first.
-export type ReturnRuleId = 'pack-full' | 'supplies-out' | 'either'
-export const RETURN_RULES: Choice<ReturnRuleId>[] = [
-  { id: 'either',       label: 'Either',       hint: 'Come home on pack full OR supplies out — whichever first.' },
-  { id: 'pack-full',    label: 'Pack Full',    hint: 'Stay until the pack is full.' },
-  { id: 'supplies-out', label: 'Supplies Out', hint: 'Stay until supplies run dry.' },
-]
-
-// Return individually (each hero leaves on their own trigger) or as a group (the
-// whole party heads home when the first hero's rule fires).
+// Return individually (each hero on their own trigger) or as a group (the whole
+// party heads home when the first triggers).
 export type ReturnModeId = 'individual' | 'group'
 export const RETURN_MODES: Choice<ReturnModeId>[] = [
   { id: 'individual', label: 'Individually', hint: 'Each hero returns on their own trigger.' },
   { id: 'group',      label: 'As a group',   hint: 'The party heads home together when the first triggers.' },
 ]
 
-export const DEFAULT_CHOICES = {
-  loadout: 'standard' as LoadoutId,
-  posture: 'normal' as PostureId,
-  lootFocus: 'everything' as LootFocusId,
-  returnRule: 'either' as ReturnRuleId,
+// Supplies a hero can choose to carry (the loadout). For now these are the known
+// consumables; carrying more = more weight + gold cost, but longer endurance.
+export interface SupplyOption { id: string; name: string; icon: string; weight: number; cost: number }
+export const SUPPLY_OPTIONS: SupplyOption[] = Object.values(CONSUMABLE_REGISTRY).map((c) => ({
+  id: c.id, name: c.name, icon: c.icon, weight: 1, cost: c.id === 'potion-hp-greater' ? 24 : 9,
+}))
+
+export const DEFAULT_LOADOUT: Record<string, number> = { 'potion-hp': 5 }
+export const DEFAULT_LOOT_CATS: LootCategory[] = [...ALL_LOOT_CATEGORIES]
+export const DEFAULT_RETURN_ON: ReturnConditionId[] = ['pack-full']
+
+// Supply burn: base fraction/sec at an 8-item loadout; bigger loadouts last longer.
+export const BASE_SUPPLY_BURN = 0.02
+export const supplyPool = (loadout: Record<string, number>): number =>
+  Object.values(loadout).reduce((a, b) => a + b, 0)
+export const supplyEndurance = (loadout: Record<string, number>): number =>
+  Math.max(1, supplyPool(loadout) / 8)
+export const loadoutWeight = (loadout: Record<string, number>): number => supplyPool(loadout)
+export const loadoutCost = (loadout: Record<string, number>): number => {
+  let g = 0
+  for (const o of SUPPLY_OPTIONS) g += (loadout[o.id] ?? 0) * o.cost
+  return g
 }
 
-// Choice multipliers.
-export const LOADOUT_SUPPLY: Record<LoadoutId, number>   = { light: 0.7, standard: 1.0, heavy: 1.6 }
-export const POSTURE_BURN: Record<PostureId, number>     = { conserve: 0.5, normal: 1.0, push: 1.7, burn: 2.6 }
-export const POSTURE_GAIN: Record<PostureId, number>     = { conserve: 0.8, normal: 1.0, push: 1.3, burn: 1.6 }
-export const FOCUS_PRESSURE: Record<LootFocusId, number> = { everything: 1.4, valuables: 0.9, materials: 1.0, rare: 0.45 }
+// Sort a dropped item into a loot category (so Loot Focus checkboxes can filter
+// what's kept). Coarse + heuristic — good enough for the feel.
+const RARE_DROPS = new Set(['drop-dark-core', 'drop-golem-core', 'drop-champions-seal', 'drop-elite-mark'])
+const CURRENCY_DROPS = new Set(['drop-coin-pouch', 'drop-ancient-coin'])
+export function categorize(itemId: string): LootCategory {
+  if (itemId === 'm-gold' || CURRENCY_DROPS.has(itemId)) return 'Currency'
+  if (itemId in CONSUMABLE_REGISTRY) return 'Consumable'
+  if (RARE_DROPS.has(itemId)) return 'Unique'
+  if (itemId.startsWith('card')) return 'Card'
+  if (itemId.startsWith('eq-')) return 'Equipment'
+  if (itemId.startsWith('craft')) return 'Crafting Material'
+  if (itemId.startsWith('drop-')) return 'Crafting Material'
+  return 'Vendor Loot'
+}
 
 // ── Per-location profile (loot pressure / supply burn / signatures) ─────────────
 export interface LocationProfile {
-  lootItemsPerSec: number   // pack items gained / sec at Normal + Everything
-  supplyBurn: number        // supplies (0..1) spent / sec at Normal
+  lootItemsPerSec: number
   signatures: LootCategory[]
 }
 
@@ -80,9 +89,8 @@ const TRAIT_SIGNATURE: Record<string, LootCategory> = {
 
 export function locationProfile(loc: Location): LocationProfile {
   const t = new Set(loc.traits)
-  let lootItemsPerSec = 0.35, supplyBurn = 0.014
+  let lootItemsPerSec = 0.35
   if (t.has('dungeon')) lootItemsPerSec += 0.2
-  if (t.has('cave')) supplyBurn += 0.006
   if (t.has('forest')) lootItemsPerSec += 0.1
   const cap = loc.openWorldCap ?? 8
   lootItemsPerSec += Math.min(0.25, cap * 0.02)
@@ -91,8 +99,7 @@ export function locationProfile(loc: Location): LocationProfile {
   for (const tr of loc.traits) { const c = TRAIT_SIGNATURE[tr]; if (c && !signatures.includes(c)) signatures.push(c) }
   if (signatures.length === 0) signatures.push('Vendor Loot')
   if (!signatures.includes('Equipment')) signatures.push('Equipment')
-  return { lootItemsPerSec, supplyBurn, signatures: signatures.slice(0, 3) }
+  return { lootItemsPerSec, signatures: signatures.slice(0, 3) }
 }
 
-// A peaceful city is a town, not a hunting ground — no expedition there.
 export const isHuntable = (loc: Location): boolean => !loc.traits.includes('city')
