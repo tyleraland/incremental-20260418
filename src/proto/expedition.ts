@@ -39,25 +39,33 @@ export const RETURN_MODES: Choice<ReturnModeId>[] = [
 
 // Supplies a hero can choose to carry (the loadout). For now these are the known
 // consumables; carrying more = more weight + gold cost, but longer endurance.
-export interface SupplyOption { id: string; name: string; icon: string; weight: number; cost: number }
+export interface SupplyOption { id: string; name: string; icon: string; cost: number }
 export const SUPPLY_OPTIONS: SupplyOption[] = Object.values(CONSUMABLE_REGISTRY).map((c) => ({
-  id: c.id, name: c.name, icon: c.icon, weight: 1, cost: c.id === 'potion-hp-greater' ? 24 : 9,
+  id: c.id, name: c.name, icon: c.icon, cost: c.id === 'potion-hp-greater' ? 24 : 9,
 }))
+export const supplyOption = (id: string): SupplyOption | undefined => SUPPLY_OPTIONS.find((o) => o.id === id)
 
-export const DEFAULT_LOADOUT: Record<string, number> = { 'potion-hp': 5 }
+// A loadout entry: how many to carry, and where to source them — pull from the
+// guild storage, buy from a town merchant, or either (both checked).
+export interface SupplyEntry { qty: number; storage: boolean; merchant: boolean }
+export type Loadout = Record<string, SupplyEntry>
+export const newSupplyEntry = (qty = 10): SupplyEntry => ({ qty, storage: true, merchant: false })
+
+export const DEFAULT_LOADOUT: Loadout = { 'potion-hp': { qty: 5, storage: true, merchant: false } }
 export const DEFAULT_LOOT_CATS: LootCategory[] = [...ALL_LOOT_CATEGORIES]
 export const DEFAULT_RETURN_ON: ReturnConditionId[] = ['pack-full']
 
 // Supply burn: base fraction/sec at an 8-item loadout; bigger loadouts last longer.
 export const BASE_SUPPLY_BURN = 0.02
-export const supplyPool = (loadout: Record<string, number>): number =>
-  Object.values(loadout).reduce((a, b) => a + b, 0)
-export const supplyEndurance = (loadout: Record<string, number>): number =>
+export const supplyPool = (loadout: Loadout): number =>
+  Object.values(loadout).reduce((a, e) => a + e.qty, 0)
+export const supplyEndurance = (loadout: Loadout): number =>
   Math.max(1, supplyPool(loadout) / 8)
-export const loadoutWeight = (loadout: Record<string, number>): number => supplyPool(loadout)
-export const loadoutCost = (loadout: Record<string, number>): number => {
+export const loadoutWeight = (loadout: Loadout): number => supplyPool(loadout)
+export const loadoutCost = (loadout: Loadout): number => {
+  // Only merchant-sourced supplies cost gold up front; storage pulls are free.
   let g = 0
-  for (const o of SUPPLY_OPTIONS) g += (loadout[o.id] ?? 0) * o.cost
+  for (const [id, e] of Object.entries(loadout)) if (e.merchant) g += e.qty * (supplyOption(id)?.cost ?? 0)
   return g
 }
 

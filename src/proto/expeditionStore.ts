@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import {
-  DEFAULT_LOADOUT, DEFAULT_LOOT_CATS, DEFAULT_RETURN_ON,
-  type LootCategory, type ReturnConditionId, type ReturnModeId,
+  DEFAULT_LOADOUT, DEFAULT_LOOT_CATS, DEFAULT_RETURN_ON, newSupplyEntry,
+  type Loadout, type LootCategory, type ReturnConditionId, type ReturnModeId,
 } from './expedition'
 
 // §logistics — proto-only per-hero state. Each hero carries their own plan
@@ -11,7 +11,7 @@ import {
 // (useExpeditionDriver) advances it each game tick.
 
 export interface HeroExpedition {
-  loadout: Record<string, number>   // supply itemId → qty carried
+  loadout: Loadout                  // supply itemId → { qty, storage, merchant }
   lootCats: LootCategory[]          // categories to keep
   returnOn: ReturnConditionId[]     // checked return conditions
   suppliesLeft: number              // 0..1 runtime
@@ -23,7 +23,10 @@ interface ExpState {
   heroes: Record<string, HeroExpedition>
   returnMode: ReturnModeId
   ensure: (unitId: string) => void
+  addSupply: (unitId: string, itemId: string) => void
   setSupplyQty: (unitId: string, itemId: string, qty: number) => void
+  toggleSupplySource: (unitId: string, itemId: string, source: 'storage' | 'merchant') => void
+  removeSupply: (unitId: string, itemId: string) => void
   toggleLootCat: (unitId: string, cat: LootCategory) => void
   toggleReturnOn: (unitId: string, cond: ReturnConditionId) => void
   setReturnMode: (mode: ReturnModeId) => void
@@ -46,10 +49,31 @@ export const useExpeditionStore = create<ExpState>((set) => ({
 
   ensure: (unitId) => set((s) => (s.heroes[unitId] ? s : { heroes: { ...s.heroes, [unitId]: freshHero() } })),
 
+  addSupply: (unitId, itemId) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    if (cur.loadout[itemId]) return s
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout: { ...cur.loadout, [itemId]: newSupplyEntry() } } } }
+  }),
+
   setSupplyQty: (unitId, itemId, qty) => set((s) => {
     const cur = s.heroes[unitId] ?? freshHero()
     const loadout = { ...cur.loadout }
-    if (qty <= 0) delete loadout[itemId]; else loadout[itemId] = Math.floor(qty)
+    const n = Math.max(0, Math.floor(qty))
+    if (n <= 0) delete loadout[itemId]
+    else loadout[itemId] = { ...(loadout[itemId] ?? newSupplyEntry(n)), qty: n }
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
+  }),
+
+  toggleSupplySource: (unitId, itemId, source) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    const entry = cur.loadout[itemId] ?? newSupplyEntry()
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout: { ...cur.loadout, [itemId]: { ...entry, [source]: !entry[source] } } } } }
+  }),
+
+  removeSupply: (unitId, itemId) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    const loadout = { ...cur.loadout }
+    delete loadout[itemId]
     return { heroes: { ...s.heroes, [unitId]: { ...cur, loadout } } }
   }),
 
@@ -71,9 +95,10 @@ export const useExpeditionStore = create<ExpState>((set) => ({
     const src = s.heroes[srcId]
     if (!src) return s
     const heroes = { ...s.heroes }
+    const cloneLoadout = (l: Loadout): Loadout => Object.fromEntries(Object.entries(l).map(([k, e]) => [k, { ...e }]))
     for (const id of targetIds) {
       const cur = heroes[id] ?? freshHero()
-      heroes[id] = { ...cur, loadout: { ...src.loadout }, lootCats: [...src.lootCats], returnOn: [...src.returnOn] }
+      heroes[id] = { ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn] }
     }
     return { heroes }
   }),
