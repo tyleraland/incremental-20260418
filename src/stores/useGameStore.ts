@@ -3,7 +3,7 @@ import type {
   Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
   LocationCombatStats, UnitCombatStats, CombatTally, StatBucket, ActionSlotEntry, TacticSlot, CompanionInstance,
-  QuestDropRule, PackItem, ConsumableRule,
+  QuestDropRule, PackItem, ConsumableRule, CarriedItem,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
 import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
@@ -23,6 +23,7 @@ import { npcsAt, npcToEngineInput } from '@/data/npcs'
 import { INITIAL_UNITS } from '@/data/units'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
 import { SAVE_KEY, saveKeyFor } from '@/lib/save'
+import { routeStepsFrom, nearestCity } from '@/lib/travelGraph'
 import { bootstrapProgressionMode, curatedStartUnits, CURATED_START, isSkillUnlocked, type ProgressionMode } from '@/lib/unlocks'
 
 // ── Re-exports (keeps existing import paths working) ──────────────────────────
@@ -942,6 +943,7 @@ interface CombatStep {
   locationStats: Record<string, LocationCombatStats>
   unitStatsDelta: Record<string, CombatTally>   // unitId → lifetime-stat deltas this tick
   travelMoves: Record<string, { locationId: string; travelPath: string[] | null }>  // §travel: heroes who crossed a portal this tick
+  carriedDelta: Record<string, Record<string, number>>  // §logistics: unitId → itemId → loot added to the hero's bag this tick
   logs: { category: LogCategory; message: string }[]
 }
 
@@ -965,6 +967,10 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const questDropDelta: Record<string, number> = {}
   let goldEarned = 0
   const travelMoves: Record<string, { locationId: string; travelPath: string[] | null }> = {}
+  const carriedDelta: Record<string, Record<string, number>> = {}   // §logistics: loot into hero bags this tick
+  // §logistics: heroes in transit (hauling home / returning) earn nothing — they're
+  // walking, not hunting. Used to keep them out of the XP split + off-screen credit.
+  const travelingIds = new Set(s.units.filter((u) => u.travelGoal).map((u) => u.id))
   const logs: { category: LogCategory; message: string }[] = []
 
   // Per-unit lifetime-stat deltas accumulated this tick (Report panel + analytics).
@@ -1039,7 +1045,14 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         for (const d of def.drops) {
           if (Math.random() < d.dropRate) {
             const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
-            lootDelta[d.itemId]    = (lootDelta[d.itemId] ?? 0) + qty
+            // §logistics: open-world loot drops into the killer's personal bag
+            // (hauled to the stash on a town trip); elsewhere it goes straight to
+            // the guild stash as before. Uncredited (minion) kills also go direct.
+            if (credited && loc.openWorld) {
+              (carriedDelta[credited] ??= {})[d.itemId] = (carriedDelta[credited][d.itemId] ?? 0) + qty
+            } else {
+              lootDelta[d.itemId] = (lootDelta[d.itemId] ?? 0) + qty
+            }
             itemsDropped[d.itemId] = (itemsDropped[d.itemId] ?? 0) + qty
             if (credited) bumpUnit(credited, 'itemsFound', qty)
           }
@@ -1058,7 +1071,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // proportional to level (a low-level hero in a high-level party earns only
       // its tiny level-share — anti-power-leveling). Pool = killsThisRound.
       const members = battle.combatants
-        .filter((c) => c.team === 'player' && c.alive && c.ownerId == null)
+        .filter((c) => c.team === 'player' && c.alive && c.ownerId == null && !travelingIds.has(c.id))
         .map((c) => ({ id: c.id, level: unitLevel.get(c.id) ?? 1 }))
       const shares = splitExpByLevel(killsThisRound, members)
       for (const [id, amt] of Object.entries(shares)) expByUnit[id] = (expByUnit[id] ?? 0) + amt
@@ -1188,7 +1201,9 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     // credit rate-extrapolated rewards on a throttle, keep the (frozen) battle for
     // drop-in. Falls through to the full sim when nothing is watched.
     if (watchedId !== null && locationId !== watchedId) {
-      if (newTicks % SAMPLING.offscreenCreditTicks === 0) creditOffscreen(loc, eligible)
+      // §logistics: heroes in transit earn nothing here (they're walking, not hunting).
+      const earners = eligible.filter((u) => !u.travelGoal)
+      if (newTicks % SAMPLING.offscreenCreditTicks === 0 && earners.length) creditOffscreen(loc, earners)
       for (const u of eligible) bumpUnit(u.id, 'combatTicks', 1)
       handleTravel(loc, battles[locationId] ?? null, eligible, false)   // §travel: cross off-screen at once
       continue
@@ -1315,8 +1330,69 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
   return {
     battles, battleCooldown, monsterSpawnTimers, hpByUnit, packByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
-    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, logs,
+    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, carriedDelta, logs,
   }
+}
+
+// §logistics: add a tick's bag-loot delta onto a hero's carried stacks.
+function addCarried(carried: CarriedItem[] | undefined, delta: Record<string, number> | undefined): CarriedItem[] | undefined {
+  if (!delta || Object.keys(delta).length === 0) return carried
+  const out = (carried ?? []).map((c) => ({ ...c }))
+  for (const [itemId, qty] of Object.entries(delta)) {
+    const ex = out.find((c) => c.itemId === itemId)
+    if (ex) ex.count += qty
+    else out.push({ itemId, count: qty })
+  }
+  return out
+}
+
+// §logistics: the haul-loop state machine for one hero, run AFTER its portal
+// crossing + bag delta are applied. Returns the (possibly) re-routed unit and any
+// loot to deposit into the guild stash (on a town arrival). Pure — routing reads
+// the location graph; capacity is derived. See §travel/logistics on Unit.
+function applyLogistics(
+  u: Unit,
+  locations: Location[],
+  byId: Map<string, Location>,
+  equipment: EquipmentItem[],
+): { unit: Unit; deposit?: CarriedItem[] } {
+  const here = u.locationId
+  const noPath = !u.travelPath || u.travelPath.length === 0
+
+  // Arrived at the logistics town → empty the bag into the stash, then route back
+  // to the field we left (or just settle here if there's nowhere to return to).
+  if (u.travelGoal === 'home' && noPath && here === u.homeLocationId) {
+    const deposit = u.carried ?? []
+    const hunt = u.huntLocationId ?? null
+    const steps = hunt && here ? routeStepsFrom(here, hunt, locations) : null
+    return {
+      unit: { ...u, carried: [], travelGoal: steps && steps.length ? 'return' : null,
+              travelPath: steps && steps.length ? steps : null, huntLocationId: steps && steps.length ? hunt : null },
+      deposit: deposit.length ? deposit : undefined,
+    }
+  }
+
+  // Arrived back at the hunting field → resume hunting.
+  if (u.travelGoal === 'return' && noPath && here === u.huntLocationId) {
+    return { unit: { ...u, travelGoal: null, huntLocationId: null } }
+  }
+
+  // Hunting with a full bag → start the haul home.
+  if (!u.travelGoal && here && byId.get(here)?.openWorld) {
+    const load = (u.carried ?? []).reduce((n, c) => n + c.count, 0)
+    const cap = getDerivedStats(u, equipment).carryCapacity
+    if (load >= cap) {
+      const home = u.homeLocationId ?? nearestCity(here, locations)
+      if (home && home !== here) {
+        const steps = routeStepsFrom(here, home, locations)
+        if (steps && steps.length) {
+          return { unit: { ...u, travelGoal: 'home', homeLocationId: home, huntLocationId: here, travelPath: steps } }
+        }
+      }
+    }
+  }
+
+  return { unit: u }
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -1458,12 +1534,34 @@ export const useGameStore = create<GameState>((set) => ({
       if (gained > 0) (combat.unitStatsDelta[u.id] ?? (combat.unitStatsDelta[u.id] = emptyTally())).levelsGained += gained
       // §travel: a hero who crossed a portal this tick moves to the destination map.
       const tm = combat.travelMoves[u.id]
-      return tm ? { ...leveled, locationId: tm.locationId, travelPath: tm.travelPath } : leveled
+      const moved = tm ? { ...leveled, locationId: tm.locationId, travelPath: tm.travelPath } : leveled
+      // §logistics: fold this tick's open-world loot into the hero's bag.
+      const carried = addCarried(u.carried, combat.carriedDelta[u.id])
+      return carried !== u.carried ? { ...moved, carried } : moved
     })
 
-    // §consumables: stashDraw is negative (potions withdrawn into packs in town).
-    const miscDeltas = { 'm-gold': combat.goldEarned, ...combat.lootDelta, ...stashDraw }
-    const miscItems = (combat.goldEarned > 0 || Object.keys(combat.lootDelta).length > 0 || Object.keys(stashDraw).length > 0)
+    // §logistics: run the haul-loop state machine on the post-move units — start a
+    // trip home when a bag fills, deposit + route back on a town arrival, settle on
+    // return. Deposits are summed into the stash below alongside loot/gold.
+    const depositDelta: Record<string, number> = {}
+    const locById = new Map(s.locations.map((l) => [l.id, l]))
+    const routedUnits = units.map((u) => {
+      const { unit, deposit } = applyLogistics(u, s.locations, locById, s.equipment)
+      if (deposit) for (const c of deposit) depositDelta[c.itemId] = (depositDelta[c.itemId] ?? 0) + c.count
+      return unit
+    })
+
+    // Sum every misc-stash delta this tick: gold + loot (kills that went straight
+    // to the stash) + §logistics town deposits + §consumables stashDraw (negative —
+    // potions withdrawn into packs in town). Keys can overlap (a deposited item that
+    // is also a withdrawn potion), so accumulate rather than spread-overwrite.
+    const miscDeltas: Record<string, number> = { 'm-gold': combat.goldEarned }
+    for (const [id, q] of Object.entries(combat.lootDelta)) miscDeltas[id] = (miscDeltas[id] ?? 0) + q
+    for (const [id, q] of Object.entries(depositDelta))     miscDeltas[id] = (miscDeltas[id] ?? 0) + q
+    for (const [id, q] of Object.entries(stashDraw))        miscDeltas[id] = (miscDeltas[id] ?? 0) + q
+    const hasMisc = combat.goldEarned !== 0 || Object.keys(combat.lootDelta).length > 0
+      || Object.keys(depositDelta).length > 0 || Object.keys(stashDraw).length > 0
+    const miscItems = hasMisc
       ? applyMiscDeltas(s.miscItems, miscDeltas).filter((m) => m.quantity > 0 || !(m.id in stashDraw))
       : s.miscItems
 
@@ -1485,7 +1583,7 @@ export const useGameStore = create<GameState>((set) => ({
 
     return {
       ticks: newTicks,
-      units,
+      units: routedUnits,
       dpsWindow,
       battles: combat.battles,
       battleCooldown: combat.battleCooldown,

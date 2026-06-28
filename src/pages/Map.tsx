@@ -520,6 +520,7 @@ function LocationDetailPanel() {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
+  const equipment           = useGameStore((s) => s.equipment)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
   const progressionMode     = useGameStore((s) => s.progressionMode)
@@ -615,6 +616,21 @@ function LocationDetailPanel() {
                           <div className="text-[9px] text-game-text-dim leading-none mt-0.5">
                             {u.class ?? <span className="italic text-game-muted">unclassed</span>}
                           </div>
+                          {/* §logistics: hauling status, or a bag-fill readout when carrying. */}
+                          {(() => {
+                            const carried = (u.carried ?? []).reduce((n, c) => n + c.count, 0)
+                            if (u.travelGoal) return (
+                              <div className="text-[9px] text-fuchsia-300/80 leading-none mt-0.5">
+                                ⇄ {u.travelGoal === 'home' ? 'hauling home' : 'returning'}
+                              </div>
+                            )
+                            if (carried > 0) return (
+                              <div className="text-[9px] text-game-text-dim leading-none mt-0.5">
+                                🎒 {carried}/{getDerivedStats(u, equipment).carryCapacity}
+                              </div>
+                            )
+                            return null
+                          })()}
                         </button>
                       )
                     })}

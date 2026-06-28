@@ -29,6 +29,28 @@ Preview: https://tyleraland.github.io/incremental-20260418/pr-preview/pr-67/
       still feel like towns (heroes milling); Boar Meadow / Dire Wolf Den showcases
       (herd / pack at 30-wide) intact.
 
+## Phase 2 — inter-map portals + walk-to-travel
+- [ ] **Portal markers** read clearly on the field (glowing ◈ gateways at map edges).
+- [ ] **Walk-to-travel.** In Time → Deploy, switch to **Open-world travel**. Select a
+      hero on an open-world map and Deploy them to a directly-linked neighbour (e.g.
+      Prontera Field → Harpy Roost): they should march to the portal and hop across,
+      not teleport. 'Instant' mode keeps the teleport.
+- [ ] **Off-screen travel** still completes when you're watching a different battle.
+- [ ] World topology feels right (Prontera hub; fields chain off it and back). Tune
+      `WORLD_EDGES` in `src/data/locations.ts` if a link is missing/wrong.
+
+## Phase 3 — routing + carrying-capacity logistics
+- [ ] **The haul loop.** With Open-world travel on, watch a hunting field a while: as a
+      hero's bag fills (🎒 readout in the location detail panel), they should route home
+      to the nearest city, deposit into the guild stash, and walk back. Confirm loot
+      lands in the stash only after the deposit (open-world loot goes to the bag first).
+- [ ] **Carry capacity feel.** `carryCapacity = 20 + STR*2` — does a trip happen too
+      often / too rarely? Tune in `src/lib/stats.ts`.
+- [ ] **In-transit earning.** A hauling/returning hero earns no exp/loot while walking
+      (intended cost). Confirm idle/offline rates still feel right for hunters.
+- [ ] **Save migration.** Load a pre-Phase-3 save (unitsCodec v4→5): no errors, heroes
+      get an empty bag. Export/import round-trips.
+
 ## Phase 2+ design inputs (gather while validating)
 - [ ] **World topology for portals/routing.** `Location.connections` is empty. Decide
       which maps connect and where each portal sits (intended chain, cities as hubs).
