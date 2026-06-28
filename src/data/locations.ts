@@ -269,3 +269,47 @@ export const INITIAL_LOCATIONS: Location[] = [
     }
   }),
 ]
+
+// ── World travel graph (§travel) ─────────────────────────────────────────────
+// Bidirectional links between overworld maps, each realized as a portal on one
+// edge of each map. Defined in ONE place so `connections` (the routing-graph
+// edges) and `portals` (their on-field realization) can't drift apart. Prontera
+// is the hub: the hunting fields chain off it and back, so a hero whose bag fills
+// can route home to a city (Phase 3). Phase 2 walks a hero to the portal and hops
+// them across; Phase 3 routes multi-hop over these same edges.
+type Edge = 'N' | 'S' | 'E' | 'W'
+function edgeCell(size: number, edge: Edge): [number, number] {
+  const m = Math.min(4, size / 2)        // a few cells in from the rim
+  const c = size / 2
+  switch (edge) {
+    case 'N': return [c, size - m]
+    case 'S': return [c, m]
+    case 'E': return [size - m, c]
+    case 'W': return [m, c]
+  }
+}
+// [mapId, partnerId, mapEdge, partnerEdge]
+const WORLD_EDGES: [string, string, Edge, Edge][] = [
+  ['prontera-city',    'geffen-city',      'W', 'E'],
+  ['prontera-city',    'payon-city',       'N', 'S'],
+  ['prontera-city',    'prontera-field-3', 'E', 'W'],
+  ['prontera-city',    'prontera-field-2', 'S', 'N'],
+  ['prontera-field-3', 'harpy-roost',      'E', 'W'],
+  ['prontera-field-3', 'boar-meadow',      'S', 'N'],
+  ['boar-meadow',      'wolf-den',         'E', 'W'],
+  ['prontera-field-2', 'beach-1',          'S', 'N'],
+  ['harpy-roost',      'pg-overgrown-maze','S', 'N'],
+]
+{
+  const byId = new Map(INITIAL_LOCATIONS.map((l) => [l.id, l]))
+  const sizeOf = (l: Location) => l.openWorldSize ?? 200
+  for (const [aId, bId, aE, bE] of WORLD_EDGES) {
+    const a = byId.get(aId), b = byId.get(bId)
+    if (!a || !b) continue
+    const aAt = edgeCell(sizeOf(a), aE), bAt = edgeCell(sizeOf(b), bE)
+    if (!a.connections.includes(bId)) a.connections.push(bId)
+    if (!b.connections.includes(aId)) b.connections.push(aId)
+    ;(a.portals ??= []).push({ at: aAt, to: bId, toAt: bAt })
+    ;(b.portals ??= []).push({ at: bAt, to: aId, toAt: aAt })
+  }
+}

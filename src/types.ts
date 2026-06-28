@@ -156,6 +156,18 @@ export interface Location {
   // read when `openWorld`; defaults to OPEN_WORLD_DEFAULT_SIZE (a large field the
   // camera can't fully fit). The party hunts across it with limited vision.
   openWorldSize?: number
+  // §travel: portals on this map that link to another location (Ragnarok-style —
+  // a spot you walk onto to cross instantly). Each portal is the physical
+  // realization of a `connections` edge; a hero routing to `to` walks to `at`,
+  // then the store hops them across (engine never sees portals). `toAt` is where
+  // they emerge on the destination (defaults to the party anchor until wired).
+  portals?: Portal[]
+}
+
+export interface Portal {
+  at: [number, number]      // cell on THIS map you walk onto to cross
+  to: string                // destination locationId
+  toAt?: [number, number]   // arrival cell on the destination (optional)
 }
 
 // ── Monster ───────────────────────────────────────────────────────────────────

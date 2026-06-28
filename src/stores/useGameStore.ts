@@ -368,6 +368,8 @@ const MONSTER_VISION = 8           // monsters see a little less far
 // a small one has, just spread thinner, or a heavy field grinds. Cap the count
 // here so map size and barrier count are decoupled. See openWorldBarriers.
 const BARRIER_CAP = 16
+// §travel: how close a routing hero must get to a portal cell to cross it.
+const PORTAL_RADIUS = 1.5
 function openWorldCap(loc: Location): number {
   return loc.openWorldCap ?? OPEN_WORLD_DEFAULT_CAP
 }
@@ -939,6 +941,7 @@ interface CombatStep {
   locationMonstersSeen: Record<string, string[]>
   locationStats: Record<string, LocationCombatStats>
   unitStatsDelta: Record<string, CombatTally>   // unitId → lifetime-stat deltas this tick
+  travelMoves: Record<string, { locationId: string; travelPath: string[] | null }>  // §travel: heroes who crossed a portal this tick
   logs: { category: LogCategory; message: string }[]
 }
 
@@ -961,6 +964,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const lootDelta: Record<string, number> = {}
   const questDropDelta: Record<string, number> = {}
   let goldEarned = 0
+  const travelMoves: Record<string, { locationId: string; travelPath: string[] | null }> = {}
   const logs: { category: LogCategory; message: string }[] = []
 
   // Per-unit lifetime-stat deltas accumulated this tick (Report panel + analytics).
@@ -1137,6 +1141,33 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     }
   }
 
+  // §travel: walk a routing hero (non-empty travelPath) to the portal leading to
+  // their next node and hop them across. Records the crossing in travelMoves (the
+  // tick reducer flips locationId + shifts travelPath). On a watched/simulated map
+  // the hero physically walks to the portal (issueMoveOrder) and crosses on
+  // arrival; off-screen they cross at once (nothing's rendered, so there's nothing
+  // to walk). Portals are store-only — the engine never sees them, so snapshots /
+  // replays are unaffected.
+  const handleTravel = (loc: Location, battle: BattleState | null, eligible: Unit[], simulated: boolean) => {
+    for (const u of eligible) {
+      const path = u.travelPath
+      if (!path || path.length === 0) continue
+      const dest = path[0]
+      const cross = () => { travelMoves[u.id] = { locationId: dest, travelPath: path.length > 1 ? path.slice(1) : null } }
+      const portal = (loc.portals ?? []).find((p) => p.to === dest)
+      if (!portal) {
+        // No portal from here to the next node — can't route off this map. Drop the
+        // path so the hero hunts where they are rather than freezing forever.
+        travelMoves[u.id] = { locationId: loc.id, travelPath: null }
+        continue
+      }
+      const c = battle?.combatants.find((x) => x.id === u.id) ?? null
+      if (!simulated || !c) { cross(); continue }
+      if (Math.hypot(c.pos.x - portal.at[0], c.pos.y - portal.at[1]) <= PORTAL_RADIUS) cross()
+      else issueMoveOrder(battle!, u.id, { x: portal.at[0], y: portal.at[1] })
+    }
+  }
+
   for (const loc of s.locations) {
     const locationId = loc.id
     const eligible = s.units.filter(
@@ -1159,6 +1190,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     if (watchedId !== null && locationId !== watchedId) {
       if (newTicks % SAMPLING.offscreenCreditTicks === 0) creditOffscreen(loc, eligible)
       for (const u of eligible) bumpUnit(u.id, 'combatTicks', 1)
+      handleTravel(loc, battles[locationId] ?? null, eligible, false)   // §travel: cross off-screen at once
       continue
     }
 
@@ -1183,6 +1215,8 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       }
       // Live-edit: push any loadout changes onto the heroes already fighting.
       syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
+      // §travel: routing heroes walk to their portal and cross on arrival.
+      handleTravel(loc, battle, eligible, true)
 
       // Step cadence: every tick normally (smoothest), backing off only when the live
       // crowd is large enough that a per-tick round + repaint overruns the frame budget
@@ -1281,7 +1315,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
   return {
     battles, battleCooldown, monsterSpawnTimers, hpByUnit, packByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
-    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, logs,
+    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, logs,
   }
 }
 
@@ -1422,7 +1456,9 @@ export const useGameStore = create<GameState>((set) => ({
       // Record any level-ups into the unit's tally delta for this tick.
       const gained = leveled.level - u.level
       if (gained > 0) (combat.unitStatsDelta[u.id] ?? (combat.unitStatsDelta[u.id] = emptyTally())).levelsGained += gained
-      return leveled
+      // §travel: a hero who crossed a portal this tick moves to the destination map.
+      const tm = combat.travelMoves[u.id]
+      return tm ? { ...leveled, locationId: tm.locationId, travelPath: tm.travelPath } : leveled
     })
 
     // §consumables: stashDraw is negative (potions withdrawn into packs in town).
@@ -1824,9 +1860,24 @@ export const useGameStore = create<GameState>((set) => ({
   // Deploy keeps the current selection — you've just acted ON these heroes, so
   // they stay selected (follow them, open a dossier, redeploy) rather than the
   // selection clearing out from under you.
-  assignUnits: (unitIds, locationId) => set((s) => ({
-    units: s.units.map((u) => unitIds.includes(u.id) ? { ...u, locationId, travelPath: null } : u),
-  })),
+  assignUnits: (unitIds, locationId) => set((s) => {
+    const ids = new Set(unitIds)
+    const byId = new Map(s.locations.map((l) => [l.id, l]))
+    return {
+      units: s.units.map((u) => {
+        if (!ids.has(u.id)) return u
+        // §travel: in 'open-world' deploy mode a hero WALKS to a directly
+        // portal-linked neighbour of their current open-world map (marches to the
+        // portal, then the tick loop hops them across) instead of teleporting.
+        // Any other deploy — instant mode, an un-linked/distant map, or a first
+        // placement from nowhere — stays an instant (re)deploy as before.
+        const from = u.locationId ? byId.get(u.locationId) : null
+        const canWalk = s.deployMode === 'open-world' && !!locationId && !!from && !!from.openWorld
+          && u.locationId !== locationId && (from.portals ?? []).some((p) => p.to === locationId)
+        return canWalk ? { ...u, travelPath: [locationId!] } : { ...u, locationId, travelPath: null }
+      }),
+    }
+  }),
 
   runToMapEdge: (unitId) => set((s) => {
     const u = s.units.find((x) => x.id === unitId)

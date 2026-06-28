@@ -1104,7 +1104,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
+function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
@@ -1486,6 +1486,19 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
   const gy = (y: number) => `${((rows - y) / rows) * 100}%`
   const groundFx = (
     <>
+      {/* §travel: portals — a glowing gateway you walk onto to cross to another map.
+          Map-fraction children of the ground layer, so they sit planted on the
+          terrain at any zoom. Cosmetic; the store drives the actual crossing. */}
+      {isOpen && (portals ?? []).map((p, i) => (
+        <div
+          key={`portal-${i}`}
+          title={`Portal → ${p.to}`}
+          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-fuchsia-500/30 border-2 border-fuchsia-300/80 shadow-[0_0_12px_3px_rgba(217,70,239,0.55)] animate-pulse pointer-events-none flex items-center justify-center"
+          style={{ left: gx(p.at[0]), top: gy(p.at[1]), width: `${(2.2 / cols) * 100}%`, height: `${(2.2 / rows) * 100}%` }}
+        >
+          <span className="text-fuchsia-100/90 leading-none" style={{ fontSize: `clamp(8px, ${(1.4 / cols) * 100}cqw, 22px)` }}>◈</span>
+        </div>
+      ))}
       {battle.zones.map((z) => (
         <div
           key={z.id}
@@ -1819,6 +1832,6 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
   return battle
-    ? <LiveBattle battle={battle} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
+    ? <LiveBattle battle={battle} portals={location?.portals} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />
 }

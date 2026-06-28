@@ -73,9 +73,9 @@ function ProgressionModeControl() {
   )
 }
 
-// §logistics — deploy mode toggle. Placeholder: not wired to anything yet. Once
-// open-world overworld travel lands, 'instant' will keep today's teleport-on-deploy
-// and 'open-world' will route heroes via travel; this toggle flips between them.
+// §logistics — deploy mode toggle. 'instant' keeps the teleport-on-deploy; in
+// 'open-world' a hero deployed to a directly portal-linked neighbour of their
+// current map WALKS there (marching to the portal, then hopping across) instead.
 function DeployModeControl() {
   const mode = useGameStore((s) => s.deployMode)
   const setMode = useGameStore((s) => s.setDeployMode)
@@ -84,7 +84,6 @@ function DeployModeControl() {
       <div className="flex items-center gap-2">
         <span className="text-xs text-game-text-dim">Deploy</span>
         <span className="text-xs font-mono text-game-text">{mode === 'instant' ? 'Instant' : 'Open world'}</span>
-        <span className="text-[9px] uppercase tracking-widest text-game-muted">not wired</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {(['instant', 'open-world'] as const).map((m) => (
