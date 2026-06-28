@@ -1,0 +1,9 @@
+Sprite assets in this directory are by Kenney (https://kenney.nl) and are
+released under the Creative Commons Zero (CC0 1.0) license — free for personal,
+educational, and commercial use; attribution appreciated but not required.
+
+  tiny-town.png      — "Tiny Town"    pack (tilemap_packed.png, 12x11 @ 16px)
+  tiny-dungeon.png   — "Tiny Dungeon" pack (tilemap_packed.png, 12x11 @ 16px)
+  ground-grass.png   — grass tile (cell 0) extracted from Tiny Town
+
+Packs: https://kenney.nl/assets/tiny-town  •  https://kenney.nl/assets/tiny-dungeon
