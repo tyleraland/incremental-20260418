@@ -9,7 +9,6 @@ import { useExpeditionStore, freshHero, type HeroExpedition } from './expedition
 import {
   locationProfile, isHuntable, isCity, nearestCity, categorize, supplyState,
 } from './expedition'
-import { consumableDef } from '@/data/consumables'
 
 // How long a returned hero parks in town (depositing loot + restocking) before
 // redeploying to where they were hunting. Instant deploy for now — open-world land
@@ -158,14 +157,6 @@ export function useExpeditionDriver() {
         exp.commitStep(u.id, { suppliesLeft: 1, status: 'hunting', locationId: u.locationId })
         progress.current[u.id] = 0
         continue
-      }
-      // §logistics: make sure loadout heal items are actually used in the field, so
-      // the pack (hence supplies) really depletes. Only writes a MISSING rule, so
-      // this is a one-time fix per hero, not a per-tick store churn.
-      for (const id of Object.keys(he.loadout)) {
-        if (consumableDef(id)?.effect === 'heal' && !(u.consumableRules ?? []).some((r) => r.itemId === id)) {
-          g.addConsumableRule(u.id, id, 0.3)
-        }
       }
       const arr = groups.get(u.locationId) ?? []
       arr.push({ u, he })

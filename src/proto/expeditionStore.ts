@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
-import { isConsumable, consumableDef } from '@/data/consumables'
+import { isConsumable } from '@/data/consumables'
 import { supplyOption } from './expedition'
 import type { PackItem } from '@/types'
 import {
@@ -23,11 +23,9 @@ function syncTargets(unitId: string, loadout: Loadout): void {
   for (const p of unit?.pack ?? []) {
     if (p.target != null && isConsumable(p.itemId) && !wanted.has(p.itemId)) g.clearCarryTarget(unitId, p.itemId)
   }
-  // A loadout heal item is meant to be USED in the field (that's what "supplies"
-  // tracks), so auto-wire a "use when hurt" rule. addConsumableRule is idempotent.
-  for (const id of wanted.keys()) {
-    if (consumableDef(id)?.effect === 'heal') g.addConsumableRule(unitId, id, 0.3)
-  }
+  // NB: carrying a supply does NOT make a hero use it — usage is gated on the
+  // action bar. Equipping a consumable there (ProtoLens.addConsumable) is what
+  // adds the configurable use rule (and back-fills the loadout if needed).
 }
 
 // Reverse of the bridge: rebuild a loadout FROM the hero's persisted pack targets.
