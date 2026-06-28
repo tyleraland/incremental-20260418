@@ -57,6 +57,12 @@ export const MAX_ATTACK_INTERVAL = 4
 // WANDER_REPATH of it. Idle monsters lurk MONSTER_WANDER_MIN..MAX rounds, then
 // hop a short MONSTER_WANDER_NEAR..FAR distance to a new local spot.
 export const WANDER_REPATH = 4
+// §hunt retention hysteresis. A party acquires prey within vision, but RETAINS a
+// committed hunt target out to this multiple of vision. Marching AROUND terrain to
+// reach a foe briefly opens the gap past vision; without hysteresis the hunter
+// drops the target the instant it crosses the sight line and oscillates at the
+// boundary instead of rounding the wall. Acquisition still needs a fresh 1× sighting.
+export const HUNT_RETAIN_MULT = 1.4
 export const MONSTER_WANDER_MIN = 5
 export const MONSTER_WANDER_MAX = 10
 export const MONSTER_WANDER_NEAR = 5

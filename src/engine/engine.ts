@@ -7,7 +7,7 @@
 
 import {
   COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
-  WANDER_REPATH, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
+  WANDER_REPATH, HUNT_RETAIN_MULT, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
   WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN, WARY_INTERRUPT_DECAY,
   TOWN_WANDER_MIN, TOWN_WANDER_MAX, TOWN_WANDER_NEAR, TOWN_WANDER_FAR, TOWN_WANDER_SPEED_MULT,
 } from './constants'
@@ -1079,9 +1079,14 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
 
   let waypoint = state.plans[team]?.waypoint ?? null
   let huntTargetId: string | null = state.plans[team]?.huntTargetId ?? null
+  // "Engaged" = actually in a fight: the locked target is alive AND still in sight.
+  // A stale lock on a foe that has drifted out of vision (e.g. while marching around
+  // terrain to reach it) does NOT count — otherwise the team rallies on that unit's
+  // own position and it oscillates at the sight boundary instead of pressing the
+  // hunt onward (the "boxed-in hero stuck against a wall" bug).
   const engaged = members.filter((m) => {
     const t = findCombatant(state, m.lockedTargetId)
-    return !!(t && t.alive)
+    return !!(t && t.alive && distance(m.pos, t.pos) <= m.visionRange)
   })
   if (engaged.length) {
     waypoint = centroidOf(engaged)
@@ -1120,14 +1125,19 @@ function pickHuntTarget(
   state: BattleState, members: Combatant[], enemies: Combatant[], center: Vec2, prevId: string | null,
 ): Combatant | null {
   const reachable = (p: Vec2) => state.barriers.length === 0 || canReach(center, p, state.barriers)
-  const seen = enemies.filter(
-    (e) => !isStealthed(e) && members.some((m) => distance(m.pos, e.pos) <= m.visionRange),
-  )
-  const held = prevId ? seen.find((e) => e.id === prevId) : undefined
+  const sees = (e: Combatant, mult: number) =>
+    members.some((m) => distance(m.pos, e.pos) <= m.visionRange * mult)
+  // Retain the committed prey out to HUNT_RETAIN_MULT× vision (hysteresis): rounding
+  // a wall to reach a foe briefly opens the gap past plain vision, so without this
+  // the hunter drops the target at the sight line and oscillates instead of
+  // committing to the detour. Acquisition below still needs a fresh 1× sighting.
+  const held = prevId
+    ? enemies.find((e) => e.id === prevId && e.alive && !isStealthed(e) && sees(e, HUNT_RETAIN_MULT))
+    : undefined
   if (held && reachable(held.pos)) return held
   let best: Combatant | null = null
-  for (const e of seen) {
-    if (!reachable(e.pos)) continue
+  for (const e of enemies) {
+    if (isStealthed(e) || !sees(e, 1) || !reachable(e.pos)) continue
     if (!best || distance(center, e.pos) < distance(center, best.pos)
       || (distance(center, e.pos) === distance(center, best.pos) && e.id < best.id)) best = e
   }

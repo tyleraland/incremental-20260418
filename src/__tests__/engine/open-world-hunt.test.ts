@@ -80,6 +80,30 @@ describe('open-world hunt routing', () => {
     expect(defaultPlanner(b, 'player').huntTargetId).toBe('e1')   // fresh pick → nearest
   })
 
+  it('rounds a wall to reach a foe parked at the vision edge (no oscillation)', () => {
+    // Reproduces the "Davan stuck" bug: a hero boxed between two walls, with a
+    // REACHABLE foe parked just past plain vision. The only route opens the gap
+    // past sight while marching around — so without hunt-retention hysteresis +
+    // the engaged-needs-vision gate, the hero locks/loses the foe at the boundary
+    // each round and oscillates in place instead of rounding the wall.
+    const walls: Barrier[] = [
+      { x: 34, y: 22, w: 3, h: 16, kind: 'wall' },   // vertical wall between hero and foe
+      { x: 14, y: 38, w: 18, h: 3, kind: 'wall' },   // horizontal wall boxing the pocket
+    ]
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', visionRange: 10, moveSpeed: 2.2 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 99999, hp: 99999, moveSpeed: 0 })],
+      mode: 'open', cols: 60, rows: 60, barriers: walls,
+    })
+    find(b, 'p').pos = { x: 33, y: 38.5 }
+    find(b, 'e').pos = { x: 38, y: 29.6 }   // ~10.2 away — reachable only around the wall
+    const before = dist(find(b, 'p').pos, find(b, 'e').pos)
+    expect(before).toBeGreaterThan(10)
+    for (let r = 0; r < 70; r++) advanceRound(b)
+    const after = dist(find(b, 'p').pos, find(b, 'e').pos)
+    expect(after).toBeLessThan(3)   // closed to melee — committed to the detour, didn't dither
+  })
+
   it('does not commit to a seen-but-unreachable enemy (walled off → roam)', () => {
     const wall: Barrier[] = [{ x: 19, y: 0, w: 2, h: 40, kind: 'wall' }]
     const b = createBattle({
