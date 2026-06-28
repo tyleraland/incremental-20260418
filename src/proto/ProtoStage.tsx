@@ -87,27 +87,23 @@ const battleScaleFor   = (z: number) => lerp(0.94, 1, clamp((z - 1.25) / 0.55, 0
 
 // ── NodeScatter ───────────────────────────────────────────────────────────────
 // A live mini-view of an open-world battle, plotted inside its world-map node:
-// every monster (red) and hero (blue) at its REAL position, gliding between tick
-// positions. Because the proto full-sims every deployed field every tick (it
-// never sets a single "watched" battle), this is a true window on combat that's
-// genuinely happening in parallel — the map reads as alive, not frozen, without
-// dropping in. Fades in from world→locale altitude so the zoomed-out overview
-// stays legible. Enemy dots are capped for legibility/perf at this scale.
+// each HERO at its REAL position, gliding between tick positions. Because the
+// proto full-sims every deployed field every tick (it never sets a single
+// "watched" battle), this is a true window on combat that's genuinely happening
+// in parallel — the map reads as alive, not frozen, without dropping in. Monsters
+// are summarised by the node's live foe-count badge (not plotted here — the dot
+// swarm belongs on the battlefield mini-map, not the overworld). Fades in from
+// world→locale altitude so the zoomed-out overview stays legible.
 const NODE_PX = 48                      // matches the node box (w-12 h-12)
 function NodeScatter({ battle, zoom }: { battle: BattleState; zoom: number }) {
   const op = clamp((zoom - 0.5) / 0.7, 0, 1)     // ~0 at full world, ~1 by locale
   if (op <= 0.02) return null
   const cols = battle.cols || 1, rows = battle.rows || 1
-  const enemies = battle.combatants.filter((c) => c.team === 'enemy' && c.alive)
-  const heroes  = battle.combatants.filter((c) => c.team === 'player' && c.alive)
+  const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
   const tx = (p: { x: number; y: number }) =>
     `translate(${(p.x / cols) * NODE_PX}px, ${((rows - p.y) / rows) * NODE_PX}px)`
   return (
     <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none" style={{ opacity: op }}>
-      {enemies.slice(0, 24).map((c) => (
-        <span key={c.id} className="absolute top-0 left-0 w-[3px] h-[3px] -ml-[1.5px] -mt-[1.5px] rounded-full bg-red-400/90"
-          style={{ transform: tx(c.pos), transition: 'transform 220ms linear', willChange: 'transform' }} />
-      ))}
       {heroes.map((c) => (
         <span key={c.id} className="absolute top-0 left-0 w-[4px] h-[4px] -ml-[2px] -mt-[2px] rounded-full bg-blue-300 ring-1 ring-blue-200/40"
           style={{ transform: tx(c.pos), transition: 'transform 220ms linear', willChange: 'transform' }} />
