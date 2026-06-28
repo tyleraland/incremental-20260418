@@ -1831,7 +1831,12 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   const locations = useGameStore((s) => s.locations)
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
+  // Key on locationId so switching the watched battle (breadcrumb ‹ ›) REMOUNTS the
+  // view: a new battle then initialises its camera + tokens fresh and renders them
+  // in their real positions, instead of the old instance easing (sliding) every
+  // token from the previous battle's framing into place. The key only changes on a
+  // location switch — never per tick — so normal play keeps the same instance.
   return battle
-    ? <LiveBattle battle={battle} portals={location?.portals} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
+    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />
 }
