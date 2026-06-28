@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useGameStore, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
+import type { BattleState } from '@/engine'
 import { BattleView } from '@/components/BattleView'
 import { useProtoStore, type ZoomLevel } from './protoStore'
 import { useQuestBoard } from './QuestJournal'
@@ -84,14 +85,48 @@ function mapScaleFor(z: number) {
 const battleOpacityFor = (z: number) => clamp((z - 1.3) / 0.45, 0, 1) // fades in over 1.3 → 1.75
 const battleScaleFor   = (z: number) => lerp(0.94, 1, clamp((z - 1.25) / 0.55, 0, 1))
 
+// ── NodeScatter ───────────────────────────────────────────────────────────────
+// A live mini-view of an open-world battle, plotted inside its world-map node:
+// every monster (red) and hero (blue) at its REAL position, gliding between tick
+// positions. Because the proto full-sims every deployed field every tick (it
+// never sets a single "watched" battle), this is a true window on combat that's
+// genuinely happening in parallel — the map reads as alive, not frozen, without
+// dropping in. Fades in from world→locale altitude so the zoomed-out overview
+// stays legible. Enemy dots are capped for legibility/perf at this scale.
+const NODE_PX = 48                      // matches the node box (w-12 h-12)
+function NodeScatter({ battle, zoom }: { battle: BattleState; zoom: number }) {
+  const op = clamp((zoom - 0.5) / 0.7, 0, 1)     // ~0 at full world, ~1 by locale
+  if (op <= 0.02) return null
+  const cols = battle.cols || 1, rows = battle.rows || 1
+  const enemies = battle.combatants.filter((c) => c.team === 'enemy' && c.alive)
+  const heroes  = battle.combatants.filter((c) => c.team === 'player' && c.alive)
+  const tx = (p: { x: number; y: number }) =>
+    `translate(${(p.x / cols) * NODE_PX}px, ${((rows - p.y) / rows) * NODE_PX}px)`
+  return (
+    <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none" style={{ opacity: op }}>
+      {enemies.slice(0, 24).map((c) => (
+        <span key={c.id} className="absolute top-0 left-0 w-[3px] h-[3px] -ml-[1.5px] -mt-[1.5px] rounded-full bg-red-400/90"
+          style={{ transform: tx(c.pos), transition: 'transform 220ms linear', willChange: 'transform' }} />
+      ))}
+      {heroes.map((c) => (
+        <span key={c.id} className="absolute top-0 left-0 w-[4px] h-[4px] -ml-[2px] -mt-[2px] rounded-full bg-blue-300 ring-1 ring-blue-200/40"
+          style={{ transform: tx(c.pos), transition: 'transform 220ms linear', willChange: 'transform' }} />
+      ))}
+    </div>
+  )
+}
+
 // ── WorldNode ───────────────────────────────────────────────────────────────
-function WorldNode({ loc, units, equipment, selected, questReady, onTap, onDive }: {
+function WorldNode({ loc, units, equipment, battle, zoom, selected, questReady, onTap, onDive }: {
   loc: Location; units: Unit[]; equipment: ReturnType<typeof useGameStore.getState>['equipment']
+  battle?: BattleState; zoom: number
   selected: boolean; questReady: boolean; onTap: () => void; onDive: () => void
 }) {
   const c = LOCATION_COORDS[loc.id]; if (!c) return null
   const kind = kindOf(loc.traits)
   const here = units.filter((u) => u.locationId === loc.id)
+  const liveFoes = battle ? battle.combatants.reduce((n, x) => n + (x.team === 'enemy' && x.alive ? 1 : 0), 0) : 0
+  const showScatter = loc.openWorld && !!battle && battle.mode === 'open'
   const lastTap = useRef(0)
   function tap() {
     const now = Date.now()
@@ -111,9 +146,17 @@ function WorldNode({ loc, units, equipment, selected, questReady, onTap, onDive 
           ? 'border-game-primary bg-game-primary/25 ring-4 ring-game-primary/30 scale-110'
           : `${kind.ring} bg-game-surface/80 group-hover:scale-105 group-hover:border-game-primary/60`,
       ].join(' ')}>
-        <span className={`text-2xl leading-none drop-shadow ${kind.glow}`}>{kind.symbol}</span>
+        {/* live combat, plotted behind the symbol — the field is genuinely running */}
+        {showScatter && <NodeScatter battle={battle!} zoom={zoom} />}
+        <span className={`relative text-2xl leading-none drop-shadow ${kind.glow}`}>{kind.symbol}</span>
+        {/* open-world marker → a live foe counter once a battle is running here */}
         {loc.openWorld && (
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-game-bg" title="Open world" />
+          showScatter && liveFoes > 0 ? (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-600/90 ring-2 ring-game-bg text-[9px] font-bold leading-none text-white flex items-center justify-center tabular-nums"
+              title={`${liveFoes} foes on the field`}>{liveFoes}</span>
+          ) : (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-game-bg" title="Open world" />
+          )
         )}
         {/* a quest here is ready to collect — a yellow (?) nudge */}
         {questReady && (
@@ -437,6 +480,7 @@ export function ProtoStage() {
             </svg>
             {pageLocs.map((loc) => (
               <WorldNode key={loc.id} loc={loc} units={units} equipment={equipment}
+                         battle={battles[loc.id]} zoom={zoom}
                          selected={selectedLocationId === loc.id}
                          questReady={questReadyLocs.has(loc.id)}
                          onTap={() => flyTo(loc)} onDive={() => dive(loc)} />

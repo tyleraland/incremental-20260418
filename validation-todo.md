@@ -55,6 +55,16 @@ resupply trips to the Phase 2 portal routing instead of building a second system
 - [ ] **Group return.** With group-return on, one hero's trigger should send the whole
       field's party home together (walking).
 
+## Phase 5 — parallel-world verisimilitude (default UI)
+The proto never sets a single "watched" battle, so every deployed field already
+full-sims every tick — combat on all maps is genuinely happening in parallel (real
+rounds/kills/damage/XP), not frozen+extrapolated. Phase 5 makes that VISIBLE.
+- [ ] **Live world map.** At locale altitude, each deployed open-world field shows a
+      live scatter of moving monster (red) + hero (blue) dots and a live foe-count
+      badge — confirm multiple fields read as alive at once, dots glide, counts tick.
+- [ ] **Perf.** If you deploy to many fields at once, confirm the world view stays
+      smooth (dots are capped at 24/field and gated to locale+ zoom).
+
 ## Phase 2+ design inputs (gather while validating)
 - [ ] **World topology for portals/routing.** `Location.connections` is empty. Decide
       which maps connect and where each portal sits (intended chain, cities as hubs).
