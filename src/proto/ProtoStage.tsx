@@ -311,7 +311,9 @@ export function ProtoStage() {
   function flyTo(loc: Location) { setSelectedLocation(loc.id); animateZoomTo(Math.max(1, zoom)) }
   function dive(loc: Location)  { setSelectedLocation(loc.id); animateZoomTo(2) }
   function gotoStop(z: number) {
-    if (z === 0) { setFocus(pageCenter); setDrag({ x: 0, y: 0 }) }
+    // The "World" stop now settles at the locale altitude (z=1) rather than the
+    // far-out overview — still recentred on the whole page.
+    if (z <= 1) { setFocus(pageCenter); setDrag({ x: 0, y: 0 }) }
     animateZoomTo(z)
   }
 
@@ -371,10 +373,10 @@ export function ProtoStage() {
                   className="mr-0.5 px-2 py-1 rounded-md flex items-center gap-1 font-medium text-rose-300 hover:text-rose-200 hover:bg-rose-500/10"
                 ><span aria-hidden>↩</span><span>Exit</span></button>
               )}
-              {([0, 2] as const).map((z, i) => {
-                const label = z === 0 ? region.name : (focusLoc?.name ?? 'Battle')
-                const icon = z === 0 ? region.icon : '⚔'
-                const disabled = z > 0 && !focusLoc
+              {([1, 2] as const).map((z, i) => {
+                const label = z === 1 ? region.name : (focusLoc?.name ?? 'Battle')
+                const icon = z === 1 ? region.icon : '⚔'
+                const disabled = z > 1 && !focusLoc
                 return (
                   <span key={z} className="flex items-center">
                     {i > 0 && <span className="px-0.5 text-game-muted">›</span>}
