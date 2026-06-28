@@ -103,8 +103,36 @@ export function useExpeditionDriver() {
       if (!he || he.status !== 'returning') continue
 
       if (g.deployMode !== 'instant') {
-        // Open-world placeholder: trickle toward the town edge (no arrival yet).
-        if (g.ticks % 10 === 0) g.runToMapEdge(u.id)
+        // Open-world travel: the hero physically WALKS home through the portal
+        // graph and back, instead of teleporting. routeUnitTo sets a multi-hop
+        // travelPath; the core tick loop walks them map→map (and deposits their
+        // pack via phase 0 once they reach the city). We just drive the legs.
+        const loc = u.locationId ? locById.get(u.locationId) : null
+        const walking = (u.travelPath?.length ?? 0) > 0
+        if (he.resupplyUntil == null) {
+          // Outbound leg → the logistics town.
+          if (walking) continue                                   // still on the road
+          if (loc && isCity(loc)) {
+            // Arrived: park to deposit (phase 0) + restock, then head back.
+            exp.commitStep(u.id, { resupplyUntil: g.ticks + TOWN_RESUPPLY_TICKS })
+          } else {
+            // Start the trip: remember the hunt anchor, route to the town on foot.
+            const from = he.locationId ?? (loc && isHuntable(loc) ? u.locationId : null)
+            const town = returnTownFor(he, from, g.locations)
+            if (!town || !from) { exp.commitStep(u.id, { status: 'hunting', resupplyUntil: undefined }); continue }
+            exp.commitStep(u.id, { status: 'returning', locationId: from })
+            g.routeUnitTo(u.id, town.id)
+          }
+        } else if (g.ticks >= he.resupplyUntil) {
+          // Resupply done → walk back to where they were hunting.
+          if (walking) continue
+          if (u.locationId === he.locationId) {
+            exp.commitStep(u.id, { status: 'hunting', suppliesLeft: 1, resupplyUntil: undefined })
+            progress.current[u.id] = 0
+          } else {
+            g.routeUnitTo(u.id, he.locationId!)
+          }
+        }
         continue
       }
 

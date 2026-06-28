@@ -76,6 +76,24 @@ describe('portal travel', () => {
   })
 })
 
+describe('routeUnitTo (multi-hop walk)', () => {
+  it('sets a multi-hop travelPath toward a distant map (keeps locationId — walking)', () => {
+    // A — B — C chain so the route has an intermediate hop.
+    const chain: Location[] = [
+      { id: 'A', region: 'world', name: 'A', description: '', traits: [], monsterIds: [], familiarityMax: 100,
+        connections: ['B'], openWorld: true, openWorldCap: 0, openWorldSize: 12, portals: [{ at: [6, 1], to: 'B' }] },
+      { id: 'B', region: 'world', name: 'B', description: '', traits: [], monsterIds: [], familiarityMax: 100,
+        connections: ['A', 'C'], openWorld: true, openWorldCap: 0, openWorldSize: 12, portals: [{ at: [6, 11], to: 'A' }, { at: [11, 6], to: 'C' }] },
+      { id: 'C', region: 'world', name: 'C', description: '', traits: [], monsterIds: [], familiarityMax: 100,
+        connections: ['B'], openWorld: true, openWorldCap: 0, openWorldSize: 12, portals: [{ at: [1, 6], to: 'B' }] },
+    ]
+    resetStore({ locations: chain, units: [makeUnit({ id: 'u1', locationId: 'A', health: 100 })] })
+    useGameStore.getState().routeUnitTo('u1', 'C')
+    expect(unitLoc('u1')!.locationId).toBe('A')            // still on A — walking
+    expect(unitLoc('u1')!.travelPath).toEqual(['B', 'C'])  // multi-hop route, current node dropped
+  })
+})
+
 describe('assignUnits deploy mode', () => {
   it('open-world mode WALKS to a portal-linked neighbour (sets travelPath, keeps locationId)', () => {
     resetStore({

@@ -202,3 +202,9 @@ export const useExpeditionStore = create<ExpState>((set, get) => ({
     return { heroes: { ...s.heroes, [unitId]: { ...cur, ...patch } } }
   }),
 }))
+
+// Dev-only: expose on window for Playwright/devtools (mirrors App.tsx's __game),
+// dead-code-stripped from production by the DEV gate.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as { __exp?: typeof useExpeditionStore }).__exp = useExpeditionStore
+}

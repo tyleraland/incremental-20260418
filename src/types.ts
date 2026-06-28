@@ -65,7 +65,6 @@ export interface Abilities {
 export interface DerivedStats {
   attack: number; defense: number; defenseEquip: number; magicAttack: number; magicDefense: number
   attackSpeed: number; accuracy: number; dodge: number; maxHp: number
-  carryCapacity: number  // §logistics: loot-bag size; STR-scaled. Bag full → haul home
   moveSpeed: number   // ft/s; divide by TICKS_PER_SECOND for ft/tick in the movement loop
   attackRange: number // feet; gap ≤ this → attacks land (melee=5, bow=35)
   attackElement: Element // 'neutral' unless a weapon imbues otherwise
@@ -94,10 +93,6 @@ export interface TacticSlot { id: string; rank: number }
 // slot). Combat decrements `count` in the engine; the store mirrors it back here.
 export interface PackItem { itemId: string; count: number; target?: number }
 
-// §travel/logistics: one stack in a hero's personal loot bag (`Unit.carried`).
-// Filled by open-world kills, emptied into the guild stash on a town deposit.
-export interface CarriedItem { itemId: string; count: number }
-
 // §consumables: the player's explicit opt-in for in-combat item use — "when my HP
 // drops below `threshold`, use `itemId`". A hero only ever uses items it has a rule
 // for (and carries). `threshold` is a ratio 0..1 (e.g. 0.4 = 40%).
@@ -125,17 +120,7 @@ export interface Unit {
   skillPoints: number
   learnedSkills: Record<string, number>
   locationId: string | null
-  travelPath: string[] | null              // §4: ordered remaining waypoints; null = at destination
-  // §travel/logistics: a hero's haul loop. `carried` is the personal loot bag
-  // (open-world kills drop into it, not straight to the guild stash) — when its
-  // weight reaches the derived carryCapacity the hero routes home, deposits, and
-  // returns. `travelGoal` names the active leg (null = hunting, not in transit);
-  // `homeLocationId` is the logistics town to haul to (defaults to nearest city);
-  // `huntLocationId` is the field to resume at after depositing.
-  carried?: CarriedItem[]
-  travelGoal?: 'home' | 'return' | null
-  homeLocationId?: string | null
-  huntLocationId?: string | null
+  travelPath: string[] | null              // §4/§travel: remaining map ids to walk through (portal hops); null = arrived
   equipment: { armor: string | null; sideboard1: string | null; sideboard2: string | null; accessory: string | null }
   weaponSets: [WeaponRecord, WeaponRecord] // §5: set A and set B
   activeWeaponSet: 0 | 1                  // §5: which weapon set is active

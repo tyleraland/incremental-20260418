@@ -509,6 +509,50 @@ function UnitActionBar() {
   )
 }
 
+// ── LiveMapScatter ────────────────────────────────────────────────────────────
+// Zoom-to-map from the locale view: a small live radar of an open-world field,
+// showing where every hero (blue) and monster (red) actually is on the map, plus
+// its portals (fuchsia ◈). Reads the live battle, so it animates as the fight
+// moves — the player sees the map "from above" without dropping in. Only the
+// selected location's scatter mounts (one live subscription), so it's cheap.
+function LiveMapScatter({ locationId }: { locationId: string }) {
+  const battle = useGameStore((s) => s.battles[locationId])
+  const portals = useGameStore((s) => s.locations.find((l) => l.id === locationId)?.portals)
+  if (!battle || battle.mode !== 'open') return null
+  const cols = battle.cols || 1
+  const rows = battle.rows || 1
+  const mx = (x: number) => `${(x / cols) * 100}%`
+  const my = (y: number) => `${((rows - y) / rows) * 100}%`   // +y is up on screen
+  const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
+  const enemies = battle.combatants.filter((c) => c.team === 'enemy' && c.alive)
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">
+        <span>Live map</span>
+        <span className="tracking-normal normal-case">
+          <span className="text-blue-300">{heroes.length} hero{heroes.length !== 1 ? 'es' : ''}</span>
+          {' · '}
+          <span className="text-red-300">{enemies.length} foe{enemies.length !== 1 ? 's' : ''}</span>
+        </span>
+      </div>
+      <div className="relative w-full aspect-square rounded-md border border-game-border bg-game-bg overflow-hidden">
+        {(portals ?? []).map((p, i) => (
+          <span key={`p${i}`} aria-hidden className="absolute -translate-x-1/2 -translate-y-1/2 text-fuchsia-300/90 leading-none text-[10px]"
+            style={{ left: mx(p.at[0]), top: my(p.at[1]) }}>◈</span>
+        ))}
+        {enemies.map((c) => (
+          <span key={c.id} className="absolute w-1 h-1 rounded-full bg-red-400/90 -translate-x-1/2 -translate-y-1/2"
+            style={{ left: mx(c.pos.x), top: my(c.pos.y) }} />
+        ))}
+        {heroes.map((c) => (
+          <span key={c.id} className="absolute w-1.5 h-1.5 rounded-full bg-blue-300 ring-1 ring-blue-200/50 -translate-x-1/2 -translate-y-1/2"
+            style={{ left: mx(c.pos.x), top: my(c.pos.y) }} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── LocationDetailPanel ───────────────────────────────────────────────────────
 
 function LocationDetailPanel() {
@@ -520,7 +564,6 @@ function LocationDetailPanel() {
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const locations           = useGameStore((s) => s.locations)
   const units               = useGameStore((s) => s.units)
-  const equipment           = useGameStore((s) => s.equipment)
   const locationFamiliarity = useGameStore((s) => s.locationFamiliarity)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
   const progressionMode     = useGameStore((s) => s.progressionMode)
@@ -592,6 +635,8 @@ function LocationDetailPanel() {
                 </div>
               )}
 
+              <LiveMapScatter locationId={location.id} />
+
               {unitsHere.length > 0 && (
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Units here</div>
@@ -616,21 +661,6 @@ function LocationDetailPanel() {
                           <div className="text-[9px] text-game-text-dim leading-none mt-0.5">
                             {u.class ?? <span className="italic text-game-muted">unclassed</span>}
                           </div>
-                          {/* §logistics: hauling status, or a bag-fill readout when carrying. */}
-                          {(() => {
-                            const carried = (u.carried ?? []).reduce((n, c) => n + c.count, 0)
-                            if (u.travelGoal) return (
-                              <div className="text-[9px] text-fuchsia-300/80 leading-none mt-0.5">
-                                ⇄ {u.travelGoal === 'home' ? 'hauling home' : 'returning'}
-                              </div>
-                            )
-                            if (carried > 0) return (
-                              <div className="text-[9px] text-game-text-dim leading-none mt-0.5">
-                                🎒 {carried}/{getDerivedStats(u, equipment).carryCapacity}
-                              </div>
-                            )
-                            return null
-                          })()}
                         </button>
                       )
                     })}

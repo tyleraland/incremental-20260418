@@ -4,7 +4,7 @@ import type { Unit } from '@/types'
 
 export const unitsCodec = makeCodec<Unit[]>({
   key: 'units',
-  version: 5,
+  version: 4,
   serialize:   (s) => s.units ?? [],
   deserialize: (data) => ({ units: data }),
   migrate: (data, _fromVersion) => {
@@ -15,7 +15,6 @@ export const unitsCodec = makeCodec<Unit[]>({
       tactics: u.tactics ?? [],   // v3: tactics loadout; older saves start empty
       pack: u.pack ?? [],                          // v4: §consumables — carried items
       consumableRules: u.consumableRules ?? [],    // v4: §consumables — use rules
-      carried: u.carried ?? [],                    // v5: §logistics — personal loot bag
     }))
   },
   empty:       () => [...INITIAL_UNITS],

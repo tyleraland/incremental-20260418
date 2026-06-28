@@ -772,6 +772,11 @@ useProtoStore.subscribe((s) => {
   } catch { /* localStorage unavailable — skip persistence */ }
 })
 
+// Dev-only: expose on window for Playwright/devtools (mirrors App.tsx's __game).
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as { __proto?: typeof useProtoStore }).__proto = useProtoStore
+}
+
 // A small starting pool so the upgrade economy is playable immediately in the
 // mock (a real save would start at 0 and earn it all from play time).
 export const ATTUNE_STARTING = 8

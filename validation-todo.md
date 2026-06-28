@@ -39,17 +39,21 @@ Preview: https://tyleraland.github.io/incremental-20260418/pr-preview/pr-67/
 - [ ] World topology feels right (Prontera hub; fields chain off it and back). Tune
       `WORLD_EDGES` in `src/data/locations.ts` if a link is missing/wrong.
 
-## Phase 3 — routing + carrying-capacity logistics
-- [ ] **The haul loop.** With Open-world travel on, watch a hunting field a while: as a
-      hero's bag fills (🎒 readout in the location detail panel), they should route home
-      to the nearest city, deposit into the guild stash, and walk back. Confirm loot
-      lands in the stash only after the deposit (open-world loot goes to the bag first).
-- [ ] **Carry capacity feel.** `carryCapacity = 20 + STR*2` — does a trip happen too
-      often / too rarely? Tune in `src/lib/stats.ts`.
-- [ ] **In-transit earning.** A hauling/returning hero earns no exp/loot while walking
-      (intended cost). Confirm idle/offline rates still feel right for hunters.
-- [ ] **Save migration.** Load a pre-Phase-3 save (unitsCodec v4→5): no errors, heroes
-      get an empty bag. Export/import round-trips.
+## Phase 3 — routing wired into the proto's logistics (default UI)
+NOTE: the default 'Tactician' (proto) UI already has the full logistics sim (mock
+loot, return-on-pack-full, town deposit, loot/supply sharing). Phase 3 wires its
+resupply trips to the Phase 2 portal routing instead of building a second system.
+- [ ] **Walk-home loop (proto).** Time → Deploy → **Open-world travel**. Deploy a hero
+      to a hunting field; as their pack fills (Logistics board's Carried column), they
+      should **walk** home through portals to the return town, deposit into the stash,
+      then walk back — not teleport. ('Instant' keeps the teleport.)
+- [ ] **Return town.** Honors the hero's chosen `returnTown`, else nearest city. Set it
+      in the per-hero Logistics lens.
+- [ ] **No loot regression.** Engine kill loot still lands in the guild stash directly
+      (the core no longer diverts it), so quest/bounty item-collection progress is
+      unaffected. Confirm a collection quest still advances while hunting.
+- [ ] **Group return.** With group-return on, one hero's trigger should send the whole
+      field's party home together (walking).
 
 ## Phase 2+ design inputs (gather while validating)
 - [ ] **World topology for portals/routing.** `Location.connections` is empty. Decide
