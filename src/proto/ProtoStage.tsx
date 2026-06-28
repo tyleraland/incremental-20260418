@@ -175,9 +175,21 @@ export function ProtoStage() {
     }
   }
 
-  const [zoom, setZoom] = useState(0)       // continuous 0..2
+  // Default to the *locale* altitude (zoom 1) rather than the fully zoomed-out
+  // world overview — the same stop the ‹ › stepper settles on. The battlefield
+  // only crossfades in past ~1.3, so this is "world map, zoomed in" with no battle.
+  const [zoom, setZoom] = useState(1)       // continuous 0..2
   const [navOpen, setNavOpen] = useState(false)   // breadcrumb collapsed → top-left chip
-  const [focus, setFocus] = useState({ x: 6 * CELL, y: 3.5 * CELL })
+  // Start centred on the current page's centroid so the locale-altitude default
+  // frames the map's content (not the hard-coded world-overview centre).
+  const [focus, setFocus] = useState(() => {
+    const { locations: locs, mapPageId: page } = useGameStore.getState()
+    const onPage = locs.filter((l) => l.region === page && LOCATION_COORDS[l.id])
+    if (onPage.length === 0) return { x: 6 * CELL, y: 3.5 * CELL }
+    let sx = 0, sy = 0
+    for (const l of onPage) { const c = LOCATION_COORDS[l.id]; sx += worldX(c); sy += worldY(c) }
+    return { x: sx / onPage.length, y: sy / onPage.length }
+  })
   const [drag, setDrag] = useState({ x: 0, y: 0 })
   const wrapRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
