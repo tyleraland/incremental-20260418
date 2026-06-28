@@ -78,15 +78,19 @@ function arenaCamera(cols = COLS, rows = ROWS): Cam {
 // Open-world: a fixed-size window that follows the centroid of the given points
 // (alive combatants), clamped so it never shows past the map edges. The whole
 // open-world field can't fit at once — the player pans to look around.
-function followCamera(pts: Vec2[], cols: number, rows: number, want: number): Cam {
+// `overscroll` (free-look only) lets the window slide half a screen past the map
+// edge so the player can pull a corner to centre and see empty space beyond the
+// rim — auto-follow (party/hero) passes 0 so it never drifts off the action.
+function followCamera(pts: Vec2[], cols: number, rows: number, want: number, overscroll = false): Cam {
   const size = Math.min(want, cols, rows)
   if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
   let sx = 0, sy = 0
   for (const p of pts) { sx += p.x; sy += p.y }
   const cx = sx / pts.length, cy = sy / pts.length
+  const slack = overscroll ? size / 2 : 0
   return {
-    x: Math.max(0, Math.min(cols - size, cx - size / 2)),
-    y: Math.max(0, Math.min(rows - size, cy - size / 2)),
+    x: Math.max(-slack, Math.min(cols - size + slack, cx - size / 2)),
+    y: Math.max(-slack, Math.min(rows - size + slack, cy - size / 2)),
     size,
   }
 }
@@ -181,7 +185,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -309,7 +313,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   return (
     <div
       ref={ref}
-      className="relative w-full max-h-full aspect-square rounded-lg border border-game-border bg-game-surface overflow-hidden select-none"
+      className={`relative w-full max-h-full aspect-square bg-game-surface overflow-hidden select-none${framed ? ' rounded-lg border border-game-border' : ''}`}
       style={{ touchAction: 'none', containerType: 'size' }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -1413,8 +1417,11 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
     : focusUnit ? autoFitSize([rpos(focusUnit)], cols, rows)   // tight, fixed single-hero cam
     : manualCenter ? camSize                                    // free-look holds its zoom
     : autoFitSize(partyPts.length ? partyPts : allPts, cols, rows)
+  // Free-look (minimap tap / drag-pan) may overscroll past the map rim into the
+  // surrounding empty space; party/hero auto-follow stays pinned to the field.
+  const freeLook = !focusUnit && !!manualCenter
   const cam = isOpen
-    ? followCamera(followPts, cols, rows, effSize)
+    ? followCamera(followPts, cols, rows, effSize, freeLook)
     : arenaCamera(cols, rows)
 
   // ── Camera mode (open-world): three explicit states the ⊳ toggle cycles ────────
@@ -1455,10 +1462,11 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
   }
   const panMove = (dxWorld: number, dyWorld: number) => {
     const base = panStartRef.current; if (!base) return
-    const halfX = Math.min(cam.size, cols) / 2, halfY = Math.min(cam.size, rows) / 2
+    // Overscroll by half a screen (matches followCamera's free-look slack), so the
+    // centre can reach the map corners and the rim can be pulled to mid-screen.
     setManualCenter({
-      x: Math.max(halfX, Math.min(cols - halfX, base.x + dxWorld)),
-      y: Math.max(halfY, Math.min(rows - halfY, base.y + dyWorld)),
+      x: Math.max(0, Math.min(cols, base.x + dxWorld)),
+      y: Math.max(0, Math.min(rows, base.y + dyWorld)),
     })
   }
   const endPan = () => {
@@ -1600,6 +1608,7 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
           mapCols={cols}
           mapRows={rows}
           perimeter={isOpen}
+          framed={!insetTopControls}
           panEnabled
           onPanStart={isOpen ? beginPan : undefined}
           onPanMove={isOpen ? panMove : undefined}
