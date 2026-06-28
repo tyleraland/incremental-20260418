@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, getInitials, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
 import { ProtoStage } from './ProtoStage'
-import { ProtoLens } from './ProtoLens'
+import { ProtoLens, PartyDoctrine } from './ProtoLens'
 import { useExpeditionDriver } from './expeditionDriver'
 import { ArmyMatrix } from './ArmyMatrix'
 import { useProtoStore, type QuestBoardEntry } from './protoStore'
@@ -191,6 +191,11 @@ function GuildBoard({ onHero }: { onHero: (id: string) => void }) {
   const recruitUnit = useGameStore((s) => s.recruitUnit)
   return (
     <div className="p-3 max-w-3xl w-full mx-auto space-y-4">
+      {/* Party doctrine — the shared, party-wide tactics, edited here on the
+          roster board rather than inside a single hero's Tactics lens. */}
+      <div className="rounded-lg border border-game-border bg-game-surface/40 px-3 py-2.5">
+        <PartyDoctrine />
+      </div>
       <ArmyMatrix squad={units} locationName="Guild" onHero={onHero} />
       <div className="flex items-center justify-between border-t border-game-border pt-3">
         <span className="text-xs text-game-text-dim">{units.length} member{units.length !== 1 ? 's' : ''} in the guild</span>

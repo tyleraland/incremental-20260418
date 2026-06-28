@@ -101,12 +101,14 @@ export function ArmyMatrix({ squad, locationName, onHero }: { squad: Unit[]; loc
   const gearProps: Record<string, Partial<Record<EquipSlot, string>>> = {}
   for (const u of squad) {
     if (facet === 'tactics') {
-      // Placeholder "intelligence": casters kite, everyone else charges. The real
-      // recommendation engine lands later (see BACKLOG.md → UI Tactician shell).
-      const want = (u.class === 'Mage' || u.class === 'Cleric') ? 'kiter' : 'charger'
+      // Placeholder "intelligence": casters kite; melee gets no auto-pick (the
+      // engine already advances melee to its target, so we never propose Charger —
+      // it must never be added by default). The real recommendation engine lands
+      // later (see BACKLOG.md → UI Tactician shell).
+      const want = (u.class === 'Mage' || u.class === 'Cleric') ? 'kiter' : null
       const equipped = new Set(u.tactics.map((t) => t.id))
       const free = MAX_UNIT_TACTICS - u.tactics.length
-      if (TACTIC_REGISTRY[want] && !equipped.has(want) && free > 0) tacticProps[u.id] = [want]
+      if (want && TACTIC_REGISTRY[want] && !equipped.has(want) && free > 0) tacticProps[u.id] = [want]
     } else if (facet === 'gear') {
       const g: Partial<Record<EquipSlot, string>> = {}
       for (const slot of GEAR_ROWS) {

@@ -727,8 +727,6 @@ function TacticianLens({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-4">
-      <PartyDoctrine />
-
       <div className="flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-widest text-game-text-dim">Priority by channel</span>
         <span className="text-[11px] text-game-text-dim">{unit.tactics.length}/{MAX_UNIT_TACTICS}</span>
@@ -829,10 +827,11 @@ function TacticianLens({ unit }: { unit: Unit }) {
   )
 }
 
-// Party doctrine — shared tactics applied to every deployed hero. Editable here
-// (equip/unequip, capped at MAX_PARTY_TACTICS) since the party screen and the
-// hero's Tactics lens are the two places you tune combat behaviour.
-function PartyDoctrine() {
+// Party doctrine — shared tactics applied to every deployed hero. Editable
+// (equip/unequip, capped at MAX_PARTY_TACTICS) from the Guild board: it's a
+// party-wide lever, so it lives with the roster rather than a single hero's
+// Tactics lens.
+export function PartyDoctrine() {
   const partyTactics      = useGameStore((s) => s.partyTactics)
   const equipPartyTactic  = useGameStore((s) => s.equipPartyTactic)
   const unequipPartyTactic = useGameStore((s) => s.unequipPartyTactic)
