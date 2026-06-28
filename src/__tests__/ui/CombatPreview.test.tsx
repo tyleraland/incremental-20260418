@@ -55,8 +55,10 @@ describe('BattleView — live battle', () => {
     advanceRound(battle)   // produce a round with movement/attacks
     useGameStore.setState({ combatLocationId: 'loc1', locations: [TEST_LOCATION], battles: { loc1: { ...battle } } })
     await renderBattle('loc1')
-    expect(screen.getAllByText('AV').length).toBeGreaterThan(0)   // party chip
-    expect(screen.getByText(/Party \(/)).toBeInTheDocument()      // legend
+    // Token identity via title (skin-independent: both the circle and sprite skins
+    // set `<name> — <hp>` on the body, where initials only exist on the circle skin).
+    expect(screen.getAllByTitle(/Ada Vale/).length).toBeGreaterThan(0)   // party chip
+    expect(screen.getByText(/Party \(/)).toBeInTheDocument()             // legend
   })
 
   it('shows a casting indicator while a unit channels a spell', async () => {

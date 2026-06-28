@@ -4,6 +4,7 @@ import { useGameStore, waveComposition, locationBarriers, type Location } from '
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, CLASS_ICON, type Appearance } from '@/render/appearance'
+import { Sprite, SPRITE_REGISTRY, GROUND_GRASS } from '@/render/sprites'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
@@ -181,7 +182,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, groundUrl, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; groundUrl?: string; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -343,22 +344,39 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
             transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear`,
           }}
         >
+          {/* painted ground (e.g. a city's grass): a single 16px tile repeated one
+              per world cell, pixel-crisp. Rides the layer like the grid, so it eases
+              with the camera. When present it replaces the bare grid look. */}
+          {groundUrl && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                backgroundImage: `url(${groundUrl})`,
+                backgroundRepeat: 'repeat',
+                backgroundSize: `${100 / mapCols}% ${100 / mapRows}%`,
+                imageRendering: 'pixelated',
+              }}
+            />
+          )}
           {/* faint grid pattern (opacity only on this child, so terrain/effects below
-              read at full strength) */}
-          <div
-            className="absolute inset-0 opacity-40 pointer-events-none"
-            style={{
-              backgroundImage:
-                'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
-                'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
-              // One cell = 1/mapCols of the layer (NOT cqmin/arena-relative). This
-              // makes the grid scale WITH the layer (and the barriers, also % of it)
-              // as it eases through a zoom — a cqmin size resolves against the arena,
-              // which doesn't transition, so the grid would snap-resize while the
-              // barriers eased, sliding the grid across the terrain.
-              backgroundSize: `${100 / mapCols}% ${100 / mapRows}%`,
-            }}
-          />
+              read at full strength). Hidden when a painted ground is shown — the grid
+              is a movement aid for the bare board, redundant over real terrain art. */}
+          {!groundUrl && (
+            <div
+              className="absolute inset-0 opacity-40 pointer-events-none"
+              style={{
+                backgroundImage:
+                  'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
+                  'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
+                // One cell = 1/mapCols of the layer (NOT cqmin/arena-relative). This
+                // makes the grid scale WITH the layer (and the barriers, also % of it)
+                // as it eases through a zoom — a cqmin size resolves against the arena,
+                // which doesn't transition, so the grid would snap-resize while the
+                // barriers eased, sliding the grid across the terrain.
+                backgroundSize: `${100 / mapCols}% ${100 / mapRows}%`,
+              }}
+            />
+          )}
           {/* terrain: walls solid (block movement + sight); cliffs translucent +
               dashed (block movement only — ranged attacks fire over them). Positioned
               as a fraction of the map → planted on the grid, no own transition. */}
@@ -559,7 +577,36 @@ function CircleBody({ c, cam, appearance, selected }: { c: Combatant; cam: Cam; 
   )
 }
 
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, castLabels }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; castLabels?: CastLabelEntry[] }) {
+// Sprite art reads a bit larger than a circle token (the character fills most of
+// the 16px cell, with transparent margin), so bump it past one grid cell.
+const SPRITE_SCALE = 1.5
+
+// The sprite skin: a sibling to CircleBody with the SAME chipDims box contract, so
+// positioning/animation/LOD upstream are identical. Falls back to the circle when
+// the sprite key isn't registered (so partial coverage Just Works). Selection +
+// casting are signalled with a ring on the square box; KO dims/greys the art.
+function SpriteBody({ c, cam, appearance, selected }: { c: Combatant; cam: Cam; appearance: Appearance; selected: boolean }) {
+  const ref = appearance.spriteId ? SPRITE_REGISTRY[appearance.spriteId] : undefined
+  if (!ref) return <CircleBody c={c} cam={cam} appearance={appearance} selected={selected} />
+  const dims = chipDims(cam, appearance.scale * SPRITE_SCALE)
+  const casting = appearance.tone === 'casting'
+  return (
+    <div
+      title={c.channel ? `${c.name} — casting ${skillName(c.channel.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
+      style={{ width: dims.width, height: dims.height }}
+      className={[
+        'rounded-md transition-opacity',
+        casting ? 'ring-2 ring-amber-400/70' : '',
+        selected ? 'ring-2 ring-emerald-300' : '',
+        c.alive ? '' : 'opacity-30 grayscale',
+      ].join(' ')}
+    >
+      <Sprite sprite={ref} idle={c.alive && !c.moving} className="w-full h-full" style={{ filter: 'drop-shadow(0 1px 1px rgb(0 0 0 / 0.55))' }} />
+    </div>
+  )
+}
+
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, useSprites, castLabels }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; useSprites: boolean; castLabels?: CastLabelEntry[] }) {
   const isPlayer = c.team === 'player'
   const isNeutral = c.team === 'neutral'   // town NPC: stationary, no facing/HP bar
   const casting = c.alive && !!c.channel
@@ -596,7 +643,9 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
         {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
         {detail && c.alive && !isNeutral && <FacingNub c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
         {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
-        <CircleBody c={c} cam={cam} appearance={appearance} selected={selected} />
+        {useSprites
+          ? <SpriteBody c={c} cam={cam} appearance={appearance} selected={selected} />
+          : <CircleBody c={c} cam={cam} appearance={appearance} selected={selected} />}
       </div>
     </div>
   )
@@ -1093,8 +1142,24 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
+// Sprite-skin on/off, persisted in localStorage so it survives reloads. A runtime
+// A/B lever while we iterate on art (circle skin vs sprite skin); default on.
+const SPRITES_KEY = 'sprites-enabled'
+function useSpritesEnabled(): [boolean, () => void] {
+  const [on, setOn] = useState(() => {
+    try { return localStorage.getItem(SPRITES_KEY) !== '0' } catch { return true }
+  })
+  const toggle = () => setOn((v) => {
+    const next = !v
+    try { localStorage.setItem(SPRITES_KEY, next ? '1' : '0') } catch { /* ignore */ }
+    return next
+  })
+  return [on, toggle]
+}
+
 function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
+  const [useSprites, toggleSprites] = useSpritesEnabled()
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
   const focusUnitId   = useGameStore((s) => s.battleFollowId)
@@ -1565,6 +1630,19 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
               aria-label="Zoom in"
               className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
             >+</button>
+            {/* Art skin A/B toggle: sprite skin ⇄ circle skin (persisted). */}
+            <button
+              onClick={toggleSprites}
+              aria-label="Toggle sprites"
+              title={useSprites ? 'Sprites on — tap for circles' : 'Circles on — tap for sprites'}
+              className={`px-1.5 h-6 flex items-center gap-1 rounded-md border text-[10px] backdrop-blur-sm ${
+                useSprites
+                  ? 'border-emerald-600/60 bg-emerald-950/70 text-emerald-200'
+                  : 'border-game-border bg-game-surface/90 text-game-text-dim hover:bg-white/5'
+              }`}
+            >
+              {useSprites ? '◧ Sprites' : '○ Circles'}
+            </button>
           </div>
         </>
       )}
@@ -1580,6 +1658,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
           onPanMove={isOpen ? panMove : undefined}
           onPanEnd={isOpen ? endPan : undefined}
           zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
+          groundUrl={useSprites && battle.peaceful ? GROUND_GRASS : undefined}
           overlay={isOpen ? (
             <>
               {offscreen.map((c) => <EdgeMarker key={c.id} c={c} pos={rpos(c)} cam={cam} />)}
@@ -1689,6 +1768,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
               appearance={getAppearance(c, classFor)}
               scale={battle.timeScale}
               detail={tokenDetail}
+              useSprites={useSprites}
               castLabels={castLabelsBySource.get(c.id)}
             />
           ))}

@@ -91,3 +91,12 @@
   100% { opacity: 0; }
 }
 .animate-cast-label { animation: cast-label 3s ease-out forwards; }
+
+/* Gentle idle "breathing" bob for standing sprite tokens — keeps a town sprite
+   feeling alive without a multi-frame walk cycle. Subtle so a crowd doesn't
+   throb. transform-origin bottom so it reads as a little hop, not a float. */
+@keyframes sprite-idle {
+  0%, 100% { transform: translateY(0)     scaleY(1); }
+  50%      { transform: translateY(-7%)   scaleY(1.04); }
+}
+.animate-sprite-idle { animation: sprite-idle 1.8s ease-in-out infinite; transform-origin: 50% 100%; }
