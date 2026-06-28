@@ -354,9 +354,20 @@ const OPEN_WORLD_DEFAULT_CAP = 8   // fallback field size when a location sets n
 // Open-world maps are large — the camera can't show the whole field at once, so
 // the party hunts across it with limited vision. Every map should really set its
 // own `openWorldCap` (density) override; size defaults here unless overridden.
-const OPEN_WORLD_DEFAULT_SIZE = 50
+// A big field is actually CHEAPER to render than a small one at the same cap: the
+// camera windows ~15 cells, so on a large map the monsters spread out and fewer
+// are on-screen/in a melee scrum at once (perf is bound by visible tokens, not
+// map area — verified on the throttled-mobile harness up to 200×200 / cap 90).
+const OPEN_WORLD_DEFAULT_SIZE = 200
 const HERO_VISION = 10             // heroes acquire targets within this many cells
 const MONSTER_VISION = 8           // monsters see a little less far
+// Open-world pathfinding (steerAround/canReach) builds a visibility graph with
+// ~4 nodes per barrier and runs Dijkstra over it every time a unit reroutes, so
+// its cost grows superlinearly with the *barrier count* — NOT with the map area.
+// A big (200-wide) map must therefore keep roughly the same handful of barriers
+// a small one has, just spread thinner, or a heavy field grinds. Cap the count
+// here so map size and barrier count are decoupled. See openWorldBarriers.
+const BARRIER_CAP = 16
 function openWorldCap(loc: Location): number {
   return loc.openWorldCap ?? OPEN_WORLD_DEFAULT_CAP
 }
@@ -399,7 +410,11 @@ function openWorldBarriers(loc: Location, size: number): Barrier[] {
   const c = size / 2
   const clear = Math.max(6, size * 0.14)           // uncluttered apron around spawn
   const out: Barrier[] = []
-  const count = Math.round(size / 6)               // ~8 clusters on a 50-wide map
+  // ~size/6 clusters (8 on a 50-wide map), but CAPPED at BARRIER_CAP so a big
+  // (200-wide) map doesn't scale up to ~33 walls and grind the pather. Small and
+  // mid maps (size ≤ 96) are below the cap, so their terrain is unchanged; only
+  // large new fields hit it, reading as sparser open ground rather than denser rock.
+  const count = Math.min(BARRIER_CAP, Math.round(size / 6))
   for (let guard = 0; out.length < count && guard < count * 12; guard++) {
     const w = 2 + Math.floor(rng() * 4)
     const hh = 2 + Math.floor(rng() * 4)

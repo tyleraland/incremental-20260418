@@ -17,7 +17,7 @@ describe('seedPerfBattle', () => {
     const s = useGameStore.getState()
 
     expect(s.mapMode).toBe('battle')
-    expect(s.combatLocationId).toBe('harpy-roost')        // densest openWorld (cap 25)
+    expect(s.combatLocationId).toBe('harpy-roost')        // densest openWorld by packing (25 in a 25×25 field)
     expect(s.units).toHaveLength(12)
     expect(new Set(s.units.map((u) => u.id)).size).toBe(12) // unique ids (no Date.now collisions)
 

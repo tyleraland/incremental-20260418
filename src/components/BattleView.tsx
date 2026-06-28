@@ -181,7 +181,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -359,6 +359,17 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
               backgroundSize: `${100 / mapCols}% ${100 / mapRows}%`,
             }}
           />
+          {/* boundary perimeter — a wall ring framing the open-world map edge. Purely
+              cosmetic (arenaClamp already contains units, so it's NOT in the engine's
+              barrier set): it gives the big field a visible rim so the player reads
+              where the map ends. Spans the whole ground layer, so it sits exactly on
+              the map edge at any zoom; only the visible side is on-screen at a time. */}
+          {perimeter && (
+            <div
+              className="absolute inset-0 border-4 border-stone-500/70 pointer-events-none"
+              style={{ boxShadow: 'inset 0 0 0 1px rgb(120 113 108 / 0.5), inset 0 0 24px rgb(0 0 0 / 0.55)' }}
+            />
+          )}
           {/* terrain: walls solid (block movement + sight); cliffs translucent +
               dashed (block movement only — ranged attacks fire over them). Positioned
               as a fraction of the map → planted on the grid, no own transition. */}
@@ -1575,6 +1586,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
           centerY={rows / 2}
           mapCols={cols}
           mapRows={rows}
+          perimeter={isOpen}
           panEnabled
           onPanStart={isOpen ? beginPan : undefined}
           onPanMove={isOpen ? panMove : undefined}

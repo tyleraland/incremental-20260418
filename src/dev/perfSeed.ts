@@ -9,6 +9,8 @@
 // Tunable via query params so a sweep can scale the load:
 //   ?heroes=<n>  party size            (default 12)
 //   ?cap=<n>     monsters on the field (default: the location's own cap)
+//   ?size=<n>    open-world map side    (default: the location's own size) — sweep
+//                this to measure how big a field stays smooth on the throttle.
 //
 // IMPORTANT: the party is built by CLONING the fully-kitted starter heroes
 // (INITIAL_UNITS u1–u6: Fighter / Ranger / Mage / Cleric / tank / Rogue), NOT by
@@ -39,16 +41,23 @@ export function seedPerfBattle(targetHeroes = numParam('heroes', 12)): void {
   }
   useGameStore.setState({ units: roster, battles: {} })
 
-  // Densest open-world field — the intended stress arena. `?cap` overrides its
-  // monster density so a sweep can push entity count past the shipped default.
+  // Densest open-world field — the intended stress arena. We want the most
+  // ON-SCREEN tokens (render cost is bound by what the camera window shows), so
+  // sort by packing DENSITY (cap / area), not raw cap: a big sparse field can
+  // have a high cap yet show only a handful at once, while a tight swarm map
+  // (e.g. the 25×25 Harpy Roost) crams them all into view. `?cap`/`?size`
+  // override the picked field so a sweep can push past the shipped default.
+  const density = (l: { openWorldCap?: number; openWorldSize?: number }) =>
+    (l.openWorldCap ?? 0) / Math.max(1, (l.openWorldSize ?? 50) ** 2)
   const base = get().locations
     .filter((l) => l.openWorld)
-    .sort((a, b) => (b.openWorldCap ?? 0) - (a.openWorldCap ?? 0))[0]
+    .sort((a, b) => density(b) - density(a))[0]
   if (!base) return
   const cap = numParam('cap', base.openWorldCap ?? 8)
-  if (cap !== (base.openWorldCap ?? 8)) {
+  const size = numParam('size', base.openWorldSize ?? 50)
+  if (cap !== (base.openWorldCap ?? 8) || size !== (base.openWorldSize ?? 50)) {
     useGameStore.setState((s) => ({
-      locations: s.locations.map((l) => (l.id === base.id ? { ...l, openWorldCap: cap } : l)),
+      locations: s.locations.map((l) => (l.id === base.id ? { ...l, openWorldCap: cap, openWorldSize: size } : l)),
     }))
   }
 
