@@ -26,6 +26,14 @@
 //                          (default: every player-team unit)
 //   -e, --events         also print events touching a watched unit each round
 //       --all-events     print every event each round (implies -e)
+//   -i, --inspect        per round, dump each watched unit's DECISION state: its
+//                          lock, its team plan (hunt / focus / waypoint), and its
+//                          movement intent (moveOrder / wanderTarget). The "why is
+//                          this unit doing nothing / stuck?" view.
+//       --reach <id>     per round, for each watched unit print canReach + the
+//                          steerAround first-corner toward combatant <id> — the
+//                          pathfinding diagnostic (is the foe walled off? is the
+//                          route oscillating?). Pairs well with -i.
 //       --no-step        just dump the opening roster + zones, don't advance
 //       --save <path>    where to cache the pulled token (default .bsnap/last.txt)
 //       --no-save        don't cache the token
@@ -35,6 +43,8 @@
 //   node scripts/bsnap.mjs https://gist.github.com/tyleraland/<id> -w u4 -e
 //   node scripts/bsnap.mjs .bsnap/last.txt -n 40            # replay the cached one
 //   node scripts/bsnap.mjs - < token.txt --no-step         # roster-only from stdin
+//   # why is hero u5 stuck? dump its decisions + pathing toward the foe it ignores:
+//   node scripts/bsnap.mjs .bsnap/last.txt -w u5 -n 40 -i --reach shadow-wolf#0
 
 import { createServer } from 'vite'
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
@@ -42,7 +52,7 @@ import { dirname } from 'node:path'
 
 // ── arg parsing ──────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2)
-const opts = { rounds: 24, watch: null, events: false, allEvents: false, step: true, save: '.bsnap/last.txt' }
+const opts = { rounds: 24, watch: null, events: false, allEvents: false, inspect: false, reach: null, step: true, save: '.bsnap/last.txt' }
 let source = null
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
@@ -51,6 +61,8 @@ for (let i = 0; i < argv.length; i++) {
   else if (a === '-w' || a === '--watch') opts.watch = argv[++i].split(',').map((s) => s.trim()).filter(Boolean)
   else if (a === '-e' || a === '--events') opts.events = true
   else if (a === '--all-events') { opts.events = true; opts.allEvents = true }
+  else if (a === '-i' || a === '--inspect') opts.inspect = true
+  else if (a === '--reach') opts.reach = argv[++i]
   else if (a === '--no-step') opts.step = false
   else if (a === '--save') opts.save = argv[++i]
   else if (a === '--no-save') opts.save = null
@@ -105,10 +117,11 @@ async function main() {
   }
 
   const server = await createServer({ logLevel: 'error', server: { middlewareMode: true }, appType: 'custom' })
-  let snapshot, engine
+  let snapshot, engine, barriers
   try {
     snapshot = await server.ssrLoadModule('/src/engine/snapshot.ts')
     engine = await server.ssrLoadModule('/src/engine/engine.ts')
+    barriers = await server.ssrLoadModule('/src/engine/barriers.ts')   // for --reach (canReach/steerAround)
   } finally {
     // keep the server up until after we've loaded; close at the very end
   }
@@ -126,7 +139,7 @@ async function main() {
   if (unknown.length) log(`⚠ watch id(s) not in battle: ${unknown.join(', ')}`)
 
   printRoster(battle)
-  if (opts.step) stepBattle(engine, battle, watch)
+  if (opts.step) stepBattle(engine, barriers, battle, watch)
 
   await server.close()
 }
@@ -141,7 +154,7 @@ function printRoster(b) {
   if (b.zones.length) log(`  zones: ${JSON.stringify(b.zones.map((z) => ({ id: z.id, dot: z.dotDamage, el: z.element, follow: z.follow, left: z.roundsLeft })))}`)
 }
 
-function stepBattle(engine, b, watch) {
+function stepBattle(engine, barriers, b, watch) {
   log(`\nstepping ${opts.rounds} round(s), watching: ${watch.join(', ')}\n`)
   const prev = Object.fromEntries(watch.map((id) => [id, hpOf(b, id)]))
   for (let i = 0; i < opts.rounds; i++) {
@@ -155,6 +168,14 @@ function stepBattle(engine, b, watch) {
       return `${id} ${c.hp}/${c.maxHp}${d ? `(${d > 0 ? '+' : ''}${d})` : ''}@${fx(c.pos.x)},${fx(c.pos.y)}${tag}`
     })
     log(`R${pad(String(b.round), 3)} L${pad(String(logical), 3)}  ${cols.join('   ')}`)
+    if (opts.inspect || opts.reach) {
+      for (const id of watch) {
+        const c = b.combatants.find((x) => x.id === id)
+        if (!c) continue
+        if (opts.inspect) log(`        ↳ ${id}  ${inspectLine(b, c)}`)
+        if (opts.reach) log(`        ↳ ${id}  ${reachLine(barriers, b, c, opts.reach)}`)
+      }
+    }
     if (opts.events) {
       const evs = b.events.filter((e) => opts.allEvents || watch.includes(e.targetId) || watch.includes(e.sourceId))
       for (const e of evs) log(`        · ${e.type} ${fmtEvent(e)}`)
@@ -162,6 +183,27 @@ function stepBattle(engine, b, watch) {
     b.events.length = 0
     if (b.outcome !== 'ongoing') { log(`\noutcome → ${b.outcome} at round ${b.round}`); break }
   }
+}
+
+// Decision state: what is this unit locked on, what is its team steering it toward
+// (the blackboard plan), and what movement has it committed? The "why is it stuck?" line.
+function inspectLine(b, c) {
+  const p = b.plans?.[c.team]
+  const v = (pt) => (pt ? `(${fx(pt.x)},${fx(pt.y)})` : '—')
+  return `lock=${c.lockedTargetId ?? '—'}  plan{hunt=${p?.huntTargetId ?? '—'} focus=${p?.focusTargetId ?? '—'} wp=${v(p?.waypoint)}}`
+    + `  move{order=${v(c.moveOrder)} wander=${v(c.wanderTarget)} dwell=${c.wanderDwell ?? 0}}`
+    + `  vis=${c.visionRange === Infinity ? '∞' : c.visionRange}`
+}
+
+// Pathing diagnostic toward combatant <toId>: distance, line-of-sight, reachability,
+// and the steerAround first-corner — catches "walled off" and "route oscillates".
+function reachLine(barriers, b, c, toId) {
+  const t = b.combatants.find((x) => x.id === toId)
+  if (!t) return `reach: target ${toId} ∅`
+  const d = Math.hypot(c.pos.x - t.pos.x, c.pos.y - t.pos.y)
+  const sa = barriers.steerAround(c.pos, t.pos, b.barriers)
+  return `→${toId} dist=${d.toFixed(1)} los=${barriers.lineClear(c.pos, t.pos, b.barriers)} reach=${barriers.canReach(c.pos, t.pos, b.barriers)}`
+    + ` steer=(${fx(sa.point.x)},${fx(sa.point.y)}) direct=${sa.direct}`
 }
 
 function fmtEvent(e) {

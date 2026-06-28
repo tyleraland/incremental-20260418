@@ -103,7 +103,7 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 ## Testing & verification
 - `npm run ci` = `tsc --noEmit` + full vitest suite. Keep green; engine changes must keep snapshot replays byte-identical.
 - Browser: use **Playwright, not the chrome-devtools MCP** (flaky here). `npm run e2e:install` once, then `npm run e2e` (mobile CPU-throttled 4×; logged fps is the signal; screenshot at `e2e/__shots__/<project>.png`). `?perf=1` drops into the heavy open-world scene (`src/dev/perfSeed.ts`). In DEV the store is on `window.__game`.
-- `npm run bsnap -- <gist-url|raw-url|file|token|->` replays a `BSNAP` headlessly from TS source (`-n` rounds, `-w` watch ids, `-e` events). Caches to `.bsnap/last.txt`.
+- `npm run bsnap -- <gist-url|raw-url|file|token|->` replays a `BSNAP` headlessly from TS source (`-n` rounds, `-w` watch ids, `-e` events). Caches to `.bsnap/last.txt`. **Debugging a stuck / misbehaving unit**: `-i`/`--inspect` dumps each watched unit's decision state per round (lock, team plan `hunt`/`focus`/`waypoint`, `moveOrder`/`wanderTarget`); `--reach <id>` adds a pathing diagnostic toward a combatant (dist / line-of-sight / `canReach` / `steerAround` first-corner — catches "walled off" and "route oscillating"). The canonical first stop for an open-world "why won't it move/fight?" report — extend `inspectLine`/`reachLine` in `scripts/bsnap.mjs` for new fields rather than hand-rolling a throwaway script.
 
 ## Branching & merging
 - Develop on a feature branch; **merge to `main` when a feature is complete** (`git merge --ff-only <branch> && git push origin main`) — `main` is what gets browser-tested. Don't wait to be asked.
