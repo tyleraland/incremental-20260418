@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
-import { NPC_REGISTRY } from '@/data/npcs'
+import { getAppearance, initials, CLASS_ICON, type Appearance } from '@/render/appearance'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
@@ -38,13 +38,6 @@ interface CastLabelEntry { id: string; sourceId: string; skillId: string; born: 
 // live their full lob-and-fade animation instead of unmounting when the next round
 // arrives (rounds are ~200ms, the arc is ~1.35s). Matches the CSS animation length.
 const FLOAT_NUM_MS = 1350
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/)
-  return parts.length === 1
-    ? parts[0].slice(0, 2).toUpperCase()
-    : (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-}
 
 function hpColor(ratio: number): string {
   if (ratio >= 0.75) return 'bg-emerald-500'
@@ -404,33 +397,18 @@ const CHIP_FLOAT_W = 'w-14'          // floating name/HP plate above the chip
 // 100/cam.size of the arena; clamped so it stays visible/tappable at extreme
 // zoom. Glyph font-size scales with it.
 const CHIP_CELL_FRACTION = 0.9
-function chipDims(cam: Cam): { width: string; height: string; fontSize: string } {
-  const cqmin = (CHIP_CELL_FRACTION * 100) / cam.size       // one chip in cqmin units
-  const size = `clamp(14px, ${cqmin}cqmin, 64px)`
+// `sizeScale` (from the appearance resolver, e.g. a large monster) grows the token
+// proportionally — the cqmin term AND the clamp floor/ceiling scale together so it
+// stays bigger at every zoom, not just in the mid-range.
+function chipDims(cam: Cam, sizeScale = 1): { width: string; height: string; fontSize: string } {
+  const cqmin = (CHIP_CELL_FRACTION * sizeScale * 100) / cam.size   // one chip in cqmin units
+  const size = `clamp(${14 * sizeScale}px, ${cqmin}cqmin, ${64 * sizeScale}px)`
   return { width: size, height: size, fontSize: `clamp(7px, ${cqmin * 0.4}cqmin, 26px)` }
-}
-
-const CLASS_ICON: Record<string, string> = {
-  Fighter: '⚔',
-  Ranger:  '🏹',
-  Mage:    '✦',
-  Cleric:  '✚',
-  Rogue:   '🗡',
 }
 
 function shortName(name: string): string {
   const first = name.trim().split(/\s+/)[0] ?? ''
   return first.length > 8 ? first.slice(0, 7) + '…' : first
-}
-
-function chipGlyph(c: Combatant, classFor: (id: string) => string | null): string {
-  if (c.team === 'player') {
-    const cls = classFor(c.id)
-    if (cls && CLASS_ICON[cls]) return CLASS_ICON[cls]
-  }
-  // Town NPCs (neutral): show their own icon (🛡️/⚔️) rather than initials.
-  if (c.team === 'neutral') return NPC_REGISTRY[c.id]?.icon ?? initials(c.name)
-  return initials(c.name)
 }
 
 // Wall-clock length of one *logical* round (2 engine rounds at timeScale=2 ×
@@ -486,11 +464,11 @@ function FloatingLabel({ c, isPlayer, casting, scale }: { c: Combatant; isPlayer
 // rotated to the unit's facing. Engine facing is world-space where +y renders
 // UP on screen (py flips y), so the on-screen angle is atan2(-fy, fx). Scales
 // with the chip (cqmin) and rides just outside its edge.
-function FacingNub({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boolean }) {
+function FacingNub({ c, cam, isPlayer, sizeScale = 1 }: { c: Combatant; cam: Cam; isPlayer: boolean; sizeScale?: number }) {
   const f = c.facing ?? { x: 0, y: isPlayer ? 1 : -1 }
   if (Math.hypot(f.x, f.y) < 1e-6) return null
   const angle = (Math.atan2(-f.y, f.x) * 180) / Math.PI   // 0° = pointing right (+x)
-  const cqmin = (CHIP_CELL_FRACTION * 100) / cam.size
+  const cqmin = (CHIP_CELL_FRACTION * sizeScale * 100) / cam.size
   const half = `clamp(3px, ${cqmin * 0.22}cqmin, 14px)`   // triangle half-height
   const len  = `clamp(4px, ${cqmin * 0.3}cqmin, 18px)`    // triangle length (the point)
   const reach = `clamp(8px, ${cqmin * 0.6}cqmin, 36px)`   // chip-centre → triangle base
@@ -523,11 +501,11 @@ function FacingNub({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boo
 // the unit is actually moving — so a token reads as one arrow when holding, a
 // trailing second chevron when on the move. Same rotation basis and
 // construction as FacingNub; scales with the chip.
-function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer: boolean }) {
+function MovingChevron({ c, cam, isPlayer, sizeScale = 1 }: { c: Combatant; cam: Cam; isPlayer: boolean; sizeScale?: number }) {
   const f = c.facing ?? { x: 0, y: isPlayer ? 1 : -1 }
   if (Math.hypot(f.x, f.y) < 1e-6) return null
   const angle = (Math.atan2(-f.y, f.x) * 180) / Math.PI   // 0° = facing +x
-  const cqmin = (CHIP_CELL_FRACTION * 100) / cam.size
+  const cqmin = (CHIP_CELL_FRACTION * sizeScale * 100) / cam.size
   const half = `clamp(3px, ${cqmin * 0.22}cqmin, 14px)`   // match FacingNub
   const len  = `clamp(4px, ${cqmin * 0.3}cqmin, 18px)`
   const reach = `clamp(4px, ${cqmin * 0.32}cqmin, 19px)`  // behind the front direction arrow (0.6)
@@ -550,7 +528,38 @@ function MovingChevron({ c, cam, isPlayer }: { c: Combatant; cam: Cam; isPlayer:
 // (many tiny tokens, open-world), the floating name/HP/cast plate and the
 // facing/moving nubs are unreadable noise *and* the bulk of the per-token DOM —
 // drop them and render just the circle. Full detail returns as you zoom/follow in.
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale, detail, castLabels }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; glyph: string; scale: number; detail: boolean; castLabels?: CastLabelEntry[] }) {
+// Per-tone base classes for the circle skin. An element `tint` (when present)
+// overrides the border color + adds a faint glow on top of these — except while
+// casting, whose amber ring takes priority as the cast signal.
+const TONE_CLASS: Record<Appearance['tone'], string> = {
+  casting: 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100',
+  player:  'bg-blue-900 border-blue-300/80 text-blue-50',
+  neutral: 'bg-amber-900/80 border-amber-300/70 text-amber-50',
+  enemy:   'bg-red-900  border-red-300/80  text-red-50',
+}
+
+// The circle skin — today's token body, and the ONE place the "draw an entity"
+// visual lives, fed entirely by the appearance resolver. A sprite skin (Stage 2)
+// is a sibling with the same props + box contract (chipDims), swapped in BattleChip.
+function CircleBody({ c, cam, appearance, selected }: { c: Combatant; cam: Cam; appearance: Appearance; selected: boolean }) {
+  const tint = appearance.tone !== 'casting' ? appearance.tint : undefined
+  return (
+    <div
+      title={c.channel ? `${c.name} — casting ${skillName(c.channel.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
+      style={{ ...chipDims(cam, appearance.scale), ...(tint ? { borderColor: tint, boxShadow: `0 0 6px ${tint}` } : null) }}
+      className={[
+        'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
+        TONE_CLASS[appearance.tone],
+        selected ? 'ring-2 ring-emerald-300' : '',
+        c.alive ? '' : 'opacity-25 grayscale',
+      ].join(' ')}
+    >
+      {c.alive ? appearance.glyph : '✕'}
+    </div>
+  )
+}
+
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, castLabels }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; castLabels?: CastLabelEntry[] }) {
   const isPlayer = c.team === 'player'
   const isNeutral = c.team === 'neutral'   // town NPC: stationary, no facing/HP bar
   const casting = c.alive && !!c.channel
@@ -585,23 +594,9 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, glyph, scale,
           </div>
         )}
         {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
-        {detail && c.alive && !isNeutral && <FacingNub c={c} cam={cam} isPlayer={isPlayer} />}
-        {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} />}
-        <div
-          title={casting ? `${c.name} — casting ${skillName(c.channel!.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
-          style={chipDims(cam)}
-          className={[
-            'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
-            casting ? 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100'
-              : isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50'
-                : isNeutral ? 'bg-amber-900/80 border-amber-300/70 text-amber-50'
-                         : 'bg-red-900  border-red-300/80  text-red-50',
-            selected ? 'ring-2 ring-emerald-300' : '',
-            c.alive ? '' : 'opacity-25 grayscale',
-          ].join(' ')}
-        >
-          {c.alive ? glyph : '✕'}
-        </div>
+        {detail && c.alive && !isNeutral && <FacingNub c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
+        {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
+        <CircleBody c={c} cam={cam} appearance={appearance} selected={selected} />
       </div>
     </div>
   )
@@ -1691,7 +1686,7 @@ function LiveBattle({ battle, onFollow, inspectRequest, closeNonce, onInspect, i
               animatePos
               selected={sameWave && c.id === selectedId}
               onSelect={() => handleSelect(c)}
-              glyph={chipGlyph(c, classFor)}
+              appearance={getAppearance(c, classFor)}
               scale={battle.timeScale}
               detail={tokenDetail}
               castLabels={castLabelsBySource.get(c.id)}
