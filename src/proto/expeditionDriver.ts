@@ -7,8 +7,9 @@ import { useProtoStore } from './protoStore'
 import { heroFull, heroRoom, heroCarried, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero, type HeroExpedition } from './expeditionStore'
 import {
-  locationProfile, isHuntable, isCity, nearestCity, categorize, supplyPool, supplyEndurance, BASE_SUPPLY_BURN,
+  locationProfile, isHuntable, isCity, nearestCity, categorize, supplyState,
 } from './expedition'
+import { consumableDef } from '@/data/consumables'
 
 // How long a returned hero parks in town (depositing loot + restocking) before
 // redeploying to where they were hunting. Instant deploy for now — open-world land
@@ -44,19 +45,6 @@ function distribute(pool: Drop[], accepters: Member[]) {
   }
 }
 
-// Gentle, directional supply equalisation: givers above the network average shed
-// supplies; accepters below it gain. A hero that both shares and accepts trends to
-// the average from either side. No-op unless someone shares AND someone accepts.
-function shareSupplies(members: Member[], newSup: Record<string, number>, dt: number) {
-  const givers = members.filter((m) => m.he.shareSupplies).map((m) => m.u.id)
-  const takers = members.filter((m) => m.he.acceptSupplies).map((m) => m.u.id)
-  if (givers.length === 0 || takers.length === 0) return
-  const net = [...new Set([...givers, ...takers])]
-  const avg = net.reduce((a, id) => a + newSup[id], 0) / net.length
-  const factor = Math.min(1, 0.4 * dt)
-  for (const id of givers) if (newSup[id] > avg) newSup[id] -= (newSup[id] - avg) * factor
-  for (const id of takers) if (newSup[id] < avg) newSup[id] += (avg - newSup[id]) * factor
-}
 
 // The town a returning hero heads to: their chosen `returnTown`, else the nearest
 // city to where they were hunting.
@@ -171,6 +159,14 @@ export function useExpeditionDriver() {
         progress.current[u.id] = 0
         continue
       }
+      // §logistics: make sure loadout heal items are actually used in the field, so
+      // the pack (hence supplies) really depletes. Only writes a MISSING rule, so
+      // this is a one-time fix per hero, not a per-tick store churn.
+      for (const id of Object.keys(he.loadout)) {
+        if (consumableDef(id)?.effect === 'heal' && !(u.consumableRules ?? []).some((r) => r.itemId === id)) {
+          g.addConsumableRule(u.id, id, 0.3)
+        }
+      }
       const arr = groups.get(u.locationId) ?? []
       arr.push({ u, he })
       groups.set(u.locationId, arr)
@@ -181,14 +177,15 @@ export function useExpeditionDriver() {
       const loc = locById.get(locId)!
       const profile = locationProfile(loc)
 
-      // 2a. burn supplies
+      // 2a. supplies = real loadout usage (carried consumables ÷ configured total),
+      // NOT a timer — they only drop as the engine spends potions in combat.
       const newSup: Record<string, number> = {}
+      const supSt: Record<string, { total: number; remaining: number }> = {}
       for (const { u, he } of members) {
-        const hasS = supplyPool(he.loadout) > 0
-        newSup[u.id] = hasS ? Math.max(0, he.suppliesLeft - (BASE_SUPPLY_BURN / supplyEndurance(he.loadout)) * dt) : 1
+        const st = supplyState(u.pack, he.loadout)
+        newSup[u.id] = st.fraction
+        supSt[u.id] = st
       }
-      // 2b. share supplies across the party network
-      shareSupplies(members, newSup, dt)
 
       // 2c. generate loot: sharers pool it, others fill their own pack
       const pool: Drop[] = []
@@ -211,7 +208,7 @@ export function useExpeditionDriver() {
       // 2e. commit supplies + evaluate the return conditions
       for (const { u, he } of members) {
         const full = heroFull(useProtoStore.getState().packs[u.id], u.pack)
-        const dry = supplyPool(he.loadout) > 0 && newSup[u.id] <= 0.03
+        const dry = supSt[u.id].total > 0 && supSt[u.id].remaining <= 0   // out of carried supplies
         const triggered = (he.returnOn.includes('pack-full') && full) || (he.returnOn.includes('supplies-out') && dry)
         if (triggered) {
           // Flag the return; phase R next tick whisks them to town and back.

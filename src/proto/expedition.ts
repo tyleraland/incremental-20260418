@@ -1,4 +1,4 @@
-import type { Location } from '@/types'
+import type { Location, PackItem } from '@/types'
 import { CONSUMABLE_REGISTRY } from '@/data/consumables'
 
 // §logistics — a lightweight "logistics, not item-management" prototype. You
@@ -55,12 +55,23 @@ export const DEFAULT_LOADOUT: Loadout = { 'potion-hp': { qty: 5, storage: true, 
 export const DEFAULT_LOOT_CATS: LootCategory[] = [...ALL_LOOT_CATEGORIES]
 export const DEFAULT_RETURN_ON: ReturnConditionId[] = ['pack-full']
 
-// Supply burn: base fraction/sec at an 8-item loadout; bigger loadouts last longer.
-export const BASE_SUPPLY_BURN = 0.02
 export const supplyPool = (loadout: Loadout): number =>
   Object.values(loadout).reduce((a, e) => a + e.qty, 0)
-export const supplyEndurance = (loadout: Loadout): number =>
-  Math.max(1, supplyPool(loadout) / 8)
+
+// §logistics — supplies = ACTUAL loadout usage, not a timer. `total` is the
+// configured supply quantity; `remaining` is how much of it the hero still carries
+// (Unit.pack counts, which the engine decrements as consumables are used in the
+// field and an in-town restock refills); `fraction` is remaining/total (1 when
+// nothing is configured). So supplies only drop when potions are genuinely spent,
+// and a quiet field never drains them.
+export function supplyState(pack: PackItem[] | undefined, loadout: Loadout): { total: number; remaining: number; fraction: number } {
+  let total = 0
+  for (const [id, e] of Object.entries(loadout)) if (id in CONSUMABLE_REGISTRY) total += e.qty
+  if (total <= 0) return { total: 0, remaining: 0, fraction: 1 }
+  let remaining = 0
+  for (const p of pack ?? []) if (p.itemId in loadout && p.itemId in CONSUMABLE_REGISTRY) remaining += p.count
+  return { total, remaining, fraction: Math.max(0, Math.min(1, remaining / total)) }
+}
 export const loadoutWeight = (loadout: Loadout): number => supplyPool(loadout)
 export const loadoutCost = (loadout: Loadout): number => {
   // Only merchant-sourced supplies cost gold up front; storage pulls are free.

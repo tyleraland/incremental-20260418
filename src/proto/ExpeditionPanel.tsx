@@ -4,7 +4,7 @@ import { useGameStore } from '@/stores/useGameStore'
 import type { Unit } from '@/types'
 import {
   RETURN_CONDITIONS, RETURN_MODES, ALL_LOOT_CATEGORIES, SUPPLY_OPTIONS, supplyOption,
-  isHuntable, isCity, nearestCity, loadoutWeight, loadoutCost, supplyPool, type Choice, type Loadout,
+  isHuntable, isCity, nearestCity, loadoutWeight, loadoutCost, supplyState, type Choice, type Loadout,
 } from './expedition'
 import { useExpeditionStore } from './expeditionStore'
 import { useProtoStore } from './protoStore'
@@ -131,8 +131,11 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
 
   const capWeight = heroCarried(packs[unit.id], unit.pack)
   const cap = (capWeight / WEIGHT_LIMIT) * 100
-  const sup = (he.suppliesLeft ?? 1) * 100
-  const hasSup = supplyPool(he.loadout) > 0
+  // Supplies = real loadout usage, computed live from the carried pack (so it's
+  // accurate the instant a potion is spent or restocked in town), not a stored timer.
+  const supSt = supplyState(unit.pack, he.loadout)
+  const sup = supSt.fraction * 100
+  const hasSup = supSt.total > 0
   const firstName = (u: Unit) => u.name.split(' ')[0]
   const weight = loadoutWeight(he.loadout)
   const cost = loadoutCost(he.loadout)
