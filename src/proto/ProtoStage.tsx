@@ -121,7 +121,6 @@ function WorldNode({ loc, units, equipment, battle, zoom, selected, questReady, 
   const c = LOCATION_COORDS[loc.id]; if (!c) return null
   const kind = kindOf(loc.traits)
   const here = units.filter((u) => u.locationId === loc.id)
-  const liveFoes = battle ? battle.combatants.reduce((n, x) => n + (x.team === 'enemy' && x.alive ? 1 : 0), 0) : 0
   const showScatter = loc.openWorld && !!battle && battle.mode === 'open'
   const lastTap = useRef(0)
   function tap() {
@@ -142,17 +141,11 @@ function WorldNode({ loc, units, equipment, battle, zoom, selected, questReady, 
           ? 'border-game-primary bg-game-primary/25 ring-4 ring-game-primary/30 scale-110'
           : `${kind.ring} bg-game-surface/80 group-hover:scale-105 group-hover:border-game-primary/60`,
       ].join(' ')}>
-        {/* live combat, plotted behind the symbol — the field is genuinely running */}
+        {/* hero positions, plotted behind the symbol — the field is genuinely running */}
         {showScatter && <NodeScatter battle={battle!} zoom={zoom} />}
         <span className={`relative text-2xl leading-none drop-shadow ${kind.glow}`}>{kind.symbol}</span>
-        {/* open-world marker → a live foe counter once a battle is running here */}
         {loc.openWorld && (
-          showScatter && liveFoes > 0 ? (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-600/90 ring-2 ring-game-bg text-[9px] font-bold leading-none text-white flex items-center justify-center tabular-nums"
-              title={`${liveFoes} foes on the field`}>{liveFoes}</span>
-          ) : (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-game-bg" title="Open world" />
-          )
+          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-game-bg" title="Open world" />
         )}
         {/* a quest here is ready to collect — a yellow (?) nudge */}
         {questReady && (
@@ -238,6 +231,7 @@ export function ProtoStage() {
   const dragRef = useRef<{ sx: number; sy: number; base: { x: number; y: number }; moved: boolean } | null>(null)
   const pinchRef = useRef<number | null>(null)
   const tweenRef = useRef<number | null>(null)
+  const mapActiveRef = useRef(true)   // current mapActive, for the native wheel listener's stale closure
 
   useLayoutEffect(() => {
     const el = wrapRef.current; if (!el) return
@@ -299,14 +293,22 @@ export function ProtoStage() {
   }, [zoomRequest?.nonce])
 
 
-  // Native non-passive wheel listener so we can preventDefault (page-scroll) and
-  // drive the zoom axis continuously.
+  // Native non-passive wheel listener so we can preventDefault (page-scroll).
+  // A plain two-finger trackpad scroll is a PAN gesture, NOT zoom — only a pinch
+  // (which browsers report as ctrl+wheel) drives the zoom axis. Previously every
+  // wheel zoomed, so trying to scroll-pan a big field zoomed you out to the locale.
   useEffect(() => {
     const el = wrapRef.current; if (!el) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      if (tweenRef.current) { cancelAnimationFrame(tweenRef.current); tweenRef.current = null }
-      setZoom((z) => clamp(z - e.deltaY * 0.0016, 0, maxZoom))
+      if (e.ctrlKey) {
+        // pinch-to-zoom
+        if (tweenRef.current) { cancelAnimationFrame(tweenRef.current); tweenRef.current = null }
+        setZoom((z) => clamp(z - e.deltaY * 0.01, 0, maxZoom))
+      } else if (mapActiveRef.current) {
+        // scroll = pan the overworld (battlefield owns its own pan, so ignore there)
+        setDrag((d) => ({ x: d.x - e.deltaX, y: d.y - e.deltaY }))
+      }
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -315,6 +317,7 @@ export function ProtoStage() {
   const scale = mapScaleFor(zoom)
   const battleOpacity = focusLoc ? battleOpacityFor(zoom) : 0
   const mapActive = battleOpacity < 0.5      // map handles pan/tap until the battle takes over
+  mapActiveRef.current = mapActive
   const panX = size.w / 2 - focus.x * scale + drag.x
   const panY = size.h / 2 - focus.y * scale + drag.y
 

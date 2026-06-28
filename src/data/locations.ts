@@ -82,9 +82,10 @@ export const INITIAL_LOCATIONS: Location[] = [
     id: 'harpy-roost', region: 'world', name: 'Harpy Roost',
     description: 'A wind-scoured crag east of Prontera, its every ledge boiling with harpies — a sky black with claws and screeching. A swarm, not a skirmish. A switchback trail climbs from here into the Sky Aerie above.',
     traits: ['mountain', 'dangerous'], monsterIds: ['harpy'],
-    // Deliberately dense: a small (25×25) field kept packed with 25 harpies —
-    // a stress arena for AoE, body-blocking, and the open-world sim at scale.
-    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 25, openWorldSize: 25,
+    // Deliberately dense: a 60×60 field kept packed with 50 harpies — a stress
+    // arena for AoE, body-blocking, and the open-world sim at scale (also the
+    // perf-harness scene, picked as the densest-by-packing open field).
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 50, openWorldSize: 60,
     // Gateway to the Sky Aerie — its own map page (region), reached like the
     // Geffen Dungeon is from Geffen City.
     dungeonEntryRegion: 'aerie',
@@ -103,7 +104,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     traits: ['plains'], monsterIds: ['wild-boar'],
     // §aggression showcase: a passive herd (skittish + pack-tactics + flee) —
     // ignores you until provoked, then aggros together and bolts when hurt.
-    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 12, openWorldSize: 30,
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 12, openWorldSize: 60,
   },
   {
     id: 'wolf-den', region: 'world', name: 'Dire Wolf Den',
@@ -279,7 +280,7 @@ export const INITIAL_LOCATIONS: Location[] = [
 // them across; Phase 3 routes multi-hop over these same edges.
 type Edge = 'N' | 'S' | 'E' | 'W'
 function edgeCell(size: number, edge: Edge): [number, number] {
-  const m = Math.min(4, size / 2)        // a few cells in from the rim
+  const m = Math.min(1, size / 2)        // right up against the rim wall
   const c = size / 2
   switch (edge) {
     case 'N': return [c, size - m]
