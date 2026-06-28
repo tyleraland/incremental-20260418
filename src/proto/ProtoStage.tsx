@@ -312,8 +312,13 @@ export function ProtoStage() {
   function dive(loc: Location)  { setSelectedLocation(loc.id); animateZoomTo(2) }
   function gotoStop(z: number) {
     // The "World" stop now settles at the locale altitude (z=1) rather than the
-    // far-out overview — still recentred on the whole page.
-    if (z <= 1) { setFocus(pageCenter); setDrag({ x: 0, y: 0 }) }
+    // far-out overview. Recentre on the current location if one is selected
+    // (stepping up from its battlefield keeps it framed), else the whole page.
+    if (z <= 1) {
+      const c = focusLoc ? LOCATION_COORDS[focusLoc.id] : null
+      setFocus(c ? { x: worldX(c), y: worldY(c) } : pageCenter)
+      setDrag({ x: 0, y: 0 })
+    }
     animateZoomTo(z)
   }
 
