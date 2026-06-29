@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { DROP_ITEMS } from '@/data/monsters'
 import { consumableDef } from '@/data/consumables'
 import { useProtoStore } from './protoStore'
-import { WEIGHT_LIMIT, heroCarried, heroFull, materialValue, itemWeight } from './economy'
+import { WEIGHT_LIMIT, heroCarried, heroFull, isOverweight, materialValue, itemWeight } from './economy'
 import { categorize } from './expedition'
 import type { Unit } from '@/types'
 
@@ -63,6 +63,9 @@ export function PackStrip({ unit }: { unit: Unit }) {
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-2">
         <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Field Loot</span>
         <span className={`text-[11px] font-mono tabular-nums ${full ? 'text-red-400 font-semibold' : 'text-game-text-dim'}`}>{weight} / {WEIGHT_LIMIT} ({pct}%)</span>
+        {!full && isOverweight(pack, unit.pack) && (
+          <span title="Minor Overweight — penalties coming soon." className="text-[9px] px-1 py-0.5 rounded-full border border-amber-500/50 bg-amber-500/10 text-amber-300">⚠ Overweight</span>
+        )}
         <span className="ml-auto text-game-text-dim text-xs">{open ? '▾' : '▸'}</span>
       </button>
 

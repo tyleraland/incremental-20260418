@@ -5,7 +5,7 @@ import { supplyOption } from './expedition'
 import type { PackItem } from '@/types'
 import {
   DEFAULT_LOADOUT, DEFAULT_LOOT_CATS, DEFAULT_RETURN_ON, newSupplyEntry,
-  type Loadout, type LootCategory, type ReturnConditionId, type ReturnModeId,
+  type Loadout, type LootCategory, type ReturnConditionId, type ReturnModeId, type SupplyModeId,
 } from './expedition'
 
 // §logistics ⇄ §consumables bridge — the loadout is the *target* (what a hero
@@ -53,6 +53,7 @@ export interface HeroExpedition {
   loadout: Loadout                  // supply itemId → { qty, storage, merchant }
   lootCats: LootCategory[]          // categories to keep
   returnOn: ReturnConditionId[]     // checked return conditions
+  supplyMode: SupplyModeId          // for 'supplies-out': any one dry vs all dry
   // §party sharing: loot defaults to give+take (the party fills evenly); supplies
   // default to take-but-not-give. A hero that accepts but won't share becomes a mule.
   shareLoot: boolean
@@ -80,6 +81,7 @@ interface ExpState {
   removeSupply: (unitId: string, itemId: string) => void
   toggleLootCat: (unitId: string, cat: LootCategory) => void
   toggleReturnOn: (unitId: string, cond: ReturnConditionId) => void
+  setSupplyMode: (unitId: string, mode: SupplyModeId) => void
   toggleShareFlag: (unitId: string, flag: ShareFlag) => void
   setReturnTown: (unitId: string, townId: string | null) => void
   setReturnMode: (mode: ReturnModeId) => void
@@ -91,6 +93,7 @@ export const freshHero = (e: Partial<HeroExpedition> = {}): HeroExpedition => ({
   loadout: e.loadout ?? { ...DEFAULT_LOADOUT },
   lootCats: e.lootCats ?? [...DEFAULT_LOOT_CATS],
   returnOn: e.returnOn ?? [...DEFAULT_RETURN_ON],
+  supplyMode: e.supplyMode ?? 'any',
   shareLoot: e.shareLoot ?? true,
   acceptLoot: e.acceptLoot ?? true,
   shareSupplies: e.shareSupplies ?? false,
@@ -175,6 +178,11 @@ export const useExpeditionStore = create<ExpState>((set, get) => ({
     return { heroes: { ...s.heroes, [unitId]: { ...cur, [flag]: !cur[flag] } } }
   }),
 
+  setSupplyMode: (unitId, mode) => set((s) => {
+    const cur = s.heroes[unitId] ?? freshHero()
+    return { heroes: { ...s.heroes, [unitId]: { ...cur, supplyMode: mode } } }
+  }),
+
   setReturnTown: (unitId, townId) => set((s) => {
     const cur = s.heroes[unitId] ?? freshHero()
     return { heroes: { ...s.heroes, [unitId]: { ...cur, returnTown: townId } } }
@@ -191,7 +199,7 @@ export const useExpeditionStore = create<ExpState>((set, get) => ({
       for (const id of targetIds) {
         const cur = heroes[id] ?? freshHero()
         heroes[id] = {
-          ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn],
+          ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn], supplyMode: src.supplyMode,
           shareLoot: src.shareLoot, acceptLoot: src.acceptLoot, shareSupplies: src.shareSupplies, acceptSupplies: src.acceptSupplies,
         }
       }

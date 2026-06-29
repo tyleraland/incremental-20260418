@@ -29,6 +29,14 @@ export const RETURN_CONDITIONS: Choice<ReturnConditionId>[] = [
   { id: 'supplies-out', label: 'Supplies out', hint: 'Come home when carried supplies run dry.' },
 ]
 
+// When 'supplies-out' is the trigger: come home as soon as ANY one supply runs
+// dry, or only once EVERY configured supply is gone.
+export type SupplyModeId = 'any' | 'all'
+export const SUPPLY_MODES: Choice<SupplyModeId>[] = [
+  { id: 'any', label: 'Any dry',  hint: 'Come home when any one carried supply hits 0.' },
+  { id: 'all', label: 'All dry',  hint: 'Come home only once every carried supply hits 0.' },
+]
+
 // Return individually (each hero on their own trigger) or as a group (the whole
 // party heads home when the first triggers).
 export type ReturnModeId = 'individual' | 'group'
@@ -72,6 +80,20 @@ export function supplyState(pack: PackItem[] | undefined, loadout: Loadout): { t
   for (const p of pack ?? []) if (p.itemId in loadout && p.itemId in CONSUMABLE_REGISTRY) remaining += p.count
   return { total, remaining, fraction: Math.max(0, Math.min(1, remaining / total)) }
 }
+// Per-supply emptiness for the 'supplies-out' return trigger. A configured supply
+// (qty > 0) is "dry" when the hero carries none of it. `mode` decides whether one
+// dry supply is enough ('any') or every supply must be gone ('all').
+export function suppliesDry(pack: PackItem[] | undefined, loadout: Loadout, mode: SupplyModeId): boolean {
+  const configured = Object.entries(loadout)
+    .filter(([id, e]) => id in CONSUMABLE_REGISTRY && e.qty > 0)
+    .map(([id]) => id)
+  if (configured.length === 0) return false
+  const carried = (id: string) => (pack ?? []).reduce((a, p) => a + (p.itemId === id ? p.count : 0), 0)
+  return mode === 'all'
+    ? configured.every((id) => carried(id) <= 0)
+    : configured.some((id) => carried(id) <= 0)
+}
+
 export const loadoutWeight = (loadout: Loadout): number => supplyPool(loadout)
 export const loadoutCost = (loadout: Loadout): number => {
   // Only merchant-sourced supplies cost gold up front; storage pulls are free.

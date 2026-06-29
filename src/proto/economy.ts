@@ -126,3 +126,19 @@ export function heroRoom(loot: Pack | undefined, pack?: PackItem[]): number {
 export function heroFull(loot: Pack | undefined, pack?: PackItem[]): boolean {
   return heroCarried(loot, pack) >= WEIGHT_LIMIT
 }
+
+// ── Carry-weight thresholds (fractions of WEIGHT_LIMIT) ─────────────────────────
+// Heading home triggers at 90% (a flat rule — simpler + more intuitive than the
+// per-item "can't fit the next drop" check). "Minor Overweight" is a debuff that
+// flags at 70% (its combat/movement penalties land later — for now it's a marker).
+export const PACK_FULL_FRACTION = 0.9
+export const OVERWEIGHT_FRACTION = 0.7
+
+export const carryFraction = (loot: Pack | undefined, pack?: PackItem[]): number =>
+  heroCarried(loot, pack) / WEIGHT_LIMIT
+// Pack "full" for return purposes: at/above the 90% mark (not an exact WEIGHT_LIMIT).
+export const packFullEnough = (loot: Pack | undefined, pack?: PackItem[]): boolean =>
+  carryFraction(loot, pack) >= PACK_FULL_FRACTION
+// Carrying enough to incur the Minor Overweight debuff (effects TBD).
+export const isOverweight = (loot: Pack | undefined, pack?: PackItem[]): boolean =>
+  carryFraction(loot, pack) >= OVERWEIGHT_FRACTION

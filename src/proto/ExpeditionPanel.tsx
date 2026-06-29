@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom'
 import { useGameStore } from '@/stores/useGameStore'
 import type { Unit } from '@/types'
 import {
-  RETURN_CONDITIONS, RETURN_MODES, ALL_LOOT_CATEGORIES, SUPPLY_OPTIONS, supplyOption,
+  RETURN_CONDITIONS, RETURN_MODES, SUPPLY_MODES, ALL_LOOT_CATEGORIES, SUPPLY_OPTIONS, supplyOption,
   isHuntable, isCity, nearestCity, loadoutWeight, loadoutCost, supplyState, type Choice, type Loadout,
 } from './expedition'
 import { useExpeditionStore } from './expeditionStore'
 import { useProtoStore } from './protoStore'
-import { heroCarried, WEIGHT_LIMIT } from './economy'
+import { heroCarried, isOverweight, OVERWEIGHT_FRACTION, WEIGHT_LIMIT } from './economy'
 
 const toggleChip = (on: boolean) =>
   `text-[11px] px-1.5 py-0.5 rounded border transition-colors ${on
@@ -113,6 +113,7 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const ensure = useExpeditionStore((s) => s.ensure)
   const toggleLootCat = useExpeditionStore((s) => s.toggleLootCat)
   const toggleReturnOn = useExpeditionStore((s) => s.toggleReturnOn)
+  const setSupplyMode = useExpeditionStore((s) => s.setSupplyMode)
   const toggleShareFlag = useExpeditionStore((s) => s.toggleShareFlag)
   const setReturnTown = useExpeditionStore((s) => s.setReturnTown)
   const setReturnMode = useExpeditionStore((s) => s.setReturnMode)
@@ -124,7 +125,7 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
 
   useEffect(() => { ensure(unit.id) }, [unit.id, ensure])
 
-  const he = heroes[unit.id] ?? { loadout: {} as Loadout, lootCats: [...ALL_LOOT_CATEGORIES], returnOn: ['pack-full' as const], shareLoot: true, acceptLoot: true, shareSupplies: false, acceptSupplies: true, suppliesLeft: 1, status: 'hunting' as const, locationId: null }
+  const he = heroes[unit.id] ?? { loadout: {} as Loadout, lootCats: [...ALL_LOOT_CATEGORIES], returnOn: ['pack-full' as const], supplyMode: 'any' as const, shareLoot: true, acceptLoot: true, shareSupplies: false, acceptSupplies: true, suppliesLeft: 1, status: 'hunting' as const, locationId: null }
   const loc = unit.locationId ? locations.find((l) => l.id === unit.locationId) : null
   const huntable = !!loc && isHuntable(loc)
   const party = huntable ? units.filter((u) => u.locationId === loc!.id) : []
@@ -164,6 +165,13 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
               <span className="text-[12px] text-game-muted italic">{!unit.locationId ? 'Not deployed' : 'In town'} — plan below</span>
             )}
             {party.length > 1 && <span className="text-[11px] text-game-muted">+{party.length - 1} more here</span>}
+            {/* Minor Overweight debuff — flags at 70% carry; penalties come later. */}
+            {isOverweight(packs[unit.id], unit.pack) && (
+              <span title={`Carrying ≥${Math.round(OVERWEIGHT_FRACTION * 100)}% capacity — penalties coming soon.`}
+                className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500/50 bg-amber-500/10 text-amber-300">
+                ⚠ Minor Overweight
+              </span>
+            )}
           </div>
           {huntable && (
             <div className="text-right shrink-0 space-y-0.5">
@@ -226,6 +234,16 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
           <button onClick={returnNow} disabled={!huntable} title="Send them home right now"
             className="text-[11px] px-2 py-0.5 rounded border border-game-gold/50 text-game-gold hover:bg-game-gold/10 disabled:opacity-30 disabled:cursor-not-allowed">⌂ Return now</button>
         </div>
+        {/* When 'Supplies out' is a trigger: any one supply dry vs every supply dry. */}
+        {he.returnOn.includes('supplies-out') && (
+          <div className="flex gap-1 flex-wrap items-center pl-0.5">
+            <span className="text-[10px] text-game-muted">Supplies out:</span>
+            {SUPPLY_MODES.map((m) => (
+              <button key={m.id} title={m.hint} onClick={() => setSupplyMode(unit.id, m.id)}
+                className={toggleChip(he.supplyMode === m.id)}>{he.supplyMode === m.id ? '✓ ' : ''}{m.label}</button>
+            ))}
+          </div>
+        )}
         {/* Which town to return to — default nearest, overridable */}
         <div className="relative">
           <button onClick={() => setTownOpen((o) => !o)}

@@ -4,10 +4,10 @@ import { TICKS_PER_SECOND } from '@/lib/time'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import type { Location, Unit } from '@/types'
 import { useProtoStore } from './protoStore'
-import { heroFull, heroRoom, heroCarried, itemWeight, WEIGHT_LIMIT } from './economy'
+import { heroRoom, heroCarried, packFullEnough, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero, type HeroExpedition } from './expeditionStore'
 import {
-  locationProfile, isHuntable, isCity, nearestCity, categorize, supplyState,
+  locationProfile, isHuntable, isCity, nearestCity, categorize, supplyState, suppliesDry,
 } from './expedition'
 
 // How long a returned hero parks in town (depositing loot + restocking) before
@@ -25,19 +25,6 @@ function oneDrop(loc: Location, he: HeroExpedition): Drop | null {
   const ids = (pool.length ? pool.map((d) => d.itemId) : ['drop-slime-gel']).filter((id) => he.lootCats.includes(categorize(id)))
   if (ids.length === 0) return null
   return { itemId: ids[Math.floor(Math.random() * ids.length)], qty: 1 }
-}
-
-// The lightest drop this hero would still pick up here. A pack counts as "full"
-// for return purposes once it can't fit even this — loot arrives in discrete
-// weights, so a pack saturates with a remainder below the lightest item and would
-// otherwise never reach an exact WEIGHT_LIMIT (it'd hunt forever, never returning:
-// e.g. nightshade berries weigh 20, so a pack stalls at 980–999 and never trips a
-// >=1000 check). Infinity when nothing here is worth keeping (so it never trips).
-export function minDropWeight(loc: Location, he: HeroExpedition): number {
-  const pool = loc.monsterIds.flatMap((mid) => MONSTER_REGISTRY[mid]?.drops ?? [])
-  const ids = (pool.length ? pool.map((d) => d.itemId) : ['drop-slime-gel']).filter((id) => he.lootCats.includes(categorize(id)))
-  if (ids.length === 0) return Infinity
-  return Math.min(...ids.map((id) => itemWeight(id)))
 }
 
 // Hand pooled loot to the accepters, always topping up the least-full first so the
@@ -211,11 +198,11 @@ export function useExpeditionDriver() {
 
       // 2e. commit supplies + evaluate the return conditions
       for (const { u, he } of members) {
-        // "Full" = can't fit even the lightest drop here (not an exact >=1000), so a
-        // pack that saturates a few units short of the limit still triggers a return.
-        const room = heroRoom(useProtoStore.getState().packs[u.id], u.pack)
-        const full = heroFull(useProtoStore.getState().packs[u.id], u.pack) || room < minDropWeight(loc, he)
-        const dry = supSt[u.id].total > 0 && supSt[u.id].remaining <= 0   // out of carried supplies
+        // "Full" = at/above 90% capacity (a flat rule), so a pack that saturates a
+        // few units short of the cap still heads home instead of hunting forever.
+        const full = packFullEnough(useProtoStore.getState().packs[u.id], u.pack)
+        // Dry = supplies run out, per the hero's any/all mode (one supply vs every one).
+        const dry = supSt[u.id].total > 0 && suppliesDry(u.pack, he.loadout, he.supplyMode)
         const triggered = (he.returnOn.includes('pack-full') && full) || (he.returnOn.includes('supplies-out') && dry)
         if (triggered) {
           // Flag the return; phase R next tick whisks them to town and back.
