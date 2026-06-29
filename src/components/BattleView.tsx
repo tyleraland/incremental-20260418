@@ -574,7 +574,7 @@ function CircleBody({ c, cam, appearance, selected }: { c: Combatant; cam: Cam; 
   )
 }
 
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, castLabels }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; castLabels?: CastLabelEntry[] }) {
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, castLabels, spawnPop = true }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; castLabels?: CastLabelEntry[]; spawnPop?: boolean }) {
   const isPlayer = c.team === 'player'
   const isNeutral = c.team === 'neutral'   // town NPC: stationary, no facing/HP bar
   const casting = c.alive && !!c.channel
@@ -592,7 +592,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
         onClick={onSelect}
         data-chip
         data-cid={c.id}
-        className="absolute -translate-x-1/2 -translate-y-1/2 animate-chip-spawn cursor-pointer"
+        className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer${spawnPop ? ' animate-chip-spawn' : ''}`}
       >
         {/* lingering "✦ <skill>" cast labels stack ABOVE the circle, newest on top
             (flex-col-reverse). Rendered here — as a chip child — so they ride the
@@ -1318,6 +1318,13 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
   // Free-look target from a minimap tap on empty ground: the camera centres here
   // (instead of the party) until the player re-follows. Cleared by ⊙/follow.
   const [manualCenter, setManualCenter] = useState<Vec2 | null>(null)
+  // Spawn-pop gating. The chip-spawn keyframe (grow→overshoot→settle) should mark a
+  // unit ARRIVING while you watch — not the roster already present when the view
+  // mounts. Since the view remounts per location (breadcrumb switch), without this
+  // every chip would replay the pop on each switch. Freeze the mount roster; a chip
+  // pops iff its id wasn't part of it (i.e. a later wave / open-world trickle spawn).
+  const mountIdsRef = useRef<Set<string> | null>(null)
+  if (mountIdsRef.current === null) mountIdsRef.current = new Set(battle.combatants.map((c) => c.id))
   // A unit's render position IS its engine round position; the CSS transitions on
   // the tokens and the camera-following world elements ease the per-round steps, so
   // the camera (derived from these positions below) stays glued — without a
@@ -1724,6 +1731,7 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
               scale={battle.timeScale}
               detail={tokenDetail}
               castLabels={castLabelsBySource.get(c.id)}
+              spawnPop={!mountIdsRef.current!.has(c.id)}
             />
           ))}
 

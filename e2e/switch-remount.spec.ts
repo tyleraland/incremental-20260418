@@ -32,11 +32,16 @@ test('switching location remounts tokens (no cross-battle reuse)', async ({ page
     let ready = false
     for (let i = 0; i < 90 && !ready; i++) { await new Promise((r) => requestAnimationFrame(r)); ready = !!document.querySelector('[data-cid="u2"]') }
     if (!ready) return { ok: false, reason: 'battle B never rendered' }
+    // Units already present when B mounts must NOT replay the chip-spawn pop
+    // (grow/bounce/shrink) — that animation marks a unit ARRIVING mid-battle. On a
+    // switch the whole roster is "already there", so no chip should carry the class.
+    const popped = chips().filter((el) => el.classList.contains('animate-chip-spawn')).length
     // Any chip still carrying the A tag is a node React KEPT across the switch — it
     // would CSS-transition (slide) from A's spot to B's. Remounting leaves none.
-    return { ok: true, reused: chips().filter((el) => el.__battleTag === 'A').length, total: chips().length }
+    return { ok: true, reused: chips().filter((el) => el.__battleTag === 'A').length, total: chips().length, popped }
   })
   console.log('[switch]', JSON.stringify(result))
   expect(result.ok, result.reason ?? '').toBe(true)
   expect(result.reused, 'tokens must remount (not reuse old battle nodes → no slide)').toBe(0)
+  expect(result.popped, 'roster present at mount must not replay the spawn pop on a switch').toBe(0)
 })
