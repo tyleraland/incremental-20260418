@@ -330,6 +330,27 @@ export function ProtoApp() {
   const [pin, setPin] = useState<'left' | 'right' | null>(null)
   const followUnit = battleFollowId ? units.find((u) => u.id === battleFollowId) ?? null : null
 
+  // Follow across maps: while the camera is locked on a hero, bring the stage along
+  // when THEY move maps (route home / cross a portal / redeploy) — instead of
+  // staying parked on the field they left. Keyed off the followed hero's location
+  // CHANGING (a ref tracks the last seen one), so it never fights the player tapping
+  // a different location to glance around while still following. Only moves the
+  // focus (selected/combat location + map page); the stage zoom persists, so the
+  // battle-altitude follow carries over.
+  const followLocId = followUnit?.locationId ?? null
+  const prevFollowLocRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!battleFollowId) { prevFollowLocRef.current = null; return }
+    const prev = prevFollowLocRef.current
+    prevFollowLocRef.current = followLocId
+    if (!followLocId || followLocId === prev) return   // hero hasn't changed maps
+    const s = useGameStore.getState()
+    if (s.selectedLocationId === followLocId) return
+    const loc = s.locations.find((l) => l.id === followLocId)
+    if (loc && loc.region !== s.mapPageId) s.setMapPage(loc.region)
+    useGameStore.setState({ selectedLocationId: followLocId, combatLocationId: followLocId })
+  }, [battleFollowId, followLocId])
+
   const measurePin = useCallback(() => {
     const sc = rosterScrollRef.current
     const ch = followChipRef.current
