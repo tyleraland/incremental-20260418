@@ -5,6 +5,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore, getLocationCombatReport, projectOfflineSampled } from '@/stores/useGameStore'
 import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills } from '@/lib/offline'
+import { HISTORY_BUCKET_TICKS } from '@/lib/combatTally'
 import type { Location, LocationCombatStats } from '@/types'
 import { makeUnit, resetStore, batchTick } from '../helpers'
 
@@ -198,6 +199,30 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     const field = cu?.locations.find((l) => l.locationId === 'field')
     expect(field).toMatchObject({ windows: 1, rounds: 0 })      // warm path: no simulation
     expect(field!.kills).toBeGreaterThan(0)
+  })
+
+  it('folds only ~one minute of the offline rate into the rolling history (no dmg/min spike)', () => {
+    // The Hero tab reads unitStatHistory as a per-minute average. Dumping a whole
+    // AFK span into one minute-bucket would inflate "dmg/min" by the minutes away;
+    // the lifetime unitStats still keep the full earnings.
+    const n = 30_000                                              // 100 minutes away
+    resetStore({
+      ticks: 1000,
+      locations: [FIELD()],
+      locationStats: { field: STATS() },
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [], unitStats: {}, unitStatHistory: {},
+    })
+    batchTick(n)
+
+    const st = useGameStore.getState()
+    const lifeDmg = st.unitStats['u0']?.damageDealt ?? 0
+    const histDmg = st.unitStatHistory['u0']?.reduce((a, b) => a + b.tally.damageDealt, 0) ?? 0
+    expect(lifeDmg).toBeGreaterThan(0)                            // full earnings preserved
+    // History holds a single minute's worth, not the full 100-minute dump.
+    const perMinute = lifeDmg * HISTORY_BUCKET_TICKS / n
+    expect(histDmg).toBeLessThan(lifeDmg)
+    expect(histDmg).toBeCloseTo(perMinute, -1)                   // ≈ one minute of the rate
   })
 
   it('ignores locations with no deployed units', () => {

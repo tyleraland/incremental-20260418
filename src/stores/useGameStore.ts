@@ -6,7 +6,7 @@ import type {
   QuestDropRule, PackItem, ConsumableRule,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
-import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
+import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory, HISTORY_BUCKET_TICKS } from '@/lib/combatTally'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
@@ -1765,7 +1765,17 @@ export const useGameStore = create<GameState>((set) => ({
       ticks: newTicks, units, lastTickAt: Date.now(), eventLog,
       miscItems, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
       unitStats: foldUnitStats(s.unitStats, detailByUnit),
-      unitStatHistory: foldHistory(s.unitStatHistory, detailByUnit, newTicks),
+      // Lifetime totals get the full AFK span (above), but the rolling history is
+      // minute-bucketed and read as a per-minute average (Hero tab / Reports). The
+      // whole absence would otherwise land in one bucket and spike "dmg/min" by the
+      // number of minutes away. Fold only a single minute's worth of the offline
+      // rate so the windowed rate stays realistic — full earnings live in the
+      // battle-report lifetime/offline summaries instead.
+      unitStatHistory: foldHistory(
+        s.unitStatHistory,
+        n > HISTORY_BUCKET_TICKS ? scaleTallyMap(detailByUnit, HISTORY_BUCKET_TICKS / n) : detailByUnit,
+        newTicks,
+      ),
     }
   }),
 
