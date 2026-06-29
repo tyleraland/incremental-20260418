@@ -54,12 +54,16 @@ export const SUPPLY_OPTIONS: SupplyOption[] = Object.values(CONSUMABLE_REGISTRY)
 export const supplyOption = (id: string): SupplyOption | undefined => SUPPLY_OPTIONS.find((o) => o.id === id)
 
 // A loadout entry: how many to carry, and where to source them — pull from the
-// guild storage, buy from a town merchant, or either (both checked).
+// guild storage, buy from a town merchant, or either. Default is BOTH ("either"):
+// the in-town restock fills from the stash first, then buys any shortfall from a
+// town merchant that stocks it (gold permitting). Turn merchant off to conserve
+// gold and live off the stash only. Storage-only would silently stall a hero whose
+// stash is empty even with gold in the bank — the common "supplies won't load" trap.
 export interface SupplyEntry { qty: number; storage: boolean; merchant: boolean }
 export type Loadout = Record<string, SupplyEntry>
-export const newSupplyEntry = (qty = 10): SupplyEntry => ({ qty, storage: true, merchant: false })
+export const newSupplyEntry = (qty = 10): SupplyEntry => ({ qty, storage: true, merchant: true })
 
-export const DEFAULT_LOADOUT: Loadout = { 'potion-hp': { qty: 5, storage: true, merchant: false } }
+export const DEFAULT_LOADOUT: Loadout = { 'potion-hp': { qty: 5, storage: true, merchant: true } }
 export const DEFAULT_LOOT_CATS: LootCategory[] = [...ALL_LOOT_CATEGORIES]
 export const DEFAULT_RETURN_ON: ReturnConditionId[] = ['pack-full']
 

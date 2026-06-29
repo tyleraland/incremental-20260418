@@ -42,6 +42,30 @@ describe('merchant-sourced supplies resupply', () => {
     expect(stash('potion-hp')).toBe(2)
   })
 
+  it('a DEFAULT-source loadout buys from the merchant (idle hero in town, gold in bank)', () => {
+    resetStore({
+      locations: INITIAL_LOCATIONS,
+      units: [makeUnit({ id: 'u1', locationId: 'prontera-city' })],
+      miscItems: [{ id: 'm-gold', name: 'Gold', quantity: 64_000 }],
+    })
+    // newSupplyEntry now defaults to "either" (storage + merchant), so the common
+    // case — a configured loadout + gold, but an empty stash — restocks itself.
+    buyMerchantSupplies(unit('u1'), 'prontera-city', { 'potion-hp': newSupplyEntry(25) })
+    expect(stash('potion-hp')).toBe(25)
+    expect(gold()).toBeLessThan(64_000)
+  })
+
+  it('turning merchant OFF opts out (lives off the stash only)', () => {
+    resetStore({
+      locations: INITIAL_LOCATIONS,
+      units: [makeUnit({ id: 'u1', locationId: 'prontera-city' })],
+      miscItems: [{ id: 'm-gold', name: 'Gold', quantity: 64_000 }],
+    })
+    buyMerchantSupplies(unit('u1'), 'prontera-city', { 'potion-hp': { ...newSupplyEntry(25), merchant: false } })
+    expect(stash('potion-hp')).toBe(0)
+    expect(gold()).toBe(64_000)
+  })
+
   it('end-to-end: a merchant loadout fills the pack over a few in-town ticks', () => {
     resetStore({
       locations: INITIAL_LOCATIONS,
