@@ -1419,7 +1419,7 @@ export function ProtoLens() {
       {/* Content. A modest zoom nudges every nested text size up a touch without
           rewriting dozens of explicit `text-[*]` classes (h-full keeps Empty
           states centred; overflow is handled by the scroll container above). */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3" onScroll={onLensScroll}>
+      <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-3" onScroll={onLensScroll}>
         <div className="h-full" style={{ zoom: 1.08 }}>
           {top === 'hero' && (unit
             ? (effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />)
@@ -1446,7 +1446,7 @@ export function ProtoLens() {
             <span className="text-xs font-semibold text-game-text">🔍 Inspect</span>
             <button onClick={() => clearFoe()} className="ml-auto flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Back</button>
           </header>
-          <div className="flex-1 min-h-0 overflow-y-auto p-3">
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-3">
             <div className="h-full" style={{ zoom: 1.08 }}>
               <FoeCard locId={selectedFoe.locId} combatantId={selectedFoe.combatantId} />
             </div>
