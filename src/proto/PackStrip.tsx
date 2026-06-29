@@ -14,9 +14,11 @@ import type { EquipSlot, Unit } from '@/types'
 // one group, or All. Tap any item for its name, description, and weight.
 
 const COLS = 8
-type Group = 'Supplies' | 'Loot' | 'Equipment'
-type Filter = 'All' | Group
-const FILTERS: Filter[] = ['All', 'Supplies', 'Loot', 'Equipment']
+// Equipment the hero is wearing reads as "Equipped". Supplies + Loot are what
+// they actually carry, so those show by default; Equipped is excluded by default.
+type Group = 'Supplies' | 'Loot' | 'Equipped'
+const GROUPS: Group[] = ['Supplies', 'Loot', 'Equipped']
+const DEFAULT_INCLUDED: Group[] = ['Supplies', 'Loot']
 const GEAR_SLOTS: EquipSlot[] = ['mainHand', 'offHand', 'armor', 'accessory', 'sideboard1', 'sideboard2']
 
 interface InvItem { key: string; name: string; qty: number; weight: number; group: Group; category: string; description: string }
@@ -56,8 +58,9 @@ export function PackStrip({ unit }: { unit: Unit }) {
   const loot = useProtoStore((s) => s.packs[unit.id])
   const equipment = useGameStore((s) => s.equipment)
   const [open, setOpen] = useState(false)
-  const [filter, setFilter] = useState<Filter>('All')
+  const [included, setIncluded] = useState<Set<Group>>(() => new Set<Group>(DEFAULT_INCLUDED))
   const [detail, setDetail] = useState<InvItem | null>(null)
+  const toggleGroup = (g: Group) => setIncluded((s) => { const n = new Set(s); if (n.has(g)) n.delete(g); else n.add(g); return n })
 
   const weight = heroCarried(loot, unit.pack)
   const pct = Math.round((weight / WEIGHT_LIMIT) * 100)
@@ -72,10 +75,10 @@ export function PackStrip({ unit }: { unit: Unit }) {
   for (const slot of GEAR_SLOTS) {
     const id = slot === 'mainHand' || slot === 'offHand' ? unit.weaponSets[unit.activeWeaponSet][slot] : unit.equipment[slot]
     const it = id ? equipment.find((e) => e.id === id) : undefined
-    if (it) items.push({ key: `e:${slot}:${it.id}`, name: it.name, qty: 1, weight: itemWeight(it.id), group: 'Equipment', category: it.category, description: it.description ?? `${it.category} — currently equipped.` })
+    if (it) items.push({ key: `e:${slot}:${it.id}`, name: it.name, qty: 1, weight: itemWeight(it.id), group: 'Equipped', category: it.category, description: it.description ?? `${it.category} — currently equipped.` })
   }
 
-  const shown = filter === 'All' ? items : items.filter((i) => i.group === filter)
+  const shown = items.filter((i) => included.has(i.group))
   const count = (g: Group) => items.reduce((n, i) => n + (i.group === g ? 1 : 0), 0)
 
   // 8 cols; at least one row, padded with empty slots; grows + scrolls.
@@ -95,14 +98,14 @@ export function PackStrip({ unit }: { unit: Unit }) {
 
       {open && (
         <div className="mt-2 space-y-2">
-          {/* filter tabs */}
+          {/* include/exclude filters — white = showing, red = hidden. Tap to toggle. */}
           <div className="flex gap-1 flex-wrap">
-            {FILTERS.map((f) => {
-              const n = f === 'All' ? items.length : count(f)
+            {GROUPS.map((g) => {
+              const on = included.has(g)
               return (
-                <button key={f} onClick={() => setFilter(f)}
-                  className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${filter === f ? 'border-game-primary/60 bg-game-primary/15 text-game-text' : 'border-game-border text-game-muted hover:text-game-text'}`}>
-                  {f} <span className="tabular-nums opacity-70">{n}</span>
+                <button key={g} onClick={() => toggleGroup(g)} title={on ? `Showing ${g} — tap to hide` : `Hiding ${g} — tap to show`}
+                  className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${on ? 'border-game-text/50 bg-white/10 text-game-text' : 'border-red-500/60 bg-red-500/10 text-red-300 line-through'}`}>
+                  {g} <span className="tabular-nums opacity-70 no-underline">{count(g)}</span>
                 </button>
               )
             })}
@@ -112,7 +115,7 @@ export function PackStrip({ unit }: { unit: Unit }) {
             <div className="grid grid-cols-8 gap-1">
               {cells.map((entry, i) => {
                 if (!entry) return <div key={`e${i}`} className="aspect-square rounded border border-dashed border-game-border/40" />
-                const ring = entry.group === 'Equipment' ? 'border-sky-700/50' : entry.group === 'Supplies' ? 'border-emerald-700/50' : 'border-game-border'
+                const ring = entry.group === 'Equipped' ? 'border-sky-700/50' : entry.group === 'Supplies' ? 'border-emerald-700/50' : 'border-game-border'
                 return (
                   <button key={entry.key} onClick={() => setDetail(entry)} title={`${entry.name}${entry.qty > 1 ? ` ×${entry.qty}` : ''}`}
                     className={`relative aspect-square rounded border ${ring} bg-game-bg/40 hover:border-game-primary/50 flex flex-col items-center justify-center leading-none`}>
@@ -122,7 +125,7 @@ export function PackStrip({ unit }: { unit: Unit }) {
                 )
               })}
             </div>
-            {shown.length === 0 && <div className="text-[10px] text-game-muted italic mt-1">{filter === 'All' ? 'Empty — fills with loot in the field.' : `No ${filter.toLowerCase()}.`}</div>}
+            {shown.length === 0 && <div className="text-[10px] text-game-muted italic mt-1">{included.size === 0 ? 'All groups hidden — tap a filter to show it.' : 'Nothing here yet — fills with loot in the field.'}</div>}
           </div>
         </div>
       )}

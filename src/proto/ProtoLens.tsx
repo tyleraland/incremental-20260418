@@ -527,115 +527,8 @@ function SwapMenu({ unit, slot, onClose }: { unit: Unit; slot: EquipSlot; onClos
 }
 
 // ── Equipment lens (gutted "Items") — this hero's gear + personal inventory ────--
-// Equipped slots (with socket pips), the personal pack, and what they carry into
-// battle. Tapping a slot opens the full-cover relative-bonus SwapMenu.
-// The battle action bar as seen from Equipment: skills are read-only (greyed —
-// managed in the Skills tab), but any slot can take a consumable to use mid-fight.
-// Adding a healing potion auto-couples a "use when HP < 30%" tactic (caveat: this
-// is hard-wired to healing for now; richer per-item rules come later).
-function BattleItemBar({ unit }: { unit: Unit }) {
-  const setActionSlot = useGameStore((s) => s.setActionSlot)
-  const addConsumableRule = useGameStore((s) => s.addConsumableRule)
-  const removeConsumableRule = useGameStore((s) => s.removeConsumableRule)
-  const miscItems = useGameStore((s) => s.miscItems)
-  const [pick, setPick] = useState<number | null>(null)
-
-  const slots = unit.actionSlots ?? Array<ActionSlotEntry | null>(ACTION_SLOT_COUNT).fill(null)
-  const rules = unit.consumableRules ?? []
-  const onBar = new Set(slots.filter((e): e is ActionSlotEntry => !!e && e.kind === 'consumable').map((e) => e.id))
-  // Equip-able consumables = what this hero already carries (Unit.pack) ∪ what's in
-  // the guild stash. The carried count comes from the pack; the stash count from
-  // miscItems. Either is enough to put it on the bar.
-  const carriedOf = (id: string) => unit.pack?.find((p) => p.itemId === id)?.count ?? 0
-  const stashOf = (id: string) => miscItems.find((m) => m.id === id)?.quantity ?? 0
-  const poolIds = [...new Set([
-    ...(unit.pack ?? []).filter((p) => isConsumable(p.itemId) && (p.count > 0 || p.target != null)).map((p) => p.itemId),
-    ...miscItems.filter((m) => m.kind === 'consumable' && m.quantity > 0).map((m) => m.id),
-  ])].filter((id) => !onBar.has(id))
-  const cName = (id: string) => consumableDef(id)?.name ?? miscItems.find((m) => m.id === id)?.name ?? id
-  const cIcon = (id: string) => consumableDef(id)?.icon ?? '🫙'
-  const isHealing = (id: string) => consumableDef(id)?.effect === 'heal'
-
-  const addConsumable = (i: number, id: string) => {
-    setActionSlot(unit.id, i, { kind: 'consumable', id })
-    if (isHealing(id) && !rules.some((r) => r.itemId === id)) addConsumableRule(unit.id, id, 0.3)
-    // Wire the carry: make sure this item is in the hero's logistics loadout, so the
-    // in-town reconcile withdraws it from the stash and the engine actually has it
-    // to use. (Only items with a supply option are loadout-carryable.)
-    if (supplyOption(id)) {
-      const exp = useExpeditionStore.getState()
-      exp.ensure(unit.id)
-      if (!exp.heroes[unit.id]?.loadout[id]) exp.addSupply(unit.id, id)
-    }
-    setPick(null)
-  }
-  const clearSlot = (i: number, entry: ActionSlotEntry) => {
-    setActionSlot(unit.id, i, null)
-    if (entry.kind === 'consumable' && !slots.some((e, j) => j !== i && e?.kind === 'consumable' && e.id === entry.id)) removeConsumableRule(unit.id, entry.id)
-    setPick(null)
-  }
-
-  return (
-    <div className="space-y-1.5">
-      <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Battle Items <span className="text-game-muted normal-case tracking-normal">— consumables for combat</span></div>
-      <div className="grid grid-cols-6 gap-1.5">
-        {slots.map((entry, i) => {
-          if (entry?.kind === 'skill') return (
-            <div key={i} title="Skill — manage in the Skills tab" className="h-11 rounded-lg border border-game-border/40 bg-game-bg/30 flex items-center justify-center px-1 opacity-50">
-              <span className="text-[9px] leading-tight text-game-muted text-center line-clamp-2">{SKILL_REGISTRY[entry.id]?.name ?? entry.id}</span>
-            </div>
-          )
-          const consumable = entry?.kind === 'consumable'
-          return (
-            <button key={i} onClick={() => setPick(pick === i ? null : i)}
-              className={['h-11 rounded-lg border flex items-center justify-center px-1 transition-colors',
-                pick === i ? 'border-game-primary bg-game-primary/15'
-                  : consumable ? 'border-game-green/50 bg-game-green/5 hover:border-game-green'
-                  : 'border-dashed border-game-border/60 bg-game-bg/40 hover:border-game-primary/40'].join(' ')}>
-              {consumable ? <span className="text-base leading-none">{cIcon(entry!.id)}</span> : <span className="text-game-muted text-sm">＋</span>}
-            </button>
-          )
-        })}
-      </div>
-
-      {pick !== null && (
-        <div className="space-y-1">
-          {slots[pick] && <button onClick={() => clearSlot(pick, slots[pick]!)} className="w-full text-left rounded-md border border-game-border/60 bg-game-bg px-2.5 py-1.5 text-xs text-game-text-dim italic hover:border-red-500/50">Clear slot {pick + 1}</button>}
-          {poolIds.length === 0
-            ? <div className="text-[11px] text-game-muted italic px-1">No consumables carried or in the stash. Add some to this hero's logistics loadout.</div>
-            : poolIds.map((id) => {
-              const carried = carriedOf(id); const inStash = stashOf(id)
-              return (
-                <button key={id} onClick={() => addConsumable(pick, id)}
-                  className="w-full flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-green/50">
-                  <span className="text-base">{cIcon(id)}</span>
-                  <span className="text-xs text-game-text flex-1 text-left">{cName(id)}</span>
-                  <span className="text-[9px] text-game-text-dim tabular-nums">
-                    {carried > 0 && <span className="text-game-green">carrying {carried}</span>}
-                    {carried > 0 && inStash > 0 && ' · '}
-                    {inStash > 0 && <span>{inStash} in stash</span>}
-                  </span>
-                </button>
-              )
-            })}
-        </div>
-      )}
-
-      {rules.length > 0 && (
-        <div className="space-y-1 pt-0.5">
-          {rules.map((r) => (
-            <div key={r.itemId} className="flex items-center gap-1.5 rounded-md border border-game-secondary/30 bg-game-secondary/5 px-2 py-1">
-              <span className="text-[9px] px-1 rounded border border-game-secondary/40 text-game-secondary uppercase tracking-wider">auto</span>
-              <span className="text-[11px] text-game-text flex-1">Use {cName(r.itemId)} when HP &lt; {Math.round(r.threshold * 100)}%</span>
-              <button onClick={() => removeConsumableRule(unit.id, r.itemId)} title="Remove this use tactic" className="text-game-muted hover:text-red-300 text-xs">✕</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
+// Equipped slots (with socket pips) + the Inventory strip. Battle consumables now
+// live on the Skills action bar (folded in). Tapping a slot opens the SwapMenu.
 function EquipmentLens({ unit }: { unit: Unit }) {
   const equipment = useGameStore((s) => s.equipment)
   const sockets   = useProtoStore((s) => s.sockets)
@@ -649,7 +542,6 @@ function EquipmentLens({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-4">
-      <BattleItemBar unit={unit} />
       <PackStrip unit={unit} />
 
       <div>
@@ -999,6 +891,8 @@ function CompanionLens({ unit }: { unit: Unit }) {
 // fight plays — the shell's "decisions in the lens, details/research on top" split.
 function SkillsLens({ unit }: { unit: Unit }) {
   const setActionSlot   = useGameStore((s) => s.setActionSlot)
+  const addConsumableRule = useGameStore((s) => s.addConsumableRule)
+  const removeConsumableRule = useGameStore((s) => s.removeConsumableRule)
   const equipment       = useGameStore((s) => s.equipment)
   const miscItems       = useGameStore((s) => s.miscItems)
   const units           = useGameStore((s) => s.units)
@@ -1016,14 +910,47 @@ function SkillsLens({ unit }: { unit: Unit }) {
   // inactive) so they're carried, not worn. Hide gear another hero holds.
   const reserved = reservedByOthers(units, unit.id)
   const itemPool = equipment.filter((it) => canUse(it, unit) && !reserved.has(it.id) && !itemsOnBar.has(it.id))
-  // Consumables (potions/food) the hero can carry on the bar to use in battle.
-  const consumablePool = miscItems.filter((i) => i.kind === 'consumable' && i.quantity > 0 && !consumablesOnBar.has(i.id))
+  // Consumables = what the hero carries (Unit.pack) ∪ the guild stash; either is
+  // enough to stage on the bar (carried to use mid-fight). Folded in from the old
+  // Battle Items bar, including its auto-use ("potion automation") rules.
+  const rules = unit.consumableRules ?? []
+  const cName = (id: string) => consumableDef(id)?.name ?? miscItems.find((m) => m.id === id)?.name ?? id
+  const cIcon = (id: string) => consumableDef(id)?.icon ?? '🫙'
+  const carriedOf = (id: string) => unit.pack?.find((p) => p.itemId === id)?.count ?? 0
+  const stashOf = (id: string) => miscItems.find((m) => m.id === id)?.quantity ?? 0
+  const isHealing = (id: string) => consumableDef(id)?.effect === 'heal'
+  const consumableIds = [...new Set([
+    ...(unit.pack ?? []).filter((p) => isConsumable(p.itemId) && (p.count > 0 || p.target != null)).map((p) => p.itemId),
+    ...miscItems.filter((m) => m.kind === 'consumable' && m.quantity > 0).map((m) => m.id),
+  ])].filter((id) => !consumablesOnBar.has(id))
 
   function label(e: ActionSlotEntry | null): string {
     if (!e) return ''
     if (e.kind === 'skill') return SKILL_REGISTRY[e.id]?.name ?? e.id
-    if (e.kind === 'consumable') return miscItems.find((i) => i.id === e.id)?.name ?? 'item'
-    return equipment.find((it) => it.id === e.id)?.name ?? 'item'
+    if (e.kind === 'consumable') return cName(e.id)
+    return equipment.find((it) => it.id === e.id)?.name ?? e.id
+  }
+
+  const assignSkill = (i: number, id: string) => { setActionSlot(unit.id, i, { kind: 'skill', id }); setSlotIdx(null) }
+  const assignItem  = (i: number, id: string) => { setActionSlot(unit.id, i, { kind: 'item', id }); setSlotIdx(null) }
+  // Adding a consumable also auto-couples a "use when HP < 30%" rule for healing
+  // potions, and ensures the item is in the logistics loadout so the hero carries
+  // it (the in-town reconcile withdraws it from the stash).
+  const assignConsumable = (i: number, id: string) => {
+    setActionSlot(unit.id, i, { kind: 'consumable', id })
+    if (isHealing(id) && !rules.some((r) => r.itemId === id)) addConsumableRule(unit.id, id, 0.3)
+    if (supplyOption(id)) {
+      const exp = useExpeditionStore.getState()
+      exp.ensure(unit.id)
+      if (!exp.heroes[unit.id]?.loadout[id]) exp.addSupply(unit.id, id)
+    }
+    setSlotIdx(null)
+  }
+  const clearSlot = (i: number) => {
+    const entry = slots[i]
+    setActionSlot(unit.id, i, null)
+    if (entry?.kind === 'consumable' && !slots.some((e, j) => j !== i && e?.kind === 'consumable' && e.id === entry.id)) removeConsumableRule(unit.id, entry.id)
+    setSlotIdx(null)
   }
 
   return (
@@ -1041,77 +968,108 @@ function SkillsLens({ unit }: { unit: Unit }) {
         <span className="opacity-60 text-[10px]">▸</span>
       </button>
 
-      <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Action bar — battle skills</div>
+      <div className="text-[10px] uppercase tracking-widest text-game-text-dim">Action bar <span className="text-game-muted normal-case tracking-normal">— skills &amp; consumables</span></div>
 
       <div className="grid grid-cols-3 gap-1.5">
-        {slots.map((entry, i) => (
-          <button
-            key={i}
-            onClick={() => setSlotIdx(slotIdx === i ? null : i)}
-            className={['h-12 rounded-lg border flex items-center justify-center px-1 text-center transition-colors',
-              slotIdx === i ? 'border-game-primary bg-game-primary/15'
-                : entry ? 'border-game-border bg-game-bg hover:border-game-primary/50'
-                : 'border-dashed border-game-border/60 bg-game-bg/40 hover:border-game-primary/40'].join(' ')}
-          >
-            <span className={['text-[11px] leading-tight', entry ? 'text-game-text font-medium' : 'text-game-muted'].join(' ')}>
-              {entry ? label(entry) : '＋'}
-            </span>
-          </button>
-        ))}
+        {slots.map((entry, i) => {
+          const consumable = entry?.kind === 'consumable'
+          return (
+            <button
+              key={i}
+              onClick={() => setSlotIdx(i)}
+              className={['h-12 rounded-lg border flex items-center justify-center gap-1 px-1 text-center transition-colors',
+                entry
+                  ? consumable ? 'border-game-green/50 bg-game-green/5 hover:border-game-green'
+                  : entry.kind === 'item' ? 'border-game-secondary/40 bg-game-bg hover:border-game-secondary/60'
+                  : 'border-game-border bg-game-bg hover:border-game-primary/50'
+                  : 'border-dashed border-game-border/60 bg-game-bg/40 hover:border-game-primary/40'].join(' ')}
+            >
+              {consumable && <span className="text-base leading-none shrink-0">{cIcon(entry!.id)}</span>}
+              <span className={['text-[11px] leading-tight line-clamp-2', entry ? 'text-game-text font-medium' : 'text-game-muted'].join(' ')}>
+                {entry ? label(entry) : '＋'}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
-      {slotIdx !== null && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Slot {slotIdx + 1} — skill, consumable, or item</div>
-          <div className="space-y-1">
+      {/* Active potion automation, at a glance (configured by adding a healing pot). */}
+      {rules.length > 0 && (
+        <div className="space-y-1">
+          {rules.map((r) => (
+            <div key={r.itemId} className="flex items-center gap-1.5 rounded-md border border-game-secondary/30 bg-game-secondary/5 px-2 py-1">
+              <span className="text-[9px] px-1 rounded border border-game-secondary/40 text-game-secondary uppercase tracking-wider">auto</span>
+              <span className="text-[11px] text-game-text flex-1">Use {cName(r.itemId)} when HP &lt; {Math.round(r.threshold * 100)}%</span>
+              <button onClick={() => removeConsumableRule(unit.id, r.itemId)} title="Remove this use rule" className="text-game-muted hover:text-red-300 text-xs">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="text-[10px] text-game-muted italic">Tap a slot to assign a skill, a consumable (auto-used when low), or stage an item.</div>
+
+      {/* Slot picker — a modal with every option (skills · consumables · items),
+          opened from the +/filled slot rather than expanding the lens inline. */}
+      {slotIdx !== null && createPortal(
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-3" onClick={() => setSlotIdx(null)}>
+          <div className="w-full max-w-md rounded-xl border border-game-border bg-game-surface p-4 space-y-3 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] uppercase tracking-widest text-game-text-dim">Slot {slotIdx + 1} — skill, consumable, or item</span>
+              <button onClick={() => setSlotIdx(null)} className="w-7 h-7 rounded-lg border border-game-border text-game-text hover:bg-game-border/50">✕</button>
+            </div>
+
             {slots[slotIdx] && (
-              <button onClick={() => { setActionSlot(unit.id, slotIdx, null); setSlotIdx(null) }}
+              <button onClick={() => clearSlot(slotIdx)}
                 className="w-full text-left rounded-md border border-game-border/60 bg-game-bg px-2.5 py-1.5 text-xs text-game-text-dim italic hover:border-red-500/50">
-                Clear slot
+                Clear slot — {label(slots[slotIdx])}
               </button>
             )}
-            {pool.length === 0 && <div className="text-xs text-game-muted italic px-1">No more learned active skills — learn some in the Skill tree.</div>}
-            {pool.map(({ skill, current }) => (
-              <button
-                key={skill.id}
-                onClick={() => { setActionSlot(unit.id, slotIdx, { kind: 'skill', id: skill.id }); setSlotIdx(null) }}
-                className="w-full text-left rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-primary/50"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium text-game-text">{skill.name}</span>
-                  <span className="text-[9px] text-game-text-dim">Lv {current}</span>
-                </div>
-                <div className="text-[10px] text-game-text-dim leading-snug">{skill.description(current)}</div>
-              </button>
-            ))}
-            {consumablePool.length > 0 && (
-              <>
-                <div className="text-[9px] uppercase tracking-widest text-game-muted pt-1.5 px-1">Consumables — carry to use in battle</div>
-                {consumablePool.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => { setActionSlot(unit.id, slotIdx, { kind: 'consumable', id: c.id }); setSlotIdx(null) }}
-                    className="w-full text-left rounded-md border border-game-border/70 bg-game-bg/60 px-2.5 py-1.5 hover:border-game-green/50"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm leading-none">🫙</span>
-                      <span className="text-xs font-medium text-game-text">{c.name}</span>
-                      <span className="text-[9px] text-game-text-dim tabular-nums">×{c.quantity}</span>
-                    </div>
-                    {c.description && <div className="text-[10px] text-game-text-dim leading-snug truncate">{c.description}</div>}
-                  </button>
-                ))}
-              </>
-            )}
+
+            {/* Skills */}
+            <div className="space-y-1">
+              <div className="text-[9px] uppercase tracking-widest text-game-muted px-1">Skills</div>
+              {pool.length === 0 && <div className="text-xs text-game-muted italic px-1">No more learned active skills — learn some in the Skill tree.</div>}
+              {pool.map(({ skill, current }) => (
+                <button key={skill.id} onClick={() => assignSkill(slotIdx, skill.id)}
+                  className="w-full text-left rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 hover:border-game-primary/50">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium text-game-text">{skill.name}</span>
+                    <span className="text-[9px] text-game-text-dim">Lv {current}</span>
+                  </div>
+                  <div className="text-[10px] text-game-text-dim leading-snug">{skill.description(current)}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* Consumables — carried to use mid-fight; healing pots auto-use when low */}
+            <div className="space-y-1">
+              <div className="text-[9px] uppercase tracking-widest text-game-muted px-1">Consumables — auto-used when low</div>
+              {consumableIds.length === 0
+                ? <div className="text-[11px] text-game-muted italic px-1">No consumables carried or in the stash. Add some to this hero's logistics loadout.</div>
+                : consumableIds.map((id) => {
+                  const carried = carriedOf(id); const inStash = stashOf(id)
+                  return (
+                    <button key={id} onClick={() => assignConsumable(slotIdx, id)}
+                      className="w-full flex items-center gap-2 rounded-md border border-game-border/70 bg-game-bg/60 px-2.5 py-1.5 hover:border-game-green/50">
+                      <span className="text-base">{cIcon(id)}</span>
+                      <span className="text-xs text-game-text flex-1 text-left">{cName(id)}</span>
+                      <span className="text-[9px] text-game-text-dim tabular-nums">
+                        {carried > 0 && <span className="text-game-green">carrying {carried}</span>}
+                        {carried > 0 && inStash > 0 && ' · '}
+                        {inStash > 0 && <span>{inStash} in stash</span>}
+                      </span>
+                    </button>
+                  )
+                })}
+            </div>
+
+            {/* Items — staged into the sideboard (reserved, stat-inactive) */}
             {itemPool.length > 0 && (
-              <>
-                <div className="text-[9px] uppercase tracking-widest text-game-muted pt-1.5 px-1">Items — reserve to sideboard</div>
+              <div className="space-y-1">
+                <div className="text-[9px] uppercase tracking-widest text-game-muted px-1">Items — reserve to sideboard</div>
                 {itemPool.map((it) => (
-                  <button
-                    key={it.id}
-                    onClick={() => { setActionSlot(unit.id, slotIdx, { kind: 'item', id: it.id }); setSlotIdx(null) }}
-                    className="w-full text-left rounded-md border border-game-border/70 bg-game-bg/60 px-2.5 py-1.5 hover:border-game-secondary/50"
-                  >
+                  <button key={it.id} onClick={() => assignItem(slotIdx, it.id)}
+                    className="w-full text-left rounded-md border border-game-border/70 bg-game-bg/60 px-2.5 py-1.5 hover:border-game-secondary/50">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-medium text-game-text">{it.name}</span>
                       <span className="text-[9px] text-game-muted">{CATEGORY_LABELS[it.category]}</span>
@@ -1119,12 +1077,26 @@ function SkillsLens({ unit }: { unit: Unit }) {
                     {it.description && <div className="text-[10px] text-game-text-dim leading-snug truncate">{it.description}</div>}
                   </button>
                 ))}
-              </>
+              </div>
+            )}
+
+            {/* Potion automation — the use-when-low rules these consumables generate */}
+            {rules.length > 0 && (
+              <div className="space-y-1 pt-1 border-t border-game-border/60">
+                <div className="text-[9px] uppercase tracking-widest text-game-muted px-1">Potion automation</div>
+                {rules.map((r) => (
+                  <div key={r.itemId} className="flex items-center gap-1.5 rounded-md border border-game-secondary/30 bg-game-secondary/5 px-2 py-1">
+                    <span className="text-[9px] px-1 rounded border border-game-secondary/40 text-game-secondary uppercase tracking-wider">auto</span>
+                    <span className="text-[11px] text-game-text flex-1">Use {cName(r.itemId)} when HP &lt; {Math.round(r.threshold * 100)}%</span>
+                    <button onClick={() => removeConsumableRule(unit.id, r.itemId)} title="Remove this use rule" className="text-game-muted hover:text-red-300 text-xs">✕</button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-      {slotIdx === null && <div className="text-[10px] text-game-muted italic">Tap a slot to assign a skill, a consumable (carried to use in battle), or stage an item (reserved to the sideboard).</div>}
     </div>
   )
 }
