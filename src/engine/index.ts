@@ -31,4 +31,4 @@ export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget, SK
 export { STATUS_REGISTRY, buildStatus } from './status'
 export { serializeBattle, deserializeBattle } from './snapshot'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'
-export { arenaBarriers, pointBlocked, traceMove, slideMove, steerAround, canReach } from './barriers'
+export { arenaBarriers, pointBlocked, traceMove, slideMove, steerAround, canReach, sightlineClear } from './barriers'

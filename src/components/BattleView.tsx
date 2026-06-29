@@ -5,7 +5,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, CLASS_ICON, type Appearance } from '@/render/appearance'
 import {
-  COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap,
+  COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap, distance, sightlineClear,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
 } from '@/engine'
 
@@ -1053,6 +1053,19 @@ function Legend({ players, enemies, openWorld = false }: { players: number; enem
 // where they're looking. Tap a hero dot to follow it; tap elsewhere to free-look
 // at that spot. Lives in the Arena `overlay` (clipped to the arena square, not
 // panned), anchored bottom-right.
+// Enemies a living hero can currently SEE — within someone's visionRange and with an
+// unobstructed sightline to them (walls block; cliffs don't, matching the engine's
+// firing LoS). The minimap only dots these, so the open-world fog hides foes the party
+// hasn't spotted. Distance is the cheap gate (most foes are out of range), so the
+// sightline test only runs for the few in range.
+function visibleEnemyDots(battle: BattleState): Combatant[] {
+  const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
+  return battle.combatants.filter((c) =>
+    c.team === 'enemy' && c.alive &&
+    heroes.some((h) => distance(h.pos, c.pos) <= h.visionRange && sightlineClear(h.pos, c.pos, battle.barriers)),
+  )
+}
+
 type MinimapPick = { unitId: string } | { point: Vec2 }
 function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: Cam; followId: string | null; onPick: (hit: MinimapPick) => void }) {
   const cols = battle.cols ?? COLS
@@ -1094,7 +1107,11 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       {/* current camera window — eases with the camera so the radar box tracks the
           smooth pan instead of stepping per round */}
       <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: 0, top: 0, transform: `translate(${mx(cam.x)}px, ${my(cam.y + cam.size)}px)`, width: (cam.size / cols) * w, height: (cam.size / rows) * h, transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }} />
-      {battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => (
+      {/* Enemy dots — fog-of-war: only foes a living hero can actually SEE (within
+          their visionRange AND an unobstructed sightline, so walls hide what's
+          behind them). Foes outside every hero's sight show no dot. ∞-vision
+          encounters reveal all; the open-world fog is where this bites. */}
+      {visibleEnemyDots(battle).map((c) => (
         <div key={c.id} className="absolute w-1 h-1 rounded-full bg-red-400/90 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: mx(c.pos.x), top: my(c.pos.y) }} />
       ))}
       {battle.combatants.filter((c) => c.team === 'player' && c.alive).map((c) => (
