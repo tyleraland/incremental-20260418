@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore } from '@/stores/useGameStore'
+import { TICKS_PER_SECOND } from '@/lib/time'
 import type { Unit } from '@/types'
 import {
   RETURN_CONDITIONS, RETURN_MODES, SUPPLY_MODES, ALL_LOOT_CATEGORIES, SUPPLY_OPTIONS, supplyOption,
   isHuntable, isCity, nearestCity, loadoutWeight, loadoutCost, supplyState, type Choice, type Loadout,
 } from './expedition'
 import { useExpeditionStore } from './expeditionStore'
+import { TOWN_RESUPPLY_TICKS } from './expeditionDriver'
 import { useProtoStore } from './protoStore'
 import { heroCarried, isOverweight, OVERWEIGHT_FRACTION, WEIGHT_LIMIT } from './economy'
 
@@ -106,6 +108,7 @@ function SupplyMenu({ unitId, initial, loadout, onClose }: {
 
 export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const units = useGameStore((s) => s.units)
+  const ticks = useGameStore((s) => s.ticks)
   const locations = useGameStore((s) => s.locations)
   const packs = useProtoStore((s) => s.packs)
   const heroes = useExpeditionStore((s) => s.heroes)
@@ -145,6 +148,15 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const cities = locations.filter(isCity)
   const auto = nearestCity(unit.locationId, locations)
   const chosenTown = he.returnTown ? locations.find((l) => l.id === he.returnTown) : null
+
+  // Higher-level plan while parked in town on a resupply trip: where they head back
+  // to, alone vs with the party, and how long until they leave (a countdown bar).
+  const inTownResupply = !huntable && !!loc && isCity(loc) && he.status === 'returning' && he.resupplyUntil != null
+  const anchorLoc = he.locationId ? locations.find((l) => l.id === he.locationId) : null
+  const resupplyLeft = inTownResupply ? Math.max(0, (he.resupplyUntil as number) - ticks) : 0
+  const resupplyPct = inTownResupply ? Math.min(100, ((TOWN_RESUPPLY_TICKS - resupplyLeft) / TOWN_RESUPPLY_TICKS) * 100) : 0
+  const resupplySecs = Math.ceil(resupplyLeft / TICKS_PER_SECOND)
+  const travelGroup = returnMode === 'group'
   const returnNow = () => {
     const ids = (returnMode === 'group' && huntable) ? party.map((u) => u.id) : [unit.id]
     // Flag the return; the driver's resupply phase whisks them to town and back.
@@ -161,6 +173,12 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${he.status === 'returning' ? 'border-game-gold/50 text-game-gold' : 'border-game-green/50 text-game-green'}`}>
                 {he.status === 'returning' ? '⌂ heading to town' : 'hunting'}
               </span>
+            ) : inTownResupply ? (
+              <>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-game-gold/50 text-game-gold">⌂ resupplying</span>
+                {anchorLoc && <span className="text-[11px] text-game-text-dim">→ back to <span className="text-game-text">{anchorLoc.name}</span></span>}
+                <span className="text-[11px] text-game-muted">{travelGroup ? 'with the party' : 'alone'}</span>
+              </>
             ) : (
               <span className="text-[12px] text-game-muted italic">{!unit.locationId ? 'Not deployed' : 'In town'} — plan below</span>
             )}
@@ -186,6 +204,19 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
             </div>
           )}
         </div>
+
+        {/* Resupply countdown — how long until they restock and head back out. */}
+        {inTownResupply && (
+          <div className="mt-2">
+            <div className="flex justify-between text-[10px] mb-0.5">
+              <span className="uppercase tracking-wider text-game-text-dim">Restocking</span>
+              <span className="text-game-text tabular-nums">{resupplySecs > 0 ? `leaves in ${resupplySecs}s` : 'leaving…'}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-game-border overflow-hidden">
+              <div className="h-full rounded-full bg-game-gold transition-all" style={{ width: `${resupplyPct}%` }} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Supplies loadout — a list + add via menu */}

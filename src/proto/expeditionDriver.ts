@@ -2,18 +2,49 @@ import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { MONSTER_REGISTRY } from '@/data/monsters'
+import { CONSUMABLE_REGISTRY } from '@/data/consumables'
+import { MERCHANT_REGISTRY, merchantLocation, buyPriceFor } from '@/data/merchants'
 import type { Location, Unit } from '@/types'
 import { useProtoStore } from './protoStore'
-import { heroRoom, heroCarried, packFullEnough, WEIGHT_LIMIT } from './economy'
+import { heroRoom, heroCarried, packFullEnough, GOLD_ID, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero, type HeroExpedition } from './expeditionStore'
 import {
-  locationProfile, isHuntable, isCity, nearestCity, categorize, supplyState, suppliesDry,
+  locationProfile, isHuntable, isCity, nearestCity, categorize, supplyState, suppliesDry, type Loadout,
 } from './expedition'
 
 // How long a returned hero parks in town (depositing loot + restocking) before
 // redeploying to where they were hunting. Instant deploy for now — open-world land
 // routing replaces the teleport later (gated on the store's deployMode lever).
-const TOWN_RESUPPLY_TICKS = TICKS_PER_SECOND * 30
+export const TOWN_RESUPPLY_TICKS = TICKS_PER_SECOND * 30
+
+// Restock a hero's MERCHANT-sourced supplies while they're standing in `cityId`:
+// buy each shortfall (loadout target − carried − in-stash) from a merchant at this
+// town that stocks it, paying gold, into the guild stash. The game tick's in-town
+// pack reconcile then withdraws from the stash into the hero's pack toward target.
+// (Storage-sourced supplies are served by the stash alone — no purchase.)
+export function buyMerchantSupplies(unit: Unit, cityId: string, loadout: Loadout): void {
+  const ticks = useGameStore.getState().ticks
+  for (const [itemId, entry] of Object.entries(loadout)) {
+    if (!entry.merchant || entry.qty <= 0 || !(itemId in CONSUMABLE_REGISTRY)) continue
+    const carried = unit.pack?.find((p) => p.itemId === itemId)?.count ?? 0
+    const inStash = useGameStore.getState().miscItems.find((m) => m.id === itemId)?.quantity ?? 0
+    let need = entry.qty - carried - inStash
+    if (need <= 0) continue
+    for (const m of Object.values(MERCHANT_REGISTRY)) {
+      if (need <= 0) break
+      if (merchantLocation(m, ticks) !== cityId) continue
+      const stock = m.stock.find((s) => s.id === itemId)
+      if (!stock) continue
+      const price = buyPriceFor(m, stock.price, unit)
+      const gold = useGameStore.getState().miscItems.find((x) => x.id === GOLD_ID)?.quantity ?? 0
+      const buy = Math.min(need, Math.floor(gold / Math.max(1, price)))
+      if (buy <= 0) continue
+      useGameStore.getState().grantMiscItem(GOLD_ID, -buy * price)
+      useGameStore.getState().grantMiscItem(itemId, buy)
+      need -= buy
+    }
+  }
+}
 
 type Drop = { itemId: string; qty: number }
 type Member = { u: Unit; he: HeroExpedition }
@@ -72,13 +103,18 @@ export function useExpeditionDriver() {
     const groups = new Map<string, Member[]>()
 
     // Phase 0: any hero standing in a city auto-deposits their field loot into the
-    // guild stash (heroes deposit on return to town — no manual button). Consumables
-    // (Unit.pack) reconcile to the loadout separately in the game tick.
+    // guild stash (heroes deposit on return to town — no manual button) and restocks
+    // any MERCHANT-sourced supplies (bought into the stash; the game tick then
+    // withdraws them into the pack). Consumables reconcile to the loadout in the tick.
     for (const u of g.units) {
       if (!u.locationId) continue
       const loc = locById.get(u.locationId)
+      if (!loc || !isCity(loc)) continue
       const lootPack = proto.packs[u.id]
-      if (loc && isCity(loc) && lootPack && Object.keys(lootPack).length > 0) proto.depositPack(u.id)
+      if (lootPack && Object.keys(lootPack).length > 0) proto.depositPack(u.id)
+      exp.ensure(u.id)
+      const he = useExpeditionStore.getState().heroes[u.id]
+      if (he) buyMerchantSupplies(u, loc.id, he.loadout)
     }
 
     // Phase R: resupply trips. A hero flagged 'returning' is whisked to a town
