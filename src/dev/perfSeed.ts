@@ -41,17 +41,16 @@ export function seedPerfBattle(targetHeroes = numParam('heroes', 12)): void {
   }
   useGameStore.setState({ units: roster, battles: {} })
 
-  // Densest open-world field — the intended stress arena. We want the most
-  // ON-SCREEN tokens (render cost is bound by what the camera window shows), so
-  // sort by packing DENSITY (cap / area), not raw cap: a big sparse field can
-  // have a high cap yet show only a handful at once, while a tight swarm map
-  // (e.g. the 25×25 Harpy Roost) crams them all into view. `?cap`/`?size`
-  // override the picked field so a sweep can push past the shipped default.
+  // The intended stress arena: the Harpy Roost — a tight field kept packed with a
+  // big swarm (heavy on both the engine and the camera-windowed render). Pinned by
+  // id rather than inferred, so gameplay density tuning on other fields can't
+  // quietly relocate the perf scene; falls back to the densest-by-packing
+  // (cap / area) open field if it's ever absent. `?cap`/`?size` override it.
   const density = (l: { openWorldCap?: number; openWorldSize?: number }) =>
     (l.openWorldCap ?? 0) / Math.max(1, (l.openWorldSize ?? 50) ** 2)
-  const base = get().locations
-    .filter((l) => l.openWorld)
-    .sort((a, b) => density(b) - density(a))[0]
+  const fields = get().locations.filter((l) => l.openWorld)
+  const base = fields.find((l) => l.id === 'harpy-roost')
+    ?? [...fields].sort((a, b) => density(b) - density(a))[0]
   if (!base) return
   const cap = numParam('cap', base.openWorldCap ?? 8)
   const size = numParam('size', base.openWorldSize ?? 50)

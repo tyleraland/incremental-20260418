@@ -70,13 +70,13 @@ export const INITIAL_LOCATIONS: Location[] = [
     id: 'prontera-field-2', region: 'world', name: 'Southern Road',
     description: 'A coastal road descending south toward Kanto.',
     traits: ['plains'], monsterIds: ['skeleton-archer'],
-    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 40, openWorldSize: 200,
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 200, openWorldSize: 200,
   },
   {
     id: 'beach-1', region: 'world', name: 'Kanto Beach',
     description: 'A sunny stretch of coastline dotted with rock pools.',
     traits: ['beach', 'water'], monsterIds: ['rock-crab', 'giant-frog'],
-    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 44, openWorldSize: 200,
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 220, openWorldSize: 200,
   },
   {
     id: 'harpy-roost', region: 'world', name: 'Harpy Roost',
@@ -112,7 +112,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     traits: ['forest'], monsterIds: ['dire-wolf'],
     // §aggression showcase: an aggressive hunting pack (pack-hunter + pack-tactics)
     // — wanders as a group and aggros together on sight.
-    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 10, openWorldSize: 30,
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 20, openWorldSize: 30,
   },
 
   // ── Proving Grounds (region 'fixed-encounters' — the sandbox-only test dungeon) ──
@@ -196,7 +196,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     description: 'A persistent open-world ruin studded with toppled walls — hunt-and-wander over terrain.',
     traits: ['arena', 'ruins'], monsterIds: ['shadow-wolf', 'dark-slime', 'forest-sprite'],
     familiarityMax: 100, connections: [],
-    openWorld: true, openWorldCap: 8, openWorldSize: 60, testScenarioId: 'pg-overgrown-maze',
+    openWorld: true, openWorldCap: 24, openWorldSize: 60, testScenarioId: 'pg-overgrown-maze',
   },
   {
     // One monster of each element the bestiary covers (neutral, water, earth,
