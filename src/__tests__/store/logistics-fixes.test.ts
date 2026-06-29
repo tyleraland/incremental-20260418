@@ -23,16 +23,17 @@ beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0); useExpeditionSto
 afterEach(() => vi.restoreAllMocks())
 
 describe('camera follows a hero across map transitions', () => {
-  it('moves combatLocationId with the followed hero when they cross a portal', () => {
+  it('moves the camera (selected + combat location) with a followed hero crossing a portal', () => {
     resetStore({
       locations: MAPS,
       units: [makeUnit({ id: 'u1', locationId: 'A', health: 100, travelPath: ['B'] })],
-      mapMode: 'battle', combatLocationId: 'A', battleFollowId: 'u1',
+      mapMode: 'battle', selectedLocationId: 'A', combatLocationId: 'A', battleFollowId: 'u1',
     })
     let crossed = false
     for (let i = 0; i < 60 && !crossed; i++) { tick(); crossed = unit('u1').locationId === 'B' }
     expect(crossed).toBe(true)
-    expect(useGameStore.getState().combatLocationId).toBe('B')   // camera came along
+    expect(useGameStore.getState().combatLocationId).toBe('B')    // watched battle came along
+    expect(useGameStore.getState().selectedLocationId).toBe('B')  // proto camera came along
   })
 
   it('does NOT move the camera for an unfollowed traveller', () => {
@@ -40,10 +41,34 @@ describe('camera follows a hero across map transitions', () => {
       locations: MAPS,
       units: [makeUnit({ id: 'u1', locationId: 'A', health: 100, travelPath: ['B'] }),
               makeUnit({ id: 'u2', locationId: 'A', health: 100 })],
-      mapMode: 'battle', combatLocationId: 'A', battleFollowId: 'u2',   // watching u2, not the traveller
+      mapMode: 'battle', selectedLocationId: 'A', combatLocationId: 'A', battleFollowId: 'u2',   // watching u2
     })
     for (let i = 0; i < 60 && unit('u1').locationId !== 'B'; i++) tick()
-    expect(useGameStore.getState().combatLocationId).toBe('A')   // stayed put
+    expect(useGameStore.getState().selectedLocationId).toBe('A')   // stayed put
+  })
+
+  it('follows an INSTANT (re)deploy of the followed hero (the resupply teleport)', () => {
+    resetStore({
+      locations: MAPS,
+      units: [makeUnit({ id: 'u1', locationId: 'A', health: 100 })],
+      mapMode: 'battle', selectedLocationId: 'A', combatLocationId: 'A', battleFollowId: 'u1',
+      deployMode: 'instant',
+    })
+    useGameStore.getState().assignUnits(['u1'], 'B')   // teleport (e.g. town → field)
+    expect(unit('u1').locationId).toBe('B')
+    expect(useGameStore.getState().selectedLocationId).toBe('B')   // camera followed the teleport
+    expect(useGameStore.getState().combatLocationId).toBe('B')
+  })
+
+  it('does NOT move the camera when an UNfollowed hero is (re)deployed', () => {
+    resetStore({
+      locations: MAPS,
+      units: [makeUnit({ id: 'u1', locationId: 'A', health: 100 }), makeUnit({ id: 'u2', locationId: 'A', health: 100 })],
+      mapMode: 'battle', selectedLocationId: 'A', combatLocationId: 'A', battleFollowId: 'u1',
+      deployMode: 'instant',
+    })
+    useGameStore.getState().assignUnits(['u2'], 'B')   // a different hero
+    expect(useGameStore.getState().selectedLocationId).toBe('A')
   })
 })
 

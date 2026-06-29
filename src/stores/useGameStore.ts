@@ -1498,16 +1498,16 @@ export const useGameStore = create<GameState>((set) => ({
     }
 
     // §travel: keep a followed hero on-camera as they cross maps. Move the watched
-    // battle WITH them the instant they hop a portal (same state update), so the
-    // camera can't lag a map behind — and the destination then sims live for them
-    // next tick instead of instant-crossing them off-screen ahead of the camera.
-    // (selectedLocationId catches up via the proto follow effect.)
+    // battle AND the proto camera (selectedLocationId — what the stage renders) WITH
+    // them the instant they hop a portal (same state update), so the camera can't lag
+    // a map behind, and the destination sims live for them next tick instead of
+    // instant-crossing them off-screen ahead of the camera.
     const followCross = s.battleFollowId ? combat.travelMoves[s.battleFollowId] : undefined
 
     return {
       ticks: newTicks,
       units,
-      ...(followCross ? { combatLocationId: followCross.locationId } : {}),
+      ...(followCross ? { combatLocationId: followCross.locationId, selectedLocationId: followCross.locationId } : {}),
       dpsWindow,
       battles: combat.battles,
       battleCooldown: combat.battleCooldown,
@@ -1885,19 +1885,29 @@ export const useGameStore = create<GameState>((set) => ({
   assignUnits: (unitIds, locationId) => set((s) => {
     const ids = new Set(unitIds)
     const byId = new Map(s.locations.map((l) => [l.id, l]))
+    const units = s.units.map((u) => {
+      if (!ids.has(u.id)) return u
+      // §travel: in 'open-world' deploy mode a hero WALKS to a directly
+      // portal-linked neighbour of their current open-world map (marches to the
+      // portal, then the tick loop hops them across) instead of teleporting.
+      // Any other deploy — instant mode, an un-linked/distant map, or a first
+      // placement from nowhere — stays an instant (re)deploy as before.
+      const from = u.locationId ? byId.get(u.locationId) : null
+      const canWalk = s.deployMode === 'open-world' && !!locationId && !!from && !!from.openWorld
+        && u.locationId !== locationId && (from.portals ?? []).some((p) => p.to === locationId)
+      return canWalk ? { ...u, travelPath: [locationId!] } : { ...u, locationId, travelPath: null }
+    })
+    // §travel: if this (re)deploy INSTANTLY moved the camera-followed hero to a new
+    // map (e.g. the resupply teleport into/out of town), bring the camera with them —
+    // a walk follows later via the portal-cross path instead. Without this the camera
+    // is stranded where the hero left from (follow silently drops).
+    const moved = s.battleFollowId && ids.has(s.battleFollowId) && !!locationId
+    const fu = moved ? units.find((u) => u.id === s.battleFollowId) : undefined
+    const followInstant = !!fu && fu.locationId === locationId && fu.travelPath == null && s.selectedLocationId !== locationId
+    const loc = followInstant ? byId.get(locationId!) : null
     return {
-      units: s.units.map((u) => {
-        if (!ids.has(u.id)) return u
-        // §travel: in 'open-world' deploy mode a hero WALKS to a directly
-        // portal-linked neighbour of their current open-world map (marches to the
-        // portal, then the tick loop hops them across) instead of teleporting.
-        // Any other deploy — instant mode, an un-linked/distant map, or a first
-        // placement from nowhere — stays an instant (re)deploy as before.
-        const from = u.locationId ? byId.get(u.locationId) : null
-        const canWalk = s.deployMode === 'open-world' && !!locationId && !!from && !!from.openWorld
-          && u.locationId !== locationId && (from.portals ?? []).some((p) => p.to === locationId)
-        return canWalk ? { ...u, travelPath: [locationId!] } : { ...u, locationId, travelPath: null }
-      }),
+      units,
+      ...(followInstant ? { selectedLocationId: locationId, combatLocationId: locationId, ...(loc ? { mapPageId: loc.region } : {}) } : {}),
     }
   }),
 
