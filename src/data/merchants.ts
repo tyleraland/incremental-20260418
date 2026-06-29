@@ -17,7 +17,7 @@ import type { Unit } from '@/types'
 // All mock — no save wiring.
 
 export interface MerchantWant { itemId: string; pricePer: number; quantity: number }
-export interface MerchantStock { kind: 'material' | 'card' | 'equipment'; id: string; price: number; stock?: number }
+export interface MerchantStock { kind: 'material' | 'card' | 'equipment' | 'consumable'; id: string; price: number; stock?: number }
 
 export interface MerchantDef {
   id: string
@@ -42,6 +42,10 @@ export const MERCHANT_REGISTRY: Record<string, MerchantDef> = {
     wants: [{ itemId: 'craft-iron-ingot', pricePer: 28, quantity: 10 }, { itemId: 'm1', pricePer: 5, quantity: 40 }],
     dislikes: ['drop-slime-gel', 'drop-bat-wing'],
     stock: [
+      // Healing potions for loadout resupply — buy here, then the in-town reconcile
+      // withdraws them from the stash toward each hero's supplies loadout.
+      { kind: 'consumable', id: 'potion-hp', price: 12, stock: 99 },
+      { kind: 'consumable', id: 'potion-hp-greater', price: 30, stock: 40 },
       { kind: 'material', id: 'm4', price: 6, stock: 50 },
       { kind: 'material', id: 'craft-herb-salve', price: 18, stock: 8 },
       { kind: 'equipment', id: 'eq-leather', price: 70 },

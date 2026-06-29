@@ -28,7 +28,7 @@ import { seedProtoMocks } from './seed'
 const BASE_NAMES: Record<string, string> = { m1: 'Wood', m2: 'Iron Ore', m3: 'Fish', m4: 'Herbs', 'm-gold': 'Gold' }
 const RECIPE_BY_OUTPUT = Object.values(RECIPE_REGISTRY).reduce<Record<string, string>>((acc, r) => { acc[r.outputItemId] = r.outputName; return acc }, {})
 function itemName(id: string): string {
-  return BASE_NAMES[id] ?? DROP_ITEMS[id] ?? EQUIPMENT_DEF[id]?.name ?? RECIPE_BY_OUTPUT[id] ?? id
+  return BASE_NAMES[id] ?? DROP_ITEMS[id] ?? EQUIPMENT_DEF[id]?.name ?? consumableDef(id)?.name ?? RECIPE_BY_OUTPUT[id] ?? id
 }
 function objectiveChips(it: EquipmentItem): Trait[] {
   const chips = getItemTraits(it)
@@ -96,7 +96,7 @@ function Shop({ m, visiting }: { m: MerchantDef; visiting: Unit | null }) {
       const s = m.stock.find((x) => x.id === id); if (!s) continue
       for (let i = 0; i < q; i++) {
         changeGold(-priceOf(s))
-        if (s.kind === 'material') grantMiscItem(s.id, 1)
+        if (s.kind === 'material' || s.kind === 'consumable') grantMiscItem(s.id, 1)
         else if (s.kind === 'equipment') grantEquipment(s.id)
         else useProtoStore.setState((st) => ({ ownedCards: { ...st.ownedCards, [s.id]: (st.ownedCards[s.id] ?? 0) + 1 } }))
       }
@@ -140,10 +140,10 @@ function Shop({ m, visiting }: { m: MerchantDef; visiting: Unit | null }) {
             return (
               <div key={s.id} className={['flex items-center gap-2 rounded-lg border border-game-border bg-game-bg px-2.5 py-2', sold ? 'opacity-50' : ''].join(' ')}>
                 <button disabled={!inspectable} onClick={() => card ? setInspectCard(s.id) : setInspectGear(eq!)} className={['flex items-center gap-2 min-w-0 flex-1 text-left', inspectable ? '' : 'cursor-default'].join(' ')}>
-                  <span className="text-sm leading-none shrink-0">{s.kind === 'card' ? '◆' : s.kind === 'equipment' ? '⚔' : '📦'}</span>
+                  <span className="text-sm leading-none shrink-0">{s.kind === 'card' ? '◆' : s.kind === 'equipment' ? '⚔' : s.kind === 'consumable' ? (consumableDef(s.id)?.icon ?? '🧪') : '📦'}</span>
                   <span className="min-w-0">
                     <span className="text-sm text-game-text font-medium truncate block">{itemName(s.id)} {inspectable && <span className="text-[9px] text-game-text-dim">· inspect</span>}</span>
-                    <span className="text-[10px] text-game-text-dim truncate block">{card ? (cardBonusLine(card.bonus) || 'card') : eq ? `${CATEGORY_LABELS[eq.category]}${eq.slots ? ` · ${eq.slots} sockets` : ''}` : 'material'}{s.stock != null && <span className="text-game-muted"> · {sold ? 'sold out' : `${left} left`}</span>}</span>
+                    <span className="text-[10px] text-game-text-dim truncate block">{card ? (cardBonusLine(card.bonus) || 'card') : eq ? `${CATEGORY_LABELS[eq.category]}${eq.slots ? ` · ${eq.slots} sockets` : ''}` : s.kind === 'consumable' ? 'consumable' : 'material'}{s.stock != null && <span className="text-game-muted"> · {sold ? 'sold out' : `${left} left`}</span>}</span>
                   </span>
                 </button>
                 <span className="text-[11px] text-game-gold font-semibold tabular-nums shrink-0">{priceOf(s)}g</span>

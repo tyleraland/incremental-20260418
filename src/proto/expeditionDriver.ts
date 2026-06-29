@@ -150,7 +150,17 @@ export function useExpeditionDriver() {
       if (!u.locationId) continue
       const loc = locById.get(u.locationId)
       if (!loc || !isHuntable(loc)) continue
-      const he = exp.heroes[u.id] ?? freshHero({ locationId: u.locationId })
+      // A hero in transit (walking a travelPath to/from town) is just passing
+      // THROUGH this map — never a hunter here. Without this guard a routing hero
+      // standing on an intermediate field gets classified as a fresh-run hunter
+      // (and can be swept into that field's party / group-return), then "starts
+      // hunting where it was ditched". Phase R / the tick loop own travellers.
+      if ((u.travelPath?.length ?? 0) > 0) continue
+      // Hydrate from persisted pack carry-targets on first sight, so a reloaded
+      // hero keeps its configured supplies loadout instead of the default (the
+      // loadout itself isn't in the save — Unit.pack targets are; see ensure()).
+      exp.ensure(u.id)
+      const he = useExpeditionStore.getState().heroes[u.id] ?? freshHero({ locationId: u.locationId })
 
       if (he.status === 'returning') continue   // phase R owns returning heroes
       if (he.locationId !== u.locationId) {   // (re)deployed → fresh run
@@ -218,6 +228,7 @@ export function useExpeditionDriver() {
     if (groupReturnLocs.size > 0) {
       for (const u of g.units) {
         if (!u.locationId || !groupReturnLocs.has(u.locationId)) continue
+        if ((u.travelPath?.length ?? 0) > 0) continue   // just passing through — not part of this party
         const he = useExpeditionStore.getState().heroes[u.id]
         if (he && he.status !== 'returning') exp.commitStep(u.id, { status: 'returning', locationId: u.locationId })
       }

@@ -15,6 +15,7 @@ import { SAMPLING } from '@/lib/sampling'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
+import { consumableDef } from '@/data/consumables'
 import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
@@ -835,7 +836,15 @@ function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): Misc
     if (!qty) continue
     const existing = out.find((m) => m.id === id)
     if (existing) existing.quantity += qty
-    else out.push({ id, name: id === 'm-gold' ? 'Gold' : (DROP_ITEMS[id] ?? id), quantity: qty })
+    else {
+      // A consumable (e.g. a potion bought from a merchant) must enter the stash
+      // tagged `kind: 'consumable'` + with its real name, so the logistics loadout
+      // and in-town resupply recognise it; everything else is a plain material.
+      const c = consumableDef(id)
+      out.push(c
+        ? { id, name: c.name, quantity: qty, kind: 'consumable' }
+        : { id, name: id === 'm-gold' ? 'Gold' : (DROP_ITEMS[id] ?? id), quantity: qty })
+    }
   }
   return out
 }
@@ -1488,9 +1497,17 @@ export const useGameStore = create<GameState>((set) => ({
       if (dealt.some((x) => x > 0) || taken.some((x) => x > 0)) dpsWindow[u.id] = { dealt, taken }
     }
 
+    // §travel: keep a followed hero on-camera as they cross maps. Move the watched
+    // battle WITH them the instant they hop a portal (same state update), so the
+    // camera can't lag a map behind — and the destination then sims live for them
+    // next tick instead of instant-crossing them off-screen ahead of the camera.
+    // (selectedLocationId catches up via the proto follow effect.)
+    const followCross = s.battleFollowId ? combat.travelMoves[s.battleFollowId] : undefined
+
     return {
       ticks: newTicks,
       units,
+      ...(followCross ? { combatLocationId: followCross.locationId } : {}),
       dpsWindow,
       battles: combat.battles,
       battleCooldown: combat.battleCooldown,
