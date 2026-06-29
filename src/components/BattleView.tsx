@@ -1067,23 +1067,27 @@ function visibleEnemyDots(battle: BattleState): Combatant[] {
 }
 
 type MinimapPick = { unitId: string } | { point: Vec2 }
-// How far past the party's sight the radar shows — a thin margin so the sight ring
-// reads as the edge of vision with a little dark beyond it (no enemy dots out there).
-const MINIMAP_SIGHT_MARGIN = 1.3
-// A SIGHT-scoped radar (not the whole 200-cell field, where the camera box + dots are
-// a pixel each): centred on the camera, it spans the party's vision plus a thin margin,
-// so the followed hero sits in the middle, the sight range is drawn as a ring, and only
+// Breathing room around the framed party so the edge heroes aren't on the rim.
+const MINIMAP_MARGIN = 1.25
+// A PARTY-scoped radar (not the whole 200-cell field, where the camera box + dots are
+// a pixel each): the square is sized to encompass every hero plus where the camera is
+// looking, so the whole party is always visible without the clutter of per-hero sight
+// rings. The followed hero keeps a single vision ring (its sight distance); only
 // in-sight foes dot. Tap a hero to follow; tap elsewhere to free-look there.
 function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: Cam; followId: string | null; onPick: (hit: MinimapPick) => void }) {
   const BOX = 64
   const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
-  // Max finite hero sight (∞ in encounters → fall back to the camera). The shown
-  // region is sight (or the camera, whichever is larger) × the margin, centred on the
-  // camera centre so the followed hero stays put in the middle.
   const sight = heroes.reduce((m, h) => Math.max(m, Number.isFinite(h.visionRange) ? h.visionRange : 0), 0)
-  const half = Math.max(cam.size / 2, sight || cam.size / 2) * MINIMAP_SIGHT_MARGIN
+  // Frame a square over every hero AND the camera centre (so the view box is always in
+  // it). Floor the radius at one hero's sight + the camera so a lone/clustered party
+  // still gets a sensible zoom; a margin keeps everyone off the rim.
+  const camCx = cam.x + cam.size / 2, camCy = cam.y + cam.size / 2
+  const pts: Vec2[] = heroes.length ? [...heroes.map((h) => h.pos), { x: camCx, y: camCy }] : [{ x: camCx, y: camCy }]
+  let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
+  for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y) }
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2
+  const half = Math.max((maxX - minX) / 2, (maxY - minY) / 2, sight, cam.size / 2) * MINIMAP_MARGIN
   const span = half * 2
-  const cx = cam.x + cam.size / 2, cy = cam.y + cam.size / 2
   const ox = cx - half, oy = cy - half                  // world coords of the box's bottom-left
   const mx = (x: number) => ((x - ox) / span) * BOX
   const my = (y: number) => (1 - (y - oy) / span) * BOX // +y is up on screen
@@ -1116,10 +1120,10 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       {battle.barriers.map((b, i) => (
         <div key={i} className="absolute bg-stone-500/40" style={{ left: mx(b.x), top: my(b.y + b.h), width: px(b.w), height: px(b.h) }} />
       ))}
-      {/* sight rings — each hero's vision radius, so the radar literally shows how far
-          the party can see; in-sight foes dot inside, the thin margin stays dark. */}
-      {heroes.filter((c) => Number.isFinite(c.visionRange)).map((c) => (
-        <div key={`v${c.id}`} className="absolute rounded-full border border-emerald-300/25 bg-emerald-300/5 pointer-events-none -translate-x-1/2 -translate-y-1/2"
+      {/* one sight ring — the FOLLOWED hero's vision radius, so the radar shows how far
+          they see without N overlapping circles cluttering a multi-hero party. */}
+      {heroes.filter((c) => c.id === followId && Number.isFinite(c.visionRange)).map((c) => (
+        <div key={`v${c.id}`} className="absolute rounded-full border border-emerald-300/30 bg-emerald-300/5 pointer-events-none -translate-x-1/2 -translate-y-1/2"
           style={{ left: mx(c.pos.x), top: my(c.pos.y), width: px(c.visionRange * 2), height: px(c.visionRange * 2) }} />
       ))}
       {/* current camera window — eases with the camera so the box tracks the smooth pan */}
