@@ -46,6 +46,9 @@ async function boot() {
     b.addEventListener('click', () => go(v.id))
     el('views').appendChild(b)
   }
+  // mobile drawers: ☰ toggles the controls sidebar; the scrim closes both
+  el('menu').addEventListener('click', () => document.body.classList.toggle('sidebar-open'))
+  el('scrim').addEventListener('click', () => document.body.classList.remove('sidebar-open', 'detail-open'))
   go(location.hash.replace('#', '') && byId.has(location.hash.replace('#', '')) ? location.hash.replace('#', '') : 'modules')
 }
 
@@ -53,6 +56,7 @@ async function go(viewId, arg) {
   const view = byId.get(viewId)
   if (!view) return
   location.hash = viewId
+  document.body.classList.remove('sidebar-open', 'detail-open') // close mobile drawers on view change
   document.querySelectorAll('#views button').forEach((b) => b.classList.toggle('active', b.dataset.view === viewId))
 
   // reset stage

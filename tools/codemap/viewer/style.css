@@ -14,6 +14,9 @@ body {
 a[data-go], a[data-mod], a[data-feat], a[data-crumb], a[data-top] { color: var(--accent); cursor: pointer; text-decoration: none; }
 a[data-go]:hover, a[data-crumb]:hover, a[data-top]:hover { text-decoration: underline; }
 
+#menu { display: none; background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 16px; line-height: 1; cursor: pointer; }
+.sheet-close { display: none; }
+#scrim { display: none; }
 header { display: flex; align-items: center; gap: 16px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border); flex: 0 0 auto; }
 .brand { display: flex; gap: 10px; align-items: baseline; }
 .brand strong { font-size: 15px; letter-spacing: .3px; }
@@ -88,3 +91,39 @@ svg.calendar text.cal-label { fill: var(--dim); font: 9px system-ui; }
 .stub li { margin: 5px 0; font-size: 13px; }
 
 #error { position: fixed; inset: auto 14px 14px 14px; background: #3d1418; color: #ffb4ac; border: 1px solid var(--dead); padding: 12px 16px; border-radius: 8px; font-family: var(--mono); font-size: 12px; }
+
+/* ── Mobile: stage goes full-screen; controls + details become drawers ──────── */
+@media (max-width: 760px) {
+  header { flex-wrap: wrap; gap: 10px; row-gap: 6px; }
+  #menu { display: inline-flex; align-items: center; }
+  #meta, #headline { display: none; }
+  nav#views { order: 3; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+  nav#views button { white-space: nowrap; flex: 0 0 auto; }
+
+  main { position: relative; }
+  #stage { width: 100%; }
+  #hint { display: none; }
+
+  #sidebar {
+    position: absolute; z-index: 30; top: 0; left: 0; bottom: 0; width: 270px; max-width: 84vw;
+    transform: translateX(-100%); transition: transform .2s ease; will-change: transform;
+    box-shadow: 2px 0 18px rgba(0,0,0,.4);
+  }
+  body.sidebar-open #sidebar { transform: none; }
+
+  #detail {
+    position: absolute; z-index: 30; left: 0; right: 0; bottom: 0; width: auto; max-height: 72%;
+    border-left: none; border-top: 1px solid var(--border); border-radius: 12px 12px 0 0;
+    transform: translateY(100%); transition: transform .2s ease; will-change: transform;
+    box-shadow: 0 -2px 18px rgba(0,0,0,.4);
+  }
+  body.detail-open #detail { transform: none; }
+  .sheet-close { display: block; position: absolute; top: 8px; right: 10px; z-index: 1;
+    background: var(--bg); border: 1px solid var(--border); color: var(--ink); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+
+  #scrim { display: block; position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,.5); }
+  body:not(.sidebar-open):not(.detail-open) #scrim { display: none; }
+
+  .cols { flex-direction: column; gap: 12px; }
+  #panel { padding: 12px 14px; }
+}

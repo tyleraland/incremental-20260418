@@ -43,15 +43,19 @@ export async function loadData(id) {
   return p
 }
 
-/* ── detail panel ─────────────────────────────────────────────────────────── */
+/* ── detail panel (a bottom sheet on mobile) ──────────────────────────────── */
 export function clearDetail() {
   el('detail').innerHTML = '<div class="detail-empty muted">Select something for details.</div>'
+  document.body.classList.remove('detail-open')
 }
 export function setDetail(html, linkHandler) {
   const d = el('detail')
-  d.innerHTML = html
+  d.innerHTML = '<button class="sheet-close" aria-label="Close">✕</button>' + html
+  document.body.classList.add('detail-open')
+  d.querySelector('.sheet-close').addEventListener('click', clearDetail)
+  const go = (view, arg) => { document.body.classList.remove('detail-open'); linkHandler && linkHandler(view, arg) }
   if (linkHandler) d.querySelectorAll('a[data-go]').forEach((a) =>
-    a.addEventListener('click', () => linkHandler(a.dataset.go, a.dataset.arg)))
+    a.addEventListener('click', () => go(a.dataset.go, a.dataset.arg)))
 }
 export const sec = (title, items) =>
   `<div class="section">${title}</div><ul>` + items.map((i) => `<li>${i}</li>`).join('') + '</ul>'
