@@ -321,28 +321,35 @@ const HEAVY_FIELD_CAP     = 16   // openWorldCap at/above which decisions thrott
 // slowing combat (the big finding from the decision-throttle exploration). ~1/sec
 // at 5 rounds/sec. Normal fields re-decide every round (responsive at small scale).
 const DECISION_INTERVAL_HEAVY = 5
+// Pace-preserving perf tier for an open-world field, keyed off its CAP (its steady
+// crowd). A huge crowd makes each round (advanceRound + the React commit/repaint of
+// every token) overrun the frame budget, so a denser field must run fewer rounds/sec.
+// The trap the old code fell into: backing off everyTicks ALONE (more ticks between
+// rounds) while leaving timeScale fixed makes units move slower — a 200-cap field
+// crawled at ~1/5 speed. Instead PAIR the two so their product stays = ROUND_TIME_SCALE:
+// a coarser timeScale (bigger move per round) exactly offsets the rarer rounds, so the
+// real-time movement/combat pace is CONSTANT across tiers — the field just resolves in
+// fewer, chunkier (glide-smoothed) steps. timeScale ∈ {6,3,2,1} ⇒ everyTicks ∈ {1,2,3,6};
+// rounds/sec = TICKS_PER_SECOND / everyTicks. (Tuned from on-device measurements:
+// ≤~80 tokens every-tick ~59fps; ~250 every-tick collapsed to ~13fps.)
+export function openWorldTimeScale(cap: number): number {
+  if (cap >= 200) return 1
+  if (cap >= 140) return 2
+  if (cap >= 90)  return 3
+  return ROUND_TIME_SCALE   // 6 — full granularity at comfortable counts
+}
+// everyTicks paired to a battle's timeScale (product = ROUND_TIME_SCALE) → constant pace.
+export const everyTicksFor = (timeScale: number): number => Math.max(1, Math.round(ROUND_TIME_SCALE / timeScale))
+export const OPEN_WORLD_ROUND_TIME_SCALE = ROUND_TIME_SCALE   // exported for the pace-invariant test
 function cadenceFor(loc: Location): { timeScale: number; everyTicks: number } {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
-  if (heavy) return { timeScale: DEV_HEAVY_TS ?? ROUND_TIME_SCALE, everyTicks: DEV_HEAVY_EVERY ?? ROUND_EVERY_TICKS }
-  return { timeScale: DEV_BASE_TS ?? ROUND_TIME_SCALE, everyTicks: ROUND_EVERY_TICKS }
+  const base = loc.openWorld ? openWorldTimeScale(openWorldCap(loc)) : ROUND_TIME_SCALE
+  const timeScale = (heavy ? DEV_HEAVY_TS : DEV_BASE_TS) ?? base
+  return { timeScale, everyTicks: DEV_HEAVY_EVERY ?? everyTicksFor(timeScale) }
 }
 function decisionIntervalFor(loc: Location): number {
   const heavy = loc.openWorld && openWorldCap(loc) >= HEAVY_FIELD_CAP
   return heavy ? DECISION_INTERVAL_HEAVY : 1
-}
-// Density-adaptive step cadence for the live, watched open-world field. Normal play
-// is a handful of tokens → step every tick (smoothest). A huge crowd makes each round
-// (advanceRound + the React commit/repaint of every token) overrun the frame budget,
-// so we step less often above comfortable counts — fewer expensive rounds/sec keeps
-// the main thread and compositor from saturating. Tuned from on-device measurements
-// (≤~80 tokens runs every-tick at ~59fps; ~250 every-tick collapsed to ~13fps). Keyed
-// on live alive count, evaluated each tick, and outside the engine — so it never
-// affects snapshot replay (which only re-runs advanceRound on a frozen battle).
-function openWorldEveryTicks(aliveCount: number): number {
-  if (aliveCount >= 200) return 5
-  if (aliveCount >= 140) return 3
-  if (aliveCount >= 90)  return 2
-  return 1
 }
 // Off-screen / offline simulation budgets are centralized in `@/lib/sampling`
 // (SAMPLING) — the one place to tune cost-vs-fidelity. SAMPLING.offscreenCreditTicks
@@ -1213,7 +1220,11 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     if (loc.openWorld) {
       const cap = openWorldCap(loc)
       let battle = battles[locationId]
-      if (!battle || battle.mode !== 'open') {
+      // Recreate when there's no open battle OR its timeScale no longer matches the
+      // field's pace tier (a save from before the tier change, or an edited cap) — so
+      // the live pace + per-round cost are right. timeScale can't be swapped on a live
+      // battle (it would desync in-flight cooldowns), hence a fresh field.
+      if (!battle || battle.mode !== 'open' || battle.timeScale !== timeScaleFor(loc)) {
         battle = createOpenBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], cap)
         battles[locationId] = battle
         monsterSpawnTimers[locationId] = OPEN_WORLD_SPAWN_TICKS
@@ -1232,12 +1243,10 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // §travel: routing heroes walk to their portal and cross on arrival.
       handleTravel(loc, battle, eligible, true)
 
-      // Step cadence: every tick normally (smoothest), backing off only when the live
-      // crowd is large enough that a per-tick round + repaint overruns the frame budget
-      // (openWorldEveryTicks). Spawn trickle and hero reconcile still run every tick
-      // above — only the costly round is paced.
-      const aliveCount = battle.combatants.reduce((n, c) => n + (c.alive ? 1 : 0), 0)
-      const everyTicks = Math.max(cadenceFor(loc).everyTicks, openWorldEveryTicks(aliveCount))
+      // Step cadence: paired to the battle's timeScale (product = ROUND_TIME_SCALE) so a
+      // denser field runs fewer, coarser rounds at the SAME real-time pace. Spawn trickle
+      // and hero reconcile still run every tick above — only the costly round is paced.
+      const everyTicks = everyTicksFor(battle.timeScale)
       if (advance && newTicks % everyTicks === 0) {
         // Clear out enemy corpses from prior rounds before this one resolves —
         // a persistent battle never resets, so without this the combatant list
