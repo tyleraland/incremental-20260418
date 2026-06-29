@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Codemap</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script src="./cytoscape.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <strong>Codemap</strong>
+      <span id="meta" class="muted"></span>
+    </div>
+    <nav id="views">
+      <button data-view="modules" class="active">Modules</button>
+      <button data-view="features">Features</button>
+      <button data-view="inventory">Inventory</button>
+    </nav>
+    <div id="stats" class="stats muted"></div>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <input id="search" type="search" placeholder="filter by path…" autocomplete="off" />
+      <div id="controls"></div>
+      <div id="legend"></div>
+    </aside>
+
+    <section id="stage">
+      <div id="cy"></div>
+      <div id="inventory" hidden></div>
+      <div id="cyhint" class="hint muted">drag to pan · scroll to zoom · click a node</div>
+    </section>
+
+    <aside id="detail">
+      <div class="detail-empty muted">Select a node for details.</div>
+    </aside>
+  </main>
+
+  <div id="error" hidden></div>
+  <script src="./app.js"></script>
+</body>
+</html>
