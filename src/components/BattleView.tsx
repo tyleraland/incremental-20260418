@@ -1067,29 +1067,41 @@ function visibleEnemyDots(battle: BattleState): Combatant[] {
 }
 
 type MinimapPick = { unitId: string } | { point: Vec2 }
+// How far past the party's sight the radar shows — a thin margin so the sight ring
+// reads as the edge of vision with a little dark beyond it (no enemy dots out there).
+const MINIMAP_SIGHT_MARGIN = 1.3
+// A SIGHT-scoped radar (not the whole 200-cell field, where the camera box + dots are
+// a pixel each): centred on the camera, it spans the party's vision plus a thin margin,
+// so the followed hero sits in the middle, the sight range is drawn as a ring, and only
+// in-sight foes dot. Tap a hero to follow; tap elsewhere to free-look there.
 function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: Cam; followId: string | null; onPick: (hit: MinimapPick) => void }) {
-  const cols = battle.cols ?? COLS
-  const rows = battle.rows ?? ROWS
-  const BOX = 64                                        // px on the long side
-  const w = cols >= rows ? BOX : BOX * (cols / rows)
-  const h = rows >= cols ? BOX : BOX * (rows / cols)
-  const mx = (x: number) => (x / cols) * w
-  const my = (y: number) => (1 - y / rows) * h          // +y is up on screen
+  const BOX = 64
+  const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
+  // Max finite hero sight (∞ in encounters → fall back to the camera). The shown
+  // region is sight (or the camera, whichever is larger) × the margin, centred on the
+  // camera centre so the followed hero stays put in the middle.
+  const sight = heroes.reduce((m, h) => Math.max(m, Number.isFinite(h.visionRange) ? h.visionRange : 0), 0)
+  const half = Math.max(cam.size / 2, sight || cam.size / 2) * MINIMAP_SIGHT_MARGIN
+  const span = half * 2
+  const cx = cam.x + cam.size / 2, cy = cam.y + cam.size / 2
+  const ox = cx - half, oy = cy - half                  // world coords of the box's bottom-left
+  const mx = (x: number) => ((x - ox) / span) * BOX
+  const my = (y: number) => (1 - (y - oy) / span) * BOX // +y is up on screen
+  const px = (cells: number) => (cells / span) * BOX     // a cell-length in radar px
   const ref = useRef<HTMLDivElement>(null)
 
   const handlePick = (e: React.PointerEvent) => {
     e.stopPropagation()
     const box = ref.current?.getBoundingClientRect()
     if (!box) return
-    const wx = ((e.clientX - box.left) / w) * cols
-    const wy = (1 - (e.clientY - box.top) / h) * rows
+    const wx = ox + ((e.clientX - box.left) / BOX) * span
+    const wy = oy + (1 - (e.clientY - box.top) / BOX) * span
     let best: { id: string; d: number } | null = null
-    for (const c of battle.combatants) {
-      if (c.team !== 'player' || !c.alive) continue
+    for (const c of heroes) {
       const d = Math.hypot(c.pos.x - wx, c.pos.y - wy)
       if (!best || d < best.d) best = { id: c.id, d }
     }
-    if (best && best.d <= cols * 0.09) onPick({ unitId: best.id })
+    if (best && best.d <= span * 0.12) onPick({ unitId: best.id })
     else onPick({ point: { x: wx, y: wy } })
   }
 
@@ -1099,25 +1111,29 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       onPointerDown={handlePick}
       title="Minimap — tap a hero to follow, elsewhere to look around"
       className="absolute top-1 right-1 rounded-md border border-game-border bg-game-surface/85 backdrop-blur-sm overflow-hidden pointer-events-auto cursor-pointer"
-      style={{ width: w, height: h, touchAction: 'none' }}
+      style={{ width: BOX, height: BOX, touchAction: 'none' }}
     >
       {battle.barriers.map((b, i) => (
-        <div key={i} className="absolute bg-stone-500/40" style={{ left: mx(b.x), top: my(b.y + b.h), width: (b.w / cols) * w, height: (b.h / rows) * h }} />
+        <div key={i} className="absolute bg-stone-500/40" style={{ left: mx(b.x), top: my(b.y + b.h), width: px(b.w), height: px(b.h) }} />
       ))}
-      {/* current camera window — eases with the camera so the radar box tracks the
-          smooth pan instead of stepping per round */}
-      <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: 0, top: 0, transform: `translate(${mx(cam.x)}px, ${my(cam.y + cam.size)}px)`, width: (cam.size / cols) * w, height: (cam.size / rows) * h, transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }} />
+      {/* sight rings — each hero's vision radius, so the radar literally shows how far
+          the party can see; in-sight foes dot inside, the thin margin stays dark. */}
+      {heroes.filter((c) => Number.isFinite(c.visionRange)).map((c) => (
+        <div key={`v${c.id}`} className="absolute rounded-full border border-emerald-300/25 bg-emerald-300/5 pointer-events-none -translate-x-1/2 -translate-y-1/2"
+          style={{ left: mx(c.pos.x), top: my(c.pos.y), width: px(c.visionRange * 2), height: px(c.visionRange * 2) }} />
+      ))}
+      {/* current camera window — eases with the camera so the box tracks the smooth pan */}
+      <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: 0, top: 0, transform: `translate(${mx(cam.x)}px, ${my(cam.y + cam.size)}px)`, width: px(cam.size), height: px(cam.size), transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }} />
       {/* Enemy dots — fog-of-war: only foes a living hero can actually SEE (within
           their visionRange AND an unobstructed sightline, so walls hide what's
-          behind them). Foes outside every hero's sight show no dot. ∞-vision
-          encounters reveal all; the open-world fog is where this bites. */}
+          behind them). Foes outside every hero's sight show no dot. */}
       {visibleEnemyDots(battle).map((c) => (
         <div key={c.id} className="absolute w-1 h-1 rounded-full bg-red-400/90 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: mx(c.pos.x), top: my(c.pos.y) }} />
       ))}
-      {battle.combatants.filter((c) => c.team === 'player' && c.alive).map((c) => (
+      {heroes.map((c) => (
         <div
           key={c.id}
-          className={`absolute rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none ${c.id === followId ? 'w-2 h-2 bg-emerald-300 ring-1 ring-emerald-200' : 'w-1.5 h-1.5 bg-blue-300'}`}
+          className={`absolute rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none ${c.id === followId ? 'w-1.5 h-1.5 bg-emerald-300' : 'w-1 h-1 bg-blue-300'}`}
           style={{ left: mx(c.pos.x), top: my(c.pos.y) }}
         />
       ))}
