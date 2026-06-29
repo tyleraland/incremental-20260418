@@ -64,7 +64,7 @@ export const INITIAL_LOCATIONS: Location[] = [
     id: 'prontera-field-3', region: 'world', name: 'Prontera Field',
     description: 'A grassy plain east of Prontera, dotted with patches of nightshade.',
     traits: ['plains'], monsterIds: ['living-nightshade'],
-    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 36, openWorldSize: 200,
+    familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 180, openWorldSize: 200,
   },
   {
     id: 'prontera-field-2', region: 'world', name: 'Southern Road',

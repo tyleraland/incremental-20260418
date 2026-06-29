@@ -632,20 +632,6 @@ export function LocationDetail({ location }: { location: Location }) {
 
   return (
     <div className="space-y-4">
-      {/* The location name lives in the stage breadcrumb, not here. A dungeon
-          "Enter …" entry (if any) sits right-aligned on its own row. */}
-      {entryRegion && (
-        <div className="flex">
-          <button
-            onClick={enterRegion}
-            className="ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-md border border-rose-700/50 bg-rose-950/20 px-2.5 py-1 text-left hover:border-rose-600/70"
-          >
-            <span className="text-sm">◆</span>
-            <span className="text-xs text-game-text">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
-          </button>
-        </div>
-      )}
-
       {/* Heroes here — no label, just the on-site chips that AREN'T selected
           (selected heroes ride the scope bar instead). "No Heroes Here" only when
           none are stationed at all. */}
@@ -686,6 +672,20 @@ export function LocationDetail({ location }: { location: Location }) {
             })}
           </div>
         </Section>
+      )}
+
+      {/* "Enter …" — a world location that opens into a dungeon map page. Sits
+          near the bottom (above Lore) so the actionable top stays heroes/quests. */}
+      {entryRegion && (
+        <div className="flex">
+          <button
+            onClick={enterRegion}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-rose-700/50 bg-rose-950/20 px-2.5 py-1 text-left hover:border-rose-600/70"
+          >
+            <span className="text-sm">◆</span>
+            <span className="text-xs text-game-text">Enter {REGION_NAMES[entryRegion] ?? entryRegion}</span>
+          </button>
+        </div>
       )}
 
       {/* Lore — flavor text, collapsed by default to keep the top actionable */}
