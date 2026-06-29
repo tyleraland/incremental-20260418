@@ -37,6 +37,17 @@ jobs:
         env:
           BASE_PATH: /incremental-20260418/
 
+      # Deterministic codebase map, built from its own isolated package (its deps
+      # never touch the game bundle) into dist/codemap so it ships with the same
+      # publish. Served at /incremental-20260418/codemap/.
+      - name: Build codemap
+        run: |
+          cd tools/codemap
+          npm ci
+          npm run build
+          mkdir -p "$GITHUB_WORKSPACE/dist/codemap"
+          cp -R dist/. "$GITHUB_WORKSPACE/dist/codemap/"
+
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
