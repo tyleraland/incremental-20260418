@@ -977,7 +977,7 @@ function SkillsLens({ unit }: { unit: Unit }) {
             <button
               key={i}
               onClick={() => setSlotIdx(i)}
-              className={['h-12 rounded-lg border flex items-center justify-center gap-1 px-1 text-center transition-colors',
+              className={['relative h-12 rounded-lg border flex items-center justify-center gap-1 px-1 text-center transition-colors',
                 entry
                   ? consumable ? 'border-game-green/50 bg-game-green/5 hover:border-game-green'
                   : entry.kind === 'item' ? 'border-game-secondary/40 bg-game-bg hover:border-game-secondary/60'
@@ -988,6 +988,14 @@ function SkillsLens({ unit }: { unit: Unit }) {
               <span className={['text-[11px] leading-tight line-clamp-2', entry ? 'text-game-text font-medium' : 'text-game-muted'].join(' ')}>
                 {entry ? label(entry) : '＋'}
               </span>
+              {/* carried count — how many of this consumable the hero holds to use */}
+              {consumable && (
+                <span title={`Carrying ${carriedOf(entry!.id)}`}
+                  className={['absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 rounded-full border border-game-bg text-[9px] font-bold leading-none flex items-center justify-center tabular-nums',
+                    carriedOf(entry!.id) > 0 ? 'bg-game-green text-game-bg' : 'bg-red-500 text-white'].join(' ')}>
+                  {carriedOf(entry!.id)}
+                </span>
+              )}
             </button>
           )
         })}
