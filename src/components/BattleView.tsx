@@ -1150,6 +1150,7 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
   const focusUnitId   = useGameStore((s) => s.battleFollowId)
+  const combatLocationId = useGameStore((s) => s.combatLocationId)
   const setBattleFollow = useGameStore((s) => s.setBattleFollow)
   const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)   // for "follow hero" mode target
   // O(1) id → class / combatant lookups, rebuilt only when the roster or the
@@ -1275,10 +1276,19 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
   }, [focusUnitId])
 
   // Drop a stale follow when the followed hero dies / leaves the field, so the
-  // camera falls back to the party instead of locking onto nothing.
+  // camera falls back to the party instead of locking onto nothing. But NOT during
+  // a map change (return-to-town, portal cross, redeploy): the hero's locationId
+  // and the camera's combatLocationId flip to the new field atomically, yet the
+  // store doesn't reconcile them into that field's combatant list until the next
+  // tick — so for one render they look "absent". As long as they're still assigned
+  // to the watched location, keep following; they'll reappear next tick.
   useEffect(() => {
-    if (focusUnitId && !battle.combatants.some((c) => c.id === focusUnitId && c.alive)) setBattleFollow(null)
-  }, [battle, focusUnitId, setBattleFollow])
+    if (!focusUnitId) return
+    if (battle.combatants.some((c) => c.id === focusUnitId && c.alive)) return
+    const u = units.find((x) => x.id === focusUnitId)
+    if (u && u.locationId === combatLocationId) return
+    setBattleFollow(null)
+  }, [battle, focusUnitId, setBattleFollow, units, combatLocationId])
 
   // Camera target controls (shared by the roster follow + minimap + the mode
   // toggle). The 3-state mode block (party / hero / free) lives below, after `cam`

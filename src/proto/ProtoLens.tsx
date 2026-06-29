@@ -26,7 +26,8 @@ import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
 import { consumableDef, isConsumable } from '@/data/consumables'
-import { sumWindow } from '@/lib/combatTally'
+import { sumWindow, sumAll } from '@/lib/combatTally'
+import { fmt } from '@/components/TallyBreakdown'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
 //
@@ -215,9 +216,17 @@ function HeroLens({ unit }: { unit: Unit }) {
   const sum = (a: number[] | undefined) => (a ? a.reduce((x, y) => x + y, 0) : 0)
   const dealtPerSec = sum(dps?.dealt) / 5
   const takenPerSec = sum(dps?.taken) / 5
+  // Damage readouts are REAL spans, not a 5-minute average extrapolated to an hour:
+  // /m = damage actually dealt in the last minute; the sub = the real retained ~hour
+  // of history. (A 5m average kept a single AoE burst pinned high long after the hero
+  // moved on, so a wandering hero still read thousands/min.)
+  const lastMin = sumWindow(history, ticks, 1)
+  const lastHr  = sumAll(history)
+  const dealtPerMin = lastMin.damageDealt
+  const takenPerMin = lastMin.damageTaken
+  // XP rate + level ETA stay on the smoother 5-minute average — a countdown wants
+  // stability over immediacy.
   const win = sumWindow(history, ticks, 5)
-  const dealtPerMin = win.damageDealt / 5
-  const takenPerMin = win.damageTaken / 5
   const xpPerMin = win.expGained / 5
   const remaining = Math.max(0, unit.expToNext - unit.exp)
   const etaSecs = xpPerMin > 0 ? remaining / (xpPerMin / 60) : Infinity
@@ -259,8 +268,8 @@ function HeroLens({ unit }: { unit: Unit }) {
           <RateCell label="Dmg /s" value={`${rnd(dealtPerSec)}`} sub="dealt · 5s" />
           <RateCell label="Taken /s" value={`${rnd(takenPerSec)}`} sub="5s" />
           <RateCell label="XP / min" value={`${rnd(xpPerMin)}`} sub="5m avg" />
-          <RateCell label="Dmg dealt" value={`${rnd(dealtPerMin)}/m`} sub={`${rnd(dealtPerMin * 60)}/h`} />
-          <RateCell label="Dmg taken" value={`${rnd(takenPerMin)}/m`} sub={`${rnd(takenPerMin * 60)}/h`} />
+          <RateCell label="Dmg dealt" value={`${fmt(dealtPerMin)}/m`} sub={`${fmt(lastHr.damageDealt)} last hr`} />
+          <RateCell label="Dmg taken" value={`${fmt(takenPerMin)}/m`} sub={`${fmt(lastHr.damageTaken)} last hr`} />
           <RateCell label="To level" value={fmtEta(etaSecs)} sub="at 5m rate" />
         </div>
       </div>
