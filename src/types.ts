@@ -160,7 +160,9 @@ export interface Location {
   // a spot you walk onto to cross instantly). Each portal is the physical
   // realization of a `connections` edge; a hero routing to `to` walks to `at`,
   // then the store hops them across (engine never sees portals). `toAt` is where
-  // they emerge on the destination (defaults to the party anchor until wired).
+  // they emerge on the destination — the partner-edge portal, so e.g. crossing off
+  // the east side of one map lands you on the west side of the next (falls back to
+  // the party anchor when a portal has no wired exit).
   portals?: Portal[]
 }
 

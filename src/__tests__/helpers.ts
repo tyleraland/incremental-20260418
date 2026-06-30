@@ -38,6 +38,7 @@ export function resetStore(overrides: object = {}) {
     battles: {},
     battleCooldown: {},
     monsterSpawnTimers: {},
+    portalArrivals: {},
     monsterDefeated: {},
     monsterSeen: {},
     miscItems: [],

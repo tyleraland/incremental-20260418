@@ -26,8 +26,9 @@ const MAPS: Location[] = [
 ]
 
 const unitLoc = (id: string) => useGameStore.getState().units.find((u) => u.id === id)
-const presentOn = (locId: string, unitId: string) =>
-  (useGameStore.getState().battles[locId]?.combatants ?? []).some((c) => c.id === unitId)
+const combatantOn = (locId: string, unitId: string) =>
+  (useGameStore.getState().battles[locId]?.combatants ?? []).find((c) => c.id === unitId)
+const presentOn = (locId: string, unitId: string) => !!combatantOn(locId, unitId)
 
 beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
 afterEach(() => vi.restoreAllMocks())
@@ -51,6 +52,41 @@ describe('portal travel', () => {
     tick()
     expect(presentOn('B', 'u1')).toBe(true)
     expect(presentOn('A', 'u1')).toBe(false)
+  })
+
+  it('lands the hero AT the partner-edge portal on arrival, not the map centre', () => {
+    resetStore({
+      locations: MAPS,
+      units: [makeUnit({ id: 'u1', locationId: 'A', health: 100, travelPath: ['B'] })],
+    })
+    let crossed = false
+    for (let i = 0; i < 60 && !crossed; i++) { tick(); crossed = unitLoc('u1')!.locationId === 'B' }
+    tick()   // destination battle fields them at the landing spot
+    const c = combatantOn('B', 'u1')!
+    // A's portal to B has toAt:[6,11] → emerge near B's matching edge, NOT centre (6,6).
+    // (The hero may take one wander step on the fielding tick, so compare anchors.)
+    const toPortal = Math.hypot(c.pos.x - 6, c.pos.y - 11)
+    const toCentre = Math.hypot(c.pos.x - 6, c.pos.y - 6)
+    expect(toPortal).toBeLessThan(toCentre)
+    expect(c.pos.y).toBeGreaterThan(8.5)
+  })
+
+  it('does not let the just-used portal suck the hero straight back (grace window)', () => {
+    // Route A → B → A: it crosses to B and lands ON B's portal back to A. Without the
+    // grace it would re-cross immediately; the grace holds it on B for a few ticks.
+    resetStore({
+      locations: MAPS,
+      units: [makeUnit({ id: 'u1', locationId: 'A', health: 100, travelPath: ['B', 'A'] })],
+    })
+    let crossed = false
+    for (let i = 0; i < 60 && !crossed; i++) { tick(); crossed = unitLoc('u1')!.locationId === 'B' }
+    expect(crossed).toBe(true)
+    // For the next few ticks it must stay on B (grace), not bounce back to A.
+    for (let i = 0; i < 3; i++) { tick(); expect(unitLoc('u1')!.locationId).toBe('B') }
+    // Once the grace lapses it completes the route back to A.
+    let back = false
+    for (let i = 0; i < 20 && !back; i++) { tick(); back = unitLoc('u1')!.locationId === 'A' }
+    expect(back).toBe(true)
   })
 
   it('crosses an off-screen map at once (no physical walk needed)', () => {

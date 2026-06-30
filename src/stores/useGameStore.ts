@@ -101,6 +101,11 @@ export interface GameState {
   battles: Record<string, BattleState>                // locationId → live engine battle (persisted as BSNAP)
   battleCooldown: Record<string, number>              // locationId → ticks until the next wave spawns (persisted)
   monsterSpawnTimers: Record<string, number>          // open-world: ticks until next monster trickles in (persisted)
+  // §travel: per-hero portal landing + grace, set when a hero crosses a portal.
+  // `at` = where to drop them in on the destination (the partner-edge portal), used
+  // once then nulled; `backTo`/`until` suppress re-crossing the edge they just used
+  // for a few ticks. Runtime only — not serialized.
+  portalArrivals: Record<string, { at: [number, number] | null; backTo: string; until: number }>
   itemSockets: Record<string, string[]>               // §6: itemInstanceId → card itemIds (persisted)
   eventLog: LogEntry[]                                // §7: ring buffer, last 200 entries
   lastTickAt: number
@@ -383,6 +388,10 @@ const MONSTER_VISION = 8           // monsters see a little less far
 const BARRIER_CAP = 16
 // §travel: how close a routing hero must get to a portal cell to cross it.
 const PORTAL_RADIUS = 1.5
+// §travel: after crossing, ignore the reverse portal (the one back where we came
+// from) for this many ticks so a hero who lands ON it isn't sucked straight back —
+// it walks clear (or hunts) first. Long enough to step off at any move speed.
+const PORTAL_GRACE_TICKS = 5
 function openWorldCap(loc: Location): number {
   return loc.openWorldCap ?? OPEN_WORLD_DEFAULT_CAP
 }
@@ -566,7 +575,7 @@ function timeScaleFor(loc: Location): number {
 // Stand up a fresh persistent battle on the location's (large) open-world map:
 // the party knotted at the centre, `cap` monsters scattered across the field,
 // everyone with a limited sight radius. Marked `mode: 'open'` so it never ends.
-function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number): BattleState {
+function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number, arrivals: GameState['portalArrivals'] = {}): BattleState {
   const size = openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
   const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
@@ -580,7 +589,12 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
     addCombatant(battle, npcToEngineInput(npc), 'neutral', undefined, npc.pos)
   }
   party.forEach((u, i) => {
-    addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, heroSpawnPos(size, i))
+    // §travel: a hero arriving via a portal emerges at the partner-edge spot (this
+    // applies on a FRESH field too — e.g. crossing into a map whose battle didn't
+    // exist yet); others form up near the centre.
+    const land = arrivals[u.id]?.at
+    const at = land ? { x: land[0], y: land[1] } : heroSpawnPos(size, i)
+    addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, at)
     const cinp = companionToEngineInput(u)
     if (cinp) {
       const owner = battle.combatants.find((c) => c.id === u.id)
@@ -595,7 +609,10 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
 // now: drop heroes that died or left (clearing stale enemy locks), and field any
 // eligible hero not already present (fresh deploys, returnees from recovery) at
 // the party anchor. Returns true if the combatant set changed. Mutates in place.
-function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): boolean {
+function reconcileOpenPlayers(
+  battle: BattleState, eligible: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[],
+  arrivals: GameState['portalArrivals'] = {},
+): boolean {
   const eligibleIds = new Set(eligible.map((u) => u.id))
   let changed = false
 
@@ -629,7 +646,11 @@ function reconcileOpenPlayers(battle: BattleState, eligible: Unit[], equipment: 
   const present = new Set(battle.combatants.filter((c) => c.team === 'player' && c.ownerId == null).map((c) => c.id))
   for (const u of eligible) {
     if (present.has(u.id)) continue
-    const at = partyAnchor(battle, battle.cols)
+    // §travel: a hero who just crossed a portal drops in AT the partner-edge portal
+    // (east→west etc., per the `toAt` wiring), not the map centre — so they emerge
+    // where the maps connect. Everyone else forms up on the party anchor.
+    const land = arrivals[u.id]?.at
+    const at = land ? { x: land[0], y: land[1] } : partyAnchor(battle, battle.cols)
     addCombatant(battle, withVision(unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), HERO_VISION), 'player', partyTactics, at)
     const cinp = companionToEngineInput(u)
     if (cinp) addCombatant(battle, withVision(cinp, HERO_VISION), 'player', partyTactics, { x: at.x + 1, y: at.y })
@@ -979,6 +1000,7 @@ interface CombatStep {
   locationStats: Record<string, LocationCombatStats>
   unitStatsDelta: Record<string, CombatTally>   // unitId → lifetime-stat deltas this tick
   travelMoves: Record<string, { locationId: string; travelPath: string[] | null }>  // §travel: heroes who crossed a portal this tick
+  arrivals: Record<string, { at: [number, number] | null; backTo: string; until: number }>  // §travel: portal landing + grace, set on cross
   logs: { category: LogCategory; message: string }[]
 }
 
@@ -1002,6 +1024,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const questDropDelta: Record<string, number> = {}
   let goldEarned = 0
   const travelMoves: Record<string, { locationId: string; travelPath: string[] | null }> = {}
+  const arrivals: CombatStep['arrivals'] = {}
   const logs: { category: LogCategory; message: string }[] = []
 
   // Per-unit lifetime-stat deltas accumulated this tick (Report panel + analytics).
@@ -1190,13 +1213,24 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       const path = u.travelPath
       if (!path || path.length === 0) continue
       const dest = path[0]
-      const cross = () => { travelMoves[u.id] = { locationId: dest, travelPath: path.length > 1 ? path.slice(1) : null } }
+      // §portal grace: don't let the portal we JUST used pull us straight back. If
+      // the next hop is back where we came from and we're still in the grace window,
+      // hold here for now (a future cyclic route then completes after the grace).
+      const grace = s.portalArrivals[u.id]
+      if (grace && dest === grace.backTo && newTicks < grace.until) continue
       const portal = (loc.portals ?? []).find((p) => p.to === dest)
       if (!portal) {
         // No portal from here to the next node — can't route off this map. Drop the
         // path so the hero hunts where they are rather than freezing forever.
         travelMoves[u.id] = { locationId: loc.id, travelPath: null }
         continue
+      }
+      // Land at the partner-edge portal on the destination (east→west etc.), falling
+      // back to the party anchor when a portal has no wired exit; and start the grace
+      // so the reverse edge can't bounce us back this instant.
+      const cross = () => {
+        travelMoves[u.id] = { locationId: dest, travelPath: path.length > 1 ? path.slice(1) : null }
+        arrivals[u.id] = { at: portal.toAt ?? null, backTo: loc.id, until: newTicks + PORTAL_GRACE_TICKS }
       }
       const c = battle?.combatants.find((x) => x.id === u.id) ?? null
       if (!simulated || !c) { cross(); continue }
@@ -1241,7 +1275,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // the live pace + per-round cost are right. timeScale can't be swapped on a live
       // battle (it would desync in-flight cooldowns), hence a fresh field.
       if (!battle || battle.mode !== 'open' || battle.timeScale !== timeScaleFor(loc)) {
-        battle = createOpenBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], cap)
+        battle = createOpenBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], cap, s.portalArrivals)
         battles[locationId] = battle
         monsterSpawnTimers[locationId] = OPEN_WORLD_SPAWN_TICKS
         markSeen(loc, enemyMonsterIds(battle))
@@ -1251,7 +1285,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // peaceful=false) still has its heroes mill about individually.
       battle.peaceful = loc.traits.includes('city')
       // Field the right heroes (fresh deploys, KO removals, recovery returnees).
-      if (reconcileOpenPlayers(battle, eligible, s.equipment, s.partyTactics ?? [])) {
+      if (reconcileOpenPlayers(battle, eligible, s.equipment, s.partyTactics ?? [], s.portalArrivals)) {
         battles[locationId] = { ...battle }
       }
       // Live-edit: push any loadout changes onto the heroes already fighting.
@@ -1354,7 +1388,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
   return {
     battles, battleCooldown, monsterSpawnTimers, hpByUnit, packByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
-    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, logs,
+    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, arrivals, logs,
   }
 }
 
@@ -1431,6 +1465,7 @@ export const useGameStore = create<GameState>((set) => ({
   battles: {},
   battleCooldown: {},
   monsterSpawnTimers: {},
+  portalArrivals: {},
 
   tick: () => set((s) => {
     const newTicks    = s.ticks + 1
@@ -1512,6 +1547,17 @@ export const useGameStore = create<GameState>((set) => ({
       : s.questItems
     for (const [id, n] of Object.entries(combat.questDropDelta)) questItems[id] = (questItems[id] ?? 0) + n
 
+    // §travel: roll the per-hero portal landing/grace forward. New crossings this
+    // tick are merged in; an entry's `at` (drop-in spot) is consumed once the hero is
+    // fielded in its battle (live combatant, not crossing again), keeping only the
+    // grace window; the whole entry drops once the grace expires.
+    const portalArrivals: GameState['portalArrivals'] = { ...s.portalArrivals, ...combat.arrivals }
+    for (const id of Object.keys(portalArrivals)) {
+      const e = portalArrivals[id]
+      if (newTicks >= e.until) { delete portalArrivals[id]; continue }
+      if (e.at && (id in combat.hpByUnit) && !combat.travelMoves[id]) portalArrivals[id] = { ...e, at: null }
+    }
+
     // §hero stats: slide the 5s damage ring for every unit (drop idle all-zero ones).
     const dpsWindow: Record<string, { dealt: number[]; taken: number[] }> = {}
     for (const u of s.units) {
@@ -1537,6 +1583,7 @@ export const useGameStore = create<GameState>((set) => ({
       battles: combat.battles,
       battleCooldown: combat.battleCooldown,
       monsterSpawnTimers: combat.monsterSpawnTimers,
+      portalArrivals,
       monsterDefeated: combat.monsterDefeated,
       questItems,
       monsterSeen: combat.monsterSeen,
@@ -2272,6 +2319,7 @@ export const useGameStore = create<GameState>((set) => ({
       battles:           {},
       battleCooldown:    {},
       monsterSpawnTimers: {},
+  portalArrivals: {},
       ticks:         0,
       lastTickAt:    Date.now(),
       offlineSummary: null,
