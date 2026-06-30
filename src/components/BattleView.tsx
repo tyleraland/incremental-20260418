@@ -1072,8 +1072,8 @@ const MINIMAP_MARGIN = 1.25
 // A PARTY-scoped radar (not the whole 200-cell field, where the camera box + dots are
 // a pixel each): the square is sized to encompass every hero plus where the camera is
 // looking, so the whole party is always visible without the clutter of per-hero sight
-// rings. The followed hero keeps a single vision ring (its sight distance); only
-// in-sight foes dot. Tap a hero to follow; tap elsewhere to free-look there.
+// rings. No vision ring is drawn; only in-sight foes dot (within a hero's visionRange
+// and unobstructed sightline). Tap a hero to follow; tap elsewhere to free-look there.
 function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: Cam; followId: string | null; onPick: (hit: MinimapPick) => void }) {
   const BOX = 64
   const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
@@ -1119,12 +1119,6 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
     >
       {battle.barriers.map((b, i) => (
         <div key={i} className="absolute bg-stone-500/40" style={{ left: mx(b.x), top: my(b.y + b.h), width: px(b.w), height: px(b.h) }} />
-      ))}
-      {/* one sight ring — the FOLLOWED hero's vision radius, so the radar shows how far
-          they see without N overlapping circles cluttering a multi-hero party. */}
-      {heroes.filter((c) => c.id === followId && Number.isFinite(c.visionRange)).map((c) => (
-        <div key={`v${c.id}`} className="absolute rounded-full border border-emerald-300/30 bg-emerald-300/5 pointer-events-none -translate-x-1/2 -translate-y-1/2"
-          style={{ left: mx(c.pos.x), top: my(c.pos.y), width: px(c.visionRange * 2), height: px(c.visionRange * 2) }} />
       ))}
       {/* current camera window — eases with the camera so the box tracks the smooth pan */}
       <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: 0, top: 0, transform: `translate(${mx(cam.x)}px, ${my(cam.y + cam.size)}px)`, width: px(cam.size), height: px(cam.size), transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }} />
