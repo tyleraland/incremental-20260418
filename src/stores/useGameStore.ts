@@ -2260,6 +2260,12 @@ export const useGameStore = create<GameState>((set) => ({
       monsterDefeated: {},
       locationStats:   {},
       unitStats:       {},
+      // The rolling rate-history + 5s ring + catch-up debug are per-unit combat
+      // state too — clear them, or a reset keeps the old hero's damage/min, xp/min,
+      // etc. stuck on the brand-new (never-fought) roster.
+      unitStatHistory: {},
+      dpsWindow:       {},
+      lastCatchUp:     null,
       viewedUnitLevels: {},
       reportUnitId:    null,
       partyTactics:    [{ id: 'finish-them', rank: 1 }],

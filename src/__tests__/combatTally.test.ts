@@ -116,6 +116,16 @@ describe('foldHistory / window sums', () => {
     expect(sumAll(hist['hero']).damageDealt).toBe(150)
   })
 
+  it('excludes buckets newer than the current tick (stale history after a tick reset)', () => {
+    // A bucket recorded at minute 100, then read as if the clock is back at 0 (what a
+    // save reset does: ticks→0 while stale buckets keep their high indices). The
+    // future bucket must not count as the current minute — else the rate sticks
+    // forever (the "44k dmg/min on a brand-new hero" bug).
+    const hist = foldHistory({}, { hero: { ...emptyTally(), damageDealt: 999 } }, 100 * HISTORY_BUCKET_TICKS)
+    expect(sumWindow(hist['hero'], 0, 1).damageDealt).toBe(0)
+    expect(sumWindow(hist['hero'], 0, 60).damageDealt).toBe(0)
+  })
+
   it('prunes buckets older than the retention window', () => {
     const delta = { hero: { ...emptyTally(), damageDealt: 1 } }
     let hist = foldHistory({}, delta, 0)

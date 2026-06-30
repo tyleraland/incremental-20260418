@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
 import { persistSave } from '@/save'
 import { saveKeyFor } from '@/lib/save'
+import { emptyTally } from '@/lib/combatTally'
 import { makeUnit, resetStore } from '../helpers'
 
 describe('store: resetSave', () => {
@@ -34,5 +35,21 @@ describe('store: resetSave', () => {
       expect(u.exp).toBe(0)
       for (const lv of Object.values(u.learnedSkills)) expect(lv).toBeLessThanOrEqual(1)
     }
+  })
+
+  it('clears the rolling rate-history so a reset hero has no stale dmg/min, xp/min', () => {
+    // Stale per-unit combat history sitting in the store (what a played-in save has).
+    resetStore({
+      units: [makeUnit({ id: 'x' })],
+      unitStatHistory: { x: [{ bucket: 100, tally: { ...emptyTally(), damageDealt: 44_000 } }] },
+      dpsWindow: { x: { dealt: [10, 20], taken: [] } },
+    })
+
+    useGameStore.getState().resetSave()
+
+    const st = useGameStore.getState()
+    expect(st.unitStatHistory).toEqual({})   // no carried-over damage/min
+    expect(st.dpsWindow).toEqual({})         // no carried-over dmg/s ring
+    expect(st.lastCatchUp).toBeNull()
   })
 })

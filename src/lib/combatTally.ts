@@ -188,11 +188,18 @@ export function foldHistory(
 }
 
 // Sum the buckets covering the last `minutes` (inclusive of the current bucket).
+// Bounded on BOTH sides of the current bucket: a bucket NEWER than `currentTick`
+// (index > current) is excluded too — you can't have dealt damage in a future
+// minute. Without the upper bound, history left over from a higher tick count reads
+// as "current" forever and the rate never decays: a save reset drops `ticks` to 0
+// while stale buckets sit at high indices, so every one of them counts as the
+// current minute (the "44k on a brand-new hero" bug).
 export function sumWindow(buckets: StatBucket[] | undefined, currentTick: number, minutes: number): CombatTally {
   const total = emptyTally()
   if (!buckets) return total
-  const from = bucketIndexOf(currentTick) - minutes + 1
-  for (const b of buckets) if (b.bucket >= from) addInto(total, b.tally)
+  const to = bucketIndexOf(currentTick)
+  const from = to - minutes + 1
+  for (const b of buckets) if (b.bucket >= from && b.bucket <= to) addInto(total, b.tally)
   return total
 }
 

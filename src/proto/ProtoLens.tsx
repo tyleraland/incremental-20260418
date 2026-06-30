@@ -26,7 +26,7 @@ import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
 import { consumableDef, isConsumable } from '@/data/consumables'
-import { sumWindow, sumAll } from '@/lib/combatTally'
+import { sumWindow } from '@/lib/combatTally'
 import { fmt } from '@/components/TallyBreakdown'
 
 // ── Prototype Lens ─────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ function HeroLens({ unit }: { unit: Unit }) {
   // of history. (A 5m average kept a single AoE burst pinned high long after the hero
   // moved on, so a wandering hero still read thousands/min.)
   const lastMin = sumWindow(history, ticks, 1)
-  const lastHr  = sumAll(history)
+  const lastHr  = sumWindow(history, ticks, 60)   // real last 60 min, NOT every retained bucket
   const dealtPerMin = lastMin.damageDealt
   const takenPerMin = lastMin.damageTaken
   // XP rate + level ETA stay on the smoother 5-minute average — a countdown wants
