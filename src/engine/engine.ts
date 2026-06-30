@@ -1389,9 +1389,23 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const predictedD = d - threatStep
   const tooClose = canCloseDirectly && (d < want - band || predictedD < want - band)
 
-  // Sweet spot: right gap, clear shot, AND the threat can't close past the
-  // line next turn → stand and fire.
-  if (losClear && !tooClose && d <= want + band) return
+  // The foe we're actually trying to SHOOT (our lock) may not be the nearest one
+  // we kite around. If it's a different, FARther enemy that's beyond firing range,
+  // holding at the kite gap from the nearest leaves us locked on a target we can't
+  // hit — stalled forever. Detect that so we close on our prey instead of parking.
+  const aim = findCombatant(state, self.lockedTargetId)
+  const shootRange = castRange(self)
+  // Beyond ACTUAL firing range of our lock (no band slack — a hair too far means we
+  // can't fire on it and would plink some nearer foe instead, never finishing the
+  // one we're committed to).
+  const aimOutOfRange = !!aim && aim.alive && aim.id !== threat.id
+    && distance(self.pos, aim.pos) > shootRange
+    && lineClear(self.pos, aim.pos, state.barriers)
+
+  // Sweet spot: right gap, clear shot, the threat can't close past the line next
+  // turn → stand and fire — UNLESS our locked target is out of firing range (then
+  // we still need to close on it).
+  if (losClear && !tooClose && d <= want + band && !aimOutOfRange) return
 
   const before = { ...self.pos }
   const step = moveSpeedOf(self)
@@ -1405,6 +1419,17 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
     retreating = true
     const { x: dx, y: dy } = escapeHeading(state, self, threat, step)
     self.pos = slideMove(self.pos, { x: self.pos.x + dx * step, y: self.pos.y + dy * step }, state.barriers)
+  } else if (aimOutOfRange) {
+    // Not pressured by the nearest threat, but our locked target sits past firing
+    // range: close STRAIGHT toward it until it's just inside our shoot range, so we
+    // can actually open fire (the nearest foe stays our kite anchor for retreats).
+    const ad = distance(self.pos, aim!.pos) || 1
+    const ux = (aim!.pos.x - self.pos.x) / ad
+    const uy = (aim!.pos.y - self.pos.y) / ad
+    const cap = Math.min(step, Math.max(0, ad - (shootRange - 0.5)))
+    if (cap > EPS) {
+      self.pos = slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers)
+    }
   } else if (losClear) {
     // We have a clear shot but we're too far — close the gap *straight* toward
     // the threat until in firing range. If a movement-only barrier (a cliff)

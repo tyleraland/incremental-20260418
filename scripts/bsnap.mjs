@@ -190,9 +190,11 @@ function stepBattle(engine, barriers, b, watch) {
 function inspectLine(b, c) {
   const p = b.plans?.[c.team]
   const v = (pt) => (pt ? `(${fx(pt.x)},${fx(pt.y)})` : '—')
+  const res = (c.lastResolution ?? []).map((r) => `${r.channel[0]}:${r.id}=${r.outcome}`).join(' ')
   return `lock=${c.lockedTargetId ?? '—'}  plan{hunt=${p?.huntTargetId ?? '—'} focus=${p?.focusTargetId ?? '—'} wp=${v(p?.waypoint)}}`
     + `  move{order=${v(c.moveOrder)} wander=${v(c.wanderTarget)} dwell=${c.wanderDwell ?? 0}}`
     + `  vis=${c.visionRange === Infinity ? '∞' : c.visionRange}`
+    + (res ? `  tactics[${res}]` : '')
 }
 
 // Pathing diagnostic toward combatant <toId>: distance, line-of-sight, reachability,

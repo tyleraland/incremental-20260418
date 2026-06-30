@@ -69,3 +69,47 @@ describe('kiter across a cliff (The Moat)', () => {
     expect(gap).toBeGreaterThan(3)                   // but holding a kite gap, not crammed at the edge
   })
 })
+
+// Regression (bsnap a159065…): a kiting archer LOCKED on a low-HP foe that is just
+// past firing range stalled forever — the Kiter anchors on the NEAREST enemy, so
+// it parked at kite distance from a different, nearer foe and never closed the last
+// step onto the target it was committed to (skills sat idle, out of range). It must
+// close on its locked target until it can actually fire.
+describe('kiter locked on a foe past firing range (≠ the nearest)', () => {
+  function stalledBattle(): BattleState {
+    const bow = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0, range: 6, cooldown: 4 }
+    const b = createBattle({
+      playerUnits: [eu({
+        id: 'archer', spd: 18, str: 25, int: 5, def: 3, maxHp: 100, hp: 100,
+        preferredRank: 'back', meleeRange: 1.2, rangedRange: 6, moveSpeed: 1.1,
+        skills: [bow], tactics: [{ id: 'kiter', rank: 1 }],
+      })],
+      enemyUnits: [
+        // Lowest HP → the team focus / lock, but parked 7.4 away (out of range 6).
+        eu({ id: 'prey', team: 'enemy', spd: 10, str: 10, def: 3, maxHp: 50, hp: 18, meleeRange: 1.2, rangedRange: 3, moveSpeed: 0 }),
+        // Healthier, but at a comfortable kite distance (in range) — the Kiter's anchor.
+        eu({ id: 'near', team: 'enemy', spd: 10, str: 10, def: 3, maxHp: 60, hp: 60, meleeRange: 1.2, rangedRange: 3, moveSpeed: 0 }),
+      ],
+      cols: 60, rows: 60,   // roomy field so the test positions aren't arena-clamped
+      maxRounds: 200,
+    })
+    find(b, 'archer').pos = { x: 30, y: 30 }
+    find(b, 'prey').pos   = { x: 30, y: 22.6 }   // 7.4 north — out of firing range
+    find(b, 'near').pos   = { x: 35.5, y: 30 }   // 5.5 east  — within range, the nearest foe
+    // Aggro committed to 'prey' (threat·1 − distance·1): even 7.4 away it out-scores
+    // the nearer 'near', so the lock lands on the OUT-OF-RANGE foe — the stall setup.
+    find(b, 'archer').threat = { prey: 50 }
+    return b
+  }
+
+  it('closes onto the out-of-range locked target and opens fire (does not stall)', () => {
+    const b = stalledBattle()
+    const startPrey = find(b, 'prey').hp
+    for (let r = 0; r < 30; r++) advanceRound(b)
+    // It fired on SOMETHING (was idle/stuck before the fix) and specifically chipped
+    // the low-HP prey it had committed to by closing into range.
+    const enemyHp = find(b, 'prey').hp + find(b, 'near').hp
+    expect(enemyHp).toBeLessThan(18 + 60)
+    expect(find(b, 'prey').hp).toBeLessThan(startPrey)
+  })
+})
