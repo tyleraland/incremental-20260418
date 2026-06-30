@@ -205,18 +205,16 @@ What's left:
   - *Plumbing.* `worldCodec` now persists `savedAt`→`lastTickAt` so catch-up fires
     across a real app restart; an `OfflineSummary` modal recaps the absence.
   Still deferred:
-  - *Reward rate is saturated, not realized (suspected over-credit).* The cold/
-    sampled prime measures combat on a field kept **at cap every round**
-    (`runCombatSlice`→`restockField`), with no spawn-trickle pacing or wandering
-    downtime — so the extrapolated **kills/exp/loot** likely run higher than what
-    realized live play (sparse, vision-gated, trickle-spawned) would yield over the
-    same span. The synthetic **damage** breakdown had the same problem and was
-    surfacing as an inflated Hero-tab dmg/min after AFK; that path is fixed (offline
-    no longer feeds the rolling rate-history — the catch-up live-sims the final
-    minute instead, see `App.tsx` `REALIZED_TAIL_TICKS`). The **reward** side still
-    extrapolates the saturated rate. Worth measuring saturated-vs-realized and, if
-    confirmed, deriving the offline rate from realized `locationStats` (or pacing the
-    prime's spawn trickle) rather than a fully-stocked slice.
+  - *✅ Reward rate is now realized, not saturated.* The cold/sampled prime used to
+    refill the field to cap **every round** (`runCombatSlice`→`restockField`), so a
+    party that out-clears the open-world spawn trickle measured a kill rate ~**13×**
+    the realized one (and the sampled path re-paid that initial clear every window,
+    ~2×). The slice now trickles monsters in on the live spawn cadence
+    (`trickleField`) and the sampled path no longer re-stocks to cap between windows
+    — so projected kills/exp/loot track realized play (measured ~1.15× cold,
+    ~1.03× sampled; guarded by `offline-reward-rate.test.ts`). The synthetic
+    **damage** breakdown also no longer feeds the rolling rate-history; the catch-up
+    live-sims the final minute instead (`App.tsx` `REALIZED_TAIL_TICKS`).
   - *Web Worker offload* — priming runs on the main thread within the 50ms budget.
     If it ever gets heavy, move it behind a loading buffer in a worker (the
     `serializeBattle`/`deserializeBattle` BSNAP tokens already make a battle

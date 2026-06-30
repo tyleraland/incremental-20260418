@@ -693,13 +693,23 @@ function offlineBattleFor(
     : createBattleFor(loc, party, equipment, partyTactics)
 }
 
-// Top up an open-world field back to its monster cap with fresh (random) draws —
-// the corpse-clear + restock both the live tick and the offline sim use.
-function restockField(battle: BattleState, loc: Location): void {
+// One round of the live open-world spawn cadence, for the offline priming slice:
+// clear last round's (already-counted) corpses, then trickle AT MOST one fresh
+// monster in every OPEN_WORLD_SPAWN_TICKS rounds while below cap — exactly what the
+// live tick does (`monsterSpawnTimers`). Returns the next timer value. This makes
+// the primed kill rate SPAWN-LIMITED (what realized play yields) instead of the
+// saturated "refill to cap every round" rate (`restockField`), which over-credited
+// offline rewards by ~13× for a party that out-clears the trickle.
+function trickleField(battle: BattleState, loc: Location, spawnTimer: number): number {
   battle.combatants = battle.combatants.filter((c) => !(c.team === 'enemy' && !c.alive))
-  const size = openWorldSize(loc)
-  let living = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
-  while (living < openWorldCap(loc)) { if (!spawnMonsterInto(battle, loc, size)) break; living++ }
+  const living = battle.combatants.filter((c) => c.team === 'enemy' && c.alive).length
+  if (living >= openWorldCap(loc)) return OPEN_WORLD_SPAWN_TICKS
+  const next = Math.max(0, spawnTimer - 1)
+  if (next === 0) {
+    spawnMonsterInto(battle, loc, openWorldSize(loc))
+    return OPEN_WORLD_SPAWN_TICKS
+  }
+  return next
 }
 
 // Run a budgeted slice of REAL combat on `battle`, in place, returning the kills it
@@ -716,10 +726,15 @@ function runCombatSlice(
   const tally: Record<string, CombatTally> = {}
   const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
   let rounds = 0
+  let spawnTimer = OPEN_WORLD_SPAWN_TICKS   // local mirror of the live trickle cadence
   const started = Date.now()
 
   while (rounds < roundCap && Date.now() - started < msBudget) {
     if (!wantOpen && battle.outcome !== 'ongoing') break  // wave finished → slice complete
+    // Open world never resets: clear last round's corpses and trickle one monster in
+    // on the live spawn cadence (spawn-LIMITED, so the measured rate is the sustained
+    // realized rate — not a saturated "always at cap" rate that over-credits rewards).
+    if (wantOpen) spawnTimer = trickleField(battle, loc, spawnTimer)
     const before = new Set(battle.combatants.filter((c) => c.team === 'enemy' && c.alive).map((c) => c.id))
     advanceRound(battle)
     rounds++
@@ -754,9 +769,6 @@ function runCombatSlice(
         }
       }
     }
-    // Open world never resets: clear corpses and keep the field stocked so the
-    // measured rate reflects sustained pressure, not a one-time clear.
-    if (wantOpen) restockField(battle, loc)
   }
 
   return { killsByMonster, loot, rounds, tally }
@@ -829,8 +841,12 @@ export function projectOfflineSampled(
     for (const [mid, k] of Object.entries(windowKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
     // Extrapolate this window's breakdown over its full duration, same factor.
     mergeTally(tally, scaleTallyMap(slice.tally, factor))
-    // Fresh field for the next window → an independent composition sample.
-    if (w < K - 1 && wantOpen) restockField(battle, loc)
+    // NOTE: we deliberately DON'T re-stock the field to cap between windows. Each
+    // slice already trickles fresh (random) monsters in on the live spawn cadence,
+    // so composition still varies window-to-window — but the field state carries
+    // continuously, so the initial cap is fought down only ONCE (as in realized
+    // play). Re-stocking to cap each window re-paid that initial clear every window
+    // and ~doubled the projected kill rate over a short (80-round) slice.
   }
 
   const totalKills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
