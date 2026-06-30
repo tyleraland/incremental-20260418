@@ -6,7 +6,7 @@ import type {
   QuestDropRule, PackItem, ConsumableRule,
 } from '@/types'
 import { ACTION_SLOT_COUNT } from '@/types'
-import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory, HISTORY_BUCKET_TICKS } from '@/lib/combatTally'
+import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
@@ -1765,17 +1765,14 @@ export const useGameStore = create<GameState>((set) => ({
       ticks: newTicks, units, lastTickAt: Date.now(), eventLog,
       miscItems, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
       unitStats: foldUnitStats(s.unitStats, detailByUnit),
-      // Lifetime totals get the full AFK span (above), but the rolling history is
-      // minute-bucketed and read as a per-minute average (Hero tab / Reports). The
-      // whole absence would otherwise land in one bucket and spike "dmg/min" by the
-      // number of minutes away. Fold only a single minute's worth of the offline
-      // rate so the windowed rate stays realistic — full earnings live in the
-      // battle-report lifetime/offline summaries instead.
-      unitStatHistory: foldHistory(
-        s.unitStatHistory,
-        n > HISTORY_BUCKET_TICKS ? scaleTallyMap(detailByUnit, HISTORY_BUCKET_TICKS / n) : detailByUnit,
-        newTicks,
-      ),
+      // Offline damage is a SYNTHETIC estimate (a saturated priming sim, scaled over
+      // the absence) — fine for lifetime totals + the "while you were away" summary,
+      // but it must NOT feed the rolling rate-history. That history drives the Hero
+      // tab's per-minute/-second readouts, and a saturated estimate reads several×
+      // the realized open-world rate. Recent stats come only from real ticks: the
+      // catch-up (App.tsx) live-sims the final minute after this bulk extrapolation,
+      // so the rolling rate reflects realized play. Leave the history untouched here.
+      unitStatHistory: s.unitStatHistory,
     }
   }),
 

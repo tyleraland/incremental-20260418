@@ -5,7 +5,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore, getLocationCombatReport, projectOfflineSampled } from '@/stores/useGameStore'
 import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills } from '@/lib/offline'
-import { HISTORY_BUCKET_TICKS } from '@/lib/combatTally'
 import type { Location, LocationCombatStats } from '@/types'
 import { makeUnit, resetStore, batchTick } from '../helpers'
 
@@ -201,10 +200,11 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     expect(field!.kills).toBeGreaterThan(0)
   })
 
-  it('folds only ~one minute of the offline rate into the rolling history (no dmg/min spike)', () => {
-    // The Hero tab reads unitStatHistory as a per-minute average. Dumping a whole
-    // AFK span into one minute-bucket would inflate "dmg/min" by the minutes away;
-    // the lifetime unitStats still keep the full earnings.
+  it('keeps the synthetic offline breakdown out of the rolling rate-history', () => {
+    // Offline damage is a saturated priming estimate — fine for lifetime totals, but
+    // it must not feed the per-minute rate-history (it reads several× the realized
+    // open-world rate). Recent stats come from real ticks (the catch-up live-sims the
+    // final minute); batchTick leaves the rolling history untouched.
     const n = 30_000                                              // 100 minutes away
     resetStore({
       ticks: 1000,
@@ -216,13 +216,8 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     batchTick(n)
 
     const st = useGameStore.getState()
-    const lifeDmg = st.unitStats['u0']?.damageDealt ?? 0
-    const histDmg = st.unitStatHistory['u0']?.reduce((a, b) => a + b.tally.damageDealt, 0) ?? 0
-    expect(lifeDmg).toBeGreaterThan(0)                            // full earnings preserved
-    // History holds a single minute's worth, not the full 100-minute dump.
-    const perMinute = lifeDmg * HISTORY_BUCKET_TICKS / n
-    expect(histDmg).toBeLessThan(lifeDmg)
-    expect(histDmg).toBeCloseTo(perMinute, -1)                   // ≈ one minute of the rate
+    expect(st.unitStats['u0']?.damageDealt ?? 0).toBeGreaterThan(0)   // lifetime keeps it
+    expect(st.unitStatHistory['u0'] ?? []).toEqual([])               // rolling history untouched
   })
 
   it('ignores locations with no deployed units', () => {

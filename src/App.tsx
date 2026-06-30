@@ -26,13 +26,29 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 // Called both by the interval (background throttle catch-up) and visibilitychange.
 const TICK_MS = 1000 / TICKS_PER_SECOND  // 200 ms per tick
 
+// On a real catch-up we EXTRAPOLATE the bulk of the absence (batchTick — cheap, no
+// spatial sim) but then PLAY OUT the final minute for real, tick by tick. The live
+// path runs sparse open-world combat (trickle spawns, vision gating, wandering), so
+// the rolling "recent stats" (Hero tab dmg/m, dmg/s) reflect realized play instead
+// of the saturated priming estimate batchTick produces. One minute of real ticks is
+// bounded (~300 rounds) and one-time on return. See the offline notes in AGENTS.md.
+const REALIZED_TAIL_TICKS = TICKS_PER_SECOND * 60  // 300 ticks = the realized last minute
+
 function catchUp() {
   const { lastTickAt, tick, batchTick, paused } = useGameStore.getState()
   if (paused) return
   const n = Math.floor((Date.now() - lastTickAt) / TICK_MS)
   if (n <= 0) return
-  if (n <= 10) { for (let i = 0; i < n; i++) tick() }
-  else batchTick(n)
+  if (n <= 10) { for (let i = 0; i < n; i++) tick(); return }   // steady state: fixed-step cadence
+  // Extrapolate everything older than the realized tail (no-op when the whole jump
+  // fits in the tail), then live-sim the tail so recent stats are real.
+  const tail = Math.min(n, REALIZED_TAIL_TICKS)
+  batchTick(n - tail)
+  for (let i = 0; i < tail; i++) tick()
+  // Those live ticks ran in a tight loop (not wall time), each advancing lastTickAt
+  // by a fixed step — so it now sits ~tail ticks ahead of now. Resync to the clock,
+  // exactly as a bare batchTick does, so the next catch-up measures from now.
+  useGameStore.setState({ lastTickAt: Date.now() })
 }
 
 function App() {
