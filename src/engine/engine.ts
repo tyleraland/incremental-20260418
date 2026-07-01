@@ -348,7 +348,7 @@ export function addCombatant(
 // tests use it to force pathing (incl. impossible paths the unit can't satisfy).
 // Resolution is instantaneous in grid steps each round — overworld travel
 // between locations is deferred (see BACKLOG).
-export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2, engage: 'off' | 'retaliate' | 'clear' = 'off'): boolean {
+export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2, engage: 'off' | 'retaliate' | 'avoid' = 'off'): boolean {
   const c = findCombatant(state, combatantId)
   if (!c) return false
   // Clamp against THIS battle's arena, not whatever bounds the last-stepped battle
@@ -365,6 +365,52 @@ export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2
 export function clearMoveOrder(state: BattleState, combatantId: string): void {
   const c = findCombatant(state, combatantId)
   if (c) { c.moveOrder = null; c.moveEngage = undefined }
+}
+
+// §travel-defend 'avoid': an aim point a few cells ahead in a direction that blends
+// the pull toward the travel destination with repulsion away from every visible
+// hostile's attack range (a soft "threat zone"). The repulsion is capped below the
+// march pull, so the destination always wins the tie — the hero SKIRTS cheap threats
+// but plows through a foe dead-ahead (taking a hit) rather than veering way off
+// course or stalling. Deterministic (positions only); executeMovement steps toward
+// the returned point (barrier-aware). Pure fn(positions) → replays 1:1.
+const AVOID_ZONE_BUFFER = 1.5     // cells beyond a foe's reach still treated as its danger zone
+const AVOID_RADIAL_CAP = 0.7      // max push straight AWAY from foes (< 1 ⇒ the march keeps forward progress)
+const AVOID_TANGENT_CAP = 1.3     // max sidestep AROUND foes ahead (perpendicular ⇒ doesn't cost forward progress)
+const AVOID_LOOKAHEAD = 5         // how far ahead to place the aim point (≥ a full step)
+function avoidAimPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
+  const mx0 = dest.x - self.pos.x, my0 = dest.y - self.pos.y
+  const mLen = Math.hypot(mx0, my0) || 1
+  const mx = mx0 / mLen, my = my0 / mLen             // unit pull toward the destination
+  let rx = 0, ry = 0   // radial: away from foes
+  let sx = 0, sy = 0   // tangential: sidestep around foes that are ahead
+  for (const e of visibleEnemiesOf(state, self)) {
+    if (!e.provoked) continue
+    const fx = e.pos.x - self.pos.x, fy = e.pos.y - self.pos.y
+    const d = Math.hypot(fx, fy) || 1
+    const zone = attackReach(e) + AVOID_ZONE_BUFFER
+    if (d >= zone) continue
+    const depth = (zone - d) / zone                  // 0 at the rim → 1 on top of the foe
+    const fdx = fx / d, fdy = fy / d
+    rx -= fdx * depth; ry -= fdy * depth             // push straight away
+    // Steer AROUND a foe that's in front of the march (pure repulsion just stalls a
+    // head-on threat). Pick the perpendicular side the foe ISN'T on (default right
+    // when it's dead-ahead), scaled by how directly ahead + how deep it is.
+    const ahead = mx * fdx + my * fdy
+    if (ahead > 0) {
+      const cross = mx * fdy - my * fdx              // >0 foe leans left of the march
+      const side = cross < -1e-6 ? -1 : 1            // foe on the right → steer left, else steer right
+      sx += (my) * side * depth * ahead              // right-hand perpendicular of the march = (my, -mx)
+      sy += (-mx) * side * depth * ahead
+    }
+  }
+  const rLen = Math.hypot(rx, ry)
+  if (rLen > AVOID_RADIAL_CAP) { rx = (rx / rLen) * AVOID_RADIAL_CAP; ry = (ry / rLen) * AVOID_RADIAL_CAP }
+  const sLen = Math.hypot(sx, sy)
+  if (sLen > AVOID_TANGENT_CAP) { sx = (sx / sLen) * AVOID_TANGENT_CAP; sy = (sy / sLen) * AVOID_TANGENT_CAP }
+  const bx = mx + rx + sx, by = my + ry + sy
+  const bLen = Math.hypot(bx, by) || 1
+  return { x: self.pos.x + (bx / bLen) * AVOID_LOOKAHEAD, y: self.pos.y + (by / bLen) * AVOID_LOOKAHEAD }
 }
 
 // How close counts as "arrived" at a move-order point.
@@ -1732,13 +1778,15 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // Between decisions, execute committed movement without the steerAround Dijkstra
   // (slide straight; re-route at the next decision round). No-op when decideNow.
   if (!decideNow) setDirectMove(true)
-  // §travel-defend: a 'retaliate' traveller keeps MARCHING toward her destination
-  // (firing on foes in range via the targeting/action phases below) rather than
-  // approaching — so she never veers off course to chase. 'clear' (and a plain fight)
-  // instead use the normal movement AI to approach/kite and put the threat down.
-  const travelDest = self.moveEngage === 'retaliate' ? self.moveOrder : null
-  const movePlan: MovementResult | null = travelDest
-    ? { toPoint: travelDest, speedMult: WANDER_SPEED_MULT }
+  // §travel-defend: how a travelling unit moves while a hostile is in sight.
+  //  'retaliate' → keep marching straight to the destination (fire in range below).
+  //  'avoid'     → steer the march AROUND foes' attack ranges (still fire if forced).
+  // Both keep heading to the travel point rather than approaching the foe, so the
+  // hero never veers off course to chase. A plain fight uses the normal movement AI.
+  const travelMove = self.moveOrder
+  const movePlan: MovementResult | null =
+    self.moveEngage === 'retaliate' && travelMove ? { toPoint: travelMove, speedMult: WANDER_SPEED_MULT }
+    : self.moveEngage === 'avoid' && travelMove ? { toPoint: avoidAimPoint(state, self, travelMove), speedMult: WANDER_SPEED_MULT }
     : applyLeash(state, self, evalMovement(state, self))
   executeMovement(state, self, movePlan)
   // §spacing: a final separation pass each turn — whatever the movement path

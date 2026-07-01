@@ -217,7 +217,7 @@ export interface GameState {
   spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
   debugLevelUp: (unitId: string) => void       // §debug: grant exactly enough exp to gain one level
   debugResetLevel: (unitId: string) => void    // §debug: reset to a clean level-1 unit (level/exp/abilities)
-  setTravelEngage: (unitId: string, mode: 'ignore' | 'retaliate' | 'clear') => void  // §travel-defend: per-hero routing combat behaviour
+  setTravelEngage: (unitId: string, mode: 'ignore' | 'retaliate' | 'avoid') => void  // §travel-defend: per-hero routing combat behaviour
   learnSkill: (unitId: string, skillId: string) => void
   // Tactics: equip/unequip and reorder priority (first = highest). Validated
   // against TACTIC_REGISTRY scope and the per-unit / party slot caps.

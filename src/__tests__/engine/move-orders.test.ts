@@ -111,25 +111,31 @@ describe('move orders — force path', () => {
     expect(minDistToFoe).toBeGreaterThan(4)     // never closed in on the foe
   })
 
-  it("§travel-defend: a 'clear' order veers to kill an off-line hostile, then resumes to the goal", () => {
-    const b = createBattle({
-      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 12, moveSpeed: 0.9, str: 40, meleeRange: 2 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 60, hp: 60, moveSpeed: 0, str: 1, def: 0 })],
-      mode: 'open', cols: 30, rows: 30,
-    })
-    find(b, 'a').pos = { x: 5, y: 15 }
-    find(b, 'e').pos = { x: 12, y: 10 }        // OFF the march line — a melee hero must veer to reach it
-    const dest = { x: 25, y: 15 }
-    issueMoveOrder(b, 'a', dest, 'clear')      // clear threats — approach and kill
-    let arrived = false, minDistToFoe = Infinity
-    for (let r = 0; r < 160 && !arrived; r++) {
-      advanceRound(b)
-      minDistToFoe = Math.min(minDistToFoe, dist(find(b, 'a').pos, find(b, 'e').pos))
-      if (dist(find(b, 'a').pos, dest) < 0.6) arrived = true
+  it("§travel-defend: an 'avoid' order steers around a threat zone on the line but still reaches the goal", () => {
+    const mk = (engage: 'off' | 'avoid') => {
+      const b = createBattle({
+        playerUnits: [eu({ id: 'a', team: 'player', visionRange: 14, moveSpeed: 0.9, str: 5, meleeRange: 1 })],
+        // A stationary threat sitting ON the march line, with a modest attack range.
+        enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 9999, hp: 9999, moveSpeed: 0, str: 1, rangedRange: 4 })],
+        mode: 'open', cols: 30, rows: 30,
+      })
+      find(b, 'a').pos = { x: 5, y: 15 }
+      find(b, 'e').pos = { x: 15, y: 15 }       // dead ahead on the y=15 line
+      const dest = { x: 25, y: 15 }
+      issueMoveOrder(b, 'a', dest, engage)
+      let arrived = false, minDistToFoe = Infinity
+      for (let r = 0; r < 160 && !arrived; r++) {
+        advanceRound(b)
+        minDistToFoe = Math.min(minDistToFoe, dist(find(b, 'a').pos, find(b, 'e').pos))
+        if (dist(find(b, 'a').pos, dest) < 0.6) arrived = true
+      }
+      return { arrived, minDistToFoe }
     }
-    expect(find(b, 'e').alive).toBe(false)     // closed in and killed it
-    expect(minDistToFoe).toBeLessThan(2.5)     // did veer off the line to reach it (melee range)
-    expect(arrived).toBe(true)                 // then resumed the march to the goal
+    const straight = mk('off')     // marches dead through the foe
+    const avoid = mk('avoid')      // bends around its attack range
+    expect(straight.arrived).toBe(true)
+    expect(avoid.arrived).toBe(true)                              // avoid still reaches the goal
+    expect(avoid.minDistToFoe).toBeGreaterThan(straight.minDistToFoe + 1)  // gave the threat a wider berth
   })
 
   it('clearMoveOrder hands the unit back to normal AI', () => {

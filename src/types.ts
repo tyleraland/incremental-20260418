@@ -121,7 +121,7 @@ export interface Unit {
   learnedSkills: Record<string, number>
   locationId: string | null
   travelPath: string[] | null              // §4/§travel: remaining map ids to walk through (portal hops); null = arrived
-  travelEngage?: 'ignore' | 'retaliate' | 'clear'  // §travel-defend: how to handle hostiles while routing (default 'retaliate')
+  travelEngage?: 'ignore' | 'retaliate' | 'avoid'  // §travel-defend: how to handle hostiles while routing (default 'retaliate')
   equipment: { armor: string | null; sideboard1: string | null; sideboard2: string | null; accessory: string | null }
   weaponSets: [WeaponRecord, WeaponRecord] // §5: set A and set B
   activeWeaponSet: 0 | 1                  // §5: which weapon set is active

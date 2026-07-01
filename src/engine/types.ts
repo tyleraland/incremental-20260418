@@ -340,11 +340,12 @@ export interface Combatant {
   // = 'off' (march straight through, as a plain move order or forced-pathing does).
   //  'retaliate' = keep marching toward the destination but target + fire on foes in
   //     range as it passes (no veer off course).
-  //  'clear' = suspend the march and engage with full combat AI (approach/kite/kill),
-  //     then resume once no hostile remains.
+  //  'avoid' = steer the march AROUND foes' attack ranges (capped repulsion vs the
+  //     pull to the destination — skirt cheap threats, plow through costly ones),
+  //     still firing when a foe ends up in range.
   // Set by the store's travel loop from the hero's Logistics preference. Optional so
   // legacy snapshots and plain orders default to 'off'.
-  moveEngage?: 'retaliate' | 'clear'
+  moveEngage?: 'retaliate' | 'avoid'
 
   // §threat: per-enemy threat each opponent has built up against this unit (by
   // id). Dealing damage to / healing against a unit raises the actor's threat on

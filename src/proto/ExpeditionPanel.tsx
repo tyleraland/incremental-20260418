@@ -13,10 +13,10 @@ import { useProtoStore } from './protoStore'
 import { heroCarried, isOverweight, OVERWEIGHT_FRACTION, WEIGHT_LIMIT } from './economy'
 
 // §travel-defend: per-hero behaviour when a hostile is in sight while routing.
-const TRAVEL_ENGAGE_OPTS: Choice<'ignore' | 'retaliate' | 'clear'>[] = [
-  { id: 'ignore',    label: 'Run past',      hint: 'March straight through — never stop to fight. Fastest, but takes the hits.' },
-  { id: 'retaliate', label: 'Retaliate',     hint: 'Keep marching, but fire on hostiles that come into range as you pass. Default.' },
-  { id: 'clear',     label: 'Fight through', hint: 'Stop and put down threats in sight before continuing. Safest, but slower and may leave the path to chase.' },
+const TRAVEL_ENGAGE_OPTS: Choice<'ignore' | 'retaliate' | 'avoid'>[] = [
+  { id: 'ignore',    label: 'Run past',  hint: 'March straight through — never stop to fight. Fastest, but takes the hits.' },
+  { id: 'retaliate', label: 'Retaliate', hint: 'Keep marching, but fire on hostiles that come into range as you pass. Default.' },
+  { id: 'avoid',     label: 'Avoid',     hint: "Steer around enemies' attack ranges to skip fights — but plow through (taking a hit) rather than veer way off course, and still shoot when a foe gets close." },
 ]
 
 const toggleChip = (on: boolean) =>
