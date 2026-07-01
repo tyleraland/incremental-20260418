@@ -345,10 +345,18 @@ export function ProtoApp() {
     prevFollowLocRef.current = followLocId
     if (!followLocId || followLocId === prev) return   // hero hasn't changed maps
     const s = useGameStore.getState()
-    if (s.selectedLocationId === followLocId) return
+    // Sync the map page + BOTH camera targets to the followed hero's new map.
+    // NB: check selectedLocationId AND combatLocationId — an instant redeploy /
+    // return-to-town can leave selectedLocationId already pointing at the new map
+    // while combatLocationId (the WATCHED battle) still points at the old field, so
+    // gating only on selectedLocationId used to strand the battle-view camera on the
+    // map they left (follow silently dropped across the transition).
     const loc = s.locations.find((l) => l.id === followLocId)
     if (loc && loc.region !== s.mapPageId) s.setMapPage(loc.region)
-    useGameStore.setState({ selectedLocationId: followLocId, combatLocationId: followLocId })
+    const patch: Partial<{ selectedLocationId: string; combatLocationId: string }> = {}
+    if (s.selectedLocationId !== followLocId) patch.selectedLocationId = followLocId
+    if (s.combatLocationId !== followLocId) patch.combatLocationId = followLocId
+    if (Object.keys(patch).length) useGameStore.setState(patch)
   }, [battleFollowId, followLocId])
 
   const measurePin = useCallback(() => {
