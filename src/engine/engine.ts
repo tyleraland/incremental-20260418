@@ -1732,7 +1732,15 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // Between decisions, execute committed movement without the steerAround Dijkstra
   // (slide straight; re-route at the next decision round). No-op when decideNow.
   if (!decideNow) setDirectMove(true)
-  executeMovement(state, self, applyLeash(state, self, evalMovement(state, self)))
+  // §travel-defend: a traveller engaging a hostile mid-route keeps MARCHING toward
+  // her destination (retaliating with the targeting/action phases below) rather than
+  // approaching the foe — so she fires on what she passes but never veers off course
+  // to chase it down. A plain fight (no travel order) uses its normal movement AI.
+  const travelDest = self.moveEngage === true ? self.moveOrder : null
+  const movePlan: MovementResult | null = travelDest
+    ? { toPoint: travelDest, speedMult: WANDER_SPEED_MULT }
+    : applyLeash(state, self, evalMovement(state, self))
+  executeMovement(state, self, movePlan)
   // §spacing: a final separation pass each turn — whatever the movement path
   // (approach, kite, hold, wander, or a movement tactic), the unit must not END
   // its turn sitting on a neighbour, and especially not on an IMMOVABLE foe it

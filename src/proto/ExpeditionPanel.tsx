@@ -157,6 +157,25 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const resupplyPct = inTownResupply ? Math.min(100, ((TOWN_RESUPPLY_TICKS - resupplyLeft) / TOWN_RESUPPLY_TICKS) * 100) : 0
   const resupplySecs = Math.ceil(resupplyLeft / TICKS_PER_SECOND)
   const travelGroup = returnMode === 'group'
+  // The stored status is only 'hunting' | 'returning', which can't tell the OUTBOUND
+  // leg (walking to town) from the INBOUND one (walking back to the hunt spot) — both
+  // are 'returning'. Derive the real logistics phase for the status pill from the
+  // resupply timer + whether the hero is still on the road (a live travelPath):
+  //   hunting → traveling-to-hunt → hunting → to-town → resupplying → to-hunt → hunting
+  const walking = (unit.travelPath?.length ?? 0) > 0
+  const phase: 'hunting' | 'traveling' | 'to-town' | 'resupplying' | 'to-hunt' | 'idle' =
+    he.status === 'returning'
+      ? (he.resupplyUntil == null ? 'to-town' : inTownResupply ? 'resupplying' : 'to-hunt')
+      : (walking ? 'traveling' : huntable ? 'hunting' : 'idle')
+  const PHASE_PILL: Record<string, { label: string; cls: string } | null> = {
+    hunting:     { label: 'hunting',             cls: 'border-game-green/50 text-game-green' },
+    traveling:   { label: '→ traveling to hunt', cls: 'border-game-green/50 text-game-green' },
+    'to-town':   { label: '⌂ returning to town', cls: 'border-game-gold/50 text-game-gold' },
+    resupplying: { label: '⌂ resupplying',       cls: 'border-game-gold/50 text-game-gold' },
+    'to-hunt':   { label: '→ returning to hunt', cls: 'border-game-gold/50 text-game-gold' },
+    idle: null,
+  }
+  const pill = PHASE_PILL[phase]
   const returnNow = () => {
     const ids = (returnMode === 'group' && huntable) ? party.map((u) => u.id) : [unit.id]
     // Flag the return; the driver's resupply phase whisks them to town and back.
@@ -169,15 +188,11 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
       <div className="rounded-lg border border-game-border bg-game-bg/60 p-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap">
-            {huntable ? (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${he.status === 'returning' ? 'border-game-gold/50 text-game-gold' : 'border-game-green/50 text-game-green'}`}>
-                {he.status === 'returning' ? '⌂ heading to town' : 'hunting'}
-              </span>
-            ) : inTownResupply ? (
+            {pill ? (
               <>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-game-gold/50 text-game-gold">⌂ resupplying</span>
-                {anchorLoc && <span className="text-[11px] text-game-text-dim">→ back to <span className="text-game-text">{anchorLoc.name}</span></span>}
-                <span className="text-[11px] text-game-muted">{travelGroup ? 'with the party' : 'alone'}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${pill.cls}`}>{pill.label}</span>
+                {phase === 'resupplying' && anchorLoc && <span className="text-[11px] text-game-text-dim">→ back to <span className="text-game-text">{anchorLoc.name}</span></span>}
+                {phase === 'resupplying' && <span className="text-[11px] text-game-muted">{travelGroup ? 'with the party' : 'alone'}</span>}
               </>
             ) : (
               <span className="text-[12px] text-game-muted italic">{!unit.locationId ? 'Not deployed' : 'In town'} — plan below</span>

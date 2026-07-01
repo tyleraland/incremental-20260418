@@ -86,23 +86,29 @@ describe('move orders — force path', () => {
     expect(find(b, 'e').hp).toBe(9999)    // never stopped to fight
   })
 
-  it('§travel-defend: an engage order stops to kill a hostile in sight, then resumes to the goal', () => {
+  it('§travel-defend: an engage order retaliates on a hostile in range but keeps marching (no veer)', () => {
     const b = createBattle({
-      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 10, moveSpeed: 0.9, str: 40, meleeRange: 2 })],
-      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 50, hp: 50, moveSpeed: 0, str: 1, def: 0 })],
+      // A ranged traveller (reach 8) marching straight along y=15.
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 12, moveSpeed: 0.9, str: 40, meleeRange: 1, rangedRange: 8 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 400, hp: 400, moveSpeed: 0, str: 1, def: 0 })],
       mode: 'open', cols: 30, rows: 30,
     })
     find(b, 'a').pos = { x: 5, y: 15 }
-    find(b, 'e').pos = { x: 9, y: 15 }       // in the path, in vision — a hostile en route
-    const dest = { x: 25, y: 15 }            // far past the enemy
-    issueMoveOrder(b, 'a', dest, true)       // engage: defend yourself while travelling
-    let arrived = false
+    find(b, 'e').pos = { x: 15, y: 9 }        // OFF the march line (6 south), but within firing range as she passes
+    const dest = { x: 25, y: 15 }
+    issueMoveOrder(b, 'a', dest, true)        // engage: defend yourself while travelling
+    let arrived = false, minY = Infinity, minDistToFoe = Infinity
     for (let r = 0; r < 120 && !arrived; r++) {
       advanceRound(b)
-      if (dist(find(b, 'a').pos, dest) < 0.6) arrived = true
+      const a = find(b, 'a')
+      minY = Math.min(minY, a.pos.y)
+      minDistToFoe = Math.min(minDistToFoe, dist(a.pos, find(b, 'e').pos))
+      if (dist(a.pos, dest) < 0.6) arrived = true
     }
-    expect(find(b, 'e').alive).toBe(false)   // stopped and killed it (didn't march past)
-    expect(arrived).toBe(true)               // then resumed the march and reached the goal
+    expect(find(b, 'e').hp).toBeLessThan(400)   // retaliated — fired on it while passing
+    expect(arrived).toBe(true)                  // still reached the goal
+    expect(minY).toBeGreaterThan(13)            // held her line — never veered south to chase
+    expect(minDistToFoe).toBeGreaterThan(4)     // never closed in on the foe
   })
 
   it('clearMoveOrder hands the unit back to normal AI', () => {
