@@ -899,27 +899,6 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
 
   return (
     <div className="mt-2 space-y-2 text-[10px]">
-      {/* Level tools (dev/testing) — players only. Level Up grants exactly enough
-          exp for one level; Reset Level wipes to a clean level-1 slate (abilities
-          included), handy for testing level-scaled behaviour like attack speed. */}
-      {c.team === 'player' && unit && (
-        <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-game-text-dim uppercase tracking-wide">Level tools</span>
-            <span className="text-game-muted tabular-nums">Lv {unit.level} · {Math.floor(unit.exp)}/{unit.expToNext} xp</span>
-          </div>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => debugLevelUp(unit.id)}
-              className="flex-1 py-1.5 rounded text-[11px] font-semibold border border-game-primary/50 bg-game-primary/20 text-game-primary hover:bg-game-primary/30 active:scale-95 transition-colors"
-            >Level Up</button>
-            <button
-              onClick={() => debugResetLevel(unit.id)}
-              className="flex-1 py-1.5 rounded text-[11px] font-semibold border border-red-500/50 bg-red-500/15 text-red-400 hover:bg-red-500/25 active:scale-95 transition-colors"
-            >Reset Level</button>
-          </div>
-        </div>
-      )}
       {/* Blackboard */}
       <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
         <div className="text-game-text-dim uppercase tracking-wide mb-1">Blackboard · {c.team}</div>
@@ -985,6 +964,29 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
           ))}
         </div>
       </div>
+
+      {/* Level tools (dev/testing) — players only, at the bottom of the tab. Level
+          Up grants exactly enough exp for one level; Reset Level wipes to a clean
+          level-1 slate (abilities included) for testing level-scaled behaviour
+          like attack speed. */}
+      {c.team === 'player' && unit && (
+        <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-game-text-dim uppercase tracking-wide">Level tools</span>
+            <span className="text-game-muted tabular-nums">Lv {unit.level} · {Math.floor(unit.exp)}/{unit.expToNext} xp</span>
+          </div>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => debugLevelUp(unit.id)}
+              className="flex-1 py-1.5 rounded text-[11px] font-semibold border border-game-primary/50 bg-game-primary/20 text-game-primary hover:bg-game-primary/30 active:scale-95 transition-colors"
+            >Level Up</button>
+            <button
+              onClick={() => debugResetLevel(unit.id)}
+              className="flex-1 py-1.5 rounded text-[11px] font-semibold border border-red-500/50 bg-red-500/15 text-red-400 hover:bg-red-500/25 active:scale-95 transition-colors"
+            >Reset Level</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
