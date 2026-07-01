@@ -1120,8 +1120,6 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       {battle.barriers.map((b, i) => (
         <div key={i} className="absolute bg-stone-500/40" style={{ left: mx(b.x), top: my(b.y + b.h), width: px(b.w), height: px(b.h) }} />
       ))}
-      {/* current camera window — eases with the camera so the box tracks the smooth pan */}
-      <div className="absolute border border-white/70 bg-white/5 pointer-events-none" style={{ left: 0, top: 0, transform: `translate(${mx(cam.x)}px, ${my(cam.y + cam.size)}px)`, width: px(cam.size), height: px(cam.size), transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear` }} />
       {/* Enemy dots — fog-of-war: only foes a living hero can actually SEE (within
           their visionRange AND an unobstructed sightline, so walls hide what's
           behind them). Foes outside every hero's sight show no dot. */}
