@@ -965,6 +965,34 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
         </div>
       </div>
 
+      {/* Pack / logistics — players only. Shows each carried consumable's store carry
+          (count/target) beside the engine's LIVE count, plus the travel behaviour, so a
+          reconcile/restock divergence (the town buy→wipe loop) is visible at a glance.
+          Potion USE shows in the Recent trace above ("use …"); the hunt/return status +
+          loadout live in the Logistics tab. */}
+      {c.team === 'player' && unit && (unit.pack?.length ?? 0) > 0 && (
+        <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-game-text-dim uppercase tracking-wide">Pack</span>
+            <span className="text-game-muted">travel: {unit.travelEngage ?? 'retaliate'}</span>
+          </div>
+          <div className="space-y-0.5">
+            {unit.pack!.map((pi) => {
+              const live = c.pack[pi.itemId] ?? 0
+              const diverged = live !== pi.count
+              return (
+                <div key={pi.itemId} className="flex items-center justify-between">
+                  <span className="text-game-text-dim">{pi.itemId}</span>
+                  <span className={`tabular-nums ${diverged ? 'text-amber-300' : 'text-game-text'}`}>
+                    carry {pi.count}{pi.target != null ? `/${pi.target}` : ''} · live {live}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Level tools (dev/testing) — players only, at the bottom of the tab. Level
           Up grants exactly enough exp for one level; Reset Level wipes to a clean
           level-1 slate (abilities included) for testing level-scaled behaviour
