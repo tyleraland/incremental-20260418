@@ -375,42 +375,49 @@ export function clearMoveOrder(state: BattleState, combatantId: string): void {
 // course or stalling. Deterministic (positions only); executeMovement steps toward
 // the returned point (barrier-aware). Pure fn(positions) → replays 1:1.
 const AVOID_ZONE_BUFFER = 1.5     // cells beyond a foe's reach still treated as its danger zone
-const AVOID_RADIAL_CAP = 0.7      // max push straight AWAY from foes (< 1 ⇒ the march keeps forward progress)
-const AVOID_TANGENT_CAP = 1.3     // max sidestep AROUND foes ahead (perpendicular ⇒ doesn't cost forward progress)
-const AVOID_LOOKAHEAD = 5         // how far ahead to place the aim point (≥ a full step)
+const AVOID_GATE_MARGIN = 1.15    // pass this fraction beyond the danger radius (clears the whole attack range + a hair)
+const AVOID_ENGAGE_MARGIN = 6     // begin arcing this many cells before reaching a foe's danger circle
+const AVOID_LOOKAHEAD = 5         // no-block case: how far ahead to place the straight aim point
 function avoidAimPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
   const mx0 = dest.x - self.pos.x, my0 = dest.y - self.pos.y
   const mLen = Math.hypot(mx0, my0) || 1
   const mx = mx0 / mLen, my = my0 / mLen             // unit pull toward the destination
-  let rx = 0, ry = 0   // radial: away from foes
-  let sx = 0, sy = 0   // tangential: sidestep around foes that are ahead
+  // Nearest visible, provoked foe whose danger circle (attack range + buffer) blocks
+  // the straight path — so we route WIDE around it rather than clipping its range.
+  let block: { e: Combatant; fx: number; fy: number; zone: number } | null = null
+  let bd = Infinity
   for (const e of visibleEnemiesOf(state, self)) {
     if (!e.provoked) continue
     const fx = e.pos.x - self.pos.x, fy = e.pos.y - self.pos.y
     const d = Math.hypot(fx, fy) || 1
     const zone = attackReach(e) + AVOID_ZONE_BUFFER
-    if (d >= zone) continue
-    const depth = (zone - d) / zone                  // 0 at the rim → 1 on top of the foe
-    const fdx = fx / d, fdy = fy / d
-    rx -= fdx * depth; ry -= fdy * depth             // push straight away
-    // Steer AROUND a foe that's in front of the march (pure repulsion just stalls a
-    // head-on threat). Pick the perpendicular side the foe ISN'T on (default right
-    // when it's dead-ahead), scaled by how directly ahead + how deep it is.
-    const ahead = mx * fdx + my * fdy
-    if (ahead > 0) {
-      const cross = mx * fdy - my * fdx              // >0 foe leans left of the march
-      const side = cross < -1e-6 ? -1 : 1            // foe on the right → steer left, else steer right
-      sx += (my) * side * depth * ahead              // right-hand perpendicular of the march = (my, -mx)
-      sy += (-mx) * side * depth * ahead
-    }
+    if (d > zone + AVOID_ENGAGE_MARGIN) continue      // still too far to matter
+    const along = fx * mx + fy * my                    // forward projection onto the march
+    if (along <= -zone) continue                        // fully behind us — no need to steer
+    const perp = Math.abs(fx * -my + fy * mx)           // |lateral| distance of the foe from the path
+    if (along > 0 && perp >= zone) continue             // straight path already clears it ahead
+    if (d < bd) { bd = d; block = { e, fx, fy, zone } }
   }
-  const rLen = Math.hypot(rx, ry)
-  if (rLen > AVOID_RADIAL_CAP) { rx = (rx / rLen) * AVOID_RADIAL_CAP; ry = (ry / rLen) * AVOID_RADIAL_CAP }
-  const sLen = Math.hypot(sx, sy)
-  if (sLen > AVOID_TANGENT_CAP) { sx = (sx / sLen) * AVOID_TANGENT_CAP; sy = (sy / sLen) * AVOID_TANGENT_CAP }
-  const bx = mx + rx + sx, by = my + ry + sy
-  const bLen = Math.hypot(bx, by) || 1
-  return { x: self.pos.x + (bx / bLen) * AVOID_LOOKAHEAD, y: self.pos.y + (by / bLen) * AVOID_LOOKAHEAD }
+  if (!block) return { x: self.pos.x + mx * AVOID_LOOKAHEAD, y: self.pos.y + my * AVOID_LOOKAHEAD }
+  // Skirt the danger circle by heading along its TANGENT (grazing radius R) rather
+  // than aiming at a fixed side-point — a static gate parks the hero beside the foe;
+  // a tangent heading arcs her AROUND and past it, always moving forward. Pass on the
+  // side the foe leans away from (shorter detour; default left when dead-ahead).
+  const d = Math.hypot(block.fx, block.fy) || 1
+  const R = block.zone * AVOID_GATE_MARGIN
+  const fdx = block.fx / d, fdy = block.fy / d          // unit toward the foe
+  const lpx = -my, lpy = mx                             // left-hand perpendicular of the march
+  const passLeft = (block.fx * lpx + block.fy * lpy) <= 0   // foe on the right/centre ⇒ pass on the left
+  let dirx: number, diry: number
+  if (d <= R) {                                          // already inside the range — peel straight out (nudged forward)
+    dirx = -fdx + mx * 0.3; diry = -fdy + my * 0.3
+  } else {                                               // rotate the toward-foe dir by the tangent half-angle to graze radius R
+    const ang = Math.asin(Math.min(1, R / d)) * (passLeft ? 1 : -1)
+    const c = Math.cos(ang), s = Math.sin(ang)
+    dirx = fdx * c - fdy * s; diry = fdx * s + fdy * c
+  }
+  const dl = Math.hypot(dirx, diry) || 1
+  return { x: self.pos.x + (dirx / dl) * AVOID_LOOKAHEAD, y: self.pos.y + (diry / dl) * AVOID_LOOKAHEAD }
 }
 
 // How close counts as "arrived" at a move-order point.

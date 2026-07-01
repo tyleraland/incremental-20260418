@@ -134,8 +134,9 @@ describe('move orders — force path', () => {
     const straight = mk('off')     // marches dead through the foe
     const avoid = mk('avoid')      // bends around its attack range
     expect(straight.arrived).toBe(true)
-    expect(avoid.arrived).toBe(true)                              // avoid still reaches the goal
-    expect(avoid.minDistToFoe).toBeGreaterThan(straight.minDistToFoe + 1)  // gave the threat a wider berth
+    expect(straight.minDistToFoe).toBeLessThan(4)   // a straight march walks into its range (4)
+    expect(avoid.arrived).toBe(true)                // avoid still reaches the goal
+    expect(avoid.minDistToFoe).toBeGreaterThan(4)   // …while clearing the whole attack range (no hits)
   })
 
   it('clearMoveOrder hands the unit back to normal AI', () => {
