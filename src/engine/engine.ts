@@ -351,6 +351,13 @@ export function addCombatant(
 export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2): boolean {
   const c = findCombatant(state, combatantId)
   if (!c) return false
+  // Clamp against THIS battle's arena, not whatever bounds the last-stepped battle
+  // left ambient. Without this, an order issued between rounds (e.g. the store's
+  // travel loop walking a hero to a portal, before advanceRound re-asserts bounds)
+  // gets clamped to a stale, smaller arena — e.g. a size-24 city field — so a portal
+  // at (30,59) on a 60-wide map collapses to (24,24) and the hero marches to a
+  // phantom point, never reaching the real portal (stuck-while-travelling).
+  setArenaBounds(state.cols, state.rows)
   c.moveOrder = arenaClamp(to)
   return true
 }

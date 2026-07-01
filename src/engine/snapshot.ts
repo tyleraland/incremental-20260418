@@ -150,20 +150,28 @@ export function deserializeBattle(token: string): BattleState {
   let rest = trimmed.startsWith(`${MAGIC}.`) ? trimmed.slice(MAGIC.length + 1) : trimmed
   // Pull off the integrity guard (`…<body>.<len>x<hash>`) if present, then strip
   // any whitespace a paste may have line-wrapped in (the base64 body has none).
-  let guard: { len: number; hash: string } | null = null
+  let guardStr: string | null = null
   const lastDot = rest.lastIndexOf('.')
-  if (lastDot > 0) {
-    const m = /^([0-9a-z]+)x([0-9a-z]+)$/.exec(rest.slice(lastDot + 1))
-    if (m) { guard = { len: parseInt(m[1], 36), hash: m[2] }; rest = rest.slice(0, lastDot) }
+  if (lastDot > 0 && /^[0-9a-z]+x[0-9a-z]+$/.test(rest.slice(lastDot + 1))) {
+    guardStr = rest.slice(lastDot + 1)
+    rest = rest.slice(0, lastDot)
   }
   const body = rest.replace(/\s+/g, '')
-  if (guard) {
-    if (body.length < guard.len) {
-      throw new Error(`Battle snapshot: token looks truncated (${body.length} of ${guard.len} chars) — re-copy the whole string`)
-    }
-    // Any length mismatch (short OR long — appended/garbled paste) or hash mismatch
-    // is corruption; only an exact-length, exact-hash body is trusted.
-    if (body.length !== guard.len || bodyTag(body).toString(36) !== guard.hash) {
+  if (guardStr) {
+    // Validate by RECONSTRUCTING the expected `<len>x<hash>` from the body, rather
+    // than splitting the guard on 'x'. The separator 'x' is itself a valid base36
+    // digit, so a hash (or length) that contains an 'x' makes a naive split ambiguous
+    // — the greedy split mis-read a perfectly good token as "truncated". Comparing the
+    // whole reconstructed string sidesteps that entirely.
+    const expected = `${body.length.toString(36)}x${bodyTag(body).toString(36)}`
+    if (guardStr !== expected) {
+      // Best-effort truncated-vs-corrupted messaging: the claimed length is the base36
+      // int before the last 'x' (may over-read if the hash held an 'x', but a truncated
+      // paste still reads as claimed > body — the branch we want).
+      const claimed = parseInt(guardStr.slice(0, guardStr.lastIndexOf('x')), 36)
+      if (Number.isFinite(claimed) && body.length < claimed) {
+        throw new Error(`Battle snapshot: token looks truncated (${body.length} of ${claimed} chars) — re-copy the whole string`)
+      }
       throw new Error('Battle snapshot: token looks corrupted (checksum mismatch) — re-copy it')
     }
   }
