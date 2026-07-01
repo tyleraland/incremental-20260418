@@ -364,7 +364,7 @@ export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2
 }
 export function clearMoveOrder(state: BattleState, combatantId: string): void {
   const c = findCombatant(state, combatantId)
-  if (c) { c.moveOrder = null; c.moveEngage = undefined }
+  if (c) { c.moveOrder = null; c.moveEngage = undefined; resetAvoidWatchdog(c) }
 }
 
 // §travel-defend 'avoid': an aim point a few cells ahead in a direction that blends
@@ -418,6 +418,36 @@ function avoidAimPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
   }
   const dl = Math.hypot(dirx, diry) || 1
   return { x: self.pos.x + (dirx / dl) * AVOID_LOOKAHEAD, y: self.pos.y + (diry / dl) * AVOID_LOOKAHEAD }
+}
+
+// §travel-defend 'avoid' anti-stuck: avoidance keeps a unit OUT of every threat zone,
+// but a wall of zones around the exit (a nightshade semicircle) has no clear route —
+// tangent steering then just orbits forever. Watch progress toward the destination:
+// if avoiding hasn't gotten the unit closer for AVOID_STUCK_TURNS, it's boxed in, so
+// COMMIT to plowing straight at the goal (taking hits — there's no other way) until it
+// has closed AVOID_BREAK_DIST (through the wall), then hand back to normal avoidance.
+// Stateful via three positions-derived combatant fields → deterministic, replays 1:1.
+const AVOID_STUCK_TURNS = 12
+const AVOID_BREAK_DIST = 8
+function resetAvoidWatchdog(c: Combatant): void {
+  c.avoidBest = undefined; c.avoidStuck = undefined; c.avoidPlowUntil = undefined
+}
+function avoidOrPlowPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
+  const d = distance(self.pos, dest)
+  // Mid-plow: keep driving straight at the goal until we've broken through the wall.
+  if (self.avoidPlowUntil != null) {
+    if (d <= self.avoidPlowUntil) resetAvoidWatchdog(self)   // through it — resume avoiding
+    else return dest
+  }
+  // Track progress; a stall (no new best for a while) means the goal is walled off.
+  if (self.avoidBest == null || d < self.avoidBest - 0.2) { self.avoidBest = d; self.avoidStuck = 0 }
+  else self.avoidStuck = (self.avoidStuck ?? 0) + 1
+  if ((self.avoidStuck ?? 0) >= AVOID_STUCK_TURNS) {
+    self.avoidPlowUntil = d - AVOID_BREAK_DIST   // commit to plowing through
+    self.avoidStuck = 0; self.avoidBest = undefined
+    return dest
+  }
+  return avoidAimPoint(state, self, dest)
 }
 
 // How close counts as "arrived" at a move-order point.
@@ -1742,6 +1772,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   const engageThreat = self.moveOrder != null && self.moveEngage != null && self.provoked
     && visibleEnemiesOf(state, self).some((e) => e.provoked)
   if (self.moveOrder && !engageThreat) {
+    if (self.avoidBest != null || self.avoidPlowUntil != null) resetAvoidWatchdog(self)   // no threat in sight → next cluster starts fresh
     if (self.statuses.some((s) => s.flags.includes('rooted'))) { pushTrace(self, round, 'order: rooted — hold'); self.lastHitById = null; return }
     const dest = self.moveOrder
     const posBefore = { ...self.pos }
@@ -1793,7 +1824,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   const travelMove = self.moveOrder
   const movePlan: MovementResult | null =
     self.moveEngage === 'retaliate' && travelMove ? { toPoint: travelMove, speedMult: WANDER_SPEED_MULT }
-    : self.moveEngage === 'avoid' && travelMove ? { toPoint: avoidAimPoint(state, self, travelMove), speedMult: WANDER_SPEED_MULT }
+    : self.moveEngage === 'avoid' && travelMove ? { toPoint: avoidOrPlowPoint(state, self, travelMove), speedMult: WANDER_SPEED_MULT }
     : applyLeash(state, self, evalMovement(state, self))
   executeMovement(state, self, movePlan)
   // §spacing: a final separation pass each turn — whatever the movement path

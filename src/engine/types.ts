@@ -346,6 +346,14 @@ export interface Combatant {
   // Set by the store's travel loop from the hero's Logistics preference. Optional so
   // legacy snapshots and plain orders default to 'off'.
   moveEngage?: 'retaliate' | 'avoid'
+  // §travel-defend 'avoid' anti-stuck watchdog (all optional, positions-derived so
+  // replays stay 1:1). avoidBest = best (min) distance-to-destination reached while
+  // avoiding; avoidStuck = turns since that improved; avoidPlowUntil = when boxed in
+  // (a wall of threat zones round the goal), the distance to close to before releasing
+  // a committed straight PLOW through the wall (accept the hits — no other way out).
+  avoidBest?: number
+  avoidStuck?: number
+  avoidPlowUntil?: number
 
   // §threat: per-enemy threat each opponent has built up against this unit (by
   // id). Dealing damage to / healing against a unit raises the actor's threat on

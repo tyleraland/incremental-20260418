@@ -139,6 +139,31 @@ describe('move orders — force path', () => {
     expect(avoid.minDistToFoe).toBeGreaterThan(4)   // …while clearing the whole attack range (no hits)
   })
 
+  it("§travel-defend: 'avoid' plows through when the exit is walled off (no clear route)", () => {
+    const dest = { x: 22, y: 20 }
+    // A semicircle of stationary foes ringing the exit — their zones overlap into a
+    // wall, so there's no route that clears them all. Avoid must give up skirting and
+    // plow through rather than orbit forever.
+    const foes = [110, 140, 170, 200, 230].map((deg) => {
+      const a = (deg * Math.PI) / 180
+      return { x: dest.x + 5 * Math.cos(a), y: dest.y + 5 * Math.sin(a) }
+    })
+    const b = createBattle({
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 20, moveSpeed: 0.9, str: 5, maxHp: 9999, hp: 9999 })],
+      enemyUnits: foes.map((_, i) => eu({ id: `e${i}`, team: 'enemy', moveSpeed: 0, str: 1, rangedRange: 4, maxHp: 9999, hp: 9999 })),
+      mode: 'open', cols: 40, rows: 40,
+    })
+    find(b, 'a').pos = { x: 4, y: 20 }
+    foes.forEach((p, i) => { find(b, `e${i}`).pos = p })
+    issueMoveOrder(b, 'a', dest, 'avoid')
+    let arrived = false
+    for (let r = 0; r < 200 && !arrived; r++) {
+      advanceRound(b)
+      if (dist(find(b, 'a').pos, dest) < 0.8) arrived = true
+    }
+    expect(arrived).toBe(true)   // broke through the wall instead of orbiting it forever
+  })
+
   it('clearMoveOrder hands the unit back to normal AI', () => {
     const b = solo(20)
     find(b, 'a').pos = { x: 5, y: 5 }
