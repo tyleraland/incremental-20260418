@@ -96,7 +96,7 @@ describe('move orders — force path', () => {
     find(b, 'a').pos = { x: 5, y: 15 }
     find(b, 'e').pos = { x: 15, y: 9 }        // OFF the march line (6 south), but within firing range as she passes
     const dest = { x: 25, y: 15 }
-    issueMoveOrder(b, 'a', dest, true)        // engage: defend yourself while travelling
+    issueMoveOrder(b, 'a', dest, 'retaliate')  // fire in range, but don't veer
     let arrived = false, minY = Infinity, minDistToFoe = Infinity
     for (let r = 0; r < 120 && !arrived; r++) {
       advanceRound(b)
@@ -109,6 +109,27 @@ describe('move orders — force path', () => {
     expect(arrived).toBe(true)                  // still reached the goal
     expect(minY).toBeGreaterThan(13)            // held her line — never veered south to chase
     expect(minDistToFoe).toBeGreaterThan(4)     // never closed in on the foe
+  })
+
+  it("§travel-defend: a 'clear' order veers to kill an off-line hostile, then resumes to the goal", () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 12, moveSpeed: 0.9, str: 40, meleeRange: 2 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 60, hp: 60, moveSpeed: 0, str: 1, def: 0 })],
+      mode: 'open', cols: 30, rows: 30,
+    })
+    find(b, 'a').pos = { x: 5, y: 15 }
+    find(b, 'e').pos = { x: 12, y: 10 }        // OFF the march line — a melee hero must veer to reach it
+    const dest = { x: 25, y: 15 }
+    issueMoveOrder(b, 'a', dest, 'clear')      // clear threats — approach and kill
+    let arrived = false, minDistToFoe = Infinity
+    for (let r = 0; r < 160 && !arrived; r++) {
+      advanceRound(b)
+      minDistToFoe = Math.min(minDistToFoe, dist(find(b, 'a').pos, find(b, 'e').pos))
+      if (dist(find(b, 'a').pos, dest) < 0.6) arrived = true
+    }
+    expect(find(b, 'e').alive).toBe(false)     // closed in and killed it
+    expect(minDistToFoe).toBeLessThan(2.5)     // did veer off the line to reach it (melee range)
+    expect(arrived).toBe(true)                 // then resumed the march to the goal
   })
 
   it('clearMoveOrder hands the unit back to normal AI', () => {

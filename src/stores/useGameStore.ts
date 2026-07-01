@@ -217,6 +217,7 @@ export interface GameState {
   spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
   debugLevelUp: (unitId: string) => void       // §debug: grant exactly enough exp to gain one level
   debugResetLevel: (unitId: string) => void    // §debug: reset to a clean level-1 unit (level/exp/abilities)
+  setTravelEngage: (unitId: string, mode: 'ignore' | 'retaliate' | 'clear') => void  // §travel-defend: per-hero routing combat behaviour
   learnSkill: (unitId: string, skillId: string) => void
   // Tactics: equip/unequip and reorder priority (first = highest). Validated
   // against TACTIC_REGISTRY scope and the per-unit / party slot caps.
@@ -1241,7 +1242,12 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       const c = battle?.combatants.find((x) => x.id === u.id) ?? null
       if (!simulated || !c) { cross(); continue }
       if (Math.hypot(c.pos.x - portal.at[0], c.pos.y - portal.at[1]) <= PORTAL_RADIUS) cross()
-      else issueMoveOrder(battle!, u.id, { x: portal.at[0], y: portal.at[1] }, true)   // §travel-defend: fight hostiles en route
+      else {
+        // §travel-defend: react to hostiles en route per the hero's Logistics
+        // preference (default 'retaliate'). 'ignore' → march straight through.
+        const te = u.travelEngage ?? 'retaliate'
+        issueMoveOrder(battle!, u.id, { x: portal.at[0], y: portal.at[1] }, te === 'ignore' ? 'off' : te)
+      }
     }
   }
 
@@ -2131,6 +2137,11 @@ export const useGameStore = create<GameState>((set) => ({
     const healed = { ...reset, health: getDerivedStats(reset, s.equipment).maxHp }
     return { units: s.units.map((u) => u.id === unitId ? healed : u) }
   }),
+
+  // §travel-defend: set a hero's routing combat behaviour (Logistics toggle).
+  setTravelEngage: (unitId, mode) => set((s) => ({
+    units: s.units.map((u) => u.id === unitId ? { ...u, travelEngage: mode } : u),
+  })),
 
   recruitUnit: () => set((s) => {
     const name = randomFullName(new Set(s.units.map((u) => u.name)))

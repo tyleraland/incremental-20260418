@@ -348,7 +348,7 @@ export function addCombatant(
 // tests use it to force pathing (incl. impossible paths the unit can't satisfy).
 // Resolution is instantaneous in grid steps each round — overworld travel
 // between locations is deferred (see BACKLOG).
-export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2, engage = false): boolean {
+export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2, engage: 'off' | 'retaliate' | 'clear' = 'off'): boolean {
   const c = findCombatant(state, combatantId)
   if (!c) return false
   // Clamp against THIS battle's arena, not whatever bounds the last-stepped battle
@@ -359,12 +359,12 @@ export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2
   // phantom point, never reaching the real portal (stuck-while-travelling).
   setArenaBounds(state.cols, state.rows)
   c.moveOrder = arenaClamp(to)
-  c.moveEngage = engage   // §travel-defend: fight visible hostiles en route (see takeTurn)
+  c.moveEngage = engage === 'off' ? undefined : engage   // §travel-defend: how to react to foes en route (see takeTurn)
   return true
 }
 export function clearMoveOrder(state: BattleState, combatantId: string): void {
   const c = findCombatant(state, combatantId)
-  if (c) { c.moveOrder = null; c.moveEngage = false }
+  if (c) { c.moveOrder = null; c.moveEngage = undefined }
 }
 
 // How close counts as "arrived" at a move-order point.
@@ -1686,7 +1686,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // full kit, then resumes marching once none remain. The order is kept intact
   // throughout, so it never gets plinked down walking straight through ranged foes.
   // A plain order (no moveEngage) always marches, so forced-pathing stays unchanged.
-  const engageThreat = self.moveOrder != null && self.moveEngage === true && self.provoked
+  const engageThreat = self.moveOrder != null && self.moveEngage != null && self.provoked
     && visibleEnemiesOf(state, self).some((e) => e.provoked)
   if (self.moveOrder && !engageThreat) {
     if (self.statuses.some((s) => s.flags.includes('rooted'))) { pushTrace(self, round, 'order: rooted — hold'); self.lastHitById = null; return }
@@ -1732,11 +1732,11 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // Between decisions, execute committed movement without the steerAround Dijkstra
   // (slide straight; re-route at the next decision round). No-op when decideNow.
   if (!decideNow) setDirectMove(true)
-  // §travel-defend: a traveller engaging a hostile mid-route keeps MARCHING toward
-  // her destination (retaliating with the targeting/action phases below) rather than
-  // approaching the foe — so she fires on what she passes but never veers off course
-  // to chase it down. A plain fight (no travel order) uses its normal movement AI.
-  const travelDest = self.moveEngage === true ? self.moveOrder : null
+  // §travel-defend: a 'retaliate' traveller keeps MARCHING toward her destination
+  // (firing on foes in range via the targeting/action phases below) rather than
+  // approaching — so she never veers off course to chase. 'clear' (and a plain fight)
+  // instead use the normal movement AI to approach/kite and put the threat down.
+  const travelDest = self.moveEngage === 'retaliate' ? self.moveOrder : null
   const movePlan: MovementResult | null = travelDest
     ? { toPoint: travelDest, speedMult: WANDER_SPEED_MULT }
     : applyLeash(state, self, evalMovement(state, self))

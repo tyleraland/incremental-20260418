@@ -336,12 +336,15 @@ export interface Combatant {
   // around known terrain, and gives up (holds) if it's unreachable. Used by the
   // game to send a unit somewhere and by tests to force pathing. null = no order.
   moveOrder: Vec2 | null
-  // §travel-defend: when true, the marching unit SUSPENDS the march to fight any
-  // visible hostile with its normal combat AI, then resumes once none remain — so a
-  // traveller isn't plinked down walking straight through ranged enemies. Set by the
-  // store's travel loop; a plain move order (tests, direct sends) leaves it false and
-  // marches straight through as before. Optional so legacy snapshots default to off.
-  moveEngage?: boolean
+  // §travel-defend: how a marching unit reacts to a hostile in sight. absent/undefined
+  // = 'off' (march straight through, as a plain move order or forced-pathing does).
+  //  'retaliate' = keep marching toward the destination but target + fire on foes in
+  //     range as it passes (no veer off course).
+  //  'clear' = suspend the march and engage with full combat AI (approach/kite/kill),
+  //     then resume once no hostile remains.
+  // Set by the store's travel loop from the hero's Logistics preference. Optional so
+  // legacy snapshots and plain orders default to 'off'.
+  moveEngage?: 'retaliate' | 'clear'
 
   // §threat: per-enemy threat each opponent has built up against this unit (by
   // id). Dealing damage to / healing against a unit raises the actor's threat on

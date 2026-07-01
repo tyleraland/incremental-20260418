@@ -12,6 +12,13 @@ import { TOWN_RESUPPLY_TICKS } from './expeditionDriver'
 import { useProtoStore } from './protoStore'
 import { heroCarried, isOverweight, OVERWEIGHT_FRACTION, WEIGHT_LIMIT } from './economy'
 
+// §travel-defend: per-hero behaviour when a hostile is in sight while routing.
+const TRAVEL_ENGAGE_OPTS: Choice<'ignore' | 'retaliate' | 'clear'>[] = [
+  { id: 'ignore',    label: 'Run past',      hint: 'March straight through — never stop to fight. Fastest, but takes the hits.' },
+  { id: 'retaliate', label: 'Retaliate',     hint: 'Keep marching, but fire on hostiles that come into range as you pass. Default.' },
+  { id: 'clear',     label: 'Fight through', hint: 'Stop and put down threats in sight before continuing. Safest, but slower and may leave the path to chase.' },
+]
+
 const toggleChip = (on: boolean) =>
   `text-[11px] px-1.5 py-0.5 rounded border transition-colors ${on
     ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
@@ -122,6 +129,7 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const setReturnMode = useExpeditionStore((s) => s.setReturnMode)
   const applyToParty = useExpeditionStore((s) => s.applyToParty)
   const commitStep = useExpeditionStore((s) => s.commitStep)
+  const setTravelEngage = useGameStore((s) => s.setTravelEngage)
 
   const [menu, setMenu] = useState<{ initial: string | null } | null>(null)
   const [townOpen, setTownOpen] = useState(false)
@@ -312,6 +320,9 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
           )}
         </div>
       </div>
+
+      {/* §travel-defend: how this hero handles hostiles while walking map→map. */}
+      <Seg label="While Travelling" options={TRAVEL_ENGAGE_OPTS} value={unit.travelEngage ?? 'retaliate'} onChange={(v) => setTravelEngage(unit.id, v)} />
 
       {/* Party sharing — who pools loot / supplies with the party */}
       <div className="space-y-1.5">
