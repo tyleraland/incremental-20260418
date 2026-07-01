@@ -354,6 +354,7 @@ export interface Combatant {
   avoidBest?: number
   avoidStuck?: number
   avoidPlowUntil?: number
+  avoidSide?: number    // committed pass direction (±1) while steering around threats — held to avoid dithering
 
   // §threat: per-enemy threat each opponent has built up against this unit (by
   // id). Dealing damage to / healing against a unit raises the actor's threat on

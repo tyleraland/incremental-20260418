@@ -164,6 +164,29 @@ describe('move orders — force path', () => {
     expect(arrived).toBe(true)   // broke through the wall instead of orbiting it forever
   })
 
+  it("§travel-defend: 'avoid' routes smoothly around a cluster taking no hits", () => {
+    // A knot of stationary ranged foes sitting across the path but NOT ringing the
+    // goal — there's room to arc around, so a smooth decisive route should take zero
+    // hits (the old flip-flopping steer dithered into range and got chipped).
+    const cluster = [[26, 28], [30, 30], [28, 34], [34, 29], [32, 33]]
+    const b = createBattle({
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 14, moveSpeed: 1.0, str: 5, maxHp: 400, hp: 400 })],
+      enemyUnits: cluster.map((_, i) => eu({ id: `e${i}`, team: 'enemy', moveSpeed: 0, str: 6, rangedRange: 4, maxHp: 9999, hp: 9999 })),
+      mode: 'open', cols: 60, rows: 60,
+    })
+    find(b, 'a').pos = { x: 6, y: 30 }
+    cluster.forEach((p, i) => { find(b, `e${i}`).pos = { x: p[0], y: p[1] } })
+    const dest = { x: 55, y: 30 }
+    issueMoveOrder(b, 'a', dest, 'avoid')
+    let arrived = false
+    for (let r = 0; r < 200 && !arrived; r++) {
+      advanceRound(b)
+      if (dist(find(b, 'a').pos, dest) < 1.0) arrived = true
+    }
+    expect(arrived).toBe(true)
+    expect(find(b, 'a').hp).toBe(400)   // arced around cleanly — never dithered into range
+  })
+
   it('clearMoveOrder hands the unit back to normal AI', () => {
     const b = solo(20)
     find(b, 'a').pos = { x: 5, y: 5 }

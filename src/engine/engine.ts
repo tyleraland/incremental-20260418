@@ -367,57 +367,58 @@ export function clearMoveOrder(state: BattleState, combatantId: string): void {
   if (c) { c.moveOrder = null; c.moveEngage = undefined; resetAvoidWatchdog(c) }
 }
 
-// §travel-defend 'avoid': an aim point a few cells ahead in a direction that blends
-// the pull toward the travel destination with repulsion away from every visible
-// hostile's attack range (a soft "threat zone"). The repulsion is capped below the
-// march pull, so the destination always wins the tie — the hero SKIRTS cheap threats
-// but plows through a foe dead-ahead (taking a hit) rather than veering way off
-// course or stalling. Deterministic (positions only); executeMovement steps toward
-// the returned point (barrier-aware). Pure fn(positions) → replays 1:1.
+// §travel-defend 'avoid': a smooth aim point that steers the march AROUND foes'
+// attack ranges. Modelled as steering forces (not a hard tangent, which flip-flops
+// its pass-side turn to turn and oscillates): the pull toward the destination, a
+// soft-wall push out of every nearby threat zone, and a tangential SWIRL whose side
+// is chosen ONCE (toward the goal) and held while any threat is near — so the hero
+// commits to one way around instead of dithering in the middle. Deterministic
+// (positions + the committed avoidSide) → replays 1:1. executeMovement steps toward
+// the returned point (barrier-aware).
 const AVOID_ZONE_BUFFER = 1.5     // cells beyond a foe's reach still treated as its danger zone
-const AVOID_GATE_MARGIN = 1.15    // pass this fraction beyond the danger radius (clears the whole attack range + a hair)
-const AVOID_ENGAGE_MARGIN = 6     // begin arcing this many cells before reaching a foe's danger circle
-const AVOID_LOOKAHEAD = 5         // no-block case: how far ahead to place the straight aim point
+const AVOID_BAND = 4              // width of the steering band outside a zone where the push ramps in
+const AVOID_W_RAD = 1.3          // soft-wall (push-out) weight vs the unit march pull
+const AVOID_W_TAN = 1.9          // per-foe tangential swirl weight (drives the smooth arc around each zone)
+const AVOID_DAMP = 0.35         // blend the new heading with the current one (momentum) to smooth jitter
+const AVOID_LOOKAHEAD = 5         // how far ahead to place the aim point (≥ a full step)
 function avoidAimPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
   const mx0 = dest.x - self.pos.x, my0 = dest.y - self.pos.y
   const mLen = Math.hypot(mx0, my0) || 1
   const mx = mx0 / mLen, my = my0 / mLen             // unit pull toward the destination
-  // Nearest visible, provoked foe whose danger circle (attack range + buffer) blocks
-  // the straight path — so we route WIDE around it rather than clipping its range.
-  let block: { e: Combatant; fx: number; fy: number; zone: number } | null = null
-  let bd = Infinity
+  const lpx = -my, lpy = mx                          // left-hand perpendicular of the march
+  // First pass: soft-wall push out of every nearby zone, and tally threat per lateral
+  // side so we can commit to arcing around toward the OPEN side (fewer foes that way).
+  type Near = { fdx: number; fdy: number; p: number }
+  const near: Near[] = []
+  let rx = 0, ry = 0, leftScore = 0, rightScore = 0
   for (const e of visibleEnemiesOf(state, self)) {
     if (!e.provoked) continue
     const fx = e.pos.x - self.pos.x, fy = e.pos.y - self.pos.y
     const d = Math.hypot(fx, fy) || 1
-    const zone = attackReach(e) + AVOID_ZONE_BUFFER
-    if (d > zone + AVOID_ENGAGE_MARGIN) continue      // still too far to matter
-    const along = fx * mx + fy * my                    // forward projection onto the march
-    if (along <= -zone) continue                        // fully behind us — no need to steer
-    const perp = Math.abs(fx * -my + fy * mx)           // |lateral| distance of the foe from the path
-    if (along > 0 && perp >= zone) continue             // straight path already clears it ahead
-    if (d < bd) { bd = d; block = { e, fx, fy, zone } }
+    const band = attackReach(e) + AVOID_ZONE_BUFFER + AVOID_BAND
+    if (d >= band) continue
+    const p = (band - d) / AVOID_BAND                  // ~0 at the band rim → ≥1 at/inside the zone
+    const fdx = fx / d, fdy = fy / d
+    rx -= fdx * p * AVOID_W_RAD; ry -= fdy * p * AVOID_W_RAD
+    near.push({ fdx, fdy, p })
+    if (fx * lpx + fy * lpy > 0) leftScore += p; else rightScore += p
   }
-  if (!block) return { x: self.pos.x + mx * AVOID_LOOKAHEAD, y: self.pos.y + my * AVOID_LOOKAHEAD }
-  // Skirt the danger circle by heading along its TANGENT (grazing radius R) rather
-  // than aiming at a fixed side-point — a static gate parks the hero beside the foe;
-  // a tangent heading arcs her AROUND and past it, always moving forward. Pass on the
-  // side the foe leans away from (shorter detour; default left when dead-ahead).
-  const d = Math.hypot(block.fx, block.fy) || 1
-  const R = block.zone * AVOID_GATE_MARGIN
-  const fdx = block.fx / d, fdy = block.fy / d          // unit toward the foe
-  const lpx = -my, lpy = mx                             // left-hand perpendicular of the march
-  const passLeft = (block.fx * lpx + block.fy * lpy) <= 0   // foe on the right/centre ⇒ pass on the left
-  let dirx: number, diry: number
-  if (d <= R) {                                          // already inside the range — peel straight out (nudged forward)
-    dirx = -fdx + mx * 0.3; diry = -fdy + my * 0.3
-  } else {                                               // rotate the toward-foe dir by the tangent half-angle to graze radius R
-    const ang = Math.asin(Math.min(1, R / d)) * (passLeft ? 1 : -1)
-    const c = Math.cos(ang), s = Math.sin(ang)
-    dirx = fdx * c - fdy * s; diry = fdx * s + fdy * c
-  }
-  const dl = Math.hypot(dirx, diry) || 1
-  return { x: self.pos.x + (dirx / dl) * AVOID_LOOKAHEAD, y: self.pos.y + (diry / dl) * AVOID_LOOKAHEAD }
+  if (near.length === 0) { self.avoidSide = undefined; return { x: self.pos.x + mx * AVOID_LOOKAHEAD, y: self.pos.y + my * AVOID_LOOKAHEAD } }
+  // Commit a pass side ONCE — toward the emptier side — and HOLD it while any threat
+  // stays near. Committing (vs re-picking per turn) is what stops the left/right dither.
+  if (self.avoidSide == null) self.avoidSide = leftScore <= rightScore ? 1 : -1
+  const side = self.avoidSide
+  // Per-foe tangential swirl (local — robust when a swarm moves around us, unlike one
+  // global lateral push that arcs into a shifting pack), all on the committed side.
+  let dx = mx + rx, dy = my + ry
+  for (const n of near) { dx += n.fdy * side * n.p * AVOID_W_TAN; dy += -n.fdx * side * n.p * AVOID_W_TAN }
+  // Momentum: ease toward the new heading from the current facing so the path curves
+  // smoothly instead of snapping (and never jitters between near-equal force frames).
+  const dl0 = Math.hypot(dx, dy) || 1
+  dx = (dx / dl0) * (1 - AVOID_DAMP) + self.facing.x * AVOID_DAMP
+  dy = (dy / dl0) * (1 - AVOID_DAMP) + self.facing.y * AVOID_DAMP
+  const dl = Math.hypot(dx, dy) || 1
+  return { x: self.pos.x + (dx / dl) * AVOID_LOOKAHEAD, y: self.pos.y + (dy / dl) * AVOID_LOOKAHEAD }
 }
 
 // §travel-defend 'avoid' anti-stuck: avoidance keeps a unit OUT of every threat zone,
@@ -429,11 +430,24 @@ function avoidAimPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
 // Stateful via three positions-derived combatant fields → deterministic, replays 1:1.
 const AVOID_STUCK_TURNS = 12
 const AVOID_BREAK_DIST = 8
+const AVOID_NEAR_DEST = 12        // once this close to the goal, stop avoiding onto an in-range spot
 function resetAvoidWatchdog(c: Combatant): void {
-  c.avoidBest = undefined; c.avoidStuck = undefined; c.avoidPlowUntil = undefined
+  c.avoidBest = undefined; c.avoidStuck = undefined; c.avoidPlowUntil = undefined; c.avoidSide = undefined
+}
+// The destination itself sits inside a visible foe's attack range (e.g. an exit ringed
+// by nightshades) — avoidance can NEVER reach it without entering a zone, so we must
+// plow the last stretch rather than orbit the ring forever.
+function destInsideAZone(state: BattleState, self: Combatant, dest: Vec2): boolean {
+  for (const e of visibleEnemiesOf(state, self)) {
+    if (!e.provoked) continue
+    if (distance(e.pos, dest) <= attackReach(e) + AVOID_ZONE_BUFFER) return true
+  }
+  return false
 }
 function avoidOrPlowPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
   const d = distance(self.pos, dest)
+  // Near a goal that's ringed by threat zones → head straight in (can't avoid onto it).
+  if (d < AVOID_NEAR_DEST && destInsideAZone(state, self, dest)) return dest
   // Mid-plow: keep driving straight at the goal until we've broken through the wall.
   if (self.avoidPlowUntil != null) {
     if (d <= self.avoidPlowUntil) resetAvoidWatchdog(self)   // through it — resume avoiding
