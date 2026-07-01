@@ -470,6 +470,7 @@ export interface CombatSetup {
   rows?: number             // arena height in grid units (default ROWS)
   timeScale?: number        // finer-rounds factor (default 1 = no scaling); N rounds == 1 logical round
   decisionInterval?: number // re-decide (targeting + team planner) only every N rounds (default 1 = every round); in between, units execute their committed lock/movement. Smooths motion + cuts AI cost. N rounds.
+  multiAttackMax?: number    // §multi-attack PROTOTYPE: max agility-driven basic swings per logical round (default MULTI_ATTACK_MAX=1 = disabled/single-swing)
   planner?: Planner         // team blackboard producer (default: built-in defaultPlanner)
   // 'encounter' (default): a discrete wave — `evalOutcome` ends it on a wipe
   // (victory/defeat/draw). 'open': a persistent open-world battle that never
@@ -551,6 +552,7 @@ export interface BattleState {
   peaceful: boolean                         // §town wander: a city field — heroes mill individually, not as a party (default false)
   timeScale: number                       // finer-rounds factor: N engine rounds == 1 logical round (default 1)
   decisionInterval: number                  // re-decide targeting/planner every N rounds (default 1); execute committed plan in between
+  multiAttackMax: number                    // §multi-attack PROTOTYPE: max agility-driven basic swings per logical round (default 1 = disabled)
   plans: Partial<Record<Team, TeamPlan>>   // §coordination: per-team blackboard, recomputed each round
   planner: Planner                          // produces the plans (pluggable)
   round: number

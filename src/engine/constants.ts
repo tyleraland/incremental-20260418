@@ -52,6 +52,21 @@ export const EPS = 1e-6
 export const REF_ATTACK_SPD = 10
 export const MAX_ATTACK_INTERVAL = 4
 
+// §multi-attack (PROTOTYPE, agility-driven extra swings). The historical cap is
+// ONE basic attack per logical round — a unit at REF_ATTACK_SPD swings once/round
+// and any faster attackSpeed (agility) is wasted for cadence. This decouples that:
+// a unit gets `floor(spd / REF_ATTACK_SPD)` basic attacks per LOGICAL round,
+// clamped to [1, MULTI_ATTACK_MAX]. So spd 10→1, 20→2, 30→3, 40→4, 50+→5 swings.
+// The swings are spread across the logical round's finer engine sub-rounds when
+// timeScale allows (so they read as separate hits), and bunch onto one engine
+// round otherwise — the per-logical-round total is `perRound` at ANY timeScale,
+// preserving the real-time pace invariance the timescale module guarantees.
+//
+// DEFAULT 1 = disabled: identical to the single-swing cadence, so every existing
+// test and snapshot replay stays byte-identical. Bump to 5 (per-battle via
+// CombatSetup.multiAttackMax, or here globally) to enable the prototype.
+export const MULTI_ATTACK_MAX = 1
+
 // §open-world wander (only consulted when BattleState.mode === 'open'). Heroes
 // roam toward a shared team waypoint, re-picking it when they get within
 // WANDER_REPATH of it. Idle monsters lurk MONSTER_WANDER_MIN..MAX rounds, then

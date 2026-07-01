@@ -6,13 +6,13 @@
 // to completion for tests and bulk/idle resolution.
 
 import {
-  COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
+  COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS, MULTI_ATTACK_MAX,
   WANDER_REPATH, HUNT_RETAIN_MULT, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
   WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN, WARY_INTERRUPT_DECAY,
   TOWN_WANDER_MIN, TOWN_WANDER_MAX, TOWN_WANDER_NEAR, TOWN_WANDER_FAR, TOWN_WANDER_SPEED_MULT,
 } from './constants'
 import { setArenaBounds, arenaClamp } from './arena'
-import { setTimeScale, timeScale, scaleRounds, onBeat, onAttackBeat } from './timescale'
+import { setTimeScale, timeScale, scaleRounds, onBeat, attacksThisEngineRound, setMultiAttackMax } from './timescale'
 import { SpatialHash, setSpatialHash } from './spatialhash'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation, setDirectMove } from './grid'
 import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
@@ -268,8 +268,10 @@ export function createBattle(setup: CombatSetup): BattleState {
   const rows = setup.rows ?? ROWS
   const timeScale = Math.max(1, Math.floor(setup.timeScale ?? 1))
   const decisionInterval = Math.max(1, Math.floor(setup.decisionInterval ?? 1))
+  const multiAttackMax = Math.max(1, Math.floor(setup.multiAttackMax ?? MULTI_ATTACK_MAX))
   setArenaBounds(cols, rows)   // so startingPosition/clamp use this battle's bounds
   setTimeScale(timeScale)      // so per-round helpers (move/cooldown/status) scale
+  setMultiAttackMax(multiAttackMax)   // §multi-attack: agility-driven extra swings/round
   const combatants: Combatant[] = []
   let index = 0
   const place = (units: EngineUnitInput[], team: Team, party?: TacticRef[]) => {
@@ -294,6 +296,7 @@ export function createBattle(setup: CombatSetup): BattleState {
     rows,
     timeScale,
     decisionInterval,
+    multiAttackMax,
     mode: setup.mode ?? 'encounter',
     peaceful: setup.peaceful ?? false,
     plans: {},
@@ -323,6 +326,7 @@ export function addCombatant(
 ): Combatant {
   setArenaBounds(state.cols, state.rows)
   setTimeScale(state.timeScale)
+  setMultiAttackMax(state.multiAttackMax ?? 1)
   const index = state.combatants.reduce((m, c) => Math.max(m, c.index), -1) + 1
   const sameRank = state.combatants.filter(
     (c) => c.team === team && c.preferredRank === input.preferredRank,
@@ -1538,16 +1542,26 @@ function executeNaiveAction(state: BattleState, self: Combatant): void {
   const target = findCombatant(state, action.targetId)
   if (!target || !target.alive) return
   const skill = action.kind === 'skill' ? action.skill : null
+  if (skill) {
+    dealAttack(state, self, target, state.calculateDamage(self, target, skill, state.round), skill)
+    recordSkillUse(state, self, skill)   // dealAttack no longer records skill use
+    breakStealth(state, self)            // a skill attack also reveals (§3)
+    return
+  }
   // Basic attacks have no cooldown — they'd otherwise fire every round, so at a
   // finer time scale they'd hit N× too often. Pace them by the unit's attackSpeed
   // (§basic-attack cadence): a normal/fast attacker swings once per logical round
   // (staggered by index so the party doesn't all swing on the same finer-round), a
-  // slow one less often. Skill casts are paced by their own scaled cooldowns, so
-  // they're never gated.
-  if (!skill && !onAttackBeat(state.round, self.index, self.spd)) return
-  dealAttack(state, self, target, state.calculateDamage(self, target, skill, state.round), skill)
-  if (skill) recordSkillUse(state, self, skill)   // dealAttack no longer records skill use
-  breakStealth(state, self)                        // a basic attack also reveals (§3)
+  // slow one less often. §multi-attack (agility): a very fast attacker may land
+  // MORE than one basic this engine (sub-)round — up to MULTI_ATTACK_MAX per logical
+  // round, decoupling attack rate from the old once-per-round cap. With the cap at 1
+  // (default) this is exactly the single-swing gate. Skills are paced by their own
+  // scaled cooldowns, so they're never gated here.
+  const swings = attacksThisEngineRound(state.round, self.index, self.spd)
+  for (let i = 0; i < swings && target.alive; i++) {
+    dealAttack(state, self, target, state.calculateDamage(self, target, null, state.round), null)
+  }
+  if (swings > 0) breakStealth(state, self)   // a basic attack also reveals (§3)
 }
 
 // Resolve / continue a channeled cast at the start of the caster's turn. Returns
@@ -1791,6 +1805,7 @@ export function advanceRound(state: BattleState): BattleState {
   if (state.outcome !== 'ongoing') return state
   setArenaBounds(state.cols, state.rows)   // movement/clamp use this battle's bounds
   setTimeScale(state.timeScale)            // per-round helpers scale to finer rounds
+  setMultiAttackMax(state.multiAttackMax ?? 1)   // §multi-attack: re-assert per battle (deserialized snapshots default to 1)
   // Bucket combatants once (round-start positions) so separation / target-acquisition
   // do O(local) neighbour queries this round instead of O(N²). Cleared at the end so
   // between-round work (spawns) and other call paths fall back to a brute scan.

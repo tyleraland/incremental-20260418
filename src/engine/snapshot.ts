@@ -94,6 +94,7 @@ interface BattleSnapshot {
   rows: number
   timeScale?: number
   decisionInterval?: number
+  multiAttackMax?: number
   mode: BattleState['mode']
   plans: BattleState['plans']
   round: number
@@ -118,6 +119,11 @@ export function serializeBattle(state: BattleState): string {
     cols: state.cols,
     rows: state.rows,
     timeScale: state.timeScale,
+    // §multi-attack: serialize ONLY when enabled (>1), unlike the motion-only
+    // decisionInterval — it changes combat outcome (extra hits), so a live battle
+    // with it on must replay 1:1. Omitting it when disabled keeps every existing
+    // token byte-identical (absent → defaults to 1 on load).
+    ...(state.multiAttackMax > 1 ? { multiAttackMax: state.multiAttackMax } : {}),
     // decisionInterval intentionally NOT serialized (prototype): keeps tokens
     // byte-identical; a restored battle defaults to 1 (re-decide every round).
     // peaceful intentionally NOT serialized (like decisionInterval): keeps tokens
@@ -212,6 +218,7 @@ export function deserializeBattle(token: string): BattleState {
     rows: snap.rows,
     timeScale: snap.timeScale ?? 1,   // legacy tokens predate finer rounds
     decisionInterval: snap.decisionInterval ?? 1,   // legacy tokens predate decision throttling
+    multiAttackMax: snap.multiAttackMax ?? 1,   // absent / legacy tokens → disabled (single swing)
     mode: snap.mode,
     peaceful: false,   // not serialized; the host re-applies it from the location (see serializeBattle)
     plans: snap.plans,

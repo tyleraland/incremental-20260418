@@ -20,6 +20,10 @@
 import { REF_ATTACK_SPD, MAX_ATTACK_INTERVAL } from './constants'
 
 let activeScale = 1
+// §multi-attack ambient — the max basic swings a unit may take per logical round
+// (agility-driven). 1 = disabled (single-swing cadence, byte-identical to before).
+// Set per battle from CombatSetup, re-asserted each round like activeScale.
+let activeMultiAttackMax = 1
 
 export function setTimeScale(scale: number): void {
   activeScale = Math.max(1, Math.floor(scale))
@@ -27,6 +31,14 @@ export function setTimeScale(scale: number): void {
 
 export function timeScale(): number {
   return activeScale
+}
+
+export function setMultiAttackMax(max: number): void {
+  activeMultiAttackMax = Math.max(1, Math.floor(max))
+}
+
+export function multiAttackMax(): number {
+  return activeMultiAttackMax
 }
 
 // Scale a per-logical-round duration (cooldown, channel, status, dwell) to rounds.
@@ -56,4 +68,32 @@ export function basicAttackInterval(spd: number): number {
 // timeScale equivalence (the period scales with activeScale just like onBeat).
 export function onAttackBeat(round: number, phase: number, spd: number): boolean {
   return ((round + phase) % (basicAttackInterval(spd) * activeScale)) === 0
+}
+
+// §multi-attack. Basic swings a unit gets per LOGICAL round from its attackSpeed
+// (agility). Below REF_ATTACK_SPD a unit swings ≤ once/round (paced by the interval
+// in onAttackBeat) → 1 here; at/above REF, `floor(spd/REF)` swings, capped at the
+// active multi-attack max. When that cap is 1 (default/disabled) this is always 1
+// for spd ≥ REF and the cadence is byte-identical to onAttackBeat.
+export function attacksPerRound(spd: number): number {
+  if (spd < REF_ATTACK_SPD) return 1
+  return Math.min(activeMultiAttackMax, Math.max(1, Math.floor(spd / REF_ATTACK_SPD)))
+}
+
+// How many basic attacks a unit lands on THIS engine (sub-)round. Generalises
+// onAttackBeat to multiple swings per logical round:
+//   • perRound === 1  → exactly onAttackBeat (0 or 1), including the slow-attacker
+//     interval — so with multiAttackMax=1 nothing changes and replays stay 1:1.
+//   • perRound > 1    → spread `perRound` swings across the logical round's
+//     activeScale engine sub-rounds (staggered by `phase` so a party doesn't all
+//     bunch on the same sub-round). The per-logical-round total is exactly
+//     `perRound` at ANY timeScale — at scale 1 the swings bunch onto the one engine
+//     round; at scale N they fan out — keeping the real-time pace invariant.
+// Stateless & deterministic, so it adds no snapshot field and replays byte-identical.
+export function attacksThisEngineRound(round: number, phase: number, spd: number): number {
+  const perRound = attacksPerRound(spd)
+  if (perRound <= 1) return onAttackBeat(round, phase, spd) ? perRound : 0
+  const sub = (((round + phase) % activeScale) + activeScale) % activeScale
+  const upto = (k: number) => Math.floor((k * perRound) / activeScale)
+  return upto(sub + 1) - upto(sub)
 }
