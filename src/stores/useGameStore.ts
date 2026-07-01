@@ -1241,7 +1241,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       const c = battle?.combatants.find((x) => x.id === u.id) ?? null
       if (!simulated || !c) { cross(); continue }
       if (Math.hypot(c.pos.x - portal.at[0], c.pos.y - portal.at[1]) <= PORTAL_RADIUS) cross()
-      else issueMoveOrder(battle!, u.id, { x: portal.at[0], y: portal.at[1] })
+      else issueMoveOrder(battle!, u.id, { x: portal.at[0], y: portal.at[1] }, true)   // §travel-defend: fight hostiles en route
     }
   }
 

@@ -348,7 +348,7 @@ export function addCombatant(
 // tests use it to force pathing (incl. impossible paths the unit can't satisfy).
 // Resolution is instantaneous in grid steps each round — overworld travel
 // between locations is deferred (see BACKLOG).
-export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2): boolean {
+export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2, engage = false): boolean {
   const c = findCombatant(state, combatantId)
   if (!c) return false
   // Clamp against THIS battle's arena, not whatever bounds the last-stepped battle
@@ -359,11 +359,12 @@ export function issueMoveOrder(state: BattleState, combatantId: string, to: Vec2
   // phantom point, never reaching the real portal (stuck-while-travelling).
   setArenaBounds(state.cols, state.rows)
   c.moveOrder = arenaClamp(to)
+  c.moveEngage = engage   // §travel-defend: fight visible hostiles en route (see takeTurn)
   return true
 }
 export function clearMoveOrder(state: BattleState, combatantId: string): void {
   const c = findCombatant(state, combatantId)
-  if (c) c.moveOrder = null
+  if (c) { c.moveOrder = null; c.moveEngage = false }
 }
 
 // How close counts as "arrived" at a move-order point.
@@ -1680,7 +1681,14 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // (1.5) move order — an explicit "go here" overrides targeting/wander. Path
   // toward it (routing around known terrain); clear on arrival; hold if it's
   // unreachable. Consumes the turn's movement+action (the unit is marching).
-  if (self.moveOrder) {
+  // §travel-defend: a travel order (moveEngage) YIELDS the march to normal combat
+  // AI whenever a hostile is in sight — the unit targets/kites/attacks it with its
+  // full kit, then resumes marching once none remain. The order is kept intact
+  // throughout, so it never gets plinked down walking straight through ranged foes.
+  // A plain order (no moveEngage) always marches, so forced-pathing stays unchanged.
+  const engageThreat = self.moveOrder != null && self.moveEngage === true && self.provoked
+    && visibleEnemiesOf(state, self).some((e) => e.provoked)
+  if (self.moveOrder && !engageThreat) {
     if (self.statuses.some((s) => s.flags.includes('rooted'))) { pushTrace(self, round, 'order: rooted — hold'); self.lastHitById = null; return }
     const dest = self.moveOrder
     const posBefore = { ...self.pos }

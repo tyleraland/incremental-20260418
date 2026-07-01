@@ -86,6 +86,25 @@ describe('move orders — force path', () => {
     expect(find(b, 'e').hp).toBe(9999)    // never stopped to fight
   })
 
+  it('§travel-defend: an engage order stops to kill a hostile in sight, then resumes to the goal', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'a', team: 'player', visionRange: 10, moveSpeed: 0.9, str: 40, meleeRange: 2 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 50, hp: 50, moveSpeed: 0, str: 1, def: 0 })],
+      mode: 'open', cols: 30, rows: 30,
+    })
+    find(b, 'a').pos = { x: 5, y: 15 }
+    find(b, 'e').pos = { x: 9, y: 15 }       // in the path, in vision — a hostile en route
+    const dest = { x: 25, y: 15 }            // far past the enemy
+    issueMoveOrder(b, 'a', dest, true)       // engage: defend yourself while travelling
+    let arrived = false
+    for (let r = 0; r < 120 && !arrived; r++) {
+      advanceRound(b)
+      if (dist(find(b, 'a').pos, dest) < 0.6) arrived = true
+    }
+    expect(find(b, 'e').alive).toBe(false)   // stopped and killed it (didn't march past)
+    expect(arrived).toBe(true)               // then resumed the march and reached the goal
+  })
+
   it('clearMoveOrder hands the unit back to normal AI', () => {
     const b = solo(20)
     find(b, 'a').pos = { x: 5, y: 5 }
