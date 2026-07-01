@@ -16,7 +16,7 @@ import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
 import { consumableDef } from '@/data/consumables'
-import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -215,6 +215,8 @@ export interface GameState {
   openEquipFor: (unitId: string, slot: EquipSlot) => void
   closeEquipContext: () => void
   spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
+  debugLevelUp: (unitId: string) => void       // §debug: grant exactly enough exp to gain one level
+  debugResetLevel: (unitId: string) => void    // §debug: reset to a clean level-1 unit (level/exp/abilities)
   learnSkill: (unitId: string, skillId: string) => void
   // Tactics: equip/unequip and reorder priority (first = highest). Validated
   // against TACTIC_REGISTRY scope and the per-unit / party slot caps.
@@ -263,6 +265,10 @@ function appendLog(log: LogEntry[], category: LogCategory, message: string, tick
 
 const EXP_A = 10
 const EXP_P = 3
+
+// §debug: the base value every ability is reset to by debugResetLevel (a clean,
+// predictable level-1 baseline — recruits normally roll 2–5).
+const DEBUG_RESET_ABILITY = 1
 
 export function expForLevel(level: number): number {
   return Math.floor(EXP_A * Math.pow(level, EXP_P))
@@ -481,7 +487,7 @@ function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[
     const def = MONSTER_REGISTRY[wave[i]]
     if (def) enemyUnits.push(monsterToEngineInput(def, `${wave[i]}#${i}`, 'enemy'))
   }
-  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, timeScale: ROUND_TIME_SCALE })
+  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, timeScale: ROUND_TIME_SCALE, multiAttackMax: MULTI_ATTACK_MAX })
 }
 
 // ── Open-world battle helpers (§open-world) ─────────────────────────────────--
@@ -582,7 +588,7 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   // A city is a peaceful field: heroes mill about individually (§town wander) and
   // its NPCs stand around for them to cross paths with.
   const peaceful = loc.traits.includes('city')
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', peaceful, cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? decisionIntervalFor(loc) })
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', peaceful, cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? decisionIntervalFor(loc), multiAttackMax: MULTI_ATTACK_MAX })
   // Town NPCs (merchants/questgivers): stationary, non-combatant, on the neutral
   // team — nobody fights them and they never fight. They stand where they spawn.
   for (const npc of npcsAt(loc.id)) {
@@ -2101,6 +2107,29 @@ export const useGameStore = create<GameState>((set) => ({
       units: s.units.map((u) => u.id === unitId ? { ...u, abilityPoints: u.abilityPoints - cost, abilities: { ...u.abilities, [ability]: current + 1 } } : u),
       viewedUnitLevels,
     }
+  }),
+
+  // §debug: grant exactly enough exp for ONE level-up, then run the normal
+  // level-up path (so ability/skill points accrue by the real rules). One click =
+  // one level. Handy for testing level-scaled behaviour (e.g. attack speed).
+  debugLevelUp: (unitId) => set((s) => {
+    const unit = s.units.find((u) => u.id === unitId)
+    if (!unit) return s
+    const boosted = { ...unit, exp: unit.expToNext }   // top exp up to the threshold
+    const { unit: leveled, log } = applyLevelUps(boosted, s.ticks, s.eventLog)
+    return { units: s.units.map((u) => u.id === unitId ? leveled : u), eventLog: log }
+  }),
+
+  // §debug: reset a hero to a clean level-1 slate — level 1, exp 0, all base
+  // ability scores back to DEBUG_RESET_ABILITY, and the level-1 point baseline.
+  // Skills/equipment/class are left alone. Refills health to the new max.
+  debugResetLevel: (unitId) => set((s) => {
+    const unit = s.units.find((u) => u.id === unitId)
+    if (!unit) return s
+    const abilities: Abilities = { strength: DEBUG_RESET_ABILITY, agility: DEBUG_RESET_ABILITY, dexterity: DEBUG_RESET_ABILITY, constitution: DEBUG_RESET_ABILITY, intelligence: DEBUG_RESET_ABILITY }
+    const reset: Unit = { ...unit, level: 1, exp: 0, expToNext: expForLevel(1), abilities, abilityPoints: 3, skillPoints: 1 }
+    const healed = { ...reset, health: getDerivedStats(reset, s.equipment).maxHp }
+    return { units: s.units.map((u) => u.id === unitId ? healed : u) }
   }),
 
   recruitUnit: () => set((s) => {

@@ -97,6 +97,8 @@ const ABILITY_DEFS: { key: keyof Abilities; label: string; color: string }[] = [
 function StatsTab({ unit }: { unit: Unit }) {
   const equipment        = useGameStore((s) => s.equipment)
   const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
+  const debugLevelUp     = useGameStore((s) => s.debugLevelUp)
+  const debugResetLevel  = useGameStore((s) => s.debugResetLevel)
   const derived          = getDerivedStats(unit, equipment)
 
   const defStat = derived.defense - derived.defenseEquip
@@ -194,6 +196,26 @@ function StatsTab({ unit }: { unit: Unit }) {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Debug — level tools (dev/testing). Level Up grants exactly enough exp for
+          one level; Reset Level wipes back to a clean level-1 slate. */}
+      <div>
+        <div className="text-xs uppercase tracking-widest text-game-text-dim mb-2">Debug</div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => debugLevelUp(unit.id)}
+            className="flex-1 py-2 rounded-lg text-sm font-semibold bg-game-primary/20 text-game-primary border border-game-primary/40 hover:bg-game-primary/30 active:scale-95 transition-colors"
+          >
+            Level Up
+          </button>
+          <button
+            onClick={() => debugResetLevel(unit.id)}
+            className="flex-1 py-2 rounded-lg text-sm font-semibold bg-red-500/15 text-red-400 border border-red-500/40 hover:bg-red-500/25 active:scale-95 transition-colors"
+          >
+            Reset Level
+          </button>
         </div>
       </div>
     </div>

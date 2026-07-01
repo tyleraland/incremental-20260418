@@ -62,10 +62,11 @@ export const MAX_ATTACK_INTERVAL = 4
 // round otherwise — the per-logical-round total is `perRound` at ANY timeScale,
 // preserving the real-time pace invariance the timescale module guarantees.
 //
-// DEFAULT 1 = disabled: identical to the single-swing cadence, so every existing
-// test and snapshot replay stays byte-identical. Bump to 5 (per-battle via
-// CombatSetup.multiAttackMax, or here globally) to enable the prototype.
-export const MULTI_ATTACK_MAX = 1
+// PROTOTYPE ENABLED at 5 (agility can grant up to 5 basic swings/logical round).
+// The LIVE game opts in: the store passes this to createBattle. The engine itself
+// defaults to 1 (disabled) when multiAttackMax is unset, so the engine test suite and
+// snapshot replays stay byte-identical. Set to 1 here to turn the feature off in-game.
+export const MULTI_ATTACK_MAX = 5
 
 // §open-world wander (only consulted when BattleState.mode === 'open'). Heroes
 // roam toward a shared team waypoint, re-picking it when they get within

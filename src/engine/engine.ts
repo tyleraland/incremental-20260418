@@ -6,7 +6,7 @@
 // to completion for tests and bulk/idle resolution.
 
 import {
-  COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS, MULTI_ATTACK_MAX,
+  COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
   WANDER_REPATH, HUNT_RETAIN_MULT, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
   WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN, WARY_INTERRUPT_DECAY,
   TOWN_WANDER_MIN, TOWN_WANDER_MAX, TOWN_WANDER_NEAR, TOWN_WANDER_FAR, TOWN_WANDER_SPEED_MULT,
@@ -268,7 +268,9 @@ export function createBattle(setup: CombatSetup): BattleState {
   const rows = setup.rows ?? ROWS
   const timeScale = Math.max(1, Math.floor(setup.timeScale ?? 1))
   const decisionInterval = Math.max(1, Math.floor(setup.decisionInterval ?? 1))
-  const multiAttackMax = Math.max(1, Math.floor(setup.multiAttackMax ?? MULTI_ATTACK_MAX))
+  // Default DISABLED (1) so the engine suite + snapshot replays are byte-identical;
+  // the live game opts in by passing multiAttackMax (see the store's createBattle).
+  const multiAttackMax = Math.max(1, Math.floor(setup.multiAttackMax ?? 1))
   setArenaBounds(cols, rows)   // so startingPosition/clamp use this battle's bounds
   setTimeScale(timeScale)      // so per-round helpers (move/cooldown/status) scale
   setMultiAttackMax(multiAttackMax)   // §multi-attack: agility-driven extra swings/round
