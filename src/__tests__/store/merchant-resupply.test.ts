@@ -80,4 +80,21 @@ describe('merchant-sourced supplies resupply', () => {
     }
     expect(carried('u1', 'potion-hp')).toBe(10)
   })
+
+  it('does NOT loop buy→wipe in town — the pack + gold settle (regression)', () => {
+    // A hero posted in town who already carries some potions: the engine town
+    // combatant seeds those carried counts, and mirroring them back used to wipe the
+    // in-town reconcile every tick — so the reconcile re-withdrew, the mirror wiped it,
+    // and the driver re-bought forever, burning all the gold. It must settle instead.
+    resetStore({
+      locations: INITIAL_LOCATIONS,
+      units: [makeUnit({ id: 'u1', locationId: 'prontera-city', pack: [{ itemId: 'potion-hp', count: 3, target: 10 }] })],
+      miscItems: [{ id: 'm-gold', name: 'Gold', quantity: 1000 }],
+    })
+    for (let i = 0; i < 12; i++) { buyMerchantSupplies(unit('u1'), 'prontera-city', loadout); tick() }
+    const goldSettled = gold()
+    for (let i = 0; i < 20; i++) { buyMerchantSupplies(unit('u1'), 'prontera-city', loadout); tick() }
+    expect(carried('u1', 'potion-hp')).toBe(10)   // stable at target, not oscillating to 0
+    expect(gold()).toBe(goldSettled)              // no endless re-buying (loop gone)
+  })
 })

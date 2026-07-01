@@ -1527,10 +1527,17 @@ export const useGameStore = create<GameState>((set) => ({
         health = Math.min(maxHp, health + REGEN_RATE)
       }
 
-      // §consumables: mirror the engine's live carried counts back, then reconcile
-      // the pack to its carry targets (withdraw OR deposit) while posted in a city.
-      let pack = u.id in combat.packByUnit ? syncPackCounts(u.pack, combat.packByUnit[u.id]) : u.pack
-      if (u.locationId && cityLocs.has(u.locationId) && (pack?.length ?? 0) > 0) {
+      // §consumables: in a city the STORE owns the pack. A town hero isn't fighting,
+      // so the engine combatant's carried counts are stale (the in-town reconcile
+      // updates Unit.pack, not the engine) — mirroring them back wiped the reconcile
+      // EVERY tick, so the reconcile re-withdrew, the mirror wiped it again (losing the
+      // potions without returning them to the stash), and the driver re-bought to
+      // refill: a buy→wipe loop that burned all the gold. So skip the mirror in town
+      // and let the reconcile be authoritative; the engine re-seeds from Unit.pack on
+      // the next deploy. Elsewhere (a live fight) the engine stays authoritative.
+      const inCity = !!u.locationId && cityLocs.has(u.locationId)
+      let pack = (!inCity && u.id in combat.packByUnit) ? syncPackCounts(u.pack, combat.packByUnit[u.id]) : u.pack
+      if (inCity && (pack?.length ?? 0) > 0) {
         pack = reconcilePackInTown(pack, stashAvail, stashDraw)
       }
 
