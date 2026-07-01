@@ -15,7 +15,7 @@ import {
 // How long a returned hero parks in town (depositing loot + restocking) before
 // redeploying to where they were hunting. Instant deploy for now — open-world land
 // routing replaces the teleport later (gated on the store's deployMode lever).
-export const TOWN_RESUPPLY_TICKS = TICKS_PER_SECOND * 30
+export const TOWN_RESUPPLY_TICKS = TICKS_PER_SECOND * 10
 
 // Restock a hero's MERCHANT-sourced supplies while they're standing in `cityId`:
 // buy each shortfall (loadout target − carried − in-stash) from a merchant at this
