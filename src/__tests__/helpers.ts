@@ -42,6 +42,12 @@ export function resetStore(overrides: object = {}) {
     monsterDefeated: {},
     monsterSeen: {},
     miscItems: [],
+    // per-run combat accumulators — clear them too so a prior test's kills/loot
+    // don't leak into the next (unit lifetime stats + the kill-loot pack channel).
+    unitStats: {},
+    unitStatHistory: {},
+    locationStats: {},
+    pendingPackLoot: {},
     eventLog: [],
     itemSockets: {},
     ticks: 0,

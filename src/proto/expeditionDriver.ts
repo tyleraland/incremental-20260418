@@ -1,15 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
 import { TICKS_PER_SECOND } from '@/lib/time'
-import { MONSTER_REGISTRY } from '@/data/monsters'
 import { CONSUMABLE_REGISTRY } from '@/data/consumables'
 import { MERCHANT_REGISTRY, merchantLocation, buyPriceFor } from '@/data/merchants'
 import type { Location, Unit } from '@/types'
 import { useProtoStore } from './protoStore'
-import { heroRoom, heroCarried, packFullEnough, GOLD_ID, WEIGHT_LIMIT } from './economy'
+import { heroCarried, packFullEnough, GOLD_ID, WEIGHT_LIMIT } from './economy'
 import { useExpeditionStore, freshHero, type HeroExpedition } from './expeditionStore'
 import {
-  locationProfile, isHuntable, isCity, nearestCity, categorize, supplyState, suppliesDry, type Loadout,
+  isHuntable, isCity, nearestCity, categorize, supplyState, suppliesDry, type Loadout,
 } from './expedition'
 
 // How long a returned hero parks in town (depositing loot + restocking) before
@@ -49,15 +48,6 @@ export function buyMerchantSupplies(unit: Unit, cityId: string, loadout: Loadout
 type Drop = { itemId: string; qty: number }
 type Member = { u: Unit; he: HeroExpedition }
 
-// One mock drop from the location's monster table, restricted to the categories
-// the hero keeps. (proto — Math.random is fine; only the engine is deterministic.)
-function oneDrop(loc: Location, he: HeroExpedition): Drop | null {
-  const pool = loc.monsterIds.flatMap((mid) => MONSTER_REGISTRY[mid]?.drops ?? [])
-  const ids = (pool.length ? pool.map((d) => d.itemId) : ['drop-slime-gel']).filter((id) => he.lootCats.includes(categorize(id)))
-  if (ids.length === 0) return null
-  return { itemId: ids[Math.floor(Math.random() * ids.length)], qty: 1 }
-}
-
 // Hand pooled loot to the accepters, always topping up the least-full first so the
 // party fills evenly (the "share the burden" behaviour). Fill is total carry (loot
 // pack + carried consumables). Items with no accepter / no room are left behind.
@@ -88,7 +78,6 @@ function returnTownFor(he: HeroExpedition, fromId: string | null, locations: Loc
 export function useExpeditionDriver() {
   const ticks = useGameStore((s) => s.ticks)
   const last = useRef(ticks)
-  const progress = useRef<Record<string, number>>({})
 
   useEffect(() => {
     const dt = Math.min(2, Math.max(0, (ticks - last.current) / TICKS_PER_SECOND))
@@ -101,6 +90,14 @@ export function useExpeditionDriver() {
     const locById = new Map(g.locations.map((l) => [l.id, l]))
     const groupReturnLocs = new Set<string>()
     const groups = new Map<string, Member[]>()
+
+    // §loot: drain the REAL kill drops the game tick credited to each hero
+    // (replaces the old wall-clock loot mock). Applied to hunting members in
+    // phase 2c; anything credited to a hero who isn't a current hunter (rare —
+    // credited a kill the same tick they left) is mailed to the stash below so
+    // no drop is silently lost.
+    const foundLoot = g.takePendingPackLoot()
+    const appliedLoot = new Set<string>()
 
     // Phase 0: any hero standing in a city auto-deposits their field loot into the
     // guild stash (heroes deposit on return to town — no manual button) and restocks
@@ -151,7 +148,6 @@ export function useExpeditionDriver() {
           if (walking) continue
           if (u.locationId === he.locationId) {
             exp.commitStep(u.id, { status: 'hunting', suppliesLeft: 1, resupplyUntil: undefined })
-            progress.current[u.id] = 0
           } else {
             g.routeUnitTo(u.id, he.locationId!)
           }
@@ -177,7 +173,6 @@ export function useExpeditionDriver() {
         // Trip's done: redeploy to where they were hunting, full supplies, hunting.
         g.assignUnits([u.id], he.locationId!)
         exp.commitStep(u.id, { status: 'hunting', suppliesLeft: 1, resupplyUntil: undefined })
-        progress.current[u.id] = 0
       }
     }
 
@@ -201,7 +196,6 @@ export function useExpeditionDriver() {
       if (he.status === 'returning') continue   // phase R owns returning heroes
       if (he.locationId !== u.locationId) {   // (re)deployed → fresh run
         exp.commitStep(u.id, { suppliesLeft: 1, status: 'hunting', locationId: u.locationId })
-        progress.current[u.id] = 0
         continue
       }
       const arr = groups.get(u.locationId) ?? []
@@ -209,11 +203,8 @@ export function useExpeditionDriver() {
       groups.set(u.locationId, arr)
     }
 
-    // Phase 2: per-location group — supplies, loot generation + sharing, returns.
+    // Phase 2: per-location group — supplies, loot into packs, returns.
     for (const [locId, members] of groups) {
-      const loc = locById.get(locId)!
-      const profile = locationProfile(loc)
-
       // 2a. supplies = real loadout usage (carried consumables ÷ configured total),
       // NOT a timer — they only drop as the engine spends potions in combat.
       const newSup: Record<string, number> = {}
@@ -224,17 +215,19 @@ export function useExpeditionDriver() {
         supSt[u.id] = st
       }
 
-      // 2c. generate loot: sharers pool it, others fill their own pack
+      // 2c. real kill loot → packs. Each hero's drops are the REAL rolls the game
+      // tick credited to them this interval (foundLoot), batched with the kills —
+      // not a wall-clock trickle. Filter to the categories the hero keeps (drops
+      // of unwanted categories are left behind), then sharers pool for the party
+      // while others load their own pack (capacity-gated inside simulateHunt).
       const pool: Drop[] = []
       for (const { u, he } of members) {
-        progress.current[u.id] = (progress.current[u.id] ?? 0) + profile.lootItemsPerSec * dt
-        const cap = he.shareLoot ? Infinity : heroRoom(useProtoStore.getState().packs[u.id], u.pack)
-        const drops: Drop[] = []
-        while (progress.current[u.id] >= 1 && drops.length < cap) {
-          progress.current[u.id] -= 1
-          const d = oneDrop(loc, he)
-          if (d) drops.push(d)
-        }
+        const found = foundLoot[u.id]
+        if (!found) continue
+        appliedLoot.add(u.id)
+        const drops: Drop[] = Object.entries(found)
+          .filter(([id]) => he.lootCats.includes(categorize(id)))
+          .map(([itemId, qty]) => ({ itemId, qty }))
         if (drops.length === 0) continue
         if (he.shareLoot) pool.push(...drops)
         else proto.simulateHunt(u.id, drops)
@@ -268,6 +261,14 @@ export function useExpeditionDriver() {
         const he = useExpeditionStore.getState().heroes[u.id]
         if (he && he.status !== 'returning') exp.commitStep(u.id, { status: 'returning', locationId: u.locationId })
       }
+    }
+
+    // §loot safety net: any credited drops NOT applied to a hunting member above
+    // (a hero who left the field the same tick they scored a kill) mail to the
+    // stash so nothing is silently lost.
+    for (const [uid, items] of Object.entries(foundLoot)) {
+      if (appliedLoot.has(uid)) continue
+      for (const [id, q] of Object.entries(items)) g.grantMiscItem(id, q)
     }
   }, [ticks])
 }

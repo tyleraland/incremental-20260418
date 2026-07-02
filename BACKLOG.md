@@ -468,42 +468,39 @@ then redeploys to the hunt anchor (`expeditionDriver` phase R, gated on
   targets) as a named template; apply/tweak on any other hero to cut per-hero
   monotony. New small persisted registry + apply action.
 
-## Loot realism — pack fills on kills, not a wall-clock timer (KNOWN BUG)
+## Loot realism — pack fills on kills, not a wall-clock timer (SHIPPED 2026-07, Fork A)
 
-The proto expedition loot pack (`proto.packs[unitId]`, shown as each hero's carry
-weight/% in `PackStrip`/`LogisticsBoard`, and the trigger for `pack-full` →
-return-to-town) is filled by a **time-based MOCK**: `expeditionDriver` phase 2c
-accrues `progress += locationProfile.lootItemsPerSec × dt` and calls
-`oneDrop`/`simulateHunt` — pure wall-clock, no reference to kills.
-`protoStore.simulateHunt` is explicitly "fakes drops so we can feel packs fill"
-(predates real engine combat). Consequences the player sees on a watched
-open-world map (reported on Kanto Beach):
-  - the pack weight climbs (and can trigger a town return) **before any monster
-    dies**, and keeps trickling asynchronously from actual deaths;
-  - it's a *second, parallel* loot stream: real engine kills already roll the
-    real drop tables into `lootDelta` → `miscItems` (the guild stash) via
-    `rewardKills`, credited to the killer's `itemsFound` — that stream is the
-    correct, kill-gated, batched one, but it's invisible in the per-hero pack.
-So there are two disconnected loot systems, and the visible one is fake.
+**Was:** the proto expedition loot pack (`proto.packs[unitId]`, shown as each
+hero's carry weight/% and the `pack-full` → return trigger) was filled by a
+wall-clock MOCK (`expeditionDriver` phase 2c: `progress += lootItemsPerSec × dt`
+→ `oneDrop`/`simulateHunt`), decoupled from kills — so pack weight climbed
+(and could send a hero home) **before any monster died** and trickled out of
+sync with deaths, while the *real* kill drops rolled invisibly into the guild
+stash. Two disconnected loot systems; the visible one was fake (reported on
+Kanto Beach).
 
-**Fix = wire the pack to real kills, delete the timer.** The open design fork
-(needs a call before implementing — touches the loot economy):
-  - **A — per-hero pack is the real buffer (recommended):** `rewardKills` routes
-    each kill's real drops into the *killer's* pack (capacity-limited via
-    `heroRoom`) instead of straight to `miscItems`; the pack deposits to the
-    stash on town return (phase 0 already does this). Matches the player's
-    mental model AND sets up ground-drops below. Bigger rewire: per-hero drop
-    attribution out of `rewardKills`, stop the direct-to-stash write for
-    deployed heroes, reconcile offline/off-screen crediting (which has no
-    per-hero pack) to the same model.
-  - **B — keep loot → stash, fix only the trigger/display:** drive pack-full and
-    the weight readout off the hero's *real* found-loot this trip (a per-hero
-    `itemsFound`-style delta the driver consumes) rather than a fake timer;
-    the "pack" stays a bookkeeping abstraction. Smaller, but no real per-hero
-    carrying, and ground-drops would still need model A later.
-Either way: **delete phase 2c's `lootItemsPerSec × dt` accrual + `oneDrop`**, and
-retire `simulateHunt`'s "fake" path. Batch drops per kill (the user's ask: items
-arrive in the kill's batch, not trickled).
+**Now (Fork A — the pack is the real loot buffer):**
+  - `rewardKills` (`useGameStore`) credits each kill's real rolled drops to the
+    **killer** as a per-hero `foundLootByUnit` delta (batched with the kill),
+    instead of writing them to the shared stash. Uncredited (minion) kills and
+    the offline `batchTick` path still mail drops to the stash; `creditOffscreen`
+    round-robins its extrapolated drops onto the party's packs so unwatched
+    hunts keep loading up too. Gold stays a stash currency.
+  - The tick accumulates that into `pendingPackLoot` (RUNTIME tier, unpersisted).
+    The expedition driver drains it each tick (`takePendingPackLoot`) into
+    `proto.packs`, capacity-gated, honoring share/accept/`lootCats` — the old
+    `lootItemsPerSec`/`oneDrop` mock is deleted.
+  - **Self-healing:** if no driver is mounted (classic UI / perf harness), the
+    tick flushes last tick's undrained `pendingPackLoot` to the stash so loot
+    is never stranded. (With the driver present it's always drained first → no-op.)
+  - Pinned by `loot-to-pack.test.ts` (kill-gated: no loot before a kill;
+    credited per hero; drops === `itemsFound`, none lost/doubled; `takePending…`
+    atomic) and verified live on the beach (kills=0 → pack=0; pack tracks kills;
+    zero stash leakage). `resetStore` now also clears the per-run stat
+    accumulators so tests don't leak loot/kills between cases.
+  - *Open follow-ups:* pack overflow beyond `WEIGHT_LIMIT` is dropped (real carry
+    pressure, but silent) — surface it; and off-screen per-hero attribution is
+    round-robin, not true kill credit.
 
 - **Ground-drop loot pickup (requested — future, builds on fork A).** When a
   monster dies, spill its rolled drops onto the battlefield as pickup tokens the

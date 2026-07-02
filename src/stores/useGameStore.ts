@@ -126,6 +126,12 @@ export interface GameState {
   questDropRules: QuestDropRule[]
   questItems: Record<string, number>            // quest-item id → count held
 
+  // §loot: real kill drops credited to a hero, waiting to be moved into their
+  // loot pack (proto.packs) by the expedition driver next tick. Accumulated by
+  // the tick (survives catchUp's batched ticks), drained by `takePendingPackLoot`.
+  // RUNTIME tier — transient hand-off, never persisted.
+  pendingPackLoot: Record<string, Record<string, number>>
+
   // EPHEMERAL_UI — stored in localStorage; not in save string
   activeTab: TabId
   selectedUnitIds: string[]
@@ -180,6 +186,10 @@ export interface GameState {
   consumeQuestItem: (itemId: string, qty: number) => void
   consumeMiscItem: (itemId: string, qty: number) => void
   grantMiscItem: (itemId: string, qty: number) => void   // add to the stash (quest rewards, gold)
+  // §loot: hand the accumulated per-hero found-loot to the expedition driver and
+  // clear it (the driver moves it into packs, capacity-gated). Read-and-reset in
+  // one atomic set so no drop is double-consumed or lost across ticks.
+  takePendingPackLoot: () => Record<string, Record<string, number>>
   grantEquipment: (itemId: string) => void               // add an owned equipment instance (quest item rewards)
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
@@ -1021,7 +1031,8 @@ interface CombatStep {
   koUnitIds: Set<string>              // player units that died this tick
   expByUnit: Record<string, number>
   goldEarned: number
-  lootDelta: Record<string, number>   // miscItemId → qty gained
+  lootDelta: Record<string, number>   // miscItemId → qty gained (stash-bound: uncredited/off-screen loot)
+  foundLootByUnit: Record<string, Record<string, number>>  // §loot: real kill drops credited to the KILLER, bound for their pack (not the shared stash)
   questDropDelta: Record<string, number>  // quest-item id → quest items collected this tick
   monsterDefeated: Record<string, number>
   monsterSeen: Record<string, number>
@@ -1050,6 +1061,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const koUnitIds = new Set<string>()
   const expByUnit: Record<string, number> = {}
   const lootDelta: Record<string, number> = {}
+  const foundLootByUnit: Record<string, Record<string, number>> = {}
   const questDropDelta: Record<string, number> = {}
   let goldEarned = 0
   const travelMoves: Record<string, { locationId: string; travelPath: string[] | null }> = {}
@@ -1128,9 +1140,18 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         for (const d of def.drops) {
           if (Math.random() < d.dropRate) {
             const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
-            lootDelta[d.itemId]    = (lootDelta[d.itemId] ?? 0) + qty
             itemsDropped[d.itemId] = (itemsDropped[d.itemId] ?? 0) + qty
-            if (credited) bumpUnit(credited, 'itemsFound', qty)
+            // §loot: a kill's drops go into the KILLER's pack (batched with the
+            // kill, capacity-gated by the expedition driver), NOT straight to the
+            // shared stash — that's the whole "loot fills your pack, deposit in
+            // town" loop. Only a real credited hero carries; a minion kill (no
+            // credit) still mails its drop home to the stash.
+            if (credited) {
+              (foundLootByUnit[credited] ??= {})[d.itemId] = ((foundLootByUnit[credited] ??= {})[d.itemId] ?? 0) + qty
+              bumpUnit(credited, 'itemsFound', qty)
+            } else {
+              lootDelta[d.itemId] = (lootDelta[d.itemId] ?? 0) + qty
+            }
           }
         }
       }
@@ -1216,7 +1237,19 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     const members = eligible.map((u) => ({ id: u.id, level: unitLevel.get(u.id) ?? 1 }))
     for (const [id, amt] of Object.entries(splitExpByLevel(exp, members))) expByUnit[id] = (expByUnit[id] ?? 0) + amt
     goldEarned += gold
-    for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
+    // §loot: off-screen hunts still fill their party's packs (round-robin over the
+    // eligible heroes), so a party hunting on an unwatched map keeps loading up and
+    // eventually returns — same loop as the watched map, just rate-extrapolated.
+    // Gold stays a stash currency (goldEarned above). Empty party → mail to stash.
+    if (eligible.length === 0) {
+      for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
+    } else {
+      let i = 0
+      for (const [id, q] of Object.entries(loot)) {
+        const uid = eligible[i++ % eligible.length].id
+        ;(foundLootByUnit[uid] ??= {})[id] = ((foundLootByUnit[uid] ??= {})[id] ?? 0) + q
+      }
+    }
     for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
     // Advance the persisted stats so the rate stays coherent for the next interval.
     const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
@@ -1421,7 +1454,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   }
 
   return {
-    battles, battleCooldown, monsterSpawnTimers, hpByUnit, packByUnit, koUnitIds, expByUnit, goldEarned, lootDelta,
+    battles, battleCooldown, monsterSpawnTimers, hpByUnit, packByUnit, koUnitIds, expByUnit, goldEarned, lootDelta, foundLootByUnit,
     questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, arrivals, logs,
   }
 }
@@ -1454,7 +1487,7 @@ function freshGameSeed(mode: ProgressionMode) {
 const BOOT_MODE = bootstrapProgressionMode()
 const BOOT_SEED = freshGameSeed(BOOT_MODE)
 
-export const useGameStore = create<GameState>((set) => ({
+export const useGameStore = create<GameState>((set, get) => ({
   units:    BOOT_SEED.units,
   progressionMode: BOOT_MODE,
   locations: INITIAL_LOCATIONS,
@@ -1494,6 +1527,7 @@ export const useGameStore = create<GameState>((set) => ({
   lastCatchUp: null,
   questDropRules: [],
   questItems: {},
+  pendingPackLoot: {},
   paused: false,
   eventLog: [],
   itemSockets: {},
@@ -1577,9 +1611,34 @@ export const useGameStore = create<GameState>((set) => ({
       return tm ? { ...leveled, locationId: tm.locationId, travelPath: tm.travelPath } : leveled
     })
 
+    // §loot: this tick's per-hero kill drops go into `pendingPackLoot` for the
+    // expedition driver to move into packs. The driver drains it (→ {}) right
+    // after each tick's commit. If it DIDN'T (classic UI / perf harness — no
+    // driver mounted), last tick's entries are still here: don't strand them —
+    // flush them to the shared stash so loot is never lost when the pack system
+    // isn't running. (With the driver present this is always empty → no-op.)
+    const stashFlush: Record<string, number> = {}
+    for (const items of Object.values(s.pendingPackLoot)) {
+      for (const [id, q] of Object.entries(items)) stashFlush[id] = (stashFlush[id] ?? 0) + q
+    }
+    let pendingPackLoot: Record<string, Record<string, number>> =
+      Object.keys(s.pendingPackLoot).length > 0 ? {} : s.pendingPackLoot
+    if (Object.keys(combat.foundLootByUnit).length > 0) {
+      pendingPackLoot = { ...pendingPackLoot }
+      for (const [uid, items] of Object.entries(combat.foundLootByUnit)) {
+        const cur = { ...(pendingPackLoot[uid] ?? {}) }
+        for (const [id, q] of Object.entries(items)) cur[id] = (cur[id] ?? 0) + q
+        pendingPackLoot[uid] = cur
+      }
+    }
+
     // §consumables: stashDraw is negative (potions withdrawn into packs in town).
-    const miscDeltas = { 'm-gold': combat.goldEarned, ...combat.lootDelta, ...stashDraw }
-    const miscItems = (combat.goldEarned > 0 || Object.keys(combat.lootDelta).length > 0 || Object.keys(stashDraw).length > 0)
+    // §loot: stashFlush is undrained pack loot mailed to the stash (classic/perf
+    // fallback — see pendingPackLoot above); merged additively with kill loot.
+    const lootIn: Record<string, number> = { ...combat.lootDelta }
+    for (const [id, q] of Object.entries(stashFlush)) lootIn[id] = (lootIn[id] ?? 0) + q
+    const miscDeltas = { 'm-gold': combat.goldEarned, ...lootIn, ...stashDraw }
+    const miscItems = (combat.goldEarned > 0 || Object.keys(lootIn).length > 0 || Object.keys(stashDraw).length > 0)
       ? applyMiscDeltas(s.miscItems, miscDeltas).filter((m) => m.quantity > 0 || !(m.id in stashDraw))
       : s.miscItems
 
@@ -1634,6 +1693,7 @@ export const useGameStore = create<GameState>((set) => ({
       unitStats: foldUnitStats(s.unitStats, combat.unitStatsDelta),
       unitStatHistory: foldHistory(s.unitStatHistory, combat.unitStatsDelta, newTicks),
       miscItems,
+      pendingPackLoot,
       // Advance the tick clock by a FIXED step (one TICK_MS), NOT Date.now().
       // Snapping to wall time after the reducer ran left lastTickAt tens of ms past
       // the tick boundary, so the next catchUp floored (now - lastTickAt) / TICK_MS
@@ -1904,6 +1964,11 @@ export const useGameStore = create<GameState>((set) => ({
       .filter((m) => m.quantity > 0),
   })),
   grantMiscItem: (itemId, qty) => set((s) => ({ miscItems: applyMiscDeltas(s.miscItems, { [itemId]: qty }) })),
+  takePendingPackLoot: () => {
+    const pending = get().pendingPackLoot
+    if (Object.keys(pending).length > 0) set({ pendingPackLoot: {} })
+    return pending
+  },
   grantEquipment: (itemId) => set((s) => {
     const def = INITIAL_EQUIPMENT.find((e) => e.id === itemId)
     if (!def) return s
