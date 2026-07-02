@@ -14,10 +14,10 @@ describe('open-world pace tiers are pace-preserving', () => {
     }
   })
 
-  it('denser fields use a coarser timeScale (fewer, cheaper rounds)', () => {
+  it('denser fields never run FINER than comfortable ones (tiers may be flat — see the 2026-07 full-granularity experiment)', () => {
     expect(openWorldTimeScale(50)).toBe(RTS)   // comfortable: full granularity, every tick
-    expect(openWorldTimeScale(90)).toBeLessThan(openWorldTimeScale(50))
+    expect(openWorldTimeScale(90)).toBeLessThanOrEqual(openWorldTimeScale(50))
     expect(openWorldTimeScale(200)).toBeLessThanOrEqual(openWorldTimeScale(140))
-    expect(everyTicksFor(openWorldTimeScale(200))).toBeGreaterThan(everyTicksFor(openWorldTimeScale(50)))
+    expect(everyTicksFor(openWorldTimeScale(200))).toBeGreaterThanOrEqual(everyTicksFor(openWorldTimeScale(50)))
   })
 })

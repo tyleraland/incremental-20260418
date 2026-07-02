@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react'
-import { useGameStore, waveComposition, locationBarriers, everyTicksFor, type Location } from '@/stores/useGameStore'
-import { TICKS_PER_SECOND } from '@/lib/time'
+import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
+import { expectedRoundGapMs, glideMs } from '@/render/cadence'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
@@ -154,9 +154,6 @@ const CAM_MS = 400
 // useSmoothScene EMA win declaratively, without bringing back its per-frame rAF.
 // The `${CAM_MS}ms` fallback covers the first frame and the static world-map Arena.
 const SEG = `var(--seg-ms, ${CAM_MS}ms)`
-// How much longer than the measured interval each glide runs: a hair of runway so a
-// momentarily-late round retargets a token while it's still moving, never parked.
-const CADENCE_RUNWAY = 1.7
 
 const px = (cam: Cam, x: number) => `${((x - cam.x) / cam.size) * 100}%`
 const py = (cam: Cam, y: number) => `${(1 - (y - cam.y) / cam.size) * 100}%`
@@ -945,23 +942,17 @@ function LiveBattle({ battle, portals, biome, terrainSeed, onFollow, inspectRequ
     if (!el) return
     const now = performance.now()
     // This battle's EXPECTED round gap: the perf tiers pair a coarser timeScale
-    // with rarer rounds (everyTicksFor), so a cap-200+ field legitimately rounds
-    // only every ~1.2s — that's cadence, not a stall.
-    const expectedMs = everyTicksFor(battle.timeScale) * (1000 / TICKS_PER_SECOND)
+    // with rarer rounds (everyTicksFor), so a slow-tier field legitimately rounds
+    // rarely — that's cadence, not a stall. The glide formula + the coherence
+    // budgets it must respect live in render/cadence.ts (pinned by Cadence.test).
+    const expectedMs = expectedRoundGapMs(battle.timeScale)
     const raw = lastRoundTsRef.current ? now - lastRoundTsRef.current : ROUND_MS
     lastRoundTsRef.current = now
     // Seed the EMA at the expected gap (not the first raw sample) so a slow-tier
     // field glides smoothly from round one instead of stepping while it converges.
     const ema = cadenceEmaRef.current ? cadenceEmaRef.current * 0.8 + raw * 0.2 : Math.max(raw, expectedMs)
     cadenceEmaRef.current = ema
-    // Clamp: floor keeps fast/desktop motion from going twitchy; ceil stops a long
-    // stall (hidden tab, GC pause) from leaving tokens crawling for seconds. The
-    // ceil must scale with the battle's own cadence: a fixed 900ms on a ~1.2s-gap
-    // slow-tier field parked every token for the last ~300ms of each round — the
-    // "step, step, step" walk on big maps, exactly what the runway exists to
-    // prevent. 900ms stays as the minimum ceil (load-stretched fast fields still
-    // cap); slow tiers may glide their full expected gap × runway.
-    const seg = Math.min(Math.max(900, expectedMs * CADENCE_RUNWAY), Math.max(160, ema * CADENCE_RUNWAY))
+    const seg = glideMs(ema, expectedMs)
     lastSegRef.current = seg
     // While the player is dragging the camera, hold the glide at 0 so the board
     // tracks the finger instantly instead of easing a beat behind it.

@@ -897,11 +897,33 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
   - *Retier (2026-07):* the ts1/ts2 tiers are gone — their ~1.2s coarse
     rounds caused the Kanto Beach incoherence reports (render lags the engine
     by ~0.7 round-step ≈ 840ms: melee FX "from afar", arcs not point-to-point,
-    loot while apparently walking, seconds-dead drop-in). `openWorldTimeScale`
-    is now {cap ≥ 90 → 3, else 6}: 400ms rounds, 3× finer steps, lag ≈ 280ms,
-    ~39-41 fps for the whole 90-220 band. Full-rip stays off the table until
-    the per-round render commit shrinks (value-mirror memo / off-thread sim,
-    below) — rounds/sec is still what the remaining tier throttles.
+    loot while apparently walking, seconds-dead drop-in). Two regression
+    tests now pin the coherence contract so it can't silently drift again:
+    `Cadence.test.ts` (render/cadence.ts budgets: glide must outlast the round
+    gap — no parking; render lag ≤ 500ms; round gap ≤ 600ms — checked for
+    every real map's tier) and `map-perf-envelope.test.ts` (every open-world
+    map's derived load params — cap / packing density / scenario barrier
+    count — must stay inside what the SYNTHETIC benchmark has measured;
+    replaces the old brittle "perf-test the densest real map" approach, which
+    play-tuning kept re-sorting).
+  - **FULL-GRANULARITY EXPERIMENT (2026-07, live):** `openWorldTimeScale` now
+    returns 6 for EVERY cap — even Kanto Beach runs fine rounds every tick.
+    Perfect coherence, measured ~29 fps median with dip windows to ~17 on the
+    Pixel-5 4× harness (vs ~39-41 at ts3, ~52 at the old coarse tier). We're
+    trying the dips in exchange for the feel; REVERT = uncomment the one tier
+    line in `openWorldTimeScale` (the pairing, glide ceiling, and tests all
+    keep working at any tier). Dip probe (trace + slow-stretch JS profile):
+    the dips are HEAVY TICKS — sim round + React commit flushing in one
+    80-130ms timer task — not raster/layout (post-slab traces show no Layout
+    dominance). Attribution inside slow stretches: ~45% browser-internal
+    `(program)`, ~7.5% dev-build React overhead (jsxDEV/validateProperty —
+    absent in prod, so the harness UNDERSTATES prod fps), ~14% spread engine
+    tail (sampleWindow / distance / spatialhash.near / zoneMembers — no
+    single villain), ~5% GC (allocation pressure). Next levers, in order:
+    (1) value-mirror token memo to shrink the per-round commit (Performance
+    § below), (2) engine micro-tail (zoneMembers scans all combatants per
+    zone; alloc churn in hot loops → GC), (3) profile a PROD build — the
+    dev-only overhead is measurement noise we're currently eating.
 - **✅ Phase 2 — LOD tokens.** `BattleChip` drops its floating plate + facing/
   moving nubs (most per-token DOM) when zoomed past `LOD_CAM_SIZE` or with more
   than `LOD_TOKEN_COUNT` on-screen tokens (`Lod.test.tsx`).

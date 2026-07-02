@@ -360,9 +360,17 @@ const DECISION_INTERVAL_HEAVY = 5
 // Density, not cap, is the real render driver (cap 220 PACKED into 60×60
 // collapses at any fine tier) — today's ≥90-cap maps are all spread, so cap
 // stays a fine proxy; revisit if a dense-packed big-cap map ever ships.
+// ── EXPERIMENT (2026-07): full granularity EVERYWHERE — every field runs fine
+// rounds every tick, even cap 220. Measured on the Pixel-5 4× harness: ~29 fps
+// median with dip windows to ~17 on a cap-220 spread field (vs ~39-41 at the
+// ts3 tier) — we're trying the perfect coherence and eating the dips; the dip
+// probe + revert numbers live in BACKLOG → cadence tiers. REVERT = uncomment
+// the tier line below (everything else — pairing, glide ceiling, tests — keeps
+// working at any tier).
 export function openWorldTimeScale(cap: number): number {
-  if (cap >= 90) return 3   // 400ms rounds — measured ~39-41 fps across the 90-220 band
-  return ROUND_TIME_SCALE   // 6 — full granularity at comfortable counts
+  void cap
+  // if (cap >= 90) return 3   // ← revert to this: 400ms rounds, ~39-41 fps across the 90-220 band
+  return ROUND_TIME_SCALE   // 6 — full granularity, one fine round per tick
 }
 // everyTicks paired to a battle's timeScale (product = ROUND_TIME_SCALE) → constant pace.
 export const everyTicksFor = (timeScale: number): number => Math.max(1, Math.round(ROUND_TIME_SCALE / timeScale))
