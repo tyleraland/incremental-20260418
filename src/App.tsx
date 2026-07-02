@@ -71,18 +71,22 @@ function App() {
 
   // Interval fires every second. catchUp() computes how many real seconds
   // have elapsed and applies them all at once, so throttled background tabs
-  // and returning from sleep both catch up correctly.
+  // and returning from sleep both catch up correctly. Perf mode instead steps
+  // ticks on a FIXED cadence (perfSeed.ts) — wall-clock batching would let a
+  // throttled run's sim state diverge from an unthrottled one's.
   useEffect(() => {
+    if (perfMode) return
     const id = setInterval(catchUp, TICK_MS)
     return () => clearInterval(id)
-  }, [])
+  }, [perfMode])
 
   // Immediate catch-up when tab becomes visible again.
   useEffect(() => {
+    if (perfMode) return
     const onVisible = () => { if (document.visibilityState === 'visible') catchUp() }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [])
+  }, [perfMode])
 
   // Load persisted save once on mount — unless the perf harness is seeding a
   // synthetic scene, in which case start from its clean roster instead.

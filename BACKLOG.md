@@ -1088,12 +1088,14 @@ documented in `skins.tsx`, and it's PINNED by a regression test
 re-render reconciles zero token bodies") so breaking it fails vitest instead of
 resurfacing as a mystery fps drop.
 
-- **Deterministic perf scene (open).** `?perf` is a live battle, so even the
-  median-of-5-windows fps that `skin-ab` now reports carries run-to-run noise
-  (±10% single-window measured). The real fix is a frozen scene: seed the RNG
-  (see *Seeded RNG for determinism* above) or drive a canned `BSNAP` replay with
-  the store loop paused and rounds stepped on a fixed cadence — then one run is
-  trustworthy and skin A/Bs stop needing repeats.
+- **Deterministic perf scene — SHIPPED 2026-07.** `?perf` now replays 1:1:
+  `perfSeed.ts` seeds the store's `Math.random` (mulberry32, `?seed=<n>`) before
+  the first scatter, and App.tsx's wall-clock catch-up is replaced in perf mode
+  by a fixed-cadence stepper (exactly one tick per interval callback, no
+  elapsed-time batching) — verified byte-identical combatant digests at round
+  100 across independent page loads. One `skin-ab` run is now a trustworthy
+  verdict; the residual window-to-window fps spread is OS scheduling noise, not
+  scene content.
 
 Next slices, roughly in order:
 
