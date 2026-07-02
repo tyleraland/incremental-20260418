@@ -1073,16 +1073,27 @@ iteration = editing shapes/palettes in that one file, A/B-able live against
 `circle` on the same battle.
 
 *Perf lesson from landing it* (measured on the `?perf` scene, mobile-chrome 4×
-throttle, via the new `skin-compare.spec.ts` A/B + `skin-trace.spec.ts` CDP
-attribution): a richer body's cost is NOT the SVG raster or the ground pattern —
-it's **React reconcile + style/layout of the token subtrees**, multiplied by
-prop churn that defeats the body memo. Naive paper ran 27 vs 38 fps; three fixes
-brought it to parity (~34 vs 35): `memo`'d bodies with primitives-only props,
-**quantized** `chipDims` (camera auto-fit "breathes" `cam.size` every round —
-eighth-cqmin steps keep the clamp strings stable) and **quantized facing** (15°
-steps), and the hp-bearing `title` moved off the body onto the chip wrapper.
-Any future skin/effect work should keep per-token element count lean and props
-quantized — that's the contract documented in `skins.tsx`.
+throttle, via the new `skin-compare.spec.ts` A/B (`npm run skin-ab`) +
+`skin-trace.spec.ts` CDP attribution): a richer body's cost is NOT the SVG
+raster or the ground pattern — it's **React reconcile + style/layout of the
+token subtrees**, multiplied by prop churn that defeats the body memo. Naive
+paper ran 27 vs 38 fps; three fixes brought it to parity (~34 vs 35): `memo`'d
+bodies with primitives-only props, **quantized** `chipDims` (camera auto-fit
+"breathes" `cam.size` every round — eighth-cqmin steps keep the clamp strings
+stable) and **quantized facing** (15° steps), and the hp-bearing `title` moved
+off the body onto the chip wrapper. Any future skin/effect work should keep
+per-token element count lean and props quantized — that's the contract
+documented in `skins.tsx`, and it's PINNED by a regression test
+(`BODY_RENDER_PROBE` in `skins.tsx` + Skins.test.tsx: "an unchanged battle
+re-render reconciles zero token bodies") so breaking it fails vitest instead of
+resurfacing as a mystery fps drop.
+
+- **Deterministic perf scene (open).** `?perf` is a live battle, so even the
+  median-of-5-windows fps that `skin-ab` now reports carries run-to-run noise
+  (±10% single-window measured). The real fix is a frozen scene: seed the RNG
+  (see *Seeded RNG for determinism* above) or drive a canned `BSNAP` replay with
+  the store loop paused and rounds stepped on a fixed cadence — then one run is
+  trustworthy and skin A/Bs stop needing repeats.
 
 Next slices, roughly in order:
 

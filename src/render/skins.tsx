@@ -78,6 +78,14 @@ const BODY_PROPS_EQUAL = (a: TokenBodyProps, b: TokenBodyProps) =>
 // separate FacingNub — the paper token's blade IS the facing indicator).
 export const SKIN_CARRIES_FACING: Record<BattleSkin, boolean> = { circle: false, paper: true }
 
+// Render-count probe: every ACTUAL body render bumps this (a memo hit doesn't).
+// Skins.test.tsx asserts the whole contract end-to-end with it — a re-render of
+// an unchanged battle must reconcile ZERO body subtrees, so any regression that
+// defeats the memo (a live object prop, an hp-bearing string, unquantized dims/
+// facing churn) fails a unit test instead of resurfacing as a mystery fps drop.
+// One increment per render — negligible in production.
+export const BODY_RENDER_PROBE = { count: 0 }
+
 // ── Circle skin (the classic token) ─────────────────────────────────────────
 
 // Per-tone base classes for the circle skin. An element `tint` (when present)
@@ -91,6 +99,7 @@ const TONE_CLASS: Record<Tone, string> = {
 }
 
 const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive, selected, dims }: TokenBodyProps) {
+  BODY_RENDER_PROBE.count++
   const tint = tone !== 'casting' ? rawTint : undefined
   return (
     <div
@@ -129,6 +138,7 @@ const PAPER_BODY_PATH =
 // body, so only the tip shows — a held weapon), then the two-tone body. Merged
 // into a single <svg> to keep the per-token element count down (see contract).
 const PaperBody = memo(function PaperBody({ glyph, tone, tint, alive, selected, facingDeg, dims }: TokenBodyProps) {
+  BODY_RENDER_PROBE.count++
   const p = PAPER_TONE[tone]
   const outline = tone !== 'casting' && tint ? tint : p.outline
   // Facing blade rotation snaps per round like the circle skin's FacingNub — no

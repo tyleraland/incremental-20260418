@@ -3,11 +3,11 @@
 // stays the stable handle either way (Lod.test relies on it), and the paper body
 // is pure render (no engine/store reads). Also pins the boot resolution order.
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, act } from '@testing-library/react'
 import { useGameStore } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
-import { bootBattleSkin } from '@/render/skins'
+import { bootBattleSkin, BODY_RENDER_PROBE } from '@/render/skins'
 import { eu } from '../engine/helpers'
 import type { Location } from '@/types'
 
@@ -53,6 +53,32 @@ describe('battlefield skins', () => {
     // the paper skin carries facing in the body — the separate FacingNub is gone,
     // and the body brings its own vector shapes
     expect(bodies[0].querySelector('svg')).toBeTruthy()
+  })
+
+  // The memo contract, end-to-end: a store-tick re-render where nothing visual
+  // changed must reconcile ZERO body subtrees. This is the perf property that
+  // keeps rich skins at fps parity (combatants mutate in place, so the caller
+  // must feed the memo'd bodies stable primitives — quantized facing/dims, no
+  // hp-bearing title). If this fails, someone reintroduced prop churn.
+  it('memo: an unchanged battle re-render reconciles zero token bodies', () => {
+    useGameStore.setState({ battleSkin: 'paper' })
+    const b = openBattle()
+    show(b)
+    const before = BODY_RENDER_PROBE.count
+    expect(before).toBeGreaterThan(0)                    // mount rendered the bodies
+    // simulate the tick's re-render: new battle identity, same in-place combatants
+    act(() => useGameStore.setState({ battles: { L1: { ...b, round: b.round + 1 } } }))
+    expect(BODY_RENDER_PROBE.count).toBe(before)
+  })
+
+  it('memo: a real visual change re-renders only the changed body', () => {
+    useGameStore.setState({ battleSkin: 'paper' })
+    const b = openBattle()
+    show(b)
+    const before = BODY_RENDER_PROBE.count
+    b.combatants[0].facing = { x: 1, y: 0 }              // hero turns east (was north)
+    act(() => useGameStore.setState({ battles: { L1: { ...b, round: b.round + 1 } } }))
+    expect(BODY_RENDER_PROBE.count).toBe(before + 1)     // hero body only, not the foe's
   })
 
   it('bootBattleSkin: localStorage > default, garbage ignored', () => {

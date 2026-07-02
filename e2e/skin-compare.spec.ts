@@ -3,37 +3,58 @@ import { test } from '@playwright/test'
 // Skin A/B perf + visual harness (NOT a pass/fail gate — the logged fps and the
 // screenshots are the signal). Drives the same heavy `?perf` scene once per
 // battle skin, so a new skin's render cost is a one-command before/after:
-//   npm run e2e -- skin-compare.spec.ts --project=mobile-chrome
+//   npm run skin-ab        (alias for: npm run e2e -- skin-compare.spec.ts --project=mobile-chrome)
 // Screenshots land at e2e/__shots__/skin-<skin>-<project>.png.
+//
+// The scene is a LIVE battle, so single-window fps is noisy (±10% run-to-run
+// measured) — sample several short windows and read the MEDIAN; the min and the
+// per-window list are logged so a real regression is distinguishable from one
+// bad window. A truly deterministic scene (seeded RNG / canned BSNAP stepping)
+// is still open — see BACKLOG → Graphics / visual evolution.
 
-const SAMPLE_MS = 4000
+const WINDOW_MS = 1200
+const WINDOWS = 5
 const SKINS = ['circle', 'paper'] as const
 
-async function sampleFps(page: import('@playwright/test').Page, ms: number) {
+async function sampleFps(page: import('@playwright/test').Page, windowMs: number, windows: number) {
   return page.evaluate(
-    (durationMs) =>
-      new Promise<{ fps: number; longTaskMs: number; arenaNodes: number }>((resolve) => {
-        let frames = 0, longTaskMs = 0
+    ({ windowMs, windows }) =>
+      new Promise<{ fpsMedian: number; fpsMin: number; fpsWindows: number[]; longTaskMs: number; arenaNodes: number }>((resolve) => {
+        let longTaskMs = 0
         let po: PerformanceObserver | undefined
         try {
           po = new PerformanceObserver((list) => { for (const e of list.getEntries()) longTaskMs += e.duration })
           po.observe({ entryTypes: ['longtask'] })
         } catch { /* longtask unsupported */ }
-        const start = performance.now()
+        const fpsWindows: number[] = []
+        let frames = 0
+        let winStart = performance.now()
         const tick = () => {
           frames++
-          if (performance.now() - start < durationMs) { requestAnimationFrame(tick); return }
-          po?.disconnect()
-          const arena = document.querySelector('.aspect-square')
-          resolve({
-            fps: frames / ((performance.now() - start) / 1000),
-            longTaskMs,
-            arenaNodes: arena ? arena.querySelectorAll('*').length : 0,
-          })
+          const now = performance.now()
+          if (now - winStart >= windowMs) {
+            fpsWindows.push(frames / ((now - winStart) / 1000))
+            frames = 0
+            winStart = now
+            if (fpsWindows.length >= windows) {
+              po?.disconnect()
+              const sorted = [...fpsWindows].sort((a, b) => a - b)
+              const arena = document.querySelector('.aspect-square')
+              resolve({
+                fpsMedian: sorted[Math.floor(sorted.length / 2)],
+                fpsMin: sorted[0],
+                fpsWindows,
+                longTaskMs,
+                arenaNodes: arena ? arena.querySelectorAll('*').length : 0,
+              })
+              return
+            }
+          }
+          requestAnimationFrame(tick)
         }
         requestAnimationFrame(tick)
       }),
-    ms,
+    { windowMs, windows },
   )
 }
 
@@ -52,8 +73,8 @@ for (const skin of SKINS) {
     await page.waitForTimeout(1000)
 
     await page.screenshot({ path: `e2e/__shots__/skin-${skin}-${testInfo.project.name}.png` })
-    const m = await sampleFps(page, SAMPLE_MS)
-    console.log(`[skin:${skin}] ${m.fps.toFixed(1)} fps · longtask ${m.longTaskMs.toFixed(0)}ms · arena DOM nodes ${m.arenaNodes}`)
+    const m = await sampleFps(page, WINDOW_MS, WINDOWS)
+    console.log(`[skin:${skin}] median ${m.fpsMedian.toFixed(1)} fps (min ${m.fpsMin.toFixed(1)}; windows ${m.fpsWindows.map((f) => f.toFixed(0)).join('/')}) · longtask ${m.longTaskMs.toFixed(0)}ms · arena DOM nodes ${m.arenaNodes}`)
     await testInfo.attach(`metrics-${skin}.json`, { body: JSON.stringify(m, null, 2), contentType: 'application/json' })
   })
 }

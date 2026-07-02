@@ -17,6 +17,7 @@
     "test:ui": "vitest --ui",
     "ci": "tsc --noEmit && vitest run",
     "e2e": "playwright test",
+    "skin-ab": "playwright test skin-compare.spec.ts --project=mobile-chrome",
     "e2e:install": "playwright install chromium"
   },
   "dependencies": {
