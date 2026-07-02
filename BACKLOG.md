@@ -1088,30 +1088,121 @@ documented in `skins.tsx`, and it's PINNED by a regression test
 re-render reconciles zero token bodies") so breaking it fails vitest instead of
 resurfacing as a mystery fps drop.
 
-- **Deterministic perf scene (open).** `?perf` is a live battle, so even the
-  median-of-5-windows fps that `skin-ab` now reports carries run-to-run noise
-  (±10% single-window measured). The real fix is a frozen scene: seed the RNG
-  (see *Seeded RNG for determinism* above) or drive a canned `BSNAP` replay with
-  the store loop paused and rounds stepped on a fixed cadence — then one run is
-  trustworthy and skin A/Bs stop needing repeats.
+- **Deterministic perf scene — SHIPPED 2026-07.** `?perf` now replays 1:1:
+  `perfSeed.ts` seeds the store's `Math.random` (mulberry32, `?seed=<n>`) before
+  the first scatter, and App.tsx's wall-clock catch-up is replaced in perf mode
+  by a fixed-cadence stepper (exactly one tick per interval callback, no
+  elapsed-time batching) — verified byte-identical combatant digests at round
+  100 across independent page loads. One `skin-ab` run is now a trustworthy
+  verdict; the residual window-to-window fps spread is OS scheduling noise, not
+  scene content. Two reading notes: (1) absolute fps is NOT comparable to
+  pre-determinism numbers — the old wall-clock catch-up batched late rounds
+  into fewer renders (hiding render cost under load), while the fixed-cadence
+  stepper renders every round, the honest worst-case; read A/B gaps, not
+  absolutes. (2) On a shared-CPU container (CI/cloud) the host itself adds
+  ±20-30% window spread even with frozen content — layer-bisects there
+  (hide vignette/ground/token svgs) showed paper≈circle within noise.
 
 Next slices, roughly in order:
 
-- **Paper-skin polish.** Per-class body/weapon variants (bow / staff / cross /
-  dagger swap on the blade layer, reading `Appearance.glyph`'s class), monster
-  *family* silhouettes (blob / beast / flyer — 3–4 shared paths keyed off
-  `MonsterDef`, not per-monster art), and a KO'd "crumpled" state. All stay in
-  `skins.tsx`; add a `bodyShape`/`weapon` field to `Appearance` when the resolver
-  needs to pick them (that's the designed extension point — never switch on ids
-  in the skin).
-- **Ground biomes.** Per-location ground patterns keyed off location traits
-  (grass field / stone dungeon / city plaza), still one data-URI pattern each;
-  thread the location's trait into `ARENA_SKINS`' ground pick. Barrier/cliff and
-  team-tint restyle to match the paper palette. A single static **vignette
-  overlay** (one compositor layer, like the perimeter ring) for the lighting read.
-- **Effects pass.** Restyle hit flashes / attack arcs / zones to the paper
-  language (flat shapes, no glows-via-filter); a `VisualState`-driven attack
-  "lunge" nudge (a one-shot transform, compositor-only) for melee reads.
+- **Paper-skin polish — variants SHIPPED 2026-07.** `Appearance` now carries the
+  designed extension points: `bodyShape` ('humanoid'/'blob'/'beast'/'flyer',
+  monster id → family map in `appearance.ts`, unlisted ids default 'beast') and
+  `weapon` ('sword'/'bow'/'staff'/'dagger' keyed off class; Mage+Cleric share
+  the staff). `PaperBody` draws them as shared flat paths (one silhouette path
+  per family drawn twice for the two-tone; 1–2 primitives per weapon; creatures
+  get a claw wedge instead of a sword) — the skin switches only on those fields,
+  never ids. Still open: a KO'd "crumpled" state (today KO = the generic ✕ +
+  fade).
+- **Ground biomes — SHIPPED 2026-07.** `biomeForLocation` (appearance.ts) maps
+  location TRAITS → 'grass' / 'stone' / 'plaza' (city → plaza; dungeon/
+  underground/cave/mountain/ruins/arena/cliff → stone; else grass); the paper
+  `ARENA_SKINS` entry carries one data-URI tile per biome plus `barrierWall`/
+  `barrierCliff` restyles (flat two-tone cutout, zero-blur inset face) and a
+  single static `vignette` overlay (one compositor layer, never repaints).
+  Team-tint restyle to the paper palette is still open.
+- **Effects pass — restyle SHIPPED 2026-07.** `FX_SKINS` (skins.tsx) styles the
+  combat-feedback layer per skin (attack arcs / hit flash ring / zones /
+  firewalls / portals); BattleView keeps the geometry+animation and reads the
+  look from the seam. Paper: muted ink arcs, cream flash ring, dashed
+  hand-drawn zone circles, solid flat fire/portal — no gradients, no glow
+  shadows. Circle keeps its classic look verbatim. Still open: the
+  `VisualState`-driven attack "lunge" nudge (a one-shot transform,
+  compositor-only) for melee reads.
+- **Organic terrain layer (the Unexplored ground read) — the next slice.** The
+  remaining visual distance to the reference is the ground: theirs is organic
+  (irregular floor boundaries, mottled large-scale texture, scattered props,
+  blobby walls with a darker depth face); ours is a repeating square tile +
+  rectangular barrier boxes. Close it with ONE per-location terrain SVG layer,
+  built at battle-view mount from (location traits/biome, barrier set, map
+  size) and a seeded `hash01` — NO `Math.random`, so replays and screenshots
+  stay stable. It renders as a child of the existing ground layer, so it
+  inherits the single compositor transform (translate+scale): one paint at
+  mount, zero per-round cost (the cost model's "detailed static background ≈
+  free"). Engine untouched — collision stays the rect barrier set; the layer
+  draws wonky polygons AROUND each rect (~0.3-cell visual overhang; adjacent
+  rects merged into one blob) with an outline + offset depth face, exactly the
+  token two-tone trick at terrain scale. Sub-slices, each A/B-able via
+  `skin-ab` + the gallery:
+    1. wall/cliff blob dressing + an organic map rim (replaces the perimeter ring),
+    2. floor mottling — 2–3-shade irregular patches over/instead of the tile,
+    3. per-biome scatter decor (props placed by seeded hash, avoiding barrier
+       boxes and portals),
+    4. hero-anchored light — one radial-gradient div gliding with the party
+       (compositor-only), layered under the static vignette; warmer ambient in
+       cities.
+  Deferred: blood-splatter decals (a bounded ring buffer of ~64 tiny divs on
+  damage events; a canvas layer only if they should accumulate indefinitely).
+  Home: a render-only `src/render/terrain.ts(x)` invoked by Arena through an
+  `ArenaSkin.terrain` hook — same seam rules as everything else (skins switch
+  on traits/biome, never ids; flat fills; no filters).
+
+- **SVG asset pipeline & authoring tooling (groundwork for many fast
+  iterations).** Findings from landing the paper variants, against the
+  "could we reach Unexplored polish?" question:
+  - *Hand-authorable?* Yes. Unexplored-level elements are 1–3 flat paths with
+    4–10 anchors each — the 4 bodies + 5 weapons shipped are exactly this
+    grade. Reaching reference density needs roughly 30–80 elements (~10 body
+    families/variants, ~8 held items, 15–25 ground props per biome family, a
+    few tiles + edge treatments) — a content problem, not a technical one.
+  - *Repo fit?* Trivially. A path string is 100–300 bytes; a full prop
+    0.5–1.5 KB of diffable source. Even 100+ elements ≈ tens of KB — a
+    rounding error next to any bitmap atlas, with none of the licensing,
+    resolution, or texture-memory questions.
+  - *Where polish actually comes from:* NOT path complexity. It is (a) one
+    shared palette, (b) one light direction (the two-tone offset), (c)
+    deterministic hand-cut wonk, (d) good silhouettes. Tooling should enforce
+    (a)–(c) mechanically so authoring effort (human or model) goes entirely
+    into (d). The pipeline, in leverage order:
+    1. **Skin gallery — SHIPPED 2026-07.** `?gallery=1` (dev-only,
+       `src/dev/SkinGallery.tsx`) renders every body×tone, weapon, KO/cast/
+       selected state, facing wheel, LOD sizes, ground tile, barrier and FX
+       swatch for both skins on one page; `npm run gallery-shot` screenshots
+       it. One image = whole-language review — this is the iteration loop for
+       all skins work (and what a PR reviewer looks at).
+    2. **Palette module.** Promote `PAPER_TONE` + effect colors into one
+       exported palette of ~20 named roles. Extend the contract test: every
+       fill/stroke in asset data must resolve to a role (no rogue hex), and no
+       filter/gradient anywhere — palette discipline is the single biggest
+       polish lever and it becomes un-regressable.
+    3. **Assets as data.** Once props pass ~a dozen, move from inline JSX to a
+       `src/render/props.ts` registry (id → path data + palette roles +
+       anchor/footprint). Data assets are lint-able, batch-generable, and
+       importable; the runtime stays a dumb renderer.
+    4. **Style helpers.** `cutout(path)` (emit the base+lit two-tone pair with
+       the standard offset), `wonk(points, seed)` (deterministic hand-cut
+       jitter of a regular polygon), `scatter(bounds, seed, density)` (prop
+       placement). Authors write intent; the helpers apply the style rules —
+       that is how 50 elements stay ONE style.
+    5. **Import path.** `scripts/import-svg.mjs`: normalize an Inkscape/Figma/
+       traced SVG into the data format — SVGO, flatten transforms, quantize
+       points, snap colors to the nearest palette role, REJECT filters and
+       gradients. Unlocks drawing in a real editor (or commissioning pieces)
+       with zero runtime changes.
+    6. **Variant generation.** Seeded batch scripts (one flower archetype → 5
+       rosettes) — because assets are data, variants are a script, not art
+       time.
+
 - **If licensed/bespoke art ever lands**: `Appearance.spriteId` is the reserved
   hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an
   atlas, falling back to `paper`/`circle` when absent.

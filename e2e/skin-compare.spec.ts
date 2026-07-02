@@ -6,11 +6,12 @@ import { test } from '@playwright/test'
 //   npm run skin-ab        (alias for: npm run e2e -- skin-compare.spec.ts --project=mobile-chrome)
 // Screenshots land at e2e/__shots__/skin-<skin>-<project>.png.
 //
-// The scene is a LIVE battle, so single-window fps is noisy (±10% run-to-run
-// measured) — sample several short windows and read the MEDIAN; the min and the
-// per-window list are logged so a real regression is distinguishable from one
-// bad window. A truly deterministic scene (seeded RNG / canned BSNAP stepping)
-// is still open — see BACKLOG → Graphics / visual evolution.
+// The ?perf scene is DETERMINISTIC (perfSeed.ts: seeded Math.random + fixed-
+// cadence tick stepping), so both skins render the exact same battle and one run
+// is a trustworthy verdict. Median-of-windows sampling is kept anyway: the
+// *content* replays 1:1, but rAF timing still carries OS/browser scheduling
+// noise — the min and per-window list are logged so a real regression is
+// distinguishable from one bad window.
 
 const WINDOW_MS = 1200
 const WINDOWS = 5
