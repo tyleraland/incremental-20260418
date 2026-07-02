@@ -158,10 +158,12 @@ const PAPER_BODY_PATHS: Record<BodyShape, string> = {
 const WEAPON_SHAPES: Record<Weapon | 'claw', ReactNode> = {
   sword: <polygon points="58,45 94,41 126,50 94,59 58,55" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
   dagger: <polygon points="62,46 92,44 115,50 92,56 62,54" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
+  // the bow sits FULLY clear of the silhouette — if the string falls behind the
+  // body, the remaining arc bulge reads as a detached crescent, not a bow.
   bow: (
     <>
-      <path d="M86 18 C120 34 120 66 86 82" fill="none" stroke="#a8703d" strokeWidth="6" />
-      <line x1="86" y1="18" x2="86" y2="82" stroke="#e8e3d2" strokeWidth="2.5" />
+      <path d="M96 24 C126 37 126 63 96 76" fill="none" stroke="#a8703d" strokeWidth="6" />
+      <line x1="96" y1="24" x2="96" y2="76" stroke="#e8e3d2" strokeWidth="2.5" />
     </>
   ),
   staff: (
