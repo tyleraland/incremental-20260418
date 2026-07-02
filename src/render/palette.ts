@@ -25,6 +25,8 @@ export const PAPER_TONE: Record<Tone, { top: string; base: string; outline: stri
 export const PAPER_PALETTE = {
   ink:    '#2b3138',   // hard outlines on light material (weapon edges, crate straps)
   cream:  '#e8e3d2',   // light material accents (blades, staff orbs, bone)
+  steel:  '#cdd5de',   // weapon metal (sword/dagger blades)
+  shadow: '#000000',   // ground-contact shadows (always with fill-opacity ≈0.35)
 
   // walls / cliffs / the map rim (one rock material for all of them)
   wallTop:     '#474033',
@@ -46,6 +48,7 @@ export const PAPER_PALETTE = {
   rockDeep:    '#383e45',
   wood:        '#7a5a33',
   woodDeep:    '#4a3620',
+  woodLight:   '#a8703d',   // warm finished wood (bow limbs, handles)
   canvas:      '#8a7a55',
 } as const
 

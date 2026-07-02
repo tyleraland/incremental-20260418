@@ -26,6 +26,10 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 // visual language (src/dev/SkinGallery.tsx). Lazy so the chunk stays out of the
 // main bundle; the DEV gate keeps the route out of production entirely.
 const SkinGallery = import.meta.env.DEV ? lazy(() => import('@/dev/SkinGallery')) : null
+// Dev-only asset workshop (`?workshop=1`): live paper-prop authoring — edit a
+// PropDef as JSON, see it on every biome at every size, copy the snippet.
+// Same gating as the gallery. Guide: src/render/CLAUDE.md.
+const AssetWorkshop = import.meta.env.DEV ? lazy(() => import('@/dev/AssetWorkshop')) : null
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
@@ -112,6 +116,9 @@ function App() {
 
   if (SkinGallery && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('gallery')) {
     return <Suspense fallback={null}><SkinGallery /></Suspense>
+  }
+  if (AssetWorkshop && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('workshop')) {
+    return <Suspense fallback={null}><AssetWorkshop /></Suspense>
   }
 
   if (!classicMode) {

@@ -1184,33 +1184,41 @@ Next slices, roughly in order:
        swatch for both skins on one page; `npm run gallery-shot` screenshots
        it. One image = whole-language review — this is the iteration loop for
        all skins work (and what a PR reviewer looks at).
-    2. **Palette module — landed with the terrain slice.** `src/render/
-       palette.ts` holds `PAPER_TONE` + ~20 named terrain/prop material roles;
-       terrain assets reference roles, never hex. Still open: the contract
-       test (every fill/stroke in asset data must resolve to a role, no
-       filter/gradient anywhere) — palette discipline is the single biggest
-       polish lever and the test makes it un-regressable.
-    3. **Assets as data — seeded by the terrain slice.** `TERRAIN_PROPS`
-       (terrain.tsx) is the first registry: id → 1–3 paths of `{d, palette
-       role, lit?}` in a unit box; the renderer applies the standard cutout
-       nudge to `lit` paths, so authors never hand-place the two-tone. Grow it
-       here; split into `src/render/props.ts` when it outgrows the file.
-    4. **Style helpers — landed with the terrain slice.** `src/render/
-       authoring.ts`: `wonk` (deterministic hand-cut jitter), `blobPath`/
-       `polyPath` (organic vs cut-stone closed paths), `roughCircle`,
-       `rectOutline`, `scatter` (seeded keep-clear placement), `hash01`/
-       `hashString`. Authors write intent; the helpers apply the style rules —
-       that is how 50 elements stay ONE style. Still open: `cutout(path)`
-       emitting the base+lit pair for arbitrary standalone paths (today the
-       convention lives in the prop renderer + wall emitter).
-    5. **Import path.** `scripts/import-svg.mjs`: normalize an Inkscape/Figma/
-       traced SVG into the data format — SVGO, flatten transforms, quantize
-       points, snap colors to the nearest palette role, REJECT filters and
-       gradients. Unlocks drawing in a real editor (or commissioning pieces)
-       with zero runtime changes.
-    6. **Variant generation.** Seeded batch scripts (one flower archetype → 5
-       rosettes) — because assets are data, variants are a script, not art
-       time.
+    2. **Palette module — SHIPPED 2026-07.** `src/render/palette.ts` holds
+       `PAPER_TONE` + ~20 named material roles; the last rogue hexes (weapon
+       steel/wood, token shadow) migrated to roles. The contract is now a CI
+       gate (`Palette.test.tsx`): roles-only + no filter/gradient, checked in
+       the prop DATA, the emitted terrain svg, AND the rendered paper bodies.
+    3. **Assets as data — SHIPPED 2026-07.** `src/render/props.ts`:
+       `PropDef`/`PropPath` + the `TERRAIN_PROPS` registry (id → 1–3 paths of
+       `{d, palette role, lit?}` in a ±1 unit box) + `cutout(d, base, lit)`
+       emitting the standard two-tone pair. `propMarkup()` (terrain.tsx) is
+       the ONE data→svg translation, shared by terrain and the workshop.
+    4. **Style helpers — SHIPPED 2026-07.** `src/render/authoring.ts`: `wonk`,
+       `blobPath`/`polyPath`, `roughCircle`, `rectOutline`, `scatter`,
+       `hash01`/`hashString`. Authors write intent; the helpers apply the
+       style rules — that is how 50 elements stay ONE style.
+    5. **Import path — SHIPPED 2026-07.** `npm run import-svg -- file.svg`
+       (`scripts/import-svg.mjs`): normalizes an Inkscape/Figma/traced SVG
+       into PropDef data — flattens nested transforms (similarity transforms
+       incl. arcs; skew/non-uniform over an arc errors with a fix hint), fits
+       + quantizes into the unit box, snaps every color to the nearest palette
+       role (printed report), REJECTS filters/gradients/masks/images/text.
+       Drawing in a real editor (or commissioning pieces) now needs zero
+       runtime changes. Loads the palette from TS source via the bsnap
+       ssrLoadModule trick.
+    6. **Asset workshop — SHIPPED 2026-07.** `?workshop=1` (dev-only,
+       `src/dev/AssetWorkshop.tsx`): the type→see authoring loop. Edit a
+       PropDef as JSON (or click an existing prop to fork it) and see it live
+       on every biome ground, across the LOD size ladder, and scattered with
+       the game's exact seeded jitter; per-keystroke validation names the
+       offending path and points at the clickable palette board; "copy TS
+       snippet" emits the paste-ready registry entry. This + import-svg is
+       the "a less-practiced contributor can produce a fitting asset" path;
+       the full guide lives in `src/render/CLAUDE.md`.
+    7. **Variant generation — still open.** Seeded batch scripts (one flower
+       archetype → 5 rosettes) — because assets are data, variants are a
+       script, not art time.
 
 - **If licensed/bespoke art ever lands**: `Appearance.spriteId` is the reserved
   hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an

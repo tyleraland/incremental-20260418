@@ -1,6 +1,6 @@
 import { memo, type CSSProperties, type ReactNode } from 'react'
 import type { Tone, BodyShape, Weapon, Biome } from '@/render/appearance'
-import { PAPER_TONE } from '@/render/palette'
+import { PAPER_TONE, PAPER_PALETTE as PAL } from '@/render/palette'
 import { PaperTerrain, type TerrainProps } from '@/render/terrain'
 
 // ── Battlefield skins ────────────────────────────────────────────────────────
@@ -150,23 +150,23 @@ const PAPER_BODY_PATHS: Record<BodyShape, string> = {
 // the 100 box; the svg has overflow:visible) or the weapon reads as a 2px
 // sliver at real token sizes.
 const WEAPON_SHAPES: Record<Weapon | 'claw', ReactNode> = {
-  sword: <polygon points="58,45 94,41 126,50 94,59 58,55" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
-  dagger: <polygon points="62,46 92,44 115,50 92,56 62,54" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
+  sword: <polygon points="58,45 94,41 126,50 94,59 58,55" fill={PAL.steel} stroke={PAL.ink} strokeWidth="3" />,
+  dagger: <polygon points="62,46 92,44 115,50 92,56 62,54" fill={PAL.steel} stroke={PAL.ink} strokeWidth="3" />,
   // the bow sits FULLY clear of the silhouette — if the string falls behind the
   // body, the remaining arc bulge reads as a detached crescent, not a bow.
   bow: (
     <>
-      <path d="M96 24 C126 37 126 63 96 76" fill="none" stroke="#a8703d" strokeWidth="6" />
-      <line x1="96" y1="24" x2="96" y2="76" stroke="#e8e3d2" strokeWidth="2.5" />
+      <path d="M96 24 C126 37 126 63 96 76" fill="none" stroke={PAL.woodLight} strokeWidth="6" />
+      <line x1="96" y1="24" x2="96" y2="76" stroke={PAL.cream} strokeWidth="2.5" />
     </>
   ),
   staff: (
     <>
-      <line x1="55" y1="50" x2="110" y2="50" stroke="#8a5a2b" strokeWidth="7" />
-      <circle cx="114" cy="50" r="10" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />
+      <line x1="55" y1="50" x2="110" y2="50" stroke={PAL.wood} strokeWidth="7" />
+      <circle cx="114" cy="50" r="10" fill={PAL.cream} stroke={PAL.ink} strokeWidth="3" />
     </>
   ),
-  claw: <polygon points="60,44 106,50 60,56" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />,
+  claw: <polygon points="60,44 106,50 60,56" fill={PAL.cream} stroke={PAL.ink} strokeWidth="3" />,
 }
 
 // One SVG per token: shadow ellipse, facing weapon (a rotated group under the
@@ -190,7 +190,7 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
       {tone === 'casting' && <div className="absolute -inset-1 rounded-full ring-2 ring-amber-400/70 animate-pulse pointer-events-none" />}
       <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }} aria-hidden>
         {/* ground-contact shadow: an offset flat ellipse, NOT filter:drop-shadow */}
-        <ellipse cx="54" cy="55" rx="46" ry="45" fill="rgb(0 0 0 / 0.35)" />
+        <ellipse cx="54" cy="55" rx="46" ry="45" fill={PAL.shadow} fillOpacity={0.35} />
         {angle != null && (
           <g transform={`rotate(${angle} 50 50)`}>
             {WEAPON_SHAPES[weapon ?? (bodyShape === 'humanoid' ? 'sword' : 'claw')]}

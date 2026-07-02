@@ -1,7 +1,8 @@
 import { memo, useMemo } from 'react'
 import type { Barrier } from '@/engine'
 import type { Biome } from '@/render/appearance'
-import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
+import { PAPER_PALETTE as P } from '@/render/palette'
+import { TERRAIN_PROPS, type PropDef } from '@/render/props'
 import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, type Pt, type Rect } from '@/render/authoring'
 
 // ── Organic terrain layer ────────────────────────────────────────────────────
@@ -45,73 +46,9 @@ const OVERHANG = 0.3
 const RIM_W = 0.85           // rim band depth in cells
 const LIT_NUDGE = 'translate(-0.14 -0.18)'   // one light direction (up-left), everywhere
 
-// ── Scatter props (assets as data — the seed of pipeline step 3) ─────────────
-// Each prop is 1–3 flat paths in a ~[-1,1] unit box, y-down (svg orientation),
-// colored by palette ROLE. `lit: true` marks the two-tone top copy — the
-// renderer applies the standard cutout nudge, so authors never hand-place it.
-interface PropPath { d: string; fill?: PaperRole; stroke?: PaperRole; sw?: number; opacity?: number; lit?: boolean }
-interface PropDef { id: string; size: number; paths: PropPath[] }
-
-const BUSH_D = 'M0 -0.75C0.55 -0.7 0.9 -0.3 0.85 0.2C0.8 0.65 0.35 0.85 0 0.85C-0.4 0.85 -0.85 0.6 -0.87 0.15C-0.9 -0.35 -0.5 -0.72 0 -0.75Z'
-const PEBBLE_D = 'M-0.45 0.1C-0.42 -0.25 -0.15 -0.38 0.05 -0.35C0.32 -0.31 0.45 -0.12 0.42 0.1C0.38 0.3 0.15 0.38 -0.05 0.36C-0.28 0.34 -0.47 0.28 -0.45 0.1Z'
-const RUBBLE_D = 'M-0.7 0.3L-0.2 -0.42L0.32 0L0 0.45Z'
-const SHARD_D = 'M-0.5 0.25L-0.1 -0.4L0.5 -0.15L0.2 0.35Z'
-const CRATE_D = 'M-0.5 -0.42L0.48 -0.5L0.52 0.46L-0.44 0.5Z'
-const BARREL_D = 'M-0.42 0A0.42 0.42 0 1 0 0.42 0A0.42 0.42 0 1 0 -0.42 0Z'
-const SACK_D = 'M-0.35 -0.5C0.1 -0.62 0.42 -0.3 0.45 0.05C0.5 0.4 0.2 0.55 -0.05 0.55C-0.38 0.55 -0.55 0.32 -0.52 0C-0.5 -0.25 -0.5 -0.42 -0.35 -0.5Z'
-
-export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
-  grass: [
-    { id: 'tuft', size: 0.9, paths: [
-      { d: 'M-0.45 0.5Q-0.35 -0.2 -0.55 -0.85M0 0.55Q0.08 -0.1 0 -0.95M0.45 0.5Q0.4 -0.25 0.55 -0.8', stroke: 'foliage', sw: 0.16 },
-    ] },
-    { id: 'bush', size: 1.1, paths: [
-      { d: BUSH_D, fill: 'foliageDeep' },
-      { d: BUSH_D, fill: 'foliage', lit: true },
-    ] },
-    { id: 'pebble', size: 0.7, paths: [
-      { d: PEBBLE_D, fill: 'rockDeep' },
-      { d: PEBBLE_D, fill: 'rock', lit: true },
-    ] },
-    { id: 'bloom', size: 0.8, paths: [
-      { d: 'M0 0.6Q0.06 0.1 0 -0.3', stroke: 'foliageDeep', sw: 0.12 },
-      { d: 'M-0.26 -0.5A0.26 0.26 0 1 0 0.26 -0.5A0.26 0.26 0 1 0 -0.26 -0.5Z', fill: 'bloom' },
-    ] },
-  ],
-  stone: [
-    { id: 'rubble', size: 1, paths: [
-      { d: RUBBLE_D, fill: 'rockDeep' },
-      { d: RUBBLE_D, fill: 'rock', lit: true },
-      { d: 'M0.4 0.5L0.72 0.02L0.9 0.45Z', fill: 'rockDeep' },
-    ] },
-    { id: 'crack', size: 1.2, paths: [
-      { d: 'M-0.85 -0.3L-0.25 -0.12L0.05 0.26L0.7 0.45', stroke: 'stoneDark', sw: 0.1 },
-    ] },
-    { id: 'shard', size: 0.8, paths: [
-      { d: SHARD_D, fill: 'rockDeep' },
-      { d: SHARD_D, fill: 'rock', lit: true },
-    ] },
-    { id: 'bone', size: 0.8, paths: [
-      { d: 'M-0.5 0.15L0.35 -0.3M0.28 -0.42L0.45 -0.18', stroke: 'cream', sw: 0.12, opacity: 0.6 },
-    ] },
-  ],
-  plaza: [
-    { id: 'crate', size: 1, paths: [
-      { d: CRATE_D, fill: 'woodDeep' },
-      { d: CRATE_D, fill: 'wood', lit: true },
-      { d: 'M-0.44 0.02L0.48 -0.04', stroke: 'ink', sw: 0.07, opacity: 0.6 },
-    ] },
-    { id: 'barrel', size: 0.9, paths: [
-      { d: BARREL_D, fill: 'woodDeep' },
-      { d: BARREL_D, fill: 'wood', lit: true },
-      { d: 'M-0.2 0A0.2 0.2 0 1 0 0.2 0A0.2 0.2 0 1 0 -0.2 0Z', stroke: 'ink', sw: 0.06, opacity: 0.5 },
-    ] },
-    { id: 'sack', size: 0.9, paths: [
-      { d: SACK_D, fill: 'woodDeep' },
-      { d: SACK_D, fill: 'canvas', lit: true },
-    ] },
-  ],
-}
+// Scatter-prop assets live in src/render/props.ts (data, not JSX); this file
+// is their renderer. `propMarkup` below is the single PropDef → svg-markup
+// emitter, shared with the ?workshop=1 authoring page.
 
 const MOTTLE_SHADES: Record<Biome, [string, string]> = {
   grass: [P.grassLight, P.grassDark],
@@ -223,6 +160,18 @@ const sigOf = (p: TerrainProps) =>
   p.barriers.map((b) => `${b.x},${b.y},${b.w},${b.h},${b.kind ?? 'w'}`).join(';') + '|' +
   (p.avoid ?? []).map((r) => `${r.x},${r.y},${r.w},${r.h}`).join(';')
 
+// PropDef → svg markup in the unit box (y down). The `lit` cutout nudge is
+// applied HERE — one light direction for every asset, authors never hand-place
+// it. Shared by the terrain emitter below and the ?workshop=1 authoring page.
+export function propMarkup(def: PropDef): string {
+  return def.paths.map((pp) =>
+    `<path d='${pp.d}' fill='${pp.fill ? P[pp.fill] : 'none'}'` +
+    (pp.stroke ? ` stroke='${P[pp.stroke]}' stroke-width='${pp.sw}' stroke-linecap='round'` : '') +
+    (pp.opacity != null ? ` opacity='${pp.opacity}'` : '') +
+    (pp.lit ? " transform='translate(-0.06 -0.08) scale(0.9)'" : '') +
+    '/>').join('')
+}
+
 // The lit depth face is the base path nudged up-left and CLIPPED to the base
 // silhouette (a clipPath is geometry, not a filter) — dark base peeks out along
 // the bottom-right: the token two-tone trick at terrain scale. The clip lives
@@ -233,13 +182,7 @@ export function terrainSvg(p: TerrainProps): string {
   for (const x of m.mottles) parts.push(`<path d='${x.d}' fill='${x.fill}' fill-opacity='0.5'/>`)
   for (const pl of m.props) {
     const def = TERRAIN_PROPS[p.biome][pl.v]
-    const inner = def.paths.map((pp) =>
-      `<path d='${pp.d}' fill='${pp.fill ? P[pp.fill] : 'none'}'` +
-      (pp.stroke ? ` stroke='${P[pp.stroke]}' stroke-width='${pp.sw}' stroke-linecap='round'` : '') +
-      (pp.opacity != null ? ` opacity='${pp.opacity}'` : '') +
-      (pp.lit ? " transform='translate(-0.06 -0.08) scale(0.9)'" : '') +
-      '/>').join('')
-    parts.push(`<g transform='translate(${pl.x} ${pl.y}) rotate(${pl.rot}) scale(${pl.flip ? -pl.s : pl.s} ${pl.s})'>${inner}</g>`)
+    parts.push(`<g transform='translate(${pl.x} ${pl.y}) rotate(${pl.rot}) scale(${pl.flip ? -pl.s : pl.s} ${pl.s})'>${propMarkup(def)}</g>`)
   }
   for (const d of m.cliffs) {
     parts.push(`<path d='${d}' fill='${P.cliffFill}' fill-opacity='0.3' stroke='${P.cliffEdge}' stroke-opacity='0.55' stroke-width='0.12' stroke-dasharray='0.5 0.3' stroke-linejoin='round'/>`)
