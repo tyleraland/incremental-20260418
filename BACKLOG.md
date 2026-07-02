@@ -885,16 +885,23 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
     differential fuzz against the old scan verbatim
     (`barriers-fastpath.test.ts`). Cap-220 worst tick 430ms → 44ms (~10×);
     beach *shipped* fps 26.6 → 36 — the per-round hitch on big maps is gone.
-  - *Answer: the tiers stay.* Even with the engine now ~free (rip tick p50
-    8–17ms), full-rip collapses on throttled mobile at every probed cap —
-    cap 90 → 7.3 fps, cap 140 → 7.4, cap 220 → 8.1 (vs 36 shipped), dense
-    60×60 → 3.8 (vs 13). Post-fix profile: no JS function dominates; ~46% is
-    `(program)` — per-round style/layout/paint of the animated battle DOM at
-    5 rounds/sec (+ dev-build React overhead). Rounds/sec is exactly what the
-    tiers throttle, so they're load-bearing; `decide=1` also re-confirmed the
-    decision throttle (mean tick 18 → 79ms without it). Next lever if the
-    tiers ever need relaxing: the per-round render commit (value-mirror memo /
-    off-thread sim, below), not the sim.
+  - *Answer: tiers still needed, but the DEEP ones retired.* Reading note
+    first: fps across separate harness runs is NOT comparable — container CPU
+    drift produced 8-vs-29-fps readings for the identical config an hour
+    apart; only within-run A/B gaps are trustworthy. A same-conditions ladder
+    (Pixel-5 4×, cap-220 spread field): old coarse ts1/e6 ≈ 52 fps ·
+    ts3/e2 ≈ 39-41 · full-rip ts6/e1 ≈ 29 median with dips to 17; dense
+    60×60 packing still collapses at any fine tier (≈ 5) — VISIBLE DENSITY,
+    not cap, is the render driver (spread cap-220 shows only ~13 tokens).
+    `decide=1` re-confirmed the decision throttle (tick 15 → 68ms without).
+  - *Retier (2026-07):* the ts1/ts2 tiers are gone — their ~1.2s coarse
+    rounds caused the Kanto Beach incoherence reports (render lags the engine
+    by ~0.7 round-step ≈ 840ms: melee FX "from afar", arcs not point-to-point,
+    loot while apparently walking, seconds-dead drop-in). `openWorldTimeScale`
+    is now {cap ≥ 90 → 3, else 6}: 400ms rounds, 3× finer steps, lag ≈ 280ms,
+    ~39-41 fps for the whole 90-220 band. Full-rip stays off the table until
+    the per-round render commit shrinks (value-mirror memo / off-thread sim,
+    below) — rounds/sec is still what the remaining tier throttles.
 - **✅ Phase 2 — LOD tokens.** `BattleChip` drops its floating plate + facing/
   moving nubs (most per-token DOM) when zoomed past `LOD_CAM_SIZE` or with more
   than `LOD_TOKEN_COUNT` on-screen tokens (`Lod.test.tsx`).

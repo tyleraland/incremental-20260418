@@ -17,9 +17,10 @@ const WINDOW_MS = 1200
 const WINDOWS = 5
 
 const CONFIGS = [
-  // Kanto-Beach shape. Shipped = timeScale 1 / round every 6 ticks / decide 5.
-  { name: 'beach shipped (ts1 every6)', q: 'cap=220&size=200' },
-  { name: 'beach mid     (ts3 every2)', q: 'cap=220&size=200&hts=3&hevery=2' },
+  // Kanto-Beach shape. Shipped tier (2026-07 retune) = timeScale 3 / round
+  // every 2 ticks / decide 5; the old coarse tier kept as an explicit override.
+  { name: 'beach shipped (current tier)', q: 'cap=220&size=200' },
+  { name: 'beach coarse  (ts1 every6)', q: 'cap=220&size=200&hts=1&hevery=6' },
   { name: 'beach RIP     (ts6 every1)', q: 'cap=220&size=200&hts=6&hevery=1' },
   { name: 'beach RIP+decide1         ', q: 'cap=220&size=200&hts=6&hevery=1&decide=1' },
   // Dense-visible worst case.

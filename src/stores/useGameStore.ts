@@ -346,13 +346,22 @@ const DECISION_INTERVAL_HEAVY = 5
 // crawled at ~1/5 speed. Instead PAIR the two so their product stays = ROUND_TIME_SCALE:
 // a coarser timeScale (bigger move per round) exactly offsets the rarer rounds, so the
 // real-time movement/combat pace is CONSTANT across tiers — the field just resolves in
-// fewer, chunkier (glide-smoothed) steps. timeScale ∈ {6,3,2,1} ⇒ everyTicks ∈ {1,2,3,6};
-// rounds/sec = TICKS_PER_SECOND / everyTicks. (Tuned from on-device measurements:
-// ≤~80 tokens every-tick ~59fps; ~250 every-tick collapsed to ~13fps.)
+// fewer, chunkier (glide-smoothed) steps. rounds/sec = TICKS_PER_SECOND / everyTicks.
+//
+// Re-tuned 2026-07 after the barrier fast path made the sim ~free (worst cap-220
+// tick 430ms → 44ms): the deep timeScale-1/2 tiers are GONE. Their ~1.2s coarse
+// rounds made the render visibly incoherent — tokens lag the engine by ~0.7 of a
+// round-step (the glide runway), so attack FX landed "from afar", arcs weren't
+// point-to-point, and loot arrived while heroes still seemed to be walking (all
+// reported on Kanto Beach). The e2e/cadence-profile.spec.ts sweep (Pixel-5, 4×
+// CPU) shows the deep tiers are no longer needed: a cap-220 SPREAD field holds
+// ~39 fps at timeScale 3 (vs ~52 at the old coarse tier — headroom traded for
+// 3× finer, coherent steps; full every-tick manages ~29 median but dips to ~17).
+// Density, not cap, is the real render driver (cap 220 PACKED into 60×60
+// collapses at any fine tier) — today's ≥90-cap maps are all spread, so cap
+// stays a fine proxy; revisit if a dense-packed big-cap map ever ships.
 export function openWorldTimeScale(cap: number): number {
-  if (cap >= 200) return 1
-  if (cap >= 140) return 2
-  if (cap >= 90)  return 3
+  if (cap >= 90) return 3   // 400ms rounds — measured ~39-41 fps across the 90-220 band
   return ROUND_TIME_SCALE   // 6 — full granularity at comfortable counts
 }
 // everyTicks paired to a battle's timeScale (product = ROUND_TIME_SCALE) → constant pace.
