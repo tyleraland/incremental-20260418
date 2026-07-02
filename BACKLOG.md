@@ -1108,11 +1108,13 @@ Next slices, roughly in order:
   get a claw wedge instead of a sword) — the skin switches only on those fields,
   never ids. Still open: a KO'd "crumpled" state (today KO = the generic ✕ +
   fade).
-- **Ground biomes.** Per-location ground patterns keyed off location traits
-  (grass field / stone dungeon / city plaza), still one data-URI pattern each;
-  thread the location's trait into `ARENA_SKINS`' ground pick. Barrier/cliff and
-  team-tint restyle to match the paper palette. A single static **vignette
-  overlay** (one compositor layer, like the perimeter ring) for the lighting read.
+- **Ground biomes — SHIPPED 2026-07.** `biomeForLocation` (appearance.ts) maps
+  location TRAITS → 'grass' / 'stone' / 'plaza' (city → plaza; dungeon/
+  underground/cave/mountain/ruins/arena/cliff → stone; else grass); the paper
+  `ARENA_SKINS` entry carries one data-URI tile per biome plus `barrierWall`/
+  `barrierCliff` restyles (flat two-tone cutout, zero-blur inset face) and a
+  single static `vignette` overlay (one compositor layer, never repaints).
+  Team-tint restyle to the paper palette is still open.
 - **Effects pass.** Restyle hit flashes / attack arcs / zones to the paper
   language (flat shapes, no glows-via-filter); a `VisualState`-driven attack
   "lunge" nudge (a one-shot transform, compositor-only) for melee reads.

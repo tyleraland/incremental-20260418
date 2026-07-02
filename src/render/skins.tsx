@@ -1,5 +1,5 @@
 import { memo, type CSSProperties, type ReactNode } from 'react'
-import type { Tone, BodyShape, Weapon } from '@/render/appearance'
+import type { Tone, BodyShape, Weapon, Biome } from '@/render/appearance'
 
 // ── Battlefield skins ────────────────────────────────────────────────────────
 //
@@ -215,11 +215,14 @@ export const TOKEN_SKINS: Record<BattleSkin, typeof CircleBody> = {
 
 const svgUrl = (svg: string) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
 
-// Procedural parquet ground: ONE repeating 2×2-cell SVG pattern (a data URI on
-// the ground layer, so a 200×200 map costs zero per-cell DOM). Four quadrants in
-// slightly different warm-dark shades + hairline seams + alternating plank
-// strokes — the "between 3D and tileset" floor read, no image assets.
-const PAPER_GROUND_TILE = svgUrl(
+// Procedural grounds: ONE repeating 2×2-cell SVG pattern each (a data URI on
+// the ground layer, so a 200×200 map costs zero per-cell DOM). Four quadrants
+// in slightly different muted shades + a few accent marks — the "between 3D and
+// tileset" floor read, no image assets. One tile per BIOME (grass field / stone
+// dungeon / city plaza), picked by the location's traits via `biomeForLocation`.
+
+// city plaza: the original warm-dark parquet — pavers + hairline seams.
+const PAPER_TILE_PLAZA = svgUrl(
   "<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>" +
   "<rect width='64' height='64' fill='#15130f'/>" +
   "<rect x='1' y='1' width='30' height='30' fill='#26221a'/>" +
@@ -231,20 +234,70 @@ const PAPER_GROUND_TILE = svgUrl(
   '</svg>',
 )
 
+// open grass: mottled dark greens, soft quadrant patches + sparse tuft strokes.
+const PAPER_TILE_GRASS = svgUrl(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>" +
+  "<rect width='64' height='64' fill='#161a10'/>" +
+  "<rect x='0' y='0' width='32' height='32' fill='#1b2113'/>" +
+  "<rect x='32' y='0' width='32' height='32' fill='#181d11'/>" +
+  "<rect x='0' y='32' width='32' height='32' fill='#192012'/>" +
+  "<rect x='32' y='32' width='32' height='32' fill='#1d2314'/>" +
+  "<path d='M9 12l2-4M12 12l2-4M40 24l2-4M43 24l2-4M22 48l2-4M25 48l2-4M52 40l2-4M55 40l2-4' stroke='#2c351c' stroke-width='1.5' fill='none'/>" +
+  "<circle cx='30' cy='20' r='1' fill='#242c17'/><circle cx='14' cy='40' r='1' fill='#242c17'/><circle cx='48' cy='54' r='1' fill='#242c17'/>" +
+  '</svg>',
+)
+
+// stone dungeon: cool grey slabs, offset joints + a hairline crack.
+const PAPER_TILE_STONE = svgUrl(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>" +
+  "<rect width='64' height='64' fill='#131518'/>" +
+  "<rect x='1' y='1' width='30' height='30' fill='#22262b'/>" +
+  "<rect x='33' y='1' width='30' height='30' fill='#1e2226'/>" +
+  "<rect x='1' y='33' width='30' height='30' fill='#202429'/>" +
+  "<rect x='33' y='33' width='30' height='30' fill='#242830'/>" +
+  "<path d='M16 1v14M16 15h16M48 33v14M48 47h-15' stroke='#181b1f' stroke-width='1'/>" +
+  "<path d='M8 44l6 5M52 12l-5 6' stroke='#181b1f' stroke-width='1' fill='none'/>" +
+  '</svg>',
+)
+
 export interface ArenaSkin {
   surface?: CSSProperties                             // arena wrapper background
-  ground?: { image: string; cellsPerTile: number }    // repeating pattern on the ground layer
+  // per-biome repeating pattern on the ground layer; the biome comes from the
+  // location's traits (biomeForLocation). Missing biome/record → plain surface.
+  grounds?: Partial<Record<Biome, { image: string; cellsPerTile: number }>>
   gridLine: string                                    // overlay grid hairline color
+  // terrain restyle: inline styles for the barrier divs. Absent → the classic
+  // stone/amber classes. Flat fills + zero-blur inset shadow only (the paper
+  // cutout trick) — no filters, same as the token contract.
+  barrierWall?: CSSProperties
+  barrierCliff?: CSSProperties
+  // one STATIC full-viewport overlay (a single compositor layer, like the
+  // perimeter ring) for the lighting read; a CSS background value.
+  vignette?: string
 }
 
 export const ARENA_SKINS: Record<BattleSkin, ArenaSkin> = {
   // circle: today's look untouched — flat game-surface + faint white grid.
   circle: { gridLine: 'rgb(255 255 255 / 0.06)' },
-  // paper: warm-dark parquet; the pattern's own seams carry the tile read, so
-  // the overlay grid drops to a whisper (still there for tactical alignment).
+  // paper: muted per-biome tiles; the patterns' own seams carry the tile read,
+  // so the overlay grid drops to a whisper (still there for tactical alignment).
   paper: {
     surface: { backgroundColor: '#191713' },
-    ground: { image: PAPER_GROUND_TILE, cellsPerTile: 2 },
+    grounds: {
+      grass: { image: PAPER_TILE_GRASS, cellsPerTile: 2 },
+      stone: { image: PAPER_TILE_STONE, cellsPerTile: 2 },
+      plaza: { image: PAPER_TILE_PLAZA, cellsPerTile: 2 },
+    },
     gridLine: 'rgb(255 255 255 / 0.03)',
+    barrierWall: {
+      backgroundColor: '#3f3a31',
+      border: '2px solid #14110c',
+      boxShadow: 'inset -3px -4px 0 rgb(0 0 0 / 0.35)',   // offset flat face, not a blur
+    },
+    barrierCliff: {
+      backgroundColor: 'rgb(74 54 35 / 0.4)',
+      border: '2px dashed rgb(163 124 72 / 0.55)',
+    },
+    vignette: 'radial-gradient(120% 120% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.42) 100%)',
   },
 }

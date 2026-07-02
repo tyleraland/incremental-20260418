@@ -144,6 +144,20 @@ export function getAppearance(c: Combatant, classFor: (id: string) => string | n
   }
 }
 
+// ── Location → ground biome ─────────────────────────────────────────────────
+// The arena-ground counterpart of the combatant resolver above: location
+// TRAITS (not ids) pick which ground pattern a skin lays down. Three biomes
+// cover the current world; anything unmatched reads as open grass.
+export type Biome = 'grass' | 'stone' | 'plaza'
+
+const STONE_TRAITS = ['dungeon', 'underground', 'cave', 'mountain', 'ruins', 'arena', 'cliff']
+export function biomeForLocation(loc: { traits?: string[] } | null | undefined): Biome {
+  const traits = loc?.traits ?? []
+  if (traits.includes('city')) return 'plaza'
+  if (STONE_TRAITS.some((t) => traits.includes(t))) return 'stone'
+  return 'grass'
+}
+
 export function visualState(c: Combatant): VisualState {
   if (!c.alive) return 'ko'
   if (c.channel) return 'cast'

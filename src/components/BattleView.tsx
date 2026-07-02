@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
-import { getAppearance, initials, monsterBodyShape, weaponForClass, CLASS_ICON, type Appearance, type BodyShape, type Weapon } from '@/render/appearance'
+import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, type BattleSkin } from '@/render/skins'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
@@ -186,8 +186,9 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
   const arenaSkin = ARENA_SKINS[skin]
+  const ground = arenaSkin.grounds?.[biome]
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -349,15 +350,16 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
             transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear`,
           }}
         >
-          {/* skin ground texture — a single repeating pattern (data URI) sized in
-              cells, so it scales/glides WITH the layer like the grid below. One
-              paint for the whole map: no per-cell DOM. */}
-          {arenaSkin.ground && (
+          {/* skin ground texture — a single repeating pattern (data URI, picked
+              by the location's biome) sized in cells, so it scales/glides WITH
+              the layer like the grid below. One paint for the whole map: no
+              per-cell DOM. */}
+          {ground && (
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
-                backgroundImage: arenaSkin.ground.image,
-                backgroundSize: `${(100 / mapCols) * arenaSkin.ground.cellsPerTile}% ${(100 / mapRows) * arenaSkin.ground.cellsPerTile}%`,
+                backgroundImage: ground.image,
+                backgroundSize: `${(100 / mapCols) * ground.cellsPerTile}% ${(100 / mapRows) * ground.cellsPerTile}%`,
               }}
             />
           )}
@@ -390,16 +392,21 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
           )}
           {/* terrain: walls solid (block movement + sight); cliffs translucent +
               dashed (block movement only — ranged attacks fire over them). Positioned
-              as a fraction of the map → planted on the grid, no own transition. */}
+              as a fraction of the map → planted on the grid, no own transition.
+              A skin may restyle them via barrierWall/barrierCliff (paper: flat
+              two-tone cutout, zero-blur inset face); absent → classic classes. */}
           {barriers.map((b, i) => {
             const isCliff = b.kind === 'cliff'
+            const restyle = isCliff ? arenaSkin.barrierCliff : arenaSkin.barrierWall
             return (
               <div
                 key={i}
-                className={isCliff
-                  ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
-                  : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
-                style={{ left: `${(b.x / mapCols) * 100}%`, top: `${((mapRows - (b.y + b.h)) / mapRows) * 100}%`, width: `${(b.w / mapCols) * 100}%`, height: `${(b.h / mapRows) * 100}%` }}
+                className={restyle
+                  ? 'absolute rounded-sm pointer-events-none'
+                  : isCliff
+                    ? 'absolute bg-amber-900/20 border border-dashed border-amber-600/60 rounded-sm pointer-events-none'
+                    : 'absolute bg-stone-700/70 border border-stone-500/60 rounded-sm pointer-events-none'}
+                style={{ left: `${(b.x / mapCols) * 100}%`, top: `${((mapRows - (b.y + b.h)) / mapRows) * 100}%`, width: `${(b.w / mapCols) * 100}%`, height: `${(b.h / mapRows) * 100}%`, ...restyle }}
               />
             )
           })}
@@ -409,6 +416,10 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
         </div>
         {children}
       </div>
+      {/* skin lighting: ONE static viewport-fixed vignette layer (a single
+          compositor layer, like the perimeter ring) — it never pans or repaints,
+          so the lighting read is free. */}
+      {arenaSkin.vignette && <div className="absolute inset-0 pointer-events-none" style={{ background: arenaSkin.vignette }} />}
       {/* viewport-fixed overlay (off-screen markers): not panned, clipped to the
           arena square so edge bubbles sit on the rim. */}
       {overlay && <div className="absolute inset-0 z-10 pointer-events-none">{overlay}</div>}
@@ -807,7 +818,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
+function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
   const skin  = useGameStore((s) => s.battleSkin)
   // The camera-follow lock lives in the store now (driven by the single top
@@ -1327,6 +1338,7 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
           perimeter={isOpen}
           framed={!insetTopControls}
           skin={skin}
+          biome={biome}
           panEnabled
           onPanStart={isOpen ? beginPan : undefined}
           onPanMove={isOpen ? panMove : undefined}
@@ -1524,7 +1536,7 @@ export function Preview({ location }: { location: Location | null }) {
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 flex justify-center items-start">
-        <Arena cam={cam} barriers={locationBarriers(location)} skin={skin}>
+        <Arena cam={cam} barriers={locationBarriers(location)} skin={skin} biome={biomeForLocation(location)}>
           {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} skin={skin} bodyShape={c.bodyShape} />)}
           {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} skin={skin} weapon={c.weapon} />)}
           {(party.length === 0 && foes.length === 0) && (
@@ -1571,6 +1583,6 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   // token from the previous battle's framing into place. The key only changes on a
   // location switch — never per tick — so normal play keeps the same instance.
   return battle
-    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
+    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />
 }
