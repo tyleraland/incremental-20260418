@@ -1,4 +1,6 @@
 import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } from '@/render/skins'
+import { TERRAIN_PROPS } from '@/render/props'
+import { propMarkup } from '@/render/terrain'
 import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
 import type { Barrier } from '@/engine'
 
@@ -131,6 +133,26 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
           <span className="text-[9px] text-neutral-500">wall · cliff · vignette</span>
         </div>
       </Section>
+
+      {terrain && (
+        <Section title="scatter props (per biome: hand-authored archetypes + seeded ~variants)">
+          {BIOMES.map((b) => (
+            <div key={b} className="w-full">
+              <div className="text-[9px] text-neutral-500 mb-1">{b} · {TERRAIN_PROPS[b].length} props</div>
+              <div className="flex flex-wrap gap-1.5">
+                {TERRAIN_PROPS[b].map((def) => (
+                  <div key={def.id} className="flex flex-col items-center gap-0.5">
+                    <div className="w-12 h-12 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+                      <svg viewBox="-1.1 -1.1 2.2 2.2" className="w-10 h-10" aria-hidden dangerouslySetInnerHTML={{ __html: propMarkup(def) }} />
+                    </div>
+                    <span className="text-[8px] text-neutral-600 leading-none">{def.id}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
 
       {terrain && (
         <Section title="organic terrain (per biome: mottling · props · wall/cliff blobs · rim) + hero light">

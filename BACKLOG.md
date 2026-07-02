@@ -1112,8 +1112,9 @@ Next slices, roughly in order:
   the staff). `PaperBody` draws them as shared flat paths (one silhouette path
   per family drawn twice for the two-tone; 1–2 primitives per weapon; creatures
   get a claw wedge instead of a sword) — the skin switches only on those fields,
-  never ids. Still open: a KO'd "crumpled" state (today KO = the generic ✕ +
-  fade).
+  never ids. KO "crumpled" state SHIPPED 2026-07: the same silhouette squashed
+  onto the ground line and tipped over (same two paths, flattened shadow, no
+  glyph, no grayscale filter) — a paper heap instead of the generic ✕ + fade.
 - **Ground biomes — SHIPPED 2026-07.** `biomeForLocation` (appearance.ts) maps
   location TRAITS → 'grass' / 'stone' / 'plaza' (city → plaza; dungeon/
   underground/cave/mountain/ruins/arena/cliff → stone; else grass); the paper
@@ -1126,9 +1127,20 @@ Next slices, roughly in order:
   firewalls / portals); BattleView keeps the geometry+animation and reads the
   look from the seam. Paper: muted ink arcs, cream flash ring, dashed
   hand-drawn zone circles, solid flat fire/portal — no gradients, no glow
-  shadows. Circle keeps its classic look verbatim. Still open: the
-  `VisualState`-driven attack "lunge" nudge (a one-shot transform,
-  compositor-only) for melee reads.
+  shadows. Circle keeps its classic look verbatim. Lunge nudge SHIPPED
+  2026-07: a `melee_attack` event nudges the attacker's token toward its
+  target and back (one-shot `transform` keyframe on a permanent wrapper
+  INSIDE the chip, direction via `--lunge-x/y`; two identical keyframe sets
+  alternate on round parity so consecutive attacks restart via a class swap,
+  never a remount of the memo'd body). Skin-agnostic (both skins get it);
+  ranged/spell hits deliberately don't lunge. Perf lesson (skin-ab): a
+  transform animation PROMOTES the element to its own compositor layer for
+  the 0.3s and drops it again — that per-round layer churn across a whole
+  zoomed-out mob cost paper ~-7 fps (SVG-heavy token textures re-upload on
+  every promotion). Fix: the lunge is gated on the existing `tokenDetail`
+  LOD — exactly the "animation gated by the existing LOD" rule from the
+  phased plan below — so the watched party lunges, the crowd doesn't;
+  measured back at circle/paper parity.
 - **Organic terrain layer (the Unexplored ground read) — SHIPPED 2026-07.**
   All four sub-slices landed in `src/render/terrain.tsx` behind the
   `ArenaSkin.terrain` hook (Arena then SKIPS the rect barrier divs + classic
@@ -1216,9 +1228,17 @@ Next slices, roughly in order:
        snippet" emits the paste-ready registry entry. This + import-svg is
        the "a less-practiced contributor can produce a fitting asset" path;
        the full guide lives in `src/render/CLAUDE.md`.
-    7. **Variant generation — still open.** Seeded batch scripts (one flower
-       archetype → 5 rosettes) — because assets are data, variants are a
-       script, not art time.
+    7. **Variant generation — SHIPPED 2026-07.** Runtime, not a batch script
+       (cheaper still: nothing to check in or regenerate): `wonkPathD`
+       (authoring.ts) deterministically re-cuts a path's anchors/controls,
+       and `variants()` (props.ts) multiplies every `TERRAIN_PROPS`
+       archetype ×3 at module load — seeded by archetype id, structure/
+       role-preserving (pinned by `Props.test.ts`), with a per-archetype
+       `wonk:` amplitude override for fine-detail props (skull eyes). The
+       density pass rode along: 8/8/7 archetypes per biome (stump, mushroom,
+       reeds, log · pillar, skull, spikes, moss · wheel, pot, signpost,
+       coil are new) → 24/24/21 registry entries, all reviewable in the
+       gallery's new per-biome props section.
 
 - **If licensed/bespoke art ever lands**: `Appearance.spriteId` is the reserved
   hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an
@@ -1292,8 +1312,9 @@ harnesses — they already separate engine vs render cost):
   gameplay gap.
 - **Dead code removed** (was: `HelloWorld.tsx`, `Codex.tsx` page,
   `useResourceStore`). The codex UI lives embedded in `Map.tsx`.
-- **Per-location terrain** is a single hardcoded map (`LOCATION_TERRAIN`)
-  and `arenaBarriers()` returns one fixed cross regardless of location.
+- ~~Per-location terrain is a single hardcoded map~~ — stale: scenarios carry
+  per-location `barriers()` and open-world fields get a deterministic
+  `openWorldBarriers` scatter (store), which the organic terrain layer draws.
 - **No save migrations** — recent INITIAL_UNITS overhaul, new skills, new
   equipment fields (range on rod/wand/staff) would invalidate any saved
   state if persistence is added later.

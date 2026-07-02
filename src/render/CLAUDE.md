@@ -64,6 +64,13 @@ also what a PR reviewer looks at.
 Prop placement (density, rotation/flip/scale jitter, keep-clear from barriers
 and portals) is the terrain builder's job — a new prop entry inherits all of it.
 
+**Variants are free.** Each archetype in `TERRAIN_PROPS` is automatically
+multiplied into seeded siblings (`variants()` in `props.ts`, riding
+`wonkPathD` in `authoring.ts`) — author ONE good silhouette and the registry
+grows by three. The re-cut keeps the command skeleton, roles, and the cutout
+pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
+(the skull's eye sockets) set a gentler per-archetype `wonk:` amplitude.
+
 ## Adding a body, weapon, or biome
 
 - **Monster silhouette / class weapon:** add the shape in `skins.tsx`

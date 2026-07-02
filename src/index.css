@@ -75,6 +75,24 @@
 }
 .animate-hit-flash { animation: hit-flash 0.45s ease-out forwards; }
 
+/* One-shot melee lunge: the attacker's token nudges toward its target (the
+   direction rides in --lunge-x/--lunge-y, set per attack) and settles back.
+   Compositor-only (transform). Two IDENTICAL keyframe sets: back-to-back
+   attacks restart the animation by alternating animation-name on round parity
+   — a class swap, so the memo'd token body is never remounted. */
+@keyframes lunge-a {
+  0%   { transform: translate(0, 0); }
+  35%  { transform: translate(var(--lunge-x, 0), var(--lunge-y, 0)); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes lunge-b {
+  0%   { transform: translate(0, 0); }
+  35%  { transform: translate(var(--lunge-x, 0), var(--lunge-y, 0)); }
+  100% { transform: translate(0, 0); }
+}
+.animate-lunge-a { animation: lunge-a 0.3s ease-out; }
+.animate-lunge-b { animation: lunge-b 0.3s ease-out; }
+
 /* Attack arc line fades shortly after the strike lands. */
 @keyframes line-fade {
   from { opacity: 0.7; }

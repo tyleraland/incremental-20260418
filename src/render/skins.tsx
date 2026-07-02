@@ -184,23 +184,36 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
     <div
       data-skin="paper"
       style={{ width: dims.width, height: dims.height }}
-      className={`relative flex items-center justify-center select-none transition-opacity ${alive ? '' : 'opacity-25 grayscale'}`}
+      className={`relative flex items-center justify-center select-none transition-opacity ${alive ? '' : 'opacity-60'}`}
     >
       {selected && <div className="absolute -inset-1 rounded-full ring-2 ring-emerald-300 pointer-events-none" />}
       {tone === 'casting' && <div className="absolute -inset-1 rounded-full ring-2 ring-amber-400/70 animate-pulse pointer-events-none" />}
       <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }} aria-hidden>
         {/* ground-contact shadow: an offset flat ellipse, NOT filter:drop-shadow */}
-        <ellipse cx="54" cy="55" rx="46" ry="45" fill={PAL.shadow} fillOpacity={0.35} />
+        <ellipse cx="54" cy={alive ? 55 : 80} rx="46" ry={alive ? 45 : 17} fill={PAL.shadow} fillOpacity={0.35} />
         {angle != null && (
           <g transform={`rotate(${angle} 50 50)`}>
             {WEAPON_SHAPES[weapon ?? (bodyShape === 'humanoid' ? 'sword' : 'claw')]}
           </g>
         )}
-        <path d={body} fill={p.base} stroke={outline} strokeWidth="5" />
-        <path d={body} fill={p.top} transform="translate(-3 -4) translate(50 50) scale(0.94) translate(-50 -50)" />
+        {alive ? (
+          <>
+            <path d={body} fill={p.base} stroke={outline} strokeWidth="5" />
+            <path d={body} fill={p.top} transform="translate(-3 -4) translate(50 50) scale(0.94) translate(-50 -50)" />
+          </>
+        ) : (
+          // KO: the SAME silhouette crumpled flat — squashed onto the ground line
+          // and tipped over, lit copy keeping the standard up-left nudge, so the
+          // heap still reads as cut paper (and as this body, not a generic ✕).
+          // Same two paths as alive; no filters (the old grayscale was one).
+          <>
+            <path d={body} fill={p.base} stroke={p.outline} strokeWidth="6" transform="translate(50 80) rotate(-9) scale(1.05 0.42) translate(-50 -50)" />
+            <path d={body} fill={p.top} transform="translate(-3 -4) translate(50 80) rotate(-9) scale(0.99 0.4) translate(-50 -50)" />
+          </>
+        )}
       </svg>
       <span className="relative font-bold leading-none" style={{ fontSize: dims.fontSize, color: p.text }}>
-        {alive ? glyph : '✕'}
+        {alive ? glyph : ''}
       </span>
     </div>
   )

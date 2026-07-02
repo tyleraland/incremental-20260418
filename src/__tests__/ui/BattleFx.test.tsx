@@ -53,6 +53,20 @@ describe('battle FX bucketing', () => {
     expect(arena(container).querySelector('line')).toBeTruthy()
   })
 
+  it('lunges the melee attacker toward its target (one-shot nudge)', async () => {
+    const { container } = await show(fxBattle())
+    // the attacker's chip carries the parity-alternating lunge class + direction vars
+    const lunger = arena(container).querySelector('.animate-lunge-a, .animate-lunge-b') as HTMLElement
+    expect(lunger).toBeTruthy()
+    expect(lunger.style.getPropertyValue('--lunge-x')).toMatch(/%$/)
+    expect(lunger.closest('[data-cid="u1"]')).toBeTruthy()   // on the ATTACKER, not the target
+    // ranged attackers don't lunge
+    const b = fxBattle()
+    b.events = [{ round: b.round, type: 'ranged_attack', sourceId: 'u1', targetId: 'e1', value: 5 }]
+    const { container: c2 } = await show(b)
+    expect(c2.querySelector('.animate-lunge-a, .animate-lunge-b')).toBeNull()
+  })
+
   it('renders a spawn float for a spawn event', async () => {
     const { container } = await show(fxBattle())
     expect(within(arena(container)).getByText('⚠ Goblin')).toBeTruthy()

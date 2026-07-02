@@ -95,6 +95,62 @@ export function roughCircle(cx: number, cy: number, r: number, n: number, seed: 
   return out
 }
 
+// Deterministic path-data wonk: re-cut an authored path with per-anchor jitter
+// (endpoints AND control points, ±amp), so one archetype yields a family of
+// hand-cut siblings (asset-pipeline step 7 — variant generation; see
+// `variants()` in props.ts). Handles the prop grammar — M/L/H/V/C/S/Q/T/A,
+// absolute or relative, implicit repeats — and re-emits absolute (H/V become L
+// so both axes wobble). Arc radii wobble at half strength; rotation/flags stay
+// exact. Identical (d, seed) → identical output, so a cutout()'s base+lit pair
+// (two copies of the same d) stays perfectly in sync.
+export function wonkPathD(d: string, seed: number, amp: number): string {
+  const tokens = [...d.matchAll(/([MmLlHhVvCcSsQqTtAaZz])|(-?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?)/g)]
+  let i = 0, cx = 0, cy = 0, sx = 0, sy = 0, k = 0
+  const read = () => Number(tokens[i++][2])
+  const jit = () => (hash01(seed + k++ * 37) - 0.5) * 2 * amp
+  const f = (v: number) => String(Math.round(v * 100) / 100)
+  const pt = (x: number, y: number) => `${f(x + jit())} ${f(y + jit())}`
+  const out: string[] = []
+  while (i < tokens.length) {
+    const c = tokens[i][1]
+    if (!c) return d                       // malformed — leave the path untouched
+    i++
+    const C = c.toUpperCase()
+    const rel = c !== C && C !== 'Z'
+    if (C === 'Z') { out.push('Z'); cx = sx; cy = sy; continue }
+    let first = true
+    do {
+      const eff = C === 'M' && !first ? 'L' : C
+      if (eff === 'M' || eff === 'L' || eff === 'T') {
+        const x = read() + (rel ? cx : 0), y = read() + (rel ? cy : 0)
+        out.push(eff + pt(x, y)); cx = x; cy = y
+        if (eff === 'M') { sx = x; sy = y }
+      } else if (eff === 'H') {
+        const x = read() + (rel ? cx : 0)
+        out.push('L' + pt(x, cy)); cx = x
+      } else if (eff === 'V') {
+        const y = read() + (rel ? cy : 0)
+        out.push('L' + pt(cx, y)); cy = y
+      } else if (eff === 'C' || eff === 'S' || eff === 'Q') {
+        const groups: string[] = []
+        let x = cx, y = cy
+        for (let g = 0; g < (eff === 'C' ? 3 : 2); g++) {
+          x = read() + (rel ? cx : 0); y = read() + (rel ? cy : 0)
+          groups.push(pt(x, y))
+        }
+        out.push(eff + groups.join(' ')); cx = x; cy = y
+      } else if (eff === 'A') {
+        const rx = read(), ry = read(), rot = read(), laf = read(), sf = read()
+        const x = read() + (rel ? cx : 0), y = read() + (rel ? cy : 0)
+        out.push(`A${f(Math.max(0.01, rx + jit() * 0.5))} ${f(Math.max(0.01, ry + jit() * 0.5))} ${f(rot)} ${laf} ${sf} ${pt(x, y)}`)
+        cx = x; cy = y
+      } else return d                      // unknown command — bail untouched
+      first = false
+    } while (i < tokens.length && !tokens[i][1])
+  }
+  return out.join('')
+}
+
 // Deterministic keep-clear placement: up to `count` points inside the map
 // (inset by `edge`), rejection-sampled away from the `avoid` rects (+margin).
 // Bounded attempts, so dense maps just come out sparser — never spin.

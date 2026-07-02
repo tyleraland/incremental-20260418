@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
@@ -624,7 +624,7 @@ function MovingChevron({ c, cam, isPlayer, sizeScale = 1 }: { c: Combatant; cam:
 // The token body itself lives in `src/render/skins.tsx` (CircleBody / PaperBody),
 // picked by the store's `battleSkin` and fed the appearance resolver's output —
 // restyling an entity is a skins-file change, never a BattleView one.
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, skin, castLabels, spawnPop = true }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; skin: BattleSkin; castLabels?: CastLabelEntry[]; spawnPop?: boolean }) {
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, skin, castLabels, spawnPop = true, lungeDeg = null, lungeFlip = false }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; skin: BattleSkin; castLabels?: CastLabelEntry[]; spawnPop?: boolean; lungeDeg?: number | null; lungeFlip?: boolean }) {
   const isPlayer = c.team === 'player'
   const isNeutral = c.team === 'neutral'   // town NPC: stationary, no facing/HP bar
   const casting = c.alive && !!c.channel
@@ -675,17 +675,33 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
         {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
         {detail && c.alive && !isNeutral && !SKIN_CARRIES_FACING[skin] && <FacingNub c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
         {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
-        <Body
-          glyph={appearance.glyph}
-          tone={appearance.tone}
-          bodyShape={appearance.bodyShape}
-          tint={appearance.tint}
-          weapon={appearance.weapon}
-          alive={c.alive}
-          selected={selected}
-          facingDeg={facingDeg}
-          dims={chipDims(cam, appearance.scale)}
-        />
+        {/* One-shot melee lunge (BACKLOG → effects pass): a compositor-only nudge
+            toward the target when this combatant landed a melee hit this round.
+            The wrapper is PERMANENT (conditionally wrapping would remount the
+            memo'd body subtree on every attack start/stop); consecutive-round
+            attacks restart the animation by alternating two identical keyframe
+            sets on round parity — a class swap, never a remount. % translate is
+            relative to this wrapper's own box = the token, so the nudge scales
+            with zoom for free. */}
+        <div
+          className={lungeDeg != null ? (lungeFlip ? 'animate-lunge-a' : 'animate-lunge-b') : undefined}
+          style={lungeDeg != null ? {
+            '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
+            '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,
+          } as CSSProperties : undefined}
+        >
+          <Body
+            glyph={appearance.glyph}
+            tone={appearance.tone}
+            bodyShape={appearance.bodyShape}
+            tint={appearance.tint}
+            weapon={appearance.weapon}
+            alive={c.alive}
+            selected={selected}
+            facingDeg={facingDeg}
+            dims={chipDims(cam, appearance.scale)}
+          />
+        </div>
       </div>
     </div>
   )
@@ -1107,7 +1123,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, onFollow, inspectRequ
   // identity changes each round), NOT on the 60fps motion re-renders. One pass
   // buckets this round's events by type instead of six separate `.filter()`s,
   // and tallies alive/party/counts in the same sweep.
-  const { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies } = useMemo(() => {
+  const { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies, lungeDegs } = useMemo(() => {
     const alive: Combatant[] = []
     const party: Combatant[] = []
     let playersAlive = 0, enemiesAlive = 0
@@ -1119,17 +1135,32 @@ function LiveBattle({ battle, portals, biome, terrainSeed, onFollow, inspectRequ
     }
     type Ev = typeof battle.events
     const hits: Ev = [], tacticUses: Ev = [], spawns: Ev = [], aggros: Ev = [], rallies: Ev = []
+    // Melee attackers this round → screen angle toward their target, quantized
+    // to the facing grid. Drives the one-shot lunge nudge on the attacker's chip
+    // (melee only — a bow/spell "lunge" would read as a flinch).
+    const lungeDegs = new Map<string, number>()
     for (const e of battle.events) {
       if (e.round !== battle.round) continue
       switch (e.type) {
-        case 'melee_attack': case 'ranged_attack': case 'skill_use': if (e.value != null) hits.push(e); break
+        case 'melee_attack':
+          if (e.value != null) {
+            hits.push(e)
+            const src = byId(e.sourceId), tgt = byId(e.targetId)
+            if (src?.alive && tgt) {
+              const dx = tgt.pos.x - src.pos.x, dy = tgt.pos.y - src.pos.y
+              if (dx || dy) lungeDegs.set(src.id, Math.round(((Math.atan2(-dy, dx) * 180) / Math.PI) / 15) * 15)
+            }
+          }
+          break
+        case 'ranged_attack': case 'skill_use': if (e.value != null) hits.push(e); break
         case 'tactic_use': tacticUses.push(e); break
         case 'spawn': spawns.push(e); break
         case 'aggro': aggros.push(e); break
         case 'rally': rallies.push(e); break
       }
     }
-    return { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies }
+    return { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies, lungeDegs }
+    // eslint-disable-next-line react-hooks/exhaustive-deps — byId derives from battle
   }, [battle])
 
   // Harvest this round's damage/heal/DoT/interrupt numbers into the lingering
@@ -1550,6 +1581,12 @@ function LiveBattle({ battle, portals, biome, terrainSeed, onFollow, inspectRequ
               skin={skin}
               castLabels={castLabelsBySource.get(c.id)}
               spawnPop={!mountIdsRef.current!.has(c.id)}
+              // LOD-gated like the label/nubs: each lunge promotes the token to
+              // a compositor layer for its 0.3s and drops it again — fine for a
+              // handful of zoomed-in tokens, layer churn × the whole mob when
+              // zoomed out (measured ~-7 fps on the ?perf scene un-gated).
+              lungeDeg={tokenDetail ? lungeDegs.get(c.id) ?? null : null}
+              lungeFlip={battle.round % 2 === 0}
             />
           ))}
 

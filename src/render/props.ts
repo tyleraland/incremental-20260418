@@ -1,5 +1,6 @@
 import type { Biome } from '@/render/appearance'
 import type { PaperRole } from '@/render/palette'
+import { hashString, wonkPathD } from '@/render/authoring'
 
 // ── Prop assets as data ──────────────────────────────────────────────────────
 //
@@ -27,6 +28,10 @@ export interface PropDef {
   id: string
   size: number         // scale multiplier vs the placement's base (≈0.7–1.2)
   paths: PropPath[]
+  // variant-generation amplitude override (unit-box units). The default ±0.07
+  // suits chunky silhouettes; props with fine registered detail (a skull's eye
+  // sockets) want a gentler re-cut. Undefined → the default.
+  wonk?: number
 }
 
 // The standard two-tone cutout: base silhouette + lit top copy. THE way to give
@@ -35,6 +40,23 @@ export function cutout(d: string, base: PaperRole, lit: PaperRole): PropPath[] {
   return [{ d, fill: base }, { d, fill: lit, lit: true }]
 }
 
+// Seeded variant family (asset-pipeline step 7 — variant generation): one
+// authored archetype → `n` re-cut siblings via `wonkPathD`, so per-biome
+// density is a multiplier, not art time. Seeded by the archetype id (stable
+// across builds, byte-identical screenshots); a cutout pair's two identical
+// `d` strings share the seed and stay in sync. Variants keep the archetype's
+// roles/strokes, so the palette contract holds by construction.
+export function variants(def: PropDef, n: number, amp = def.wonk ?? 0.07): PropDef[] {
+  const base = hashString(def.id)
+  return Array.from({ length: n }, (_, i) => ({
+    id: `${def.id}~${i + 1}`,
+    size: def.size,
+    paths: def.paths.map((p) => ({ ...p, d: wonkPathD(p.d, base + (i + 1) * 7919, amp) })),
+  }))
+}
+
+const withVariants = (defs: PropDef[], n = 2): PropDef[] => defs.flatMap((d) => [d, ...variants(d, n)])
+
 const BUSH_D = 'M0 -0.75C0.55 -0.7 0.9 -0.3 0.85 0.2C0.8 0.65 0.35 0.85 0 0.85C-0.4 0.85 -0.85 0.6 -0.87 0.15C-0.9 -0.35 -0.5 -0.72 0 -0.75Z'
 const PEBBLE_D = 'M-0.45 0.1C-0.42 -0.25 -0.15 -0.38 0.05 -0.35C0.32 -0.31 0.45 -0.12 0.42 0.1C0.38 0.3 0.15 0.38 -0.05 0.36C-0.28 0.34 -0.47 0.28 -0.45 0.1Z'
 const RUBBLE_D = 'M-0.7 0.3L-0.2 -0.42L0.32 0L0 0.45Z'
@@ -42,9 +64,16 @@ const SHARD_D = 'M-0.5 0.25L-0.1 -0.4L0.5 -0.15L0.2 0.35Z'
 const CRATE_D = 'M-0.5 -0.42L0.48 -0.5L0.52 0.46L-0.44 0.5Z'
 const BARREL_D = 'M-0.42 0A0.42 0.42 0 1 0 0.42 0A0.42 0.42 0 1 0 -0.42 0Z'
 const SACK_D = 'M-0.35 -0.5C0.1 -0.62 0.42 -0.3 0.45 0.05C0.5 0.4 0.2 0.55 -0.05 0.55C-0.38 0.55 -0.55 0.32 -0.52 0C-0.5 -0.25 -0.5 -0.42 -0.35 -0.5Z'
+const LOG_D = 'M-0.85 -0.15C-0.86 -0.3 -0.72 -0.36 -0.6 -0.34L0.62 -0.28C0.78 -0.27 0.87 -0.14 0.86 0.01C0.85 0.16 0.74 0.26 0.6 0.26L-0.6 0.32C-0.76 0.33 -0.84 0.02 -0.85 -0.15Z'
+const MUSHCAP_D = 'M-0.55 -0.02C-0.56 -0.5 0.54 -0.52 0.55 -0.04C0.28 0.05 -0.28 0.06 -0.55 -0.02Z'
+const PILLAR_D = 'M-0.34 0.6L-0.38 -0.32L-0.14 -0.55L0.08 -0.32L0.14 -0.52L0.37 -0.4L0.34 0.6Z'
+const SPIKES_D = 'M-0.7 0.55L-0.45 -0.22L-0.25 0.08L-0.04 -0.65L0.2 0.02L0.42 -0.32L0.66 0.55Z'
+const SKULL_D = 'M-0.4 0.08C-0.46 -0.35 -0.16 -0.56 0.05 -0.54C0.31 -0.5 0.49 -0.28 0.46 0.04C0.44 0.24 0.31 0.31 0.2 0.33L0.17 0.46L-0.24 0.43L-0.27 0.27C-0.35 0.23 -0.38 0.18 -0.4 0.08Z'
+const POT_D = 'M-0.38 -0.12C-0.42 0.08 -0.3 0.48 -0.19 0.55L0.2 0.55C0.31 0.48 0.42 0.08 0.38 -0.12L0.46 -0.26L-0.46 -0.24Z'
+const BOARD_D = 'M-0.55 -0.56L0.5 -0.62L0.53 -0.26L-0.52 -0.21Z'
 
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
-  grass: [
+  grass: withVariants([
     { id: 'tuft', size: 0.9, paths: [
       { d: 'M-0.45 0.5Q-0.35 -0.2 -0.55 -0.85M0 0.55Q0.08 -0.1 0 -0.95M0.45 0.5Q0.4 -0.25 0.55 -0.8', stroke: 'foliage', sw: 0.16 },
     ] },
@@ -54,8 +83,25 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: 'M0 0.6Q0.06 0.1 0 -0.3', stroke: 'foliageDeep', sw: 0.12 },
       { d: 'M-0.26 -0.5A0.26 0.26 0 1 0 0.26 -0.5A0.26 0.26 0 1 0 -0.26 -0.5Z', fill: 'bloom' },
     ] },
-  ],
-  stone: [
+    { id: 'stump', size: 0.9, paths: [
+      { d: 'M-0.4 -0.1L-0.4 0.42C-0.4 0.58 0.4 0.58 0.4 0.42L0.4 -0.1Z', fill: 'woodDeep' },
+      { d: 'M-0.42 -0.1A0.42 0.24 0 1 0 0.42 -0.1A0.42 0.24 0 1 0 -0.42 -0.1Z', fill: 'wood' },
+      { d: 'M-0.22 -0.1A0.22 0.12 0 1 0 0.22 -0.1A0.22 0.12 0 1 0 -0.22 -0.1Z', stroke: 'woodDeep', sw: 0.06 },
+    ] },
+    { id: 'mushroom', size: 0.7, paths: [
+      { d: 'M-0.14 0.55C-0.17 0.2 -0.13 0.05 -0.09 -0.08L0.12 -0.08C0.15 0.1 0.17 0.3 0.14 0.55Z', fill: 'cream' },
+      ...cutout(MUSHCAP_D, 'woodDeep', 'woodLight'),
+    ] },
+    { id: 'reeds', size: 1, paths: [
+      { d: 'M-0.3 0.6Q-0.25 -0.2 -0.36 -0.72M0.05 0.6Q0.1 -0.3 0.02 -0.88M0.38 0.6Q0.35 -0.1 0.44 -0.6', stroke: 'foliageDeep', sw: 0.12 },
+      { d: 'M-0.43 -0.78A0.07 0.15 10 1 0 -0.29 -0.78A0.07 0.15 10 1 0 -0.43 -0.78ZM-0.05 -0.94A0.07 0.14 -4 1 0 0.09 -0.94A0.07 0.14 -4 1 0 -0.05 -0.94Z', fill: 'canvas' },
+    ] },
+    { id: 'log', size: 1.1, paths: [
+      ...cutout(LOG_D, 'woodDeep', 'wood'),
+      { d: 'M-0.85 0.07A0.12 0.23 0 1 0 -0.61 0.07A0.12 0.23 0 1 0 -0.85 0.07Z', fill: 'woodLight' },
+    ] },
+  ]),
+  stone: withVariants([
     { id: 'rubble', size: 1, paths: [
       ...cutout(RUBBLE_D, 'rockDeep', 'rock'),
       { d: 'M0.4 0.5L0.72 0.02L0.9 0.45Z', fill: 'rockDeep' },
@@ -67,8 +113,20 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     { id: 'bone', size: 0.8, paths: [
       { d: 'M-0.5 0.15L0.35 -0.3M0.28 -0.42L0.45 -0.18', stroke: 'cream', sw: 0.12, opacity: 0.6 },
     ] },
-  ],
-  plaza: [
+    { id: 'pillar', size: 1, paths: [
+      { d: 'M-0.5 0.6L0.5 0.6L0.43 0.36L-0.44 0.38Z', fill: 'rockDeep' },
+      ...cutout(PILLAR_D, 'rockDeep', 'rock'),
+    ] },
+    { id: 'skull', size: 0.7, wonk: 0.025, paths: [
+      ...cutout(SKULL_D, 'rockDeep', 'cream'),
+      { d: 'M-0.24 -0.06A0.09 0.11 0 1 0 -0.06 -0.06A0.09 0.11 0 1 0 -0.24 -0.06ZM0.08 -0.04A0.09 0.11 0 1 0 0.26 -0.04A0.09 0.11 0 1 0 0.08 -0.04Z', fill: 'ink' },
+    ] },
+    { id: 'spikes', size: 1, paths: cutout(SPIKES_D, 'rockDeep', 'rock') },
+    { id: 'moss', size: 1.1, paths: [
+      { d: 'M-0.6 0.1C-0.5 -0.3 0 -0.45 0.4 -0.25C0.7 -0.1 0.6 0.3 0.2 0.38C-0.15 0.46 -0.55 0.4 -0.6 0.1Z', fill: 'foliageDeep', opacity: 0.55 },
+    ] },
+  ]),
+  plaza: withVariants([
     { id: 'crate', size: 1, paths: [
       ...cutout(CRATE_D, 'woodDeep', 'wood'),
       { d: 'M-0.44 0.02L0.48 -0.04', stroke: 'ink', sw: 0.07, opacity: 0.6 },
@@ -78,5 +136,22 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: 'M-0.2 0A0.2 0.2 0 1 0 0.2 0A0.2 0.2 0 1 0 -0.2 0Z', stroke: 'ink', sw: 0.06, opacity: 0.5 },
     ] },
     { id: 'sack', size: 0.9, paths: cutout(SACK_D, 'woodDeep', 'canvas') },
-  ],
+    { id: 'wheel', size: 0.9, wonk: 0.04, paths: [
+      { d: 'M-0.55 0A0.55 0.55 0 1 0 0.55 0A0.55 0.55 0 1 0 -0.55 0Z', stroke: 'wood', sw: 0.14 },
+      { d: 'M-0.45 0L0.45 0M0 -0.45L0 0.45M-0.32 -0.32L0.32 0.32M-0.32 0.32L0.32 -0.32', stroke: 'woodDeep', sw: 0.08 },
+      { d: 'M-0.12 0A0.12 0.12 0 1 0 0.12 0A0.12 0.12 0 1 0 -0.12 0Z', fill: 'woodDeep' },
+    ] },
+    { id: 'pot', size: 0.9, paths: [
+      ...cutout(POT_D, 'woodDeep', 'woodLight'),
+      { d: 'M-0.3 -0.26C-0.38 -0.55 -0.1 -0.72 0.1 -0.66C0.36 -0.6 0.4 -0.36 0.3 -0.26Z', fill: 'foliage' },
+    ] },
+    { id: 'signpost', size: 1, paths: [
+      { d: 'M-0.06 0.6L-0.04 -0.7L0.08 -0.7L0.07 0.6Z', fill: 'woodDeep' },
+      ...cutout(BOARD_D, 'woodDeep', 'wood'),
+    ] },
+    { id: 'coil', size: 0.8, paths: [
+      { d: 'M-0.5 0A0.5 0.5 0 1 0 0.5 0A0.5 0.5 0 1 0 -0.5 0ZM-0.27 0A0.27 0.27 0 1 0 0.27 0A0.27 0.27 0 1 0 -0.27 0Z', stroke: 'canvas', sw: 0.13 },
+      { d: 'M-0.1 0A0.1 0.1 0 1 0 0.1 0A0.1 0.1 0 1 0 -0.1 0Z', fill: 'shadow', opacity: 0.3 },
+    ] },
+  ]),
 }
