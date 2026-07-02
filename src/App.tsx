@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
@@ -21,6 +21,11 @@ import { ProtoApp } from '@/proto/ProtoApp'
 if (import.meta.env.DEV && typeof window !== 'undefined') {
   ;(window as unknown as { __game?: typeof useGameStore }).__game = useGameStore
 }
+
+// Dev-only skin gallery (`?gallery=1`): a pure-render contact sheet of the whole
+// visual language (src/dev/SkinGallery.tsx). Lazy so the chunk stays out of the
+// main bundle; the DEV gate keeps the route out of production entirely.
+const SkinGallery = import.meta.env.DEV ? lazy(() => import('@/dev/SkinGallery')) : null
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
@@ -104,6 +109,10 @@ function App() {
     }, 60_000)
     return () => clearInterval(id)
   }, [perfMode])
+
+  if (SkinGallery && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('gallery')) {
+    return <Suspense fallback={null}><SkinGallery /></Suspense>
+  }
 
   if (!classicMode) {
     return (

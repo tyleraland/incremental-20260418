@@ -1,0 +1,172 @@
+import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } from '@/render/skins'
+import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
+
+// Dev-only skin gallery (`?gallery=1`): a contact sheet of the ENTIRE visual
+// language — every token body × tone, every weapon, the state variants
+// (KO/casting/selected), a facing wheel, the LOD size ladder, each biome's
+// ground tile, barrier swatches, and the FX palette — for both skins on one
+// page. One screenshot (`npm run gallery-shot`) is a whole-language review:
+// palette drift, silhouette weakness, or a contract break is visible at a
+// glance, which makes art iteration a tight loop instead of hunting scenes in
+// a live battle. Pure render: imports ONLY the render modules (no store, no
+// engine), so it also documents the skins' public surface.
+
+const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer']
+const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
+const WEAPONS: Weapon[] = ['sword', 'dagger', 'bow', 'staff']
+const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
+const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-up
+const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'WO', flyer: 'HA' }
+
+const dims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
+
+function Cell({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="h-20 w-20 flex items-center justify-center">{children}</div>
+      <span className="text-[9px] text-neutral-500 leading-none">{label}</span>
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-6">
+      <h2 className="text-[11px] uppercase tracking-widest text-neutral-400 mb-2">{title}</h2>
+      <div className="flex flex-wrap gap-2 items-end">{children}</div>
+    </div>
+  )
+}
+
+function SkinBlock({ skin }: { skin: BattleSkin }) {
+  const Body = TOKEN_SKINS[skin]
+  const arena = ARENA_SKINS[skin]
+  const fx = FX_SKINS[skin]
+  return (
+    <div className="mb-10">
+      <h1 className="text-sm font-bold text-neutral-200 mb-3">skin: {skin}</h1>
+
+      <Section title="bodies × tones">
+        {SHAPES.map((shape) =>
+          TONES.map((tone) => (
+            <Cell key={`${shape}-${tone}`} label={`${shape} · ${tone}`}>
+              <Body glyph={GLYPH[shape]} tone={tone} bodyShape={shape} alive selected={false} facingDeg={0} dims={dims(56)} />
+            </Cell>
+          )),
+        )}
+      </Section>
+
+      <Section title="weapons (class handhelds) + creature claw">
+        {WEAPONS.map((w) => (
+          <Cell key={w} label={w}>
+            <Body glyph="⚔" tone="player" bodyShape="humanoid" weapon={w} alive selected={false} facingDeg={0} dims={dims(56)} />
+          </Cell>
+        ))}
+        <Cell label="claw (beast)">
+          <Body glyph="WO" tone="enemy" bodyShape="beast" alive selected={false} facingDeg={0} dims={dims(56)} />
+        </Cell>
+      </Section>
+
+      <Section title="states">
+        <Cell label="KO">
+          <Body glyph="⚔" tone="player" bodyShape="humanoid" weapon="sword" alive={false} selected={false} facingDeg={null} dims={dims(56)} />
+        </Cell>
+        <Cell label="casting">
+          <Body glyph="✦" tone="casting" bodyShape="humanoid" weapon="staff" alive selected={false} facingDeg={0} dims={dims(56)} />
+        </Cell>
+        <Cell label="selected">
+          <Body glyph="⚔" tone="player" bodyShape="humanoid" weapon="sword" alive selected facingDeg={0} dims={dims(56)} />
+        </Cell>
+        <Cell label="element tint">
+          <Body glyph="SL" tone="enemy" bodyShape="blob" tint="rgb(251 146 60 / 0.9)" alive selected={false} facingDeg={0} dims={dims(56)} />
+        </Cell>
+      </Section>
+
+      <Section title="facing wheel (15° quantized in play)">
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+          <Cell key={deg} label={`${deg}°`}>
+            <Body glyph="⚔" tone="player" bodyShape="humanoid" weapon="bow" alive selected={false} facingDeg={deg} dims={dims(48)} />
+          </Cell>
+        ))}
+      </Section>
+
+      <Section title="size ladder (LOD sanity)">
+        {SIZES.map((px) => (
+          <Cell key={px} label={`${px}px`}>
+            <Body glyph="HA" tone="enemy" bodyShape="flyer" alive selected={false} facingDeg={-30} dims={dims(px)} />
+          </Cell>
+        ))}
+      </Section>
+
+      <Section title="ground tiles (per biome) · barriers · vignette">
+        {BIOMES.map((b) => {
+          const g = arena.grounds?.[b]
+          return (
+            <div key={b} className="flex flex-col items-center gap-1">
+              <div
+                className="w-40 h-40 rounded border border-neutral-800"
+                style={{ ...arena.surface, ...(g ? { backgroundImage: g.image, backgroundSize: `${g.cellsPerTile * 32}px` } : null) }}
+              />
+              <span className="text-[9px] text-neutral-500">{b}{g ? '' : ' (none)'}</span>
+            </div>
+          )
+        })}
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-40 h-40 rounded border border-neutral-800 relative" style={arena.surface}>
+            <div className="absolute rounded-sm bg-stone-700/70 border border-stone-500/60" style={{ left: 8, top: 8, width: 56, height: 40, ...ARENA_SKINS[skin].barrierWall }} />
+            <div className="absolute rounded-sm bg-amber-900/20 border border-dashed border-amber-600/60" style={{ left: 88, top: 84, width: 56, height: 40, ...ARENA_SKINS[skin].barrierCliff }} />
+            {arena.vignette && <div className="absolute inset-0 pointer-events-none" style={{ background: arena.vignette }} />}
+          </div>
+          <span className="text-[9px] text-neutral-500">wall · cliff · vignette</span>
+        </div>
+      </Section>
+
+      <Section title="fx: arcs · hit ring · zone · firewall · portal">
+        <div className="flex flex-col items-center gap-1">
+          <svg width="80" height="80" className="rounded border border-neutral-800" style={arena.surface}>
+            <line x1="10" y1="20" x2="70" y2="35" stroke={fx.arcPlayer} strokeWidth="3" strokeLinecap="round" />
+            <line x1="10" y1="55" x2="70" y2="70" stroke={fx.arcEnemy} strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <span className="text-[9px] text-neutral-500">arcs</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-20 h-20 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+            <div className={`w-12 h-12 rounded-full ${fx.hitRing}`} />
+          </div>
+          <span className="text-[9px] text-neutral-500">hit ring</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-20 h-20 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+            <div className={`w-14 h-14 rounded-full ${fx.zone}`} />
+          </div>
+          <span className="text-[9px] text-neutral-500">zone</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-20 h-20 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+            <div className={`w-14 h-3 rounded-sm ${fx.firewall}`} />
+          </div>
+          <span className="text-[9px] text-neutral-500">firewall</span>
+        </div>
+        <div className="flex flex-col items-center gap-1">
+          <div className="w-20 h-20 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${fx.portal}`}>
+              <span className="text-fuchsia-100/90 text-[11px]">◈</span>
+            </div>
+          </div>
+          <span className="text-[9px] text-neutral-500">portal</span>
+        </div>
+      </Section>
+    </div>
+  )
+}
+
+export default function SkinGallery() {
+  return (
+    <div data-gallery className="min-h-full bg-[#0b0b10] p-4 overflow-auto">
+      <p className="text-[10px] text-neutral-500 mb-4">
+        skin gallery — the whole visual language on one sheet (dev-only, ?gallery=1 · npm run gallery-shot)
+      </p>
+      {BATTLE_SKIN_IDS.map((s) => <SkinBlock key={s} skin={s} />)}
+    </div>
+  )
+}
