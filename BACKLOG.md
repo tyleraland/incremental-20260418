@@ -871,6 +871,30 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
   ~0.65 at the same CPU; slowing tempo *alone* (coarse + `hevery 4`) barely helps. DEV
   `?hts=`/`?hevery=`/`?ts=` params + `data-cid` on tokens drive the sweep.
   (`useGameStore.ts`: `HEAVY_FIELD_CAP`, `cadenceFor`; `e2e/jerk.spec.ts`.)
+- **✅ Cadence tiers re-validated + barrier fast path (2026-07,
+  `e2e/cadence-profile.spec.ts`).** Asked "are the slow tiers still necessary,
+  or can big/dense fields run full-granularity every tick?" — profiled the
+  ?perf scene shaped like Kanto Beach (cap 220, 200×200) and a dense 60×60
+  packing, mobile-chrome 4×, sweeping `?hts/?hevery/?decide`.
+  - *First finding: the engine was 81% barrier checks.* `traceMove`/`lineClear`
+    sampled every 0.2 cells × every barrier; on a 200-wide map one wander line
+    is 500+ samples, so sim cost scaled with map size × entities. Fixed with
+    exact per-barrier **slab-window clipping** (`sampleWindow`, barriers.ts):
+    same predicate at the same sample positions, only provably-outside samples
+    skipped — byte-identical by construction, pinned by a 4000-case
+    differential fuzz against the old scan verbatim
+    (`barriers-fastpath.test.ts`). Cap-220 worst tick 430ms → 44ms (~10×);
+    beach *shipped* fps 26.6 → 36 — the per-round hitch on big maps is gone.
+  - *Answer: the tiers stay.* Even with the engine now ~free (rip tick p50
+    8–17ms), full-rip collapses on throttled mobile at every probed cap —
+    cap 90 → 7.3 fps, cap 140 → 7.4, cap 220 → 8.1 (vs 36 shipped), dense
+    60×60 → 3.8 (vs 13). Post-fix profile: no JS function dominates; ~46% is
+    `(program)` — per-round style/layout/paint of the animated battle DOM at
+    5 rounds/sec (+ dev-build React overhead). Rounds/sec is exactly what the
+    tiers throttle, so they're load-bearing; `decide=1` also re-confirmed the
+    decision throttle (mean tick 18 → 79ms without it). Next lever if the
+    tiers ever need relaxing: the per-round render commit (value-mirror memo /
+    off-thread sim, below), not the sim.
 - **✅ Phase 2 — LOD tokens.** `BattleChip` drops its floating plate + facing/
   moving nubs (most per-token DOM) when zoomed past `LOD_CAM_SIZE` or with more
   than `LOD_TOKEN_COUNT` on-screen tokens (`Lod.test.tsx`).

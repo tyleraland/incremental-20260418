@@ -29,26 +29,78 @@ export function pointBlocked(barriers: Barrier[], p: Vec2, pad = UNIT_PAD): bool
   return false
 }
 
+// Exact sample-window clipping for the sampled trace/sight checks below. The
+// original scans tested EVERY 0.2-cell sample against EVERY barrier — 81% of
+// all engine time on a 220-entity open field (profiled on the ?perf scene,
+// mobile 4×), and on a 200×200 map a single long wander line is 500+ samples.
+// Instead, per barrier, a slab test finds the t-window where the segment can
+// possibly sit inside that barrier's pad-inflated rect, and only the samples
+// in that window (± one sample of float slack) are tested — with the ORIGINAL
+// predicate at the ORIGINAL sample positions, so results are byte-identical
+// (pinned by barriers-fastpath.test.ts), never an approximation. Cost drops
+// from O(samples × barriers) to O(barriers + samples actually near a wall).
+//
+// Returns the sample-index window [i0, i1] for barrier `b` on the segment
+// from+(Δ·i/steps), or null when no sample can hit it. `iMin`/`iMax` bound the
+// caller's remaining interest (traceMove narrows iMax as it finds hits).
+function sampleWindow(
+  b: Barrier, pad: number, from: Vec2, dx: number, dy: number, steps: number, iMin: number, iMax: number,
+): { i0: number; i1: number } | null {
+  let t0 = 0, t1 = 1
+  const lox = b.x - pad, hix = b.x + b.w + pad
+  if (dx === 0) { if (from.x <= lox || from.x >= hix) return null }
+  else {
+    let a = (lox - from.x) / dx, c = (hix - from.x) / dx
+    if (a > c) { const s = a; a = c; c = s }
+    if (a > t0) t0 = a
+    if (c < t1) t1 = c
+  }
+  const loy = b.y - pad, hiy = b.y + b.h + pad
+  if (dy === 0) { if (from.y <= loy || from.y >= hiy) return null }
+  else {
+    let a = (loy - from.y) / dy, c = (hiy - from.y) / dy
+    if (a > c) { const s = a; a = c; c = s }
+    if (a > t0) t0 = a
+    if (c < t1) t1 = c
+  }
+  if (t0 > t1) return null
+  // ±1 sample of slack absorbs the slab divisions' float error; the skipped
+  // samples were provably outside the rect, the kept ones re-run the exact test.
+  const i0 = Math.max(iMin, Math.ceil(t0 * steps) - 1)
+  const i1 = Math.min(iMax, Math.floor(t1 * steps) + 1)
+  return i0 > i1 ? null : { i0, i1 }
+}
+
 // Clamp to the active arena (15×15 by default; larger for open-world battles).
 const clamp = (p: Vec2): Vec2 => arenaClamp(p)
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y)
 
 // Farthest point from `from` toward `to` that isn't inside a barrier — i.e. stop
 // up against the wall. Samples the segment so a fast move can't tunnel through.
+// Equivalent to sampling every step against every barrier (the first blocked
+// sample wins), but each barrier only scans its own slab window — see sampleWindow.
 export function traceMove(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_PAD): Vec2 {
   to = clamp(to)
   if (barriers.length === 0) return to
   const d = dist(from, to)
   if (d < EPS) return from
   const steps = Math.max(1, Math.ceil(d / 0.2))
-  let last = from
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps
-    const p = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }
-    if (pointBlocked(barriers, p, pad)) return last
-    last = p
+  const dx = to.x - from.x, dy = to.y - from.y
+  let firstBlocked = Infinity   // smallest blocked sample index across all barriers
+  for (const b of barriers) {
+    const win = sampleWindow(b, pad, from, dx, dy, steps, 1, Math.min(steps, firstBlocked - 1))
+    if (!win) continue
+    const lox = b.x - pad, hix = b.x + b.w + pad, loy = b.y - pad, hiy = b.y + b.h + pad
+    for (let i = win.i0; i <= win.i1; i++) {
+      const t = i / steps
+      const px = from.x + dx * t, py = from.y + dy * t
+      if (px > lox && px < hix && py > loy && py < hiy) { firstBlocked = i; break }
+    }
   }
-  return to
+  if (firstBlocked === Infinity) return to
+  if (firstBlocked === 1) return from
+  const t = (firstBlocked - 1) / steps
+  return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }
 }
 
 // Nearest free point when a unit has somehow ended up *inside* a barrier (a
@@ -122,9 +174,16 @@ export function lineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = UNIT_
   const d = dist(from, to)
   if (d < EPS) return true
   const steps = Math.max(1, Math.ceil(d / 0.2))
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps
-    if (pointBlocked(barriers, { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }, pad)) return false
+  const dx = to.x - from.x, dy = to.y - from.y
+  for (const b of barriers) {
+    const win = sampleWindow(b, pad, from, dx, dy, steps, 0, steps)
+    if (!win) continue
+    const lox = b.x - pad, hix = b.x + b.w + pad, loy = b.y - pad, hiy = b.y + b.h + pad
+    for (let i = win.i0; i <= win.i1; i++) {
+      const t = i / steps
+      const px = from.x + dx * t, py = from.y + dy * t
+      if (px > lox && px < hix && py > loy && py < hiy) return false
+    }
   }
   return true
 }
