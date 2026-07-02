@@ -4,6 +4,7 @@ import { useGameStore, waveComposition, locationBarriers, type Location } from '
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, CLASS_ICON, type Appearance } from '@/render/appearance'
+import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, type BattleSkin } from '@/render/skins'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap, distance, sightlineClear,
   type Rank, type Vec2, type Barrier, type BattleState, type Combatant, type StatusEffect,
@@ -185,7 +186,8 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
+  const arenaSkin = ARENA_SKINS[skin]
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -314,7 +316,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
     <div
       ref={ref}
       className={`relative w-full max-h-full aspect-square bg-game-surface overflow-hidden select-none${framed ? ' rounded-lg border border-game-border' : ''}`}
-      style={{ touchAction: 'none', containerType: 'size' }}
+      style={{ touchAction: 'none', containerType: 'size', ...arenaSkin.surface }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -347,14 +349,26 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
             transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear`,
           }}
         >
+          {/* skin ground texture — a single repeating pattern (data URI) sized in
+              cells, so it scales/glides WITH the layer like the grid below. One
+              paint for the whole map: no per-cell DOM. */}
+          {arenaSkin.ground && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                backgroundImage: arenaSkin.ground.image,
+                backgroundSize: `${(100 / mapCols) * arenaSkin.ground.cellsPerTile}% ${(100 / mapRows) * arenaSkin.ground.cellsPerTile}%`,
+              }}
+            />
+          )}
           {/* faint grid pattern (opacity only on this child, so terrain/effects below
               read at full strength) */}
           <div
             className="absolute inset-0 opacity-40 pointer-events-none"
             style={{
               backgroundImage:
-                'linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),' +
-                'linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px)',
+                `linear-gradient(to right, ${arenaSkin.gridLine} 1px, transparent 1px),` +
+                `linear-gradient(to bottom, ${arenaSkin.gridLine} 1px, transparent 1px)`,
               // One cell = 1/mapCols of the layer (NOT cqmin/arena-relative). This
               // makes the grid scale WITH the layer (and the barriers, also % of it)
               // as it eases through a zoom — a cqmin size resolves against the arena,
@@ -415,8 +429,15 @@ const CHIP_CELL_FRACTION = 0.9
 // `sizeScale` (from the appearance resolver, e.g. a large monster) grows the token
 // proportionally — the cqmin term AND the clamp floor/ceiling scale together so it
 // stays bigger at every zoom, not just in the mid-range.
+// The cqmin value is QUANTIZED (eighth-steps, ~2% at typical zooms): the party
+// auto-fit camera "breathes" cam.size by a whisper every round, and an exact value
+// would hand every on-screen token a fresh clamp() string per round — re-style/
+// re-layout/repaint of every body element ~5×/s and a broken body memo (the
+// dominant render cost measured on the ?perf scene, worse the richer the skin).
+// Quantized, the strings are stable until the zoom moves ~2% — imperceptible steps,
+// and idle tokens' memo'd bodies skip reconcile entirely.
 function chipDims(cam: Cam, sizeScale = 1): { width: string; height: string; fontSize: string } {
-  const cqmin = (CHIP_CELL_FRACTION * sizeScale * 100) / cam.size   // one chip in cqmin units
+  const cqmin = Math.round(((CHIP_CELL_FRACTION * sizeScale * 100) / cam.size) * 8) / 8   // one chip in cqmin units
   const size = `clamp(${14 * sizeScale}px, ${cqmin}cqmin, ${64 * sizeScale}px)`
   return { width: size, height: size, fontSize: `clamp(7px, ${cqmin * 0.4}cqmin, 26px)` }
 }
@@ -542,42 +563,25 @@ function MovingChevron({ c, cam, isPlayer, sizeScale = 1 }: { c: Combatant; cam:
 // `detail=false` is the level-of-detail path: when the camera is zoomed far out
 // (many tiny tokens, open-world), the floating name/HP/cast plate and the
 // facing/moving nubs are unreadable noise *and* the bulk of the per-token DOM —
-// drop them and render just the circle. Full detail returns as you zoom/follow in.
-// Per-tone base classes for the circle skin. An element `tint` (when present)
-// overrides the border color + adds a faint glow on top of these — except while
-// casting, whose amber ring takes priority as the cast signal.
-const TONE_CLASS: Record<Appearance['tone'], string> = {
-  casting: 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100',
-  player:  'bg-blue-900 border-blue-300/80 text-blue-50',
-  neutral: 'bg-amber-900/80 border-amber-300/70 text-amber-50',
-  enemy:   'bg-red-900  border-red-300/80  text-red-50',
-}
-
-// The circle skin — today's token body, and the ONE place the "draw an entity"
-// visual lives, fed entirely by the appearance resolver. A sprite skin (Stage 2)
-// is a sibling with the same props + box contract (chipDims), swapped in BattleChip.
-function CircleBody({ c, cam, appearance, selected }: { c: Combatant; cam: Cam; appearance: Appearance; selected: boolean }) {
-  const tint = appearance.tone !== 'casting' ? appearance.tint : undefined
-  return (
-    <div
-      title={c.channel ? `${c.name} — casting ${skillName(c.channel.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
-      style={{ ...chipDims(cam, appearance.scale), ...(tint ? { borderColor: tint, boxShadow: `0 0 6px ${tint}` } : null) }}
-      className={[
-        'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
-        TONE_CLASS[appearance.tone],
-        selected ? 'ring-2 ring-emerald-300' : '',
-        c.alive ? '' : 'opacity-25 grayscale',
-      ].join(' ')}
-    >
-      {c.alive ? appearance.glyph : '✕'}
-    </div>
-  )
-}
-
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, castLabels, spawnPop = true }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; castLabels?: CastLabelEntry[]; spawnPop?: boolean }) {
+// drop them and render just the body. Full detail returns as you zoom/follow in.
+// The token body itself lives in `src/render/skins.tsx` (CircleBody / PaperBody),
+// picked by the store's `battleSkin` and fed the appearance resolver's output —
+// restyling an entity is a skins-file change, never a BattleView one.
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, skin, castLabels, spawnPop = true }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; skin: BattleSkin; castLabels?: CastLabelEntry[]; spawnPop?: boolean }) {
   const isPlayer = c.team === 'player'
   const isNeutral = c.team === 'neutral'   // town NPC: stationary, no facing/HP bar
   const casting = c.alive && !!c.channel
+  const Body = TOKEN_SKINS[skin]
+  // Facing → screen degrees (0° = +x; py flips y). Passed as a NUMBER, never the
+  // live c.facing object — the memo'd body compares props, and the engine mutates
+  // combatants in place, so an object prop would freeze the blade. Quantized to
+  // 15° (24 directions): heading wobbles a hair every round while a unit marches,
+  // and an exact angle would defeat the body memo for every mover every round
+  // (measured as the dominant paper-skin render cost on the ?perf scene).
+  const f = c.facing ?? { x: 0, y: isPlayer ? 1 : -1 }
+  const facingDeg = isNeutral || Math.hypot(f.x, f.y) < 1e-6
+    ? null
+    : Math.round(((Math.atan2(-f.y, f.x) * 180) / Math.PI) / 15) * 15
   // Outer layer owns ONLY the world position, glided via a compositor transform
   // (no layout per frame). The inner layer keeps the spawn pop + centering (which
   // own `transform` themselves — keeping them off the positioned element avoids a
@@ -592,6 +596,9 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
         onClick={onSelect}
         data-chip
         data-cid={c.id}
+        // title on the WRAPPER (re-rendered every round anyway), not the memo'd
+        // body — it embeds live hp, which would break the body memo per hit.
+        title={c.channel ? `${c.name} — casting ${skillName(c.channel.skillId)}` : `${c.name} — ${Math.ceil(c.hp)}/${c.maxHp}`}
         className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer${spawnPop ? ' animate-chip-spawn' : ''}`}
       >
         {/* lingering "✦ <skill>" cast labels stack ABOVE the circle, newest on top
@@ -609,9 +616,17 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
           </div>
         )}
         {detail && <FloatingLabel c={c} isPlayer={isPlayer} casting={casting} scale={scale} />}
-        {detail && c.alive && !isNeutral && <FacingNub c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
+        {detail && c.alive && !isNeutral && !SKIN_CARRIES_FACING[skin] && <FacingNub c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
         {detail && c.alive && c.moving && !casting && <MovingChevron c={c} cam={cam} isPlayer={isPlayer} sizeScale={appearance.scale} />}
-        <CircleBody c={c} cam={cam} appearance={appearance} selected={selected} />
+        <Body
+          glyph={appearance.glyph}
+          tone={appearance.tone}
+          tint={appearance.tint}
+          alive={c.alive}
+          selected={selected}
+          facingDeg={facingDeg}
+          dims={chipDims(cam, appearance.scale)}
+        />
       </div>
     </div>
   )
@@ -1194,6 +1209,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
 
 function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
+  const skin  = useGameStore((s) => s.battleSkin)
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
   const focusUnitId   = useGameStore((s) => s.battleFollowId)
@@ -1710,6 +1726,7 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
           mapRows={rows}
           perimeter={isOpen}
           framed={!insetTopControls}
+          skin={skin}
           panEnabled
           onPanStart={isOpen ? beginPan : undefined}
           onPanMove={isOpen ? panMove : undefined}
@@ -1824,6 +1841,7 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
               appearance={getAppearance(c, classFor)}
               scale={battle.timeScale}
               detail={tokenDetail}
+              skin={skin}
               castLabels={castLabelsBySource.get(c.id)}
               spawnPop={!mountIdsRef.current!.has(c.id)}
             />
@@ -1850,7 +1868,8 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
 
 // ── Static preview (no live battle: between waves / not yet started) ─────────────
 
-function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos: Vec2; label: string; name: string; title: string; isPlayer: boolean }) {
+function PreviewChip({ cam, pos, label, name, title, isPlayer, skin }: { cam: Cam; pos: Vec2; label: string; name: string; title: string; isPlayer: boolean; skin: BattleSkin }) {
+  const Body = TOKEN_SKINS[skin]
   return (
     <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className="absolute -translate-x-1/2 -translate-y-1/2">
       <div className={`absolute top-full mt-1 left-1/2 -translate-x-1/2 ${CHIP_FLOAT_W} flex flex-col items-center gap-0.5 pointer-events-none`}>
@@ -1861,14 +1880,15 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos
           <div className="h-full bg-emerald-500/90" />
         </div>
       </div>
-      <div
-        style={chipDims(cam)}
-        className={[
-          'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none',
-          isPlayer ? 'bg-blue-900 border-blue-300/80 text-blue-50' : 'bg-red-900 border-red-300/80 text-red-50',
-        ].join(' ')}>
-        {label}
-      </div>
+      {/* form-up facing: teams start facing each other across the center line */}
+      <Body
+        glyph={label}
+        tone={isPlayer ? 'player' : 'enemy'}
+        alive
+        selected={false}
+        facingDeg={isPlayer ? -90 : 90}
+        dims={chipDims(cam)}
+      />
     </div>
   )
 }
@@ -1876,6 +1896,7 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer }: { cam: Cam; pos
 export function Preview({ location }: { location: Location | null }) {
   const units            = useGameStore((s) => s.units)
   const equipment        = useGameStore((s) => s.equipment)
+  const skin             = useGameStore((s) => s.battleSkin)
 
   const party = units.filter((u) => u.locationId === location?.id)
   const foes  = location ? waveComposition(location, party.length) : []
@@ -1901,9 +1922,9 @@ export function Preview({ location }: { location: Location | null }) {
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 flex justify-center items-start">
-        <Arena cam={cam} barriers={locationBarriers(location)}>
-          {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} />)}
-          {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} />)}
+        <Arena cam={cam} barriers={locationBarriers(location)} skin={skin}>
+          {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} skin={skin} />)}
+          {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} skin={skin} />)}
           {(party.length === 0 && foes.length === 0) && (
             <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">
               {location ? 'No combatants to preview — deploy a party here.' : 'Pick a location to preview its encounter.'}

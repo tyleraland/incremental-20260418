@@ -73,6 +73,38 @@ function ProgressionModeControl() {
   )
 }
 
+// Battlefield skin — render-only A/B of the token/ground look (the seam for the
+// graphics restyle; see src/render/skins.tsx). Also switchable via ?skin=paper.
+function BattleSkinControl() {
+  const skin = useGameStore((s) => s.battleSkin)
+  const setSkin = useGameStore((s) => s.setBattleSkin)
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-game-text-dim">Battle skin</span>
+        <span className="text-xs font-mono text-game-text capitalize">{skin}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {(['circle', 'paper'] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setSkin(m)}
+            className={['text-xs px-3 py-1.5 rounded-lg border capitalize transition-colors',
+              m === skin
+                ? 'border-game-primary bg-game-primary/15 text-game-primary cursor-default'
+                : 'border-game-border text-game-text-dim hover:border-game-primary/50'].join(' ')}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-game-muted leading-snug">
+        Render-only: swaps the battlefield token bodies + ground. Same battle, different look.
+      </p>
+    </div>
+  )
+}
+
 // §logistics — deploy mode toggle. 'instant' keeps the teleport-on-deploy; in
 // 'open-world' a hero deployed to a directly portal-linked neighbour of their
 // current map WALKS there (marching to the portal, then hopping across) instead.
@@ -377,6 +409,9 @@ export function Time() {
         </div>
         <div className="pt-2 border-t border-game-border/40">
           <DeployModeControl />
+        </div>
+        <div className="pt-2 border-t border-game-border/40">
+          <BattleSkinControl />
         </div>
         <SaveTransfer />
         <ResetSaveButton />

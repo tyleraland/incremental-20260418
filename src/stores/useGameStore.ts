@@ -26,6 +26,7 @@ import { SCENARIO_REGISTRY } from '@/data/scenarios'
 import { SAVE_KEY, saveKeyFor } from '@/lib/save'
 import { routeStepsFrom } from '@/lib/travelGraph'
 import { bootstrapProgressionMode, curatedStartUnits, CURATED_START, isSkillUnlocked, type ProgressionMode } from '@/lib/unlocks'
+import { bootBattleSkin, type BattleSkin } from '@/render/skins'
 
 // ── Re-exports (keeps existing import paths working) ──────────────────────────
 
@@ -160,6 +161,9 @@ export interface GameState {
   viewedUnitLevels: Record<string, number>
   // The unit whose lifetime-stats Report sheet is open (null = closed).
   reportUnitId: string | null
+  // Battlefield look (render-only; token bodies + arena ground live in
+  // src/render/skins.tsx). Toggle in Time → Debug or ?skin=paper.
+  battleSkin: BattleSkin
 
   paused: boolean
 
@@ -248,6 +252,7 @@ export interface GameState {
   // resetSave afterwards to re-seed a fresh game for the new mode.
   setProgressionMode: (mode: ProgressionMode) => void
   setDeployMode: (mode: 'instant' | 'open-world') => void
+  setBattleSkin: (skin: BattleSkin) => void
   // Tap-/drag-to-fill an action slot. When entry.kind === 'item', the item is
   // also added to the unit's sideboard (evicting the oldest sideboard entry if
   // both sideboards are full). Setting to null clears the slot AND removes the
@@ -1445,6 +1450,7 @@ export const useGameStore = create<GameState>((set) => ({
   mapMode: 'world',
   mapPageId: 'world',
   deployMode: 'instant',
+  battleSkin: bootBattleSkin(),
   mapFocusNonce: 0,
   battleFocus: null,
   battleFollowId: null,
@@ -2336,6 +2342,10 @@ export const useGameStore = create<GameState>((set) => ({
 
   setProgressionMode: (mode) => set((s) => (s.progressionMode === mode ? s : { progressionMode: mode })),
   setDeployMode: (mode) => set((s) => (s.deployMode === mode ? s : { deployMode: mode })),
+  setBattleSkin: (skin) => {
+    try { localStorage.setItem('battle-skin', skin) } catch { /* private mode */ }
+    set((s) => (s.battleSkin === skin ? s : { battleSkin: skin }))
+  },
 
   resetSave: () => {
     // Wipe the persisted save too — not just the UI keys. Without this the reset

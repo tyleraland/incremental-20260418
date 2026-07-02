@@ -1052,9 +1052,60 @@ the per-round **React render**, or raw **frame/paint** cost?
   re-add the `?probe` panel; don't merge the throwaway branch wholesale (it predates
   the #55 pacing changes).
 
-## Graphics / visual evolution (sprites + detailed backgrounds)
+## Graphics / visual evolution (art direction + restyle roadmap)
 
-Raised 2026-06. Goal: replace the circle tokens with **animated sprites** and the
+**Direction chosen 2026-07: Unexplored-style flat-vector "paper cutout", NOT a
+pixel tileset.** (A free pixel tileset was tried before and read as janky/
+unprofessional.) The reference look: flat two-tone shapes with a weapon glyph and
+facing baked into the token, muted tiled floors, soft offset shadows, vignette
+lighting — something between 3D and a tileset. Crucially this look is
+**procedural** (drawn from code as SVG/CSS), so it needs no assets to license,
+stays crisp at any zoom, and every "sprite" question below about atlases becomes
+optional rather than blocking.
+
+**Foundation shipped 2026-07** (see CLAUDE.md → Combat view → *Skinning seam*):
+`src/render/appearance.ts` (entity → visual resolver) + `src/render/skins.tsx`
+(token bodies behind the `TokenBodyProps` contract + per-skin arena ground),
+runtime-switched by store `battleSkin` (Time→Debug / `?skin=paper`). The first
+art-directed skin, **`paper`**, ships there: two-tone cutout body, facing blade,
+offset-shape shadow (no CSS filters), one-data-URI parquet ground. Restyle
+iteration = editing shapes/palettes in that one file, A/B-able live against
+`circle` on the same battle.
+
+*Perf lesson from landing it* (measured on the `?perf` scene, mobile-chrome 4×
+throttle, via the new `skin-compare.spec.ts` A/B + `skin-trace.spec.ts` CDP
+attribution): a richer body's cost is NOT the SVG raster or the ground pattern —
+it's **React reconcile + style/layout of the token subtrees**, multiplied by
+prop churn that defeats the body memo. Naive paper ran 27 vs 38 fps; three fixes
+brought it to parity (~34 vs 35): `memo`'d bodies with primitives-only props,
+**quantized** `chipDims` (camera auto-fit "breathes" `cam.size` every round —
+eighth-cqmin steps keep the clamp strings stable) and **quantized facing** (15°
+steps), and the hp-bearing `title` moved off the body onto the chip wrapper.
+Any future skin/effect work should keep per-token element count lean and props
+quantized — that's the contract documented in `skins.tsx`.
+
+Next slices, roughly in order:
+
+- **Paper-skin polish.** Per-class body/weapon variants (bow / staff / cross /
+  dagger swap on the blade layer, reading `Appearance.glyph`'s class), monster
+  *family* silhouettes (blob / beast / flyer — 3–4 shared paths keyed off
+  `MonsterDef`, not per-monster art), and a KO'd "crumpled" state. All stay in
+  `skins.tsx`; add a `bodyShape`/`weapon` field to `Appearance` when the resolver
+  needs to pick them (that's the designed extension point — never switch on ids
+  in the skin).
+- **Ground biomes.** Per-location ground patterns keyed off location traits
+  (grass field / stone dungeon / city plaza), still one data-URI pattern each;
+  thread the location's trait into `ARENA_SKINS`' ground pick. Barrier/cliff and
+  team-tint restyle to match the paper palette. A single static **vignette
+  overlay** (one compositor layer, like the perimeter ring) for the lighting read.
+- **Effects pass.** Restyle hit flashes / attack arcs / zones to the paper
+  language (flat shapes, no glows-via-filter); a `VisualState`-driven attack
+  "lunge" nudge (a one-shot transform, compositor-only) for melee reads.
+- **If licensed/bespoke art ever lands**: `Appearance.spriteId` is the reserved
+  hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an
+  atlas, falling back to `paper`/`circle` when absent.
+
+Raised 2026-06 (original analysis, still governing). Goal: replace the circle tokens with **animated sprites** and the
 flat color-tint arena with a **detailed background**. The render architecture is
 DOM + CSS-`transform` (see the two Performance blocks above), and that decides what's
 cheap vs. what's a new bottleneck. **The one rule that governs all of this: keep

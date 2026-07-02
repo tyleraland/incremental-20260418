@@ -1,0 +1,204 @@
+import { memo, type CSSProperties } from 'react'
+import type { Tone } from '@/render/appearance'
+
+// ── Battlefield skins ────────────────────────────────────────────────────────
+//
+// The render-only seam for restyling the battlefield: a skin = one token-body
+// component (how a combatant is drawn inside its chip box) + one arena entry
+// (ground/grid treatment). Everything else — camera, compositor glide, LOD,
+// floats, tactics — is skin-agnostic and untouched by a swap.
+//
+// Contract (keep these or the restyle stops being a one-file change):
+//   • A body receives ONLY `TokenBodyProps` (fed by the appearance resolver +
+//     chipDims). It never reads the store or engine types, so Preview chips and
+//     live chips share it, and a new look can't grow gameplay tendrils.
+//   • The body fills the `dims` box and marks its root `data-skin`. The hover
+//     `title` (name — hp) lives on the CHIP wrapper, not the body: it changes on
+//     every hp tick, and on the body it would defeat the memo below for any
+//     token under fire.
+//   • Bodies must stay compositor-cheap: flat fills only — no CSS `filter` /
+//     SVG filters / per-token gradients (each forces extra compositing work and
+//     the whole point is 50+ tokens gliding at 60fps). Shadows are offset flat
+//     shapes, "3D" is a two-tone fill, exactly like Unexplored's paper cutouts.
+//   • Keep the element count per body LEAN. React reconcile + style/layout of
+//     the token subtrees is the measured render cost at 50+ entities (engine is
+//     ~1%): every extra div/svg child is multiplied by the mob.
+//   • Skins are picked at runtime (store `battleSkin`; Time→Debug or ?skin=…),
+//     so looks can be A/B'd live on the same battle.
+//
+// 'circle' is the classic debug token; 'paper' is the first art-directed skin:
+// procedural flat-vector "paper cutout" tokens (no image assets — crisp at any
+// zoom, nothing to license, restyle = edit the shapes/palette below).
+
+export type BattleSkin = 'circle' | 'paper'
+export const BATTLE_SKIN_IDS: BattleSkin[] = ['circle', 'paper']
+
+// Resolve the boot skin: URL ?skin=… (also persists, like ?mode=) > localStorage
+// > circle. Ephemeral-UI tier — never part of the save string.
+export function bootBattleSkin(): BattleSkin {
+  const valid = (v: string | null): v is BattleSkin => v === 'circle' || v === 'paper'
+  try {
+    const q = new URLSearchParams(window.location.search).get('skin')
+    if (valid(q)) { localStorage.setItem('battle-skin', q); return q }
+    const saved = localStorage.getItem('battle-skin')
+    if (valid(saved)) return saved
+  } catch { /* SSR/tests without window */ }
+  return 'circle'
+}
+
+// Bodies are `memo`'d, and combatants MUTATE IN PLACE each round — so a body may
+// receive ONLY primitives (or objects compared field-by-field in BODY_PROPS_EQUAL
+// that the caller builds fresh). Passing a live engine object (e.g. `c.facing`)
+// would compare equal-by-reference forever and freeze the token's visuals.
+export interface TokenBodyProps {
+  glyph: string        // class icon / NPC icon / initials (from the appearance resolver)
+  tone: Tone           // team color family; 'casting' carries the amber cast signal
+  tint?: string        // element accent (rim/outline); ignored while casting
+  alive: boolean
+  selected: boolean
+  // Facing as a SCREEN angle in degrees (0° = pointing right; caller applies the
+  // world→screen y-flip and quantizes — see BattleChip). null = no facing shown
+  // (neutrals, KO).
+  facingDeg: number | null
+  dims: { width: string; height: string; fontSize: string }   // chipDims box
+}
+
+// BattleChip re-renders every round (combatants mutate in place, so it can't be
+// memo'd itself) — but a token that didn't visibly change shouldn't re-reconcile
+// its body subtree. With the paper skin ~7 elements per token, this memo is the
+// difference between reconciling ~7×N elements per round and only the changed
+// tokens'. It only bites because the caller keeps the props stable: quantized
+// facing/dims, no live objects, no hp-bearing strings (see chipDims/facingDeg).
+const BODY_PROPS_EQUAL = (a: TokenBodyProps, b: TokenBodyProps) =>
+  a.glyph === b.glyph && a.tone === b.tone && a.tint === b.tint &&
+  a.alive === b.alive && a.selected === b.selected && a.facingDeg === b.facingDeg &&
+  a.dims.width === b.dims.width && a.dims.fontSize === b.dims.fontSize
+
+// True when the skin's body itself shows facing (so BattleChip drops the
+// separate FacingNub — the paper token's blade IS the facing indicator).
+export const SKIN_CARRIES_FACING: Record<BattleSkin, boolean> = { circle: false, paper: true }
+
+// ── Circle skin (the classic token) ─────────────────────────────────────────
+
+// Per-tone base classes for the circle skin. An element `tint` (when present)
+// overrides the border color + adds a faint glow on top of these — except while
+// casting, whose amber ring takes priority as the cast signal.
+const TONE_CLASS: Record<Tone, string> = {
+  casting: 'bg-blue-950 border-amber-300 ring-2 ring-amber-400/60 text-amber-100',
+  player:  'bg-blue-900 border-blue-300/80 text-blue-50',
+  neutral: 'bg-amber-900/80 border-amber-300/70 text-amber-50',
+  enemy:   'bg-red-900  border-red-300/80  text-red-50',
+}
+
+const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive, selected, dims }: TokenBodyProps) {
+  const tint = tone !== 'casting' ? rawTint : undefined
+  return (
+    <div
+      data-skin="circle"
+      style={{ ...dims, ...(tint ? { borderColor: tint, boxShadow: `0 0 6px ${tint}` } : null) }}
+      className={[
+        'rounded-full border-2 shadow-md flex items-center justify-center font-bold leading-none select-none transition-opacity',
+        TONE_CLASS[tone],
+        selected ? 'ring-2 ring-emerald-300' : '',
+        alive ? '' : 'opacity-25 grayscale',
+      ].join(' ')}
+    >
+      {alive ? glyph : '✕'}
+    </div>
+  )
+}, BODY_PROPS_EQUAL)
+
+// ── Paper skin (flat-vector cutout tokens) ──────────────────────────────────
+
+// Two-tone flat palette per tone: `top` is the cutout's lit face, `base` shows
+// as a darker rim along the bottom-right (the same path drawn twice, the top
+// copy nudged up-left) — the pseudo-3D read without a single gradient/filter.
+const PAPER_TONE: Record<Tone, { top: string; base: string; outline: string; text: string }> = {
+  player:  { top: '#5577dd', base: '#2e4187', outline: '#141d42', text: '#eef3ff' },
+  casting: { top: '#5577dd', base: '#2e4187', outline: '#fbbf24', text: '#fef3c7' },
+  enemy:   { top: '#cc5244', base: '#79281f', outline: '#3c110b', text: '#ffedea' },
+  neutral: { top: '#c99a4c', base: '#77571f', outline: '#3c2b0d', text: '#fdf4dd' },
+}
+
+// A slightly irregular rounded blob (100×100 box) — regular enough to read as a
+// unit token, wonky enough to feel hand-cut rather than geometric.
+const PAPER_BODY_PATH =
+  'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z'
+
+// One SVG per token: shadow ellipse, facing blade (a rotated group under the
+// body, so only the tip shows — a held weapon), then the two-tone body. Merged
+// into a single <svg> to keep the per-token element count down (see contract).
+const PaperBody = memo(function PaperBody({ glyph, tone, tint, alive, selected, facingDeg, dims }: TokenBodyProps) {
+  const p = PAPER_TONE[tone]
+  const outline = tone !== 'casting' && tint ? tint : p.outline
+  // Facing blade rotation snaps per round like the circle skin's FacingNub — no
+  // rotate transition (359°→1° would spin the long way around).
+  const angle = alive ? facingDeg : null
+  return (
+    <div
+      data-skin="paper"
+      style={{ width: dims.width, height: dims.height }}
+      className={`relative flex items-center justify-center select-none transition-opacity ${alive ? '' : 'opacity-25 grayscale'}`}
+    >
+      {selected && <div className="absolute -inset-1 rounded-full ring-2 ring-emerald-300 pointer-events-none" />}
+      {tone === 'casting' && <div className="absolute -inset-1 rounded-full ring-2 ring-amber-400/70 animate-pulse pointer-events-none" />}
+      <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }} aria-hidden>
+        {/* ground-contact shadow: an offset flat ellipse, NOT filter:drop-shadow */}
+        <ellipse cx="54" cy="55" rx="46" ry="45" fill="rgb(0 0 0 / 0.35)" />
+        {angle != null && (
+          <g transform={`rotate(${angle} 50 50)`}>
+            <polygon points="55,45 85,42 112,50 85,58 55,55" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />
+          </g>
+        )}
+        <path d={PAPER_BODY_PATH} fill={p.base} stroke={outline} strokeWidth="5" />
+        <path d={PAPER_BODY_PATH} fill={p.top} transform="translate(-3 -4) translate(50 50) scale(0.94) translate(-50 -50)" />
+      </svg>
+      <span className="relative font-bold leading-none" style={{ fontSize: dims.fontSize, color: p.text }}>
+        {alive ? glyph : '✕'}
+      </span>
+    </div>
+  )
+}, BODY_PROPS_EQUAL)
+
+export const TOKEN_SKINS: Record<BattleSkin, typeof CircleBody> = {
+  circle: CircleBody,
+  paper: PaperBody,
+}
+
+// ── Arena (ground) skins ─────────────────────────────────────────────────────
+
+const svgUrl = (svg: string) => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+
+// Procedural parquet ground: ONE repeating 2×2-cell SVG pattern (a data URI on
+// the ground layer, so a 200×200 map costs zero per-cell DOM). Four quadrants in
+// slightly different warm-dark shades + hairline seams + alternating plank
+// strokes — the "between 3D and tileset" floor read, no image assets.
+const PAPER_GROUND_TILE = svgUrl(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'>" +
+  "<rect width='64' height='64' fill='#15130f'/>" +
+  "<rect x='1' y='1' width='30' height='30' fill='#26221a'/>" +
+  "<rect x='33' y='1' width='30' height='30' fill='#211e16'/>" +
+  "<rect x='1' y='33' width='30' height='30' fill='#231f17'/>" +
+  "<rect x='33' y='33' width='30' height='30' fill='#282419'/>" +
+  "<path d='M1 11h30M1 21h30M33 43h30M33 53h30' stroke='#1c1913' stroke-width='1'/>" +
+  "<path d='M43 1v30M53 1v30M11 33v30M21 33v30' stroke='#1c1913' stroke-width='1'/>" +
+  '</svg>',
+)
+
+export interface ArenaSkin {
+  surface?: CSSProperties                             // arena wrapper background
+  ground?: { image: string; cellsPerTile: number }    // repeating pattern on the ground layer
+  gridLine: string                                    // overlay grid hairline color
+}
+
+export const ARENA_SKINS: Record<BattleSkin, ArenaSkin> = {
+  // circle: today's look untouched — flat game-surface + faint white grid.
+  circle: { gridLine: 'rgb(255 255 255 / 0.06)' },
+  // paper: warm-dark parquet; the pattern's own seams carry the tile read, so
+  // the overlay grid drops to a whisper (still there for tactical alignment).
+  paper: {
+    surface: { backgroundColor: '#191713' },
+    ground: { image: PAPER_GROUND_TILE, cellsPerTile: 2 },
+    gridLine: 'rgb(255 255 255 / 0.03)',
+  },
+}
