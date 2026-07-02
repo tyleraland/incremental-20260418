@@ -1095,7 +1095,13 @@ resurfacing as a mystery fps drop.
   elapsed-time batching) — verified byte-identical combatant digests at round
   100 across independent page loads. One `skin-ab` run is now a trustworthy
   verdict; the residual window-to-window fps spread is OS scheduling noise, not
-  scene content.
+  scene content. Two reading notes: (1) absolute fps is NOT comparable to
+  pre-determinism numbers — the old wall-clock catch-up batched late rounds
+  into fewer renders (hiding render cost under load), while the fixed-cadence
+  stepper renders every round, the honest worst-case; read A/B gaps, not
+  absolutes. (2) On a shared-CPU container (CI/cloud) the host itself adds
+  ±20-30% window spread even with frozen content — layer-bisects there
+  (hide vignette/ground/token svgs) showed paper≈circle within noise.
 
 Next slices, roughly in order:
 
