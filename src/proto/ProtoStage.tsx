@@ -302,7 +302,13 @@ export function ProtoStage() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       if (e.ctrlKey) {
-        // pinch-to-zoom
+        // pinch-to-zoom — but only while the MAP owns the stage. Once the battle
+        // has taken over, the pinch belongs to the battle CAMERA (BattleView's
+        // own wheel/pinch handling, which runs first as the deeper target);
+        // driving the stage axis too made every battle zoom-out gesture
+        // crossfade back to the locale. Exiting battle is explicit: the
+        // breadcrumb / zoom rail / ⤢ Overworld.
+        if (!mapActiveRef.current) return
         if (tweenRef.current) { cancelAnimationFrame(tweenRef.current); tweenRef.current = null }
         setZoom((z) => clamp(z - e.deltaY * 0.01, 0, maxZoom))
       } else if (mapActiveRef.current) {
@@ -327,13 +333,17 @@ export function ProtoStage() {
   }
   function onDown(e: React.PointerEvent) {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    if (pointers.current.size === 2) { pinchRef.current = dist2(); dragRef.current = null; return }
+    // Touch pinch drives the stage axis only while the MAP owns the stage —
+    // in battle the same gesture is the battle camera's (BattleView pinch),
+    // and driving both meant zooming the camera also crossfaded to the locale.
+    if (pointers.current.size === 2) { pinchRef.current = mapActive ? dist2() : null; dragRef.current = null; return }
     if (mapActive) dragRef.current = { sx: e.clientX, sy: e.clientY, base: drag, moved: false }
   }
   function onMove(e: React.PointerEvent) {
     if (!pointers.current.has(e.pointerId)) return
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (pointers.current.size >= 2) {
+      if (!mapActiveRef.current) { pinchRef.current = null; return }
       const d = dist2()
       if (pinchRef.current != null) setZoom((z) => clamp(z + (d - pinchRef.current!) * 0.006, 0, maxZoom))
       pinchRef.current = d

@@ -62,6 +62,14 @@ const OPEN_CAM_MAX_SIZE = 60  // most zoomed-out (still less than the whole map)
 const LOD_CAM_SIZE      = 18   // cells shown above which tokens are too small to label
 const LOD_TOKEN_COUNT   = 16   // on-screen tokens above which labels are dropped
 
+// Reference zoom the ground layer is LAID OUT at (cells across the arena at
+// scale 1). Camera zoom is a compositor `scale(GROUND_BASE_CELLS / cam.size)`
+// on top — never an animated width/height (layout), which desynced from the
+// eased transform under jank and made the ground pattern appear to scroll.
+// Matches the default open-world camera so borders/hairlines inside the layer
+// (drawn in layer-local px) render at their authored size at the usual zoom.
+const GROUND_BASE_CELLS = 15
+
 interface Cam { x: number; y: number; size: number }
 
 // Encounters frame the entire arena and never move. We used to sit slightly
@@ -186,7 +194,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', onPanStart, onPanMove, onPanEnd }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
   const ref = useRef<HTMLDivElement>(null)
@@ -236,6 +244,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
       dragRef.current = null
       pinchRef.current = { startDist: pointerGap(), startSize: zoom.size }
       suppressClickRef.current = true
+      onPinch?.(true)   // hold the glide at 0 so the zoom tracks the fingers
     } else if (panEnabled && pointersRef.current.size === 1) {
       // Single-finger pan is a pixel nudge layered on the camera. In an
       // auto-following open-world view it FIGHTS the camera (and even a pinch
@@ -284,7 +293,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   }
   const onPointerUp = (e: React.PointerEvent) => {
     pointersRef.current.delete(e.pointerId)
-    if (pointersRef.current.size < 2) pinchRef.current = null
+    if (pointersRef.current.size < 2 && pinchRef.current) { pinchRef.current = null; onPinch?.(false) }
     const d = dragRef.current
     if (d?.moved) {
       suppressClickRef.current = true
@@ -296,6 +305,25 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
     }
     dragRef.current = null
   }
+
+  // Desktop pinch (browsers report trackpad pinch as ctrl+wheel) zooms the
+  // battle CAMERA — the same axis the touch pinch drives. Native non-passive
+  // listener so preventDefault stops the browser's page zoom. Plain scroll is
+  // left alone (a host like the proto stage may pan with it).
+  const zoomCtlRef = useRef(zoom)
+  zoomCtlRef.current = zoom
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      const z = zoomCtlRef.current
+      if (!z || !e.ctrlKey) return
+      e.preventDefault()
+      z.set(Math.max(z.min, Math.min(z.max, z.size * (1 + e.deltaY * 0.01))))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   // Swallow the synthetic click that fires right after a drag, so chip taps
   // don't toggle selection when the user was just panning.
@@ -340,14 +368,21 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
             scale while a lone token/zone eased translate-only). The layer spans the
             whole map so its fixed grid pattern always covers the viewport.
             backgroundSize is one world cell (cqmin = % of the square arena). */}
+        {/* The layer's LAYOUT size is fixed at a reference zoom (GROUND_BASE_CELLS
+            cells visible) and the camera zoom is applied as a `scale()` in the
+            same transform as the translate — ONE compositor matrix. Animating
+            width/height instead (layout properties) desynced from the eased
+            transform under main-thread jank, so the ground pattern visibly
+            "scrolled" for a beat on every zoom while the camera moved. */}
         <div
           className="absolute"
           style={{
             left: 0, top: 0,
-            width: `${(mapCols / cam.size) * 100}%`,
-            height: `${(mapRows / cam.size) * 100}%`,
-            transform: `translate(${fxPct(cam, 0)}cqw, ${fyPct(cam, mapRows)}cqh)`,
-            transition: `${XFORM_TRANSITION}, width ${SEG} linear, height ${SEG} linear`,
+            width: `${(mapCols / GROUND_BASE_CELLS) * 100}%`,
+            height: `${(mapRows / GROUND_BASE_CELLS) * 100}%`,
+            transformOrigin: '0 0',
+            transform: `translate(${fxPct(cam, 0)}cqw, ${fyPct(cam, mapRows)}cqh) scale(${GROUND_BASE_CELLS / cam.size})`,
+            transition: XFORM_TRANSITION,
           }}
         >
           {/* skin ground texture — a single repeating pattern (data URI, picked
@@ -1203,6 +1238,12 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
     panStartRef.current = null
     arenaWrapRef.current?.style.setProperty('--seg-ms', `${lastSegRef.current}ms`)
   }
+  // Pinch-zoom likewise tracks the fingers instantly: hold the glide at 0 for
+  // the duration (same panningRef seam the drag-pan uses), restore on release.
+  const onPinch = (active: boolean) => {
+    panningRef.current = active
+    arenaWrapRef.current?.style.setProperty('--seg-ms', active ? '0ms' : `${lastSegRef.current}ms`)
+  }
 
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
@@ -1344,6 +1385,7 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
           onPanStart={isOpen ? beginPan : undefined}
           onPanMove={isOpen ? panMove : undefined}
           onPanEnd={isOpen ? endPan : undefined}
+          onPinch={isOpen ? onPinch : undefined}
           zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
           overlay={isOpen ? (
             <>
