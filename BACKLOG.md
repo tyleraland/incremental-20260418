@@ -842,7 +842,16 @@ old `performance.md` plan are done** (that file was folded in here and deleted):
   reads `var(--seg-ms)`. Re-derives the deleted EMA win declaratively — no rAF, zero
   extra React renders, just CSS inheritance. Verified live: ~620ms under CPU-throttled
   mobile (real cadence ~365ms) vs the old 380ms that was *shorter* than the jittery
-  interval. (`BattleView.tsx`.)
+  interval. (`BattleView.tsx`.) **2026-07 fix: the ceiling is now cadence-aware.**
+  The fixed 900ms ceil predated the Phase-1.2 slow tiers: a cap-200+ field
+  legitimately rounds every ~1.2s (timeScale 1 × everyTicks 6), so its glide was
+  clamped 300ms short of the gap and every token parked between rounds — the
+  "step, step, step" walk on big maps (Kanto Beach) while small fields glided.
+  Ceil = max(900, expected gap × runway), where expected = `everyTicksFor(timeScale)`
+  × tick ms — so a real stall still caps, but a slow TIER isn't mistaken for one;
+  the EMA also seeds at the expected gap so round one glides. Verified live:
+  beach-1 seg ≈1909ms (gap 1200ms — always mid-glide when retargeted),
+  harpy-roost unchanged ≈341ms.
 - **✅ Phase 1.2 — heavy-field cadence: half the sim rate AND half the pace, for
   smoothness (the "lighter" Phase-4 alt).** The watched battle is the only one
   full-simmed, and on mobile a crowded field's per-tick `advanceRound` overruns the
