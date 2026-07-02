@@ -151,22 +151,26 @@ const PAPER_BODY_PATHS: Record<BodyShape, string> = {
 // business end shows). Heroes carry their class weapon; a weaponless humanoid
 // keeps the classic blade; creatures get a short claw wedge instead of marching
 // around with a sword. Static JSX — each costs 1–2 flat primitives.
+// The body silhouettes reach x≈92, so anything inside that is hidden — every
+// shape here must put its business end WELL past it (tips out to ~110–125 of
+// the 100 box; the svg has overflow:visible) or the weapon reads as a 2px
+// sliver at real token sizes.
 const WEAPON_SHAPES: Record<Weapon | 'claw', ReactNode> = {
-  sword: <polygon points="55,45 85,42 112,50 85,58 55,55" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
-  dagger: <polygon points="58,46.5 82,45 101,50 82,55 58,53.5" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
+  sword: <polygon points="58,45 94,41 126,50 94,59 58,55" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
+  dagger: <polygon points="62,46 92,44 115,50 92,56 62,54" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
   bow: (
     <>
-      <path d="M74 22 C102 34 102 66 74 78" fill="none" stroke="#a8703d" strokeWidth="6" />
-      <line x1="74" y1="22" x2="74" y2="78" stroke="#e8e3d2" strokeWidth="2.5" />
+      <path d="M86 18 C120 34 120 66 86 82" fill="none" stroke="#a8703d" strokeWidth="6" />
+      <line x1="86" y1="18" x2="86" y2="82" stroke="#e8e3d2" strokeWidth="2.5" />
     </>
   ),
   staff: (
     <>
-      <line x1="52" y1="50" x2="96" y2="50" stroke="#8a5a2b" strokeWidth="6" />
-      <circle cx="99" cy="50" r="8" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />
+      <line x1="55" y1="50" x2="110" y2="50" stroke="#8a5a2b" strokeWidth="7" />
+      <circle cx="114" cy="50" r="10" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />
     </>
   ),
-  claw: <polygon points="58,44.5 90,50 58,55.5" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />,
+  claw: <polygon points="60,44 106,50 60,56" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />,
 }
 
 // One SVG per token: shadow ellipse, facing weapon (a rotated group under the
