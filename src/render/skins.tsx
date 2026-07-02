@@ -1,5 +1,7 @@
 import { memo, type CSSProperties, type ReactNode } from 'react'
 import type { Tone, BodyShape, Weapon, Biome } from '@/render/appearance'
+import { PAPER_TONE } from '@/render/palette'
+import { PaperTerrain, type TerrainProps } from '@/render/terrain'
 
 // ── Battlefield skins ────────────────────────────────────────────────────────
 //
@@ -121,16 +123,8 @@ const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive,
 }, BODY_PROPS_EQUAL)
 
 // ── Paper skin (flat-vector cutout tokens) ──────────────────────────────────
-
-// Two-tone flat palette per tone: `top` is the cutout's lit face, `base` shows
-// as a darker rim along the bottom-right (the same path drawn twice, the top
-// copy nudged up-left) — the pseudo-3D read without a single gradient/filter.
-const PAPER_TONE: Record<Tone, { top: string; base: string; outline: string; text: string }> = {
-  player:  { top: '#5577dd', base: '#2e4187', outline: '#141d42', text: '#eef3ff' },
-  casting: { top: '#5577dd', base: '#2e4187', outline: '#fbbf24', text: '#fef3c7' },
-  enemy:   { top: '#cc5244', base: '#79281f', outline: '#3c110b', text: '#ffedea' },
-  neutral: { top: '#c99a4c', base: '#77571f', outline: '#3c2b0d', text: '#fdf4dd' },
-}
+// The two-tone tone palette (`PAPER_TONE`) and the terrain/prop roles live in
+// `render/palette.ts` — the paper language's single color vocabulary.
 
 // Silhouette paths (100×100 box), one per BodyShape — regular enough to read as
 // unit tokens, wonky enough to feel hand-cut rather than geometric. Each is one
@@ -272,11 +266,20 @@ export interface ArenaSkin {
   // location's traits (biomeForLocation). Missing biome/record → plain surface.
   grounds?: Partial<Record<Biome, { image: string; cellsPerTile: number }>>
   gridLine: string                                    // overlay grid hairline color
-  // terrain restyle: inline styles for the barrier divs. Absent → the classic
-  // stone/amber classes. Flat fills + zero-blur inset shadow only (the paper
-  // cutout trick) — no filters, same as the token contract.
+  // terrain restyle for skins WITHOUT an organic terrain layer: inline styles
+  // for the rect barrier divs. Absent → the classic stone/amber classes. Flat
+  // fills + zero-blur inset shadow only — no filters, same as the token contract.
   barrierWall?: CSSProperties
   barrierCliff?: CSSProperties
+  // the organic terrain layer (render/terrain.tsx): ONE static per-location SVG
+  // (wonky wall/cliff blobs, organic map rim, floor mottling, scatter props)
+  // built from biome+barriers+seed. When present, Arena renders it inside the
+  // ground layer and SKIPS the rect barrier divs and the classic perimeter ring.
+  terrain?: (p: TerrainProps) => ReactNode
+  // hero-anchored light: ONE radial-gradient div gliding with the party on the
+  // compositor (layered under the static vignette). `city` is the warmer
+  // ambient for peaceful town fields.
+  heroLight?: { field: string; city: string }
   // one STATIC full-viewport overlay (a single compositor layer, like the
   // perimeter ring) for the lighting read; a CSS background value.
   vignette?: string
@@ -333,14 +336,11 @@ export const ARENA_SKINS: Record<BattleSkin, ArenaSkin> = {
       plaza: { image: PAPER_TILE_PLAZA, cellsPerTile: 2 },
     },
     gridLine: 'rgb(255 255 255 / 0.03)',
-    barrierWall: {
-      backgroundColor: '#3f3a31',
-      border: '2px solid #14110c',
-      boxShadow: 'inset -3px -4px 0 rgb(0 0 0 / 0.35)',   // offset flat face, not a blur
-    },
-    barrierCliff: {
-      backgroundColor: 'rgb(74 54 35 / 0.4)',
-      border: '2px dashed rgb(163 124 72 / 0.55)',
+    // the organic terrain layer replaces the rect barrier restyle + perimeter ring
+    terrain: (p) => <PaperTerrain {...p} />,
+    heroLight: {
+      field: 'radial-gradient(closest-side, rgb(214 226 255 / 0.09), rgb(214 226 255 / 0.04) 55%, transparent 75%)',
+      city:  'radial-gradient(closest-side, rgb(255 214 150 / 0.13), rgb(255 200 130 / 0.05) 55%, transparent 75%)',
     },
     vignette: 'radial-gradient(120% 120% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.42) 100%)',
   },

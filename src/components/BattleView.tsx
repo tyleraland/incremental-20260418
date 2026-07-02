@@ -4,6 +4,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSkin } from '@/render/skins'
+import { hashString, type Rect } from '@/render/authoring'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, distance, sightlineClear,
@@ -194,9 +195,13 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
+  // Organic terrain layer (render/terrain.tsx): one static per-location SVG
+  // inside the ground layer. When a skin carries it, it REPLACES the rect
+  // barrier divs and the classic perimeter ring below.
+  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid })
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -419,18 +424,22 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
               barrier set): it gives the big field a visible rim so the player reads
               where the map ends. Spans the whole ground layer, so it sits exactly on
               the map edge at any zoom; only the visible side is on-screen at a time. */}
-          {perimeter && (
+          {perimeter && !terrainEl && (
             <div
               className="absolute inset-0 border-4 border-stone-500/70 pointer-events-none"
               style={{ boxShadow: 'inset 0 0 0 1px rgb(120 113 108 / 0.5), inset 0 0 24px rgb(0 0 0 / 0.55)' }}
             />
           )}
+          {/* organic terrain (skin hook): mottling, scatter props, wall/cliff
+              blobs and the map rim as ONE static SVG riding this layer's
+              compositor transform. Replaces the rect barriers + ring below. */}
+          {terrainEl}
           {/* terrain: walls solid (block movement + sight); cliffs translucent +
               dashed (block movement only — ranged attacks fire over them). Positioned
               as a fraction of the map → planted on the grid, no own transition.
               A skin may restyle them via barrierWall/barrierCliff (paper: flat
               two-tone cutout, zero-blur inset face); absent → classic classes. */}
-          {barriers.map((b, i) => {
+          {!terrainEl && barriers.map((b, i) => {
             const isCliff = b.kind === 'cliff'
             const restyle = isCliff ? arenaSkin.barrierCliff : arenaSkin.barrierWall
             return (
@@ -472,6 +481,8 @@ const CHIP_FLOAT_W = 'w-14'          // floating name/HP plate above the chip
 // 100/cam.size of the arena; clamped so it stays visible/tappable at extreme
 // zoom. Glyph font-size scales with it.
 const CHIP_CELL_FRACTION = 0.9
+// Diameter (cells) of the hero-anchored ground light (§terrain, paper skin).
+const HERO_LIGHT_CELLS = 16
 // `sizeScale` (from the appearance resolver, e.g. a large monster) grows the token
 // proportionally — the cqmin term AND the clamp floor/ceiling scale together so it
 // stays bigger at every zoom, not just in the mid-range.
@@ -853,10 +864,11 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
+function LiveBattle({ battle, portals, biome, terrainSeed, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
   const skin  = useGameStore((s) => s.battleSkin)
   const fx    = FX_SKINS[skin]
+  const heroLight = ARENA_SKINS[skin].heroLight
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
   const focusUnitId   = useGameStore((s) => s.battleFollowId)
@@ -1260,6 +1272,27 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
   // construction — they ride the grid's exact transform, so a freshly-cast circle
   // can't drift to its spot a beat after a camera change (the old per-element screen
   // transform desynced from the grid's translate+scale). y is flipped (+y is up).
+  // §terrain: portals are keep-clear boxes for the scatter decor (a crate sitting
+  // on a gateway reads as blocking it). World coords; memoized so the memo'd
+  // terrain layer sees a stable reference across per-round re-renders.
+  const terrainAvoid = useMemo<Rect[]>(
+    () => (portals ?? []).map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
+    [portals],
+  )
+
+  // §terrain: hero-anchored light — ONE radial-gradient div gliding with the
+  // party centroid on the compositor, layered under the static vignette (city
+  // fields glow warmer). Size quantized in COARSE 8-cqmin steps: chipDims'
+  // eighth-steps are ~2% of a token but ~0.1% of this ~107cqmin element, so the
+  // auto-fit camera's breathing would re-quantize nearly every round — and each
+  // step is a width/height restyle + repaint of a viewport-sized gradient
+  // (measured ~5 fps on the ?perf scene). 8-cqmin steps (~7%) vanish in the
+  // gradient's softness and hold the string stable for whole zoom regimes.
+  const lightCq = Math.round(((HERO_LIGHT_CELLS / cam.size) * 100) / 8) * 8
+  const lightAnchor: Vec2 | null = heroLight && partyPts.length
+    ? { x: partyPts.reduce((a, p) => a + p.x, 0) / partyPts.length, y: partyPts.reduce((a, p) => a + p.y, 0) / partyPts.length }
+    : null
+
   const gx = (x: number) => `${(x / cols) * 100}%`
   const gy = (y: number) => `${((rows - y) / rows) * 100}%`
   const groundFx = (
@@ -1381,6 +1414,8 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
           framed={!insetTopControls}
           skin={skin}
           biome={biome}
+          terrainSeed={terrainSeed}
+          terrainAvoid={terrainAvoid}
           panEnabled
           onPanStart={isOpen ? beginPan : undefined}
           onPanMove={isOpen ? panMove : undefined}
@@ -1395,6 +1430,22 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
           ) : undefined}
           groundOverlay={groundFx}
         >
+          {/* hero-anchored light: glides with the party on the compositor, under
+              tokens/arcs; the static vignette (Arena) layers above it. */}
+          {heroLight && lightAnchor && (
+            <div
+              aria-hidden
+              className="absolute pointer-events-none"
+              style={{
+                left: 0, top: 0,
+                width: `${lightCq}cqmin`, height: `${lightCq}cqmin`,
+                transform: `translate(calc(${fxPct(cam, lightAnchor.x)}cqw - 50%), calc(${fyPct(cam, lightAnchor.y)}cqh - 50%))`,
+                transition: XFORM_TRANSITION,
+                willChange: 'transform',   // hold ONE promoted layer across the per-round glides
+                background: battle.peaceful ? heroLight.city : heroLight.field,
+              }}
+            />
+          )}
 
           {/* attack arc lines for this round */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`${cam.x} ${rows - cam.y - cam.size} ${cam.size} ${cam.size}`} preserveAspectRatio="none">
@@ -1579,7 +1630,7 @@ export function Preview({ location }: { location: Location | null }) {
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 flex justify-center items-start">
-        <Arena cam={cam} barriers={locationBarriers(location)} skin={skin} biome={biomeForLocation(location)}>
+        <Arena cam={cam} barriers={locationBarriers(location)} skin={skin} biome={biomeForLocation(location)} terrainSeed={hashString(location?.id ?? '')}>
           {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} skin={skin} bodyShape={c.bodyShape} />)}
           {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} skin={skin} weapon={c.weapon} />)}
           {(party.length === 0 && foes.length === 0) && (
@@ -1626,6 +1677,6 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   // token from the previous battle's framing into place. The key only changes on a
   // location switch — never per tick — so normal play keeps the same instance.
   return battle
-    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
+    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />
 }

@@ -1129,33 +1129,37 @@ Next slices, roughly in order:
   shadows. Circle keeps its classic look verbatim. Still open: the
   `VisualState`-driven attack "lunge" nudge (a one-shot transform,
   compositor-only) for melee reads.
-- **Organic terrain layer (the Unexplored ground read) — the next slice.** The
-  remaining visual distance to the reference is the ground: theirs is organic
-  (irregular floor boundaries, mottled large-scale texture, scattered props,
-  blobby walls with a darker depth face); ours is a repeating square tile +
-  rectangular barrier boxes. Close it with ONE per-location terrain SVG layer,
-  built at battle-view mount from (location traits/biome, barrier set, map
-  size) and a seeded `hash01` — NO `Math.random`, so replays and screenshots
-  stay stable. It renders as a child of the existing ground layer, so it
-  inherits the single compositor transform (translate+scale): one paint at
-  mount, zero per-round cost (the cost model's "detailed static background ≈
-  free"). Engine untouched — collision stays the rect barrier set; the layer
-  draws wonky polygons AROUND each rect (~0.3-cell visual overhang; adjacent
-  rects merged into one blob) with an outline + offset depth face, exactly the
-  token two-tone trick at terrain scale. Sub-slices, each A/B-able via
-  `skin-ab` + the gallery:
-    1. wall/cliff blob dressing + an organic map rim (replaces the perimeter ring),
-    2. floor mottling — 2–3-shade irregular patches over/instead of the tile,
-    3. per-biome scatter decor (props placed by seeded hash, avoiding barrier
-       boxes and portals),
-    4. hero-anchored light — one radial-gradient div gliding with the party
-       (compositor-only), layered under the static vignette; warmer ambient in
-       cities.
-  Deferred: blood-splatter decals (a bounded ring buffer of ~64 tiny divs on
+- **Organic terrain layer (the Unexplored ground read) — SHIPPED 2026-07.**
+  All four sub-slices landed in `src/render/terrain.tsx` behind the
+  `ArenaSkin.terrain` hook (Arena then SKIPS the rect barrier divs + classic
+  perimeter ring): (1) wall/cliff blobs — wonky outlines with ~0.3-cell
+  overhang around the unchanged collision rects, overlapping rects merged into
+  one blob paint, lit depth face via a clipPath'd up-left copy; an organic
+  evenodd rim replaces the perimeter ring; (2) floor mottling — large soft
+  near-tile-shade patches; (3) per-biome scatter props (`TERRAIN_PROPS`:
+  tufts/bushes/blooms · rubble/cracks/bones · crates/barrels/sacks), seeded
+  placement avoiding barriers and portals; (4) the hero-anchored light — one
+  radial-gradient div gliding with the party centroid, warmer in `peaceful`
+  city fields (`ArenaSkin.heroLight`). Deterministic throughout (seeded
+  `hash01`/`hashString(locationId)`, NO Math.random — pinned by
+  `Terrain.test.tsx`). Two perf lessons, both measured on `skin-ab`:
+  - *Static ≠ free if it's DOM inside the animated layer.* The first cut
+    rendered ~230 live SVG elements into the ground layer and cost ~9 fps —
+    they join every style/layout pass of the transformed subtree even though
+    they never change. The shipped form bakes the whole picture into ONE
+    data-URI SVG background image on a single div (exactly how the biome tiles
+    ship): zero DOM, zero reconcile, zero layout — measured free, and arena
+    node count actually DROPPED vs. the rect-barrier baseline (266 vs 301).
+    Rule of thumb: static battlefield art ships as an IMAGE, not elements.
+  - *Quantization steps are relative to element size.* The light's size in
+    eighth-cqmin steps (chipDims' recipe, ~2% of a token) was ~0.1% of the
+    ~107cqmin light — the auto-fit camera's breathing re-quantized it nearly
+    every round, each step a restyle+repaint of a viewport-sized gradient
+    (~5 fps). Coarse 8-cqmin steps (~7%, invisible in a soft gradient) fixed
+    it. When quantizing to protect a memo/style string, size the step to the
+    ELEMENT, not the formula.
+  Still open: blood-splatter decals (a bounded ring buffer of ~64 tiny divs on
   damage events; a canvas layer only if they should accumulate indefinitely).
-  Home: a render-only `src/render/terrain.ts(x)` invoked by Arena through an
-  `ArenaSkin.terrain` hook — same seam rules as everything else (skins switch
-  on traits/biome, never ids; flat fills; no filters).
 
 - **SVG asset pipeline & authoring tooling (groundwork for many fast
   iterations).** Findings from landing the paper variants, against the
@@ -1180,20 +1184,25 @@ Next slices, roughly in order:
        swatch for both skins on one page; `npm run gallery-shot` screenshots
        it. One image = whole-language review — this is the iteration loop for
        all skins work (and what a PR reviewer looks at).
-    2. **Palette module.** Promote `PAPER_TONE` + effect colors into one
-       exported palette of ~20 named roles. Extend the contract test: every
-       fill/stroke in asset data must resolve to a role (no rogue hex), and no
-       filter/gradient anywhere — palette discipline is the single biggest
-       polish lever and it becomes un-regressable.
-    3. **Assets as data.** Once props pass ~a dozen, move from inline JSX to a
-       `src/render/props.ts` registry (id → path data + palette roles +
-       anchor/footprint). Data assets are lint-able, batch-generable, and
-       importable; the runtime stays a dumb renderer.
-    4. **Style helpers.** `cutout(path)` (emit the base+lit two-tone pair with
-       the standard offset), `wonk(points, seed)` (deterministic hand-cut
-       jitter of a regular polygon), `scatter(bounds, seed, density)` (prop
-       placement). Authors write intent; the helpers apply the style rules —
-       that is how 50 elements stay ONE style.
+    2. **Palette module — landed with the terrain slice.** `src/render/
+       palette.ts` holds `PAPER_TONE` + ~20 named terrain/prop material roles;
+       terrain assets reference roles, never hex. Still open: the contract
+       test (every fill/stroke in asset data must resolve to a role, no
+       filter/gradient anywhere) — palette discipline is the single biggest
+       polish lever and the test makes it un-regressable.
+    3. **Assets as data — seeded by the terrain slice.** `TERRAIN_PROPS`
+       (terrain.tsx) is the first registry: id → 1–3 paths of `{d, palette
+       role, lit?}` in a unit box; the renderer applies the standard cutout
+       nudge to `lit` paths, so authors never hand-place the two-tone. Grow it
+       here; split into `src/render/props.ts` when it outgrows the file.
+    4. **Style helpers — landed with the terrain slice.** `src/render/
+       authoring.ts`: `wonk` (deterministic hand-cut jitter), `blobPath`/
+       `polyPath` (organic vs cut-stone closed paths), `roughCircle`,
+       `rectOutline`, `scatter` (seeded keep-clear placement), `hash01`/
+       `hashString`. Authors write intent; the helpers apply the style rules —
+       that is how 50 elements stay ONE style. Still open: `cutout(path)`
+       emitting the base+lit pair for arbitrary standalone paths (today the
+       convention lives in the prop renderer + wall emitter).
     5. **Import path.** `scripts/import-svg.mjs`: normalize an Inkscape/Figma/
        traced SVG into the data format — SVGO, flatten transforms, quantize
        points, snap colors to the nearest palette role, REJECT filters and

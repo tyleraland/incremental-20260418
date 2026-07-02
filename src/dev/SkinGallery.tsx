@@ -1,5 +1,6 @@
 import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } from '@/render/skins'
 import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
+import type { Barrier } from '@/engine'
 
 // Dev-only skin gallery (`?gallery=1`): a contact sheet of the ENTIRE visual
 // language — every token body × tone, every weapon, the state variants
@@ -19,6 +20,15 @@ const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-u
 const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'WO', flyer: 'HA' }
 
 const dims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
+
+// A representative barrier set for the terrain swatch: two overlapping walls
+// (exercises the blob merge), a lone wall, and a cliff.
+const TERRAIN_SAMPLE: Barrier[] = [
+  { x: 2.5, y: 8.5, w: 4, h: 3 },
+  { x: 5.8, y: 7, w: 3, h: 2.5 },
+  { x: 11, y: 11.5, w: 2.5, h: 2 },
+  { x: 9.5, y: 2.5, w: 3.5, h: 2, kind: 'cliff' },
+]
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -41,6 +51,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function SkinBlock({ skin }: { skin: BattleSkin }) {
   const Body = TOKEN_SKINS[skin]
   const arena = ARENA_SKINS[skin]
+  const terrain = arena.terrain
   const fx = FX_SKINS[skin]
   return (
     <div className="mb-10">
@@ -120,6 +131,33 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
           <span className="text-[9px] text-neutral-500">wall · cliff · vignette</span>
         </div>
       </Section>
+
+      {terrain && (
+        <Section title="organic terrain (per biome: mottling · props · wall/cliff blobs · rim) + hero light">
+          {BIOMES.map((b, i) => {
+            const g = arena.grounds?.[b]
+            return (
+              <div key={b} className="flex flex-col items-center gap-1">
+                <div
+                  className="w-56 h-56 rounded border border-neutral-800 relative overflow-hidden"
+                  style={{ ...arena.surface, ...(g ? { backgroundImage: g.image, backgroundSize: `${g.cellsPerTile * 14}px` } : null) }}
+                >
+                  {terrain({ biome: b, cols: 16, rows: 16, barriers: TERRAIN_SAMPLE, seed: 7 + i * 1000, rim: true })}
+                </div>
+                <span className="text-[9px] text-neutral-500">{b}</span>
+              </div>
+            )
+          })}
+          {arena.heroLight && (['field', 'city'] as const).map((k) => (
+            <div key={k} className="flex flex-col items-center gap-1">
+              <div className="w-28 h-56 rounded border border-neutral-800 relative" style={arena.surface}>
+                <div className="absolute inset-0" style={{ background: arena.heroLight![k] }} />
+              </div>
+              <span className="text-[9px] text-neutral-500">light: {k}</span>
+            </div>
+          ))}
+        </Section>
+      )}
 
       <Section title="fx: arcs · hit ring · zone · firewall · portal">
         <div className="flex flex-col items-center gap-1">
