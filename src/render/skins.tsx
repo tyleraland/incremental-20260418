@@ -276,6 +276,44 @@ export interface ArenaSkin {
   vignette?: string
 }
 
+// ── Effect (FX) skins ────────────────────────────────────────────────────────
+// The combat-feedback layer (attack arcs, hit flashes, ground zones, firewalls,
+// portals) styled per skin, so an effects restyle stays a skins-file change —
+// BattleView keeps the geometry/animation and reads the look from here. Paper
+// speaks its own language: flat fills and borders only, no glow shadows, no
+// gradients (the classic circle look keeps both, untouched). Class strings must
+// stay LITERAL in this file so Tailwind's scanner sees them.
+export interface FxSkin {
+  arcPlayer: string     // attack-line stroke color (player side)
+  arcEnemy: string
+  hitRing: string       // struck-unit flash ring (animate-hit-flash rides along)
+  zone: string          // persistent ground zone (Lightning Storm / Molasses / …)
+  firewall: string      // firewall strip
+  portal: string        // travel gateway
+}
+
+export const FX_SKINS: Record<BattleSkin, FxSkin> = {
+  // circle: today's look verbatim (saturated strokes, gradient + glow accents).
+  circle: {
+    arcPlayer: 'rgb(96,165,250)',
+    arcEnemy: 'rgb(248,113,113)',
+    hitRing: 'border-2 border-white/70',
+    zone: 'bg-orange-500/25 border border-orange-400/50',
+    firewall: 'bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)]',
+    portal: 'bg-fuchsia-500/30 border-2 border-fuchsia-300/80 shadow-[0_0_12px_3px_rgba(217,70,239,0.55)]',
+  },
+  // paper: muted ink strokes, cream flash ring, dashed hand-drawn zone circles,
+  // solid two-tone fire and portal — all flat, nothing glows.
+  paper: {
+    arcPlayer: 'rgb(143 176 232 / 0.9)',
+    arcEnemy: 'rgb(224 141 127 / 0.9)',
+    hitRing: 'border-[3px] border-[#f3e9d4]/80',
+    zone: 'bg-[#c97f3d]/20 border-2 border-dashed border-[#c97f3d]/60',
+    firewall: 'bg-[#d8813c]/65 border-2 border-[#7c3212]/80',
+    portal: 'bg-[#b96fd6]/25 border-2 border-[#e3b7f2]/80',
+  },
+}
+
 export const ARENA_SKINS: Record<BattleSkin, ArenaSkin> = {
   // circle: today's look untouched — flat game-surface + faint white grid.
   circle: { gridLine: 'rgb(255 255 255 / 0.06)' },

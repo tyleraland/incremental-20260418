@@ -1115,9 +1115,14 @@ Next slices, roughly in order:
   `barrierCliff` restyles (flat two-tone cutout, zero-blur inset face) and a
   single static `vignette` overlay (one compositor layer, never repaints).
   Team-tint restyle to the paper palette is still open.
-- **Effects pass.** Restyle hit flashes / attack arcs / zones to the paper
-  language (flat shapes, no glows-via-filter); a `VisualState`-driven attack
-  "lunge" nudge (a one-shot transform, compositor-only) for melee reads.
+- **Effects pass — restyle SHIPPED 2026-07.** `FX_SKINS` (skins.tsx) styles the
+  combat-feedback layer per skin (attack arcs / hit flash ring / zones /
+  firewalls / portals); BattleView keeps the geometry+animation and reads the
+  look from the seam. Paper: muted ink arcs, cream flash ring, dashed
+  hand-drawn zone circles, solid flat fire/portal — no gradients, no glow
+  shadows. Circle keeps its classic look verbatim. Still open: the
+  `VisualState`-driven attack "lunge" nudge (a one-shot transform,
+  compositor-only) for melee reads.
 - **If licensed/bespoke art ever lands**: `Appearance.spriteId` is the reserved
   hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an
   atlas, falling back to `paper`/`circle` when absent.

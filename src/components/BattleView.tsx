@@ -3,7 +3,7 @@ import { useGameStore, waveComposition, locationBarriers, type Location } from '
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
-import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, type BattleSkin } from '@/render/skins'
+import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSkin } from '@/render/skins'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, distance, sightlineClear,
@@ -821,6 +821,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
 function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
   const skin  = useGameStore((s) => s.battleSkin)
+  const fx    = FX_SKINS[skin]
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
   const focusUnitId   = useGameStore((s) => s.battleFollowId)
@@ -1229,7 +1230,7 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
         <div
           key={`portal-${i}`}
           title={`Portal → ${p.to}`}
-          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-fuchsia-500/30 border-2 border-fuchsia-300/80 shadow-[0_0_12px_3px_rgba(217,70,239,0.55)] animate-pulse pointer-events-none flex items-center justify-center"
+          className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${fx.portal} animate-pulse pointer-events-none flex items-center justify-center`}
           style={{ left: gx(p.at[0]), top: gy(p.at[1]), width: `${(2.2 / cols) * 100}%`, height: `${(2.2 / rows) * 100}%` }}
         >
           <span className="text-fuchsia-100/90 leading-none" style={{ fontSize: `clamp(8px, ${(1.4 / cols) * 100}cqw, 22px)` }}>◈</span>
@@ -1238,7 +1239,7 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
       {battle.zones.map((z) => (
         <div
           key={z.id}
-          className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-500/25 border border-orange-400/50 animate-pulse pointer-events-none"
+          className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${fx.zone} animate-pulse pointer-events-none`}
           // A static zone has constant left/top → no transition needed (the layer
           // glides it). A follow-aura (Consecration) moves with its caster, so ease
           // its in-layer position too.
@@ -1248,7 +1249,7 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
       {battle.firewalls.map((w) => (
         <div
           key={w.id}
-          className="absolute rounded-sm bg-gradient-to-b from-amber-300/70 via-orange-500/60 to-red-600/50 border border-amber-300/70 shadow-[0_0_10px_2px_rgba(251,146,60,0.6)] animate-pulse pointer-events-none"
+          className={`absolute rounded-sm ${fx.firewall} animate-pulse pointer-events-none`}
           style={{ left: gx(w.pos.x), top: gy(w.pos.y), width: `${(2 * w.half / cols) * 100}%`, height: `${(0.5 / rows) * 100}%`, transform: `translate(-50%,-50%) rotate(${Math.atan2(w.normal.x, w.normal.y) * 180 / Math.PI}deg)` }}
         />
       ))}
@@ -1359,7 +1360,7 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
               const src = byId(e.sourceId), tgt = byId(e.targetId)
               if (!src || !tgt) return null
               const sp = rpos(src), tp = rpos(tgt)
-              const stroke = src.team === 'player' ? 'rgb(96,165,250)' : 'rgb(248,113,113)'
+              const stroke = src.team === 'player' ? fx.arcPlayer : fx.arcEnemy
               return <line key={`l-${battle.round}-${i}`} className="animate-line-fade" x1={insetX(cam, sp.x)} y1={rows - insetY(cam, sp.y)} x2={insetX(cam, tp.x)} y2={rows - insetY(cam, tp.y)} stroke={stroke} strokeWidth={cam.size * 0.012} strokeLinecap="round" />
             })}
           </svg>
@@ -1370,7 +1371,7 @@ function LiveBattle({ battle, portals, biome, onFollow, inspectRequest, closeNon
             const tgt = byId(e.targetId)
             if (!tgt) return null
             const tp = rpos(tgt)
-            return <div key={`h-${battle.round}-${i}`} className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 animate-hit-flash" style={{ ...chipDims(cam), left: px(cam, insetX(cam, tp.x)), top: py(cam, insetY(cam, tp.y)) }} />
+            return <div key={`h-${battle.round}-${i}`} className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${fx.hitRing} animate-hit-flash`} style={{ ...chipDims(cam), left: px(cam, insetX(cam, tp.x)), top: py(cam, insetY(cam, tp.y)) }} />
           })}
 
           {/* lingering floating numbers (damage/heal/DoT): each plays its full
