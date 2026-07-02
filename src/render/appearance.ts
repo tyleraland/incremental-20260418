@@ -18,11 +18,22 @@ import type { MonsterSize } from '@/types'
 
 export type Tone = 'player' | 'enemy' | 'neutral' | 'casting'
 
+// Silhouette family for the token body. A skin picks its body path by this —
+// NEVER by entity id (that translation happens here). 3–4 shared shapes cover
+// the whole bestiary; per-monster art stays a non-goal.
+export type BodyShape = 'humanoid' | 'blob' | 'beast' | 'flyer'
+
+// A hero's handheld, keyed off class — the paper skin swaps its facing-blade
+// layer by this. Absent (Novice / monsters) → the skin's generic pointer.
+export type Weapon = 'sword' | 'bow' | 'staff' | 'dagger'
+
 export interface Appearance {
   glyph: string          // circle-skin body text (class icon / NPC icon / initials)
   tone: Tone             // base token color family
   scale: number          // token size multiplier (1 = one grid cell's worth)
+  bodyShape: BodyShape   // silhouette family (skins pick their body path by this)
   tint?: string          // element accent (rgba) for the rim; undefined = plain team color
+  weapon?: Weapon        // class handheld (skins pick their blade layer by this)
   spriteId?: string      // future sprite-sheet key; absent → circle skin
 }
 
@@ -38,6 +49,38 @@ export const CLASS_ICON: Record<string, string> = {
   Mage:    '✦',
   Cleric:  '✚',
   Rogue:   '🗡',
+}
+
+// Class → handheld. Mage and Cleric share the staff (the tone/tint tells them
+// apart); Novice / classless resolves to undefined (generic pointer).
+const CLASS_WEAPON: Record<string, Weapon> = {
+  Fighter: 'sword',
+  Ranger:  'bow',
+  Mage:    'staff',
+  Cleric:  'staff',
+  Rogue:   'dagger',
+}
+export function weaponForClass(cls: string | null | undefined): Weapon | undefined {
+  return cls ? CLASS_WEAPON[cls] : undefined
+}
+
+// Monster id → silhouette family. Only non-beasts are listed: anything unlisted
+// (including future monsters) reads as 'beast', so a new registry entry gets a
+// sensible token without touching the render layer.
+const MONSTER_SHAPE: Partial<Record<string, BodyShape>> = {
+  // blobs — slimes, sacs, rooted things
+  'slime': 'blob', 'tough-slime': 'blob', 'dark-slime': 'blob', 'fire-slime': 'blob',
+  'egg-sac': 'blob', 'living-nightshade': 'blob', 'giant-frog': 'blob',
+  // flyers — wings or floating
+  'harpy': 'flyer', 'bat': 'flyer', 'hornet': 'flyer', 'rat-fly': 'flyer',
+  'forest-sprite': 'flyer', 'wraith': 'flyer', 'ruins-specter': 'flyer',
+  // humanoids — two legs, tools, armor
+  'poacher': 'humanoid', 'skeleton-archer': 'humanoid', 'animated-armor': 'humanoid',
+  'stone-golem': 'humanoid', 'stone-sentinel': 'humanoid',
+  'elite-fighter': 'humanoid', 'elite-rogue': 'humanoid', 'elite-cleric': 'humanoid', 'elite-ranger': 'humanoid',
+}
+export function monsterBodyShape(monsterId: string): BodyShape {
+  return MONSTER_SHAPE[monsterId] ?? 'beast'
 }
 
 export function initials(name: string): string {
@@ -80,19 +123,22 @@ export function getAppearance(c: Combatant, classFor: (id: string) => string | n
       glyph: (cls && CLASS_ICON[cls]) || initials(c.name),
       tone: casting ? 'casting' : 'player',
       scale: 1,
+      bodyShape: 'humanoid',
+      weapon: weaponForClass(cls),
       // A hero's elemental identity is its weapon-imbued attack element (§3).
       tint: ELEMENT_TINT[c.attackElement],
     }
   }
   if (c.team === 'neutral') {
     // Town NPC: show its own icon; stationary, no element identity.
-    return { glyph: NPC_REGISTRY[c.id]?.icon ?? initials(c.name), tone: 'neutral', scale: 1 }
+    return { glyph: NPC_REGISTRY[c.id]?.icon ?? initials(c.name), tone: 'neutral', scale: 1, bodyShape: 'humanoid' }
   }
   const def = monsterDefOf(c)
   return {
     glyph: initials(c.name),
     tone: casting ? 'casting' : 'enemy',
     scale: def ? SIZE_SCALE[def.size] : 1,
+    bodyShape: monsterBodyShape(c.id.split('#')[0]),
     // Monsters attack neutral; their elemental identity is the defensive element.
     tint: ELEMENT_TINT[c.armorElement],
   }

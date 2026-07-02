@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
-import { getAppearance, initials, CLASS_ICON, type Appearance } from '@/render/appearance'
+import { getAppearance, initials, monsterBodyShape, weaponForClass, CLASS_ICON, type Appearance, type BodyShape, type Weapon } from '@/render/appearance'
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, type BattleSkin } from '@/render/skins'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
@@ -621,7 +621,9 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
         <Body
           glyph={appearance.glyph}
           tone={appearance.tone}
+          bodyShape={appearance.bodyShape}
           tint={appearance.tint}
+          weapon={appearance.weapon}
           alive={c.alive}
           selected={selected}
           facingDeg={facingDeg}
@@ -1466,7 +1468,7 @@ function LiveBattle({ battle, portals, onFollow, inspectRequest, closeNonce, onI
 
 // ── Static preview (no live battle: between waves / not yet started) ─────────────
 
-function PreviewChip({ cam, pos, label, name, title, isPlayer, skin }: { cam: Cam; pos: Vec2; label: string; name: string; title: string; isPlayer: boolean; skin: BattleSkin }) {
+function PreviewChip({ cam, pos, label, name, title, isPlayer, skin, bodyShape = 'humanoid', weapon }: { cam: Cam; pos: Vec2; label: string; name: string; title: string; isPlayer: boolean; skin: BattleSkin; bodyShape?: BodyShape; weapon?: Weapon }) {
   const Body = TOKEN_SKINS[skin]
   return (
     <div title={title} style={{ left: px(cam, insetX(cam, pos.x)), top: py(cam, insetY(cam, pos.y)) }} className="absolute -translate-x-1/2 -translate-y-1/2">
@@ -1482,6 +1484,8 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer, skin }: { cam: Ca
       <Body
         glyph={label}
         tone={isPlayer ? 'player' : 'enemy'}
+        bodyShape={bodyShape}
+        weapon={weapon}
         alive
         selected={false}
         facingDeg={isPlayer ? -90 : 90}
@@ -1505,7 +1509,7 @@ export function Preview({ location }: { location: Location | null }) {
     const rank: Rank = (m?.stats.attackRange ?? 5) > 5 ? 'back' : 'front'
     const within = enemyRank[rank] ?? 0; enemyRank[rank] = within + 1
     const name = m?.name ?? id
-    return { key: `${id}-${i}`, pos: startingPosition('enemy', rank, within), label: initials(name), name, title: name }
+    return { key: `${id}-${i}`, pos: startingPosition('enemy', rank, within), label: initials(name), name, title: name, bodyShape: monsterBodyShape(id) }
   })
   const partyRank: Record<string, number> = {}
   const partyChips = party.map((u) => {
@@ -1513,7 +1517,7 @@ export function Preview({ location }: { location: Location | null }) {
     const rank: Rank = ranged ? 'back' : 'front'
     const within = partyRank[rank] ?? 0; partyRank[rank] = within + 1
     const label = (u.class && CLASS_ICON[u.class]) ? CLASS_ICON[u.class] : initials(u.name)
-    return { key: u.id, pos: startingPosition('player', rank, within), label, name: u.name, title: `${u.name} — ${ranged ? 'ranged' : 'melee'}` }
+    return { key: u.id, pos: startingPosition('player', rank, within), label, name: u.name, title: `${u.name} — ${ranged ? 'ranged' : 'melee'}`, weapon: weaponForClass(u.class) }
   })
   const cam = arenaCamera()
 
@@ -1521,8 +1525,8 @@ export function Preview({ location }: { location: Location | null }) {
     <div className="relative flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 flex justify-center items-start">
         <Arena cam={cam} barriers={locationBarriers(location)} skin={skin}>
-          {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} skin={skin} />)}
-          {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} skin={skin} />)}
+          {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} skin={skin} bodyShape={c.bodyShape} />)}
+          {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} skin={skin} weapon={c.weapon} />)}
           {(party.length === 0 && foes.length === 0) && (
             <div className="absolute inset-0 flex items-center justify-center text-xs text-game-muted italic px-6 text-center">
               {location ? 'No combatants to preview — deploy a party here.' : 'Pick a location to preview its encounter.'}

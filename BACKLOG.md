@@ -1099,13 +1099,15 @@ resurfacing as a mystery fps drop.
 
 Next slices, roughly in order:
 
-- **Paper-skin polish.** Per-class body/weapon variants (bow / staff / cross /
-  dagger swap on the blade layer, reading `Appearance.glyph`'s class), monster
-  *family* silhouettes (blob / beast / flyer — 3–4 shared paths keyed off
-  `MonsterDef`, not per-monster art), and a KO'd "crumpled" state. All stay in
-  `skins.tsx`; add a `bodyShape`/`weapon` field to `Appearance` when the resolver
-  needs to pick them (that's the designed extension point — never switch on ids
-  in the skin).
+- **Paper-skin polish — variants SHIPPED 2026-07.** `Appearance` now carries the
+  designed extension points: `bodyShape` ('humanoid'/'blob'/'beast'/'flyer',
+  monster id → family map in `appearance.ts`, unlisted ids default 'beast') and
+  `weapon` ('sword'/'bow'/'staff'/'dagger' keyed off class; Mage+Cleric share
+  the staff). `PaperBody` draws them as shared flat paths (one silhouette path
+  per family drawn twice for the two-tone; 1–2 primitives per weapon; creatures
+  get a claw wedge instead of a sword) — the skin switches only on those fields,
+  never ids. Still open: a KO'd "crumpled" state (today KO = the generic ✕ +
+  fade).
 - **Ground biomes.** Per-location ground patterns keyed off location traits
   (grass field / stone dungeon / city plaza), still one data-URI pattern each;
   thread the location's trait into `ARENA_SKINS`' ground pick. Barrier/cliff and

@@ -1,5 +1,5 @@
-import { memo, type CSSProperties } from 'react'
-import type { Tone } from '@/render/appearance'
+import { memo, type CSSProperties, type ReactNode } from 'react'
+import type { Tone, BodyShape, Weapon } from '@/render/appearance'
 
 // ── Battlefield skins ────────────────────────────────────────────────────────
 //
@@ -53,7 +53,9 @@ export function bootBattleSkin(): BattleSkin {
 export interface TokenBodyProps {
   glyph: string        // class icon / NPC icon / initials (from the appearance resolver)
   tone: Tone           // team color family; 'casting' carries the amber cast signal
+  bodyShape: BodyShape // silhouette family (resolver-picked; a skin NEVER keys off ids)
   tint?: string        // element accent (rim/outline); ignored while casting
+  weapon?: Weapon      // class handheld; absent → the skin's generic pointer
   alive: boolean
   selected: boolean
   // Facing as a SCREEN angle in degrees (0° = pointing right; caller applies the
@@ -71,6 +73,7 @@ export interface TokenBodyProps {
 // facing/dims, no live objects, no hp-bearing strings (see chipDims/facingDeg).
 const BODY_PROPS_EQUAL = (a: TokenBodyProps, b: TokenBodyProps) =>
   a.glyph === b.glyph && a.tone === b.tone && a.tint === b.tint &&
+  a.bodyShape === b.bodyShape && a.weapon === b.weapon &&
   a.alive === b.alive && a.selected === b.selected && a.facingDeg === b.facingDeg &&
   a.dims.width === b.dims.width && a.dims.fontSize === b.dims.fontSize
 
@@ -129,19 +132,52 @@ const PAPER_TONE: Record<Tone, { top: string; base: string; outline: string; tex
   neutral: { top: '#c99a4c', base: '#77571f', outline: '#3c2b0d', text: '#fdf4dd' },
 }
 
-// A slightly irregular rounded blob (100×100 box) — regular enough to read as a
-// unit token, wonky enough to feel hand-cut rather than geometric.
-const PAPER_BODY_PATH =
-  'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z'
+// Silhouette paths (100×100 box), one per BodyShape — regular enough to read as
+// unit tokens, wonky enough to feel hand-cut rather than geometric. Each is one
+// path drawn twice (base + lit top copy nudged up-left) for the filter-free
+// two-tone read, so a new family costs zero extra elements.
+const PAPER_BODY_PATHS: Record<BodyShape, string> = {
+  // the original rounded cutout — heroes, NPCs, tool-users
+  humanoid: 'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z',
+  // squat droopy puddle — slimes, sacs, rooted things
+  blob:     'M50 26 C70 27 87 41 89 58 C91 76 73 88 49 88 C25 88 9 75 12 57 C15 39 31 25 50 26 Z',
+  // round body with two flared ear points — wolves, boars, crabs, lizards
+  beast:    'M34 20 L23 2 L44 13 C48 11 52 11 56 13 L77 2 L66 20 C80 27 89 40 88 56 C86 77 70 90 50 91 C30 90 14 77 12 56 C11 40 20 27 34 20 Z',
+  // two raised wing lobes over a hanging body — harpies, bats, ghosts
+  flyer:    'M50 32 C55 21 67 12 90 15 C88 36 74 50 60 53 L61 74 C57 86 43 86 39 74 L40 53 C26 50 12 36 10 15 C33 12 45 21 50 32 Z',
+}
 
-// One SVG per token: shadow ellipse, facing blade (a rotated group under the
+// Facing-layer shapes (drawn under the body, rotated to facingDeg, so only the
+// business end shows). Heroes carry their class weapon; a weaponless humanoid
+// keeps the classic blade; creatures get a short claw wedge instead of marching
+// around with a sword. Static JSX — each costs 1–2 flat primitives.
+const WEAPON_SHAPES: Record<Weapon | 'claw', ReactNode> = {
+  sword: <polygon points="55,45 85,42 112,50 85,58 55,55" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
+  dagger: <polygon points="58,46.5 82,45 101,50 82,55 58,53.5" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />,
+  bow: (
+    <>
+      <path d="M74 22 C102 34 102 66 74 78" fill="none" stroke="#a8703d" strokeWidth="6" />
+      <line x1="74" y1="22" x2="74" y2="78" stroke="#e8e3d2" strokeWidth="2.5" />
+    </>
+  ),
+  staff: (
+    <>
+      <line x1="52" y1="50" x2="96" y2="50" stroke="#8a5a2b" strokeWidth="6" />
+      <circle cx="99" cy="50" r="8" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />
+    </>
+  ),
+  claw: <polygon points="58,44.5 90,50 58,55.5" fill="#e8e3d2" stroke="#2b3138" strokeWidth="3" />,
+}
+
+// One SVG per token: shadow ellipse, facing weapon (a rotated group under the
 // body, so only the tip shows — a held weapon), then the two-tone body. Merged
 // into a single <svg> to keep the per-token element count down (see contract).
-const PaperBody = memo(function PaperBody({ glyph, tone, tint, alive, selected, facingDeg, dims }: TokenBodyProps) {
+const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon, alive, selected, facingDeg, dims }: TokenBodyProps) {
   BODY_RENDER_PROBE.count++
   const p = PAPER_TONE[tone]
   const outline = tone !== 'casting' && tint ? tint : p.outline
-  // Facing blade rotation snaps per round like the circle skin's FacingNub — no
+  const body = PAPER_BODY_PATHS[bodyShape]
+  // Facing rotation snaps per round like the circle skin's FacingNub — no
   // rotate transition (359°→1° would spin the long way around).
   const angle = alive ? facingDeg : null
   return (
@@ -157,11 +193,11 @@ const PaperBody = memo(function PaperBody({ glyph, tone, tint, alive, selected, 
         <ellipse cx="54" cy="55" rx="46" ry="45" fill="rgb(0 0 0 / 0.35)" />
         {angle != null && (
           <g transform={`rotate(${angle} 50 50)`}>
-            <polygon points="55,45 85,42 112,50 85,58 55,55" fill="#cdd5de" stroke="#2b3138" strokeWidth="3" />
+            {WEAPON_SHAPES[weapon ?? (bodyShape === 'humanoid' ? 'sword' : 'claw')]}
           </g>
         )}
-        <path d={PAPER_BODY_PATH} fill={p.base} stroke={outline} strokeWidth="5" />
-        <path d={PAPER_BODY_PATH} fill={p.top} transform="translate(-3 -4) translate(50 50) scale(0.94) translate(-50 -50)" />
+        <path d={body} fill={p.base} stroke={outline} strokeWidth="5" />
+        <path d={body} fill={p.top} transform="translate(-3 -4) translate(50 50) scale(0.94) translate(-50 -50)" />
       </svg>
       <span className="relative font-bold leading-none" style={{ fontSize: dims.fontSize, color: p.text }}>
         {alive ? glyph : '✕'}
