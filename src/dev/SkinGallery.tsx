@@ -113,6 +113,9 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
         <Cell label="element tint">
           <Body glyph="SL" tone="enemy" bodyShape="blob" tint="rgb(251 146 60 / 0.9)" alive selected={false} facingDeg={0} dims={dims(56)} />
         </Cell>
+        <Cell label="moving (plate lean)">
+          <Body glyph="WO" tone="enemy" bodyShape="canine" alive selected={false} facingDeg={0} moving dims={dims(56)} />
+        </Cell>
       </Section>
 
       <Section title="facing wheel (15° quantized in play) — weapon carry + rotating top-down body">

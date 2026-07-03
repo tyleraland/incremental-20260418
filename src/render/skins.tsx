@@ -64,6 +64,10 @@ export interface TokenBodyProps {
   // world→screen y-flip and quantizes — see BattleChip). null = no facing shown
   // (neutrals, KO).
   facingDeg: number | null
+  // In motion this round (engine `c.moving`): the paper skin leans a body plate
+  // along the heading. A boolean edge, not a phase — flips only on start/stop,
+  // so it can't defeat the memo per round. Optional: absent reads as idle.
+  moving?: boolean
   dims: { width: string; height: string; fontSize: string }   // chipDims box
 }
 
@@ -77,6 +81,7 @@ const BODY_PROPS_EQUAL = (a: TokenBodyProps, b: TokenBodyProps) =>
   a.glyph === b.glyph && a.tone === b.tone && a.tint === b.tint &&
   a.bodyShape === b.bodyShape && a.weapon === b.weapon &&
   a.alive === b.alive && a.selected === b.selected && a.facingDeg === b.facingDeg &&
+  a.moving === b.moving &&
   a.dims.width === b.dims.width && a.dims.fontSize === b.dims.fontSize
 
 // True when the skin's body itself shows facing (so BattleChip drops the
@@ -126,46 +131,71 @@ const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive,
 // The two-tone tone palette (`PAPER_TONE`) and the terrain/prop roles live in
 // `render/palette.ts` — the paper language's single color vocabulary.
 
-// Silhouette paths (100×100 box), one per BodyShape — regular enough to read as
-// unit tokens, wonky enough to feel hand-cut rather than geometric. Each is one
-// path drawn twice (base + lit top copy nudged up-left) for the filter-free
-// two-tone read, so a new family costs zero extra elements.
-// TOP-DOWN + DIRECTIONAL (the Unexplored read): every silhouette is authored
-// FACING +x (nose right), and the whole body rotates to facingDeg — the shape
-// itself telegraphs heading, not just the weapon layer. The lit copy's up-left
-// nudge is composed OUTSIDE the rotation (screen space), so the language's one
-// light direction survives any heading.
-const PAPER_BODY_PATHS: Record<BodyShape, string> = {
-  // the original rounded cutout — heroes, NPCs, tool-users (near-symmetric;
-  // heading reads from the carried weapon)
-  humanoid: 'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z',
-  // wobbly puddle oozing forward: bulging nose, droplet wake trailing behind
-  blob:     'M91 52 C92 61 84 71 73 75 C63 83 47 86 36 80 C24 83 12 75 14 63 C7 59 6 48 13 42 C9 35 12 27 20 26 C26 25 31 29 30 35 C36 27 48 23 58 26 C74 25 88 37 91 48 L91 52 Z',
-  // generic quadruped: blunt wide head, small ear nubs, fat body — boars,
+// Layered silhouettes (100×100 box), one under+over pair per BodyShape —
+// regular enough to read as unit tokens, wonky enough to feel hand-cut.
+// TOP-DOWN + DIRECTIONAL (the Unexplored read): authored FACING +x (nose
+// right); the whole token rotates to facingDeg, so the shape telegraphs
+// heading. Lit-copy nudges are composed OUTSIDE the rotation (screen space) —
+// the language's one light direction survives any heading.
+// STACKED CUTOUTS (depth): `under` is the body/limbs plate (full two-tone);
+// `over` is the head/shell/core plate riding on top, with a flat offset shadow
+// CAST ONTO the under plate — that shadow is what sells "two sheets of paper".
+// `lean` shifts a plate along the local heading while the unit is MOVING (the
+// wolf's head leads, the snail's foot stretches out, the slime's core lags) —
+// a static transform swap on the move/idle edge, never a running animation.
+// `c` is the plate's own lit-scale origin (over plates are off-center).
+interface BodyPlate { d: string; c: [number, number]; lean?: number }
+const PAPER_BODY_LAYERS: Record<BodyShape, { under: BodyPlate; over: BodyPlate }> = {
+  // hero/NPC: round torso, head disc riding center-front; head leads on the
+  // move (heading otherwise reads from the carried weapon)
+  humanoid: {
+    under: { d: 'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z', c: [50, 50] },
+    over:  { d: 'M60 34 C70 35 76 41 76 50 C76 59 69 66 59 66 C50 66 44 59 44 50 C44 41 51 33 60 34 Z', c: [60, 50], lean: 4 },
+  },
+  // slime: wobbly puddle with a droplet wake, gel core riding it — the core
+  // LAGS behind the heading while moving (inertia)
+  blob: {
+    under: { d: 'M91 52 C92 61 84 71 73 75 C63 83 47 86 36 80 C24 83 12 75 14 63 C7 59 6 48 13 42 C9 35 12 27 20 26 C26 25 31 29 30 35 C36 27 48 23 58 26 C74 25 88 37 91 48 L91 52 Z', c: [50, 52] },
+    over:  { d: 'M50 34 C62 34 70 42 70 52 C70 62 60 69 48 69 C37 69 29 62 29 52 C29 42 38 34 50 34 Z', c: [50, 52], lean: -6 },
+  },
+  // generic quadruped: fat torso oval, smaller blunt eared head — boars,
   // crabs, lizards
-  beast:    'M92 50 C92 43 87 38 80 36 C74 32 68 31 63 32 L57 21 L50 31 C38 28 26 32 18 39 C11 43 8 46 8 50 C8 54 11 57 18 61 C26 68 38 72 50 69 L57 79 L63 68 C68 69 74 68 80 64 C87 62 92 57 92 50 Z',
-  // moth-style: two back-swept wing lobes astride the heading, slim body —
-  // harpies, bats, ghosts
-  flyer:    'M90 50 C90 45 85 41 78 41 C76 36 72 32 66 31 C64 18 52 8 38 10 C28 12 26 22 33 28 C39 33 48 37 56 40 C48 39 40 40 34 43 C20 38 6 40 5 50 C6 60 20 62 34 57 C40 60 48 61 56 60 C48 63 39 67 33 72 C26 78 28 88 38 90 C52 92 64 82 66 69 C72 68 76 64 78 59 C85 59 90 55 90 50 Z',
-  // spiral shell riding the back half, foot slab reaching forward, two ball-
-  // tipped eyestalks past the nose — snails, shelled crawlers
-  snail:    'M74 42 C77 36 82 32 87 33 C93 34 94 41 89 43 C86 44 84 46 84 48 L84 52 C84 54 86 56 89 57 C94 59 93 66 87 67 C82 68 77 64 74 58 C70 63 62 67 54 66 C50 73 40 77 30 75 C16 73 6 63 6 50 C6 37 16 27 30 25 C40 23 50 27 54 34 C62 33 70 37 74 42 Z',
-  // fat head knob at the nose, S-band slithering back to a tapered tail —
-  // snakes, worms, eels
-  serpent:  'M78 42 C84 37 93 38 96 45 C99 52 94 60 86 61 C81 62 77 60 74 57 C68 49 62 47 56 49 C48 52 44 60 38 66 C32 72 22 74 14 70 C8 67 5 60 10 57 C16 60 24 60 30 56 C36 52 40 44 48 38 C54 34 62 32 70 36 C73 38 76 40 78 42 Z',
-  // long snout, back-swept ears, cheek ruff, bushy forked tail — wolves,
-  // hounds, foxes
-  canine:   'M96 50 C96 46 93 43 88 42 C83 36 76 33 68 33 L61 20 L52 31 C46 29 41 30 37 33 L28 26 L31 36 C21 39 15 43 14 47 L2 40 L8 50 L2 60 L14 53 C15 57 21 61 31 64 L28 74 L37 67 C41 70 46 71 52 69 L61 80 L68 67 C76 67 83 64 88 58 C93 57 96 54 96 50 Z',
+  beast: {
+    under: { d: 'M60 32 C48 26 34 26 24 32 C13 38 8 44 8 50 C8 56 13 62 24 68 C34 74 48 74 60 68 C67 63 70 57 70 50 C70 43 67 37 60 32 Z', c: [39, 50] },
+    over:  { d: 'M90 50 C90 44 86 39 79 37 C73 33 67 32 62 33 L56 23 L50 32 C45 34 42 41 42 50 C42 59 45 66 50 68 L56 77 L62 67 C67 68 73 67 79 63 C86 61 90 56 90 50 Z', c: [64, 50], lean: 5 },
+  },
+  // two swept wings (waisted at the hinge) under a slim fuselage — harpies,
+  // bats, ghosts; the body leads the wings on the move
+  flyer: {
+    under: { d: 'M54 44 C46 36 36 24 26 16 C16 8 6 12 8 22 C10 32 22 42 40 48 L40 52 C22 58 10 68 8 78 C6 88 16 92 26 84 C36 76 46 64 54 56 C56 52 56 48 54 44 Z', c: [30, 50] },
+    over:  { d: 'M90 50 C90 45 85 42 79 42 C72 38 62 36 50 37 L30 44 C25 45 22 47 22 50 C22 53 25 55 30 56 L50 63 C62 64 72 62 79 58 C85 58 90 55 90 50 Z', c: [55, 50], lean: 4 },
+  },
+  // foot slab + ball-tipped eyestalks under, spiral shell riding the back —
+  // the foot STRETCHES forward from under the shell on the move
+  snail: {
+    under: { d: 'M74 42 C77 36 82 32 87 33 C93 34 94 41 89 43 C86 44 84 46 84 48 L84 52 C84 54 86 56 89 57 C94 59 93 66 87 67 C82 68 77 64 74 58 C70 62 63 65 56 66 L26 68 C16 68 9 61 9 51 C9 41 16 34 26 34 L56 34 C64 35 70 38 74 42 Z', c: [50, 50], lean: 6 },
+    over:  { d: 'M34 24 C49 24 60 35 60 50 C60 65 49 76 34 76 C19 76 8 65 8 50 C8 35 19 24 34 24 Z', c: [34, 50] },
+  },
+  // S-band under, fat head knob over — the head strikes forward on the move
+  serpent: {
+    under: { d: 'M76 56 C70 49 63 47 56 49 C48 52 44 60 38 66 C32 72 22 74 14 70 C8 67 5 60 10 57 C16 60 24 60 30 56 C36 52 40 44 48 38 C54 34 63 33 70 37 C76 41 79 49 76 56 Z', c: [42, 52] },
+    over:  { d: 'M77 41 C83 36 92 37 95 44 C98 51 94 59 86 60 C80 61 75 58 73 53 C71 48 72 44 77 41 Z', c: [84, 49], lean: 5 },
+  },
+  // smooth torso + forked brush tail under, snout/ears head over — the head
+  // leads on the move; wolves, hounds, foxes
+  canine: {
+    under: { d: 'M50 32 C40 29 30 30 22 35 C16 38 12 42 11 47 L2 40 L8 50 L2 60 L11 53 C12 58 16 62 22 65 C30 70 40 71 50 68 C58 65 63 58 63 50 C63 42 58 35 50 32 Z', c: [34, 50] },
+    over:  { d: 'M92 50 C92 46 89 43 85 42 C80 37 74 34 66 34 L60 22 L52 32 C46 35 42 42 42 50 C42 58 46 65 52 68 L60 78 L66 66 C74 66 80 63 85 58 C89 57 92 54 92 50 Z', c: [66, 50], lean: 5 },
+  },
 }
 
-// Per-family accent layer, rotated WITH the body while alive: the ONE extra
-// flat primitive that turns a silhouette into a creature — the snail's shell
-// spiral, the canine's cream nose, the blob's gel gloss. Tone/palette colors
-// only (the spiral takes the tone so it works on both teams); families whose
-// silhouette already carries the read (serpent, beast, flyer) stay at zero.
+// Per-family accent, riding the OVER plate's transform while alive: the ONE
+// extra flat primitive that turns a silhouette into a creature — the snail's
+// shell spiral, the canine's cream nose. Tone/palette colors only (the spiral
+// takes the tone so it works on both teams); families whose plates already
+// carry the read stay at zero.
 const BODY_DETAILS: Partial<Record<BodyShape, (p: (typeof PAPER_TONE)[Tone]) => ReactNode>> = {
-  blob:   () => <path d="M36 38 C44 32 56 32 62 36 C58 42 46 46 38 46 C33 46 32 42 36 38 Z" fill={PAL.cream} fillOpacity={0.4} />,
-  snail:  (p) => <path d="M30 40 C38 42 40 50 34 55 C26 61 14 56 14 46 C14 36 24 28 36 30" fill="none" stroke={p.outline} strokeWidth="4.5" strokeLinecap="round" />,
+  snail:  (p) => <path d="M34 40 C41 42 43 49 38 54 C31 60 20 55 20 46 C20 37 28 30 39 32" fill="none" stroke={p.outline} strokeWidth="4.5" strokeLinecap="round" />,
   canine: () => <path d="M84 44 C90 45 92 48 92 50 C92 52 90 55 84 56 C80 55 78 52 78 50 C78 48 80 45 84 44 Z" fill={PAL.cream} fillOpacity={0.75} />,
 }
 
@@ -200,16 +230,24 @@ const WEAPON_SHAPES: Record<Weapon, ReactNode> = {
 // One SVG per token: shadow ellipse, facing weapon (a rotated group under the
 // body, so only the tip shows — a held weapon), then the two-tone body. Merged
 // into a single <svg> to keep the per-token element count down (see contract).
-const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon, alive, selected, facingDeg, dims }: TokenBodyProps) {
+const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon, alive, selected, facingDeg, moving, dims }: TokenBodyProps) {
   BODY_RENDER_PROBE.count++
   const p = PAPER_TONE[tone]
   const outline = tone !== 'casting' && tint ? tint : p.outline
-  const body = PAPER_BODY_PATHS[bodyShape]
+  const { under, over } = PAPER_BODY_LAYERS[bodyShape]
   // Facing rotation snaps per round like the circle skin's FacingNub — no
   // rotate transition (359°→1° would spin the long way around). The whole
   // top-down body rotates to the heading (null — neutrals — faces east).
+  // A plate's motion lean rides the SAME transform string (rotate first, then
+  // the local +x shift), so it snaps on the move/idle edge — at 1–3 screen px
+  // that's imperceptible, and it costs no transition or animation.
   const angle = alive ? facingDeg : null
-  const rot = angle ? `rotate(${angle} 50 50)` : undefined
+  const plateT = (pl: BodyPlate) => {
+    const lean = moving && pl.lean ? ` translate(${pl.lean} 0)` : ''
+    return angle || lean ? `rotate(${angle ?? 0} 50 50)${lean}` : undefined
+  }
+  const litT = (pl: BodyPlate, nudge: string, k: number) =>
+    `translate(${nudge}) ${plateT(pl) ?? ''} translate(${pl.c[0]} ${pl.c[1]}) scale(${k}) translate(${-pl.c[0]} ${-pl.c[1]})`
   const heroWeapon = weapon ?? (bodyShape === 'humanoid' ? 'sword' : undefined)
   return (
     <div
@@ -223,29 +261,34 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
         {/* ground-contact shadow: an offset flat ellipse, NOT filter:drop-shadow */}
         <ellipse cx="54" cy={alive ? 55 : 80} rx="46" ry={alive ? 45 : 17} fill={PAL.shadow} fillOpacity={0.35} />
         {angle != null && heroWeapon && (
-          <g transform={rot}>
+          <g transform={plateT(under)}>
             {WEAPON_SHAPES[heroWeapon]}
           </g>
         )}
         {alive ? (
-          // Two-tone with the light pinned in SCREEN space: the base (and any
-          // detail) rotates to the heading, while the lit copy composes its
-          // up-left nudge OUTSIDE the rotation — transforms apply right-to-left,
-          // so the shape rotates first, then shifts. One light direction at any
-          // heading, zero extra elements.
+          // Stacked plates, light pinned in SCREEN space: each plate rotates
+          // (+ its motion lean) while its lit copy composes the up-left nudge
+          // OUTSIDE the rotation — transforms apply right-to-left, so the shape
+          // rotates first, then shifts. The over plate additionally casts a
+          // flat down-right shadow ONTO the under plate — the "two sheets of
+          // paper" read. 5 flat paths, no filters.
           <>
-            <path d={body} fill={p.base} stroke={outline} strokeWidth="5" transform={rot} />
-            <path d={body} fill={p.top} transform={`translate(-3 -4) ${rot ?? ''} translate(50 50) scale(0.94) translate(-50 -50)`} />
-            {BODY_DETAILS[bodyShape] && <g transform={rot}>{BODY_DETAILS[bodyShape]!(p)}</g>}
+            <path d={under.d} fill={p.base} stroke={outline} strokeWidth="5" transform={plateT(under)} />
+            <path d={under.d} fill={p.top} transform={litT(under, '-3 -4', 0.94)} />
+            <path d={over.d} fill={PAL.shadow} fillOpacity={0.3} transform={`translate(2.5 3.5) ${plateT(over) ?? ''}`} />
+            <path d={over.d} fill={p.base} stroke={outline} strokeWidth="4" transform={plateT(over)} />
+            <path d={over.d} fill={p.top} transform={litT(over, '-2 -3', 0.92)} />
+            {BODY_DETAILS[bodyShape] && <g transform={plateT(over)}>{BODY_DETAILS[bodyShape]!(p)}</g>}
           </>
         ) : (
-          // KO: the SAME silhouette crumpled flat — squashed onto the ground line
-          // and tipped over, lit copy keeping the standard up-left nudge, so the
-          // heap still reads as cut paper (and as this body, not a generic ✕).
-          // Same two paths as alive; no filters (the old grayscale was one).
+          // KO: the plates merged into ONE silhouette (path data concatenates —
+          // both wind the same way) and crumpled flat — squashed onto the ground
+          // line and tipped over, lit copy keeping the standard up-left nudge,
+          // so the heap still reads as cut paper (and as this body, not a
+          // generic ✕). Two paths; no filters (the old grayscale was one).
           <>
-            <path d={body} fill={p.base} stroke={p.outline} strokeWidth="6" transform="translate(50 80) rotate(-9) scale(1.05 0.42) translate(-50 -50)" />
-            <path d={body} fill={p.top} transform="translate(-3 -4) translate(50 80) rotate(-9) scale(0.99 0.4) translate(-50 -50)" />
+            <path d={`${under.d} ${over.d}`} fill={p.base} stroke={p.outline} strokeWidth="6" transform="translate(50 80) rotate(-9) scale(1.05 0.42) translate(-50 -50)" />
+            <path d={`${under.d} ${over.d}`} fill={p.top} transform="translate(-3 -4) translate(50 80) rotate(-9) scale(0.99 0.4) translate(-50 -50)" />
           </>
         )}
       </svg>

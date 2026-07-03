@@ -700,6 +700,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
             alive={c.alive}
             selected={selected}
             facingDeg={facingDeg}
+            moving={c.alive && !!c.moving}
             dims={chipDims(cam, appearance.scale)}
           />
         </div>
