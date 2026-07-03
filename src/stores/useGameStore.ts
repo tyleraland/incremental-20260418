@@ -18,6 +18,7 @@ import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
 import { consumableDef } from '@/data/consumables'
 import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
+import { generateForLocation, specBarriers } from '@/mapgen'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
 import { npcsAt, npcToEngineInput } from '@/data/npcs'
@@ -615,9 +616,13 @@ function timeScaleFor(loc: Location): number {
 // the party knotted at the centre, `cap` monsters scattered across the field,
 // everyone with a limited sight radius. Marked `mode: 'open'` so it never ends.
 function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number, arrivals: GameState['portalArrivals'] = {}): BattleState {
-  const size = openWorldSize(loc)
+  // §mapgen: a location opted in via `mapGen` draws its arena size + barriers
+  // from the generated MapSpec (validated + rerolled inside the generator);
+  // every other location keeps the scenario / seeded-scatter path unchanged.
+  const gen = loc.mapGen ? generateForLocation(loc) : null
+  const size = gen ? gen.spec.cols : openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
-  const barriers = scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
+  const barriers = gen ? specBarriers(gen.spec) : scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
   // A city is a peaceful field: heroes mill about individually (§town wander) and
   // its NPCs stand around for them to cross paths with.
   const peaceful = loc.traits.includes('city')

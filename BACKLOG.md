@@ -187,6 +187,41 @@ What's left:
       `cam.size` changes (decouple zoom easing from the position `--seg-ms`), and/or
       rate-limit / smooth the per-round auto-fit target so it doesn't step every round.
 
+## Procedural map generation (scaffold shipped 2026-07; guide: `src/mapgen/CLAUDE.md`)
+
+The pipeline + MapSpec contract + validation harness + `field` recipe + `?mapgen=1`
+lab landed. Idea inventory: `procedural-generation-ideas.md`. Deferred phases (each
+independently shippable; ordering rationale in the guide's roadmap):
+
+- **Phase 2 — render consumption + first live location.** `terrain.tsx` /
+  `ARENA_SKINS` read the surface + scatter planes (mottles/props become MapSpec
+  consumers; today they derive visuals from barriers alone), then flip one sandbox
+  location's `mapGen` on and perf-pass it (`skin-ab`, `map-perf-envelope.test.ts`).
+  Also: lake/water ground treatment in the paper skin (shallow vs deep bands),
+  landmark POI → big silhouette prop.
+- **Phase 3 — dungeon recipe (graph-first).** Room/corridor graph, **cyclic
+  layouts** (loops not trees), the **stamp/vault registry** (authored MapSpec
+  fragments placed by constraint — the highest-leverage single item), lair POI,
+  depth gradient. Shares the bake/validate tail unchanged.
+- **Phase 4 — lock-and-key + proficiency gates.** Place `Lock`s (shape already in
+  `types.ts`), make `validate.ts` reachability conditional
+  (reachable-if-openable), add the `getProficiencies(unit)` derive, resolve
+  composition gates at deploy (map variant chosen at build time — no dynamic
+  barriers). Replayability engine: same seed × different party = different map.
+- **Phase 5 — city recipe (road-first) + coherence + naming.** Inter-map
+  adjacency/depth gradients as first-class; fill `semantic.premise` (+ place
+  names) — scaffolds, never prose; wire to Reports/offline surfaces.
+- **Phase 6 — interactables / dynamic barriers.** The one invariant-breaker
+  (BSNAP byte-identical replay must survive it); gated behind everything above.
+- **Cross-cutting debts:** barrier-count vs pather budget (a lake spends ~7–12
+  rects of `maxBarriers`=24 vs store `BARRIER_CAP`=16 — needs a Dijkstra perf
+  pass or rect-chain-aware pathing before big water maps go live); tactical
+  profile heuristics are v0 (chokepoint/lane counts unvalidated against play);
+  map features need consuming AI (hold-chokepoint / use-cover tactics — see AI
+  & coordination) and should ship as pairs; `?mapgen=1` lab could grow an
+  export-to-Location snippet button (curated-map authoring loop) and a bulk
+  CLI sweep (`npm run mapgen-sweep`) if the vitest fuzz gate gets slow.
+
 ## Offline progression
 
 - **✅ Sampled Offline Progression ("Warm Catch-up") — Phases 1 & 2 shipped.**

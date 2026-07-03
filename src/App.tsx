@@ -30,6 +30,9 @@ const SkinGallery = import.meta.env.DEV ? lazy(() => import('@/dev/SkinGallery')
 // PropDef as JSON, see it on every biome at every size, copy the snippet.
 // Same gating as the gallery. Guide: src/render/CLAUDE.md.
 const AssetWorkshop = import.meta.env.DEV ? lazy(() => import('@/dev/AssetWorkshop')) : null
+// Dev-only mapgen lab (`?mapgen=1`): seed contact sheet + layer inspector +
+// validation readout for the procedural map generator (src/mapgen/CLAUDE.md).
+const MapgenLab = import.meta.env.DEV ? lazy(() => import('@/dev/MapgenLab')) : null
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
@@ -119,6 +122,9 @@ function App() {
   }
   if (AssetWorkshop && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('workshop')) {
     return <Suspense fallback={null}><AssetWorkshop /></Suspense>
+  }
+  if (MapgenLab && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('mapgen')) {
+    return <Suspense fallback={null}><MapgenLab /></Suspense>
   }
 
   if (!classicMode) {

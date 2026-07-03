@@ -165,6 +165,13 @@ export interface Location {
   // the east side of one map lands you on the west side of the next (falls back to
   // the party anchor when a portal has no wired exit).
   portals?: Portal[]
+  // §mapgen: opt this location into the procedural map generator (src/mapgen) —
+  // its open-world battle's barriers + arena size then come from the generated
+  // MapSpec instead of testScenarioId/openWorldBarriers. Seed defaults to the
+  // location id (save = seed; the id is already persisted), themes project from
+  // `traits`. No live location sets this yet — the ?mapgen=1 lab is the review
+  // surface; flipping a location on is a one-line change here.
+  mapGen?: { recipe: string; seed?: number | string }
 }
 
 export interface Portal {

@@ -1,0 +1,224 @@
+// Map generation — THE UNIVERSE (idea catalog → types).
+//
+// This file is the scaffold's hardest deliverable: the fixed vocabularies and the
+// MapSpec contract every layer, recipe, consumer, and future phase builds against.
+// Vocabularies are deliberately SMALL (catalog §K: "small fixed vocabularies or
+// authoring explodes") — grow them one entry at a time, never per-feature.
+//
+// The load-bearing hinge (catalog intro): the engine only needs a collision
+// graph; everything else is a skin. A generator emits a MapSpec of four planes —
+// collision (engine), surface (render), scatter (render), semantic (store/AI) —
+// all derived from one shared substrate so features agree by construction.
+//
+// MapSpec is DATA ONLY: plain JSON-able values (plus one Uint8Array), no
+// functions, no class instances. Save = seed + params, never the baked spec
+// (§K); anything that must survive a save must be reconstructible from GenParams.
+
+export interface Pt { x: number; y: number }
+export interface Rect { x: number; y: number; w: number; h: number }
+
+// ── Collision plane (consumer: engine) ──────────────────────────────────────--
+// Rects forever (locked): two collision kinds only, matching engine Barrier —
+// 'wall' blocks movement + sight, 'cliff' blocks movement only (see-across).
+// Deep water, ravines, fences, hedges are NOT new engine primitives: they are
+// one of these two kinds wearing a different MATERIAL (catalog §B: "one
+// collision, many paints"). The engine adapter drops the material; only the
+// render layer reads it.
+
+export type CollisionKind = 'wall' | 'cliff'
+
+export const BARRIER_MATERIALS = [
+  'rock',        // natural outcrop / boulder mass (wall)
+  'cut-stone',   // built wall / ruin course (wall)
+  'wood',        // palisade / fallen timber (wall)
+  'hedge',       // dense growth: blocks path, see-across (cliff)
+  'deep-water',  // impassable water: see-across (cliff) — locked decision
+  'ravine',      // chasm / drop: see-across (cliff)
+  'rubble',      // collapsed structure (wall) — the ruins/history motif (§I)
+] as const
+export type BarrierMaterial = (typeof BARRIER_MATERIALS)[number]
+
+export interface CollisionRect extends Rect {
+  kind: CollisionKind
+  material: BarrierMaterial
+}
+
+// ── Surface plane (consumer: render; engine reads nothing here today) ────────
+// One walkable material per fine-grid cell — the "coherent pattern, not noise".
+// `cellsPerUnit` is the two-resolutions hook (§B): collision rects live in world
+// units; the surface grid may later run finer than 1 cell/unit for richer paper
+// visuals without touching collision. 1 today.
+
+export const SURFACE_MATERIALS = [
+  'grass',
+  'meadow',          // lush grass band (high moisture)
+  'dirt',
+  'sand',
+  'shallow-water',   // walkable ford/shore — crossable by construction (locked)
+  'deep-water',      // visual twin of the deep-water collision rects covering it
+  'stone-floor',
+  'road',            // reserved for the city/dungeon recipes' nav skeleton
+] as const
+export type SurfaceMaterial = (typeof SURFACE_MATERIALS)[number]
+
+export interface SurfacePlane {
+  cols: number
+  rows: number
+  cellsPerUnit: number            // fine-grid resolution hook; always 1 today
+  grid: Uint8Array                // row-major [y * cols + x] → SURFACE_MATERIALS index
+}
+
+// ── Scatter plane (consumer: render; optional future collision) ──────────────
+// Discrete props placed by the generator so they can respect the substrate
+// (trees where it's moist) and the semantic plane (clear of spawns/portals).
+// Abstract KINDS, not prop ids — the skin translates kind → its own prop
+// archetype (same seam rule as appearance.ts: switch on tags, never ids).
+// `solid: true` is the hook for props that also emit a collision rect; the
+// scaffold places decorative-only scatter.
+
+export const SCATTER_KINDS = ['tree', 'bush', 'rock', 'stump', 'flower', 'reed'] as const
+export type ScatterKind = (typeof SCATTER_KINDS)[number]
+
+export interface ScatterItem extends Pt {
+  kind: ScatterKind
+  size: number       // relative footprint, ~0.5–1.5
+  seed: number       // per-item wonk seed for the render layer's variant pick
+  solid: boolean
+}
+
+// ── Semantic plane (consumer: store / gameplay / AI) ─────────────────────────
+// Everything a map knows about itself that isn't geometry: named points, the
+// navigation skeleton, gating, self-description. This is the bridge from the
+// generator to the deploy loop (§L) and the story scaffold (§M).
+
+export const POI_KINDS = [
+  'spawn',      // party form-up anchor (validation: apron kept clear)
+  'portal',     // a travel edge's on-field cell (pre-placed via GenParams.pois)
+  'landmark',   // orientation silhouette site (§H) — render may stamp a big prop
+  'lair',       // boss/set-piece terminal node (§D) — dungeon recipe
+  'vault',      // optional off-critical-path reward pocket (§J)
+  'gate',       // a Lock's physical site (§D lock-and-key)
+  'key',        // where a Lock's opener lives
+] as const
+export type PoiKind = (typeof POI_KINDS)[number]
+
+export interface Poi {
+  id: string
+  kind: PoiKind
+  at: Pt
+  tags: string[]     // free-form annotations ('vista', 'boss', a lock id…)
+}
+
+// Navigation skeleton (§A layer 5): the connectivity graph recipes reason over
+// BEFORE geometry exists (function-first), baked here for consumers (AI waypoint
+// hints, the deploy UI, stamps). The field recipe emits nodes only; roads /
+// corridors / cycles arrive with the city & dungeon recipes.
+export interface NavNode { id: string; at: Pt; poiId?: string }
+export interface NavEdge {
+  a: string
+  b: string
+  kind: 'road' | 'corridor' | 'desire-path'
+  lockId?: string    // edge gated by a Lock (conditional reachability)
+}
+
+// Abstract lock-and-key (§D — "the one abstraction unifying gates, switches,
+// secrets, traps, proficiency puzzles"). A Lock sits on a nav edge (or POI) and
+// names what opens it; resolution to a themed concrete (rune door, portcullis,
+// rubble) happens function-first, theme-late. PROFICIENCY_TAGS is the §F
+// vocabulary — switch on tags, never class ids. The scaffold reserves the shape;
+// no recipe places locks yet, but the validator's reachability is already
+// written to become conditional ("reachable-if-openable") when one does.
+export const PROFICIENCY_TAGS = [
+  'perception', 'disarm', 'might', 'mobility', 'arcane', 'holy', 'light', 'lore',
+] as const
+export type ProficiencyTag = (typeof PROFICIENCY_TAGS)[number]
+
+export interface Lock {
+  id: string
+  kind: 'enemy' | 'switch' | 'key' | 'proficiency'
+  tag?: ProficiencyTag     // for kind 'proficiency'
+  at?: Pt
+}
+
+// Tactical-profile annotation (§L): the map self-describes so richness reaches
+// player decisions (deploy UI: "enclosed, 2 chokepoints, rewards perception").
+// Heuristic numbers, not promises — refine per phase.
+export interface TacticalProfile {
+  openness: number        // unblocked area fraction, 0–1
+  barrierCount: number
+  chokepoints: number     // narrow-gap count between barrier pairs
+  longLanes: number       // unbroken sight lanes spanning most of the map
+  coverClusters: number   // distinct wall clusters usable as cover
+}
+
+export interface SemanticPlane {
+  pois: Poi[]
+  nav: { nodes: NavNode[]; edges: NavEdge[] }
+  locks: Lock[]
+  regionTags: string[]        // theme tags echoed for cross-system coherence (§G)
+  premise: string | null      // §M1 story scaffold — ONE line, never prose; null until the naming phase
+  tactical: TacticalProfile
+}
+
+// ── The contract ─────────────────────────────────────────────────────────────
+
+export interface MapSpec {
+  specVersion: 1
+  recipe: string
+  seed: number               // the resolved numeric seed actually used (post-reroll)
+  cols: number
+  rows: number
+  collision: CollisionRect[]
+  surface: SurfacePlane
+  scatter: ScatterItem[]
+  semantic: SemanticPlane
+}
+
+// ── Generation params ────────────────────────────────────────────────────────
+// Themes reuse the location-trait words (biomeForLocation's vocabulary) so a
+// Location's `traits` project straight onto the generator — one tag enabling
+// compatible content across systems with no explicit coordination (§G).
+
+export const THEME_TAGS = [
+  'plains', 'forest', 'beach', 'water', 'mountain', 'desert',
+  'ruins', 'city', 'dungeon', 'haunted', 'volcanic', 'arcane',
+] as const
+export type ThemeTag = (typeof THEME_TAGS)[number]
+
+export interface GenParams {
+  recipe: string
+  seed: number | string       // string → hashString; save = this, never the spec
+  size: number                // square arena side, world units
+  themes: ThemeTag[]
+  // Pather budget: open-world routing cost grows with BARRIER COUNT, not map
+  // area (store BARRIER_CAP=16). Default is deliberately close to that cap;
+  // recipes that spend more (a lake's rect chain) must be perf-passed before a
+  // live location adopts them. See BACKLOG → Procedural map generation.
+  maxBarriers?: number
+  spawnApron?: number         // clear radius around the spawn POI (default scales with size)
+  keepClear?: Rect[]          // externally-owned cells (portals) no pass may cover
+  pois?: { kind: PoiKind; at: Pt; id?: string; tags?: string[] }[]  // pre-placed anchors (portals)
+  // Layer-inspector hook: pass ids to skip. Stream-isolated RNG guarantees the
+  // remaining passes produce byte-identical output — the ?mapgen=1 lab's
+  // layer-by-layer buildup rides this.
+  skipPasses?: string[]
+  // Validation policy: 'reroll' (default) re-runs with a derived seed up to
+  // MAX_ATTEMPTS; 'accept' returns the first attempt with its failing report
+  // (the lab wants to SEE bad maps); 'throw' for callers that must not ship one.
+  onFail?: 'reroll' | 'accept' | 'throw'
+}
+
+// ── Validation harness output ────────────────────────────────────────────────
+// Machine-checkable coherence (§A layer 10). Every rule is named so harnesses
+// (fuzz gates, the lab, future CI sweeps) report failures a human can triage
+// without rendering the map.
+
+export interface RuleResult { rule: string; ok: boolean; detail: string }
+export interface ValidationReport { ok: boolean; rules: RuleResult[] }
+
+export interface GenResult {
+  spec: MapSpec
+  report: ValidationReport
+  attempts: number            // 1 = first roll validated
+  notes: string[]             // per-pass breadcrumbs (what was capped/dropped — no silent truncation)
+}

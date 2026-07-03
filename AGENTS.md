@@ -96,6 +96,12 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 - **Overworld = open-world locations only.** Every `region: 'world'` location is `openWorld` (cities included). The fixed-round **discrete-wave encounters** (proving/pathing arenas, Elemental Circle/Frontier, Elite Four, the early discrete fields) live in the **`'fixed-encounters'`** dungeon, entered from Prontera — but **sandbox-only** (`isRegionUnlocked`/`SANDBOX_ONLY_REGIONS` in `unlocks.ts`; the entry is hidden in curated). Curated class-change quests therefore must target monsters on the overworld (guarded by `world-map.test.ts`).
 - Tap a location → select + detail panel (units present, monsters, Familiarity = `locationFamiliarity[id]/familiarityMax`, deploy).
 
+## Procedural map generation (`src/mapgen/` — scaffold; guide: `src/mapgen/CLAUDE.md`, ideas: `procedural-generation-ideas.md`)
+- Pure deterministic leaf library (engine discipline) baking a **MapSpec** of 4 planes — collision (engine) / surface / scatter (render) / semantic (store/AI) — from shared noise fields, via a **pass pipeline with per-pass RNG streams** (editing one pass never reshuffles another's randomness). Save = seed + params, never the spec.
+- One recipe so far: `field` (overworld: surface bands → lake+ford → outcrops → scatter → POIs + tactical profile). `dungeon`/`city` reserved. Materials over 2 collision kinds (deep water = `cliff` + `deep-water` material); vocabularies in `types.ts` stay small.
+- **Validation harness** (`validate.ts`): named rules (reachability flood-fill, apron, barrier budget, water coherence) + reroll policy; fuzz gate in `recipe-field.test.ts`. Human review runs through the dev lab **`?mapgen=1`** (seed contact sheet, plane toggles, per-pass skips).
+- Game seam: `Location.mapGen = { recipe, seed? }` → `createOpenBattleFor` takes barriers+size from the spec (adapter `specBarriers`/`generateForLocation`). **No live location opted in yet**; render consumption (terrain.tsx reading surface/scatter) is the next phase — see BACKLOG → *Procedural map generation*.
+
 ## Equipment & crafting
 - Equip slots: `mainHand`, `offHand`, `sideboard1`, `sideboard2`, `armor`, `accessory`. Sideboard slots hold *reserved, stat-inactive* gear. A 2H weapon (`category 'weapon-2h'`) in `mainHand` locks `offHand`.
 - Equip flow: tap a slot in Units → Inventory opens in equip-context → pick an item (shows stat deltas + `↑ Upgrade`) → back to Units.
