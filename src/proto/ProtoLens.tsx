@@ -399,17 +399,14 @@ function SelectionCommandBar({ scope, units, location, setTop }: {
   // ── location scope: the site is the subject; deploy is the primary verb ──
   if (scope === 'location') {
     if (!location) return null
+    // The scope switcher above already names the site, so this row is pure
+    // action: Deploy is the site's primary verb, its quest board beside it.
     return (
       <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 bg-game-bg/40">
-        <span className="flex items-center gap-1.5 min-w-0 text-[11px] px-2 py-1 rounded border border-game-accent/50 bg-game-accent/10 text-game-text">
-          <span className="shrink-0">⌖</span><span className="truncate">{location.name}</span>
-        </span>
-        <div className="ml-auto shrink-0 flex items-center gap-1.5">
-          <button onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })} className={primaryBtn}>
-            ➤ Deploy heroes here
-          </button>
-          <button onClick={() => setTop('loc-quests')} className={quietBtn} title="This location's quest board">📜</button>
-        </div>
+        <button onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })} className={`${primaryBtn} flex-1 justify-center`}>
+          ➤ Deploy heroes here
+        </button>
+        <button onClick={() => setTop('loc-quests')} className={quietBtn} title="This location's quest board">📜</button>
       </div>
     )
   }
@@ -1408,6 +1405,10 @@ export function ProtoLens() {
   const openReport       = useGameStore((s) => s.openReport)
   const selectedFoe      = useProtoStore((s) => s.selectedFoe)
   const clearFoe         = useProtoStore((s) => s.clearFoe)
+  const setScopeFocus    = useProtoStore((s) => s.setScopeFocus)
+  const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
+  const setMapPage       = useGameStore((s) => s.setMapPage)
+  const mapPageId        = useGameStore((s) => s.mapPageId)
   const [top, setTop] = useState<Top>('location')
   const [heroSub, setHeroSub] = useState<HeroSub>('stats')
   // Seed the mock pack/card economy once (idempotent) so the hero board has cards
@@ -1513,8 +1514,48 @@ export function ProtoLens() {
     else if (tabsHidden && y < prev - 24) set(false)
   }
 
+  // ── Scope switcher facets ────────────────────────────────────────────────────
+  // The lens has two faces — the SITE you're looking at and the HERO you've
+  // picked — and the old design swapped between them silently, so you'd lose
+  // track of which you were in and how to get back. The switcher makes both
+  // always-visible and one tap apart: the active facet is lit, the other waits.
+  // The location facet resolves to the focused site, else the selected hero's
+  // own location (so "go to the site" works straight from a hero).
+  const facetLoc = location ?? (unit?.locationId ? locations.find((l) => l.id === unit.locationId) ?? null : null)
+  const heroLabel = selUnits.length > 1 ? `${selUnits.length} heroes` : (unit ? unit.name.split(' ')[0] : null)
+  const heroIcon = selUnits.length > 1 ? '⚑' : '◈'
+  const goLocationScope = () => {
+    if (!facetLoc) return
+    if (facetLoc.region !== mapPageId) setMapPage(facetLoc.region)
+    if (selectedLocId !== facetLoc.id) setSelectedLocation(facetLoc.id)
+    setScopeFocus('location')
+  }
+  const goHeroScope = () => { if (heroLabel) setScopeFocus('hero') }
+  const facetCls = (active: boolean, enabled: boolean) => [
+    'flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[12px] font-medium transition-colors',
+    !enabled ? 'border-transparent text-game-muted/50 cursor-default'
+      : active ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
+      : 'border-game-border/70 text-game-text-dim hover:text-game-text hover:bg-white/5',
+  ].join(' ')
+
   return (
     <div className="relative h-full flex flex-col bg-game-surface/40 min-h-0">
+      {/* Scope switcher — the always-on "where am I?" anchor. Two facets: the site
+          and the selected hero. The lit one is your current scope; tapping the
+          other flips scope (and its tab row below). Hidden while inspecting a foe. */}
+      {!selectedFoe && (facetLoc || heroLabel) && (
+        <div className="shrink-0 flex items-stretch gap-1.5 px-2 py-1.5 border-b border-game-border bg-game-surface/60">
+          <button onClick={goLocationScope} disabled={!facetLoc} title={facetLoc ? `Look at ${facetLoc.name} — the site` : undefined} className={facetCls(scope === 'location', !!facetLoc)}>
+            <span className="shrink-0 opacity-80">⌖</span>
+            <span className="truncate">{facetLoc ? facetLoc.name : 'No site'}</span>
+          </button>
+          <span className="self-center text-[10px] text-game-muted shrink-0">›</span>
+          <button onClick={goHeroScope} disabled={!heroLabel} title={heroLabel ? `Look at ${heroLabel}` : undefined} className={facetCls(scope !== 'location', !!heroLabel)}>
+            <span className="shrink-0 opacity-80">{heroIcon}</span>
+            <span className="truncate">{heroLabel ?? 'No hero'}</span>
+          </button>
+        </div>
+      )}
       <div className={['shrink-0 overflow-hidden transition-[max-height] duration-200 ease-out', tabsHidden ? 'max-h-0' : 'max-h-20'].join(' ')}>
         <div className="flex border-b border-game-border bg-game-surface/60">
           {tabs.map((t) => (

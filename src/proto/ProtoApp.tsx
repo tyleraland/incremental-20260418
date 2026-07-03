@@ -85,14 +85,15 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   const [open, setOpen] = useState(false)
   const cur = SORT_MODES.find((m) => m.id === mode)!
   return (
-    <div className="relative shrink-0">
+    <div className="relative shrink-0 flex-1 flex">
       {/* compact trigger naming the active mode — shares a column with the
-          multi toggle (the old icon-glyph pair read as a cipher) */}
+          multi toggle (the old icon-glyph pair read as a cipher). flex-1 so it
+          splits the rail's height evenly with the multi toggle below it. */}
       <button
         onClick={() => setOpen((v) => !v)}
         title={`Sort: ${cur.label} ${dir === 'asc' ? '▲' : '▼'}`}
         aria-label="Sort roster"
-        className="flex items-center justify-center gap-1 w-12 h-6 rounded-md border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
+        className="flex-1 flex items-center justify-center gap-1 w-12 min-h-[24px] rounded-md border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
       >
         <span className="text-[10px] leading-none">⇅</span>
         <span className="text-[9px] leading-none">{cur.label}{dir === 'asc' ? '▲' : '▼'}</span>
@@ -216,6 +217,9 @@ function RosterChip({ unit, selected, here, following, compact, onSelect, onFocu
 // ── Top-bar global nav ─────────────────────────────────────────────────────--
 type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'town'
 const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', town: 'Town' }
+// What the ☰ drawer can open: the global panels above, plus 'decisions' (its own
+// inbox overlay, not a GlobalOverlay). 'decisions' is routed specially in ProtoApp.
+type DrawerDest = GlobalPanel | 'decisions'
 
 // The Guild board folds in the Party spreadsheet (all heroes grouped by location).
 // Tapping a hero now drills straight into the lens's Hero tab (the single hero
@@ -240,44 +244,19 @@ function GuildBoard({ onHero }: { onHero: (id: string) => void }) {
   )
 }
 
-function NavBtn({ icon, label, active, disabled, badge, onClick, className }: { icon: string; label: string; active?: boolean; disabled?: boolean; badge?: number; onClick?: () => void; className?: string }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={badge ? `${label} — ${badge} ready` : label}
-      aria-label={label}
-      className={[
-        // Icon over an always-visible label (icon-only buttons read as mystery
-        // meat on a phone); inactive buttons drop their outline so the row
-        // doesn't read as eight competing boxes.
-        'relative shrink-0 flex flex-col items-center justify-center gap-0.5 min-w-[50px] px-1.5 h-10 rounded-lg border transition-colors',
-        active ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
-          : 'border-transparent text-game-text-dim hover:text-game-text hover:bg-white/5',
-        disabled ? 'opacity-40 cursor-not-allowed' : '',
-        className ?? '',
-      ].join(' ')}
-    >
-      <span className="text-base leading-none">{icon}</span>
-      <span className="text-[9px] font-medium leading-none">{label}</span>
-      {/* nudge: a gold badge when quests are ready to collect */}
-      {badge ? (
-        <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-bg tabular-nums">{badge}</span>
-      ) : null}
-    </button>
-  )
-}
-
 // ── Decisions inbox ──────────────────────────────────────────────────────────--
 // One actionable surface replacing scattered alert dots: everything that wants a
 // player decision, with severity and a "go" action. red = blocked/hurt, gold =
 // spendable/collectable, gray = informational.
 type Severity = 'red' | 'gold' | 'info'
+// The kind drives the inbox's type filter (chips). 'ko' = a hurt hero, 'points' =
+// spendable growth, 'quest' = quest board, 'idle' = a benched hero.
+type DecisionKind = 'ko' | 'points' | 'quest' | 'idle'
 // A decision is one row: a bold `title` (who/what) + an optional dim `detail`
 // (the specifics). One row per subject — a hero's skill AND ability points fold
 // into a single row rather than nagging twice — so the inbox reads as a short,
 // prioritized queue instead of a wall of near-duplicate lines.
-type Decision = { id: string; severity: Severity; icon: string; title: string; detail?: string; go: () => void }
+type Decision = { id: string; severity: Severity; kind: DecisionKind; icon: string; title: string; detail?: string; go: () => void }
 
 function useDecisions(gotoQuest: (e: QuestBoardEntry) => void): Decision[] {
   const units = useGameStore((s) => s.units)
@@ -294,7 +273,7 @@ function useDecisions(gotoQuest: (e: QuestBoardEntry) => void): Decision[] {
   for (const u of units) {
     // Urgent first: a recovering hero is out of the fight and wants eyes on them.
     if (u.recoveryTicksLeft > 0) {
-      out.push({ id: `ko-${u.id}`, severity: 'red', icon: '✚', title: first(u), detail: 'Knocked out — recovering', go: () => goHero(u) })
+      out.push({ id: `ko-${u.id}`, severity: 'red', kind: 'ko', icon: '✚', title: first(u), detail: 'Knocked out — recovering', go: () => goHero(u) })
     }
     // Spendable points fold into ONE row per hero (skill + ability together): the
     // tap lands you on their dossier where both are spent anyway.
@@ -302,15 +281,15 @@ function useDecisions(gotoQuest: (e: QuestBoardEntry) => void): Decision[] {
       const bits: string[] = []
       if (u.skillPoints > 0) bits.push(pts(u.skillPoints, 'skill point'))
       if (u.abilityPoints > 0) bits.push(pts(u.abilityPoints, 'ability point'))
-      out.push({ id: `pts-${u.id}`, severity: 'gold', icon: '✦', title: first(u), detail: `${bits.join(' · ')} to spend`, go: () => goHero(u) })
+      out.push({ id: `pts-${u.id}`, severity: 'gold', kind: 'points', icon: '✦', title: first(u), detail: `${bits.join(' · ')} to spend`, go: () => goHero(u) })
     }
   }
   for (const e of board) {
-    if (e.status === 'ready') out.push({ id: `q-${e.id}`, severity: 'gold', icon: '📜', title: `Quest ready — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
-    else if (e.status === 'available') out.push({ id: `qa-${e.id}`, severity: 'info', icon: '📜', title: `New quest — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
+    if (e.status === 'ready') out.push({ id: `q-${e.id}`, severity: 'gold', kind: 'quest', icon: '📜', title: `Quest ready — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
+    else if (e.status === 'available') out.push({ id: `qa-${e.id}`, severity: 'info', kind: 'quest', icon: '📜', title: `New quest — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
   }
   for (const u of units) {
-    if (!u.locationId && !u.isResting && u.recoveryTicksLeft <= 0) out.push({ id: `idle-${u.id}`, severity: 'info', icon: '·', title: first(u), detail: 'Idle — deploy them?', go: () => goHero(u) })
+    if (!u.locationId && !u.isResting && u.recoveryTicksLeft <= 0) out.push({ id: `idle-${u.id}`, severity: 'info', kind: 'idle', icon: '·', title: first(u), detail: 'Idle — deploy them?', go: () => goHero(u) })
   }
   const rank = { red: 0, gold: 1, info: 2 }
   return out.sort((a, b) => rank[a.severity] - rank[b.severity])
@@ -333,9 +312,24 @@ const SEV_SECTION: { sev: Severity; label: string }[] = [
   { sev: 'gold', label: 'Ready to spend' },
   { sev: 'info', label: 'When you get to it' },
 ]
+// Type filter chips — only the kinds actually present are offered, so the row
+// stays short. 'all' is always first.
+const KIND_FILTERS: { id: DecisionKind; label: string; icon: string }[] = [
+  { id: 'ko',     label: 'Hurt',   icon: '✚' },
+  { id: 'points', label: 'Points', icon: '✦' },
+  { id: 'quest',  label: 'Quests', icon: '📜' },
+  { id: 'idle',   label: 'Idle',   icon: '·' },
+]
 
 function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose: () => void }) {
+  const [filter, setFilter] = useState<DecisionKind | 'all'>('all')
   const urgent = decisions.filter((d) => d.severity !== 'info').length
+  // Chips for the kinds present, each with its count; hide the row if there's
+  // only one kind (nothing to filter).
+  const present = KIND_FILTERS.map((k) => ({ ...k, n: decisions.filter((d) => d.kind === k.id).length })).filter((k) => k.n > 0)
+  const eff = filter !== 'all' && present.some((k) => k.id === filter) ? filter : 'all'
+  const shown = eff === 'all' ? decisions : decisions.filter((d) => d.kind === eff)
+  const chipBase = 'flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] whitespace-nowrap transition-colors'
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
@@ -343,6 +337,22 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
         <span className="text-[11px] text-game-text-dim">{urgent ? `${urgent} want you` : `${decisions.length} to review`}</span>
         <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
+      {/* Type filter — scroll-safe chip row; only present kinds appear. */}
+      {present.length > 1 && (
+        <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-game-border/60 bg-game-surface/30 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setFilter('all')}
+            className={[chipBase, eff === 'all' ? 'border-game-primary/60 bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
+          >All <span className="tabular-nums opacity-70">{decisions.length}</span></button>
+          {present.map((k) => (
+            <button
+              key={k.id}
+              onClick={() => setFilter(k.id)}
+              className={[chipBase, eff === k.id ? 'border-game-primary/60 bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
+            ><span>{k.icon}</span>{k.label} <span className="tabular-nums opacity-70">{k.n}</span></button>
+          ))}
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         <div className="max-w-xl w-full mx-auto space-y-3" style={{ zoom: 1.12 }}>
           {decisions.length === 0 && (
@@ -352,7 +362,7 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
             </div>
           )}
           {SEV_SECTION.map(({ sev, label }) => {
-            const rows = decisions.filter((d) => d.severity === sev)
+            const rows = shown.filter((d) => d.severity === sev)
             if (!rows.length) return null
             return (
               <section key={sev} className="space-y-1.5">
@@ -385,9 +395,13 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
   )
 }
 
-// ── Nav drawer — the low-frequency global destinations live here, off the bar ──
-function NavDrawer({ onPick, onClose }: { onPick: (p: GlobalPanel) => void; onClose: () => void }) {
-  const items: { id: GlobalPanel; icon: string; label: string; sub: string }[] = [
+// ── Nav drawer — the single global-nav surface (the reclaimed top row folded in
+// here). Decisions + Town lead (they were the two on-bar buttons); the rest are
+// the lower-frequency destinations. Decisions carries the urgent count.
+function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => void; onClose: () => void; urgent: number }) {
+  const items: { id: DrawerDest; icon: string; label: string; sub: string; badge?: number }[] = [
+    { id: 'decisions', icon: '⚑', label: 'Decisions', sub: 'everything waiting on you', badge: urgent },
+    { id: 'town',     icon: '🏪', label: 'Town',     sub: 'market · stash · resupply' },
     { id: 'guild',    icon: '⚜', label: 'Guild',    sub: 'roster spreadsheet · doctrine · recruit' },
     { id: 'quests',   icon: '📜', label: 'Quests',   sub: 'the full journal, all locations' },
     { id: 'reports',  icon: '📊', label: 'Reports',  sub: 'combat + progression history' },
@@ -409,8 +423,13 @@ function NavDrawer({ onPick, onClose }: { onPick: (p: GlobalPanel) => void; onCl
               onClick={() => onPick(it.id)}
               className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
             >
-              <span className="text-lg w-6 text-center">{it.icon}</span>
-              <span className="min-w-0">
+              <span className="relative text-lg w-6 text-center shrink-0">
+                {it.icon}
+                {it.badge ? (
+                  <span className="absolute -top-1.5 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-surface tabular-nums">{it.badge}</span>
+                ) : null}
+              </span>
+              <span className="min-w-0 flex-1">
                 <span className="block text-sm text-game-text font-medium">{it.label}</span>
                 <span className="block text-[10px] text-game-muted truncate">{it.sub}</span>
               </span>
@@ -705,21 +724,26 @@ export function ProtoApp() {
 
   return (
     <div className="h-full flex flex-col bg-game-bg overflow-hidden">
-      {/* global bar — field play keeps only what it needs always-on: the menu
-          drawer (Guild/Quests/Reports/Time/Settings), Town (a real game
-          destination), and the Decisions inbox. Everything else moved off the bar. */}
-      <header className="shrink-0 flex items-center gap-1 px-1.5 h-12 border-b border-game-border bg-game-surface/70">
-        <NavBtn icon="☰" label="Menu" active={drawer} onClick={() => setDrawer(true)} />
-        <div className="ml-auto flex items-center gap-1">
-          <NavBtn icon="🏪" label="Town" active={panel === 'town'} onClick={() => setPanel('town')} />
-          <NavBtn icon="⚑" label="Decisions" active={decisionsOpen} badge={urgent} onClick={() => setDecisionsOpen(true)} />
-        </div>
-      </header>
-
-      {/* roster rail — always pinned (it's the shared selector driving stage +
-          lens), but defaults to a slim avatar-only strip; the ▸ handle expands
-          it into the managing view (names, group labels, sort, multi-select). */}
+      {/* roster rail — now the TOPMOST bar: the old Menu/Town/Decisions header row
+          was reclaimed for the stage/lens, and those global destinations moved
+          into the ☰ Menu drawer. The rail is the shared selector driving stage +
+          lens; a slim avatar strip by default, the ▸ handle expands it into the
+          managing view (names, group labels, sort, multi-select). */}
       <div className="shrink-0 flex items-stretch gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
+        {/* ☰ Menu — the single global-nav anchor (Decisions · Town · Guild ·
+            Quests · Reports · Time · Settings). Carries the urgent-decisions
+            badge so that count stays glanceable now that Decisions has no row. */}
+        <button
+          onClick={() => setDrawer(true)}
+          title="Menu — Decisions, Town, Guild, Quests, Reports, Time…"
+          aria-label="Menu"
+          className="relative shrink-0 w-9 self-stretch rounded-md border border-game-border/60 bg-game-bg/40 text-game-text-dim hover:text-game-text flex items-center justify-center"
+        >
+          <span className="text-base leading-none">☰</span>
+          {urgent > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-bg tabular-nums">{urgent}</span>
+          )}
+        </button>
         <button
           onClick={toggleRoster}
           title={rosterExpanded ? 'Collapse the roster to a slim strip' : 'Expand the roster — names, groups, sort & multi-select'}
@@ -728,15 +752,16 @@ export function ProtoApp() {
         >
           <span className="text-[10px] leading-none">{rosterExpanded ? '▾' : '▸'}</span>
         </button>
-        {/* sort + multi-select are managing tools — they ride expanded mode only */}
+        {/* sort + multi-select are managing tools — they ride expanded mode only,
+            each taking half the rail's height (self-stretch column + flex-1 kids). */}
         {rosterExpanded && (
-          <div className="flex flex-col gap-1 shrink-0">
+          <div className="flex flex-col gap-1.5 shrink-0 self-stretch">
             <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
             <button
               onClick={() => setMulti((v) => !v)}
               title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
               aria-label="Toggle multi-select"
-              className={['flex items-center justify-center gap-0.5 w-12 h-6 rounded-md border',
+              className={['flex-1 flex items-center justify-center gap-0.5 w-12 min-h-[24px] rounded-md border',
                 multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
             >
               <span className="text-[11px] leading-none">{multi ? '✓' : '⊕'}</span>
@@ -833,7 +858,7 @@ export function ProtoApp() {
         ? <Town onClose={() => setPanel(null)} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
 
-      {drawer && <NavDrawer onPick={(p) => { setDrawer(false); setPanel(p) }} onClose={() => setDrawer(false)} />}
+      {drawer && <NavDrawer urgent={urgent} onPick={(p) => { setDrawer(false); if (p === 'decisions') setDecisionsOpen(true); else setPanel(p) }} onClose={() => setDrawer(false)} />}
       {decisionsOpen && <DecisionsInbox decisions={decisions} onClose={() => setDecisionsOpen(false)} />}
       <DeploySheetHost />
     </div>
