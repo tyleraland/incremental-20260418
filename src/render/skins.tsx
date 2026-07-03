@@ -129,49 +129,56 @@ const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive,
 // Silhouette paths (100×100 box), one per BodyShape — regular enough to read as
 // unit tokens, wonky enough to feel hand-cut rather than geometric. Each is one
 // path drawn twice (base + lit top copy nudged up-left) for the filter-free
-// two-tone read, so a new family costs zero extra elements. Bodies do NOT
-// rotate with facing (only the weapon layer does), so every silhouette must
-// read at any heading: keep the mass centered, character at the edges.
+// two-tone read, so a new family costs zero extra elements.
+// TOP-DOWN + DIRECTIONAL (the Unexplored read): every silhouette is authored
+// FACING +x (nose right), and the whole body rotates to facingDeg — the shape
+// itself telegraphs heading, not just the weapon layer. The lit copy's up-left
+// nudge is composed OUTSIDE the rotation (screen space), so the language's one
+// light direction survives any heading.
 const PAPER_BODY_PATHS: Record<BodyShape, string> = {
-  // the original rounded cutout — heroes, NPCs, tool-users
+  // the original rounded cutout — heroes, NPCs, tool-users (near-symmetric;
+  // heading reads from the carried weapon)
   humanoid: 'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z',
-  // gel dome with a droplet spout off the crown and a drippy skirt — slimes,
-  // sacs, rooted things
-  blob:     'M50 20 C52 13 58 9 65 9 C63 15 60 20 61 25 C76 31 87 44 88 59 C89 68 84 74 76 78 C78 82 76 86 71 87 C66 88 62 86 61 83 C57 84 53 85 48 85 C44 88 37 88 34 84 C21 81 11 72 12 58 C13 42 27 25 43 21 C45 20 47 20 50 20 Z',
-  // round body with two flared ear points — boars, crabs, lizards
-  beast:    'M34 20 L23 2 L44 13 C48 11 52 11 56 13 L77 2 L66 20 C80 27 89 40 88 56 C86 77 70 90 50 91 C30 90 14 77 12 56 C11 40 20 27 34 20 Z',
-  // two raised wing lobes over a hanging body — harpies, bats, ghosts
-  flyer:    'M50 32 C55 21 67 12 90 15 C88 36 74 50 60 53 L61 74 C57 86 43 86 39 74 L40 53 C26 50 12 36 10 15 C33 12 45 21 50 32 Z',
-  // big spiral shell over a flaring foot skirt, two ball-tipped eyestalks
-  // reaching out top-left — snails, shelled crawlers
-  snail:    'M26 30 C20 28 14 26 10 22 C4 20 1 14 6 10 C11 7 16 11 15 16 C14 19 19 20 24 23 C26 24 28 25 29 24 C30 20 31 12 32 6 C33 0 40 -2 42 3 C43 7 39 9 38 14 C38 17 40 19 42 18 C48 14 53 13 60 14 C79 18 91 33 90 51 C89 65 81 76 69 81 C77 83 86 83 92 81 C90 89 78 93 64 92 C44 95 24 90 14 82 C10 78 13 72 19 70 C15 62 13 52 15 44 C17 37 21 32 26 30 Z',
-  // one thick S-curve band: head knob top-left, taper to a tail point bottom-
-  // right — snakes, worms, eels
-  serpent:  'M33 3 C45 2 52 12 49 20 C56 23 64 27 70 32 C80 41 78 53 66 59 C58 63 50 64 46 68 C44 70 46 73 52 75 C62 78 74 80 84 79 L92 87 C76 94 56 91 43 84 C31 78 29 67 38 59 C46 52 58 50 62 44 C64 40 60 36 52 34 C42 31 33 28 29 22 C25 15 24 4 33 3 Z',
-  // tall splayed ears, jagged side ruff, tapered jaw — wolves, hounds, foxes
-  canine:   'M32 20 L20 0 L44 12 C48 10 52 10 56 12 L80 0 L68 20 C78 25 85 33 87 43 L96 46 L88 54 L94 60 L86 63 C82 77 72 87 60 90 L50 96 L40 90 C28 87 18 77 14 63 L6 60 L12 54 L4 46 L13 43 C15 33 22 25 32 20 Z',
+  // wobbly puddle oozing forward: bulging nose, droplet wake trailing behind
+  blob:     'M91 52 C92 61 84 71 73 75 C63 83 47 86 36 80 C24 83 12 75 14 63 C7 59 6 48 13 42 C9 35 12 27 20 26 C26 25 31 29 30 35 C36 27 48 23 58 26 C74 25 88 37 91 48 L91 52 Z',
+  // generic quadruped: blunt wide head, small ear nubs, fat body — boars,
+  // crabs, lizards
+  beast:    'M92 50 C92 43 87 38 80 36 C74 32 68 31 63 32 L57 21 L50 31 C38 28 26 32 18 39 C11 43 8 46 8 50 C8 54 11 57 18 61 C26 68 38 72 50 69 L57 79 L63 68 C68 69 74 68 80 64 C87 62 92 57 92 50 Z',
+  // moth-style: two back-swept wing lobes astride the heading, slim body —
+  // harpies, bats, ghosts
+  flyer:    'M90 50 C90 45 85 41 78 41 C76 36 72 32 66 31 C64 18 52 8 38 10 C28 12 26 22 33 28 C39 33 48 37 56 40 C48 39 40 40 34 43 C20 38 6 40 5 50 C6 60 20 62 34 57 C40 60 48 61 56 60 C48 63 39 67 33 72 C26 78 28 88 38 90 C52 92 64 82 66 69 C72 68 76 64 78 59 C85 59 90 55 90 50 Z',
+  // spiral shell riding the back half, foot slab reaching forward, two ball-
+  // tipped eyestalks past the nose — snails, shelled crawlers
+  snail:    'M74 42 C77 36 82 32 87 33 C93 34 94 41 89 43 C86 44 84 46 84 48 L84 52 C84 54 86 56 89 57 C94 59 93 66 87 67 C82 68 77 64 74 58 C70 63 62 67 54 66 C50 73 40 77 30 75 C16 73 6 63 6 50 C6 37 16 27 30 25 C40 23 50 27 54 34 C62 33 70 37 74 42 Z',
+  // fat head knob at the nose, S-band slithering back to a tapered tail —
+  // snakes, worms, eels
+  serpent:  'M78 42 C84 37 93 38 96 45 C99 52 94 60 86 61 C81 62 77 60 74 57 C68 49 62 47 56 49 C48 52 44 60 38 66 C32 72 22 74 14 70 C8 67 5 60 10 57 C16 60 24 60 30 56 C36 52 40 44 48 38 C54 34 62 32 70 36 C73 38 76 40 78 42 Z',
+  // long snout, back-swept ears, cheek ruff, bushy forked tail — wolves,
+  // hounds, foxes
+  canine:   'M96 50 C96 46 93 43 88 42 C83 36 76 33 68 33 L61 20 L52 31 C46 29 41 30 37 33 L28 26 L31 36 C21 39 15 43 14 47 L2 40 L8 50 L2 60 L14 53 C15 57 21 61 31 64 L28 74 L37 67 C41 70 46 71 52 69 L61 80 L68 67 C76 67 83 64 88 58 C93 57 96 54 96 50 Z',
 }
 
-// Per-family accent layer, drawn over the lit copy while alive: the ONE extra
+// Per-family accent layer, rotated WITH the body while alive: the ONE extra
 // flat primitive that turns a silhouette into a creature — the snail's shell
-// spiral, the canine's cream muzzle, the blob's gel gloss. Tone/palette colors
+// spiral, the canine's cream nose, the blob's gel gloss. Tone/palette colors
 // only (the spiral takes the tone so it works on both teams); families whose
 // silhouette already carries the read (serpent, beast, flyer) stay at zero.
 const BODY_DETAILS: Partial<Record<BodyShape, (p: (typeof PAPER_TONE)[Tone]) => ReactNode>> = {
-  blob:   () => <path d="M29 36 C34 29 44 25 51 27 C48 33 38 40 31 43 C27 44 26 40 29 36 Z" fill={PAL.cream} fillOpacity={0.4} />,
-  snail:  (p) => <path d="M55 47 C64 45 68 53 61 58 C50 64 39 56 41 44 C43 31 58 25 69 31" fill="none" stroke={p.outline} strokeWidth="4.5" strokeLinecap="round" />,
-  canine: () => <path d="M40 68 C45 62 55 62 60 68 C58 80 42 80 40 68 Z" fill={PAL.cream} fillOpacity={0.75} />,
+  blob:   () => <path d="M36 38 C44 32 56 32 62 36 C58 42 46 46 38 46 C33 46 32 42 36 38 Z" fill={PAL.cream} fillOpacity={0.4} />,
+  snail:  (p) => <path d="M30 40 C38 42 40 50 34 55 C26 61 14 56 14 46 C14 36 24 28 36 30" fill="none" stroke={p.outline} strokeWidth="4.5" strokeLinecap="round" />,
+  canine: () => <path d="M84 44 C90 45 92 48 92 50 C92 52 90 55 84 56 C80 55 78 52 78 50 C78 48 80 45 84 44 Z" fill={PAL.cream} fillOpacity={0.75} />,
 }
 
 // Facing-layer shapes (drawn under the body, rotated to facingDeg, so only the
 // business end shows). Heroes carry their class weapon; a weaponless humanoid
-// keeps the classic blade; creatures get a short claw wedge instead of marching
-// around with a sword. Static JSX — each costs 1–2 flat primitives.
+// keeps the classic blade. Creature families carry NO weapon layer — their
+// directional silhouette (snout/head at +x) is the heading indicator, which
+// also saves an element per monster token. Static JSX — 1–2 flat primitives.
 // The body silhouettes reach x≈92, so anything inside that is hidden — every
 // shape here must put its business end WELL past it (tips out to ~110–125 of
 // the 100 box; the svg has overflow:visible) or the weapon reads as a 2px
 // sliver at real token sizes.
-const WEAPON_SHAPES: Record<Weapon | 'claw', ReactNode> = {
+const WEAPON_SHAPES: Record<Weapon, ReactNode> = {
   sword: <polygon points="58,45 94,41 126,50 94,59 58,55" fill={PAL.steel} stroke={PAL.ink} strokeWidth="3" />,
   dagger: <polygon points="62,46 92,44 115,50 92,56 62,54" fill={PAL.steel} stroke={PAL.ink} strokeWidth="3" />,
   // the bow sits FULLY clear of the silhouette — if the string falls behind the
@@ -188,7 +195,6 @@ const WEAPON_SHAPES: Record<Weapon | 'claw', ReactNode> = {
       <circle cx="114" cy="50" r="10" fill={PAL.cream} stroke={PAL.ink} strokeWidth="3" />
     </>
   ),
-  claw: <polygon points="60,44 106,50 60,56" fill={PAL.cream} stroke={PAL.ink} strokeWidth="3" />,
 }
 
 // One SVG per token: shadow ellipse, facing weapon (a rotated group under the
@@ -200,8 +206,11 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
   const outline = tone !== 'casting' && tint ? tint : p.outline
   const body = PAPER_BODY_PATHS[bodyShape]
   // Facing rotation snaps per round like the circle skin's FacingNub — no
-  // rotate transition (359°→1° would spin the long way around).
+  // rotate transition (359°→1° would spin the long way around). The whole
+  // top-down body rotates to the heading (null — neutrals — faces east).
   const angle = alive ? facingDeg : null
+  const rot = angle ? `rotate(${angle} 50 50)` : undefined
+  const heroWeapon = weapon ?? (bodyShape === 'humanoid' ? 'sword' : undefined)
   return (
     <div
       data-skin="paper"
@@ -213,16 +222,21 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
       <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }} aria-hidden>
         {/* ground-contact shadow: an offset flat ellipse, NOT filter:drop-shadow */}
         <ellipse cx="54" cy={alive ? 55 : 80} rx="46" ry={alive ? 45 : 17} fill={PAL.shadow} fillOpacity={0.35} />
-        {angle != null && (
-          <g transform={`rotate(${angle} 50 50)`}>
-            {WEAPON_SHAPES[weapon ?? (bodyShape === 'humanoid' ? 'sword' : 'claw')]}
+        {angle != null && heroWeapon && (
+          <g transform={rot}>
+            {WEAPON_SHAPES[heroWeapon]}
           </g>
         )}
         {alive ? (
+          // Two-tone with the light pinned in SCREEN space: the base (and any
+          // detail) rotates to the heading, while the lit copy composes its
+          // up-left nudge OUTSIDE the rotation — transforms apply right-to-left,
+          // so the shape rotates first, then shifts. One light direction at any
+          // heading, zero extra elements.
           <>
-            <path d={body} fill={p.base} stroke={outline} strokeWidth="5" />
-            <path d={body} fill={p.top} transform="translate(-3 -4) translate(50 50) scale(0.94) translate(-50 -50)" />
-            {BODY_DETAILS[bodyShape]?.(p)}
+            <path d={body} fill={p.base} stroke={outline} strokeWidth="5" transform={rot} />
+            <path d={body} fill={p.top} transform={`translate(-3 -4) ${rot ?? ''} translate(50 50) scale(0.94) translate(-50 -50)`} />
+            {BODY_DETAILS[bodyShape] && <g transform={rot}>{BODY_DETAILS[bodyShape]!(p)}</g>}
           </>
         ) : (
           // KO: the SAME silhouette crumpled flat — squashed onto the ground line

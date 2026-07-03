@@ -89,14 +89,14 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
         )}
       </Section>
 
-      <Section title="weapons (class handhelds) + creature claw">
+      <Section title="weapons (class handhelds) — creatures carry facing in the body">
         {WEAPONS.map((w) => (
           <Cell key={w} label={w}>
             <Body glyph="⚔" tone="player" bodyShape="humanoid" weapon={w} alive selected={false} facingDeg={0} dims={dims(56)} />
           </Cell>
         ))}
-        <Cell label="claw (beast)">
-          <Body glyph="WO" tone="enemy" bodyShape="beast" alive selected={false} facingDeg={0} dims={dims(56)} />
+        <Cell label="no weapon (beast)">
+          <Body glyph="BO" tone="enemy" bodyShape="beast" alive selected={false} facingDeg={0} dims={dims(56)} />
         </Cell>
       </Section>
 
@@ -115,10 +115,15 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
         </Cell>
       </Section>
 
-      <Section title="facing wheel (15° quantized in play)">
+      <Section title="facing wheel (15° quantized in play) — weapon carry + rotating top-down body">
         {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
           <Cell key={deg} label={`${deg}°`}>
             <Body glyph="⚔" tone="player" bodyShape="humanoid" weapon="bow" alive selected={false} facingDeg={deg} dims={dims(48)} />
+          </Cell>
+        ))}
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+          <Cell key={`c${deg}`} label={`${deg}°`}>
+            <Body glyph="WO" tone="enemy" bodyShape="canine" alive selected={false} facingDeg={deg} dims={dims(48)} />
           </Cell>
         ))}
       </Section>
