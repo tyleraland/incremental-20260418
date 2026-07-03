@@ -151,6 +151,73 @@ export function wonkPathD(d: string, seed: number, amp: number): string {
   return out.join('')
 }
 
+// ── Mask → boundary loops (§mapgen surface consumption) ─────────────────────
+// Trace the boundary of a cell mask into closed loops (grid-lattice points,
+// interior kept on the left, so outer loops and holes wind oppositely and an
+// evenodd fill renders islands correctly). This is how a painted cell region
+// (a lake, a sand band) becomes ONE organic path: loops → decimate → wonk →
+// blobPath. Pure and deterministic; cost is O(cells) once at bake.
+
+export function maskLoops(inMask: (x: number, y: number) => boolean, cols: number, rows: number): Pt[][] {
+  const key = (p: Pt) => p.y * (cols + 1) + p.x
+  const nexts = new Map<number, Pt[]>()   // directed edge: start-vertex → end-vertices
+  const add = (a: Pt, b: Pt) => {
+    const k = key(a)
+    const l = nexts.get(k)
+    if (l) l.push(b)
+    else nexts.set(k, [b])
+  }
+  const at = (x: number, y: number) => x >= 0 && y >= 0 && x < cols && y < rows && inMask(x, y)
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!at(x, y)) continue
+      if (!at(x, y - 1)) add({ x, y }, { x: x + 1, y })
+      if (!at(x + 1, y)) add({ x: x + 1, y }, { x: x + 1, y: y + 1 })
+      if (!at(x, y + 1)) add({ x: x + 1, y: y + 1 }, { x, y: y + 1 })
+      if (!at(x - 1, y)) add({ x, y: y + 1 }, { x, y })
+    }
+  }
+  const loops: Pt[][] = []
+  while (nexts.size) {
+    const k0 = nexts.keys().next().value as number
+    const start = { x: k0 % (cols + 1), y: Math.floor(k0 / (cols + 1)) }
+    let cur = start
+    const loop: Pt[] = []
+    for (let guard = 0; guard < (cols + 1) * (rows + 1) * 4; guard++) {
+      loop.push(cur)
+      const k = key(cur)
+      const outs = nexts.get(k)
+      if (!outs || outs.length === 0) break
+      const nxt = outs.pop()!
+      if (outs.length === 0) nexts.delete(k)
+      cur = nxt
+      if (cur.x === start.x && cur.y === start.y) break
+    }
+    if (loop.length >= 4) loops.push(dropCollinear(loop))
+  }
+  return loops
+}
+
+// Merge staircase runs: keep only real corners, so the wonk works on the shape,
+// not on every lattice step.
+function dropCollinear(pts: Pt[]): Pt[] {
+  const out: Pt[] = []
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[(i + pts.length - 1) % pts.length]
+    const b = pts[i]
+    const c = pts[(i + 1) % pts.length]
+    if ((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x) !== 0) out.push(b)
+  }
+  return out.length >= 3 ? out : pts
+}
+
+// Bound a loop's point count (a big lake's boundary is hundreds of corners;
+// the baked path only needs the shape).
+export function decimate(pts: Pt[], maxPts = 64): Pt[] {
+  const step = Math.ceil(pts.length / maxPts)
+  return step > 1 ? pts.filter((_, i) => i % step === 0) : pts
+}
+
 // Deterministic keep-clear placement: up to `count` points inside the map
 // (inset by `edge`), rejection-sampled away from the `avoid` rects (+margin).
 // Bounded attempts, so dense maps just come out sparser — never spin.

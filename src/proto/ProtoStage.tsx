@@ -23,6 +23,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'geffen-city': [2, 3], 'payon-city': [5, 2], 'prontera-city': [5, 3],
   'prontera-field-3': [6, 3], 'harpy-roost': [7, 3], 'pg-overgrown-maze': [8, 4],
   'boar-meadow': [6, 4], 'wolf-den': [7, 4], 'prontera-field-2': [5, 4], 'beach-1': [5, 5],
+  'mirror-vale': [6, 5],   // §mapgen: first generated map
   // Fixed Encounters page (sandbox-only test dungeon, entered from Prontera) —
   // discrete-wave arenas + the early fields + the Elemental Frontier chain.
   'geffen-field-1': [1, 1], 'prontera-field-1': [2, 1], 'elite-four': [3, 1],

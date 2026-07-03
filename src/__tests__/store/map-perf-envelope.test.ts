@@ -16,6 +16,7 @@
 import { describe, expect, it } from 'vitest'
 import { INITIAL_LOCATIONS } from '@/data/locations'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
+import { generateForLocationCached } from '@/mapgen'
 
 // ── The measured envelope (Pixel-5 4×-CPU harness, 2026-07) ─────────────────
 // cap 220 spread over 200×200: ~29 fps median at full granularity (the shipped
@@ -65,6 +66,18 @@ describe('every open-world map stays inside the benchmarked perf envelope', () =
       const n = scen.barriers?.().length ?? 0
       expect(n, `scenario ${id}: ${n} barriers — steerAround cost grows with barrier count`)
         .toBeLessThanOrEqual(MAX_BENCHED_BARRIERS)
+    }
+  })
+
+  it('§mapgen locations bake VALID maps inside the pathing bound', () => {
+    const gen = INITIAL_LOCATIONS.filter((l) => l.mapGen)
+    expect(gen.length, 'phase 2 shipped a live generated location — keep at least one covered').toBeGreaterThan(0)
+    for (const loc of gen) {
+      const res = generateForLocationCached(loc)
+      expect(res.report.ok, `${loc.id}: ${JSON.stringify(res.report.rules.filter((r) => !r.ok))}`).toBe(true)
+      expect(res.spec.collision.length, `${loc.id}: ${res.spec.collision.length} generated barriers — steerAround cost grows with barrier count`)
+        .toBeLessThanOrEqual(MAX_BENCHED_BARRIERS)
+      expect(res.spec.cols).toBe(loc.openWorldSize ?? DEFAULT_SIZE)
     }
   })
 })

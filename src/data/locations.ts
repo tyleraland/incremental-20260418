@@ -79,6 +79,18 @@ export const INITIAL_LOCATIONS: Location[] = [
     familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 220, openWorldSize: 200,
   },
   {
+    id: 'mirror-vale', region: 'world', name: 'Mirrorlake Vale',
+    description: 'A green vale cupped around a cold, still lake south of the Kanto shore. Frogs bellow from the shallows and crabs pick along the ford — the first stretch of wilderness laid down by the map generator, not a cartographer.',
+    traits: ['plains', 'water'], monsterIds: ['giant-frog', 'rock-crab'],
+    familiarityMax: 100, connections: [],
+    // §mapgen phase 2: the FIRST live procedurally-generated location. Barriers +
+    // arena size come from the baked MapSpec (recipe 'field', seed = location id);
+    // the paper terrain reads the spec's surface/scatter planes. Perf: cap 30 is
+    // under the benched crowd, and the adapter holds barriers ≤ 16 (envelope test).
+    openWorld: true, openWorldCap: 30, openWorldSize: 96,
+    mapGen: { recipe: 'field' },
+  },
+  {
     id: 'harpy-roost', region: 'world', name: 'Harpy Roost',
     description: 'A wind-scoured crag east of Prontera, its every ledge boiling with harpies — a sky black with claws and screeching. A swarm, not a skirmish. A switchback trail climbs from here into the Sky Aerie above.',
     traits: ['mountain', 'dangerous'], monsterIds: ['harpy'],
@@ -299,6 +311,7 @@ const WORLD_EDGES: [string, string, Edge, Edge][] = [
   ['prontera-field-3', 'boar-meadow',      'S', 'N'],
   ['boar-meadow',      'wolf-den',         'E', 'W'],
   ['prontera-field-2', 'beach-1',          'S', 'N'],
+  ['beach-1',          'mirror-vale',      'S', 'N'],
   ['harpy-roost',      'pg-overgrown-maze','S', 'N'],
 ]
 {

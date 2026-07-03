@@ -34,7 +34,7 @@ Polish comes from consistency, not path complexity:
 | `palette.ts` | the color vocabulary: `PAPER_TONE` (token tones) + `PAPER_PALETTE` (~20 material roles) |
 | `authoring.ts` | seeded geometry: `wonk` / `blobPath` / `polyPath` / `rectOutline` / `roughCircle` / `scatter` / `hash01` / `hashString` |
 | `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor) |
-| `terrain.tsx` | the renderer: per-location terrain model + baked data-URI emitter, `propMarkup()` (the one PropDef→svg translation) |
+| `terrain.tsx` | the renderer: per-location terrain model + baked data-URI emitter, `propMarkup()` (the one PropDef→svg translation); §mapgen spec consumption (surface washes, scatter-plane props, material-aware collision paint) |
 | `appearance.ts` | entity → visual resolver (glyph/tone/bodyShape/weapon/biome) — the ONLY id→visual translation |
 | `skins.tsx` | token bodies (`TokenBodyProps` contract), `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |
 

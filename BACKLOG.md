@@ -193,12 +193,17 @@ The pipeline + MapSpec contract + validation harness + `field` recipe + `?mapgen
 lab landed. Idea inventory: `procedural-generation-ideas.md`. Deferred phases (each
 independently shippable; ordering rationale in the guide's roadmap):
 
-- **Phase 2 — render consumption + first live location.** `terrain.tsx` /
-  `ARENA_SKINS` read the surface + scatter planes (mottles/props become MapSpec
-  consumers; today they derive visuals from barriers alone), then flip one sandbox
-  location's `mapGen` on and perf-pass it (`skin-ab`, `map-perf-envelope.test.ts`).
-  Also: lake/water ground treatment in the paper skin (shallow vs deep bands),
-  landmark POI → big silhouette prop.
+- **✅ Phase 2 — render consumption + first live location (shipped 2026-07).**
+  `terrain.tsx` consumes the spec: surface plane → organic washes (`maskLoops`
+  boundary tracing in `authoring.ts`; shallow-under-deep water + shoreline),
+  scatter plane → biome prop archetypes (`KIND_ARCHETYPE`), material-aware
+  collision paint (deep-water rects vanish under the lake, hedges go foliage).
+  **`mirror-vale`** (96×96 `field`, south of Kanto Beach) is the first live
+  generated location; `generateForLocation` pins live maps to `maxBarriers` 16
+  and `map-perf-envelope.test.ts` gates every `mapGen` location (valid bake +
+  barrier bound). Deferred polish: landmark POI → big silhouette prop,
+  spec-aware minimap tint, ford/ripple accents, `skin-ab` run on a spec'd
+  perf scene (the ?perf scene has no spec, so the benchmark is unaffected today).
 - **Phase 3 — dungeon recipe (graph-first).** Room/corridor graph, **cyclic
   layouts** (loops not trees), the **stamp/vault registry** (authored MapSpec
   fragments placed by constraint — the highest-leverage single item), lair POI,

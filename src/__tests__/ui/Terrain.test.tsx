@@ -10,6 +10,9 @@ import { useGameStore } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
 import { buildTerrainModel, PaperTerrain, TERRAIN_BUILD_PROBE, type TerrainProps } from '@/render/terrain'
+import { PAPER_PALETTE } from '@/render/palette'
+import { generateMap, specBarriers, type MapSpec } from '@/mapgen'
+import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import { eu } from '../engine/helpers'
 import type { Location } from '@/types'
 
@@ -96,6 +99,65 @@ describe('terrain model', () => {
     expect(bg(a.container)).toBe(bg(b.container))                // fully deterministic data URI
     expect(bg(a.container)).toContain('data:image/svg+xml')
     expect((bg(a.container).match(/%3Cpath/g) ?? []).length).toBeGreaterThan(20)
+  })
+})
+
+describe('terrain consumes a MapSpec (§mapgen phase 2)', () => {
+  // Deterministically pick a seed whose field actually has a lake, so the
+  // water assertions are about behaviour, not seed luck.
+  function lakeSpec(): MapSpec {
+    for (let seed = 1; seed < 30; seed++) {
+      const r = generateMap(FIELD_RECIPE, { recipe: 'field', seed, size: 64, themes: ['plains', 'water'], maxBarriers: 16 })
+      if (r.report.ok && r.spec.collision.some((c) => c.material === 'deep-water')) return r.spec
+    }
+    throw new Error('no lake seed found in 30 tries — hydrology regressed')
+  }
+  const spec = lakeSpec()
+  const props: TerrainProps = {
+    biome: 'grass', cols: spec.cols, rows: spec.rows,
+    barriers: specBarriers(spec), seed: 777, rim: true, spec,
+  }
+
+  it('paints the surface plane as organic washes — water present, deterministic', () => {
+    const rng = vi.spyOn(Math, 'random')
+    const a = buildTerrainModel(props)
+    const b = buildTerrainModel({ ...props })
+    expect(rng).not.toHaveBeenCalled()
+    rng.mockRestore()
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+    const fills = a.surface.map((s) => s.fill)
+    expect(fills).toContain(PAPER_PALETTE.waterShallow)
+    expect(fills).toContain(PAPER_PALETTE.waterDeep)
+  })
+
+  it('deep-water collision rects do NOT paint as stone cliffs; other cliffs still do', () => {
+    const m = buildTerrainModel(props)
+    const nonWaterCliffs = spec.collision.filter((c) => c.kind === 'cliff' && c.material !== 'deep-water')
+    expect(m.cliffs.length).toBe(nonWaterCliffs.length)
+    // walls unaffected by the material filter (cluster-merged, so ≤ rect count)
+    expect(m.walls.length).toBeGreaterThan(0)
+  })
+
+  it('the scatter plane replaces the random scatter and stays clear of collision', () => {
+    const m = buildTerrainModel(props)
+    expect(m.props.length).toBe(spec.scatter.length)
+    for (const p of m.props) {
+      const wx = p.x, wy = spec.rows - p.y
+      for (const r of spec.collision) {
+        const inside = wx > r.x && wx < r.x + r.w && wy > r.y && wy < r.y + r.h
+        expect(inside, `prop at ${wx},${wy} inside ${JSON.stringify(r)}`).toBe(false)
+      }
+    }
+  })
+
+  it('still bakes to ONE background-image div, and the memo signature keys on the spec', () => {
+    const { container } = render(<PaperTerrain {...props} />)
+    expect(container.querySelector('svg')).toBeNull()
+    const bg = (container.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage
+    expect(bg).toContain('data:image/svg+xml')
+    // spec-less render of the same geometry differs (washes only exist with a spec)
+    const { container: plain } = render(<PaperTerrain {...{ ...props, spec: undefined }} />)
+    expect((plain.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage).not.toBe(bg)
   })
 })
 

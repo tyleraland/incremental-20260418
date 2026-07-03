@@ -40,6 +40,14 @@ export const PAPER_PALETTE = {
   stoneLight: '#282d34', stoneDark: '#0e1013',
   plazaLight: '#2c2719', plazaDark: '#0f0d09',
 
+  // §mapgen surface plane (terrain.tsx spec consumption): material washes laid
+  // over the biome ground. Values sit near the mottle shades — large soft
+  // regions, not features — except the two waters, which must READ as water.
+  meadowWash:   '#2c3d1c',
+  sandWash:     '#4f472e',
+  waterShallow: '#2b5666',
+  waterDeep:    '#183848',
+
   // prop materials
   foliage:     '#33441f',
   foliageDeep: '#1f2c12',

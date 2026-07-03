@@ -1,9 +1,11 @@
 import { memo, useMemo } from 'react'
 import type { Barrier } from '@/engine'
+import type { MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
+import { SURFACE_MATERIALS } from '@/mapgen'
 import type { Biome } from '@/render/appearance'
 import { PAPER_PALETTE as P } from '@/render/palette'
 import { TERRAIN_PROPS, type PropDef } from '@/render/props'
-import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, type Pt, type Rect } from '@/render/authoring'
+import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, maskLoops, decimate, type Pt, type Rect } from '@/render/authoring'
 
 // ── Organic terrain layer ────────────────────────────────────────────────────
 //
@@ -38,6 +40,13 @@ export interface TerrainProps {
   seed: number      // per-location (hashString of the location id)
   rim: boolean      // open-world map edge → organic rock rim (replaces the perimeter ring)
   avoid?: Rect[]    // extra keep-clear boxes for the scatter (portals), world coords
+  // §mapgen (phase 2): a generated location's baked MapSpec. When present the
+  // terrain becomes a spec CONSUMER: surface-plane material regions paint as
+  // organic washes (lake / sand / meadow), the scatter plane replaces the
+  // seeded random props, and collision paints material-aware (deep-water rects
+  // vanish under the lake instead of reading as stone; hedges go green).
+  // Absent → the classic barrier-derived dressing, byte-identical to before.
+  spec?: MapSpec
 }
 
 // How far the visual blob overhangs its collision rect. Purely cosmetic slack —
@@ -62,8 +71,10 @@ const MOTTLE_SHADES: Record<Biome, [string, string]> = {
 
 export interface TerrainModel {
   mottles: { d: string; fill: string }[]
+  // §mapgen surface washes, paint order as listed (meadow under sand under water)
+  surface: { d: string; fill: string; opacity: number; shore?: boolean }[]
   props: { v: number; x: number; y: number; s: number; rot: number; flip: boolean }[]
-  cliffs: string[]
+  cliffs: { d: string; fill: string; edge: string }[]
   walls: { d: string; multi: boolean }[]
   rim: { d: string; inner: string } | null
 }
@@ -71,10 +82,17 @@ export interface TerrainModel {
 const r2 = (v: number) => Math.round(v * 100) / 100
 
 export function buildTerrainModel(p: TerrainProps): TerrainModel {
-  const { cols, rows, seed } = p
+  const { cols, rows, seed, spec } = p
   const toSvg = (r: Rect): Rect => ({ x: r.x, y: rows - r.y - r.h, w: r.w, h: r.h })
-  const wallRects = p.barriers.filter((b) => (b.kind ?? 'wall') === 'wall')
-  const cliffRects = p.barriers.filter((b) => b.kind === 'cliff')
+  // With a spec, collision paints MATERIAL-aware from the collision plane:
+  // deep-water rects are engine-only (the lake wash below is their visual) and
+  // hedges paint foliage, not stone. Without one, kind is all we know.
+  const wallRects: Rect[] = spec
+    ? spec.collision.filter((r) => r.kind === 'wall')
+    : p.barriers.filter((b) => (b.kind ?? 'wall') === 'wall')
+  const cliffSrc = spec
+    ? spec.collision.filter((r) => r.kind === 'cliff' && r.material !== 'deep-water')
+    : p.barriers.filter((b) => b.kind === 'cliff')
 
   // walls: cluster rects whose overhang-expanded boxes touch, then paint each
   // cluster as ONE multi-subpath blob (same fill → the union reads as one rock).
@@ -104,8 +122,38 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
 
   // cliffs: tighter overhang, straight cut-stone edges, no merging fuss (they
   // render translucent, so a rare overlap just darkens a corner).
-  const cliffs = cliffRects.map((b, i) =>
-    blobFor({ x: b.x - OVERHANG / 2, y: b.y - OVERHANG / 2, w: b.w + OVERHANG, h: b.h + OVERHANG }, seed + 4700 + i * 613, 0.2, false))
+  const cliffs = cliffSrc.map((b, i) => ({
+    d: blobFor({ x: b.x - OVERHANG / 2, y: b.y - OVERHANG / 2, w: b.w + OVERHANG, h: b.h + OVERHANG }, seed + 4700 + i * 613, 0.2, false),
+    fill: spec && (b as MapSpec['collision'][number]).material === 'hedge' ? P.foliageDeep : P.cliffFill,
+    edge: spec && (b as MapSpec['collision'][number]).material === 'hedge' ? P.foliage : P.cliffEdge,
+  }))
+
+  // §mapgen surface washes: each material region of the surface plane becomes
+  // ONE organic multi-subpath (mask → boundary loops → decimate → wonk → blob;
+  // evenodd so islands in a lake render). Shallow water is painted under deep
+  // (the deep mask is a subset), giving the two-band read for free.
+  const surface: TerrainModel['surface'] = []
+  if (spec) {
+    const mi = (m: SurfaceMaterial) => SURFACE_MATERIALS.indexOf(m)
+    const g = spec.surface.grid
+    const pathFor = (want: (v: number) => boolean, off: number, amp: number) => {
+      const loops = maskLoops((x, y) => want(g[y * spec.cols + x]), spec.cols, spec.rows)
+      return loops
+        .map((lp, i) => blobPath(wonk(decimate(lp).map((pt) => ({ x: pt.x, y: rows - pt.y })), seed + off + i * 131, amp)))
+        .join('')
+    }
+    const meadow = mi('meadow'), sand = mi('sand'), shallow = mi('shallow-water'), deep = mi('deep-water')
+    const bands: { want: (v: number) => boolean; fill: string; opacity: number; shore?: boolean }[] = [
+      { want: (v) => v === meadow, fill: P.meadowWash, opacity: 0.5 },
+      { want: (v) => v === sand, fill: P.sandWash, opacity: 0.6 },
+      { want: (v) => v === shallow || v === deep, fill: P.waterShallow, opacity: 0.85, shore: true },
+      { want: (v) => v === deep, fill: P.waterDeep, opacity: 0.9 },
+    ]
+    bands.forEach((b, i) => {
+      const d = pathFor(b.want, 5200 + i * 977, 0.3)
+      if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
+    })
+  }
 
   // rim: the map-edge band as an evenodd ring — a crisp outer rect (the real
   // map bound) around a wonked organic inner coastline.
@@ -130,25 +178,69 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     })
   }
 
-  // scatter props: seeded placement clear of barrier boxes (+margin) and the
-  // caller's keep-clear rects (portals).
-  const keepClear: Rect[] = [...p.barriers, ...(p.avoid ?? [])]
-  const propCount = Math.max(8, Math.min(64, Math.round((cols * rows) / 45)))
+  // scatter props. With a spec, the generator's scatter PLANE drives placement
+  // (it followed the substrate: trees where it's moist, reeds by the shore, and
+  // it already kept clear of collision + portals); the abstract kind resolves
+  // to a biome prop archetype here — same seam rule as appearance.ts, kinds
+  // never prop ids. Without a spec, the classic seeded random scatter.
   const variants = TERRAIN_PROPS[p.biome]
-  const props = scatter(cols, rows, seed + 9000, propCount, keepClear, 0.6).map((pt: Pt, i: number) => {
-    const s = seed + 9000 + i * 379
-    const v = Math.floor(hash01(s) * variants.length)
-    return {
-      v,
-      x: r2(pt.x),
-      y: r2(rows - pt.y),
-      s: r2((0.55 + hash01(s + 7) * 0.5) * variants[v].size),
-      rot: r2((hash01(s + 19) - 0.5) * 24),
-      flip: hash01(s + 31) < 0.5,
-    }
-  })
+  let props: TerrainModel['props']
+  if (spec) {
+    props = spec.scatter.map((it) => {
+      const cands = ARCHETYPE_INDEX(p.biome, it.kind)
+      const v = cands[Math.floor(hash01(it.seed) * cands.length)]
+      return {
+        v,
+        x: r2(it.x),
+        y: r2(rows - it.y),
+        s: r2(it.size * variants[v].size),
+        rot: r2((hash01(it.seed + 19) - 0.5) * 24),
+        flip: hash01(it.seed + 31) < 0.5,
+      }
+    })
+  } else {
+    // seeded placement clear of barrier boxes (+margin) and the caller's
+    // keep-clear rects (portals).
+    const keepClear: Rect[] = [...p.barriers, ...(p.avoid ?? [])]
+    const propCount = Math.max(8, Math.min(64, Math.round((cols * rows) / 45)))
+    props = scatter(cols, rows, seed + 9000, propCount, keepClear, 0.6).map((pt: Pt, i: number) => {
+      const s = seed + 9000 + i * 379
+      const v = Math.floor(hash01(s) * variants.length)
+      return {
+        v,
+        x: r2(pt.x),
+        y: r2(rows - pt.y),
+        s: r2((0.55 + hash01(s + 7) * 0.5) * variants[v].size),
+        rot: r2((hash01(s + 19) - 0.5) * 24),
+        flip: hash01(s + 31) < 0.5,
+      }
+    })
+  }
 
-  return { mottles, props, cliffs, walls, rim }
+  return { mottles, surface, props, cliffs, walls, rim }
+}
+
+// ScatterKind → biome prop ARCHETYPE (base id; seeded variants ride along).
+// The mapgen vocabulary stays abstract; what a "tree" looks like is this
+// biome's business. Falls back to the whole set for unmapped kinds.
+const KIND_ARCHETYPE: Record<Biome, Partial<Record<ScatterKind, string>>> = {
+  grass: { tree: 'bush', bush: 'bush', rock: 'pebble', stump: 'stump', flower: 'bloom', reed: 'reeds' },
+  stone: { tree: 'spikes', bush: 'moss', rock: 'shard', stump: 'rubble', flower: 'bone', reed: 'crack' },
+  plaza: { tree: 'signpost', bush: 'pot', rock: 'sack', stump: 'crate', flower: 'pot', reed: 'coil' },
+}
+const archetypeCache = new Map<string, number[]>()
+function ARCHETYPE_INDEX(biome: Biome, kind: ScatterKind): number[] {
+  const k = `${biome}:${kind}`
+  const hit = archetypeCache.get(k)
+  if (hit) return hit
+  const base = KIND_ARCHETYPE[biome][kind]
+  const defs = TERRAIN_PROPS[biome]
+  let idxs = base
+    ? defs.map((d, i) => [d.id, i] as const).filter(([id]) => id === base || id.startsWith(`${base}~`)).map(([, i]) => i)
+    : []
+  if (idxs.length === 0) idxs = defs.map((_, i) => i)
+  archetypeCache.set(k, idxs)
+  return idxs
 }
 
 // Build-count probe (memo regression guard, like BODY_RENDER_PROBE): an
@@ -158,7 +250,9 @@ export const TERRAIN_BUILD_PROBE = { count: 0 }
 const sigOf = (p: TerrainProps) =>
   `${p.seed}|${p.biome}|${p.cols}x${p.rows}|${p.rim}|` +
   p.barriers.map((b) => `${b.x},${b.y},${b.w},${b.h},${b.kind ?? 'w'}`).join(';') + '|' +
-  (p.avoid ?? []).map((r) => `${r.x},${r.y},${r.w},${r.h}`).join(';')
+  (p.avoid ?? []).map((r) => `${r.x},${r.y},${r.w},${r.h}`).join(';') + '|' +
+  // a spec is fully determined by (recipe, seed, version) — save = seed
+  (p.spec ? `${p.spec.recipe}:${p.spec.seed}:v${p.spec.specVersion}` : '')
 
 // PropDef → svg markup in the unit box (y down). The `lit` cutout nudge is
 // applied HERE — one light direction for every asset, authors never hand-place
@@ -180,12 +274,21 @@ export function terrainSvg(p: TerrainProps): string {
   const m = buildTerrainModel(p)
   const parts: string[] = []
   for (const x of m.mottles) parts.push(`<path d='${x.d}' fill='${x.fill}' fill-opacity='0.5'/>`)
+  // §mapgen surface washes above the mottles, below everything discrete. The
+  // water band gets a pale shoreline stroke — the paper "cut edge" read.
+  for (const s of m.surface) {
+    parts.push(
+      `<path d='${s.d}' fill='${s.fill}' fill-opacity='${s.opacity}' fill-rule='evenodd'` +
+      (s.shore ? ` stroke='${P.cream}' stroke-opacity='0.3' stroke-width='0.14' stroke-linejoin='round'` : '') +
+      '/>',
+    )
+  }
   for (const pl of m.props) {
     const def = TERRAIN_PROPS[p.biome][pl.v]
     parts.push(`<g transform='translate(${pl.x} ${pl.y}) rotate(${pl.rot}) scale(${pl.flip ? -pl.s : pl.s} ${pl.s})'>${propMarkup(def)}</g>`)
   }
-  for (const d of m.cliffs) {
-    parts.push(`<path d='${d}' fill='${P.cliffFill}' fill-opacity='0.3' stroke='${P.cliffEdge}' stroke-opacity='0.55' stroke-width='0.12' stroke-dasharray='0.5 0.3' stroke-linejoin='round'/>`)
+  for (const c of m.cliffs) {
+    parts.push(`<path d='${c.d}' fill='${c.fill}' fill-opacity='0.3' stroke='${c.edge}' stroke-opacity='0.55' stroke-width='0.12' stroke-dasharray='0.5 0.3' stroke-linejoin='round'/>`)
   }
   m.walls.forEach((w, i) => {
     parts.push(

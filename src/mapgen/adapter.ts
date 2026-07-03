@@ -40,8 +40,25 @@ export function generateForLocation(loc: MapGenSource): GenResult {
     seed: cfg.seed ?? loc.id,
     size: loc.openWorldSize ?? 200,
     themes,
+    // LIVE maps hold the measured pathing envelope (store BARRIER_CAP /
+    // map-perf-envelope's MAX_BENCHED_BARRIERS=16): steerAround cost grows with
+    // rect count. The lab explores up to the looser lib default; the game does not.
+    maxBarriers: 16,
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),
   }
   return generateMap(recipe, params)
+}
+
+// Session cache: generation is pure and a location's params are static data, so
+// a result never invalidates. Lets render-path callers (BattleView per tick,
+// the terrain memo) treat "the location's spec" as a cheap lookup.
+const LOCATION_CACHE = new Map<string, GenResult>()
+export function generateForLocationCached(loc: MapGenSource): GenResult {
+  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}`
+  const hit = LOCATION_CACHE.get(key)
+  if (hit) return hit
+  const res = generateForLocation(loc)
+  LOCATION_CACHE.set(key, res)
+  return res
 }

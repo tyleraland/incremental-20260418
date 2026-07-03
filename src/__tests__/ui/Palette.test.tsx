@@ -10,6 +10,8 @@ import { render } from '@testing-library/react'
 import { PAPER_PALETTE, PAPER_TONE } from '@/render/palette'
 import { TERRAIN_PROPS } from '@/render/props'
 import { terrainSvg, type TerrainProps } from '@/render/terrain'
+import { generateMap, specBarriers } from '@/mapgen'
+import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import { TOKEN_SKINS } from '@/render/skins'
 import type { Biome, BodyShape, Weapon } from '@/render/appearance'
 
@@ -51,6 +53,18 @@ describe('palette contract', () => {
       // url(…) refs are allowed ONLY as the wall/rim clip paths
       expect(svg.replace(/clip-path='url\(#(?:w\d+|rim)\)'/g, '')).not.toContain('url(')
     }
+  })
+
+  it('spec-driven terrain (§mapgen surface/scatter) also emits only palette colors', () => {
+    const res = generateMap(FIELD_RECIPE, { recipe: 'field', seed: 5, size: 48, themes: ['plains', 'water'] })
+    const svg = terrainSvg({
+      biome: 'grass', cols: res.spec.cols, rows: res.spec.rows,
+      barriers: specBarriers(res.spec), seed: 5, rim: true, spec: res.spec,
+    })
+    for (const c of paints(svg)) {
+      expect(ROLE_VALUES.has(c) || c === 'none', `spec terrain: rogue paint '${c}'`).toBe(true)
+    }
+    expect(svg).not.toMatch(/filter|[gG]radient/)
   })
 
   it('paper token bodies use only palette + tone colors, no filters/gradients', () => {

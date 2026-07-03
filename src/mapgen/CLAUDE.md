@@ -55,10 +55,17 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `recipes/index.ts` | `RECIPE_REGISTRY` (`dungeon` = graph-first, `city` = road-first: reserved) |
 | `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store) |
 
-Consumers today: `createOpenBattleFor` (store) honors `Location.mapGen`
-(barriers + arena size from the spec; **no live location sets it yet**), and
-the dev lab. `terrain.tsx` consuming surface/scatter is its own phase —
-deliberately not stubbed.
+Consumers today (phase 2): `createOpenBattleFor` (store) honors
+`Location.mapGen` via `generateForLocationCached` (pure generation + static
+params → a session cache that never invalidates), and `terrain.tsx` reads the
+spec's **surface plane** (material regions → organic washes via
+`maskLoops`→`decimate`→`wonk`→`blobPath`; shallow-under-deep gives the
+two-band water read), **scatter plane** (abstract kinds → biome prop
+archetypes, `KIND_ARCHETYPE` — kinds never prop ids), and **materials**
+(deep-water rects vanish under the lake wash; hedges paint foliage). First
+live location: **`mirror-vale`** (96×96 field, cap 30). The lab explores with
+`maxBarriers` 24; `generateForLocation` pins live maps to **16** (the
+benched pathing envelope, gated in `map-perf-envelope.test.ts`).
 
 ## Harnesses (the human-validation bottleneck is the design center)
 
@@ -78,10 +85,11 @@ deliberately not stubbed.
 
 ## Phase roadmap (each ships something; catalog "prototyping order")
 
-1. ✅ **Scaffold** (this): pipeline, field recipe, validation, lab, seams.
-2. **Render consumption** — `terrain.tsx`/`ARENA_SKINS` read surface+scatter
-   (mottles/props become MapSpec consumers); flip one sandbox location's
-   `mapGen` on; perf-pass barrier counts (`skin-ab`, `map-perf-envelope`).
+1. ✅ **Scaffold**: pipeline, field recipe, validation, lab, seams.
+2. ✅ **Render consumption** — terrain reads surface/scatter/materials;
+   `mirror-vale` live; barrier budget pinned to the perf envelope. Left for
+   later polish: landmark POI → big silhouette prop, richer water treatment
+   (ripple props, ford highlight), spec-aware minimap.
 3. **Dungeon recipe (graph-first)** — room/corridor graph, **cyclic layouts**
    (⭐4), stamp/vault registry (§I — "highest-leverage single item"), lair POI.
 4. **Lock-and-key + proficiency gates** — `Lock` placement, conditional

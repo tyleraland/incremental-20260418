@@ -6,6 +6,7 @@ import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSkin } from '@/render/skins'
 import { hashString, type Rect } from '@/render/authoring'
+import { generateForLocationCached, type MapSpec } from '@/mapgen'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, distance, sightlineClear,
@@ -193,13 +194,14 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
   // Organic terrain layer (render/terrain.tsx): one static per-location SVG
   // inside the ground layer. When a skin carries it, it REPLACES the rect
-  // barrier divs and the classic perimeter ring below.
-  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid })
+  // barrier divs and the classic perimeter ring below. §mapgen locations hand
+  // it their baked MapSpec so the surface/scatter planes drive the dressing.
+  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, spec: mapSpec })
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -878,7 +880,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, portals, biome, terrainSeed, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
+function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; mapSpec?: MapSpec; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
   const skin  = useGameStore((s) => s.battleSkin)
   const fx    = FX_SKINS[skin]
@@ -1450,6 +1452,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, onFollow, inspectRequ
           biome={biome}
           terrainSeed={terrainSeed}
           terrainAvoid={terrainAvoid}
+          mapSpec={mapSpec}
           panEnabled
           onPanStart={isOpen ? beginPan : undefined}
           onPanMove={isOpen ? panMove : undefined}
@@ -1716,7 +1719,11 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   // in their real positions, instead of the old instance easing (sliding) every
   // token from the previous battle's framing into place. The key only changes on a
   // location switch — never per tick — so normal play keeps the same instance.
+  // §mapgen: a generated location's baked spec for the terrain layer. The
+  // adapter memoizes per location (pure generation, static params), so this is
+  // a Map lookup on every render after the first.
+  const mapSpec = location?.mapGen ? generateForLocationCached(location).spec : undefined
   return battle
-    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
+    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} mapSpec={mapSpec} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />
 }

@@ -57,6 +57,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'wolf-den':         [7, 4],   // Dire Wolf Den (aggressive pack — aggression showcase)
   'prontera-field-2': [5, 4],   // Southern Road
   'beach-1':          [5, 5],   // Kanto Beach
+  'mirror-vale':      [6, 5],   // Mirrorlake Vale (§mapgen: first generated map)
 
   // Fixed Encounters — sandbox-only test dungeon (entered from Prontera): the
   // discrete-wave arenas + early fields + Elemental Frontier, off the overworld.

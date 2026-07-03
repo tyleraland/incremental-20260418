@@ -18,7 +18,7 @@ import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
 import { consumableDef } from '@/data/consumables'
 import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
-import { generateForLocation, specBarriers } from '@/mapgen'
+import { generateForLocationCached, specBarriers } from '@/mapgen'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
 import { npcsAt, npcToEngineInput } from '@/data/npcs'
@@ -619,7 +619,7 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   // §mapgen: a location opted in via `mapGen` draws its arena size + barriers
   // from the generated MapSpec (validated + rerolled inside the generator);
   // every other location keeps the scenario / seeded-scatter path unchanged.
-  const gen = loc.mapGen ? generateForLocation(loc) : null
+  const gen = loc.mapGen ? generateForLocationCached(loc) : null
   const size = gen ? gen.spec.cols : openWorldSize(loc)
   const scenBarriers = locationBarriers(loc)
   const barriers = gen ? specBarriers(gen.spec) : scenBarriers.length ? scenBarriers : openWorldBarriers(loc, size)
