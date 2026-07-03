@@ -724,7 +724,16 @@ export function LocationDetail({ location }: { location: Location }) {
         </Section>
       )}
 
-      <button onClick={() => setSelectedLocation(null)} className="text-[11px] text-game-text-dim hover:text-game-text">clear selection</button>
+      {/* Deselect — a quiet utility, right-aligned with an icon so it reads as a
+          control rather than orphaned body text among the bordered actions above. */}
+      <div className="flex justify-end pt-1">
+        <button
+          onClick={() => setSelectedLocation(null)}
+          className="inline-flex items-center gap-1 text-[11px] text-game-muted hover:text-game-text"
+        >
+          <span className="text-[10px]">✕</span> Clear selection
+        </button>
+      </div>
 
       {codexId && MONSTER_REGISTRY[codexId] && (
         <MonsterCodex monster={MONSTER_REGISTRY[codexId]} seenCount={monsterSeen[codexId] ?? 0} onClose={() => setCodexId(null)} />

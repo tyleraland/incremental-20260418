@@ -153,7 +153,6 @@ function unitStateColor(u: Unit): { color: string; state: string } {
 }
 
 function RosterChip({ unit, selected, here, following, compact, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; compact?: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
-  const viewed    = useGameStore((s) => s.viewedUnitLevels)
   const equipment = useGameStore((s) => s.equipment)
   const { color, state } = unitStateColor(unit)
   const maxHp = getDerivedStats(unit, equipment).maxHp
@@ -198,8 +197,16 @@ function RosterChip({ unit, selected, here, following, compact, onSelect, onFocu
           className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-game-accent border border-game-bg flex items-center justify-center text-[8px] leading-none shadow"
         >🎥</span>
       )}
-      {needsAttention(unit, viewed) && (
-        <span className="absolute -top-0.5 -left-0.5 w-3 h-3 rounded-full bg-game-gold border border-game-bg text-[7px] font-bold text-black flex items-center justify-center">!</span>
+      {/* The corner badge is reserved for the one genuinely urgent, field-relevant
+          state: a KO'd hero recovering out of the fight. Routine "unspent points"
+          nudges live solely in the Decisions inbox now — flagging every hero here
+          (they all have points at the start) made the badge meaningless and just
+          re-stated what the inbox already carries. */}
+      {unit.recoveryTicksLeft > 0 && (
+        <span
+          title="Knocked out — recovering"
+          className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 rounded-full bg-rose-600 border border-game-bg text-[8px] font-bold text-white flex items-center justify-center leading-none"
+        >✚</span>
       )}
       {!compact && <span className="text-[10px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>}
     </button>
@@ -265,7 +272,12 @@ function NavBtn({ icon, label, active, disabled, badge, onClick, className }: { 
 // One actionable surface replacing scattered alert dots: everything that wants a
 // player decision, with severity and a "go" action. red = blocked/hurt, gold =
 // spendable/collectable, gray = informational.
-type Decision = { id: string; severity: 'red' | 'gold' | 'info'; icon: string; text: string; go: () => void }
+type Severity = 'red' | 'gold' | 'info'
+// A decision is one row: a bold `title` (who/what) + an optional dim `detail`
+// (the specifics). One row per subject — a hero's skill AND ability points fold
+// into a single row rather than nagging twice — so the inbox reads as a short,
+// prioritized queue instead of a wall of near-duplicate lines.
+type Decision = { id: string; severity: Severity; icon: string; title: string; detail?: string; go: () => void }
 
 function useDecisions(gotoQuest: (e: QuestBoardEntry) => void): Decision[] {
   const units = useGameStore((s) => s.units)
@@ -278,55 +290,94 @@ function useDecisions(gotoQuest: (e: QuestBoardEntry) => void): Decision[] {
     useProtoStore.getState().setScopeFocus('hero')
     useProtoStore.getState().requestHeroTab()
   }
+  const pts = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
   for (const u of units) {
-    if (u.recoveryTicksLeft > 0) out.push({ id: `ko-${u.id}`, severity: 'red', icon: '✚', text: `${first(u)} was knocked out — recovering`, go: () => goHero(u) })
-    if (u.skillPoints > 0) out.push({ id: `sp-${u.id}`, severity: 'gold', icon: '✦', text: `${first(u)} has ${u.skillPoints} skill point${u.skillPoints > 1 ? 's' : ''} to spend`, go: () => goHero(u) })
-    if (u.abilityPoints > 0) out.push({ id: `ap-${u.id}`, severity: 'gold', icon: '◈', text: `${first(u)} has ${u.abilityPoints} ability point${u.abilityPoints > 1 ? 's' : ''} to spend`, go: () => goHero(u) })
+    // Urgent first: a recovering hero is out of the fight and wants eyes on them.
+    if (u.recoveryTicksLeft > 0) {
+      out.push({ id: `ko-${u.id}`, severity: 'red', icon: '✚', title: first(u), detail: 'Knocked out — recovering', go: () => goHero(u) })
+    }
+    // Spendable points fold into ONE row per hero (skill + ability together): the
+    // tap lands you on their dossier where both are spent anyway.
+    if (u.skillPoints > 0 || u.abilityPoints > 0) {
+      const bits: string[] = []
+      if (u.skillPoints > 0) bits.push(pts(u.skillPoints, 'skill point'))
+      if (u.abilityPoints > 0) bits.push(pts(u.abilityPoints, 'ability point'))
+      out.push({ id: `pts-${u.id}`, severity: 'gold', icon: '✦', title: first(u), detail: `${bits.join(' · ')} to spend`, go: () => goHero(u) })
+    }
   }
   for (const e of board) {
-    if (e.status === 'ready') out.push({ id: `q-${e.id}`, severity: 'gold', icon: '📜', text: `Quest ready: ${e.title} — ${e.locationName}`, go: () => gotoQuest(e) })
-    else if (e.status === 'available') out.push({ id: `qa-${e.id}`, severity: 'info', icon: '📜', text: `New quest at ${e.locationName}: ${e.title}`, go: () => gotoQuest(e) })
+    if (e.status === 'ready') out.push({ id: `q-${e.id}`, severity: 'gold', icon: '📜', title: `Quest ready — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
+    else if (e.status === 'available') out.push({ id: `qa-${e.id}`, severity: 'info', icon: '📜', title: `New quest — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
   }
   for (const u of units) {
-    if (!u.locationId && !u.isResting && u.recoveryTicksLeft <= 0) out.push({ id: `idle-${u.id}`, severity: 'info', icon: '·', text: `${first(u)} is idle — deploy them?`, go: () => goHero(u) })
+    if (!u.locationId && !u.isResting && u.recoveryTicksLeft <= 0) out.push({ id: `idle-${u.id}`, severity: 'info', icon: '·', title: first(u), detail: 'Idle — deploy them?', go: () => goHero(u) })
   }
   const rank = { red: 0, gold: 1, info: 2 }
   return out.sort((a, b) => rank[a.severity] - rank[b.severity])
 }
 
-const SEV_CLS: Record<Decision['severity'], string> = {
-  red:  'border-rose-600/50 bg-rose-950/30 text-rose-200',
-  gold: 'border-game-gold/50 bg-game-gold/10 text-game-gold',
-  info: 'border-game-border bg-game-bg text-game-text-dim',
+const SEV_CLS: Record<Severity, string> = {
+  red:  'border-rose-600/50 bg-rose-950/30',
+  gold: 'border-game-gold/40 bg-game-gold/[0.07]',
+  info: 'border-game-border bg-game-bg',
 }
+const SEV_ICON_CLS: Record<Severity, string> = {
+  red:  'text-rose-300',
+  gold: 'text-game-gold',
+  info: 'text-game-muted',
+}
+// Section headers turn a flat list into a triaged queue: what's hurt, what's
+// ready to spend, what can wait. Empty sections drop out.
+const SEV_SECTION: { sev: Severity; label: string }[] = [
+  { sev: 'red',  label: 'Needs attention' },
+  { sev: 'gold', label: 'Ready to spend' },
+  { sev: 'info', label: 'When you get to it' },
+]
 
 function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose: () => void }) {
+  const urgent = decisions.filter((d) => d.severity !== 'info').length
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
         <span className="text-sm font-semibold text-game-text">⚑ Decisions</span>
-        <span className="text-[11px] text-game-text-dim">{decisions.length} waiting</span>
+        <span className="text-[11px] text-game-text-dim">{urgent ? `${urgent} want you` : `${decisions.length} to review`}</span>
         <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
-        <div className="max-w-xl w-full mx-auto space-y-1.5" style={{ zoom: 1.12 }}>
+        <div className="max-w-xl w-full mx-auto space-y-3" style={{ zoom: 1.12 }}>
           {decisions.length === 0 && (
             <div className="text-center py-10">
               <div className="text-3xl mb-2 opacity-40">✓</div>
               <div className="text-sm text-game-text-dim">Nothing needs you right now.</div>
             </div>
           )}
-          {decisions.map((d) => (
-            <button
-              key={d.id}
-              onClick={() => { d.go(); onClose() }}
-              className={`w-full flex items-center gap-2.5 rounded-md border px-3 py-2 text-left text-xs hover:brightness-125 transition-all ${SEV_CLS[d.severity]}`}
-            >
-              <span className="w-5 text-center shrink-0">{d.icon}</span>
-              <span className="flex-1 leading-snug">{d.text}</span>
-              <span className="shrink-0 opacity-60">›</span>
-            </button>
-          ))}
+          {SEV_SECTION.map(({ sev, label }) => {
+            const rows = decisions.filter((d) => d.severity === sev)
+            if (!rows.length) return null
+            return (
+              <section key={sev} className="space-y-1.5">
+                <div className="flex items-center gap-2 px-0.5">
+                  <span className="text-[10px] uppercase tracking-widest text-game-muted">{label}</span>
+                  <span className="text-[10px] text-game-muted tabular-nums">{rows.length}</span>
+                  <span className="flex-1 h-px bg-game-border/60" />
+                </div>
+                {rows.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => { d.go(); onClose() }}
+                    className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left hover:brightness-125 transition-all ${SEV_CLS[d.severity]}`}
+                  >
+                    <span className={`w-5 text-center shrink-0 text-base ${SEV_ICON_CLS[d.severity]}`}>{d.icon}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm text-game-text font-medium leading-tight truncate">{d.title}</span>
+                      {d.detail && <span className="block text-[11px] text-game-text-dim leading-tight truncate">{d.detail}</span>}
+                    </span>
+                    <span className="shrink-0 opacity-50 text-game-text-dim">›</span>
+                  </button>
+                ))}
+              </section>
+            )
+          })}
         </div>
       </div>
     </div>,
