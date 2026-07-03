@@ -31,10 +31,14 @@ const MAX_BENCHED_DENSITY = 0.016
 // small map whose WHOLE population is at or under the benched on-screen crowd
 // (Harpy's cap) can pack as tightly as it likes (e.g. wolf-den, 20 on 30×30).
 const MAX_BENCHED_CROWD = 50
-// Pathing (steerAround) cost grows with BARRIER COUNT, not map area — the
-// store already caps generated scatter at BARRIER_CAP=16; authored scenario
-// barrier sets must respect the same bound.
-const MAX_BENCHED_BARRIERS = 16
+// Pathing (steerAround) cost grows with BARRIER COUNT, not map area. Measured
+// 2026-07 after the visibility-graph cache landed (cadence-profile "barriers"
+// sweep, this container's 4×-throttled harness — read gaps, not absolutes):
+// tick mean/max at barriers=16 ran 7.5/13ms; at 40, 13.2/43ms — i.e. the same
+// territory the old per-call pather occupied at 16 (9.6/27ms), and ~4× better
+// than the old code at 40 (33/164ms). 72 (the dungeon lab budget) is still
+// ~25/76ms — affordable in a pinch but not adopted as the live bound yet.
+const MAX_BENCHED_BARRIERS = 40
 
 // Store defaults for unset fields (OPEN_WORLD_DEFAULT_CAP / _SIZE — private
 // consts in useGameStore; mirrored here so the envelope sees what the store

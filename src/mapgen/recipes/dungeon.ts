@@ -12,10 +12,10 @@
 // forever. Stamps (§I) drop authored set pieces into rooms under budget;
 // depth is graph distance from the entry (§G), and the lair sits at max depth.
 //
-// NOT live on any location yet: a dungeon spends ~30–60 rects, above the
-// benched open-world pathing envelope (16). Fine for the lab and for future
-// discrete encounters; a live open-world dungeon needs the pather perf pass
-// first (BACKLOG → Procedural map generation, cross-cutting debts).
+// NOT live on any location yet: a dungeon spends ~30–60 rects against the
+// live pathing envelope of 40 (raised from 16 by the 2026-07 pather perf
+// pass). A lean floor now fits; the full 72 budget is still lab/encounter
+// territory (BACKLOG → Procedural map generation, cross-cutting debts).
 
 import type { ProficiencyTag, Pt, Rect } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'

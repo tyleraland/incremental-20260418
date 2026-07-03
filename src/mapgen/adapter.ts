@@ -46,10 +46,13 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
     seed: cfg.seed ?? loc.id,
     size: loc.openWorldSize ?? 200,
     themes,
-    // LIVE maps hold the measured pathing envelope (store BARRIER_CAP /
-    // map-perf-envelope's MAX_BENCHED_BARRIERS=16): steerAround cost grows with
-    // rect count. The lab explores up to the looser lib default; the game does not.
-    maxBarriers: 16,
+    // LIVE maps hold the measured pathing envelope (map-perf-envelope's
+    // MAX_BENCHED_BARRIERS=40, re-benched 2026-07 with the steerAround
+    // visibility-graph cache): cost grows with rect count. The lab explores up
+    // to the looser lib default; the game does not. NOTE: this is a GenParam —
+    // raising it changes what live locations bake (mirror-vale's outcrops were
+    // budget-starved at 16 and fill in at 40).
+    maxBarriers: 40,
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),
     proficiencies: opts.proficiencies,

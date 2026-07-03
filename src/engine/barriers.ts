@@ -9,7 +9,7 @@
 // Leaf module (constants + types only) so grid.ts can import it without a cycle.
 
 import { COLS, ROWS, EPS, DEPLOY_FRONT } from './constants'
-import { arenaClamp } from './arena'
+import { arenaClamp, arenaCols, arenaRows } from './arena'
 import type { Vec2, Barrier } from './types'
 
 // Tie-break in the path search: corners on the left side of the arena cost
@@ -194,29 +194,105 @@ export function sightlineClear(from: Vec2, to: Vec2, barriers: Barrier[], pad = 
   return lineClear(from, to, walls, pad)
 }
 
-// Proper navigation around terrain: a Dijkstra shortest path on the visibility
-// graph (from + target + barrier corners), so a unit picks the route with the
-// shortest total detour instead of just the locally-cheapest next corner. Pure
-// per-call (memory-less, recomputed each round) — when the line is clear, beeline.
-export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): { point: Vec2; direct: boolean; reachable: boolean } {
-  if (lineClear(from, target, barriers, pad)) return { point: target, direct: true, reachable: true }
+// ── Visibility-graph cache (the §mapgen pather perf pass) ────────────────────
+// steerAround used to rebuild its whole graph per call: corner nodes, usable
+// flags, and — the killer — a lazy lineClear per Dijkstra relaxation, ~O((4B)²·B)
+// per moving unit per decision round. That cost is what pinned live maps to
+// BARRIER_CAP=16 rects. Everything corner↔corner depends only on the barrier
+// set, the pad, and the arena bounds — all static for the life of a battle —
+// so it's built ONCE and cached against the barrier ARRAY's identity (WeakMap;
+// interleaved battles each hit their own entry, and tests' throwaway arrays
+// just build fresh). Per call only the from/target edges are computed (≤2·4B
+// lineClear) plus a pure-arithmetic Dijkstra.
+//
+// Byte-identical by construction (pinned by steer-cache.test.ts differential
+// fuzz): corner clearance is stored per ORDERED pair — lineClear's sample
+// positions differ by direction, so (a→b) and (b→a) may disagree by an ulp at
+// a pad graze — and the Dijkstra below keeps the original's node order,
+// linear-scan min selection, and tie-breaks exactly.
+//
+// Phase-6 note (dynamic barriers): REPLACE the barriers array to change
+// terrain — never mutate rects in place — so the cache entry dies with the old
+// array identity. A length change or arena-bounds change also invalidates.
+interface VisGraph {
+  count: number
+  pad: number
+  cols: number
+  rows: number
+  nodes: Vec2[]        // 4 clamped corners per barrier, in barrier order
+  usable: boolean[]    // corner isn't inside another barrier
+  bias: number[]       // HERD_BIAS for corners left of the (constant) grid centre
+  dist: Float64Array   // m×m corner distances (hypot — symmetric)
+  clear: Uint8Array    // m×m ORDERED corner→corner lineClear
+}
+const VIS_CACHE = new WeakMap<Barrier[], VisGraph[]>()
+
+function visGraphFor(barriers: Barrier[], pad: number): VisGraph {
+  const cols = arenaCols(), rows = arenaRows()
+  let list = VIS_CACHE.get(barriers)
+  if (list) {
+    const hit = list.find((g) => g.pad === pad && g.cols === cols && g.rows === rows && g.count === barriers.length)
+    if (hit) return hit
+  } else {
+    list = []
+    VIS_CACHE.set(barriers, list)
+  }
   const off = pad + 0.3
-  // Build node graph: 0 = from, last = target, middle = barrier corners.
-  const nodes: Vec2[] = [from]
+  const nodes: Vec2[] = []
   for (const b of barriers) {
     nodes.push(clamp({ x: b.x - off, y: b.y - off }))
     nodes.push(clamp({ x: b.x + b.w + off, y: b.y - off }))
     nodes.push(clamp({ x: b.x - off, y: b.y + b.h + off }))
     nodes.push(clamp({ x: b.x + b.w + off, y: b.y + b.h + off }))
   }
-  nodes.push(target)
-  const n = nodes.length
-  const T = n - 1
-  // Corners that fall inside another barrier are unusable hops.
-  const usable = new Array(n).fill(true)
-  for (let i = 1; i < T; i++) if (pointBlocked(barriers, nodes[i], pad)) usable[i] = false
+  const m = nodes.length
+  const usable = nodes.map((p) => !pointBlocked(barriers, p, pad))
+  const cx = COLS / 2
+  const bias = nodes.map((p) => (p.x < cx ? HERD_BIAS : 0))
+  const distM = new Float64Array(m * m)
+  const clearM = new Uint8Array(m * m)
+  for (let i = 0; i < m; i++) {
+    if (!usable[i]) continue
+    for (let j = 0; j < m; j++) {
+      if (i === j || !usable[j]) continue   // pairs with an unusable end are never queried
+      distM[i * m + j] = dist(nodes[i], nodes[j])
+      clearM[i * m + j] = lineClear(nodes[i], nodes[j], barriers, pad) ? 1 : 0
+    }
+  }
+  const g: VisGraph = { count: barriers.length, pad, cols, rows, nodes, usable, bias, dist: distM, clear: clearM }
+  list.push(g)
+  return g
+}
 
-  // Dijkstra (small graph: ~4 corners per barrier + from + target).
+// Proper navigation around terrain: a Dijkstra shortest path on the visibility
+// graph (from + target + barrier corners), so a unit picks the route with the
+// shortest total detour instead of just the locally-cheapest next corner. The
+// corner graph is cached per battle (see VisGraph above); the from/target edges
+// are per-call — when the line is clear, beeline.
+export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): { point: Vec2; direct: boolean; reachable: boolean } {
+  if (lineClear(from, target, barriers, pad)) return { point: target, direct: true, reachable: true }
+  const g = visGraphFor(barriers, pad)
+  const m = g.nodes.length
+  // Node indexing mirrors the pre-cache implementation exactly:
+  // 0 = from, 1..m = barrier corners, T = m+1 = target.
+  const n = m + 2
+  const T = n - 1
+  const usable = g.usable
+  // Per-call edges. from→corner and corner→target only (node 0 settles first,
+  // so no relaxation ever runs corner→from; the loop breaks when target
+  // settles, so no target→corner). from→target is known false here — the
+  // beeline early-out above already failed. from-edges are eager (the step-0
+  // relaxation touches every usable corner anyway); target-edges are LAZY —
+  // the original only ever tested corners that actually settled before the
+  // target, so the memo reproduces exactly those calls.
+  const fromClear = new Uint8Array(m)
+  for (let i = 0; i < m; i++) {
+    if (usable[i]) fromClear[i] = lineClear(from, g.nodes[i], barriers, pad) ? 1 : 0
+  }
+  const toClear = new Int8Array(m).fill(-1)
+
+  // Dijkstra — same structure, selection order, and tie-breaks as before; all
+  // geometry now reads from the cache instead of recomputing.
   const dArr = new Array(n).fill(Infinity)
   const prev = new Array(n).fill(-1)
   const seen = new Array(n).fill(false)
@@ -226,14 +302,27 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
     for (let v = 0; v < n; v++) if (!seen[v] && dArr[v] < bu) { bu = dArr[v]; u = v }
     if (u < 0 || u === T) break
     seen[u] = true
-    const cx = COLS / 2
-    for (let v = 0; v < n; v++) {
-      if (seen[v] || !usable[v]) continue
-      if (!lineClear(nodes[u], nodes[v], barriers, pad)) continue
+    for (let v = 1; v < n; v++) {   // v=0 is settled at step 0; original skipped it via `seen`
+      if (seen[v]) continue
+      if (v !== T && !usable[v - 1]) continue
+      let ok: number
+      if (v === T) {
+        if (u === 0) ok = 0
+        else {
+          ok = toClear[u - 1]
+          if (ok < 0) ok = toClear[u - 1] = lineClear(g.nodes[u - 1], target, barriers, pad) ? 1 : 0
+        }
+      } else {
+        ok = u === 0 ? fromClear[v - 1] : g.clear[(u - 1) * m + (v - 1)]
+      }
+      if (!ok) continue
       // Small left-side surcharge on intermediate corners → consistent herding
       // for near-tie detours (true shortcuts on the left still win).
-      const bias = v !== 0 && v !== T && nodes[v].x < cx ? HERD_BIAS : 0
-      const nd = dArr[u] + dist(nodes[u], nodes[v]) + bias
+      const bias = v !== T ? g.bias[v - 1] : 0
+      const dd = u === 0
+        ? dist(from, g.nodes[v - 1])
+        : v === T ? dist(g.nodes[u - 1], target) : g.dist[(u - 1) * m + (v - 1)]
+      const nd = dArr[u] + dd + bias
       if (nd < dArr[v]) { dArr[v] = nd; prev[v] = u }
     }
   }
@@ -249,9 +338,12 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
   const path: number[] = []
   for (let cur = T; cur !== -1; cur = prev[cur]) path.push(cur)
   path.reverse()
+  // Corners come back as COPIES — the cached graph must never leak a mutable
+  // alias (from/target pass through as-is, exactly like the pre-cache code).
+  const at = (i: number): Vec2 => (i === 0 ? from : i === T ? target : { x: g.nodes[i - 1].x, y: g.nodes[i - 1].y })
   let hop = 1
-  while (hop < path.length - 1 && dist(nodes[path[hop]], from) < 0.6) hop++
-  return { point: nodes[path[hop]], direct: path[hop] === T, reachable: true }
+  while (hop < path.length - 1 && dist(at(path[hop]), from) < 0.6) hop++
+  return { point: at(path[hop]), direct: path[hop] === T, reachable: true }
 }
 
 // Is `target` reachable from `from` given the *known* terrain (`barriers`)?

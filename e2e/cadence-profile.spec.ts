@@ -30,6 +30,14 @@ const CONFIGS = [
   { name: 'cap90 shipped (ts3 every2)', q: 'cap=90&size=200' },
   { name: 'cap90 RIP     (ts6 every1)', q: 'cap=90&size=200&hts=6&hevery=1' },
   { name: 'cap140 RIP    (ts6 every1)', q: 'cap=140&size=200&hts=6&hevery=1' },
+  // Pathing-load sweep (steerAround visibility-graph cache, 2026-07): tick cost
+  // as barrier COUNT grows past the old envelope (16) on the default busy field
+  // (Harpy: cap 50 on 60×60), plus the engine-heavy beach shape. These runs are
+  // what MAX_BENCHED_BARRIERS in map-perf-envelope.test.ts cites.
+  { name: 'barriers16 (old envelope)  ', q: 'barriers=16' },
+  { name: 'barriers40                 ', q: 'barriers=40' },
+  { name: 'barriers72 (dungeon budget)', q: 'barriers=72' },
+  { name: 'beach barriers40           ', q: 'cap=220&size=200&barriers=40' },
 ] as const
 
 async function sampleRender(page: import('@playwright/test').Page) {

@@ -199,8 +199,9 @@ independently shippable; ordering rationale in the guide's roadmap):
   scatter plane → biome prop archetypes (`KIND_ARCHETYPE`), material-aware
   collision paint (deep-water rects vanish under the lake, hedges go foliage).
   **`mirror-vale`** (96×96 `field`, south of Kanto Beach) is the first live
-  generated location; `generateForLocation` pins live maps to `maxBarriers` 16
-  and `map-perf-envelope.test.ts` gates every `mapGen` location (valid bake +
+  generated location; `generateForLocation` pins live maps to the benched
+  pathing envelope (16 at ship; 40 since the 2026-07 pather perf pass) and
+  `map-perf-envelope.test.ts` gates every `mapGen` location (valid bake +
   barrier bound). Deferred polish: landmark POI → big silhouette prop,
   spec-aware minimap tint, ford/ripple accents, `skin-ab` run on a spec'd
   perf scene (the ?perf scene has no spec, so the benchmark is unaffected today).
@@ -259,9 +260,16 @@ independently shippable; ordering rationale in the guide's roadmap):
   Reports/offline-summary wiring (§M2 "aim narrative at surfaces we own").
 - **Phase 6 — interactables / dynamic barriers.** The one invariant-breaker
   (BSNAP byte-identical replay must survive it); gated behind everything above.
-- **Cross-cutting debts:** barrier-count vs pather budget (a lake spends ~7–12
-  rects of `maxBarriers`=24 vs store `BARRIER_CAP`=16 — needs a Dijkstra perf
-  pass or rect-chain-aware pathing before big water maps go live); tactical
+- **Cross-cutting debts:** ✅ *pather perf pass (2026-07)* — `steerAround` now
+  caches its visibility graph per barrier set (corner nodes + ordered pairwise
+  clearance/distances, WeakMap on the barrier array; byte-identical, pinned by
+  `steer-cache.test.ts` differential fuzz). Worst-tick at 72 rects fell
+  ~7.5× (572→76ms on the throttled harness; `cadence-profile.spec.ts`
+  "barriers" sweep, `?perf&barriers=N`). Live envelope raised 16→40
+  (adapter pin + `map-perf-envelope.test.ts`) — big water maps and denser
+  cities are unblocked; the dungeon's 72-rect budget still wants either a
+  further pass or a trimmed live variant. NOTE: the raise re-baked
+  `mirror-vale` (its outcrops were budget-starved at 16). Remaining: tactical
   profile heuristics are v0 (chokepoint/lane counts unvalidated against play);
   map features need consuming AI (hold-chokepoint / use-cover tactics — see AI
   & coordination) and should ship as pairs; `?mapgen=1` lab could grow an

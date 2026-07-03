@@ -24,6 +24,10 @@
 //   ?cap=<n>     monsters on the field (default: the location's own cap)
 //   ?size=<n>    open-world map side    (default: the location's own size) — sweep
 //                this to measure how big a field stays smooth on the throttle.
+//   ?barriers=<n> synthetic wall/cliff rects scattered over the field (default:
+//                the location's own terrain) — the PATHING-load sweep. steerAround
+//                cost grows with rect COUNT; this is how the envelope constant in
+//                map-perf-envelope.test.ts gets measured before it moves.
 //   ?seed=<n>    PRNG seed              (default 1337)
 //
 // IMPORTANT: the party is built by CLONING the fully-kitted starter heroes
@@ -33,6 +37,7 @@
 // load this harness exists to measure.
 import { useGameStore, type Unit } from '@/stores/useGameStore'
 import { INITIAL_UNITS } from '@/data/units'
+import { SCENARIO_REGISTRY } from '@/data/scenarios'
 import { TICKS_PER_SECOND } from '@/lib/time'
 
 function numParam(name: string, fallback: number): number {
@@ -90,6 +95,29 @@ export function seedPerfBattle(targetHeroes = numParam('heroes', 12)): void {
   if (cap !== (base.openWorldCap ?? 8) || size !== (base.openWorldSize ?? 50)) {
     useGameStore.setState((s) => ({
       locations: s.locations.map((l) => (l.id === base.id ? { ...l, openWorldCap: cap, openWorldSize: size } : l)),
+    }))
+  }
+
+  // ?barriers=<n>: the pathing-load sweep. A dev-only scenario entry carries n
+  // seeded scattered rects; wiring it through testScenarioId means the battle
+  // stands up with the terrain in place (monsters scatter AROUND it, exactly
+  // like a real authored/generated map — not a post-hoc barrier swap).
+  const nBarriers = numParam('barriers', 0)
+  if (nBarriers > 0) {
+    const br = mulberry32((numParam('seed', 1337) ^ 0xba7) >>> 0)
+    const rects = Array.from({ length: nBarriers }, () => ({
+      x: 1 + br() * (size - 9), y: 1 + br() * (size - 9),
+      w: 1 + br() * 7, h: 1 + br() * 7,
+      kind: br() < 0.25 ? ('cliff' as const) : ('wall' as const),
+    }))
+    SCENARIO_REGISTRY['perf-barriers'] = {
+      id: 'perf-barriers',
+      name: 'Perf barrier sweep',
+      description: `Synthetic pathing-load terrain (?barriers=${nBarriers}). Dev-only; registered by perfSeed.`,
+      barriers: () => rects,
+    }
+    useGameStore.setState((s) => ({
+      locations: s.locations.map((l) => (l.id === base.id ? { ...l, testScenarioId: 'perf-barriers' } : l)),
     }))
   }
 

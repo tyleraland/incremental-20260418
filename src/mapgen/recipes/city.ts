@@ -11,9 +11,9 @@
 // Cities in the game are peaceful open-world fields (openWorldCap 0, NPC
 // merchants) — the recipe generates the STAGE for that, not the population
 // (NPCs/spawns are store-owned, out of generator scope). Not live on any
-// location yet: at the live pather envelope (adapter pins maxBarriers 16) a
-// city keeps its plaza + roads but starves to ~16 houses — fine, just thin.
-// The lab reviews the full default (24).
+// location yet; the live pather envelope (adapter pins maxBarriers 40 since
+// the 2026-07 perf pass) now fits a full-density town, and a tighter budget
+// just starves it to fewer houses.
 
 import type { Pt } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
@@ -280,7 +280,7 @@ export const CITY_RECIPE: RecipeDef = {
   description: 'Road-first town: plaza + gate roads + cross-street loops → paving → street-fronting buildings → yard/market scatter → plaza landmark + premise.',
   passes: [roadsPass, pavePass, blocksPass, scatterPass, semanticPass, premisePass],
   // The spawn apron is the plaza's clear heart (plaza r ≈ size*0.1, so houses
-  // hug the rim); budget matches the lab default — the adapter still pins live
-  // maps to the benched 16.
-  defaults: { size: 64, maxBarriers: 24, spawnApron: 7, themes: ['city'] },
+  // hug the rim); budget matches the live envelope (40 since the 2026-07
+  // pather perf pass) so a default bake IS a full-density town.
+  defaults: { size: 64, maxBarriers: 40, spawnApron: 7, themes: ['city'] },
 }

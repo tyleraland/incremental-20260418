@@ -41,8 +41,10 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
    (elevation/moisture/roughness), never private noise, so planes agree by
    construction (sand rings the lake because both consulted the same field).
 8. **Barrier budget is a pather budget**: open-world routing cost grows with
-   rect *count* (store `BARRIER_CAP`=16). Default `maxBarriers`=24 — any recipe
-   spending near it needs a perf pass before a live location adopts it.
+   rect *count*. The live envelope is **40** (re-benched 2026-07 after the
+   engine's steerAround visibility-graph cache; `map-perf-envelope.test.ts`
+   cites the measurement). Lib default `maxBarriers`=24; the dungeon's 72 is
+   still lab/encounter territory — bench before a live location adopts more.
 
 ## Module map
 
@@ -56,7 +58,7 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / water-coherence |
 | `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → outcrops → scatter → semantic |
 | `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → cyclic corridor graph → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects): lab/encounter only until the pather perf pass |
-| `recipes/city.ts` | the road-first town: plaza + jittered gate roads + cross-street loops (nav skeleton FIRST) → paving (ground → road/stone) → street-fronting building rects (road-distance transform: every house ≥2 cells off pavement, ≤4 from a street) → yard/market scatter → plaza landmark. Generates the STAGE for a city (NPCs/spawns stay store-owned); not live anywhere yet — at the live envelope (16) it just starves to fewer houses |
+| `recipes/city.ts` | the road-first town: plaza + jittered gate roads + cross-street loops (nav skeleton FIRST) → paving (ground → road/stone) → street-fronting building rects (road-distance transform: every house ≥2 cells off pavement, ≤4 from a street) → yard/market scatter → plaza landmark. Generates the STAGE for a city (NPCs/spawns stay store-owned); not live anywhere yet — under a tighter budget it just starves to fewer houses |
 | `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
 | `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
@@ -72,8 +74,9 @@ two-band water read), **scatter plane** (abstract kinds → biome prop
 archetypes, `KIND_ARCHETYPE` — kinds never prop ids), and **materials**
 (deep-water rects vanish under the lake wash; hedges paint foliage). First
 live location: **`mirror-vale`** (96×96 field, cap 30). The lab explores with
-`maxBarriers` 24; `generateForLocation` pins live maps to **16** (the
-benched pathing envelope, gated in `map-perf-envelope.test.ts`).
+`maxBarriers` 24; `generateForLocation` pins live maps to **40** (the
+pathing envelope re-benched 2026-07 with the engine's visibility-graph
+cache, gated in `map-perf-envelope.test.ts`).
 
 ## Harnesses (the human-validation bottleneck is the design center)
 
