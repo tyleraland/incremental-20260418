@@ -127,7 +127,7 @@ export function QuestJournal({ onClose, onGoto }: { onClose: () => void; onGoto:
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
         <span className="text-sm font-semibold text-game-text">📜 Quests</span>
         <span className="text-[11px] text-game-text-dim">{board.length} total · {counts.ready ?? 0} ready</span>
-        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+        <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
 
       {/* filters */}

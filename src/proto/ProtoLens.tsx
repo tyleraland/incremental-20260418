@@ -338,6 +338,8 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
   const requestZoom    = useProtoStore((s) => s.requestZoom)
   const battleFollowId = useGameStore((s) => s.battleFollowId)
   const battles        = useGameStore((s) => s.battles)
+  const equipment      = useGameStore((s) => s.equipment)
+  const rosterOrder    = useProtoStore((s) => s.rosterOrder)
   const [debugOpen, setDebugOpen] = useState(false)
   if (units.length === 0) return null
   const primary = units[0]
@@ -346,13 +348,27 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
   const liveC = single ? battle?.combatants.find((c) => c.id === primary.id) : undefined
   const primaryLive = !!liveC
   const following = battleFollowId === primary.id
-  // Selected heroes not already at the location you're viewing — Deploy here brings
-  // exactly these in (and the tip flags them).
+  // Selected heroes not already at the location you're viewing — Deploy brings
+  // exactly these in; the button names the destination so the "your selection is
+  // elsewhere" context needs no separate tip line.
   const elsewhere = location ? units.filter((u) => u.locationId !== location.id) : []
   // Tap a chip to focus that hero (make it primary) without dropping the selection.
   const focusHero = (id: string) => useGameStore.setState((s) => ({
     selectedUnitIds: [id, ...s.selectedUnitIds.filter((x) => x !== id)],
   }))
+  // ‹ › cycle through the roster (in the rail's current visual order) without
+  // reaching back up to the rail — a quiet select, so the camera stays put.
+  const cycle = (d: number) => {
+    const order = rosterOrder.length ? rosterOrder : useGameStore.getState().units.map((u) => u.id)
+    if (order.length < 2) return
+    const idx = order.indexOf(primary.id)
+    const next = order[(idx + d + order.length) % order.length]
+    if (!next) return
+    useGameStore.setState({ selectedUnitIds: [next] })
+    useProtoStore.getState().clearFoe()
+    useProtoStore.getState().dismissBattleCard()
+  }
+  const canCycle = single && (rosterOrder.length > 1 || useGameStore.getState().units.length > 1)
   // Follow flies the camera to the hero AND camera-locks onto them (toggles off
   // if already following) — the old standalone "Jump" is folded in here.
   const toggleFollow = () => {
@@ -360,40 +376,45 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
     useGameStore.setState({ selectedLocationId: primary.locationId, combatLocationId: primary.locationId, battleFollowId: primary.id })
     requestZoom(2)
   }
+  const cycleBtnCls = 'shrink-0 w-7 h-7 rounded-md border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 flex items-center justify-center text-sm leading-none'
   return (
-    <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-game-bg/40">
+    <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 bg-game-bg/40">
+      {canCycle && (
+        <button onClick={() => cycle(-1)} title="Previous hero" aria-label="Previous hero" className={cycleBtnCls}>‹</button>
+      )}
       {/* Selected hero chip(s) — the whole multi-selection rides this row. Same
           compact chip as the Location panel; selected heroes live here (and leave
           the Location list); the primary one (drives the hero-scoped tabs) is
-          ringed. Tap to focus a different selected hero. */}
-      <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto">
+          ringed. Tap to focus a different selected hero. Each chip carries a
+          slim live HP bar, so the bar doubles as a party status row. */}
+      <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
         {units.map((u) => {
           const isPrimary = u.id === primary.id
+          const c = u.locationId ? battles[u.locationId]?.combatants.find((x) => x.id === u.id) : undefined
+          const hp = c ? c.hp : u.health
+          const maxHp = c ? c.maxHp : getDerivedStats(u, equipment).maxHp
+          const pct = Math.max(0, Math.min(100, maxHp > 0 ? (hp / maxHp) * 100 : 0))
           return (
             <button
               key={u.id}
               onClick={() => focusHero(u.id)}
-              title={`${u.name.split(' ')[0]} — selected${single ? '' : ' · tap to focus'}`}
+              title={`${u.name.split(' ')[0]} — ${Math.floor(hp)}/${maxHp} HP${single ? '' : ' · tap to focus'}`}
               className={[
-                'flex items-center gap-1.5 shrink-0 text-[11px] px-2 py-1 rounded border transition-colors',
+                'relative overflow-hidden flex items-center gap-1.5 shrink-0 text-[11px] px-2 py-1 rounded border transition-colors',
                 isPrimary
                   ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
                   : 'border-game-border text-game-text hover:border-game-primary/50',
               ].join(' ')}
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-game-green shrink-0" />
               <span className="truncate">{u.name.split(' ')[0]}</span>
               <span className="text-game-text-dim">Lv {u.level}</span>
+              <span className="absolute bottom-0 left-0 h-0.5 bg-game-green" style={{ width: `${pct}%`, transition: 'width 380ms linear' }} />
             </button>
           )
         })}
       </div>
-
-      {/* "somewhere else" tip — the selection isn't on the location you're viewing. */}
-      {location && elsewhere.length > 0 && (
-        <span className="hidden sm:block text-[10px] text-amber-200/80 truncate">
-          {elsewhere.length === 1 ? `${elsewhere[0].name.split(' ')[0]} is elsewhere` : `${elsewhere.length} selected are elsewhere`} · viewing {location.name}
-        </span>
+      {canCycle && (
+        <button onClick={() => cycle(1)} title="Next hero" aria-label="Next hero" className={cycleBtnCls}>›</button>
       )}
 
       <div className="ml-auto shrink-0 flex items-center gap-1.5">
@@ -401,19 +422,19 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
           <button
             onClick={() => assignUnits(elsewhere.map((u) => u.id), location.id)}
             title={`Deploy ${elsewhere.length === 1 ? elsewhere[0].name.split(' ')[0] : `${elsewhere.length} heroes`} to ${location.name}`}
-            className="flex items-center gap-1 px-2 py-0.5 rounded-md border border-game-primary/50 text-[11px] text-game-text hover:bg-game-primary/15"
-          >➤ Deploy here{elsewhere.length > 1 ? ` (${elsewhere.length})` : ''}</button>
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-game-primary/60 bg-game-primary/15 text-[11px] font-medium text-game-text hover:bg-game-primary/25"
+          >➤ Deploy{elsewhere.length > 1 ? ` ${elsewhere.length}` : ''} → <span className="max-w-[22vw] truncate">{location.name}</span></button>
         )}
         {single && primaryLive && (
           <button
             onClick={toggleFollow}
-            title="Jump the camera to this hero and lock onto them"
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] ${following ? 'border-game-accent/60 bg-game-accent/15 text-game-accent' : 'border-game-border text-game-text-dim hover:text-game-text'}`}
-          >🎥 {following ? 'Following' : 'Follow'}</button>
+            title={following ? 'Camera is following — tap to release' : 'Jump the camera to this hero and lock onto them'}
+            aria-label={following ? 'Stop following' : 'Follow'}
+            className={`w-7 h-7 shrink-0 rounded-md border flex items-center justify-center text-[13px] ${following ? 'border-game-accent/60 bg-game-accent/15' : 'border-game-border opacity-70 hover:opacity-100'}`}
+          >🎥</button>
         )}
-        {/* Debug pushed to the far right, set off from the action buttons. */}
         {single && primaryLive && (
-          <button onClick={() => setDebugOpen(true)} title="Open the unit debug panel" className="ml-1 px-2 py-0.5 rounded-md border border-game-border text-[11px] text-game-text-dim hover:text-game-text">⛭ Debug</button>
+          <button onClick={() => setDebugOpen(true)} title="Open the unit debug panel" aria-label="Debug" className="w-7 h-7 shrink-0 rounded-md border border-game-border text-[13px] text-game-text-dim hover:text-game-text flex items-center justify-center">⛭</button>
         )}
       </div>
       {debugOpen && liveC && battle && (
@@ -501,8 +522,8 @@ function SwapMenu({ unit, slot, onClose }: { unit: Unit; slot: EquipSlot; onClos
     <div className="fixed inset-0 z-[55] flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
         <span className="text-sm font-semibold text-game-text">{SLOT_LABELS[slot]}</span>
-        <span className="text-[10px] text-game-muted">— {unit.name} · relative bonuses</span>
-        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+        <span className="text-[10px] text-game-muted">· {unit.name}</span>
+        <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto p-3 max-w-xl w-full mx-auto space-y-1.5">
         {current && (
@@ -573,7 +594,7 @@ function EquipmentLens({ unit }: { unit: Unit }) {
             )
           })}
         </div>
-        <div className="text-[10px] text-game-muted italic mt-1.5">Tap a slot to compare gear (opens a full menu with the stat impact).</div>
+        <div className="text-[10px] text-game-muted italic mt-1.5">Tap a slot to compare &amp; swap.</div>
       </div>
 
       {swapSlot && <SwapMenu unit={unit} slot={swapSlot} onClose={() => setSwapSlot(null)} />}
@@ -1409,7 +1430,7 @@ export function ProtoLens() {
           rewriting dozens of explicit `text-[*]` classes (h-full keeps Empty
           states centred; overflow is handled by the scroll container above). */}
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-3" onScroll={onLensScroll}>
-        <div className="h-full" style={{ zoom: 1.08 }}>
+        <div className="h-full" style={{ zoom: 1.12 }}>
           {top === 'hero' && (unit
             ? (effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />)
             : (
@@ -1433,10 +1454,10 @@ export function ProtoLens() {
         <div className="absolute inset-0 z-30 flex flex-col bg-game-surface">
           <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border bg-game-surface/80">
             <span className="text-xs font-semibold text-game-text">🔍 Inspect</span>
-            <button onClick={() => clearFoe()} className="ml-auto flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Back</button>
+            <button onClick={() => clearFoe()} aria-label="Close" className="ml-auto w-8 h-8 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
           </header>
           <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-3">
-            <div className="h-full" style={{ zoom: 1.08 }}>
+            <div className="h-full" style={{ zoom: 1.12 }}>
               <FoeCard locId={selectedFoe.locId} combatantId={selectedFoe.combatantId} />
             </div>
           </div>

@@ -456,6 +456,11 @@ interface ProtoState {
   // Bumped to dismiss an open battlefield detail card (e.g. a roster tap, which
   // also selects the hero) — the card isn't a modal that traps the roster.
   battleCardDismiss: number
+  // The roster rail's current visual order (flat, post-sort/group), published by
+  // ProtoApp so the scope bar's ‹ › hero cycling steps in the same order the
+  // player sees in the rail.
+  rosterOrder: string[]
+  setRosterOrder: (ids: string[]) => void
   // Stage overlay (top half = details/research, shown in front of the
   // battlefield): the skill tree for now; item details / codex later.
   stageOverlay: StageOverlay | null
@@ -596,6 +601,10 @@ export const useProtoStore = create<ProtoState>((set) => ({
   requestLocationTab: () => set((s) => ({ locationTabRequest: s.locationTabRequest + 1 })),
   requestBattleInspect: (unitId) => set((s) => ({ battleInspectRequest: { unitId, nonce: (s.battleInspectRequest?.nonce ?? 0) + 1 } })),
   dismissBattleCard: () => set((s) => ({ battleCardDismiss: s.battleCardDismiss + 1 })),
+  rosterOrder: [],
+  setRosterOrder: (ids) => set((s) => (
+    s.rosterOrder.length === ids.length && s.rosterOrder.every((id, i) => id === ids[i]) ? s : { rosterOrder: ids }
+  )),
   openStageOverlay: (o) => set({ stageOverlay: o }),
   closeStageOverlay: () => set({ stageOverlay: null }),
   buyUpgrade: (locId, upId, cost, max) => set((s) => {

@@ -74,15 +74,16 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   const cur = SORT_MODES.find((m) => m.id === mode)!
   return (
     <div className="relative shrink-0">
-      {/* compact icon-only trigger — shares a column with the multi toggle */}
+      {/* compact trigger naming the active mode — shares a column with the
+          multi toggle (the old icon-glyph pair read as a cipher) */}
       <button
         onClick={() => setOpen((v) => !v)}
         title={`Sort: ${cur.label} ${dir === 'asc' ? '▲' : '▼'}`}
         aria-label="Sort roster"
-        className="flex items-center justify-center gap-0.5 w-10 h-6 rounded-md border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
+        className="flex items-center justify-center gap-1 w-12 h-6 rounded-md border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
       >
-        <span className="text-[11px] leading-none">⇅</span>
-        <span className="text-[9px] leading-none">{cur.icon}{dir === 'asc' ? '▲' : '▼'}</span>
+        <span className="text-[10px] leading-none">⇅</span>
+        <span className="text-[9px] leading-none">{cur.label}{dir === 'asc' ? '▲' : '▼'}</span>
       </button>
       {open && (
         <>
@@ -171,7 +172,7 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
           <span className="absolute -top-0.5 -left-0.5 w-3 h-3 rounded-full bg-game-gold border border-game-bg text-[7px] font-bold text-black flex items-center justify-center">!</span>
         )}
       </div>
-      <span className="text-[9px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
+      <span className="text-[10px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
       {/* cue: this hero is on the battlefield you're currently viewing */}
       {here && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-accent" />}
     </button>
@@ -205,7 +206,7 @@ function GuildBoard({ onHero }: { onHero: (id: string) => void }) {
   )
 }
 
-function NavBtn({ icon, label, active, disabled, badge, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; badge?: number; onClick?: () => void }) {
+function NavBtn({ icon, label, active, disabled, badge, onClick, className }: { icon: string; label: string; active?: boolean; disabled?: boolean; badge?: number; onClick?: () => void; className?: string }) {
   return (
     <button
       onClick={onClick}
@@ -213,17 +214,21 @@ function NavBtn({ icon, label, active, disabled, badge, onClick }: { icon: strin
       title={badge ? `${label} — ${badge} ready` : label}
       aria-label={label}
       className={[
-        'relative flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors',
+        // Icon over an always-visible label (icon-only buttons read as mystery
+        // meat on a phone); inactive buttons drop their outline so the row
+        // doesn't read as eight competing boxes.
+        'relative shrink-0 flex flex-col items-center justify-center gap-0.5 min-w-[50px] px-1.5 h-10 rounded-lg border transition-colors',
         active ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
-          : 'border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5',
+          : 'border-transparent text-game-text-dim hover:text-game-text hover:bg-white/5',
         disabled ? 'opacity-40 cursor-not-allowed' : '',
+        className ?? '',
       ].join(' ')}
     >
       <span className="text-base leading-none">{icon}</span>
-      <span className="hidden sm:inline">{label}</span>
+      <span className="text-[9px] font-medium leading-none">{label}</span>
       {/* nudge: a gold badge when quests are ready to collect */}
       {badge ? (
-        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-bg tabular-nums">{badge}</span>
+        <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-bg tabular-nums">{badge}</span>
       ) : null}
     </button>
   )
@@ -253,7 +258,7 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
         <span className="text-sm font-semibold text-game-text">{PANEL_TITLE[panel]}</span>
-        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+        <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ zoom: 1.15 }}>
         {panel === 'guild'   && <GuildBoard onHero={openHeroInLens} />}
@@ -316,6 +321,12 @@ export function ProtoApp() {
   // bulk deploy (Location lens). Off = single-select (tap replaces).
   const [multi, setMulti] = useState(false)
   const groups = useMemo(() => groupRoster(units, sortMode, sortDir, viewed, locations), [units, sortMode, sortDir, viewed, locations])
+  // Publish the rail's flat visual order so the scope bar's ‹ › hero cycling
+  // steps through heroes in the same order the player sees here.
+  const setRosterOrder = useProtoStore((s) => s.setRosterOrder)
+  useEffect(() => {
+    setRosterOrder(groups.flatMap((g) => g.units.map((u) => u.id)))
+  }, [groups, setRosterOrder])
   function pickSort(m: SortMode) {
     if (m === sortMode) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortMode(m); setSortDir(SORT_MODES.find((x) => x.id === m)!.defaultDir) }
@@ -477,16 +488,18 @@ export function ProtoApp() {
 
   return (
     <div className="h-full flex flex-col bg-game-bg overflow-hidden">
-      {/* global nav bar — guild/reports/time + settings (placeholders) */}
-      <header className="shrink-0 flex items-center gap-1.5 px-2 h-11 border-b border-game-border bg-game-surface/70">
+      {/* global nav bar — guild/reports/time + settings. Scrollable as a safety
+          net, and the disabled placeholders hide on phones so the six real
+          destinations always fit without clipping Settings off-screen. */}
+      <header className="shrink-0 flex items-center gap-1 px-1.5 h-12 border-b border-game-border bg-game-surface/70 overflow-x-auto no-scrollbar">
         <NavBtn icon="⚜" label="Guild"   active={panel === 'guild'}   onClick={() => setPanel('guild')} />
         <NavBtn icon="🏪" label="Town"    active={panel === 'town'}    onClick={() => setPanel('town')} />
         <QuestsNavButton active={panel === 'quests'} onClick={() => setPanel('quests')} />
         <NavBtn icon="📊" label="Reports" active={panel === 'reports'} onClick={() => setPanel('reports')} />
         <NavBtn icon="⏳" label="Time"    active={panel === 'time'}    onClick={() => setPanel('time')} />
-        <div className="ml-auto flex items-center gap-1.5">
-          <NavBtn icon="🏆" label="Achievements" disabled />
-          <NavBtn icon="🔔" label="Alerts" disabled />
+        <div className="ml-auto flex items-center gap-1">
+          <NavBtn icon="🏆" label="Awards" disabled className="hidden sm:flex" />
+          <NavBtn icon="🔔" label="Alerts" disabled className="hidden sm:flex" />
           <NavBtn icon="⚙" label="Settings" active={panel === 'settings'} onClick={() => setPanel('settings')} />
         </div>
       </header>
@@ -501,7 +514,7 @@ export function ProtoApp() {
             onClick={() => setMulti((v) => !v)}
             title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
             aria-label="Toggle multi-select"
-            className={['flex items-center justify-center gap-0.5 w-10 h-6 rounded-md border',
+            className={['flex items-center justify-center gap-0.5 w-12 h-6 rounded-md border',
               multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
           >
             <span className="text-[11px] leading-none">{multi ? '✓' : '⊕'}</span>
@@ -509,7 +522,7 @@ export function ProtoApp() {
           </button>
         </div>
         <div className="relative flex-1 min-w-0">
-          <div ref={rosterScrollRef} className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar h-full">
+          <div ref={rosterScrollRef} className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar h-full snap-x scroll-px-1">
             {groups.map((g) => {
               const chips = g.units.map((u) => (
                 <RosterChip
@@ -527,9 +540,9 @@ export function ProtoApp() {
               if (g.label === null) return <div key={g.key} className="flex items-center gap-0.5">{chips}</div>
               const isCurrent = g.locId !== undefined && g.locId === selectedLocId
               return (
-                <div key={g.key} className={['flex flex-col rounded-lg border px-1 pb-0.5 shrink-0',
+                <div key={g.key} className={['flex flex-col rounded-lg border px-1 pb-0.5 shrink-0 snap-start',
                   isCurrent ? 'border-game-accent/50 bg-game-accent/5' : 'border-game-border/50 bg-white/[0.02]'].join(' ')}>
-                  <span className="text-[8px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
+                  <span className="text-[9px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
                     {g.icon} {g.label}
                   </span>
                   <div className="flex items-center gap-0.5">{chips}</div>

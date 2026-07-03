@@ -582,6 +582,7 @@ export function LocationDetail({ location }: { location: Location }) {
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
   const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
+  const assignUnits         = useGameStore((s) => s.assignUnits)
 
   // "Enter <Region>" — a world location can open into a dungeon map page. Some
   // pages are sandbox-only (the fixed-encounters test dungeon): hide the entry
@@ -600,6 +601,9 @@ export function LocationDetail({ location }: { location: Location }) {
   const [codexId, setCodexId] = useState<string | null>(null)
 
   const here = units.filter((u) => u.locationId === location.id)
+  // The selected heroes who aren't at this site — the empty-site deploy CTA acts
+  // on exactly these (mirrors the scope bar's Deploy).
+  const selElsewhere = units.filter((u) => selectedUnitIds.includes(u.id) && u.locationId !== location.id)
   // Only on-site heroes that AREN'T selected show here — selected ones move up to
   // the scope bar.
   const presentUnsel = here.filter((u) => !selectedUnitIds.includes(u.id))
@@ -633,13 +637,23 @@ export function LocationDetail({ location }: { location: Location }) {
   return (
     <div className="space-y-4">
       {/* Heroes here — no label, just the on-site chips that AREN'T selected
-          (selected heroes ride the scope bar instead). "No Heroes Here" only when
-          none are stationed at all. */}
-      {(here.length === 0 || presentUnsel.length > 0) && (
+          (selected heroes ride the scope bar instead). An empty site leads with a
+          real deploy CTA for the current selection instead of a dead-end notice. */}
+      {here.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-game-border px-3 py-2.5 space-y-2">
+          <div className="text-[11px] text-game-text-dim italic">No heroes here.</div>
+          {selElsewhere.length > 0 ? (
+            <button
+              onClick={() => assignUnits(selElsewhere.map((u) => u.id), location.id)}
+              className="w-full text-xs font-semibold px-3 py-2 rounded-md border border-game-primary/60 bg-game-primary/15 text-game-text hover:bg-game-primary/25 transition-colors"
+            >➤ Deploy {selElsewhere.length === 1 ? selElsewhere[0].name.split(' ')[0] : `${selElsewhere.length} heroes`} here</button>
+          ) : (
+            <div className="text-[10px] text-game-muted">Pick heroes in the roster above, then deploy them here.</div>
+          )}
+        </div>
+      ) : presentUnsel.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {here.length === 0
-            ? <span className="text-[11px] text-game-text-dim italic">No Heroes Here</span>
-            : presentUnsel.map((u) => hereChip(u))}
+          {presentUnsel.map((u) => hereChip(u))}
         </div>
       )}
 

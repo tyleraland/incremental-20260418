@@ -572,7 +572,7 @@ export function Town({ onClose }: { onClose: () => void }) {
         <span className="text-sm font-semibold text-game-text">🏪 Town</span>
         <span className="text-[10px] text-game-muted hidden sm:inline">— merchants, cards & workbench</span>
         <Gold className="ml-auto text-sm" />
-        <button onClick={onClose} className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+        <button onClick={onClose} aria-label="Close" className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
       <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
         {TOWN_TABS.map((t) => (
