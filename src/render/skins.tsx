@@ -129,16 +129,38 @@ const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive,
 // Silhouette paths (100×100 box), one per BodyShape — regular enough to read as
 // unit tokens, wonky enough to feel hand-cut rather than geometric. Each is one
 // path drawn twice (base + lit top copy nudged up-left) for the filter-free
-// two-tone read, so a new family costs zero extra elements.
+// two-tone read, so a new family costs zero extra elements. Bodies do NOT
+// rotate with facing (only the weapon layer does), so every silhouette must
+// read at any heading: keep the mass centered, character at the edges.
 const PAPER_BODY_PATHS: Record<BodyShape, string> = {
   // the original rounded cutout — heroes, NPCs, tool-users
   humanoid: 'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z',
-  // squat droopy puddle — slimes, sacs, rooted things
-  blob:     'M50 26 C70 27 87 41 89 58 C91 76 73 88 49 88 C25 88 9 75 12 57 C15 39 31 25 50 26 Z',
-  // round body with two flared ear points — wolves, boars, crabs, lizards
+  // gel dome with a droplet spout off the crown and a drippy skirt — slimes,
+  // sacs, rooted things
+  blob:     'M50 20 C52 13 58 9 65 9 C63 15 60 20 61 25 C76 31 87 44 88 59 C89 68 84 74 76 78 C78 82 76 86 71 87 C66 88 62 86 61 83 C57 84 53 85 48 85 C44 88 37 88 34 84 C21 81 11 72 12 58 C13 42 27 25 43 21 C45 20 47 20 50 20 Z',
+  // round body with two flared ear points — boars, crabs, lizards
   beast:    'M34 20 L23 2 L44 13 C48 11 52 11 56 13 L77 2 L66 20 C80 27 89 40 88 56 C86 77 70 90 50 91 C30 90 14 77 12 56 C11 40 20 27 34 20 Z',
   // two raised wing lobes over a hanging body — harpies, bats, ghosts
   flyer:    'M50 32 C55 21 67 12 90 15 C88 36 74 50 60 53 L61 74 C57 86 43 86 39 74 L40 53 C26 50 12 36 10 15 C33 12 45 21 50 32 Z',
+  // big spiral shell over a flaring foot skirt, two ball-tipped eyestalks
+  // reaching out top-left — snails, shelled crawlers
+  snail:    'M26 30 C20 28 14 26 10 22 C4 20 1 14 6 10 C11 7 16 11 15 16 C14 19 19 20 24 23 C26 24 28 25 29 24 C30 20 31 12 32 6 C33 0 40 -2 42 3 C43 7 39 9 38 14 C38 17 40 19 42 18 C48 14 53 13 60 14 C79 18 91 33 90 51 C89 65 81 76 69 81 C77 83 86 83 92 81 C90 89 78 93 64 92 C44 95 24 90 14 82 C10 78 13 72 19 70 C15 62 13 52 15 44 C17 37 21 32 26 30 Z',
+  // one thick S-curve band: head knob top-left, taper to a tail point bottom-
+  // right — snakes, worms, eels
+  serpent:  'M33 3 C45 2 52 12 49 20 C56 23 64 27 70 32 C80 41 78 53 66 59 C58 63 50 64 46 68 C44 70 46 73 52 75 C62 78 74 80 84 79 L92 87 C76 94 56 91 43 84 C31 78 29 67 38 59 C46 52 58 50 62 44 C64 40 60 36 52 34 C42 31 33 28 29 22 C25 15 24 4 33 3 Z',
+  // tall splayed ears, jagged side ruff, tapered jaw — wolves, hounds, foxes
+  canine:   'M32 20 L20 0 L44 12 C48 10 52 10 56 12 L80 0 L68 20 C78 25 85 33 87 43 L96 46 L88 54 L94 60 L86 63 C82 77 72 87 60 90 L50 96 L40 90 C28 87 18 77 14 63 L6 60 L12 54 L4 46 L13 43 C15 33 22 25 32 20 Z',
+}
+
+// Per-family accent layer, drawn over the lit copy while alive: the ONE extra
+// flat primitive that turns a silhouette into a creature — the snail's shell
+// spiral, the canine's cream muzzle, the blob's gel gloss. Tone/palette colors
+// only (the spiral takes the tone so it works on both teams); families whose
+// silhouette already carries the read (serpent, beast, flyer) stay at zero.
+const BODY_DETAILS: Partial<Record<BodyShape, (p: (typeof PAPER_TONE)[Tone]) => ReactNode>> = {
+  blob:   () => <path d="M29 36 C34 29 44 25 51 27 C48 33 38 40 31 43 C27 44 26 40 29 36 Z" fill={PAL.cream} fillOpacity={0.4} />,
+  snail:  (p) => <path d="M55 47 C64 45 68 53 61 58 C50 64 39 56 41 44 C43 31 58 25 69 31" fill="none" stroke={p.outline} strokeWidth="4.5" strokeLinecap="round" />,
+  canine: () => <path d="M40 68 C45 62 55 62 60 68 C58 80 42 80 40 68 Z" fill={PAL.cream} fillOpacity={0.75} />,
 }
 
 // Facing-layer shapes (drawn under the body, rotated to facingDeg, so only the
@@ -200,6 +222,7 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
           <>
             <path d={body} fill={p.base} stroke={outline} strokeWidth="5" />
             <path d={body} fill={p.top} transform="translate(-3 -4) translate(50 50) scale(0.94) translate(-50 -50)" />
+            {BODY_DETAILS[bodyShape]?.(p)}
           </>
         ) : (
           // KO: the SAME silhouette crumpled flat — squashed onto the ground line
