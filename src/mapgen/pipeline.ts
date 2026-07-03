@@ -38,6 +38,9 @@ export interface RecipeDef {
   name: string
   description: string
   passes: PassDef[]
+  // Recipe-appropriate param defaults (a dungeon wants a small spawn apron —
+  // its spawn sits in a room, not an open field). Caller params always win.
+  defaults?: Partial<Pick<GenParams, 'size' | 'themes' | 'maxBarriers' | 'spawnApron'>>
 }
 
 const MAX_ATTEMPTS = 4
@@ -48,7 +51,14 @@ const MAX_ATTEMPTS = 4
 const rerollSeed = (seed: number) => (seed + 0x9e3779b9) >>> 0
 
 export function generateMap(recipe: RecipeDef, rawParams: GenParams): GenResult {
-  const base = normalizeParams({ ...rawParams, recipe: recipe.id })
+  // Recipe defaults fill only the holes the caller left (explicit undefined
+  // counts as a hole, so spreads compose predictably).
+  const withDefaults: GenParams = { ...rawParams }
+  const bag = withDefaults as unknown as Record<string, unknown>
+  for (const [k, v] of Object.entries(recipe.defaults ?? {})) {
+    if (bag[k] === undefined) bag[k] = v
+  }
+  const base = normalizeParams({ ...withDefaults, recipe: recipe.id })
   const notes: string[] = []
   let seed = base.seed
   let last: GenResult | null = null

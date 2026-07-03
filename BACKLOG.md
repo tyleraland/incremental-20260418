@@ -204,10 +204,17 @@ independently shippable; ordering rationale in the guide's roadmap):
   barrier bound). Deferred polish: landmark POI → big silhouette prop,
   spec-aware minimap tint, ford/ripple accents, `skin-ab` run on a spec'd
   perf scene (the ?perf scene has no spec, so the benchmark is unaffected today).
-- **Phase 3 — dungeon recipe (graph-first).** Room/corridor graph, **cyclic
-  layouts** (loops not trees), the **stamp/vault registry** (authored MapSpec
-  fragments placed by constraint — the highest-leverage single item), lair POI,
-  depth gradient. Shares the bake/validate tail unchanged.
+- **✅ Phase 3 — dungeon recipe, graph-first (shipped 2026-07).** `layout`
+  publishes a cyclic room graph on the nav skeleton (spanning tree + loop
+  edges; `doorAt` per corridor), `carve` realizes it as ~20–35 wall rects with
+  door-gap chokepoints, `stamps.ts` places authored vaults by constraint
+  (pillar-vault / shrine / barred-cell — whose treasure is `optional`-tagged:
+  reachability-exempt, the standing §J pocket and phase-4 lock test case),
+  debris grades with depth, lair at max graph depth. Deferred: free-form room
+  shapes (maximal-rect mask carve instead of the lattice-band constructive
+  model), corridor/hallway rooms, multi-floor chains via `dungeonEntryRegion`,
+  a LIVE dungeon location (blocked on the pather perf pass — rect count is
+  ~2× the open-world envelope; fine for discrete encounters).
 - **Phase 4 — lock-and-key + proficiency gates.** Place `Lock`s (shape already in
   `types.ts`), make `validate.ts` reachability conditional
   (reachable-if-openable), add the `getProficiencies(unit)` derive, resolve

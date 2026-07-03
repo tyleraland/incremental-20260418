@@ -23,7 +23,7 @@ const PAD = 0.45
 // kind each material must ride on — the §B "one collision, many paints" table.
 const MATERIAL_KIND: Record<string, 'wall' | 'cliff'> = {
   'rock': 'wall', 'cut-stone': 'wall', 'wood': 'wall', 'rubble': 'wall',
-  'hedge': 'cliff', 'deep-water': 'cliff', 'ravine': 'cliff',
+  'hedge': 'cliff', 'deep-water': 'cliff', 'ravine': 'cliff', 'bars': 'cliff',
 }
 
 function occupancy(spec: MapSpec): Uint8Array {
@@ -107,9 +107,13 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
 
     // reachable — spawn reaches every POI, and no significant open pocket is
     // walled off (a big unreachable region is wasted map and a wander trap).
+    // POIs tagged 'optional' are EXEMPT: a §J visible-unreachable goal pocket
+    // (a barred cell's treasure) is deliberate. This is also the seam where
+    // lock-and-key upgrades the check to "reachable-if-openable" (§D).
     const blocked = occupancy(spec)
     const seen = flood(spec, blocked, spawn.at)
     const unreachablePois = spec.semantic.pois.filter((p) => {
+      if (p.tags.includes('optional')) return false
       const xi = Math.min(spec.cols - 1, Math.max(0, Math.floor(p.at.x)))
       const yi = Math.min(spec.rows - 1, Math.max(0, Math.floor(p.at.y)))
       return !seen[yi * spec.cols + xi]

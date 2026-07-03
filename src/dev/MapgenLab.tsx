@@ -21,7 +21,7 @@ const SURFACE_COLOR: Record<string, string> = {
 }
 const BARRIER_COLOR: Record<string, string> = {
   'rock': '#5d5344', 'cut-stone': '#6e675c', 'wood': '#7d5f3c', 'rubble': '#6f6555',
-  'hedge': '#3f6b35', 'deep-water': '#2f6b91', 'ravine': '#4a453f',
+  'hedge': '#3f6b35', 'deep-water': '#2f6b91', 'ravine': '#4a453f', 'bars': '#9aa3ad',
 }
 const SCATTER_COLOR: Record<string, string> = {
   tree: '#2f5c2a', bush: '#4a7a3a', rock: '#57504a', stump: '#6e5233', flower: '#c86a8a', reed: '#5d8a4a',
@@ -130,7 +130,7 @@ export default function MapgenLab() {
       <p className="text-stone-400 text-xs mb-3">contact sheet → click a seed to focus · toggle planes / skip passes on the focused map · report + pass notes below</p>
 
       <div className="flex flex-wrap gap-3 items-center mb-3">
-        <label>recipe <select className="bg-stone-800 px-1" value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
+        <label>recipe <select className="bg-stone-800 px-1" value={recipeId} onChange={(e) => { const id = e.target.value; setRecipeId(id); const ds = RECIPE_REGISTRY[id].defaults?.size; if (ds) setSize(ds) }}>
           {Object.keys(RECIPE_REGISTRY).map((id) => <option key={id}>{id}</option>)}
         </select></label>
         <label>size <input className="bg-stone-800 w-16 px-1" type="number" value={size} onChange={(e) => setSize(Math.max(12, +e.target.value || 12))} /></label>

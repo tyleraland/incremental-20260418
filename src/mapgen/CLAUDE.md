@@ -9,9 +9,10 @@ plugs in. Keep it terse and accurate.
 
 A **pure, deterministic, leaf library** (same discipline as `src/engine/`): no
 store, render, game-state, RNG, or time imports. It bakes a **MapSpec** — four
-planes over one shared substrate — and validates it. Today one recipe (`field`)
-proves the layers compose; dungeon/city recipes, stamps, locks, interactables,
-naming are *reserved seams*, not code. Curated maps and roguelike maps are the
+planes over one shared substrate — and validates it. Two recipes ship — `field`
+(overworld, field-first) and `dungeon` (graph-first) — plus the stamp/vault
+registry; city, locks, interactables, naming are *reserved seams*, not code.
+Curated maps and roguelike maps are the
 same engine at different knobs: curated = a location pinning `{recipe, seed}`
 it liked (reviewed in the lab); roguelike = seeds drawn per run.
 
@@ -52,7 +53,10 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `pipeline.ts` | `generateMap(recipe, params)`: pass runner, per-pass streams, skipPasses, bake→validate→reroll |
 | `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / water-coherence |
 | `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → outcrops → scatter → semantic |
-| `recipes/index.ts` | `RECIPE_REGISTRY` (`dungeon` = graph-first, `city` = road-first: reserved) |
+| `recipes/dungeon.ts` | the graph-first dungeon: room lattice → cyclic corridor graph (spanning tree + loop edges) → carved walls/doors → stamps → depth-graded debris → lair. Constructive rect count (~20–35): lab/encounter only until the pather perf pass |
+| `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
+| `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
+| `recipes/index.ts` | `RECIPE_REGISTRY` (`city` = road-first: reserved) |
 | `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store) |
 
 Consumers today (phase 2): `createOpenBattleFor` (store) honors
@@ -90,11 +94,15 @@ benched pathing envelope, gated in `map-perf-envelope.test.ts`).
    `mirror-vale` live; barrier budget pinned to the perf envelope. Left for
    later polish: landmark POI → big silhouette prop, richer water treatment
    (ripple props, ford highlight), spec-aware minimap.
-3. **Dungeon recipe (graph-first)** — room/corridor graph, **cyclic layouts**
-   (⭐4), stamp/vault registry (§I — "highest-leverage single item"), lair POI.
+3. ✅ **Dungeon recipe (graph-first)** — cyclic room graph (function-first:
+   `layout` publishes nav nodes/edges, `carve` realizes them as walls + doors,
+   `doorAt` on every edge), stamp registry, lair + depth gradient, optional-POI
+   reachability exemption. Left for later: free-form room shapes (maximal-rect
+   mask carve), corridor rooms, live dungeon location (needs the pather pass).
 4. **Lock-and-key + proficiency gates** — `Lock` placement, conditional
-   reachability in `validate.ts`, `getProficiencies` derive, variants resolved
-   at deploy (§F — no dynamic barriers needed).
+   reachability in `validate.ts` (the barred-cell's `optional` tag is the
+   placeholder it replaces), `getProficiencies` derive, variants resolved at
+   deploy (§F — no dynamic barriers needed).
 5. **City recipe (road-first)** + inter-map coherence (§G adjacency/depth
    gradients) + naming/premise (§M — fill `semantic.premise`, never prose).
 6. **Interactables / dynamic barriers** — the one invariant-breaker (snapshot

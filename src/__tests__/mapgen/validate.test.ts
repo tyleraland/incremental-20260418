@@ -83,6 +83,19 @@ describe('mapgen validate', () => {
     expect(ruleOf(bisected, 'reachable').ok).toBe(false)
   })
 
+  it("reachable: POIs tagged 'optional' are exempt (§J visible-unreachable pockets)", () => {
+    const pois: Poi[] = [
+      { id: 'spawn', kind: 'spawn', at: { x: SIZE / 2, y: SIZE / 2 }, tags: [] },
+      { id: 'treasure', kind: 'vault', at: { x: 2, y: 2 }, tags: ['optional'] },
+    ]
+    const boxed = makeSpec([wall(0, 5, 6, 1.2), wall(5, 0, 1.2, 6)], pois)
+    expect(ruleOf(boxed, 'reachable').ok).toBe(true)
+    // the same pocketed POI without the tag still fails
+    const required = makeSpec([wall(0, 5, 6, 1.2), wall(5, 0, 1.2, 6)],
+      pois.map((p) => (p.id === 'treasure' ? { ...p, tags: [] } : p)))
+    expect(ruleOf(required, 'reachable').ok).toBe(false)
+  })
+
   it('water-coherence: deep cells need covering rects; water rects need water under them', () => {
     const deep = SURFACE_MATERIALS.indexOf('deep-water')
     const uncovered = makeSpec()

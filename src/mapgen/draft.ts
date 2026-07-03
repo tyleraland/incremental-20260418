@@ -114,8 +114,11 @@ const inRect = (p: Pt, r: Rect, m: number) =>
 // cover the placed thing's half-extent: it inflates the apron and every
 // avoided box, so a fat rect can't pass on its centre and land on its edge.
 export function isPlaceable(d: MapDraft, p: Pt, margin = 0.6): boolean {
-  const c = d.cols / 2
-  if (Math.hypot(p.x - c, p.y - c) < d.params.spawnApron + margin) return false
+  // The apron protects the spawn POI once a pass has placed one (a dungeon's
+  // entry room); until then it protects the map centre (a field's form-up
+  // knot — the field recipe adds its spawn last, at the centre).
+  const s = d.semantic.pois.find((x) => x.kind === 'spawn')?.at ?? { x: d.cols / 2, y: d.rows / 2 }
+  if (Math.hypot(p.x - s.x, p.y - s.y) < d.params.spawnApron + margin) return false
   if (d.collision.some((r) => inRect(p, r, margin))) return false
   return !d.params.keepClear.some((r) => inRect(p, r, margin + 1))
 }

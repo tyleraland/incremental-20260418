@@ -35,6 +35,7 @@ export const BARRIER_MATERIALS = [
   'deep-water',  // impassable water: see-across (cliff) — locked decision
   'ravine',      // chasm / drop: see-across (cliff)
   'rubble',      // collapsed structure (wall) — the ruins/history motif (§I)
+  'bars',        // portcullis / cell bars: see-across (cliff) — §J "target it, can't reach it"
 ] as const
 export type BarrierMaterial = (typeof BARRIER_MATERIALS)[number]
 
@@ -113,11 +114,18 @@ export interface Poi {
 // BEFORE geometry exists (function-first), baked here for consumers (AI waypoint
 // hints, the deploy UI, stamps). The field recipe emits nodes only; roads /
 // corridors / cycles arrive with the city & dungeon recipes.
-export interface NavNode { id: string; at: Pt; poiId?: string }
+export interface NavNode {
+  id: string
+  at: Pt
+  poiId?: string
+  area?: Rect        // the node's floor footprint (a dungeon room, a city block)
+  depth?: number     // graph distance from the entry node (§G depth gradient)
+}
 export interface NavEdge {
   a: string
   b: string
   kind: 'road' | 'corridor' | 'desire-path'
+  doorAt?: Pt        // the edge's physical pinch (a dungeon door) — choke-tactic anchor
   lockId?: string    // edge gated by a Lock (conditional reachability)
 }
 

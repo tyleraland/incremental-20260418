@@ -4,6 +4,7 @@ import { propMarkup, scatterArchetype } from '@/render/terrain'
 import { PAPER_PALETTE } from '@/render/palette'
 import { generateMap, specBarriers, SCATTER_KINDS, type MapSpec } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
+import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
 import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
 import type { Barrier } from '@/engine'
 
@@ -48,6 +49,8 @@ const GEN_SPEC: MapSpec = (() => {
   return generateMap(FIELD_RECIPE, { recipe: 'field', seed: 1, size: 48, themes: ['plains', 'water'], onFail: 'accept' }).spec
 })()
 const WASHES = ['meadowWash', 'sandWash', 'waterShallow', 'waterDeep'] as const
+// A representative generated DUNGEON floor (phase 3): rooms, doors, stamps.
+const GEN_DUNGEON: MapSpec = generateMap(DUNGEON_RECIPE, { recipe: 'dungeon', seed: 3, size: 48, themes: ['dungeon'] }).spec
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -234,6 +237,15 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
               {terrain({ biome: 'grass', cols: GEN_SPEC.cols, rows: GEN_SPEC.rows, barriers: specBarriers(GEN_SPEC), seed: 7, rim: true, spec: GEN_SPEC })}
             </div>
             <span className="text-[9px] text-neutral-500">generated field (recipe: {GEN_SPEC.recipe}, seed {GEN_SPEC.seed}) — lake · ford · washes · spec scatter</span>
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <div
+              className="w-56 h-56 rounded border border-neutral-800 relative overflow-hidden"
+              style={{ ...arena.surface, ...(arena.grounds?.stone ? { backgroundImage: arena.grounds.stone.image, backgroundSize: `${arena.grounds.stone.cellsPerTile * 5}px` } : null) }}
+            >
+              {terrain({ biome: 'stone', cols: GEN_DUNGEON.cols, rows: GEN_DUNGEON.rows, barriers: specBarriers(GEN_DUNGEON), seed: 3, rim: true, spec: GEN_DUNGEON })}
+            </div>
+            <span className="text-[9px] text-neutral-500">generated dungeon (recipe: {GEN_DUNGEON.recipe}, seed {GEN_DUNGEON.seed}) — rooms · doors · stamps · lair</span>
           </div>
         </Section>
       )}
