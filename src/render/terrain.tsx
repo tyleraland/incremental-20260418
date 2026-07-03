@@ -228,6 +228,12 @@ const KIND_ARCHETYPE: Record<Biome, Partial<Record<ScatterKind, string>>> = {
   stone: { tree: 'spikes', bush: 'moss', rock: 'shard', stump: 'rubble', flower: 'bone', reed: 'crack' },
   plaza: { tree: 'signpost', bush: 'pot', rock: 'sack', stump: 'crate', flower: 'pot', reed: 'coil' },
 }
+// Catalog helper (?gallery=1): the archetype a scatter kind resolves to in a
+// biome — so the gallery can show the mapgen vocabulary next to the raw props.
+export function scatterArchetype(biome: Biome, kind: ScatterKind): PropDef {
+  return TERRAIN_PROPS[biome][ARCHETYPE_INDEX(biome, kind)[0]]
+}
+
 const archetypeCache = new Map<string, number[]>()
 function ARCHETYPE_INDEX(biome: Biome, kind: ScatterKind): number[] {
   const k = `${biome}:${kind}`

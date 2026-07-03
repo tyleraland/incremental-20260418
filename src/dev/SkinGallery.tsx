@@ -1,6 +1,9 @@
 import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } from '@/render/skins'
 import { TERRAIN_PROPS } from '@/render/props'
-import { propMarkup } from '@/render/terrain'
+import { propMarkup, scatterArchetype } from '@/render/terrain'
+import { PAPER_PALETTE } from '@/render/palette'
+import { generateMap, specBarriers, SCATTER_KINDS, type MapSpec } from '@/mapgen'
+import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
 import type { Barrier } from '@/engine'
 
@@ -11,8 +14,10 @@ import type { Barrier } from '@/engine'
 // page. One screenshot (`npm run gallery-shot`) is a whole-language review:
 // palette drift, silhouette weakness, or a contract break is visible at a
 // glance, which makes art iteration a tight loop instead of hunting scenes in
-// a live battle. Pure render: imports ONLY the render modules (no store, no
-// engine), so it also documents the skins' public surface.
+// a live battle. Pure render: imports only the render modules + the pure
+// mapgen leaf (no store, no engine), so it also documents the skins' public
+// surface — including the §mapgen vocabulary (washes, scatter-kind mapping,
+// one generated field swatch).
 
 const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer']
 const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
@@ -31,6 +36,18 @@ const TERRAIN_SAMPLE: Barrier[] = [
   { x: 11, y: 11.5, w: 2.5, h: 2 },
   { x: 9.5, y: 2.5, w: 3.5, h: 2, kind: 'cliff' },
 ]
+
+// A representative GENERATED map for the mapgen swatch (§mapgen phase 2):
+// deterministically pick a seed whose small field has a lake, so the swatch
+// always exercises the full vocabulary (washes, ford, water-hidden collision).
+const GEN_SPEC: MapSpec = (() => {
+  for (let seed = 1; seed < 30; seed++) {
+    const r = generateMap(FIELD_RECIPE, { recipe: 'field', seed, size: 48, themes: ['plains', 'water'], maxBarriers: 16 })
+    if (r.report.ok && r.spec.collision.some((c) => c.material === 'deep-water')) return r.spec
+  }
+  return generateMap(FIELD_RECIPE, { recipe: 'field', seed: 1, size: 48, themes: ['plains', 'water'], onFail: 'accept' }).spec
+})()
+const WASHES = ['meadowWash', 'sandWash', 'waterShallow', 'waterDeep'] as const
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -178,6 +195,46 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
               <span className="text-[9px] text-neutral-500">light: {k}</span>
             </div>
           ))}
+        </Section>
+      )}
+
+      {terrain && (
+        <Section title="mapgen vocabulary: surface washes · scatter kind → biome archetype · a generated field">
+          {WASHES.map((w) => (
+            <div key={w} className="flex flex-col items-center gap-1">
+              <div className="w-12 h-12 rounded border border-neutral-800" style={{ ...arena.surface }}>
+                <div className="w-full h-full rounded" style={{ backgroundColor: PAPER_PALETTE[w], opacity: 0.8 }} />
+              </div>
+              <span className="text-[8px] text-neutral-600 leading-none">{w}</span>
+            </div>
+          ))}
+          {BIOMES.map((b) => (
+            <div key={b} className="w-full">
+              <div className="text-[9px] text-neutral-500 mb-1">{b} · kind → archetype</div>
+              <div className="flex flex-wrap gap-1.5">
+                {SCATTER_KINDS.map((kind) => {
+                  const def = scatterArchetype(b, kind)
+                  return (
+                    <div key={kind} className="flex flex-col items-center gap-0.5">
+                      <div className="w-12 h-12 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+                        <svg viewBox="-1.1 -1.1 2.2 2.2" className="w-10 h-10" aria-hidden dangerouslySetInnerHTML={{ __html: propMarkup(def) }} />
+                      </div>
+                      <span className="text-[8px] text-neutral-600 leading-none">{kind} → {def.id}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+          <div className="flex flex-col items-center gap-1">
+            <div
+              className="w-56 h-56 rounded border border-neutral-800 relative overflow-hidden"
+              style={{ ...arena.surface, ...(arena.grounds?.grass ? { backgroundImage: arena.grounds.grass.image, backgroundSize: `${arena.grounds.grass.cellsPerTile * 5}px` } : null) }}
+            >
+              {terrain({ biome: 'grass', cols: GEN_SPEC.cols, rows: GEN_SPEC.rows, barriers: specBarriers(GEN_SPEC), seed: 7, rim: true, spec: GEN_SPEC })}
+            </div>
+            <span className="text-[9px] text-neutral-500">generated field (recipe: {GEN_SPEC.recipe}, seed {GEN_SPEC.seed}) — lake · ford · washes · spec scatter</span>
+          </div>
         </Section>
       )}
 
