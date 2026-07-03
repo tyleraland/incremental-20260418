@@ -11,6 +11,7 @@ import {
   type ClassChangeQuestDef, type ClassQuestStatus, type BountyDef,
 } from './protoStore'
 import { isRegionUnlocked } from '@/lib/unlocks'
+import { generateForLocationCached } from '@/mapgen'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
@@ -692,6 +693,12 @@ export function LocationDetail({ location }: { location: Location }) {
       {location.description && (
         <Section title="Lore" defaultOpen={false}>
           <p className="text-xs text-game-text-dim italic leading-snug">{location.description}</p>
+          {/* §M story scaffold: generated locations carry a one-line premise */}
+          {location.mapGen && generateForLocationCached(location).spec.semantic.premise && (
+            <p className="text-[11px] text-game-text-dim/80 italic leading-snug mt-1.5">
+              “{generateForLocationCached(location).spec.semantic.premise}”
+            </p>
+          )}
         </Section>
       )}
 

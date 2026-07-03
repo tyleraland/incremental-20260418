@@ -9,9 +9,11 @@ plugs in. Keep it terse and accurate.
 
 A **pure, deterministic, leaf library** (same discipline as `src/engine/`): no
 store, render, game-state, RNG, or time imports. It bakes a **MapSpec** — four
-planes over one shared substrate — and validates it. Two recipes ship — `field`
-(overworld, field-first) and `dungeon` (graph-first) — plus the stamp/vault
-registry; city, locks, interactables, naming are *reserved seams*, not code.
+planes over one shared substrate — and validates it. Three recipes ship —
+`field` (overworld, field-first), `dungeon` (graph-first), `city` (road-first)
+— plus the stamp/vault registry and the shared §M premise pass (every bake
+names itself + one premise line); interactables and inter-map coherence are
+*reserved seams*, not code.
 Curated maps and roguelike maps are the
 same engine at different knobs: curated = a location pinning `{recipe, seed}`
 it liked (reviewed in the lab); roguelike = seeds drawn per run.
@@ -54,9 +56,11 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / water-coherence |
 | `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → outcrops → scatter → semantic |
 | `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → cyclic corridor graph → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects): lab/encounter only until the pather perf pass |
+| `recipes/city.ts` | the road-first town: plaza + jittered gate roads + cross-street loops (nav skeleton FIRST) → paving (ground → road/stone) → street-fronting building rects (road-distance transform: every house ≥2 cells off pavement, ≤4 from a street) → yard/market scatter → plaza landmark. Generates the STAGE for a city (NPCs/spawns stay store-owned); not live anywhere yet — at the live envelope (16) it just starves to fewer houses |
+| `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
 | `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
-| `recipes/index.ts` | `RECIPE_REGISTRY` (`city` = road-first: reserved) |
+| `recipes/index.ts` | `RECIPE_REGISTRY` — field / dungeon / city |
 | `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store) |
 
 Consumers today (phase 2): `createOpenBattleFor` (store) honors
@@ -106,8 +110,14 @@ benched pathing envelope, gated in `map-perf-envelope.test.ts`).
    Mechanics are built and machine-gated (see the phase-4 section below);
    frequency, rewards, and surfacing need human play + iteration before any
    live location adopts gates.
-5. **City recipe (road-first)** + inter-map coherence (§G adjacency/depth
-   gradients) + naming/premise (§M — fill `semantic.premise`, never prose).
+5. 🟡 **City recipe (road-first) + naming/premise — SHIPPED; inter-map
+   coherence open.** `city` bakes plaza/roads/buildings (fuzz gate:
+   `recipe-city.test.ts`); the shared `premise` pass fills `semantic.name` +
+   `semantic.premise` for every recipe (gate: `naming.test.ts`; surfaced in
+   the lab and both location-detail panels — Reports/offline surfacing is
+   BACKLOG). Still open: §G inter-map adjacency/depth gradients as
+   first-class, a live city location (wants NPC/merchant placement reading
+   the spec's semantic plane), premise → Reports/event-log wiring.
 6. **Interactables / dynamic barriers** — the one invariant-breaker (snapshot
    replay must survive it); gated behind everything above (§E).
 

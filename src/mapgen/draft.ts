@@ -75,6 +75,7 @@ export function makeDraft(params: NormParams): MapDraft {
       nav: { nodes: [], edges: [] },
       locks: [],
       regionTags: [...params.themes],
+      name: null,
       premise: null,
       tactical: { openness: 1, barrierCount: 0, chokepoints: 0, longLanes: 0, coverClusters: 0 },
     },

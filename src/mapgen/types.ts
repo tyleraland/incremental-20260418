@@ -173,7 +173,8 @@ export interface SemanticPlane {
   nav: { nodes: NavNode[]; edges: NavEdge[] }
   locks: Lock[]
   regionTags: string[]        // theme tags echoed for cross-system coherence (§G)
-  premise: string | null      // §M1 story scaffold — ONE line, never prose; null until the naming phase
+  name: string | null         // §M procedural place name ('Meremoor') — filled by the shared premise pass
+  premise: string | null      // §M1 story scaffold — ONE line, never prose (the premise pass fills it)
   tactical: TacticalProfile
 }
 

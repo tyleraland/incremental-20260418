@@ -22,7 +22,7 @@ function makeSpec(collision: CollisionRect[] = [], pois?: Poi[]): MapSpec {
       nav: { nodes: [], edges: [] },
       locks: [],
       regionTags: [],
-      premise: null,
+      name: null, premise: null,
       tactical: { openness: 1, barrierCount: collision.length, chokepoints: 0, longLanes: 0, coverClusters: 0 },
     },
   }

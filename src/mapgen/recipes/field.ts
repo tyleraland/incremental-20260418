@@ -13,6 +13,7 @@ import type { ScatterKind, SurfaceMaterial } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, matAt, paint } from '../draft'
 import { tacticalProfile } from '../profile'
+import { premisePass } from '../naming'
 
 // ── surface: fields → material bands (§A layer 3) ────────────────────────────
 const surfacePass = {
@@ -224,8 +225,6 @@ const semanticPass = {
     draft.semantic.nav.nodes = draft.semantic.pois.map((p) => ({ id: `nav-${p.id}`, at: p.at, poiId: p.id }))
 
     draft.semantic.tactical = tacticalProfile(draft)
-    // premise stays null — §M naming/premise is its own phase; the field is
-    // reserved so consumers can already render it when it lands.
   },
 }
 
@@ -233,5 +232,5 @@ export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
   description: 'Field-first open-world map: noise substrate → material bands → lake/ford + outcrops → scatter → POIs + tactical profile.',
-  passes: [surfacePass, hydrologyPass, outcropsPass, scatterPass, semanticPass],
+  passes: [surfacePass, hydrologyPass, outcropsPass, scatterPass, semanticPass, premisePass],
 }

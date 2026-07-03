@@ -187,6 +187,11 @@ export default function MapgenLab() {
             seed {focused.r.spec.seed} · attempt {focused.r.attempts} · {focused.ms.toFixed(0)}ms ·
             openness {tac.openness} · barriers {tac.barrierCount} · chokepoints {tac.chokepoints} · lanes {tac.longLanes} · cover {tac.coverClusters}
           </div>
+          {focused.r.spec.semantic.name && (
+            <div className="text-xs text-amber-200/80 italic mt-0.5">
+              {focused.r.spec.semantic.name} — {focused.r.spec.semantic.premise}
+            </div>
+          )}
         </div>
 
         <div className="max-w-md">

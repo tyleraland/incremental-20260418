@@ -4,6 +4,7 @@ import { MonsterCodex } from '@/components/MonsterCodex'
 import { BattleView } from '@/components/BattleView'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
 import { isRegionUnlocked } from '@/lib/unlocks'
+import { generateForLocationCached } from '@/mapgen'
 
 // ── Pages ────────────────────────────────────────────────────────────────────
 //
@@ -599,6 +600,12 @@ function LocationDetailPanel() {
           <>
             <div className="font-semibold text-game-text mb-1">{location.name}</div>
             <p className="text-xs text-game-text-dim leading-snug">{location.description}</p>
+            {/* §M story scaffold: generated locations carry a one-line premise */}
+            {location.mapGen && generateForLocationCached(location).spec.semantic.premise && (
+              <p className="text-[11px] italic text-game-text-dim/80 leading-snug mt-1">
+                “{generateForLocationCached(location).spec.semantic.premise}”
+              </p>
+            )}
           </>
         ) : (
           <span className="text-xs text-game-text-dim italic">Tap a location to see details</span>

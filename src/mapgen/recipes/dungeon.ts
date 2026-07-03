@@ -22,6 +22,7 @@ import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
 import { hashString, type Rng } from '../rng'
 import { tacticalProfile } from '../profile'
+import { premisePass } from '../naming'
 import { STAMP_REGISTRY, placeStamp, stampBarrierCost, type StampDef } from '../stamps'
 
 const MARGIN = 2          // solid ring at the map edge (cells)
@@ -558,7 +559,7 @@ export const DUNGEON_RECIPE: RecipeDef = {
   description: 'Graph-first, donjon-flavored dungeon: scattered polymorph rooms → cyclic corridor graph → errant corridors + dead-end stubs → maximal-rect wall cover → stamps → depth-graded debris → lair.',
   // gates BEFORE stamps: locks are structure (they claim a dead-end and its
   // door), stamps are dressing (they skip rooms that already have POIs).
-  passes: [layoutPass, carvePass, floorPass, gatesPass, stampsPass, scatterPass, semanticPass],
+  passes: [layoutPass, carvePass, floorPass, gatesPass, stampsPass, scatterPass, semanticPass, premisePass],
   // Free-form floors cost more rects (~30–60) than the old lattice — still
   // lab/encounter only until the pather perf pass (BACKLOG). Spawn sits in the
   // entry hall, so the apron is room-sized.

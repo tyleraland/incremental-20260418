@@ -244,9 +244,19 @@ independently shippable; ordering rationale in the guide's roadmap):
   party through fetch-key-then-open-door). The variant-at-deploy model is the
   floor this grows under — the Lock vocabulary and validator guarantees are
   designed to survive play-time resolution when it lands.
-- **Phase 5 — city recipe (road-first) + coherence + naming.** Inter-map
-  adjacency/depth gradients as first-class; fill `semantic.premise` (+ place
-  names) — scaffolds, never prose; wire to Reports/offline surfaces.
+- **🟡 Phase 5 — city recipe + naming (SHIPPED 2026-07); inter-map coherence
+  open.** `city` recipe (road-first: plaza + jittered gate roads +
+  cross-street loops → paving → street-fronting buildings via a road-distance
+  transform → yard/market scatter → plaza landmark; fuzz gate
+  `recipe-city.test.ts`) and the shared §M **premise pass** (`naming.ts`:
+  theme-conditioned place name + one-line premise on every recipe's bake,
+  reading what the map actually grew — ford/sealed door/lair depth/road
+  count; gate `naming.test.ts`). Premise surfaces in the `?mapgen=1` lab and
+  both location-detail panels (proto Lore section + classic Map). Still
+  open: **inter-map adjacency/depth gradients** (§G) as first-class; a LIVE
+  generated city (wants NPC/merchant placement reading the semantic plane —
+  today `createOpenBattleFor` scatters NPCs, not the spec); premise →
+  Reports/offline-summary wiring (§M2 "aim narrative at surfaces we own").
 - **Phase 6 — interactables / dynamic barriers.** The one invariant-breaker
   (BSNAP byte-identical replay must survive it); gated behind everything above.
 - **Cross-cutting debts:** barrier-count vs pather budget (a lake spends ~7–12

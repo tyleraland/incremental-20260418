@@ -20,7 +20,7 @@ function makeSpec(collision: CollisionRect[], pois: Poi[], locks: Lock[]): MapSp
     scatter: [],
     semantic: {
       pois: [{ id: 'spawn', kind: 'spawn', at: { x: SIZE / 2, y: SIZE / 2 }, tags: [] }, ...pois],
-      nav: { nodes: [], edges: [] }, locks, regionTags: [], premise: null,
+      nav: { nodes: [], edges: [] }, locks, regionTags: [], name: null, premise: null,
       tactical: { openness: 1, barrierCount: collision.length, chokepoints: 0, longLanes: 0, coverClusters: 0 },
     },
   }
