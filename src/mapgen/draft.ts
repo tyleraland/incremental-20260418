@@ -6,7 +6,7 @@
 // than by validator alone — the validator then guards the cross-plane rules.
 
 import type {
-  CollisionRect, GenParams, MapSpec, Poi, PoiKind, Pt, Rect,
+  CollisionRect, GenParams, MapSpec, Poi, PoiKind, ProficiencyTag, Pt, Rect,
   SurfaceMaterial, SurfacePlane, ThemeTag,
 } from './types'
 import { SURFACE_MATERIALS } from './types'
@@ -22,6 +22,7 @@ export interface NormParams {
   spawnApron: number
   keepClear: Rect[]
   pois: { kind: PoiKind; at: Pt; id?: string; tags?: string[] }[]
+  proficiencies: ProficiencyTag[]
   skipPasses: string[]
   onFail: 'reroll' | 'accept' | 'throw'
 }
@@ -38,6 +39,9 @@ export function normalizeParams(p: GenParams): NormParams {
     spawnApron: p.spawnApron ?? Math.max(6, size * 0.14),
     keepClear: p.keepClear ?? [],
     pois: p.pois ?? [],
+    // sorted + deduped so the same kit always keys the same variant (cache keys,
+    // determinism tests, and reroll chains all read this)
+    proficiencies: [...new Set(p.proficiencies ?? [])].sort(),
     skipPasses: p.skipPasses ?? [],
     onFail: p.onFail ?? 'reroll',
   }

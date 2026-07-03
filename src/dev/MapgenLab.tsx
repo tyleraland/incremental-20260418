@@ -11,8 +11,8 @@
 
 import { useMemo, useState } from 'react'
 import {
-  generateMap, RECIPE_REGISTRY, SURFACE_MATERIALS, THEME_TAGS,
-  type GenResult, type MapSpec, type ThemeTag,
+  generateMap, RECIPE_REGISTRY, SURFACE_MATERIALS, THEME_TAGS, PROFICIENCY_TAGS,
+  type GenResult, type MapSpec, type ProficiencyTag, type ThemeTag,
 } from '@/mapgen'
 
 const SURFACE_COLOR: Record<string, string> = {
@@ -103,22 +103,26 @@ export default function MapgenLab() {
   const [baseSeed, setBaseSeed] = useState(1)
   const [focus, setFocus] = useState(1)
   const [skips, setSkips] = useState<string[]>([])
+  // §F composition gates: the simulated deploying party's kit. Toggle a tag and
+  // watch the SAME seed re-bake with its gate open — the review loop for lock
+  // tuning (contact sheet + focused map both re-resolve).
+  const [profs, setProfs] = useState<ProficiencyTag[]>([])
   const [toggles, setToggles] = useState<Toggles>({ surface: true, collision: true, scatter: true, semantic: true })
 
   const recipe = RECIPE_REGISTRY[recipeId]
-  const params = { recipe: recipeId, size, themes, onFail: 'accept' as const }
+  const params = { recipe: recipeId, size, themes, proficiencies: profs, onFail: 'accept' as const }
 
   const sheet = useMemo(
     () => Array.from({ length: 9 }, (_, i) => generateMap(recipe, { ...params, seed: baseSeed + i })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [recipeId, size, themes, baseSeed],
+    [recipeId, size, themes, baseSeed, profs],
   )
   const focused = useMemo(() => {
     const t0 = performance.now()
     const r = generateMap(recipe, { ...params, seed: focus, skipPasses: skips })
     return { r, ms: performance.now() - t0 }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipeId, size, themes, focus, skips])
+  }, [recipeId, size, themes, focus, skips, profs])
 
   const thumbPx = Math.max(1, Math.floor(150 / size))
   const bigPx = Math.max(2, Math.floor(560 / size))
@@ -142,6 +146,18 @@ export default function MapgenLab() {
               setThemes(e.target.checked ? [...themes, tag] : themes.filter((t) => t !== tag))} /> {tag}
           </label>
         ))}
+      </div>
+      <div className="flex flex-wrap gap-3 items-center mb-3 text-xs">
+        <span className="text-stone-400">party kit (composition gates — toggle to re-resolve locks):</span>
+        {PROFICIENCY_TAGS.map((tag) => (
+          <label key={tag} className={profs.includes(tag) ? 'text-cyan-400' : 'text-stone-500'}>
+            <input type="checkbox" checked={profs.includes(tag)} onChange={(e) =>
+              setProfs(e.target.checked ? [...profs, tag] : profs.filter((t) => t !== tag))} /> {tag}
+          </label>
+        ))}
+        {focused.r.spec.semantic.locks.length > 0 && (
+          <span className="text-stone-400">| locks: {focused.r.spec.semantic.locks.map((l) => `${l.tag} ${l.open ? '🔓' : '🔒'}`).join(' · ')}</span>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-6 items-start">

@@ -130,12 +130,19 @@ export interface NavEdge {
 }
 
 // Abstract lock-and-key (§D — "the one abstraction unifying gates, switches,
-// secrets, traps, proficiency puzzles"). A Lock sits on a nav edge (or POI) and
-// names what opens it; resolution to a themed concrete (rune door, portcullis,
-// rubble) happens function-first, theme-late. PROFICIENCY_TAGS is the §F
-// vocabulary — switch on tags, never class ids. The scaffold reserves the shape;
-// no recipe places locks yet, but the validator's reachability is already
-// written to become conditional ("reachable-if-openable") when one does.
+// secrets, traps, proficiency puzzles"). A Lock names what opens it; resolution
+// to a themed concrete (rune door, rubble, hidden door, chasm) happens
+// function-first, theme-late. PROFICIENCY_TAGS is the §F vocabulary — switch on
+// tags, never class ids (same seam rule as appearance.ts).
+//
+// LOCKED DECISION (phase 4): proficiency locks resolve AT BAKE TIME — the
+// composition gate. The deploying party's tags arrive in GenParams; a matching
+// lock bakes OPEN (its sealing geometry is simply omitted), a non-matching one
+// bakes CLOSED (sealed + its prizes exempt from reachability). Same seed ×
+// different party = a different playable map, with NO dynamic barriers and no
+// engine change — the replayability engine, resolved once per battle stand-up.
+// 'key' (carried item) and 'switch' (interactable) kinds are reserved shapes;
+// they need phase-6 machinery.
 export const PROFICIENCY_TAGS = [
   'perception', 'disarm', 'might', 'mobility', 'arcane', 'holy', 'light', 'lore',
 ] as const
@@ -145,7 +152,9 @@ export interface Lock {
   id: string
   kind: 'enemy' | 'switch' | 'key' | 'proficiency'
   tag?: ProficiencyTag     // for kind 'proficiency'
-  at?: Pt
+  at?: Pt                  // the gate's physical site (mirrored by a 'gate' POI)
+  open: boolean            // bake-time resolution: true = the party's kit opened it
+  gates: string[]          // POI ids behind this lock (each also tagged `locked:<id>`)
 }
 
 // Tactical-profile annotation (§L): the map self-describes so richness reaches
@@ -206,6 +215,11 @@ export interface GenParams {
   spawnApron?: number         // clear radius around the spawn POI (default scales with size)
   keepClear?: Rect[]          // externally-owned cells (portals) no pass may cover
   pois?: { kind: PoiKind; at: Pt; id?: string; tags?: string[] }[]  // pre-placed anchors (portals)
+  // §F composition gates: the deploying party's proficiency tags. A recipe's
+  // gate pass resolves each proficiency Lock against this set at bake (see the
+  // Lock docs above). Empty/absent = every lock bakes closed — also what the
+  // lab's contact sheet and the fuzz gates review by default.
+  proficiencies?: ProficiencyTag[]
   // Layer-inspector hook: pass ids to skip. Stream-isolated RNG guarantees the
   // remaining passes produce byte-identical output — the ?mapgen=1 lab's
   // layer-by-layer buildup rides this.

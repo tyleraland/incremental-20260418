@@ -107,17 +107,27 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
 
     // reachable — spawn reaches every POI, and no significant open pocket is
     // walled off (a big unreachable region is wasted map and a wander trap).
-    // POIs tagged 'optional' are EXEMPT: a §J visible-unreachable goal pocket
-    // (a barred cell's treasure) is deliberate. This is also the seam where
-    // lock-and-key upgrades the check to "reachable-if-openable" (§D).
+    // Exemptions — this is CONDITIONAL reachability (§D):
+    //   'optional'        a §J visible-unreachable pocket, deliberate forever
+    //   'locked:<lockId>' gated content: exempt while its lock is CLOSED, but
+    //                     a lock the party OPENED must actually deliver — the
+    //                     tag stops exempting and the `locks` rule (below)
+    //                     enforces both directions.
+    const lockById = new Map(spec.semantic.locks.map((l) => [l.id, l]))
+    const exempt = (p: (typeof spec.semantic.pois)[number]) =>
+      p.tags.includes('optional') ||
+      // 'gate' POIs mark the seal itself — a closed gate's marker sits INSIDE
+      // its plug; the locks rule below owns their semantics (approachability)
+      p.kind === 'gate' ||
+      p.tags.some((t) => t.startsWith('locked:') && lockById.get(t.slice(7))?.open === false)
     const blocked = occupancy(spec)
     const seen = flood(spec, blocked, spawn.at)
-    const unreachablePois = spec.semantic.pois.filter((p) => {
-      if (p.tags.includes('optional')) return false
-      const xi = Math.min(spec.cols - 1, Math.max(0, Math.floor(p.at.x)))
-      const yi = Math.min(spec.rows - 1, Math.max(0, Math.floor(p.at.y)))
-      return !seen[yi * spec.cols + xi]
-    })
+    const reachableAt = (p: { x: number; y: number }) => {
+      const xi = Math.min(spec.cols - 1, Math.max(0, Math.floor(p.x)))
+      const yi = Math.min(spec.rows - 1, Math.max(0, Math.floor(p.y)))
+      return !!seen[yi * spec.cols + xi]
+    }
+    const unreachablePois = spec.semantic.pois.filter((p) => !exempt(p) && !reachableAt(p.at))
     let open = 0, reached = 0
     for (let i = 0; i < blocked.length; i++) { if (!blocked[i]) open++; if (seen[i]) reached++ }
     const frac = open ? reached / open : 0
@@ -126,6 +136,43 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
       okReach
         ? `all ${spec.semantic.pois.length} POIs reachable; ${(frac * 100).toFixed(0)}% of open cells connected`
         : `${unreachablePois.map((p) => p.id).join(',') || 'no POI stranded'}; ${(frac * 100).toFixed(0)}% of open cells connected (need ≥85%)`)
+
+    // locks — the §D contract, both directions, per lock:
+    //   · the gate itself is approachable (you can walk up and SEE the door);
+    //   · CLOSED → every gated POI is genuinely unreachable (the seal seals —
+    //     a leaky gate would hand out the prize for free);
+    //   · OPEN → every gated POI is reachable (the party's kit actually paid);
+    //   · never gate the critical path: no spawn/portal/lair POI may be gated.
+    if (spec.semantic.locks.length) {
+      const problems: string[] = []
+      const poiById = new Map(spec.semantic.pois.map((p) => [p.id, p]))
+      // "approachable" = some open cell within a few steps of the gate site is
+      // reachable — the party can walk up and SEE the door even though the
+      // door cell itself sits inside the sealing plug.
+      const approachable = (p: { x: number; y: number }) => {
+        for (let dy = -4; dy <= 4; dy++) {
+          for (let dx = -4; dx <= 4; dx++) {
+            if (reachableAt({ x: p.x + dx, y: p.y + dy })) return true
+          }
+        }
+        return false
+      }
+      for (const lock of spec.semantic.locks) {
+        if (lock.at && !approachable(lock.at)) problems.push(`${lock.id}: gate site unreachable`)
+        for (const gid of lock.gates) {
+          const poi = poiById.get(gid)
+          if (!poi) { problems.push(`${lock.id}: gated POI ${gid} missing`); continue }
+          if (['spawn', 'portal', 'lair'].includes(poi.kind)) problems.push(`${lock.id}: gates critical-path POI ${gid} (${poi.kind})`)
+          const canReach = reachableAt(poi.at)
+          if (lock.open && !canReach) problems.push(`${lock.id}: OPEN but ${gid} still unreachable`)
+          if (!lock.open && canReach) problems.push(`${lock.id}: CLOSED but ${gid} is reachable (leaky seal)`)
+        }
+      }
+      rule('locks', problems.length === 0,
+        problems.length === 0
+          ? spec.semantic.locks.map((l) => `${l.id} ${l.open ? 'open' : 'closed'}`).join(', ')
+          : problems.join('; '))
+    }
   }
 
   // water-coherence — the surface plane and collision plane tell one story:

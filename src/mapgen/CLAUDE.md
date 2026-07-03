@@ -102,10 +102,10 @@ benched pathing envelope, gated in `map-perf-envelope.test.ts`).
    1-wide labyrinth corridors (needs sub-cell pathing care), symmetric
    layouts, a cavern recipe (erosion-first), remove-deadends knob, live
    dungeon location (needs the pather pass).
-4. **Lock-and-key + proficiency gates** — `Lock` placement, conditional
-   reachability in `validate.ts` (the barred-cell's `optional` tag is the
-   placeholder it replaces), `getProficiencies` derive, variants resolved at
-   deploy (§F — no dynamic barriers needed).
+4. 🟡 **Lock-and-key + proficiency gates — FOUNDATION SHIPPED, FEEL OPEN.**
+   Mechanics are built and machine-gated (see the phase-4 section below);
+   frequency, rewards, and surfacing need human play + iteration before any
+   live location adopts gates.
 5. **City recipe (road-first)** + inter-map coherence (§G adjacency/depth
    gradients) + naming/premise (§M — fill `semantic.premise`, never prose).
 6. **Interactables / dynamic barriers** — the one invariant-breaker (snapshot
@@ -113,6 +113,64 @@ benched pathing envelope, gated in `map-perf-envelope.test.ts`).
 
 Consuming-AI dependency (⭐10): map features and the tactics that use them
 (hold-chokepoint, use-cover) ship as pairs — see BACKLOG → AI & coordination.
+
+## Phase 4 — lock-and-key + proficiency gates (foundation)
+
+**Status: the mechanics are DONE and machine-verified; the FEEL is not.**
+Everything below the "guarantees" line is a first guess that needs human play
+before a live location turns gates on. This section is the handoff for that
+iteration.
+
+### How it works (one paragraph)
+
+A `Lock` (semantic plane) names what opens it — today only `kind:
+'proficiency'` is placed. The deploying party's tags
+(`src/lib/proficiencies.ts` → `partyProficiencyTags`, class-based today) flow
+in as `GenParams.proficiencies`; the dungeon's `gates` pass claims a dead-end
+room, drops a prize POI tagged `locked:<id>`, a `gate` POI at the door pinch,
+and — only if the party LACKS the tag — a sealing plug whose material follows
+the tag (might=rubble, arcane=rune-sealed cut-stone, perception=bare rock
+"hidden door", mobility=see-across chasm). **Variant-at-deploy, resolved once
+at battle stand-up** — no dynamic barriers, no engine change; same seed ×
+different party = a different playable map.
+
+### What the validator GUARANTEES (don't re-litigate by eye)
+
+- closed ⇒ every gated POI genuinely unreachable (no leaky seals);
+- open ⇒ every gated POI reachable (the kit actually paid off);
+- the gate site is approachable (the party can walk up and see the door);
+- spawn/portal/lair are never gated (never gate the critical path);
+- variants are byte-deterministic per (seed, sorted kit).
+
+### What ONLY human play can judge (the open iteration)
+
+1. **Frequency & placement feel** — one gate per floor, dead-ends only,
+   uniform tag pick: all first guesses. Too rare and kits never matter; too
+   common and it's a checklist. Tune in `gatesPass` (`recipes/dungeon.ts`).
+2. **Rewards** — the prize is an annotation (`vault` POI, `prize` tag). The
+   store consumes NOTHING yet. §F wants incremental-native rewards
+   (familiarity/xp/loot multipliers, fewer casualties), not just chests —
+   that's store work, keyed off the POI tags.
+3. **Surfacing** — nobody tells the player "Shae's perception found a hidden
+   door." §M says this is the cheapest emergent-story source; aim it at
+   Reports / the event log when a battle stands up with an open lock.
+4. **Party-change semantics** — gates resolve ONCE at stand-up; heroes joining
+   later don't re-resolve (documented in `adapter.ts`). Revisit when a live
+   location has gates: re-resolve on reconcile? announce missed gates?
+5. **Field-recipe gates** — a ford revealed by mobility, a cliff shortcut:
+   same machinery, different recipe; nothing placed yet.
+6. **'key' and 'switch' lock kinds** — reserved shapes; need item plumbing /
+   phase-6 interactables.
+
+### How to iterate (the loop)
+
+`?mapgen=1` → recipe `dungeon` → toggle **party kit** tags → the SAME seed
+re-bakes with its gate open/closed (lock readout inline; validation panel
+shows the `locks` rule both ways). Add a gate archetype = one `GATE_LOOKS`
+entry (+ a material vocab entry if needed); add a tag source = extend
+`getProficiencyTags` (extension points documented in the file); add a lock
+kind = extend the `Lock` union + teach `validate.ts` its openability.
+`locks.test.ts` pins every guarantee above — extend it with each change.
 
 ## Adding to the generator
 

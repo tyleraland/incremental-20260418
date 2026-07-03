@@ -223,11 +223,20 @@ independently shippable; ordering rationale in the guide's roadmap):
   `dungeonEntryRegion`, a LIVE dungeon location (blocked on the pather perf
   pass — rect count is ~4× the open-world envelope; fine for discrete
   encounters).
-- **Phase 4 — lock-and-key + proficiency gates.** Place `Lock`s (shape already in
-  `types.ts`), make `validate.ts` reachability conditional
-  (reachable-if-openable), add the `getProficiencies(unit)` derive, resolve
-  composition gates at deploy (map variant chosen at build time — no dynamic
-  barriers). Replayability engine: same seed × different party = different map.
+- **🟡 Phase 4 — lock-and-key + proficiency gates (FOUNDATION shipped 2026-07;
+  feel needs human iteration).** Shipped: enriched `Lock` model (open/gates),
+  `GenParams.proficiencies`, conditional reachability + the `locks` rule
+  (closed-seals / open-delivers / gate-approachable / critical-path-never-gated),
+  the dungeon `gates` pass (tag-themed seals: rubble/rune-door/hidden-door/chasm,
+  variant resolved ONCE at battle stand-up), `getProficiencyTags` +
+  `partyProficiencyTags` (class-based; extension points for skills/equipment
+  documented in `src/lib/proficiencies.ts`), lab party-kit toggles, store seam
+  wired (dormant — no live location has gates). **Open for iteration (the
+  handoff list lives in `src/mapgen/CLAUDE.md` → phase 4):** gate frequency &
+  placement feel, store-side rewards (familiarity/xp/loot multipliers off the
+  `prize` POI tags), surfacing in Reports/event log ("Shae's perception found a
+  hidden door"), party-change re-resolve semantics, field-recipe gates,
+  'key'/'switch' lock kinds (phase 6).
 - **Phase 5 — city recipe (road-first) + coherence + naming.** Inter-map
   adjacency/depth gradients as first-class; fill `semantic.premise` (+ place
   names) — scaffolds, never prose; wire to Reports/offline surfaces.

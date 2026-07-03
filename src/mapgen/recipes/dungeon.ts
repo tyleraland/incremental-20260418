@@ -17,7 +17,7 @@
 // discrete encounters; a live open-world dungeon needs the pather perf pass
 // first (BACKLOG → Procedural map generation, cross-cutting debts).
 
-import type { Pt, Rect } from '../types'
+import type { ProficiencyTag, Pt, Rect } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
 import { hashString, type Rng } from '../rng'
@@ -374,6 +374,9 @@ const stampsPass = {
     const tryPlace = (stamp: StampDef, node: (typeof nodes)[number]) => {
       const a = node.area
       if (!a || used.has(node.id)) return false
+      // a room that already carries POIs is claimed (a gate's prize, another
+      // stamp) — stamping it would strand non-exempt prizes behind a seal
+      if (draft.semantic.pois.some((p) => p.at.x > a.x && p.at.x < a.x + a.w && p.at.y > a.y && p.at.y < a.y + a.h)) return false
       // stamps carry their own interior margins; +1 keeps them off the room wall
       if (a.w < stamp.w + 1 || a.h < stamp.h + 1) return false
       if (draft.collision.length + stampBarrierCost(stamp) > params.maxBarriers) return false
@@ -403,6 +406,114 @@ const stampsPass = {
     for (const n of mids) if (tryPlace(STAMP_REGISTRY['pillar-vault'], n)) break
     for (const n of nodes.filter((x) => x.id !== entry?.id)) if (tryPlace(STAMP_REGISTRY['shrine'], n)) break
     note(placed.length ? `placed ${placed.join(', ')}` : 'no stamp fit (rooms too small or budget spent)')
+  },
+}
+
+// ── gates: proficiency locks — the §F composition gate, resolved at bake ─────
+// Function-first, theme-late: place "a lock" on a dead-end room's single
+// corridor, THEN resolve its concrete by tag — rubble to shoulder through,
+// a rune-sealed door, a hidden door that reads as plain rock, a chasm you can
+// see the prize across. If the deploying party's kit (params.proficiencies)
+// carries the tag the lock bakes OPEN: no seal is emitted and the prize is
+// simply reachable. Same seed × different party = a different playable map.
+//
+// FEEL WARNING (see CLAUDE.md → phase 4): frequency, placement, and reward
+// weight here are first guesses — mechanics are gated by the validator, but
+// whether a gate is FUN needs human play. Iterate via the lab's party toggles.
+const GATE_LOOKS: Partial<Record<string, { kind: 'wall' | 'cliff'; material: 'rubble' | 'cut-stone' | 'rock' | 'ravine' }>> = {
+  might: { kind: 'wall', material: 'rubble' },        // collapsed passage — clear it
+  arcane: { kind: 'wall', material: 'cut-stone' },    // rune-sealed door
+  perception: { kind: 'wall', material: 'rock' },     // hidden door (reads as bare rock)
+  mobility: { kind: 'cliff', material: 'ravine' },    // chasm — see the prize, can't cross
+}
+const GATE_TAGS = Object.keys(GATE_LOOKS) as ProficiencyTag[]
+
+const gatesPass = {
+  id: 'gates',
+  run({ draft, params, rng, note }: PassCtx) {
+    const nodes = draft.semantic.nav.nodes
+    const edges = draft.semantic.nav.edges
+    const degree = new Map<string, number>()
+    for (const e of edges) {
+      degree.set(e.a, (degree.get(e.a) ?? 0) + 1)
+      degree.set(e.b, (degree.get(e.b) ?? 0) + 1)
+    }
+    const entry = nodes.find((n) => (n.depth ?? 0) === 0)
+    const lair = [...nodes].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0))[0]
+    // Candidates: dead-end rooms off the critical path with a known door pinch
+    // and NO existing POIs inside (gating a stamped room would strand its
+    // non-exempt prizes — the validator would catch it, but why waste rerolls).
+    const hasPoiInside = (a: NonNullable<(typeof nodes)[number]['area']>) =>
+      draft.semantic.pois.some((p) => p.at.x > a.x && p.at.x < a.x + a.w && p.at.y > a.y && p.at.y < a.y + a.h)
+    // (polymorph lobes and through-corridors can route around a door plug —
+    // the sealTight mask check below vets each candidate exactly, so no shape
+    // pre-filter is needed)
+    const plan = PLANS.get(draft)
+    const cands = nodes
+      .filter((n) =>
+        degree.get(n.id) === 1 && n.id !== entry?.id && n.id !== lair?.id &&
+        n.area && !hasPoiInside(n.area) &&
+        // closets get swallowed whole by the 4.5-cell seal plug (prize AND
+        // approach vanish into it) — gate rooms with some depth behind the door
+        Math.min(n.area.w, n.area.h) >= 5)
+      .map((n) => ({ n, edge: edges.find((e) => (e.a === n.id || e.b === n.id) && e.doorAt) }))
+      .filter((c): c is { n: (typeof nodes)[number]; edge: (typeof edges)[number] } => !!c.edge)
+    if (!cands.length) { note('no gateable dead-end — no locks this floor'); return }
+    if (draft.collision.length >= params.maxBarriers) { note('no barrier budget left — no locks this floor'); return }
+
+    // Seal-tightness, proven on the walk mask BEFORE committing: flood from
+    // the spawn with the plug cells removed — if the prize cell is still
+    // reached, something else leaks into this room (a through-corridor that
+    // clipped it, a merged stub) and it is not gateable. Candidates that fail
+    // are skipped, not rerolled — cheap and exact at plan level.
+    const sealTight = (c: (typeof cands)[number]): boolean => {
+      if (!plan) return false
+      const { size } = params
+      const at = c.edge.doorAt!
+      const spawnPoi = draft.semantic.pois.find((p) => p.kind === 'spawn')!
+      const start = Math.floor(spawnPoi.at.y) * size + Math.floor(spawnPoi.at.x)
+      const seen = new Uint8Array(size * size)
+      const passable = (x: number, y: number) =>
+        plan.walk[y * size + x] === 1 && !(Math.abs(x + 0.5 - at.x) < 2.25 && Math.abs(y + 0.5 - at.y) < 2.25)
+      if (!passable(start % size, Math.floor(start / size))) return false
+      const stack = [start]
+      seen[start] = 1
+      while (stack.length) {
+        const i = stack.pop()!
+        const x = i % size, y = (i / size) | 0
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue
+          const j = ny * size + nx
+          if (!seen[j] && passable(nx, ny)) { seen[j] = 1; stack.push(j) }
+        }
+      }
+      return !seen[Math.floor(c.n.at.y) * size + Math.floor(c.n.at.x)]
+    }
+
+    const r = rng('place')
+    const start = r.int(cands.length)
+    let c: (typeof cands)[number] | null = null
+    for (let i = 0; i < cands.length; i++) {
+      const probe = cands[(start + i) % cands.length]
+      if (sealTight(probe)) { c = probe; break }
+    }
+    if (!c) { note(`${cands.length} dead-end candidate(s), none seal-tight (through-corridors leak) — no locks this floor`); return }
+    const tag = r.pick(GATE_TAGS)
+    const open = params.proficiencies.includes(tag)
+    const id = `lock-${tag}`
+    const at = c.edge.doorAt!
+    addPoi(draft, { id: `${id}-prize`, kind: 'vault', at: c.n.at, tags: ['prize', `locked:${id}`] })
+    addPoi(draft, { id: `${id}-gate`, kind: 'gate', at, tags: open ? [tag, 'open'] : [tag] })
+    if (!open) {
+      const look = GATE_LOOKS[tag]!
+      // a fat plug over the door pinch — oversized so any ≤3-wide corridor is
+      // sealed regardless of its heading; the excess melts into the rock render
+      addBarrier(draft, { x: at.x - 2.25, y: at.y - 2.25, w: 4.5, h: 4.5, kind: look.kind, material: look.material })
+    }
+    c.edge.lockId = id
+    draft.semantic.locks.push({ id, kind: 'proficiency', tag, at, open, gates: [`${id}-prize`] })
+    note(`${tag} gate ${open ? 'OPEN (party kit)' : 'sealed'} on ${c.n.id} at ${at.x},${at.y}`)
   },
 }
 
@@ -445,7 +556,9 @@ export const DUNGEON_RECIPE: RecipeDef = {
   id: 'dungeon',
   name: 'Dungeon Floor',
   description: 'Graph-first, donjon-flavored dungeon: scattered polymorph rooms → cyclic corridor graph → errant corridors + dead-end stubs → maximal-rect wall cover → stamps → depth-graded debris → lair.',
-  passes: [layoutPass, carvePass, floorPass, stampsPass, scatterPass, semanticPass],
+  // gates BEFORE stamps: locks are structure (they claim a dead-end and its
+  // door), stamps are dressing (they skip rooms that already have POIs).
+  passes: [layoutPass, carvePass, floorPass, gatesPass, stampsPass, scatterPass, semanticPass],
   // Free-form floors cost more rects (~30–60) than the old lattice — still
   // lab/encounter only until the pather perf pass (BACKLOG). Spawn sits in the
   // entry hall, so the apron is room-sized.

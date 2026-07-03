@@ -7,6 +7,7 @@ import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLoca
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSkin } from '@/render/skins'
 import { hashString, type Rect } from '@/render/authoring'
 import { generateForLocationCached, type MapSpec } from '@/mapgen'
+import { partyProficiencyTags } from '@/lib/proficiencies'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
   COLS, ROWS, startingPosition, COMBAT_SKILLS, distance, sightlineClear,
@@ -1720,9 +1721,16 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   // token from the previous battle's framing into place. The key only changes on a
   // location switch — never per tick — so normal play keeps the same instance.
   // §mapgen: a generated location's baked spec for the terrain layer. The
-  // adapter memoizes per location (pure generation, static params), so this is
-  // a Map lookup on every render after the first.
-  const mapSpec = location?.mapGen ? generateForLocationCached(location).spec : undefined
+  // adapter memoizes per (location, party kit), so this is a Map lookup on
+  // every render after the first. The kit mirrors what the store used when it
+  // stood the battle up (units posted at this location), so the terrain draws
+  // the same gate variant the engine is running. Drift is possible if the
+  // party changes AFTER stand-up (gates don't re-resolve) — acceptable while
+  // no live location has gates; see mapgen CLAUDE.md phase 4 open questions.
+  const units = useGameStore((s) => s.units)
+  const mapSpec = location?.mapGen
+    ? generateForLocationCached(location, { proficiencies: partyProficiencyTags(units.filter((u) => u.locationId === location.id)) }).spec
+    : undefined
   return battle
     ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} mapSpec={mapSpec} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />

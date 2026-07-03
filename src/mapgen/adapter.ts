@@ -5,7 +5,7 @@
 // a later phase — deliberately NOT stubbed here so the seam stays honest.
 
 import type { Barrier } from '@/engine'
-import type { GenParams, GenResult, MapSpec, ThemeTag } from './types'
+import type { GenParams, GenResult, MapSpec, ProficiencyTag, ThemeTag } from './types'
 import { THEME_TAGS } from './types'
 import { generateMap } from './pipeline'
 import { RECIPE_REGISTRY } from './recipes'
@@ -28,7 +28,13 @@ export interface MapGenSource {
 // to the location id (save = seed, and the id IS persisted), themes project
 // from the location's traits (§G: one tag, coherent content everywhere), and
 // portal cells become keep-clear boxes + portal POIs the validator must reach.
-export function generateForLocation(loc: MapGenSource): GenResult {
+// `opts.proficiencies` is the deploying party's kit at battle stand-up — the
+// §F composition-gate input. Variants resolve ONCE, when the battle is created;
+// heroes joining a live battle later do NOT re-resolve gates (locked decision
+// for now — see src/mapgen/CLAUDE.md → phase 4 open questions).
+export interface MapGenOpts { proficiencies?: ProficiencyTag[] }
+
+export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): GenResult {
   const cfg = loc.mapGen
   if (!cfg) throw new Error(`generateForLocation: ${loc.id} has no mapGen config`)
   const recipe = RECIPE_REGISTRY[cfg.recipe]
@@ -46,6 +52,7 @@ export function generateForLocation(loc: MapGenSource): GenResult {
     maxBarriers: 16,
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),
+    proficiencies: opts.proficiencies,
   }
   return generateMap(recipe, params)
 }
@@ -54,11 +61,12 @@ export function generateForLocation(loc: MapGenSource): GenResult {
 // a result never invalidates. Lets render-path callers (BattleView per tick,
 // the terrain memo) treat "the location's spec" as a cheap lookup.
 const LOCATION_CACHE = new Map<string, GenResult>()
-export function generateForLocationCached(loc: MapGenSource): GenResult {
-  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}`
+export function generateForLocationCached(loc: MapGenSource, opts: MapGenOpts = {}): GenResult {
+  const kit = [...new Set(opts.proficiencies ?? [])].sort().join(',')
+  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}|${kit}`
   const hit = LOCATION_CACHE.get(key)
   if (hit) return hit
-  const res = generateForLocation(loc)
+  const res = generateForLocation(loc, opts)
   LOCATION_CACHE.set(key, res)
   return res
 }
