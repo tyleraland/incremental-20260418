@@ -21,7 +21,7 @@ import { supplyOption } from './expedition'
 import { seedProtoMocks } from './seed'
 import { UnitDetailOverlay, StatusList } from '@/components/BattleUnitSheet'
 import { MonsterCodex } from '@/components/MonsterCodex'
-import { LocationDetail } from './LocationDetail'
+import { LocationDetail, LocationHeroesPanel, LocationQuestsPanel } from './LocationDetail'
 import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
@@ -41,18 +41,27 @@ import { fmt } from '@/components/TallyBreakdown'
 // matrix) drills to Hero; otherwise the tabs are manual — the stage's zoom slider
 // drives navigation, not the lens.
 
-// Skills & Tactics are now top-level (sit beside Location / Equipment); Party
-// moved to the global top nav (it spans multiple units). Equipment (the gutted
-// "Items") is this hero's gear + personal inventory.
-type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics' | 'expedition'
+// §orchestration: the lens tabs depend on the SELECTION SCOPE — one hero gets
+// the hero dossier tabs, a multi-selection gets party tools, a location gets
+// site management. The roster/map control selection; the tabs follow.
+type Top = 'location' | 'loc-heroes' | 'loc-quests' | 'hero' | 'equipment' | 'skills' | 'tactics' | 'expedition' | 'party' | 'doctrine'
 type HeroSub = 'stats' | 'pet'
-const TOP_TABS: { id: Top; label: string; icon: string }[] = [
-  { id: 'location',   label: 'Location',  icon: '⌖' },
-  { id: 'hero',       label: 'Hero',      icon: '◈' },
-  { id: 'equipment',  label: 'Equipment', icon: '🎒' },
+type TabDef = { id: Top; label: string; icon: string }
+const HERO_TABS: TabDef[] = [
+  { id: 'hero',       label: 'Overview',  icon: '◈' },
   { id: 'skills',     label: 'Skills',    icon: '✦' },
+  { id: 'equipment',  label: 'Equipment', icon: '🎒' },
   { id: 'tactics',    label: 'Tactics',   icon: '☷' },
   { id: 'expedition', label: 'Logistics', icon: '🧭' },
+]
+const PARTY_TABS: TabDef[] = [
+  { id: 'party',    label: 'Party',    icon: '⚑' },
+  { id: 'doctrine', label: 'Doctrine', icon: '☷' },
+]
+const LOC_TABS: TabDef[] = [
+  { id: 'location',   label: 'Overview', icon: '⌖' },
+  { id: 'loc-heroes', label: 'Heroes',   icon: '⚑' },
+  { id: 'loc-quests', label: 'Quests',   icon: '📜' },
 ]
 // The hero's whole dossier is one container (UnitLens); a Pet sub appears only
 // once a hero has a beast companion.
@@ -145,6 +154,36 @@ function CooldownGrid({ cells }: { cells: GridCell[] }) {
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+// Skill readiness as observation: a one-line "N ready · M cooling" summary that
+// expands to the full cooldown grid. The player configures skills on the Skills
+// tab — here they just watch what the AI is doing with them.
+function SkillActivity({ cells }: { cells: GridCell[] }) {
+  const [open, setOpen] = useState(false)
+  const active = cells.filter((c) => !c.empty)
+  if (active.length === 0) return null
+  const ready = active.filter((c) => !c.bar || c.bar.frac >= 1)
+  const cooling = active.filter((c) => c.bar && c.bar.frac < 1)
+  const readyNames = ready.map((c) => c.name).slice(0, 3).join(', ')
+  return (
+    <div className="rounded-lg border border-game-border bg-game-bg/60">
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left">
+        <span className="text-[10px] uppercase tracking-wider text-game-text-dim shrink-0">Skills</span>
+        <span className="text-[11px] text-game-text truncate flex-1">
+          <span className="text-emerald-400">{ready.length} ready</span>
+          {cooling.length > 0 && <span className="text-game-text-dim"> · {cooling.length} cooling</span>}
+          {readyNames && <span className="text-game-muted"> — {readyNames}{ready.length > 3 ? '…' : ''}</span>}
+        </span>
+        <span className="text-[10px] text-game-muted shrink-0">{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
+        <div className="px-2.5 pb-2.5 pt-0.5">
+          <CooldownGrid cells={cells} />
+        </div>
+      )}
     </div>
   )
 }
@@ -254,7 +293,12 @@ function HeroLens({ unit }: { unit: Unit }) {
         </div>
       )}
 
-      <CooldownGrid cells={cells} />
+      {/* Skill readiness is OBSERVATION, not a control (the player doesn't fire
+          skills) — so it's a compact one-line summary that expands to the full
+          cooldown grid on demand. Configuration lives on the Skills tab. */}
+      <SkillActivity cells={cells} />
+
+
 
       <div className="grid grid-cols-2 gap-2">
         <MiniBar label="HP" cur={hp} max={maxHp} color="bg-game-green" />
@@ -326,32 +370,64 @@ function HeroLens({ unit }: { unit: Unit }) {
   )
 }
 
-// ── Persistent hero scope-bar ──────────────────────────────────────────────────
-// One identity strip that rides above every lens tab so it's always obvious WHOSE
-// dossier you're acting on. It carries the whole current selection (multi-select
-// rides here as chips), and the cross-location actions for it: a "somewhere else"
-// tip, Deploy here (bring the elsewhere heroes to the focused location), and Follow
-// (fly the camera to a live hero AND lock onto them). Statuses + cooldowns live on
-// the Hero tab, not here.
-function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: string; name: string } | null }) {
+// ── Selection command bar ──────────────────────────────────────────────────────
+// §orchestration: ONE bar that always answers "who/what am I acting on, and what
+// can I do with it?" The roster/map control selection; this bar shows the actions
+// for the current scope — a hero, a multi-selection, or a location. Move/Deploy
+// open the two deploy sheets; both flows end in the same confirm.
+function SelectionCommandBar({ scope, units, location, setTop }: {
+  scope: 'hero' | 'party' | 'location'
+  units: Unit[]
+  location: { id: string; name: string } | null
+  setTop: (t: Top) => void
+}) {
   const assignUnits    = useGameStore((s) => s.assignUnits)
+  const locations      = useGameStore((s) => s.locations)
   const requestZoom    = useProtoStore((s) => s.requestZoom)
   const battleFollowId = useGameStore((s) => s.battleFollowId)
   const battles        = useGameStore((s) => s.battles)
   const equipment      = useGameStore((s) => s.equipment)
   const rosterOrder    = useProtoStore((s) => s.rosterOrder)
+  const openDeploySheet = useProtoStore((s) => s.openDeploySheet)
   const [debugOpen, setDebugOpen] = useState(false)
+
+  const actionBtn = 'flex items-center gap-1 px-2.5 py-1 rounded-md border text-[11px] shrink-0'
+  const primaryBtn = `${actionBtn} border-game-primary/60 bg-game-primary/15 font-medium text-game-text hover:bg-game-primary/25`
+  const quietBtn   = `${actionBtn} border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5`
+  const iconBtn = 'w-7 h-7 shrink-0 rounded-md border flex items-center justify-center text-[13px]'
+
+  // ── location scope: the site is the subject; deploy is the primary verb ──
+  if (scope === 'location') {
+    if (!location) return null
+    return (
+      <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 bg-game-bg/40">
+        <span className="flex items-center gap-1.5 min-w-0 text-[11px] px-2 py-1 rounded border border-game-accent/50 bg-game-accent/10 text-game-text">
+          <span className="shrink-0">⌖</span><span className="truncate">{location.name}</span>
+        </span>
+        <div className="ml-auto shrink-0 flex items-center gap-1.5">
+          <button onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })} className={primaryBtn}>
+            ➤ Deploy heroes here
+          </button>
+          <button onClick={() => setTop('loc-quests')} className={quietBtn} title="This location's quest board">📜</button>
+        </div>
+      </div>
+    )
+  }
+
   if (units.length === 0) return null
   const primary = units[0]
-  const single  = units.length === 1
+  const single  = scope === 'hero'
   const battle = primary.locationId ? battles[primary.locationId] : undefined
   const liveC = single ? battle?.combatants.find((c) => c.id === primary.id) : undefined
-  const primaryLive = !!liveC
   const following = battleFollowId === primary.id
-  // Selected heroes not already at the location you're viewing — Deploy brings
-  // exactly these in; the button names the destination so the "your selection is
-  // elsewhere" context needs no separate tip line.
-  const elsewhere = location ? units.filter((u) => u.locationId !== location.id) : []
+  // "Return" walks/sends the selection to their nearest town (same-region city,
+  // else Prontera) — the everyday "come home and restock" verb.
+  const cities = locations.filter((l) => l.traits.includes('city'))
+  const homeCityId = (() => {
+    const cur = primary.locationId ? locations.find((l) => l.id === primary.locationId) : null
+    return (cur && cities.find((c) => c.region === cur.region)?.id) ?? cities[0]?.id ?? null
+  })()
+  const allHome = !!homeCityId && units.every((u) => u.locationId === homeCityId)
   // Tap a chip to focus that hero (make it primary) without dropping the selection.
   const focusHero = (id: string) => useGameStore.setState((s) => ({
     selectedUnitIds: [id, ...s.selectedUnitIds.filter((x) => x !== id)],
@@ -365,12 +441,13 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
     const next = order[(idx + d + order.length) % order.length]
     if (!next) return
     useGameStore.setState({ selectedUnitIds: [next] })
+    useProtoStore.getState().setScopeFocus('hero')
     useProtoStore.getState().clearFoe()
     useProtoStore.getState().dismissBattleCard()
   }
   const canCycle = single && (rosterOrder.length > 1 || useGameStore.getState().units.length > 1)
   // Follow flies the camera to the hero AND camera-locks onto them (toggles off
-  // if already following) — the old standalone "Jump" is folded in here.
+  // if already following).
   const toggleFollow = () => {
     if (following) { useGameStore.setState({ battleFollowId: null }); return }
     useGameStore.setState({ selectedLocationId: primary.locationId, combatLocationId: primary.locationId, battleFollowId: primary.id })
@@ -382,11 +459,8 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
       {canCycle && (
         <button onClick={() => cycle(-1)} title="Previous hero" aria-label="Previous hero" className={cycleBtnCls}>‹</button>
       )}
-      {/* Selected hero chip(s) — the whole multi-selection rides this row. Same
-          compact chip as the Location panel; selected heroes live here (and leave
-          the Location list); the primary one (drives the hero-scoped tabs) is
-          ringed. Tap to focus a different selected hero. Each chip carries a
-          slim live HP bar, so the bar doubles as a party status row. */}
+      {/* The whole selection rides here as chips (primary ringed; tap to focus).
+          Each chip carries a live HP sliver — the bar doubles as party status. */}
       <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
         {units.map((u) => {
           const isPrimary = u.id === primary.id
@@ -418,23 +492,28 @@ function HeroScopeBar({ units, location }: { units: Unit[]; location: { id: stri
       )}
 
       <div className="ml-auto shrink-0 flex items-center gap-1.5">
-        {location && elsewhere.length > 0 && (
+        <button
+          onClick={() => openDeploySheet({ kind: 'pick-location', unitIds: units.map((u) => u.id) })}
+          title={`Move ${single ? primary.name.split(' ')[0] : `${units.length} heroes`} — pick a destination`}
+          className={primaryBtn}
+        >➤ Move{single ? '' : ` ${units.length}`}</button>
+        {homeCityId && !allHome && (
           <button
-            onClick={() => assignUnits(elsewhere.map((u) => u.id), location.id)}
-            title={`Deploy ${elsewhere.length === 1 ? elsewhere[0].name.split(' ')[0] : `${elsewhere.length} heroes`} to ${location.name}`}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-game-primary/60 bg-game-primary/15 text-[11px] font-medium text-game-text hover:bg-game-primary/25"
-          >➤ Deploy{elsewhere.length > 1 ? ` ${elsewhere.length}` : ''} → <span className="max-w-[22vw] truncate">{location.name}</span></button>
+            onClick={() => assignUnits(units.map((u) => u.id), homeCityId)}
+            title="Send the selection back to town"
+            className={quietBtn}
+          >⌂ Return</button>
         )}
-        {single && primaryLive && (
+        {single && liveC && (
           <button
             onClick={toggleFollow}
             title={following ? 'Camera is following — tap to release' : 'Jump the camera to this hero and lock onto them'}
             aria-label={following ? 'Stop following' : 'Follow'}
-            className={`w-7 h-7 shrink-0 rounded-md border flex items-center justify-center text-[13px] ${following ? 'border-game-accent/60 bg-game-accent/15' : 'border-game-border opacity-70 hover:opacity-100'}`}
+            className={`${iconBtn} ${following ? 'border-game-accent/60 bg-game-accent/15' : 'border-game-border opacity-70 hover:opacity-100'}`}
           >🎥</button>
         )}
-        {single && primaryLive && (
-          <button onClick={() => setDebugOpen(true)} title="Open the unit debug panel" aria-label="Debug" className="w-7 h-7 shrink-0 rounded-md border border-game-border text-[13px] text-game-text-dim hover:text-game-text flex items-center justify-center">⛭</button>
+        {single && liveC && (
+          <button onClick={() => setDebugOpen(true)} title="Open the unit debug panel" aria-label="Debug" className={`${iconBtn} border-game-border text-game-text-dim hover:text-game-text`}>⛭</button>
         )}
       </div>
       {debugOpen && liveC && battle && (
@@ -1275,6 +1354,48 @@ function FoeCard({ locId, combatantId }: { locId: string; combatantId: string })
   )
 }
 
+// ── Party lens — the multi-selection's shared tools ───────────────────────────
+// §orchestration: members at a glance (tap → drill into that hero), plus the
+// party-wide levers. Bulk Move/Return live in the command bar above.
+function PartyLens({ units }: { units: Unit[] }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const battles   = useGameStore((s) => s.battles)
+  const locations = useGameStore((s) => s.locations)
+  const drill = (u: Unit) => {
+    useGameStore.setState({ selectedUnitIds: [u.id] })
+    useProtoStore.getState().setScopeFocus('hero')
+    useProtoStore.getState().requestHeroTab()
+  }
+  const locName = (id: string | null) => (id ? locations.find((l) => l.id === id)?.name ?? id : 'Idle')
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Members · {units.length}</div>
+        <div className="space-y-1">
+          {units.map((u) => {
+            const c = u.locationId ? battles[u.locationId]?.combatants.find((x) => x.id === u.id) : undefined
+            const hp = c ? c.hp : u.health
+            const maxHp = c ? c.maxHp : getDerivedStats(u, equipment).maxHp
+            const pct = Math.max(0, Math.min(100, maxHp > 0 ? (hp / maxHp) * 100 : 0))
+            return (
+              <button key={u.id} onClick={() => drill(u)}
+                className="w-full flex items-center gap-2 rounded-md border border-game-border bg-game-bg px-2.5 py-1.5 text-left hover:border-game-primary/50 transition-colors">
+                <span className="text-xs font-medium text-game-text w-16 truncate shrink-0">{u.name.split(' ')[0]}</span>
+                <span className="text-[10px] text-game-text-dim shrink-0">Lv {u.level} {u.class ?? 'Novice'}</span>
+                <span className="flex-1 min-w-0 h-1.5 rounded-full bg-game-border overflow-hidden">
+                  <span className="block h-full bg-game-green" style={{ width: `${pct}%`, transition: 'width 380ms linear' }} />
+                </span>
+                <span className="text-[10px] text-game-muted truncate max-w-[72px] shrink-0">{locName(u.locationId)}</span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-[10px] text-game-muted italic mt-1.5">Tap a member to drill into their dossier · Move/Return above act on everyone selected.</p>
+      </div>
+    </div>
+  )
+}
+
 // ── ProtoLens shell ─────────────────────────────────────────────────────────--
 export function ProtoLens() {
   const units            = useGameStore((s) => s.units)
@@ -1326,10 +1447,19 @@ export function ProtoLens() {
   }, [heroBattleRequest])
 
   const unit = units.find((u) => u.id === selectedUnitIds[0]) ?? null
-  // The whole current selection (in selection order) — the scope bar carries all
+  // The whole current selection (in selection order) — the command bar carries all
   // of it as chips, so a multi-select can be deployed/followed from one row.
   const selUnits = selectedUnitIds.map((id) => units.find((u) => u.id === id)).filter((u): u is Unit => !!u)
   const location = selectedLocId ? locations.find((l) => l.id === selectedLocId) ?? null : null
+
+  // §orchestration: derive the SCOPE — location focus (map/roster-label tap) wins;
+  // otherwise the size of the hero selection decides hero vs party. The tab row
+  // adapts; an out-of-scope tab snaps to the scope's first tab.
+  const scopeFocus = useProtoStore((s) => s.scopeFocus)
+  const scope: 'hero' | 'party' | 'location' =
+    scopeFocus === 'location' && location ? 'location' : selUnits.length > 1 ? 'party' : 'hero'
+  const tabs = scope === 'location' ? LOC_TABS : scope === 'party' ? PARTY_TABS : HERO_TABS
+  const effTop: Top = tabs.some((t) => t.id === top) ? top : tabs[0].id
 
   // NOTE: viewing a hero no longer clears their attention cue — only *spending* a
   // resource does (recorded in the store on spend). So merely opening the dossier
@@ -1345,6 +1475,13 @@ export function ProtoLens() {
   // nudges fresh growth without nagging about leftover points.
   const grew = !!unit && unit.level > (viewedUnitLevels[unit.id] ?? 0)
   const tabPip = (id: Top): boolean => grew && (id === 'hero' || id === 'skills')
+
+  // Keep the active tab valid when the scope changes under it (e.g. selecting a
+  // second hero flips hero→party, so 'skills' would no longer be in the row).
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === top)) setTop(tabs[0].id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope])
 
   // Collapse the top tab row as you scroll the lens content DOWN (reclaim the
   // space for reading); scrolling back up — or reaching the top — brings it back.
@@ -1380,14 +1517,14 @@ export function ProtoLens() {
     <div className="relative h-full flex flex-col bg-game-surface/40 min-h-0">
       <div className={['shrink-0 overflow-hidden transition-[max-height] duration-200 ease-out', tabsHidden ? 'max-h-0' : 'max-h-20'].join(' ')}>
         <div className="flex border-b border-game-border bg-game-surface/60">
-          {TOP_TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.id}
               aria-label={t.label}
               onClick={() => setTop(t.id)}
               className={[
                 'flex-1 flex flex-col items-center gap-0.5 py-2 transition-colors relative',
-                top === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
+                effTop === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim',
               ].join(' ')}
             >
               <span className="text-base leading-none relative">
@@ -1395,20 +1532,21 @@ export function ProtoLens() {
                 {tabPip(t.id) && <span className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full bg-game-gold border border-game-bg" />}
               </span>
               <span className="text-[11px] font-medium">{t.label}</span>
-              {top === t.id && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-primary" />}
+              {effTop === t.id && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-primary" />}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Persistent selected-hero strip — rides every tab (incl. Location) so the
-          selection's chips + cross-location actions (Deploy here / Jump / Follow)
-          are always in reach. Hidden only when inspecting a foe. */}
-      {!selectedFoe && selUnits.length > 0 && <HeroScopeBar units={selUnits} location={location} />}
+      {/* Selection command bar — always answers "who/what am I acting on + what
+          can I do?" for the current scope. Hidden only when inspecting a foe. */}
+      {!selectedFoe && (scope === 'location' ? !!location : selUnits.length > 0) && (
+        <SelectionCommandBar scope={scope} units={selUnits} location={location} setTop={setTop} />
+      )}
 
       {/* Hero sub-tabs only appear when there's a Pet (Report otherwise lives in
           Hero Detail). Hidden for a foe. */}
-      {top === 'hero' && unit && !selectedFoe && heroSubs.length > 1 && (
+      {effTop === 'hero' && unit && !selectedFoe && heroSubs.length > 1 && (
         <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-game-border/60 bg-game-bg/30">
           {heroSubs.map((s) => (
             <button
@@ -1431,20 +1569,31 @@ export function ProtoLens() {
           states centred; overflow is handled by the scroll container above). */}
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-3" onScroll={onLensScroll}>
         <div className="h-full" style={{ zoom: 1.12 }}>
-          {top === 'hero' && (unit
+          {/* Hero scope */}
+          {effTop === 'hero' && (unit
             ? (effSub === 'pet' ? <CompanionLens unit={unit} /> : <HeroLens unit={unit} />)
             : (
               <Empty icon="◈" title="Select a hero" sub="Pick a hero from the roster, or tap one on the battlefield." />
             ))}
+          {effTop === 'equipment' && (unit ? <EquipmentLens unit={unit} /> : <Empty icon="🎒" title="Select a hero" sub="Equipment & personal inventory belong to a hero — pick one." />)}
+          {effTop === 'skills'    && (unit ? <SkillsLens unit={unit} /> : <Empty icon="✦" title="Select a hero" sub="Pick a hero to set their battle skills." />)}
+          {effTop === 'tactics'   && (unit ? <TacticianLens unit={unit} /> : <Empty icon="☷" title="Select a hero" sub="Pick a hero to tune their tactics." />)}
+          {effTop === 'expedition' && (unit ? <ExpeditionPanel unit={unit} /> : <Empty icon="🧭" title="Select a hero" sub="Pick a hero to plan their logistics." />)}
 
-          {top === 'location' && (location
+          {/* Party scope */}
+          {effTop === 'party'    && <PartyLens units={selUnits} />}
+          {effTop === 'doctrine' && <PartyDoctrine />}
+
+          {/* Location scope */}
+          {effTop === 'location' && (location
             ? <LocationDetail location={location} />
             : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
-
-          {top === 'equipment' && (unit ? <EquipmentLens unit={unit} /> : <Empty icon="🎒" title="Select a hero" sub="Equipment & personal inventory belong to a hero — pick one." />)}
-          {top === 'skills'    && (unit ? <SkillsLens unit={unit} /> : <Empty icon="✦" title="Select a hero" sub="Pick a hero to set their battle skills." />)}
-          {top === 'tactics'   && (unit ? <TacticianLens unit={unit} /> : <Empty icon="☷" title="Select a hero" sub="Pick a hero to tune their tactics." />)}
-          {top === 'expedition' && (unit ? <ExpeditionPanel unit={unit} /> : <Empty icon="🧭" title="Select a hero" sub="Pick a hero to plan their logistics." />)}
+          {effTop === 'loc-heroes' && (location
+            ? <LocationHeroesPanel location={location} />
+            : <Empty icon="⚑" title="No location focused" sub="Tap a location to see who's hunting there." />)}
+          {effTop === 'loc-quests' && (location
+            ? <LocationQuestsPanel location={location} />
+            : <Empty icon="📜" title="No location focused" sub="Tap a location to see its quests." />)}
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { useGameStore, MONSTER_REGISTRY, type Location, type Unit } from '@/stores/useGameStore'
+import { useGameStore, getDerivedStats, MONSTER_REGISTRY, type Location, type Unit } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { ItemCodex } from '@/components/ItemCodex'
 import { INITIAL_EQUIPMENT } from '@/data/equipment'
@@ -574,15 +574,87 @@ function Section({ title, defaultOpen = true, children }: { title: string; defau
   )
 }
 
+// ── Location › Heroes — the party-formation surface ──────────────────────────--
+// §orchestration: parties form by being at the same place doing the same thing,
+// so the location's Heroes tab makes that explicit: who's hunting here now,
+// who's on the road here, and who could be sent. Chips select the hero (hero
+// scope); the deploy button opens the location-first picker.
+export function LocationHeroesPanel({ location }: { location: Location }) {
+  const units       = useGameStore((s) => s.units)
+  const locations   = useGameStore((s) => s.locations)
+  const equipment   = useGameStore((s) => s.equipment)
+  const openDeploySheet = useProtoStore((s) => s.openDeploySheet)
+  const cityIds = new Set(locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
+
+  const hunting   = units.filter((u) => u.locationId === location.id && !(u.travelPath && u.travelPath.length))
+  const traveling = units.filter((u) => u.travelPath && u.travelPath.length && u.travelPath[u.travelPath.length - 1] === location.id)
+  const available = units.filter((u) => u.recoveryTicksLeft <= 0 && !(u.travelPath && u.travelPath.length)
+    && u.locationId !== location.id && (!u.locationId || cityIds.has(u.locationId)))
+
+  const pickHero = (u: Unit) => {
+    useGameStore.setState({ selectedUnitIds: [u.id] })
+    useProtoStore.getState().setScopeFocus('hero')
+  }
+  const chip = (u: Unit, tone: 'green' | 'amber' | 'dim') => {
+    const maxHp = getDerivedStats(u, equipment).maxHp
+    const cls = tone === 'green' ? 'border-game-green/40 bg-game-green/10'
+      : tone === 'amber' ? 'border-amber-500/40 bg-amber-500/10'
+      : 'border-game-border bg-game-bg'
+    return (
+      <button key={u.id} onClick={() => pickHero(u)} title={`${u.name} — tap to select`}
+        className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border text-game-text hover:border-game-primary/60 transition-colors ${cls}`}>
+        <span className="truncate">{u.name.split(' ')[0]}</span>
+        <span className="text-game-text-dim">Lv {u.level}</span>
+        <span className="text-game-muted tabular-nums">{Math.floor((u.health / Math.max(1, maxHp)) * 100)}%</span>
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Hunting here {hunting.length > 0 && `· ${hunting.length}`}</div>
+        {hunting.length === 0
+          ? <div className="text-[11px] text-game-muted italic">Nobody is hunting here.</div>
+          : <div className="flex flex-wrap gap-1.5">{hunting.map((u) => chip(u, 'green'))}</div>}
+      </div>
+      {traveling.length > 0 && (
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Traveling here · {traveling.length}</div>
+          <div className="flex flex-wrap gap-1.5">{traveling.map((u) => chip(u, 'amber'))}</div>
+        </div>
+      )}
+      <div>
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Available to deploy</div>
+        {available.length === 0
+          ? <div className="text-[11px] text-game-muted italic">Everyone is already committed somewhere.</div>
+          : <div className="flex flex-wrap gap-1.5">{available.map((u) => chip(u, 'dim'))}</div>}
+      </div>
+      <button
+        onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })}
+        className="w-full text-xs font-semibold px-3 py-2 rounded-md border border-game-primary/60 bg-game-primary/15 text-game-text hover:bg-game-primary/25 transition-colors"
+      >➤ Deploy heroes here</button>
+    </div>
+  )
+}
+
+// ── Location › Quests — the site's boards, promoted to their own tab ─────────--
+export function LocationQuestsPanel({ location }: { location: Location }) {
+  return (
+    <div className="space-y-4">
+      <ClassQuestBoard location={location} />
+      <LocationBountyBoard location={location} />
+      {location.monsterIds.length > 0 && !LOCATION_BOUNTIES.some((b) => b.locationId === location.id) && <QuestBoard location={location} />}
+    </div>
+  )
+}
+
 export function LocationDetail({ location }: { location: Location }) {
-  const units               = useGameStore((s) => s.units)
   const locations           = useGameStore((s) => s.locations)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
   const monsterSeen         = useGameStore((s) => s.monsterSeen)
-  const selectedUnitIds     = useGameStore((s) => s.selectedUnitIds)
-  const assignUnits         = useGameStore((s) => s.assignUnits)
 
   // "Enter <Region>" — a world location can open into a dungeon map page. Some
   // pages are sandbox-only (the fixed-encounters test dungeon): hide the entry
@@ -600,72 +672,15 @@ export function LocationDetail({ location }: { location: Location }) {
 
   const [codexId, setCodexId] = useState<string | null>(null)
 
-  const here = units.filter((u) => u.locationId === location.id)
-  // The selected heroes who aren't at this site — the empty-site deploy CTA acts
-  // on exactly these (mirrors the scope bar's Deploy).
-  const selElsewhere = units.filter((u) => selectedUnitIds.includes(u.id) && u.locationId !== location.id)
-  // Only on-site heroes that AREN'T selected show here — selected ones move up to
-  // the scope bar.
-  const presentUnsel = here.filter((u) => !selectedUnitIds.includes(u.id))
-  // Tap a hero chip to add/remove them from the current selection (so this group
-  // doubles as a selection surface — you can see who's picked and adjust).
-  const toggleSel = (id: string) => useGameStore.setState((s) => ({
-    selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id],
-  }))
-  // An on-site, unselected hero chip. Tap to select — which moves it up into the
-  // scope bar (selected heroes live there, not in this list).
-  const hereChip = (u: Unit) => (
-    <button
-      key={u.id}
-      onClick={() => toggleSel(u.id)}
-      title="On site — tap to select"
-      className="flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border border-game-green/40 bg-game-green/10 text-game-text hover:border-game-green/70 transition-colors"
-    >
-      <span className="w-1.5 h-1.5 rounded-full bg-game-green shrink-0" />
-      <span className="truncate">{u.name.split(' ')[0]}</span>
-      <span className="text-game-text-dim">Lv {u.level}</span>
-    </button>
-  )
-
   // Inhabitants: the KNOWN enemies that inhabit this map — the location's monster
   // pool, filtered to those already discovered here. A static bestiary (it grows
   // as you meet new foes, then settles once all are known), NOT who's on the field
-  // right now.
+  // right now. (Heroes + quests moved to the location's own Heroes/Quests tabs.)
   const seenHere = new Set(locationMonstersSeen[location.id] ?? [])
   const foeIds = location.monsterIds.filter((id) => MONSTER_REGISTRY[id] && seenHere.has(id))
 
   return (
     <div className="space-y-4">
-      {/* Heroes here — no label, just the on-site chips that AREN'T selected
-          (selected heroes ride the scope bar instead). An empty site leads with a
-          real deploy CTA for the current selection instead of a dead-end notice. */}
-      {here.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-game-border px-3 py-2.5 space-y-2">
-          <div className="text-[11px] text-game-text-dim italic">No heroes here.</div>
-          {selElsewhere.length > 0 ? (
-            <button
-              onClick={() => assignUnits(selElsewhere.map((u) => u.id), location.id)}
-              className="w-full text-xs font-semibold px-3 py-2 rounded-md border border-game-primary/60 bg-game-primary/15 text-game-text hover:bg-game-primary/25 transition-colors"
-            >➤ Deploy {selElsewhere.length === 1 ? selElsewhere[0].name.split(' ')[0] : `${selElsewhere.length} heroes`} here</button>
-          ) : (
-            <div className="text-[10px] text-game-muted">Pick heroes in the roster above, then deploy them here.</div>
-          )}
-        </div>
-      ) : presentUnsel.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {presentUnsel.map((u) => hereChip(u))}
-        </div>
-      )}
-
-      {/* Quests — class-change paths (cities), location bounties, legacy monster board */}
-      <Section title="Quests">
-        <div className="space-y-4">
-          <ClassQuestBoard location={location} />
-          <LocationBountyBoard location={location} />
-          {location.monsterIds.length > 0 && !LOCATION_BOUNTIES.some((b) => b.locationId === location.id) && <QuestBoard location={location} />}
-        </div>
-      </Section>
-
       {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (
         <Section title="Inhabitants">

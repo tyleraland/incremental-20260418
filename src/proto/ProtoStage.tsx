@@ -361,8 +361,10 @@ export function ProtoStage() {
     if (pointers.current.size === 0) dragRef.current = null
   }
 
-  function flyTo(loc: Location) { setSelectedLocation(loc.id); animateZoomTo(Math.max(1, zoom)) }
-  function dive(loc: Location)  { setSelectedLocation(loc.id); animateZoomTo(2) }
+  // A map-node tap is a LOCATION pick — the command bar + lens flip to location
+  // scope (a roster tap flips them back to hero scope).
+  function flyTo(loc: Location) { setSelectedLocation(loc.id); useProtoStore.getState().setScopeFocus('location'); animateZoomTo(Math.max(1, zoom)) }
+  function dive(loc: Location)  { setSelectedLocation(loc.id); useProtoStore.getState().setScopeFocus('location'); animateZoomTo(2) }
   function gotoStop(z: number) {
     // The "World" stop now settles at the locale altitude (z=1) rather than the
     // far-out overview. Recentre on the current location if one is selected
