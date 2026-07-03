@@ -210,11 +210,19 @@ independently shippable; ordering rationale in the guide's roadmap):
   door-gap chokepoints, `stamps.ts` places authored vaults by constraint
   (pillar-vault / shrine / barred-cell — whose treasure is `optional`-tagged:
   reachability-exempt, the standing §J pocket and phase-4 lock test case),
-  debris grades with depth, lair at max graph depth. Deferred: free-form room
-  shapes (maximal-rect mask carve instead of the lattice-band constructive
-  model), corridor/hallway rooms, multi-floor chains via `dungeonEntryRegion`,
-  a LIVE dungeon location (blocked on the pather perf pass — rect count is
-  ~2× the open-world envelope; fine for discrete encounters).
+  debris grades with depth, lair at max graph depth. Refined donjon-style
+  (2026-07, after review of donjon.bin.sh's vocabulary): free-placed
+  **polymorph rooms** (closet→hall weighted size table, L/T composite lobes,
+  cave-notch erosion off the roughness field), **errant door-to-door
+  corridors** (0–2 jittered jogs, width 2–3) + kept dead-end stubs, and a
+  greedy **maximal-rect cover** of the solid mask (free-form floor, exact
+  coverage, ~30–60 rects, budget 72). Deferred: 1-wide labyrinth corridors,
+  symmetric layouts, an erosion-first cavern recipe, a remove-deadends knob,
+  corridor pathfinding AROUND rooms (today a corridor may clip a room it
+  passes — reads as an extra entrance), multi-floor chains via
+  `dungeonEntryRegion`, a LIVE dungeon location (blocked on the pather perf
+  pass — rect count is ~4× the open-world envelope; fine for discrete
+  encounters).
 - **Phase 4 — lock-and-key + proficiency gates.** Place `Lock`s (shape already in
   `types.ts`), make `validate.ts` reachability conditional
   (reachable-if-openable), add the `getProficiencies(unit)` derive, resolve

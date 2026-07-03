@@ -53,7 +53,7 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `pipeline.ts` | `generateMap(recipe, params)`: pass runner, per-pass streams, skipPasses, bake→validate→reroll |
 | `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / water-coherence |
 | `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → outcrops → scatter → semantic |
-| `recipes/dungeon.ts` | the graph-first dungeon: room lattice → cyclic corridor graph (spanning tree + loop edges) → carved walls/doors → stamps → depth-graded debris → lair. Constructive rect count (~20–35): lab/encounter only until the pather perf pass |
+| `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → cyclic corridor graph → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects): lab/encounter only until the pather perf pass |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
 | `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
 | `recipes/index.ts` | `RECIPE_REGISTRY` (`city` = road-first: reserved) |
@@ -94,11 +94,14 @@ benched pathing envelope, gated in `map-perf-envelope.test.ts`).
    `mirror-vale` live; barrier budget pinned to the perf envelope. Left for
    later polish: landmark POI → big silhouette prop, richer water treatment
    (ripple props, ford highlight), spec-aware minimap.
-3. ✅ **Dungeon recipe (graph-first)** — cyclic room graph (function-first:
-   `layout` publishes nav nodes/edges, `carve` realizes them as walls + doors,
-   `doorAt` on every edge), stamp registry, lair + depth gradient, optional-POI
-   reachability exemption. Left for later: free-form room shapes (maximal-rect
-   mask carve), corridor rooms, live dungeon location (needs the pather pass).
+3. ✅ **Dungeon recipe (graph-first, donjon-flavored)** — cyclic room graph
+   (function-first: `layout` publishes nav nodes/edges + exact `doorAt`
+   pinches, `carve` covers the solid mask with maximal rects), scattered
+   polymorph rooms, errant corridors, dead-end stubs, stamp registry, lair +
+   depth gradient, optional-POI reachability exemption. Left for later:
+   1-wide labyrinth corridors (needs sub-cell pathing care), symmetric
+   layouts, a cavern recipe (erosion-first), remove-deadends knob, live
+   dungeon location (needs the pather pass).
 4. **Lock-and-key + proficiency gates** — `Lock` placement, conditional
    reachability in `validate.ts` (the barred-cell's `optional` tag is the
    placeholder it replaces), `getProficiencies` derive, variants resolved at
