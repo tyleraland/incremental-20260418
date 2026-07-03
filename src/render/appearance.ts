@@ -21,8 +21,6 @@ export type Tone = 'player' | 'enemy' | 'neutral' | 'casting'
 // Silhouette family for the token body. A skin picks its body path by this —
 // NEVER by entity id (that translation happens here). A handful of shared
 // shapes cover the whole bestiary; per-monster art stays a non-goal.
-// ('snail' has no live monster yet — the asset is authored and gallery-pinned,
-// mapping a future shelled monster is one MONSTER_SHAPE line.)
 export type BodyShape = 'humanoid' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine'
 
 // A hero's handheld, keyed off class — the paper skin swaps its facing-blade
@@ -82,6 +80,8 @@ const MONSTER_SHAPE: Partial<Record<string, BodyShape>> = {
   'elite-fighter': 'humanoid', 'elite-rogue': 'humanoid', 'elite-cleric': 'humanoid', 'elite-ranger': 'humanoid',
   // serpents — legless S-curve bodies
   'river-serpent': 'serpent', 'adderwalla': 'serpent',
+  // snails — shelled crawlers
+  'snail': 'snail',
   // canines — ears, ruff, muzzle
   'wolf': 'canine', 'dire-wolf': 'canine', 'shadow-wolf': 'canine',
 }

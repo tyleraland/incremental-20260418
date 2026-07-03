@@ -175,6 +175,12 @@ export const INITIAL_LOCATIONS: Location[] = [
     traits: ['arena'], monsterIds: ['rock-crab'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-slime-huddle',
   },
+  {
+    id: 'pg-menagerie', region: 'fixed-encounters', name: 'The Menagerie',
+    description: 'A viewing pen with one of each restyled creature — snail, snake, wolf, slime, boar, harpy — to inspect the paper token families up close and in motion.',
+    traits: ['arena'], monsterIds: ['snail', 'adderwalla', 'wolf', 'slime', 'wild-boar', 'harpy'],
+    familiarityMax: 100, connections: [], testScenarioId: 'pg-menagerie',
+  },
 
   // ── Pathing Grounds (barrier / terrain testbeds, a second sandbox row) ───────
   // Stage the known-terrain pathing work. The last one is open-world

@@ -29,6 +29,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'geffen-field-1': [1, 1], 'prontera-field-1': [2, 1], 'elite-four': [3, 1],
   'pg-guardian-stand': [1, 2], 'pg-veiled-approach': [2, 2], 'pg-wolf-pack': [3, 2],
   'pg-threat-trial': [4, 2], 'pg-divided-hall': [5, 2], 'pg-ravine': [6, 2], 'pg-slime-huddle': [7, 2],
+  'pg-menagerie': [8, 2],
   'pg-bottleneck': [1, 3], 'pg-serpentine': [2, 3], 'pg-pillared-hall': [3, 3],
   'pg-moat': [4, 3], 'pg-elemental-circle': [5, 3],
   'ember-hollow': [1, 4], 'cinder-dunes': [2, 4], 'hollow-barrow': [3, 4], 'irradiated-marsh': [4, 4],

@@ -23,6 +23,7 @@ export const DROP_ITEMS: Record<string, string> = {
   'drop-ember-gel':     'Ember Gel',     'drop-adder-scale':   'Adder Scale',
   'drop-ember-fang':    'Ember Fang',    'drop-wraith-shroud': 'Wraith Shroud',
   'drop-mutant-tail':   'Mutant Tail',   'drop-radiant-scale': 'Radiant Scale',
+  'drop-snail-shell':   'Snail Shell',
 }
 
 // moveSpeed: ft/s (divide by TICKS_PER_SECOND in tick loop for ft/tick)
@@ -32,6 +33,9 @@ export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
   // struck, then turns and fights back (skittish).
   'slime':         { id: 'slime',        name: 'Slime',         level: 1, health:  25, element: 'water',   size: 'small',  attackName: 'Slam',   stats: { attack: 1,  defense: [1,1],   magicAttack: 1,  magicDefense: [1,0],  attackSpeed: 10, accuracy: 6,  dodge: 2,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-slime-gel',      dropRate: 0.90, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }] },
   'tough-slime':   { id: 'tough-slime',  name: 'Tough Slime',   level: 1, health: 200, element: 'water',   size: 'small',  attackName: 'Slam',   stats: { attack: 1,  defense: [18,18], magicAttack: 1,  magicDefense: [2,1],  attackSpeed: 10, accuracy: 6,  dodge: 2,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-slime-gel',      dropRate: 0.95, quantityMin: 2, quantityMax: 4 }] },
+  // A slow shelled grazer (the 'snail' body family's first live monster):
+  // non-aggressive until struck, then hunkers behind heavy shell defense.
+  'snail':         { id: 'snail',        name: 'Snail',         level: 2, health:  60, element: 'earth',   size: 'small',  attackName: 'Shell Bash', stats: { attack: 4, defense: [9,9],  magicAttack: 1,  magicDefense: [3,2],  attackSpeed: 5,  accuracy: 7,  dodge: 1,  moveSpeed: 1.5, attackRange: 5  }, drops: [{ itemId: 'drop-snail-shell',    dropRate: 0.80, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }] },
   'wolf':          { id: 'wolf',         name: 'Wolf',          level: 2, health:  40, element: 'neutral', size: 'medium', attackName: 'Bite',   stats: { attack: 8,  defense: [2,2],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 14, accuracy: 10, dodge: 8,  moveSpeed: 7.5, attackRange: 5  }, drops: [{ itemId: 'drop-wolf-pelt',     dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-wolf-fang',     dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
   'forest-sprite': { id: 'forest-sprite',name: 'Forest Sprite', level: 3, health:  35, element: 'neutral', size: 'small',  attackName: 'Claws',  stats: { attack: 5,  defense: [2,1],   magicAttack: 12, magicDefense: [6,4],  attackSpeed: 16, accuracy: 12, dodge: 14, moveSpeed: 6,   attackRange: 5  }, drops: [{ itemId: 'drop-spirit-dust',    dropRate: 0.50, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-emerald-leaf',  dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },
   'poacher':       { id: 'poacher',      name: 'Poacher',       level: 4, health:  60, element: 'neutral', size: 'medium', attackName: 'Sword',  stats: { attack: 14, defense: [5,3],   magicAttack: 2,  magicDefense: [2,2],  attackSpeed: 10, accuracy: 16, dodge: 6,  moveSpeed: 5,   attackRange: 15 }, drops: [{ itemId: 'drop-coin-pouch',     dropRate: 0.60, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-iron-dagger',   dropRate: 0.40, quantityMin: 1, quantityMax: 1 }] },

@@ -72,6 +72,7 @@ const LOCATION_COORDS: Record<string, [number, number]> = {
   'pg-divided-hall':    [5, 2],
   'pg-ravine':          [6, 2],
   'pg-slime-huddle':    [7, 2],
+  'pg-menagerie':       [8, 2],   // one-of-each viewing pen (paper token families)
   'pg-bottleneck':      [1, 3],
   'pg-serpentine':      [2, 3],
   'pg-pillared-hall':   [3, 3],
