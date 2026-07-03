@@ -9,7 +9,16 @@ import type { MapDraft } from './draft'
 export function tacticalProfile(draft: MapDraft): TacticalProfile {
   const { cols, rows, collision } = draft
   const area = cols * rows
-  const blocked = collision.reduce((s, r) => s + r.w * r.h, 0)
+  // Openness by CELL SAMPLING, not summed rect areas — a mask-carved dungeon's
+  // cover rects overlap heavily (the merge-friendly expand step), so summing
+  // double-counts and pins openness to 0.
+  let blocked = 0
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const cx = x + 0.5, cy = y + 0.5
+      if (collision.some((r) => cx > r.x && cx < r.x + r.w && cy > r.y && cy < r.y + r.h)) blocked++
+    }
+  }
 
   // chokepoints: rect pairs whose facing edges leave a 1.5–4 cell gap while
   // overlapping on the cross axis — the funnel signature (a dungeon door is

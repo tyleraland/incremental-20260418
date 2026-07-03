@@ -1,7 +1,9 @@
 // Dungeon fuzz gate — graph-first promises, checked over a seed sweep: every
-// map validates (spawn room reachable through its doors), layouts are CYCLIC
-// (loops, not trees), depth grades to a lair, stamps land under budget, and
-// the §J barred-cell's optional vault rides the reachability exemption.
+// map validates (spawn room reachable through its corridors), layouts are
+// CYCLIC (loops, not trees), depth grades to a lair, stamps land under budget,
+// the §J barred-cell's optional vault rides the reachability exemption — and
+// (donjon-flavored) floors are DIVERSE: room sizes spread closet→hall, a good
+// share of rooms are polymorph (L/T composites), corridors wind.
 
 import { describe, it, expect } from 'vitest'
 import { generateMap } from '@/mapgen'
@@ -17,8 +19,27 @@ describe('dungeon recipe fuzz gate', () => {
   it('25 seeds × 48-cell floors: all validate inside the recipe budget', () => {
     for (const r of results) {
       expect(r.report.ok, `seed ${r.spec.seed}: ${JSON.stringify(r.report.rules.filter((x) => !x.ok))}`).toBe(true)
-      expect(r.spec.collision.length).toBeLessThanOrEqual(36)
+      expect(r.spec.collision.length).toBeLessThanOrEqual(DUNGEON_RECIPE.defaults!.maxBarriers!)
+      // the wall cover is EXACT — an uncovered solid cell would be walkable rock
+      expect(r.notes.join(), `seed ${r.spec.seed} left solid cells uncovered`).not.toContain('OVER BUDGET')
     }
+  })
+
+  it('donjon diversity: sizes spread closet→hall, polymorph rooms are common', () => {
+    let polymorphSeeds = 0
+    let smallest = Infinity, largest = 0
+    for (const r of results) {
+      for (const n of r.spec.semantic.nav.nodes) {
+        const area = (n.area?.w ?? 0) * (n.area?.h ?? 0)
+        smallest = Math.min(smallest, area)
+        largest = Math.max(largest, area)
+      }
+      const m = r.notes.join().match(/\((\d+) polymorph\)/)
+      if (m && Number(m[1]) >= 2) polymorphSeeds++
+    }
+    expect(smallest).toBeLessThanOrEqual(30)      // closets exist
+    expect(largest).toBeGreaterThanOrEqual(100)   // large halls exist
+    expect(polymorphSeeds).toBeGreaterThan(SEEDS.length * 0.5)
   })
 
   it('graph-first: rooms + corridors published on the nav skeleton; most layouts carry a cycle', () => {

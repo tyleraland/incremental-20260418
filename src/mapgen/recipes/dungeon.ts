@@ -1,158 +1,270 @@
-// The DUNGEON recipe — graph-first (idea catalog §D, prototyping-order step 5).
-// The plan comes BEFORE the geometry: `layout` decides rooms and their
-// connectivity graph — a spanning tree plus extra edges, so the layout is
-// CYCLIC (⭐4: loops, not trees — back-routes and flanking, forces arrive from
-// two sides) — and only then does `carve` realize it as wall rects with door
-// gaps. Stamps (§I) drop authored set pieces into rooms under budget; depth is
-// graph distance from the entry (§G gradient), and the lair sits at max depth.
+// The DUNGEON recipe — graph-first (idea catalog §D, prototyping-order step 5),
+// donjon-flavored (donjon.bin.sh: Scattered room layout, Small→Colossal size
+// spread, "polymorph" irregular rooms, Errant corridors, kept dead-ends).
 //
-// Geometry model (deliberately constructive, not mask-carved): rooms are the
-// cells of a jittered g×g lattice; walls are the lattice's band segments, each
-// ONE rect (two when a door splits it), so the rect count is known and small
-// by construction. Room-shape variety comes from band thickness jitter,
-// skipped (solid) cells, doors, and stamps — organic wall reads come free from
-// the paper renderer's blob pass. Maximal-rect mask carving (free-form rooms)
-// is a later refinement — see BACKLOG.
+// The plan comes BEFORE the geometry: `layout` free-places rooms of wildly
+// varied size and shape on the cell grid, connects them with a spanning tree
+// plus extra edges — CYCLIC layouts (⭐4: loops, not trees — back-routes and
+// flanking) — and carves winding corridors between them. Only then does
+// `carve` realize the negative space as wall rects (greedy maximal-rectangle
+// cover of the solid mask), so floor shape is FREE-FORM — L/T composites,
+// closets, long halls, cave-notched edges — while collision stays rects
+// forever. Stamps (§I) drop authored set pieces into rooms under budget;
+// depth is graph distance from the entry (§G), and the lair sits at max depth.
 //
-// NOT live on any location yet: a dungeon spends ~20–35 rects, above the
+// NOT live on any location yet: a dungeon spends ~30–60 rects, above the
 // benched open-world pathing envelope (16). Fine for the lab and for future
 // discrete encounters; a live open-world dungeon needs the pather perf pass
 // first (BACKLOG → Procedural map generation, cross-cutting debts).
 
-import type { Rect } from '../types'
+import type { Pt, Rect } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
-import { hashString } from '../rng'
+import { hashString, type Rng } from '../rng'
 import { tacticalProfile } from '../profile'
 import { STAMP_REGISTRY, placeStamp, stampBarrierCost, type StampDef } from '../stamps'
 
-const DOOR_W = 3.2          // gap width; PAD-inflated flood fill still passes ≥2.3
-const BAND_MIN = 1.1        // band half-thickness range (walls 2.2–3.2 thick)
-const BAND_MAX = 1.6
+const MARGIN = 2          // solid ring at the map edge (cells)
+const ROOM_GAP = 2        // min solid cells between room bounding boxes
+const ENTRY_MIN = 9       // entry hall min side — must swallow the spawn apron
 
-interface Lattice {
-  g: number
-  vx: number[]; hv: number[]     // vertical line centres + half-thicknesses (index 1..g-1)
-  hy: number[]; hh: number[]     // horizontal line centres + half-thicknesses
-  present: boolean[]             // cell cx + cy*g → is a room (not solid)
-  rooms: Map<string, Rect>       // room id → floor rect
-  edges: { a: string; b: string }[]
+// The donjon-style room size table (Small…Colossal): weighted archetypes.
+// `hall` is the long gallery — one axis stretched, the other narrow.
+const ROOM_KINDS = [
+  { kind: 'closet', weight: 0.22, w: [3, 5] as const, h: [3, 5] as const },
+  { kind: 'small', weight: 0.30, w: [5, 7] as const, h: [5, 7] as const },
+  { kind: 'medium', weight: 0.26, w: [7, 10] as const, h: [7, 10] as const },
+  { kind: 'large', weight: 0.14, w: [10, 14] as const, h: [10, 14] as const },
+  { kind: 'hall', weight: 0.08, w: [4, 6] as const, h: [11, 16] as const },
+]
+
+interface Room {
+  id: string
+  primary: Rect              // largest rect — stamp/POI anchor + node area
+  rects: Rect[]              // full composite (primary + polymorph lobes)
+}
+interface Plan {
+  walk: Uint8Array
+  rooms: Room[]
+  edges: { a: string; b: string; doorAt?: Pt }[]
+  corridorCells: number[]
+}
+const PLANS = new WeakMap<object, Plan>()
+
+const idx = (size: number, x: number, y: number) => y * size + x
+const center = (r: Rect): Pt => ({ x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) })
+
+function carveRect(walk: Uint8Array, size: number, r: Rect) {
+  const x0 = Math.max(MARGIN, Math.floor(r.x)), x1 = Math.min(size - MARGIN, Math.ceil(r.x + r.w))
+  const y0 = Math.max(MARGIN, Math.floor(r.y)), y1 = Math.min(size - MARGIN, Math.ceil(r.y + r.h))
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) walk[idx(size, x, y)] = 1
 }
 
-const roomId = (cx: number, cy: number) => `room-${cx}-${cy}`
-
-// Cell floor span between the surrounding bands (map edge when on the rim).
-function cellRect(L: Lattice, size: number, cx: number, cy: number): Rect {
-  const x0 = cx === 0 ? 0 : L.vx[cx] + L.hv[cx]
-  const x1 = cx === L.g - 1 ? size : L.vx[cx + 1] - L.hv[cx + 1]
-  const y0 = cy === 0 ? 0 : L.hy[cy] + L.hh[cy]
-  const y1 = cy === L.g - 1 ? size : L.hy[cy + 1] - L.hh[cy + 1]
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
-}
-
-// Stash the lattice on the draft via a WeakMap so passes share it without
-// widening the MapDraft type (it's plan-time scaffolding, not spec output —
-// what consumers need lands in semantic.nav).
-const PLANS = new WeakMap<object, Lattice>()
-
-// ── layout: rooms + a CYCLIC connectivity graph, spawn at the entry (§A L5-6) ─
+// ── layout: scattered polymorph rooms + a cyclic graph + errant corridors ────
 const layoutPass = {
   id: 'layout',
-  run({ draft, params, rng, note }: PassCtx) {
+  run({ draft, params, fields, rng, note }: PassCtx) {
     const { size } = params
-    const g = Math.max(2, Math.min(3, Math.round(size / 16)))
-    const r = rng('lattice')
-    const L: Lattice = {
-      g,
-      vx: Array.from({ length: g }, (_, i) => (i * size) / g),
-      hv: Array.from({ length: g }, () => r.range(BAND_MIN, BAND_MAX)),
-      hy: Array.from({ length: g }, (_, i) => (i * size) / g),
-      hh: Array.from({ length: g }, () => r.range(BAND_MIN, BAND_MAX)),
-      present: Array.from({ length: g * g }, () => true),
-      rooms: new Map(),
-      edges: [],
-    }
-    // Skip a few cells into solid rock — floor-plan variety. Keep ≥ 4 rooms.
-    const skipper = rng('skips')
-    for (let i = 0; i < g * g; i++) {
-      if (L.present.filter(Boolean).length <= 4) break
-      if (skipper.chance(0.16)) L.present[i] = false
-    }
-    // Largest connected component wins; stragglers turn solid (no orphan rooms).
-    const comp = largestComponent(L)
-    for (let i = 0; i < g * g; i++) if (!comp.has(i)) L.present[i] = false
-    const cells: [number, number][] = []
-    for (let cy = 0; cy < g; cy++) for (let cx = 0; cx < g; cx++) if (L.present[cy * g + cx]) cells.push([cx, cy])
-    for (const [cx, cy] of cells) L.rooms.set(roomId(cx, cy), cellRect(L, size, cx, cy))
+    const walk = new Uint8Array(size * size)
+    const r = rng('rooms')
+    const rooms: Room[] = []
+    const bboxes: Rect[] = []
 
-    // Graph: randomized spanning tree over lattice-adjacent rooms, then extra
-    // edges from the leftovers — the CYCLES. Note how many loops we got.
-    const cands: { a: string; b: string; ai: number; bi: number }[] = []
-    for (const [cx, cy] of cells) {
-      if (cx + 1 < g && L.present[cy * g + cx + 1]) cands.push({ a: roomId(cx, cy), b: roomId(cx + 1, cy), ai: cy * g + cx, bi: cy * g + cx + 1 })
-      if (cy + 1 < g && L.present[(cy + 1) * g + cx]) cands.push({ a: roomId(cx, cy), b: roomId(cx, cy + 1), ai: cy * g + cx, bi: (cy + 1) * g + cx })
+    const tryRoom = (primary: Rect, polymorph: boolean): Room | null => {
+      // whole composite must clear other rooms' grown boxes
+      const rects = [primary]
+      if (polymorph) {
+        // 1–2 offset lobes make an L / T / fat-cross silhouette (donjon
+        // "polymorph rooms") — each overlaps the primary so the floor is one mass.
+        const lobes = 1 + (r.chance(0.35) ? 1 : 0)
+        for (let i = 0; i < lobes; i++) {
+          const lw = Math.max(3, Math.round(primary.w * r.range(0.4, 0.8)))
+          const lh = Math.max(3, Math.round(primary.h * r.range(0.4, 0.8)))
+          rects.push({
+            x: Math.round(primary.x + r.range(-lw * 0.6, primary.w - lw * 0.4)),
+            y: Math.round(primary.y + r.range(-lh * 0.6, primary.h - lh * 0.4)),
+            w: lw, h: lh,
+          })
+        }
+      }
+      const bx0 = Math.min(...rects.map((q) => q.x)) - ROOM_GAP
+      const by0 = Math.min(...rects.map((q) => q.y)) - ROOM_GAP
+      const bx1 = Math.max(...rects.map((q) => q.x + q.w)) + ROOM_GAP
+      const by1 = Math.max(...rects.map((q) => q.y + q.h)) + ROOM_GAP
+      if (bx0 < MARGIN || by0 < MARGIN || bx1 > size - MARGIN || by1 > size - MARGIN) return null
+      const box = { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 }
+      if (bboxes.some((b) => b.x < box.x + box.w && box.x < b.x + b.w && b.y < box.y + box.h && box.y < b.y + b.h)) return null
+      const room: Room = { id: `room-${rooms.length}`, primary, rects }
+      rooms.push(room)
+      bboxes.push(box)
+      for (const q of rects) carveRect(walk, size, q)
+      return room
+    }
+
+    // The entry hall first — big enough to swallow the spawn apron, in the
+    // southern third so the delve reads bottom-up.
+    for (let guard = 0; guard < 60 && rooms.length === 0; guard++) {
+      const w = Math.round(r.range(ENTRY_MIN, ENTRY_MIN + 4))
+      const h = Math.round(r.range(ENTRY_MIN, ENTRY_MIN + 4))
+      tryRoom({ x: Math.round(r.range(MARGIN + 1, size - MARGIN - w - 1)), y: Math.round(r.range(MARGIN + 1, size * 0.33)), w, h }, r.chance(0.4))
+    }
+
+    // One guaranteed great hall (donjon's Large/Huge presence — also the
+    // pillar-vault's natural home), anywhere clear of the entry.
+    for (let guard = 0; guard < 60 && rooms.length === 1; guard++) {
+      const w = Math.round(r.range(11, 14)), h = Math.round(r.range(11, 14))
+      tryRoom({
+        x: Math.round(r.range(MARGIN + 1, size - MARGIN - w - 1)),
+        y: Math.round(r.range(MARGIN + 1, size - MARGIN - h - 1)),
+        w, h,
+      }, r.chance(0.5))
+    }
+
+    // Scattered fill: weighted size table, ~60% polymorph.
+    const target = Math.max(6, Math.min(12, Math.round(size / 5)))
+    for (let guard = 0; rooms.length < target && guard < target * 30; guard++) {
+      const pick = r.next()
+      let acc = 0
+      const k = ROOM_KINDS.find((q) => (acc += q.weight) >= pick) ?? ROOM_KINDS[1]
+      let [w, h] = [Math.round(r.range(k.w[0], k.w[1])), Math.round(r.range(k.h[0], k.h[1]))]
+      if (k.kind === 'hall' && r.chance(0.5)) [w, h] = [h, w]   // galleries run either way
+      tryRoom({
+        x: Math.round(r.range(MARGIN + 1, size - MARGIN - w - 1)),
+        y: Math.round(r.range(MARGIN + 1, size - MARGIN - h - 1)),
+        w, h,
+      }, r.chance(0.6))
+    }
+
+    // Graph: candidate edges to each room's 3 nearest neighbours, randomized
+    // spanning tree, plus up to 2 spares — the cycles.
+    const cands: { a: number; b: number; d: number }[] = []
+    for (let i = 0; i < rooms.length; i++) {
+      const near = rooms
+        .map((q, j) => ({ j, d: Math.hypot(center(q.primary).x - center(rooms[i].primary).x, center(q.primary).y - center(rooms[i].primary).y) }))
+        .filter((q) => q.j !== i)
+        .sort((p, q) => p.d - q.d)
+        .slice(0, 3)
+      for (const n of near) {
+        const [a, b] = [Math.min(i, n.j), Math.max(i, n.j)]
+        if (!cands.some((c) => c.a === a && c.b === b)) cands.push({ a, b, d: n.d })
+      }
     }
     const shuf = rng('graph')
     for (let i = cands.length - 1; i > 0; i--) { const j = shuf.int(i + 1); [cands[i], cands[j]] = [cands[j], cands[i]] }
-    const parent = new Map<number, number>()
-    const find = (i: number): number => { const p = parent.get(i) ?? i; if (p === i) return i; const root = find(p); parent.set(i, root); return root }
+    const parent = rooms.map((_, i) => i)
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])))
+    const edges: Plan['edges'] = []
     const spare: typeof cands = []
     for (const c of cands) {
-      if (find(c.ai) === find(c.bi)) { spare.push(c); continue }
-      parent.set(find(c.ai), find(c.bi))
-      L.edges.push({ a: c.a, b: c.b })
+      if (find(c.a) === find(c.b)) { spare.push(c); continue }
+      parent[find(c.a)] = find(c.b)
+      edges.push({ a: rooms[c.a].id, b: rooms[c.b].id })
     }
     let loops = 0
     for (const c of spare) {
       if (loops >= 2) break
-      L.edges.push({ a: c.a, b: c.b })
+      edges.push({ a: rooms[c.a].id, b: rooms[c.b].id })
       loops++
     }
-    note(`${cells.length} rooms, ${L.edges.length} corridors (${loops} loop edge(s), g=${g})`)
 
-    // Entry: the southernmost room nearest the map's south-centre; spawn there
-    // FIRST so isPlaceable's apron protects it for every later pass.
-    const entry = cells.slice().sort((p, q) => p[1] - q[1] || Math.abs(p[0] - (g - 1) / 2) - Math.abs(q[0] - (g - 1) / 2))[0]
-    const er = L.rooms.get(roomId(entry[0], entry[1]))!
-    addPoi(draft, { id: 'spawn', kind: 'spawn', at: { x: er.x + er.w / 2, y: er.y + er.h / 2 }, tags: ['entry'] })
+    // Errant corridors: DOOR to DOOR (each end exits its room's boundary
+    // toward the partner — center-to-center routing carved through half of
+    // every room and merged neighbours into plazas), through 0–2 jittered
+    // waypoints, width 2 (sometimes 3) — narrow, winding, a tactical space of
+    // its own. `doorAt` is the source room's exact exit pinch.
+    const cr = rng('corridors')
+    const corridorCells: number[] = []
+    const roomOf = new Map(rooms.map((q) => [q.id, q]))
+    // Where a ray from the room centre toward `target` exits the primary rect,
+    // pulled one cell inside so the corridor always overlaps the room floor.
+    const doorFor = (room: Room, target: Pt): Pt => {
+      const c = center(room.primary)
+      const dx = target.x - c.x, dy = target.y - c.y
+      const sx = dx !== 0 ? (room.primary.w / 2 - 1) / Math.abs(dx) : Infinity
+      const sy = dy !== 0 ? (room.primary.h / 2 - 1) / Math.abs(dy) : Infinity
+      const s = Math.min(sx, sy, 1)
+      return { x: Math.round(c.x + dx * s), y: Math.round(c.y + dy * s) }
+    }
+    for (const e of edges) {
+      const A = roomOf.get(e.a)!, B = roomOf.get(e.b)!
+      const a = doorFor(A, center(B.primary))
+      const b = doorFor(B, center(A.primary))
+      const pts: Pt[] = [a]
+      const jogs = cr.int(3)   // 0–2 = Straight…Errant
+      for (let j = 1; j <= jogs; j++) {
+        const t = j / (jogs + 1)
+        pts.push({
+          x: Math.round(a.x + (b.x - a.x) * t + cr.range(-size * 0.06, size * 0.06)),
+          y: Math.round(a.y + (b.y - a.y) * t + cr.range(-size * 0.06, size * 0.06)),
+        })
+      }
+      pts.push(b)
+      const wCorr = cr.chance(0.25) ? 3 : 2
+      let cur = pts[0]
+      for (let i = 1; i < pts.length; i++) {
+        const nxt = pts[i]
+        const corner: Pt = cr.chance(0.5) ? { x: nxt.x, y: cur.y } : { x: cur.x, y: nxt.y }
+        for (const [from, to] of [[cur, corner], [corner, nxt]] as const) {
+          carveRect(walk, size, {
+            x: Math.min(from.x, to.x), y: Math.min(from.y, to.y),
+            w: Math.abs(to.x - from.x) + wCorr, h: Math.abs(to.y - from.y) + wCorr,
+          })
+        }
+        cur = nxt
+      }
+      e.doorAt = a
+    }
 
-    // Publish the plan: nodes carry room areas + depth (BFS from entry); edges
-    // are the corridors. Function-first — geometry realizes THIS, next pass.
-    const depth = bfsDepth(L, roomId(entry[0], entry[1]))
-    draft.semantic.nav.nodes = [...L.rooms.entries()].map(([id, rect]) => ({
-      id, at: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, area: rect, depth: depth.get(id) ?? 0,
+    // Dead-end stubs (donjon "Remove Deadends: Some" — we keep a few): short
+    // blind alleys off room edges. Optional vault bait later, ambush pocket now.
+    const stubs = 1 + cr.int(2)
+    for (let s = 0, guard = 0; s < stubs && guard < 20; guard++) {
+      const room = rooms[cr.int(rooms.length)]
+      const p = center(room.primary)
+      const dir = cr.pick([[1, 0], [-1, 0], [0, 1], [0, -1]] as const)
+      const len = 3 + cr.int(4)
+      // start one cell INSIDE the room floor so the stub always connects
+      const start = {
+        x: p.x + dir[0] * (Math.ceil(room.primary.w / 2) - 1),
+        y: p.y + dir[1] * (Math.ceil(room.primary.h / 2) - 1),
+      }
+      const leg: Rect = { x: Math.min(start.x, start.x + dir[0] * len), y: Math.min(start.y, start.y + dir[1] * len), w: Math.abs(dir[0] * len) + 2, h: Math.abs(dir[1] * len) + 2 }
+      if (leg.x < MARGIN || leg.y < MARGIN || leg.x + leg.w > size - MARGIN || leg.y + leg.h > size - MARGIN) continue
+      carveRect(walk, size, leg)
+      s++
+    }
+
+    // Cave-notch erosion: knob single cells of floor into the rock where the
+    // roughness field runs hot — breaks the last straight edges. ADD-only, so
+    // connectivity can't regress.
+    for (let y = MARGIN; y < size - MARGIN; y++) {
+      for (let x = MARGIN; x < size - MARGIN; x++) {
+        if (walk[idx(size, x, y)]) continue
+        const nearFloor = walk[idx(size, x + 1, y)] || walk[idx(size, x - 1, y)] || walk[idx(size, x, y + 1)] || walk[idx(size, x, y - 1)]
+        if (nearFloor && fields.roughness(x, y) > 0.8) walk[idx(size, x, y)] = 1
+      }
+    }
+
+    for (let i = 0; i < size * size; i++) if (walk[i]) corridorCells.push(i)
+    note(`${rooms.length} rooms (${rooms.filter((q) => q.rects.length > 1).length} polymorph), ${edges.length} corridors (${loops} loop edge(s)), ${stubs} stub(s)`)
+
+    // Spawn in the entry hall FIRST (isPlaceable apron guards it from here on).
+    const entry = rooms[0]
+    addPoi(draft, { id: 'spawn', kind: 'spawn', at: center(entry.primary), tags: ['entry'] })
+
+    // Publish the plan on the nav skeleton (function-first: geometry realizes THIS).
+    const depth = bfsDepth(rooms, edges, entry.id)
+    draft.semantic.nav.nodes = rooms.map((q) => ({
+      id: q.id, at: center(q.primary), area: q.primary, depth: depth.get(q.id) ?? 0,
     }))
-    draft.semantic.nav.edges = L.edges.map((e) => ({ ...e, kind: 'corridor' as const }))
-    PLANS.set(draft, L)
+    draft.semantic.nav.edges = edges.map((e) => ({ a: e.a, b: e.b, kind: 'corridor' as const, doorAt: e.doorAt }))
+    PLANS.set(draft, { walk, rooms, edges, corridorCells })
   },
 }
 
-function largestComponent(L: Lattice): Set<number> {
-  const { g } = L
-  const seen = new Set<number>()
-  let best = new Set<number>()
-  for (let s = 0; s < g * g; s++) {
-    if (!L.present[s] || seen.has(s)) continue
-    const comp = new Set<number>([s])
-    const stack = [s]
-    seen.add(s)
-    while (stack.length) {
-      const i = stack.pop()!
-      const cx = i % g, cy = (i / g) | 0
-      for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]] as const) {
-        if (nx < 0 || ny < 0 || nx >= g || ny >= g) continue
-        const j = ny * g + nx
-        if (L.present[j] && !seen.has(j)) { seen.add(j); comp.add(j); stack.push(j) }
-      }
-    }
-    if (comp.size > best.size) best = comp
-  }
-  return best
-}
-
-function bfsDepth(L: Lattice, entry: string): Map<string, number> {
+function bfsDepth(rooms: Room[], edges: Plan['edges'], entry: string): Map<string, number> {
   const adj = new Map<string, string[]>()
-  for (const e of L.edges) {
+  for (const e of edges) {
     adj.set(e.a, [...(adj.get(e.a) ?? []), e.b])
     adj.set(e.b, [...(adj.get(e.b) ?? []), e.a])
   }
@@ -167,76 +279,68 @@ function bfsDepth(L: Lattice, entry: string): Map<string, number> {
   return depth
 }
 
-// ── carve: realize the plan as wall rects with door gaps (§A layer 6) ────────
+// ── carve: cover the SOLID mask with few fat rects (maximal-rect greedy) ─────
+// Free-form floor, rects-forever collision: repeatedly take the largest
+// uncovered-solid rectangle (max-area-under-histogram), then grow it over any
+// solid cells (covered or not) so neighbours merge instead of tiling. Exact:
+// loops until every solid cell is covered — a stray gap would be walkable rock.
 const carvePass = {
   id: 'carve',
-  run({ draft, params, rng, note }: PassCtx) {
-    const L = PLANS.get(draft)
-    if (!L) { note('no layout plan — skipped'); return }
+  run({ draft, params, note }: PassCtx) {
+    const plan = PLANS.get(draft)
+    if (!plan) { note('no layout plan — skipped'); return }
     const { size } = params
-    const { g } = L
-    const doorRng = rng('doors')
-    const hasEdge = (a: string, b: string) => L.edges.some((e) => (e.a === a && e.b === b) || (e.a === b && e.b === a))
-    const isSolid = (cx: number, cy: number) => !L.present[cy * g + cx]
-
-    // Solid cells fill themselves + their surrounding band halves — one rect.
-    for (let cy = 0; cy < g; cy++) {
-      for (let cx = 0; cx < g; cx++) {
-        if (!isSolid(cx, cy)) continue
-        const x0 = cx === 0 ? 0 : L.vx[cx] - L.hv[cx]
-        const x1 = cx === g - 1 ? size : L.vx[cx + 1] + L.hv[cx + 1]
-        const y0 = cy === 0 ? 0 : L.hy[cy] - L.hh[cy]
-        const y1 = cy === g - 1 ? size : L.hy[cy + 1] + L.hh[cy + 1]
-        addBarrier(draft, { x: x0, y: y0, w: x1 - x0, h: y1 - y0, kind: 'wall', material: 'cut-stone' })
+    const solid = plan.walk.map((v) => (v ? 0 : 1))
+    const covered = new Uint8Array(size * size)
+    let emitted = 0
+    const heights = new Int32Array(size)
+    for (let guard = 0; guard < 400; guard++) {
+      // largest rectangle of solid && !covered
+      let best = { area: 0, x: 0, y: 0, w: 0, h: 0 }
+      heights.fill(0)
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const i = idx(size, x, y)
+          heights[x] = solid[i] && !covered[i] ? heights[x] + 1 : 0
+        }
+        // max rect under histogram (classic index-stack scan)
+        const stack: number[] = []
+        for (let x = 0; x <= size; x++) {
+          const h = x === size ? 0 : heights[x]
+          while (stack.length && heights[stack[stack.length - 1]] > h) {
+            const top = stack.pop()!
+            const hh = heights[top]
+            const left = stack.length ? stack[stack.length - 1] + 1 : 0
+            const ww = x - left
+            if (hh * ww > best.area) best = { area: hh * ww, x: left, y: y - hh + 1, w: ww, h: hh }
+          }
+          stack.push(x)
+        }
       }
-    }
-
-    // Internal band segments: one wall rect per (line, cell-row/col), split in
-    // two by a door where the plan has an edge. Segments flanking a solid cell
-    // are already covered by its fill.
-    const emit = (x: number, y: number, w: number, h: number) => {
+      if (best.area === 0) break
+      void guard
+      // grow over ANY solid (merges into the surrounding rock mass)
+      let { x, y, w, h } = best
+      const allSolid = (x0: number, y0: number, x1: number, y1: number) => {
+        for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) if (!solid[idx(size, xx, yy)]) return false
+        return true
+      }
+      while (x > 0 && allSolid(x - 1, y, x, y + h)) { x--; w++ }
+      while (x + w < size && allSolid(x + w, y, x + w + 1, y + h)) w++
+      while (y > 0 && allSolid(x, y - 1, x + w, y)) { y--; h++ }
+      while (y + h < size && allSolid(x, y + h, x + w, y + h + 1)) h++
+      for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) covered[idx(size, xx, yy)] = 1
       addBarrier(draft, { x, y, w, h, kind: 'wall', material: 'cut-stone' })
+      emitted++
+      if (draft.collision.length >= params.maxBarriers) break
     }
-    for (let i = 1; i < g; i++) {
-      for (let row = 0; row < g; row++) {
-        if (isSolid(i - 1, row) || isSolid(i, row)) continue
-        const x = L.vx[i] - L.hv[i], w = L.hv[i] * 2
-        const y0 = row === 0 ? 0 : L.hy[row] - L.hh[row]
-        const y1 = row === g - 1 ? size : L.hy[row + 1] + L.hh[row + 1]
-        if (hasEdge(roomId(i - 1, row), roomId(i, row))) {
-          const room = cellRect(L, size, i, row)
-          const c = room.y + (0.3 + doorRng.next() * 0.4) * room.h
-          if (c - DOOR_W / 2 - y0 > 0.6) emit(x, y0, w, c - DOOR_W / 2 - y0)
-          if (y1 - (c + DOOR_W / 2) > 0.6) emit(x, c + DOOR_W / 2, w, y1 - (c + DOOR_W / 2))
-          markDoor(draft, roomId(i - 1, row), roomId(i, row), { x: L.vx[i], y: c })
-        } else emit(x, y0, w, y1 - y0)
-      }
-    }
-    for (let i = 1; i < g; i++) {
-      for (let col = 0; col < g; col++) {
-        if (isSolid(col, i - 1) || isSolid(col, i)) continue
-        const y = L.hy[i] - L.hh[i], h = L.hh[i] * 2
-        const x0 = col === 0 ? 0 : L.vx[col] - L.hv[col]
-        const x1 = col === g - 1 ? size : L.vx[col + 1] + L.hv[col + 1]
-        if (hasEdge(roomId(col, i - 1), roomId(col, i))) {
-          const room = cellRect(L, size, col, i)
-          const c = room.x + (0.3 + doorRng.next() * 0.4) * room.w
-          if (c - DOOR_W / 2 - x0 > 0.6) emit(x0, y, c - DOOR_W / 2 - x0, h)
-          if (x1 - (c + DOOR_W / 2) > 0.6) emit(c + DOOR_W / 2, y, x1 - (c + DOOR_W / 2), h)
-          markDoor(draft, roomId(col, i - 1), roomId(col, i), { x: c, y: L.hy[i] })
-        } else emit(x0, y, x1 - x0, h)
-      }
-    }
-    note(`${draft.collision.length}/${params.maxBarriers} rects after carve`)
+    let uncovered = 0
+    for (let i = 0; i < solid.length; i++) if (solid[i] && !covered[i]) uncovered++
+    note(`${emitted} wall rects cover the rock (${uncovered} solid cell(s) uncovered)${uncovered ? ' — OVER BUDGET, reroll will judge' : ''}`)
   },
 }
 
-function markDoor(draft: PassCtx['draft'], a: string, b: string, at: { x: number; y: number }) {
-  const e = draft.semantic.nav.edges.find((x) => (x.a === a && x.b === b) || (x.a === b && x.b === a))
-  if (e) e.doorAt = { x: Math.round(at.x * 100) / 100, y: Math.round(at.y * 100) / 100 }
-}
-
-// ── floor: everything is dressed stone; the deepest room goes to dirt (§G) ───
+// ── floor: dressed stone; the deepest room goes to dirt (§G) ─────────────────
 const floorPass = {
   id: 'floor',
   run({ draft }: PassCtx) {
@@ -270,11 +374,12 @@ const stampsPass = {
     const tryPlace = (stamp: StampDef, node: (typeof nodes)[number]) => {
       const a = node.area
       if (!a || used.has(node.id)) return false
-      if (a.w < stamp.w + 2.4 || a.h < stamp.h + 2.4) return false
+      // stamps carry their own interior margins; +1 keeps them off the room wall
+      if (a.w < stamp.w + 1 || a.h < stamp.h + 1) return false
       if (draft.collision.length + stampBarrierCost(stamp) > params.maxBarriers) return false
       const at = {
-        x: a.x + 1.2 + r.next() * (a.w - stamp.w - 2.4),
-        y: a.y + 1.2 + r.next() * (a.h - stamp.h - 2.4),
+        x: a.x + 0.5 + r.next() * (a.w - stamp.w - 1),
+        y: a.y + 0.5 + r.next() * (a.h - stamp.h - 1),
       }
       placeStamp(draft, stamp, at, (params.seed ^ hashString(node.id)) >>> 0)
       used.add(node.id)
@@ -282,14 +387,19 @@ const stampsPass = {
       return true
     }
 
-    // §D "dead-ends worth risking": the barred cell goes in a leaf room off the
-    // critical path (never entry/lair). Pillars favour the deep middle; the
-    // shrine takes any leftover room.
-    const deadEnds = nodes.filter((n) => degree.get(n.id) === 1 && n.id !== entry?.id && n.id !== lair?.id)
-    for (const n of deadEnds) if (tryPlace(STAMP_REGISTRY['barred-cell'], n)) break
+    // §D "dead-ends worth risking": the barred cell prefers a leaf room off
+    // the critical path, falling back to any quiet non-entry/non-lair room
+    // (a barred nook in a big chamber is just as donjon). Pillars favour the
+    // deep middle; the shrine takes any leftover room.
+    const offPath = nodes
+      .filter((n) => n.id !== entry?.id && n.id !== lair?.id)
+      .sort((a, b) => (degree.get(a.id) ?? 0) - (degree.get(b.id) ?? 0))
+    for (const n of offPath) if (tryPlace(STAMP_REGISTRY['barred-cell'], n)) break
+    // deep-middle rooms first; the lair itself is the fallback (a pillared
+    // boss chamber is classic — cover for the fight, prize behind the boss)
     const mids = nodes
-      .filter((n) => (n.depth ?? 0) >= 1 && n.id !== lair?.id)
-      .sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0))
+      .filter((n) => (n.depth ?? 0) >= 1)
+      .sort((a, b) => (a.id === lair?.id ? 1 : 0) - (b.id === lair?.id ? 1 : 0) || (b.depth ?? 0) - (a.depth ?? 0))
     for (const n of mids) if (tryPlace(STAMP_REGISTRY['pillar-vault'], n)) break
     for (const n of nodes.filter((x) => x.id !== entry?.id)) if (tryPlace(STAMP_REGISTRY['shrine'], n)) break
     note(placed.length ? `placed ${placed.join(', ')}` : 'no stamp fit (rooms too small or budget spent)')
@@ -334,10 +444,10 @@ const semanticPass = {
 export const DUNGEON_RECIPE: RecipeDef = {
   id: 'dungeon',
   name: 'Dungeon Floor',
-  description: 'Graph-first dungeon: jittered room lattice → cyclic corridor graph → carved walls + doors → stamps → depth-graded debris → lair.',
+  description: 'Graph-first, donjon-flavored dungeon: scattered polymorph rooms → cyclic corridor graph → errant corridors + dead-end stubs → maximal-rect wall cover → stamps → depth-graded debris → lair.',
   passes: [layoutPass, carvePass, floorPass, stampsPass, scatterPass, semanticPass],
-  // A dungeon is wall-dense by nature: ~20–35 rects. Above the live open-world
-  // pathing envelope (16) on purpose — lab/encounter use only until the pather
-  // perf pass (BACKLOG). Spawn sits in a room, so the apron is small.
-  defaults: { size: 48, maxBarriers: 36, spawnApron: 3.5, themes: ['dungeon'] },
+  // Free-form floors cost more rects (~30–60) than the old lattice — still
+  // lab/encounter only until the pather perf pass (BACKLOG). Spawn sits in the
+  // entry hall, so the apron is room-sized.
+  defaults: { size: 48, maxBarriers: 72, spawnApron: 3.5, themes: ['dungeon'] },
 }
