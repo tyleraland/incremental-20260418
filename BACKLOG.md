@@ -236,7 +236,14 @@ independently shippable; ordering rationale in the guide's roadmap):
   placement feel, store-side rewards (familiarity/xp/loot multipliers off the
   `prize` POI tags), surfacing in Reports/event log ("Shae's perception found a
   hidden door"), party-change re-resolve semantics, field-recipe gates,
-  'key'/'switch' lock kinds (phase 6).
+  'key'/'switch' lock kinds (phase 6). **Biggest unbuilt piece — puzzle-SOLVING
+  as a play flow:** today's gates are a static have-the-tag check; the intended
+  system is discovery (clues noticed as a function of INT/knowledge + time),
+  key logistics (items found on-map unlocking other locks — real sequencing
+  chains), and planning AI (§E objective-channel: the autobattler routes the
+  party through fetch-key-then-open-door). The variant-at-deploy model is the
+  floor this grows under — the Lock vocabulary and validator guarantees are
+  designed to survive play-time resolution when it lands.
 - **Phase 5 — city recipe (road-first) + coherence + naming.** Inter-map
   adjacency/depth gradients as first-class; fill `semantic.premise` (+ place
   names) — scaffolds, never prose; wire to Reports/offline surfaces.

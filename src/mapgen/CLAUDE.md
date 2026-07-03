@@ -144,6 +144,26 @@ different party = a different playable map.
 
 ### What ONLY human play can judge (the open iteration)
 
+0. **Puzzle-SOLVING is not built — today's gates are a static kit check.**
+   The resolved model (variant-at-deploy) asks only "does the party HAVE the
+   tag"; the intended end-state is the party actively working the puzzle, and
+   none of that flow exists yet:
+   - **Discovery**: clues on the map the party must notice before a gate is
+     even known (a perception sweep near the hidden door, a legible rune) —
+     plausibly a function of INT/knowledge stats and time spent, not a boolean.
+   - **Key logistics**: items found on THIS map (or bought/quested elsewhere)
+     that unlock specific locks — find-key-A-behind-puzzle-B chains, which is
+     where lock-and-key becomes actual sequencing instead of a doorman check.
+   - **Planning AI**: the autobattler must route the party THROUGH the chain —
+     "fetch the key from the east room, then open the rune door" — which needs
+     the §E objective-channel AI (AI targets non-combatant objectives; an
+     equippable "work the gate" tactic) layered on the team planner.
+   The bake-time variant model was chosen precisely so this can grow UNDER it:
+   discovery/keys/planning can resolve locks at PLAY time later (via
+   interactable-style state or staged re-bakes) without invalidating the Lock
+   vocabulary, the validator's guarantees, or any placed content. Treat the
+   current model as the floor, not the design.
+
 1. **Frequency & placement feel** — one gate per floor, dead-ends only,
    uniform tag pick: all first guesses. Too rare and kits never matter; too
    common and it's a checklist. Tune in `gatesPass` (`recipes/dungeon.ts`).
