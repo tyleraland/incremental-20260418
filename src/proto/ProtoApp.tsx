@@ -129,7 +129,7 @@ function needsAttention(u: Unit, viewed: Record<string, number>): boolean {
   return u.level > (viewed[u.id] ?? 0)
 }
 
-function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
+function RosterChip({ unit, selected, here, following, compact, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; compact?: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
   const viewed    = useGameStore((s) => s.viewedUnitLevels)
   // Status dot only (deployed / resting / recovering) — HP is read on the Hero
   // tab and the battlefield, so the roster doesn't repeat it.
@@ -151,7 +151,10 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
       onClick={tap}
       title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}${here ? ' · on the viewed battlefield' : ''}${following ? ' · camera is following them' : ''}\nTap to select · double-tap to jump the camera`}
       className={[
-        'relative shrink-0 w-[54px] flex flex-col items-center gap-0.5 px-0.5 py-1 rounded-lg border transition-all',
+        'relative shrink-0 flex flex-col items-center border transition-all',
+        // Compact = the avatar IS the chip (the name lives in the scope bar and
+        // the tooltip); expanded adds the name row.
+        compact ? 'rounded-full p-0.5' : 'w-[54px] gap-0.5 px-0.5 py-1 rounded-lg',
         // Follow is signalled purely by the 🎥 badge below — no extra highlight,
         // so it never competes with the selection ring.
         selected
@@ -172,9 +175,7 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
           <span className="absolute -top-0.5 -left-0.5 w-3 h-3 rounded-full bg-game-gold border border-game-bg text-[7px] font-bold text-black flex items-center justify-center">!</span>
         )}
       </div>
-      <span className="text-[10px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
-      {/* cue: this hero is on the battlefield you're currently viewing */}
-      {here && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-accent" />}
+      {!compact && <span className="text-[10px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>}
     </button>
   )
 }
@@ -320,6 +321,20 @@ export function ProtoApp() {
   // Multi-select: when on, single-tap toggles a hero in/out of the selection for
   // bulk deploy (Location lens). Off = single-select (tap replaces).
   const [multi, setMulti] = useState(false)
+  // Roster density: compact (default) = a slim avatar-only strip for glancing +
+  // switching; expanded adds names, group labels, and the sort/multi tools for
+  // managing. Ephemeral UI state — its own localStorage key, like tab state.
+  const [rosterExpanded, setRosterExpanded] = useState(() => {
+    try { return localStorage.getItem('proto-roster-expanded') === '1' } catch { return false }
+  })
+  function toggleRoster() {
+    setRosterExpanded((v) => {
+      const next = !v
+      try { localStorage.setItem('proto-roster-expanded', next ? '1' : '0') } catch { /* private mode */ }
+      if (!next) setMulti(false)   // multi-select is an expanded-mode tool
+      return next
+    })
+  }
   const groups = useMemo(() => groupRoster(units, sortMode, sortDir, viewed, locations), [units, sortMode, sortDir, viewed, locations])
   // Publish the rail's flat visual order so the scope bar's ‹ › hero cycling
   // steps through heroes in the same order the player sees here.
@@ -504,26 +519,37 @@ export function ProtoApp() {
         </div>
       </header>
 
-      {/* roster rail — always visible, shared selector + sort (grouped) */}
+      {/* roster rail — always pinned (it's the shared selector driving stage +
+          lens), but defaults to a slim avatar-only strip; the ▸ handle expands
+          it into the managing view (names, group labels, sort, multi-select). */}
       <div className="shrink-0 flex items-stretch gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
-        {/* filter (sort) + multi-select share a column to the left of the roster */}
-        <div className="flex flex-col gap-1 shrink-0">
-          <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
-          {/* multi-select toggle — build a selection for bulk deploy */}
-          <button
-            onClick={() => setMulti((v) => !v)}
-            title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
-            aria-label="Toggle multi-select"
-            className={['flex items-center justify-center gap-0.5 w-12 h-6 rounded-md border',
-              multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
-          >
-            <span className="text-[11px] leading-none">{multi ? '✓' : '⊕'}</span>
-            <span className="text-[9px] leading-none">{multi ? selectedUnitIds.length : 'multi'}</span>
-          </button>
-        </div>
+        <button
+          onClick={toggleRoster}
+          title={rosterExpanded ? 'Collapse the roster to a slim strip' : 'Expand the roster — names, groups, sort & multi-select'}
+          aria-label={rosterExpanded ? 'Collapse roster' : 'Expand roster'}
+          className="shrink-0 w-5 self-stretch rounded-md border border-game-border/60 bg-game-bg/40 text-game-text-dim hover:text-game-text flex items-center justify-center"
+        >
+          <span className="text-[10px] leading-none">{rosterExpanded ? '▾' : '▸'}</span>
+        </button>
+        {/* sort + multi-select are managing tools — they ride expanded mode only */}
+        {rosterExpanded && (
+          <div className="flex flex-col gap-1 shrink-0">
+            <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
+            <button
+              onClick={() => setMulti((v) => !v)}
+              title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
+              aria-label="Toggle multi-select"
+              className={['flex items-center justify-center gap-0.5 w-12 h-6 rounded-md border',
+                multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
+            >
+              <span className="text-[11px] leading-none">{multi ? '✓' : '⊕'}</span>
+              <span className="text-[9px] leading-none">{multi ? selectedUnitIds.length : 'multi'}</span>
+            </button>
+          </div>
+        )}
         <div className="relative flex-1 min-w-0">
           <div ref={rosterScrollRef} className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar h-full snap-x scroll-px-1">
-            {groups.map((g) => {
+            {groups.map((g, gi) => {
               const chips = g.units.map((u) => (
                 <RosterChip
                   key={u.id}
@@ -531,6 +557,7 @@ export function ProtoApp() {
                   selected={multi ? selectedUnitIds.includes(u.id) : selectedUnitIds[0] === u.id}
                   here={!!selectedLocId && u.locationId === selectedLocId}
                   following={battleFollowId === u.id}
+                  compact={!rosterExpanded}
                   innerRef={battleFollowId === u.id ? followChipRef : undefined}
                   onSelect={() => selectQuiet(u)}
                   onFocus={() => focusHero(u)}
@@ -539,9 +566,23 @@ export function ProtoApp() {
               // Flat (name/level): no container.
               if (g.label === null) return <div key={g.key} className="flex items-center gap-0.5">{chips}</div>
               const isCurrent = g.locId !== undefined && g.locId === selectedLocId
+              // Compact: no group chrome — a hairline divider between groups and a
+              // soft tint under the currently-viewed location's heroes. The group
+              // name rides the tooltip.
+              if (!rosterExpanded) {
+                return (
+                  <div
+                    key={g.key}
+                    title={g.label ?? undefined}
+                    className={['flex items-center gap-0.5 shrink-0 snap-start rounded-full px-0.5',
+                      isCurrent ? 'bg-game-accent/10' : '',
+                      gi > 0 ? 'border-l border-game-border/60 pl-1.5 rounded-l-none' : ''].join(' ')}
+                  >{chips}</div>
+                )
+              }
               return (
-                <div key={g.key} className={['flex flex-col rounded-lg border px-1 pb-0.5 shrink-0 snap-start',
-                  isCurrent ? 'border-game-accent/50 bg-game-accent/5' : 'border-game-border/50 bg-white/[0.02]'].join(' ')}>
+                <div key={g.key} className={['flex flex-col rounded-lg px-1 pb-0.5 shrink-0 snap-start',
+                  isCurrent ? 'bg-game-accent/10' : 'bg-white/[0.03]'].join(' ')}>
                   <span className="text-[9px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
                     {g.icon} {g.label}
                   </span>
@@ -561,6 +602,7 @@ export function ProtoApp() {
                   selected={multi ? selectedUnitIds.includes(followUnit.id) : selectedUnitIds[0] === followUnit.id}
                   here={!!selectedLocId && followUnit.locationId === selectedLocId}
                   following
+                  compact={!rosterExpanded}
                   onSelect={() => selectQuiet(followUnit)}
                   onFocus={() => focusHero(followUnit)}
                 />
