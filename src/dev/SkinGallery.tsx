@@ -1,10 +1,12 @@
 import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } from '@/render/skins'
 import { TERRAIN_PROPS } from '@/render/props'
 import { propMarkup, scatterArchetype } from '@/render/terrain'
+import { buildingMarkup, BUILDING_LOOKS } from '@/render/buildings'
 import { PAPER_PALETTE } from '@/render/palette'
-import { generateMap, specBarriers, SCATTER_KINDS, type MapSpec } from '@/mapgen'
+import { generateMap, specBarriers, SCATTER_KINDS, type BarrierMaterial, type MapSpec } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
+import { CITY_RECIPE } from '@/mapgen/recipes/city'
 import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
 import type { Barrier } from '@/engine'
 
@@ -51,6 +53,14 @@ const GEN_SPEC: MapSpec = (() => {
 const WASHES = ['meadowWash', 'sandWash', 'waterShallow', 'waterDeep'] as const
 // A representative generated DUNGEON floor (phase 3): rooms, doors, stamps.
 const GEN_DUNGEON: MapSpec = generateMap(DUNGEON_RECIPE, { recipe: 'dungeon', seed: 3, size: 48, themes: ['dungeon'] }).spec
+// The live Prontera bake (phase 5): plaza + gate roads + street-fronting stone/
+// timber buildings — the city tile catalog in situ.
+const GEN_CITY: MapSpec = generateMap(CITY_RECIPE, { recipe: 'city', seed: 'prontera-city', size: 50, themes: ['city'], maxBarriers: 40 }).spec
+// The building-material catalog: one BUILDING_LOOKS entry per BarrierMaterial a
+// city recipe tags. A swatch renders one house of each so the roof/wall/shadow
+// treatment is reviewable next to the in-situ bake.
+const BUILDING_MATS = Object.keys(BUILDING_LOOKS) as BarrierMaterial[]
+const buildingSwatch = (material: BarrierMaterial): string => buildingMarkup({ x: 1.4, y: 1.8, w: 5.2, h: 4 }, material, 42)
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -254,6 +264,28 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
               {terrain({ biome: 'stone', cols: GEN_DUNGEON.cols, rows: GEN_DUNGEON.rows, barriers: specBarriers(GEN_DUNGEON), seed: 3, rim: true, spec: GEN_DUNGEON })}
             </div>
             <span className="text-[9px] text-neutral-500">generated dungeon (recipe: {GEN_DUNGEON.recipe}, seed {GEN_DUNGEON.seed}) — rooms · doors · stamps · lair</span>
+          </div>
+        </Section>
+      )}
+
+      {terrain && (
+        <Section title="city tile catalog (Prontera) — building materials · cobbled streets · flagstone plaza">
+          {BUILDING_MATS.map((mat) => (
+            <div key={mat} className="flex flex-col items-center gap-1">
+              <div className="w-16 h-16 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+                <svg viewBox="0 0 8 8" className="w-14 h-14" aria-hidden dangerouslySetInnerHTML={{ __html: buildingSwatch(mat) }} />
+              </div>
+              <span className="text-[8px] text-neutral-600 leading-none">{mat}</span>
+            </div>
+          ))}
+          <div className="flex flex-col items-center gap-1">
+            <div
+              className="w-64 h-64 rounded border border-neutral-800 relative overflow-hidden"
+              style={{ ...arena.surface, ...(arena.grounds?.plaza ? { backgroundImage: arena.grounds.plaza.image, backgroundSize: `${arena.grounds.plaza.cellsPerTile * 5}px` } : null) }}
+            >
+              {terrain({ biome: 'plaza', cols: GEN_CITY.cols, rows: GEN_CITY.rows, barriers: specBarriers(GEN_CITY), seed: 9, rim: true, spec: GEN_CITY })}
+            </div>
+            <span className="text-[9px] text-neutral-500">generated city (recipe: {GEN_CITY.recipe}, "{GEN_CITY.semantic.name}") — plaza · roads · {GEN_CITY.collision.length} buildings</span>
           </div>
         </Section>
       )}

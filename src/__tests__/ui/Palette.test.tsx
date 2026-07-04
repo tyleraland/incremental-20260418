@@ -12,6 +12,7 @@ import { TERRAIN_PROPS } from '@/render/props'
 import { terrainSvg, type TerrainProps } from '@/render/terrain'
 import { generateMap, specBarriers } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
+import { CITY_RECIPE } from '@/mapgen/recipes/city'
 import { TOKEN_SKINS } from '@/render/skins'
 import type { Biome, BodyShape, Weapon } from '@/render/appearance'
 
@@ -65,6 +66,21 @@ describe('palette contract', () => {
       expect(ROLE_VALUES.has(c) || c === 'none', `spec terrain: rogue paint '${c}'`).toBe(true)
     }
     expect(svg).not.toMatch(/filter|[gG]radient/)
+  })
+
+  it('spec-driven CITY terrain (buildings + paving) also emits only palette colors', () => {
+    const res = generateMap(CITY_RECIPE, { recipe: 'city', seed: 'prontera-city', size: 50, themes: ['city'], maxBarriers: 40 })
+    expect(res.spec.collision.some((c) => c.material === 'cut-stone' || c.material === 'wood')).toBe(true)
+    const svg = terrainSvg({
+      biome: 'plaza', cols: res.spec.cols, rows: res.spec.rows,
+      barriers: specBarriers(res.spec), seed: 9, rim: true, spec: res.spec,
+    })
+    for (const c of paints(svg)) {
+      expect(ROLE_VALUES.has(c) || c === 'none', `city terrain: rogue paint '${c}'`).toBe(true)
+    }
+    expect(svg).not.toMatch(/filter|[gG]radient/)
+    // buildings + paving are pure <path> markup — no clip refs beyond wall/rim
+    expect(svg.replace(/clip-path='url\(#(?:w\d+|rim)\)'/g, '')).not.toContain('url(')
   })
 
   it('paper token bodies use only palette + tone colors, no filters/gradients', () => {

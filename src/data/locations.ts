@@ -5,6 +5,13 @@ import type { Location } from '@/types'
 // there. A compact square so heroes (and the town's NPCs) stay close enough to
 // cross paths. `openWorldCap: 0` keeps the field monster-free.
 const CITY_FIELD_SIZE = 24
+// Prontera is the first location wired to the procedural CITY recipe (road-first
+// town: plaza + gate roads + street-fronting buildings). It needs more room than
+// the compact 24-cell field so the generated streets and building blocks read as
+// a metropolis rather than a courtyard — still well inside the 40-barrier pather
+// envelope (a size-50 bake lands ~12 buildings). Its NPCs stand on the plaza
+// (see src/data/npcs.ts), which the recipe keeps clear of buildings.
+const PRONTERA_SIZE = 50
 
 // World shape: a single chain of cells from Geffen → Prontera → Kanto, with
 // Geffen Dungeon as a separate sub-area branching off Geffen City. We're
@@ -48,7 +55,12 @@ export const INITIAL_LOCATIONS: Location[] = [
     description: 'Capital of the Prontera kingdom — a walled, peaceful city. Its guild halls train Novices on the Path of the Fighter and the Path of the Cleric, and its market square hosts Arnold the Armorsmith and Paul the Weaponsmith.',
     traits: ['city'], monsterIds: [],
     familiarityMax: 100, connections: [],
-    openWorld: true, openWorldCap: 0, openWorldSize: CITY_FIELD_SIZE,
+    openWorld: true, openWorldCap: 0, openWorldSize: PRONTERA_SIZE,
+    // First live procedural CITY: the generator lays down the plaza, gate roads,
+    // and street-fronting stone/timber buildings; render/terrain.tsx draws them
+    // as paper-cutout structures (roofs, depth, shadow) over cobbled streets and
+    // a flagstone plaza. Seed pinned to the id so the town looks the same each visit.
+    mapGen: { recipe: 'city', seed: 'prontera-city' },
     // Sandbox-only: the fixed-round test encounters live in their own dungeon
     // page, entered here (gated to sandbox — see isRegionUnlocked).
     dungeonEntryRegion: 'fixed-encounters',

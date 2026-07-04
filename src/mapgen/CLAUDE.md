@@ -113,14 +113,17 @@ cache, gated in `map-perf-envelope.test.ts`).
    Mechanics are built and machine-gated (see the phase-4 section below);
    frequency, rewards, and surfacing need human play + iteration before any
    live location adopts gates.
-5. 🟡 **City recipe (road-first) + naming/premise — SHIPPED; inter-map
-   coherence open.** `city` bakes plaza/roads/buildings (fuzz gate:
-   `recipe-city.test.ts`); the shared `premise` pass fills `semantic.name` +
-   `semantic.premise` for every recipe (gate: `naming.test.ts`; surfaced in
+5. 🟡 **City recipe (road-first) + naming/premise — SHIPPED, first live city
+   landed; inter-map coherence open.** `city` bakes plaza/roads/buildings (fuzz
+   gate: `recipe-city.test.ts`); the shared `premise` pass fills `semantic.name`
+   + `semantic.premise` for every recipe (gate: `naming.test.ts`; surfaced in
    the lab and both location-detail panels — Reports/offline surfacing is
-   BACKLOG). Still open: §G inter-map adjacency/depth gradients as
-   first-class, a live city location (wants NPC/merchant placement reading
-   the spec's semantic plane), premise → Reports/event-log wiring.
+   BACKLOG). **`prontera-city` is live** (50×50, `mapGen: {recipe:'city'}`):
+   `src/render/buildings.ts` draws the cut-stone/wood wall rects as paper-cutout
+   buildings, `terrain.tsx` paints cobbled/flagstone/dirt washes. Still open: §G
+   inter-map adjacency/depth gradients as first-class, NPC/merchant placement
+   reading the spec's semantic plane (today they're hand-placed on the plaza),
+   premise → Reports/event-log wiring.
 6. **Interactables / dynamic barriers** — the one invariant-breaker (snapshot
    replay must survive it); gated behind everything above (§E).
 

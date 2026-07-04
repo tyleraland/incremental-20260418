@@ -290,10 +290,14 @@ independently shippable; ordering rationale in the guide's roadmap):
   theme-conditioned place name + one-line premise on every recipe's bake,
   reading what the map actually grew — ford/sealed door/lair depth/road
   count; gate `naming.test.ts`). Premise surfaces in the `?mapgen=1` lab and
-  both location-detail panels (proto Lore section + classic Map). Still
-  open: **inter-map adjacency/depth gradients** (§G) as first-class; a LIVE
-  generated city (wants NPC/merchant placement reading the semantic plane —
-  today `createOpenBattleFor` scatters NPCs, not the spec); premise →
+  both location-detail panels (proto Lore section + classic Map). **First live
+  city landed 2026-07: `prontera-city`** (50×50, `mapGen: {recipe:'city'}`) —
+  `src/render/buildings.ts` renders the cut-stone/wood wall rects as
+  paper-cutout buildings and `terrain.tsx` paints the road/plaza/dirt surface
+  washes (see Graphics → *City tile catalog*). Still open: **inter-map
+  adjacency/depth gradients** (§G) as first-class; **NPC/merchant placement
+  reading the semantic plane** (today they're hand-placed on the plaza in
+  `npcs.ts`, not read from the spec's `landmark`/`nav` nodes); premise →
   Reports/offline-summary wiring (§M2 "aim narrative at surfaces we own").
 - **Phase 6 — interactables / dynamic barriers.** The one invariant-breaker
   (BSNAP byte-identical replay must survive it); gated behind everything above.
@@ -1405,6 +1409,27 @@ Next slices, roughly in order:
     ELEMENT, not the formula.
   Still open: blood-splatter decals (a bounded ring buffer of ~64 tiny divs on
   damage events; a canvas layer only if they should accumulate indefinitely).
+
+- **City tile catalog — SHIPPED 2026-07.** The town-asset layer for cities like
+  Prontera, built material-first so procgen plugs straight in. `src/render/
+  buildings.ts` is a CATALOG keyed off `BarrierMaterial` (`BUILDING_LOOKS`:
+  cut-stone → slate-roof stone hall, wood → terracotta-tile timber house, rubble
+  → roofless ruin): `buildingMarkup()` draws a wall rect as a paper-cutout
+  **building** — pitched two-tone roof split by a ridge (hipped, lit slope
+  up-left), a lit wall sliver at the down-right eaves (the "height"), roof
+  courses, and a flat cast shadow. `terrain.tsx` splits a city spec's BUILT-
+  material walls into buildings (natural rock walls stay organic blobs), and
+  paints the surface plane's paved materials — cobbled `road`, flagstone
+  `stone-floor`, packed `dirt`, grass `yard` — as washes plus a seeded stone-
+  mosaic paving overlay (tighter boundary wonk than natural coastlines so
+  streets read engineered). All flat fills / palette roles (Palette.test), all
+  baked into the one terrain data-URI image (zero runtime cost). `prontera-city`
+  is the first live consumer (wired to `recipe: 'city'`, 50×50; merchants moved
+  onto the plaza). Catalog + in-situ bake reviewable in `?gallery=1` → "city
+  tile catalog". Same seam rule as everything else: switch on material/kind,
+  never location ids — so a future procedural city recipe inherits the look.
+  Open polish: window/door detail on larger footprints, per-theme roof palettes
+  (desert/haunted), a landmark POI → a big silhouette (well/statue) on the plaza.
 
 - **SVG asset pipeline & authoring tooling (groundwork for many fast
   iterations).** Findings from landing the paper variants, against the

@@ -58,6 +58,39 @@ export const PAPER_PALETTE = {
   woodDeep:    '#4a3620',
   woodLight:   '#a8703d',   // warm finished wood (bow limbs, handles)
   canvas:      '#8a7a55',
+
+  // ── City building materials (render/buildings.ts) ──────────────────────────
+  // The town-tile catalog: a BUILDING_LOOKS entry keys off a BarrierMaterial, so
+  // any wall rect the city recipe (or a future procgen city) tags gets a themed
+  // structure — pitched two-tone roof, a sliver of lit wall at the eaves, a cast
+  // shadow. Two tones per surface (lit face + shade) so the pitch reads without a
+  // single gradient, exactly like the token cutout.
+  roofRidge:   '#1b140c',   // ridge/eave ink shared by every roof
+
+  // timber house — daub walls, warm terracotta-tile roof
+  plaster:     '#b6a480',
+  plasterDark: '#7d6d4e',
+  roofTile:    '#b5613a',
+  roofTileDark:'#743a22',
+
+  // cut-stone hall — dressed grey stone, cool slate roof
+  stoneWall:     '#9a9280',
+  stoneWallDark: '#605a4a',
+  roofSlate:     '#5d6879',
+  roofSlateDark: '#38404e',
+
+  // ── City ground surfaces (render/terrain.tsx spec consumption) ─────────────
+  // Paved regions of a city's surface plane read as distinct materials over the
+  // biome ground: warm cobbled roads, a pale flagstone plaza, packed-dirt yards.
+  // Two tones each drive a seeded stone-mosaic texture (flat marks, no gradient).
+  roadPave:    '#565040',   // cobbled street — a warm grey that reads paved, not muddy
+  roadPaveLit: '#6f6753',   // lit cobble stones dabbed over the base
+  roadSeam:    '#221e15',
+  flagstone:   '#5a5039',   // plaza paving slabs
+  flagstoneLit:'#6d6247',
+  flagSeam:    '#231f16',
+  dirtPath:    '#3f2f1d',   // packed-dirt lot (browner + dimmer than the streets)
+  yardWash:    '#26331a',   // grass yards/commons between the streets
 } as const
 
 export type PaperRole = keyof typeof PAPER_PALETTE

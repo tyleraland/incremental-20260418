@@ -13,6 +13,7 @@ import { buildTerrainModel, PaperTerrain, TERRAIN_BUILD_PROBE, type TerrainProps
 import { PAPER_PALETTE } from '@/render/palette'
 import { generateMap, specBarriers, type MapSpec } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
+import { CITY_RECIPE } from '@/mapgen/recipes/city'
 import { eu } from '../engine/helpers'
 import type { Location } from '@/types'
 
@@ -158,6 +159,38 @@ describe('terrain consumes a MapSpec (§mapgen phase 2)', () => {
     // spec-less render of the same geometry differs (washes only exist with a spec)
     const { container: plain } = render(<PaperTerrain {...{ ...props, spec: undefined }} />)
     expect((plain.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage).not.toBe(bg)
+  })
+})
+
+describe('terrain consumes a CITY MapSpec (§city buildings + paving)', () => {
+  const spec = generateMap(CITY_RECIPE, { recipe: 'city', seed: 'prontera-city', size: 50, themes: ['city'], maxBarriers: 40 }).spec
+  const props: TerrainProps = {
+    biome: 'plaza', cols: spec.cols, rows: spec.rows,
+    barriers: specBarriers(spec), seed: 9, rim: true, spec,
+  }
+
+  it('renders BUILT-material walls as buildings, not organic rock blobs', () => {
+    const buildings = spec.collision.filter((c) => c.kind === 'wall' && (c.material === 'cut-stone' || c.material === 'wood'))
+    expect(buildings.length).toBeGreaterThan(4)
+    const m = buildTerrainModel(props)
+    // every built wall becomes a building; none leak into the blob-wall layer
+    expect(m.buildings.length).toBe(buildings.length)
+    expect(m.walls.length).toBe(0)
+    // paved streets + plaza produce a paving mosaic overlay
+    expect(m.paving.length).toBeGreaterThan(0)
+  })
+
+  it('is deterministic (no Math.random) and keys the memo on the spec', () => {
+    const rng = vi.spyOn(Math, 'random')
+    const a = buildTerrainModel(props)
+    const b = buildTerrainModel({ ...props })
+    expect(rng).not.toHaveBeenCalled()
+    rng.mockRestore()
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+    const { container } = render(<PaperTerrain {...props} />)
+    expect(container.querySelector('svg')).toBeNull()                       // still one baked image
+    const bg = (container.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage
+    expect(bg).toContain('data:image/svg+xml')
   })
 })
 

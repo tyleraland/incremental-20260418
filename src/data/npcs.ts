@@ -19,19 +19,20 @@ export interface NpcDef {
   merchantId?: string      // their shop in the Market (MERCHANT_REGISTRY), if any
 }
 
-// Arnold and Paul keep shop side-by-side in Prontera's market square (a few cells
-// apart, near the field centre so a wandering hero passes them). Coordinates are
-// for the city's compact open-world field (see CITY_FIELD_SIZE in locations.ts).
+// Arnold and Paul keep shop side-by-side on Prontera's plaza (the flagstone
+// market square at the field centre, kept clear of buildings by the city recipe),
+// a few cells apart so a hero forming up passes both. Coordinates are for the
+// PRONTERA_SIZE field (see locations.ts): centre ≈ (25, 25), flanking the well.
 export const NPC_REGISTRY: Record<string, NpcDef> = {
   'arnold-armorsmith': {
     id: 'arnold-armorsmith', name: 'Arnold the Armorsmith', icon: '🛡️',
     blurb: 'A burly smith hammering plate at his stall. Always after fresh hides.',
-    locationId: 'prontera-city', pos: { x: 10, y: 17 }, merchantId: 'arnold-armorsmith',
+    locationId: 'prontera-city', pos: { x: 22, y: 25 }, merchantId: 'arnold-armorsmith',
   },
   'paul-weaponsmith': {
     id: 'paul-weaponsmith', name: 'Paul the Weaponsmith', icon: '⚔️',
     blurb: 'A wiry bladesmith at the next stall over. Pays for fangs and talons.',
-    locationId: 'prontera-city', pos: { x: 13, y: 17 }, merchantId: 'paul-weaponsmith',
+    locationId: 'prontera-city', pos: { x: 28, y: 25 }, merchantId: 'paul-weaponsmith',
   },
 }
 

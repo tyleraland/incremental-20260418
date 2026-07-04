@@ -1,10 +1,11 @@
 import { memo, useMemo } from 'react'
 import type { Barrier } from '@/engine'
-import type { MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
+import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
 import { SURFACE_MATERIALS } from '@/mapgen'
 import type { Biome } from '@/render/appearance'
-import { PAPER_PALETTE as P } from '@/render/palette'
+import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
 import { TERRAIN_PROPS, type PropDef } from '@/render/props'
+import { buildingMarkup, isBuildingMaterial } from '@/render/buildings'
 import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, maskLoops, decimate, type Pt, type Rect } from '@/render/authoring'
 
 // ── Organic terrain layer ────────────────────────────────────────────────────
@@ -73,9 +74,17 @@ export interface TerrainModel {
   mottles: { d: string; fill: string }[]
   // §mapgen surface washes, paint order as listed (meadow under sand under water)
   surface: { d: string; fill: string; opacity: number; shore?: boolean }[]
+  // §city paving texture: a seeded stone-mosaic seam overlay per paved material
+  // (cobbled roads, flagstone plaza), painted over its wash — the ground "varied
+  // texture" read. Empty unless the spec is a city.
+  paving: { d: string; stroke: PaperRole; sw: number; opacity: number }[]
   props: { v: number; x: number; y: number; s: number; rot: number; flip: boolean }[]
   cliffs: { d: string; fill: string; edge: string }[]
   walls: { d: string; multi: boolean }[]
+  // §city buildings: BUILT-material wall rects (cut-stone/wood/rubble) rendered as
+  // pitched-roof cutout structures (render/buildings.ts) instead of rock blobs.
+  // Rects are in svg coords (y already flipped); the markup is emitted in terrainSvg.
+  buildings: { x: number; y: number; w: number; h: number; material: BarrierMaterial; seed: number }[]
   rim: { d: string; inner: string } | null
 }
 
@@ -85,14 +94,23 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
   const { cols, rows, seed, spec } = p
   const toSvg = (r: Rect): Rect => ({ x: r.x, y: rows - r.y - r.h, w: r.w, h: r.h })
   // With a spec, collision paints MATERIAL-aware from the collision plane:
-  // deep-water rects are engine-only (the lake wash below is their visual) and
-  // hedges paint foliage, not stone. Without one, kind is all we know.
+  // deep-water rects are engine-only (the lake wash below is their visual),
+  // hedges paint foliage not stone, and BUILT materials (cut-stone/wood/rubble)
+  // become city buildings (below) rather than organic rock blobs. Without a spec,
+  // kind is all we know — everything's a natural wall/cliff.
+  const buildingRects = spec ? spec.collision.filter((r) => r.kind === 'wall' && isBuildingMaterial(r.material)) : []
   const wallRects: Rect[] = spec
-    ? spec.collision.filter((r) => r.kind === 'wall')
+    ? spec.collision.filter((r) => r.kind === 'wall' && !isBuildingMaterial(r.material))
     : p.barriers.filter((b) => (b.kind ?? 'wall') === 'wall')
   const cliffSrc = spec
     ? spec.collision.filter((r) => r.kind === 'cliff' && r.material !== 'deep-water')
     : p.barriers.filter((b) => b.kind === 'cliff')
+  // City buildings: keep the collision rect (material carried) in svg coords; the
+  // markup is built in terrainSvg. Seeded per rect so a house looks stable.
+  const buildings: TerrainModel['buildings'] = buildingRects.map((r, i) => {
+    const s = toSvg(r)
+    return { x: s.x, y: s.y, w: s.w, h: s.h, material: r.material, seed: seed + 8100 + i * 613 }
+  })
 
   // walls: cluster rects whose overhang-expanded boxes touch, then paint each
   // cluster as ONE multi-subpath blob (same fill → the union reads as one rock).
@@ -133,6 +151,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
   // evenodd so islands in a lake render). Shallow water is painted under deep
   // (the deep mask is a subset), giving the two-band read for free.
   const surface: TerrainModel['surface'] = []
+  const paving: TerrainModel['paving'] = []
   if (spec) {
     const mi = (m: SurfaceMaterial) => SURFACE_MATERIALS.indexOf(m)
     const g = spec.surface.grid
@@ -143,16 +162,66 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
         .join('')
     }
     const meadow = mi('meadow'), sand = mi('sand'), shallow = mi('shallow-water'), deep = mi('deep-water')
-    const bands: { want: (v: number) => boolean; fill: string; opacity: number; shore?: boolean }[] = [
-      { want: (v) => v === meadow, fill: P.meadowWash, opacity: 0.5 },
-      { want: (v) => v === sand, fill: P.sandWash, opacity: 0.6 },
-      { want: (v) => v === shallow || v === deep, fill: P.waterShallow, opacity: 0.85, shore: true },
-      { want: (v) => v === deep, fill: P.waterDeep, opacity: 0.9 },
+    // A city's ground reads as paved streets + a flagstone plaza + grass yards
+    // and packed-dirt lots between the buildings — gated on the city recipe so a
+    // field/dungeon spec is byte-identical to before (road/stone-floor never
+    // appear there; grass is the base tile, not a wash, everywhere else). Paved
+    // regions use a TIGHTER boundary wonk (`amp`) so streets keep their
+    // engineered shape instead of meandering like a natural coastline.
+    const isCity = spec.recipe === 'city'
+    const grass = mi('grass'), dirt = mi('dirt'), road = mi('road'), floor = mi('stone-floor')
+    const NAT = 0.3, PAVED = 0.14   // organic vs. built boundary jitter
+    const bands: { want: (v: number) => boolean; fill: string; opacity: number; amp: number; shore?: boolean }[] = [
+      ...(isCity ? [{ want: (v: number) => v === grass, fill: P.yardWash, opacity: 0.5, amp: NAT }] : []),
+      { want: (v) => v === meadow, fill: P.meadowWash, opacity: 0.5, amp: NAT },
+      { want: (v) => v === sand, fill: P.sandWash, opacity: 0.6, amp: NAT },
+      ...(isCity ? [
+        { want: (v: number) => v === dirt, fill: P.dirtPath, opacity: 0.6, amp: 0.22 },
+        { want: (v: number) => v === road, fill: P.roadPave, opacity: 0.96, amp: PAVED },
+        { want: (v: number) => v === floor, fill: P.flagstone, opacity: 0.96, amp: PAVED },
+      ] : []),
+      { want: (v) => v === shallow || v === deep, fill: P.waterShallow, opacity: 0.85, amp: NAT, shore: true },
+      { want: (v) => v === deep, fill: P.waterDeep, opacity: 0.9, amp: NAT },
     ]
     bands.forEach((b, i) => {
-      const d = pathFor(b.want, 5200 + i * 977, 0.3)
+      const d = pathFor(b.want, 5200 + i * 977, b.amp)
       if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
     })
+
+    // Paving texture: a seeded stone mosaic over the paved cells. Roads get
+    // irregular cobble dashes; the plaza gets a coarse flagstone seam grid.
+    // Cheap & bounded (one pass over the paved cells only) and baked into the
+    // single terrain image, so it costs nothing at runtime.
+    if (isCity) {
+      let cobble = ''
+      let flags = ''
+      for (let y = 0; y < spec.rows; y++) {
+        for (let x = 0; x < spec.cols; x++) {
+          const v = g[y * spec.cols + x]
+          const cx = x + 0.5, sy = rows - y - 0.5   // cell centre in svg coords
+          if (v === road) {
+            // 1–2 short round-capped dabs per cell → packed cobbles (lit stone)
+            const s = seed + x * 73 + y * 179
+            const dabs = hash01(s) < 0.35 ? 2 : 1
+            for (let k = 0; k < dabs; k++) {
+              const t = s + k * 991
+              const len = 0.16 + hash01(t + 1) * 0.14
+              const ang = hash01(t + 2) * Math.PI
+              const ux = Math.cos(ang) * len * 0.5, uy = Math.sin(ang) * len * 0.5
+              const jx = (hash01(t + 3) - 0.5) * 0.62, jy = (hash01(t + 4) - 0.5) * 0.62
+              cobble += `M${r2(cx + jx - ux)} ${r2(sy + jy - uy)}L${r2(cx + jx + ux)} ${r2(sy + jy + uy)}`
+            }
+          } else if (v === floor) {
+            // slab seams on a coarse lattice → ~2-cell flagstones, lightly jittered
+            const jt = (hash01(seed + x * 11 + y * 17) - 0.5) * 0.14
+            if (x % 2 === 0) flags += `M${r2(x + jt)} ${r2(rows - y)}L${r2(x + jt)} ${r2(rows - y - 1)}`
+            if (y % 2 === 0) flags += `M${r2(x)} ${r2(rows - y + jt)}L${r2(x + 1)} ${r2(rows - y + jt)}`
+          }
+        }
+      }
+      if (cobble) paving.push({ d: cobble, stroke: 'roadPaveLit', sw: 0.2, opacity: 0.5 })
+      if (flags) paving.push({ d: flags, stroke: 'flagSeam', sw: 0.08, opacity: 0.55 })
+    }
   }
 
   // rim: the map-edge band as an evenodd ring — a crisp outer rect (the real
@@ -217,7 +286,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     })
   }
 
-  return { mottles, surface, props, cliffs, walls, rim }
+  return { mottles, surface, paving, props, cliffs, walls, buildings, rim }
 }
 
 // ScatterKind → biome prop ARCHETYPE (base id; seeded variants ride along).
@@ -289,6 +358,10 @@ export function terrainSvg(p: TerrainProps): string {
       '/>',
     )
   }
+  // §city paving mosaic: seam strokes over the paved washes (cobble / flagstone)
+  for (const pv of m.paving) {
+    parts.push(`<path d='${pv.d}' fill='none' stroke='${P[pv.stroke]}' stroke-width='${pv.sw}' stroke-opacity='${pv.opacity}' stroke-linecap='round'/>`)
+  }
   for (const pl of m.props) {
     const def = TERRAIN_PROPS[p.biome][pl.v]
     parts.push(`<g transform='translate(${pl.x} ${pl.y}) rotate(${pl.rot}) scale(${pl.flip ? -pl.s : pl.s} ${pl.s})'>${propMarkup(def)}</g>`)
@@ -306,6 +379,11 @@ export function terrainSvg(p: TerrainProps): string {
       `<g clip-path='url(#w${i})'><path d='${w.d}' fill='${P.wallTop}' transform='${LIT_NUDGE}'/></g>`,
     )
   })
+  // §city buildings above the natural walls: pitched-roof cutout structures
+  // (render/buildings.ts). Each carries its own fills/shadow — a dumb emit here.
+  for (const b of m.buildings) {
+    parts.push(buildingMarkup({ x: b.x, y: b.y, w: b.w, h: b.h }, b.material, b.seed))
+  }
   if (m.rim) {
     parts.push(
       `<clipPath id='rim'><path d='${m.rim.d}' clip-rule='evenodd'/></clipPath>` +

@@ -10,10 +10,10 @@
 //
 // Cities in the game are peaceful open-world fields (openWorldCap 0, NPC
 // merchants) — the recipe generates the STAGE for that, not the population
-// (NPCs/spawns are store-owned, out of generator scope). Not live on any
-// location yet; the live pather envelope (adapter pins maxBarriers 40 since
-// the 2026-07 perf pass) now fits a full-density town, and a tighter budget
-// just starves it to fewer houses.
+// (NPCs/spawns are store-owned, out of generator scope). LIVE on `prontera-city`
+// (50×50) since 2026-07: render/buildings.ts draws the cut-stone/wood wall rects
+// as paper-cutout buildings. The live pather envelope (adapter pins maxBarriers
+// 40) fits a full-density town; a tighter budget just starves it to fewer houses.
 
 import type { Pt } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'

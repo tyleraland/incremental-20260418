@@ -34,7 +34,8 @@ Polish comes from consistency, not path complexity:
 | `palette.ts` | the color vocabulary: `PAPER_TONE` (token tones) + `PAPER_PALETTE` (~20 material roles) |
 | `authoring.ts` | seeded geometry: `wonk` / `blobPath` / `polyPath` / `rectOutline` / `roughCircle` / `scatter` / `hash01` / `hashString` |
 | `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor) |
-| `terrain.tsx` | the renderer: per-location terrain model + baked data-URI emitter, `propMarkup()` (the one PropDef→svg translation); §mapgen spec consumption (surface washes, scatter-plane props, material-aware collision paint) |
+| `buildings.ts` | the CITY tile catalog: `BUILDING_LOOKS` keyed off `BarrierMaterial` (cut-stone/wood/rubble) + `buildingMarkup()` — a wall rect → pitched-roof cutout (two-tone roof, lit wall sliver, cast shadow). Procgen plugs in by tagging a rect's material; switches on material, never ids |
+| `terrain.tsx` | the renderer: per-location terrain model + baked data-URI emitter, `propMarkup()` (the one PropDef→svg translation); §mapgen spec consumption (surface washes incl. city road/plaza/dirt + a seeded paving mosaic, scatter-plane props, material-aware collision paint — BUILT-material walls become `buildings.ts` structures, natural walls stay organic blobs) |
 | `appearance.ts` | entity → visual resolver (glyph/tone/bodyShape/weapon/biome) — the ONLY id→visual translation |
 | `skins.tsx` | token bodies (`TokenBodyProps` contract), `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |
 
@@ -80,6 +81,12 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 - **Biome:** extend `Biome` + `biomeForLocation` in `appearance.ts`, add a
   ground tile in `skins.tsx`, mottle shades in `terrain.tsx`
   (`MOTTLE_SHADES`), and a prop set in `props.ts`.
+- **City building material / ground:** add a `BUILDING_LOOKS` entry in
+  `buildings.ts` (roof lit/shade + wall + texture; `roofed:false` = a ruin) and,
+  if it's a walkable surface, a wash + optional paving texture in `terrain.tsx`'s
+  city `bands`/paving block. Both key off the mapgen `BarrierMaterial`/
+  `SurfaceMaterial` vocab — a procgen city recipe that emits the material gets the
+  look for free. Review in `?gallery=1` → "city tile catalog".
 - **Whole new skin:** a new `TOKEN_SKINS` body + `ARENA_SKINS`/`FX_SKINS`
   entries. Read the contract comment atop `skins.tsx` first (memo'd bodies,
   quantized props, lean element counts).
