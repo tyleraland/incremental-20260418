@@ -73,10 +73,10 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 
 ## Adding a body, weapon, or biome
 
-- **Monster silhouette / class weapon:** add the shape in `skins.tsx`
-  (`PAPER_BODY_LAYERS` / `WEAPON_SHAPES`, palette roles only), then map ids in
-  `appearance.ts` (`MONSTER_SHAPE` / `CLASS_WEAPON`). Skins switch on
-  `bodyShape`/`weapon` — never on entity ids.
+- **Monster silhouette / class weapon:** add the part stack in `skins.tsx`
+  (`PAPER_BODIES` / `WEAPON_SHAPES`, palette roles only — see the runbook
+  below), then map ids in `appearance.ts` (`MONSTER_SHAPE` / `CLASS_WEAPON`).
+  Skins switch on `bodyShape`/`weapon` — never on entity ids.
 - **Biome:** extend `Biome` + `biomeForLocation` in `appearance.ts`, add a
   ground tile in `skins.tsx`, mottle shades in `terrain.tsx`
   (`MOTTLE_SHADES`), and a prop set in `props.ts`.
@@ -86,27 +86,36 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 
 ### Monster-body runbook (reference sprite → layered cutout)
 
-Five rules that keep every new creature in the language:
+A creature is an ordered **stack of parts** in `PAPER_BODIES[shape]`, drawn
+back-to-front (`skins.tsx`). Each part is either a `plate` (a full two-tone
+cutout — dark base+outline + a lit copy nudged up-left; `shadow: true` casts a
+flat drop shadow onto the parts below) or an `accent` (ONE flat fill — eyes,
+teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
+`text` or a palette role, `stroke: true` outlines it). Five rules:
 
 1. Redraw the reference as a **top-down** silhouette facing **+x** (nose right)
-   in the 100×100 box, split into an `under` body/limbs plate and an `over`
-   head/shell/core plate in `PAPER_BODY_LAYERS`, and map its id in
-   `MONSTER_SHAPE` — the shape carries heading, so no side views and no id
-   checks anywhere downstream.
+   in the 100×100 box, decomposed into the few parts that carry the read (the
+   wolf: tail plume · torso · spiky mane ruff · eared head · nose), and map its
+   id in `MONSTER_SHAPE` — the shape carries heading, so no side views and no id
+   checks anywhere downstream. Monsters are **silhouette-only** (no text label),
+   so the parts must do all the identifying.
 2. Paint only with palette **roles**/tone fields (no hex, no filters, no
-   gradients — `Palette.test.tsx` enforces it), give the `over` plate a
-   lit-scale origin `c` at its own centre, and add **at most one** extra
-   `BODY_DETAILS` primitive (a shell spiral, a muzzle) when the plates alone
-   don't read.
-3. Set a small `lean` (±4–6 units) on whichever plate should lead or lag in
-   motion, then trust the renderer to do the rest — cast the over-plate's flat
-   drop shadow, keep the lit nudge up-left in screen space, rotate the whole
-   token to facing, and concat both plates for the KO crumple.
-4. Stay lean — **~5 flat paths per token** — because every element multiplies
-   across 50+ gliding tokens and the memo only holds if the body receives
-   primitives (no live engine objects, no per-token gradients).
-5. Iterate in a scratchpad Playwright preview (a rotation grid, idle vs
-   moving), then verify with `?gallery=1` / `npm run gallery-shot` for the
+   gradients — `Palette.test.tsx` enforces it); give each `plate` a lit-scale
+   origin `c` at its own centre; reach for `accent` parts (a face, teeth) only
+   when the plates alone don't read.
+3. Set a small `lean` (±4–8 units) on whichever parts should lead or lag in
+   motion (head leads, tail lags), then trust the renderer — it casts the
+   `shadow` plates' flat drop shadow, keeps the lit nudge up-left in screen
+   space, rotates the whole token to facing, and concats the `plate`s for the KO
+   crumple (accents drop).
+4. Stay lean — **a handful of flat paths per token** (a `plate` is 2–3 paths, an
+   `accent` is 1) — because every element multiplies across 50+ gliding tokens
+   and the memo only holds if the body receives primitives (no live engine
+   objects, no per-token gradients). Dropping the monster text label pays for a
+   couple of extra parts (measured net-flat on `skin-ab`).
+5. Iterate in a scratchpad Playwright preview (a rotation grid, idle vs moving;
+   inject CSS to hide `[data-skin="paper"] > span` so labels don't cover the
+   silhouette), then verify with `?gallery=1` / `npm run gallery-shot` for the
    whole-language read and `npm run skin-ab` for the fps delta before you commit.
 
 ## Perf contracts (why the weird constraints)

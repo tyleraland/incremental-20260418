@@ -722,6 +722,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
             selected={selected}
             facingDeg={facingDeg}
             moving={c.alive && !!c.moving}
+            creature={c.team === 'enemy'}
             dims={chipDims(cam, appearance.scale)}
           />
         </div>
@@ -1672,6 +1673,7 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer, skin, bodyShape =
         alive
         selected={false}
         facingDeg={isPlayer ? -90 : 90}
+        creature={!isPlayer}
         dims={chipDims(cam)}
       />
     </div>
