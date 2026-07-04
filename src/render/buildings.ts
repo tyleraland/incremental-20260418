@@ -19,7 +19,7 @@
 
 import type { BarrierMaterial } from '@/mapgen'
 import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
-import { hash01, polyPath, wonk, type Pt, type Rect } from '@/render/authoring'
+import { hash01, polyPath, type Pt, type Rect } from '@/render/authoring'
 
 // Roof texture family — flat strokes over each slope so a bare two-tone reads as
 // staggered shingles (Ragnarok-Prontera townhouse), dressed slate, or bare ruin.
@@ -57,23 +57,19 @@ export function isBuildingMaterial(m: BarrierMaterial | undefined): boolean {
 const LIFT = 0.42
 // Cast shadow offset (down-right, away from the light).
 const SHADOW = { dx: 0.5, dy: 0.62 }
-// Corner jitter — small: houses read RECTANGULAR, just not machine-sterile.
-const WONK = 0.09
 
 const f = (v: number) => String(Math.round(v * 100) / 100)
 const poly = (pts: Pt[]) => polyPath(pts)
 
-// A wonked rect outline (4 corners only — buildings stay boxy). Seeded so a
-// building looks the same every visit.
-function corners(r: Rect, seed: number, amp = WONK): [Pt, Pt, Pt, Pt] {
-  const raw: Pt[] = [
+// The building footprint: exact rectangle corners — straight walls, right
+// angles. A building is a crisp box; only the ROOF carries angles (the pitch).
+function corners(r: Rect): [Pt, Pt, Pt, Pt] {
+  return [
     { x: r.x, y: r.y },
     { x: r.x + r.w, y: r.y },
     { x: r.x + r.w, y: r.y + r.h },
     { x: r.x, y: r.y + r.h },
   ]
-  const w = wonk(raw, seed, amp)
-  return [w[0], w[1], w[2], w[3]]
 }
 
 const shift = (p: Pt, dx: number, dy: number): Pt => ({ x: p.x + dx, y: p.y + dy })
@@ -130,7 +126,7 @@ function studs(a: Pt, b: Pt, inward: Pt, n: number, role: PaperRole): string {
 // terrain's single data-URI image, so the element count is free at runtime.
 export function buildingMarkup(r: Rect, material: BarrierMaterial, seed: number): string {
   const look = BUILDING_LOOKS[material] ?? BUILDING_LOOKS['cut-stone']!
-  const [tl, tr, br, bl] = corners(r, seed)
+  const [tl, tr, br, bl] = corners(r)
 
   // cast shadow — the footprint pushed down-right, flat and translucent
   const sh = [tl, tr, br, bl].map((p) => shift(p, SHADOW.dx, SHADOW.dy))
