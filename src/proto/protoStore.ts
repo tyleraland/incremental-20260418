@@ -456,6 +456,22 @@ interface ProtoState {
   // Bumped to dismiss an open battlefield detail card (e.g. a roster tap, which
   // also selects the hero) — the card isn't a modal that traps the roster.
   battleCardDismiss: number
+  // The roster rail's current visual order (flat, post-sort/group), published by
+  // ProtoApp so the scope bar's ‹ › hero cycling steps in the same order the
+  // player sees in the rail.
+  rosterOrder: string[]
+  setRosterOrder: (ids: string[]) => void
+  // §orchestration: which scope the command bar + lens tabs act on. The roster
+  // controls hero selection (tap a chip → 'hero'); tapping a location (map node
+  // or a roster group label) flips to 'location'. One rule, no competing bars.
+  scopeFocus: 'hero' | 'location'
+  setScopeFocus: (f: 'hero' | 'location') => void
+  // §orchestration: the two deploy flows share one confirm surface. Location-first
+  // opens a hero picker for a site; hero-first opens a destination picker for the
+  // current selection.
+  deploySheet: { kind: 'pick-heroes'; locId: string } | { kind: 'pick-location'; unitIds: string[] } | null
+  openDeploySheet: (s: { kind: 'pick-heroes'; locId: string } | { kind: 'pick-location'; unitIds: string[] }) => void
+  closeDeploySheet: () => void
   // Stage overlay (top half = details/research, shown in front of the
   // battlefield): the skill tree for now; item details / codex later.
   stageOverlay: StageOverlay | null
@@ -596,6 +612,15 @@ export const useProtoStore = create<ProtoState>((set) => ({
   requestLocationTab: () => set((s) => ({ locationTabRequest: s.locationTabRequest + 1 })),
   requestBattleInspect: (unitId) => set((s) => ({ battleInspectRequest: { unitId, nonce: (s.battleInspectRequest?.nonce ?? 0) + 1 } })),
   dismissBattleCard: () => set((s) => ({ battleCardDismiss: s.battleCardDismiss + 1 })),
+  rosterOrder: [],
+  setRosterOrder: (ids) => set((s) => (
+    s.rosterOrder.length === ids.length && s.rosterOrder.every((id, i) => id === ids[i]) ? s : { rosterOrder: ids }
+  )),
+  scopeFocus: 'hero',
+  setScopeFocus: (f) => set((s) => (s.scopeFocus === f ? s : { scopeFocus: f })),
+  deploySheet: null,
+  openDeploySheet: (sheet) => set({ deploySheet: sheet }),
+  closeDeploySheet: () => set({ deploySheet: null }),
   openStageOverlay: (o) => set({ stageOverlay: o }),
   closeStageOverlay: () => set({ stageOverlay: null }),
   buyUpgrade: (locId, upId, cost, max) => set((s) => {

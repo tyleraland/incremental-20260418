@@ -20,7 +20,7 @@ export function StageOverlay({ overlay, onClose }: { overlay: Overlay; onClose: 
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <div className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border bg-game-surface">
         <span className="text-xs font-semibold text-game-text">{overlay.kind === 'skill-tree' ? 'Skill tree' : 'Details'}</span>
-        <button onClick={onClose} className="ml-auto text-[11px] px-2.5 py-1 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5">✕ Close</button>
+        <button onClick={onClose} aria-label="Close" className="ml-auto w-8 h-8 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {overlay.kind === 'skill-tree' && <SkillTree unitId={overlay.unitId} />}

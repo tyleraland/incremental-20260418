@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useGameStore, getInitials, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
+import { useGameStore, getInitials, getDerivedStats, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
+import { DeploySheetHost } from './DeploySheet'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens, PartyDoctrine } from './ProtoLens'
 import { useExpeditionDriver } from './expeditionDriver'
@@ -38,20 +39,31 @@ function sortUnits(units: Unit[], mode: SortMode, dir: SortDir, viewed: Record<s
   return dir === 'desc' ? arr.reverse() : arr
 }
 
-// Grouped roster: area / class / to-do bucket heroes; name/level stay flat. Each
-// group renders in a light container so same-area (etc.) heroes read as a set.
+// Grouped roster: assignment / class / to-do bucket heroes; name/level stay flat.
+// Each group renders in a light container so same-area (etc.) heroes read as a set.
 interface RGroup { key: string; label: string | null; icon: string; units: Unit[]; locId?: string | null }
-function groupRoster(units: Unit[], mode: SortMode, dir: SortDir, viewed: Record<string, number>, locations: { id: string; name: string }[]): RGroup[] {
+function groupRoster(units: Unit[], mode: SortMode, dir: SortDir, viewed: Record<string, number>, locations: { id: string; name: string; traits?: string[] }[]): RGroup[] {
   const byName = (a: Unit, b: Unit) => a.name.localeCompare(b.name)
   const bucket = () => new Map<string, Unit[]>()
   const push = (m: Map<string, Unit[]>, k: string, u: Unit) => { const a = m.get(k); if (a) a.push(u); else m.set(k, [u]) }
   const flip = (g: RGroup[]) => (dir === 'desc' ? g.reverse() : g)
 
+  // §orchestration: the default grouping is by ASSIGNMENT — per-location hunting
+  // packs (cities marked ⌂), then in-transit heroes, then the idle bench. The
+  // strip answers "where is everyone?" at a glance.
   if (mode === 'location') {
-    const m = bucket(); for (const u of units) push(m, u.locationId ?? '__none__', u)
+    const m = bucket(); const travel: Unit[] = []
+    for (const u of units) {
+      if (u.travelPath && u.travelPath.length > 0) travel.push(u)
+      else push(m, u.locationId ?? '__none__', u)
+    }
     const out: RGroup[] = []
-    for (const l of locations) { const a = m.get(l.id); if (a) out.push({ key: l.id, label: l.name, icon: '⌖', units: a.sort(byName), locId: l.id }) }
-    const none = m.get('__none__'); if (none) out.push({ key: '__none__', label: 'Guild', icon: '⌂', units: none.sort(byName), locId: null })
+    for (const l of locations) {
+      const a = m.get(l.id)
+      if (a) out.push({ key: l.id, label: l.name, icon: l.traits?.includes('city') ? '⌂' : '⌖', units: a.sort(byName), locId: l.id })
+    }
+    if (travel.length) out.push({ key: '__travel__', label: 'Traveling', icon: '➟', units: travel.sort(byName), locId: null })
+    const none = m.get('__none__'); if (none) out.push({ key: '__none__', label: 'Idle', icon: '·', units: none.sort(byName), locId: null })
     return flip(out)
   }
   if (mode === 'class') {
@@ -73,16 +85,18 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   const [open, setOpen] = useState(false)
   const cur = SORT_MODES.find((m) => m.id === mode)!
   return (
-    <div className="relative shrink-0">
-      {/* compact icon-only trigger — shares a column with the multi toggle */}
+    <div className="relative shrink-0 flex-1 flex">
+      {/* compact trigger naming the active mode — shares a column with the
+          multi toggle (the old icon-glyph pair read as a cipher). flex-1 so it
+          splits the rail's height evenly with the multi toggle below it. */}
       <button
         onClick={() => setOpen((v) => !v)}
         title={`Sort: ${cur.label} ${dir === 'asc' ? '▲' : '▼'}`}
         aria-label="Sort roster"
-        className="flex items-center justify-center gap-0.5 w-10 h-6 rounded-md border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
+        className="flex-1 flex items-center justify-center gap-1 w-12 min-h-[24px] rounded-md border border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60"
       >
-        <span className="text-[11px] leading-none">⇅</span>
-        <span className="text-[9px] leading-none">{cur.icon}{dir === 'asc' ? '▲' : '▼'}</span>
+        <span className="text-[10px] leading-none">⇅</span>
+        <span className="text-[9px] leading-none">{cur.label}{dir === 'asc' ? '▲' : '▼'}</span>
       </button>
       {open && (
         <>
@@ -107,16 +121,24 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   )
 }
 
-// ── Prototype shell ─────────────────────────────────────────────────────────--
+// ── Tactician shell (the DEFAULT UI) ─────────────────────────────────────────--
 //
-// A radical re-layout exploration (gated behind ?proto=1): instead of paging
-// between Map / Heroes / Inventory, the screen is split so the WORLD is always
-// live on one side and a context LENS on the hero is always on the other. The
-// roster rail across the top is the shared selector that drives both — pick a
-// hero and the world flies to them while their dossier fills the lens.
+// The split-screen re-layout, now the default render (the legacy tab-bar UI is
+// the fallback behind ?classic=1). Instead of paging between Map / Heroes /
+// Inventory, the screen is split so the WORLD is always live on one side and a
+// context LENS on the selection is always on the other. The roster rail across
+// the top is the shared selector that drives both — pick a hero and the world
+// flies to them while their dossier fills the lens; the ☰ Menu (rail, far-left)
+// holds the global destinations (Decisions · Town · Guild · Quests · Reports ·
+// Time · Settings).
 //
-// Mock-grade: it leans on the real store + BattleView, fakes the narrative lens,
-// and isn't wired into the tab bar / save format. Purpose is to feel the shape.
+// It runs on the real store + save codecs (units, inventory, battles, sockets,
+// stats, …) — the same live tick loop and persisted game as classic. What is
+// still PROTOTYPE-only mock (unpersisted, in `protoStore`): the quest board's
+// commit/bounty/completion bookkeeping, the card-socket display (getDerivedStats
+// doesn't read sockets yet), the fake per-hero loot bag + overweight penalty,
+// the ArmyMatrix Optimize/locks, hero lore flavor, and placeholder skill icons.
+// Tracked in BACKLOG.md → "Tactician shell — plumbing gaps".
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
@@ -128,14 +150,22 @@ function needsAttention(u: Unit, viewed: Record<string, number>): boolean {
   return u.level > (viewed[u.id] ?? 0)
 }
 
-function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
-  const viewed    = useGameStore((s) => s.viewedUnitLevels)
-  // Status dot only (deployed / resting / recovering) — HP is read on the Hero
-  // tab and the battlefield, so the roster doesn't repeat it.
-  const statusColor = unit.recoveryTicksLeft > 0 ? 'bg-purple-500'
-    : unit.isResting ? 'bg-sky-500'
-    : unit.locationId ? 'bg-game-green'
-    : 'bg-game-muted'
+// State → ring color: fighting green, traveling amber, resting sky, recovering
+// purple, idle gray. The ring's sweep is the hero's HP fraction — one glyph
+// carries condition + state, replacing the old corner status dot.
+function unitStateColor(u: Unit): { color: string; state: string } {
+  if (u.recoveryTicksLeft > 0) return { color: '#a855f7', state: 'recovering' }
+  if (u.isResting) return { color: '#38bdf8', state: 'resting' }
+  if (u.travelPath && u.travelPath.length > 0) return { color: '#f59e0b', state: 'traveling' }
+  if (u.locationId) return { color: '#34d399', state: 'fighting' }
+  return { color: '#9ca3af', state: 'idle' }
+}
+
+function RosterChip({ unit, selected, here, following, compact, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; compact?: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
+  const equipment = useGameStore((s) => s.equipment)
+  const { color, state } = unitStateColor(unit)
+  const maxHp = getDerivedStats(unit, equipment).maxHp
+  const hpPct = Math.max(0.04, Math.min(1, maxHp > 0 ? unit.health / maxHp : 0))
   // Single tap = quiet select; double tap (within 300ms) = focus (fly camera).
   const lastTap = useRef(0)
   function tap() {
@@ -148,9 +178,12 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
     <button
       ref={innerRef}
       onClick={tap}
-      title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'}${here ? ' · on the viewed battlefield' : ''}${following ? ' · camera is following them' : ''}\nTap to select · double-tap to jump the camera`}
+      title={`${unit.name} — Lv ${unit.level} ${unit.class ?? 'Novice'} · ${state} · ${Math.floor(unit.health)}/${maxHp} HP${here ? ' · on the viewed battlefield' : ''}${following ? ' · camera is following them' : ''}\nTap to select · double-tap to jump the camera`}
       className={[
-        'relative shrink-0 w-[54px] flex flex-col items-center gap-0.5 px-0.5 py-1 rounded-lg border transition-all',
+        'relative shrink-0 flex flex-col items-center border transition-all',
+        // Compact = the avatar IS the chip (the name lives in the command bar and
+        // the tooltip); expanded adds the name row.
+        compact ? 'rounded-full p-0.5' : 'w-[54px] gap-0.5 px-0.5 py-1 rounded-lg',
         // Follow is signalled purely by the 🎥 badge below — no extra highlight,
         // so it never competes with the selection ring.
         selected
@@ -158,22 +191,33 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
           : 'border-transparent hover:bg-white/5',
       ].join(' ')}
     >
-      <div className="relative w-9 h-9 rounded-full bg-game-surface border border-game-border flex items-center justify-center text-base">
-        {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
-        <span className={`absolute -bottom-0 -right-0 w-2.5 h-2.5 rounded-full border-2 border-game-bg ${statusColor}`} />
-        {following && (
-          <span
-            title="Camera is following this hero"
-            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-game-accent border border-game-bg flex items-center justify-center text-[8px] leading-none shadow"
-          >🎥</span>
-        )}
-        {needsAttention(unit, viewed) && (
-          <span className="absolute -top-0.5 -left-0.5 w-3 h-3 rounded-full bg-game-gold border border-game-bg text-[7px] font-bold text-black flex items-center justify-center">!</span>
-        )}
+      {/* HP/condition ring: sweep = HP fraction, color = state */}
+      <div
+        className="rounded-full p-[2px]"
+        style={{ background: `conic-gradient(${color} ${hpPct * 360}deg, rgba(255,255,255,0.10) 0deg)` }}
+      >
+        <div className="relative w-8 h-8 rounded-full bg-game-surface flex items-center justify-center text-base">
+          {unit.class && CLASS_ICON[unit.class] ? CLASS_ICON[unit.class] : getInitials(unit.name)}
+        </div>
       </div>
-      <span className="text-[9px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>
-      {/* cue: this hero is on the battlefield you're currently viewing */}
-      {here && <span className="absolute bottom-0 inset-x-2 h-0.5 rounded-full bg-game-accent" />}
+      {following && (
+        <span
+          title="Camera is following this hero"
+          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-game-accent border border-game-bg flex items-center justify-center text-[8px] leading-none shadow"
+        >🎥</span>
+      )}
+      {/* The corner badge is reserved for the one genuinely urgent, field-relevant
+          state: a KO'd hero recovering out of the fight. Routine "unspent points"
+          nudges live solely in the Decisions inbox now — flagging every hero here
+          (they all have points at the start) made the badge meaningless and just
+          re-stated what the inbox already carries. */}
+      {unit.recoveryTicksLeft > 0 && (
+        <span
+          title="Knocked out — recovering"
+          className="absolute -top-0.5 -left-0.5 w-3.5 h-3.5 rounded-full bg-rose-600 border border-game-bg text-[8px] font-bold text-white flex items-center justify-center leading-none"
+        >✚</span>
+      )}
+      {!compact && <span className="text-[10px] text-game-text font-medium leading-none truncate w-full text-center">{unit.name.split(' ')[0]}</span>}
     </button>
   )
 }
@@ -181,6 +225,9 @@ function RosterChip({ unit, selected, here, following, onSelect, onFocus, innerR
 // ── Top-bar global nav ─────────────────────────────────────────────────────--
 type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'town'
 const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', town: 'Town' }
+// What the ☰ drawer can open: the global panels above, plus 'decisions' (its own
+// inbox overlay, not a GlobalOverlay). 'decisions' is routed specially in ProtoApp.
+type DrawerDest = GlobalPanel | 'decisions'
 
 // The Guild board folds in the Party spreadsheet (all heroes grouped by location).
 // Tapping a hero now drills straight into the lens's Hero tab (the single hero
@@ -205,35 +252,202 @@ function GuildBoard({ onHero }: { onHero: (id: string) => void }) {
   )
 }
 
-function NavBtn({ icon, label, active, disabled, badge, onClick }: { icon: string; label: string; active?: boolean; disabled?: boolean; badge?: number; onClick?: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={badge ? `${label} — ${badge} ready` : label}
-      aria-label={label}
-      className={[
-        'relative flex items-center gap-1.5 px-3 h-9 rounded-lg border text-xs font-medium transition-colors',
-        active ? 'border-game-primary/60 bg-game-primary/15 text-game-text'
-          : 'border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5',
-        disabled ? 'opacity-40 cursor-not-allowed' : '',
-      ].join(' ')}
-    >
-      <span className="text-base leading-none">{icon}</span>
-      <span className="hidden sm:inline">{label}</span>
-      {/* nudge: a gold badge when quests are ready to collect */}
-      {badge ? (
-        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-bg tabular-nums">{badge}</span>
-      ) : null}
-    </button>
+// ── Decisions inbox ──────────────────────────────────────────────────────────--
+// One actionable surface replacing scattered alert dots: everything that wants a
+// player decision, with severity and a "go" action. red = blocked/hurt, gold =
+// spendable/collectable, gray = informational.
+type Severity = 'red' | 'gold' | 'info'
+// The kind drives the inbox's type filter (chips). 'ko' = a hurt hero, 'points' =
+// spendable growth, 'quest' = quest board, 'idle' = a benched hero.
+type DecisionKind = 'ko' | 'points' | 'quest' | 'idle'
+// A decision is one row: a bold `title` (who/what) + an optional dim `detail`
+// (the specifics). One row per subject — a hero's skill AND ability points fold
+// into a single row rather than nagging twice — so the inbox reads as a short,
+// prioritized queue instead of a wall of near-duplicate lines.
+type Decision = { id: string; severity: Severity; kind: DecisionKind; icon: string; title: string; detail?: string; go: () => void }
+
+function useDecisions(gotoQuest: (e: QuestBoardEntry) => void): Decision[] {
+  const units = useGameStore((s) => s.units)
+  const board = useQuestBoard()
+  const out: Decision[] = []
+  const first = (u: Unit) => u.name.split(' ')[0]
+  // A decision tap drills into the hero (hero scope + the right lens tab).
+  const goHero = (u: Unit) => {
+    useGameStore.setState({ selectedUnitIds: [u.id], ...(u.locationId ? { selectedLocationId: u.locationId } : {}) })
+    useProtoStore.getState().setScopeFocus('hero')
+    useProtoStore.getState().requestHeroTab()
+  }
+  const pts = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+  for (const u of units) {
+    // Urgent first: a recovering hero is out of the fight and wants eyes on them.
+    if (u.recoveryTicksLeft > 0) {
+      out.push({ id: `ko-${u.id}`, severity: 'red', kind: 'ko', icon: '✚', title: first(u), detail: 'Knocked out — recovering', go: () => goHero(u) })
+    }
+    // Spendable points fold into ONE row per hero (skill + ability together): the
+    // tap lands you on their dossier where both are spent anyway.
+    if (u.skillPoints > 0 || u.abilityPoints > 0) {
+      const bits: string[] = []
+      if (u.skillPoints > 0) bits.push(pts(u.skillPoints, 'skill point'))
+      if (u.abilityPoints > 0) bits.push(pts(u.abilityPoints, 'ability point'))
+      out.push({ id: `pts-${u.id}`, severity: 'gold', kind: 'points', icon: '✦', title: first(u), detail: `${bits.join(' · ')} to spend`, go: () => goHero(u) })
+    }
+  }
+  for (const e of board) {
+    if (e.status === 'ready') out.push({ id: `q-${e.id}`, severity: 'gold', kind: 'quest', icon: '📜', title: `Quest ready — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
+    else if (e.status === 'available') out.push({ id: `qa-${e.id}`, severity: 'info', kind: 'quest', icon: '📜', title: `New quest — ${e.title}`, detail: e.locationName, go: () => gotoQuest(e) })
+  }
+  for (const u of units) {
+    if (!u.locationId && !u.isResting && u.recoveryTicksLeft <= 0) out.push({ id: `idle-${u.id}`, severity: 'info', kind: 'idle', icon: '·', title: first(u), detail: 'Idle — deploy them?', go: () => goHero(u) })
+  }
+  const rank = { red: 0, gold: 1, info: 2 }
+  return out.sort((a, b) => rank[a.severity] - rank[b.severity])
+}
+
+const SEV_CLS: Record<Severity, string> = {
+  red:  'border-rose-600/50 bg-rose-950/30',
+  gold: 'border-game-gold/40 bg-game-gold/[0.07]',
+  info: 'border-game-border bg-game-bg',
+}
+const SEV_ICON_CLS: Record<Severity, string> = {
+  red:  'text-rose-300',
+  gold: 'text-game-gold',
+  info: 'text-game-muted',
+}
+// Section headers turn a flat list into a triaged queue: what's hurt, what's
+// ready to spend, what can wait. Empty sections drop out.
+const SEV_SECTION: { sev: Severity; label: string }[] = [
+  { sev: 'red',  label: 'Needs attention' },
+  { sev: 'gold', label: 'Ready to spend' },
+  { sev: 'info', label: 'When you get to it' },
+]
+// Type filter chips — only the kinds actually present are offered, so the row
+// stays short. 'all' is always first.
+const KIND_FILTERS: { id: DecisionKind; label: string; icon: string }[] = [
+  { id: 'ko',     label: 'Hurt',   icon: '✚' },
+  { id: 'points', label: 'Points', icon: '✦' },
+  { id: 'quest',  label: 'Quests', icon: '📜' },
+  { id: 'idle',   label: 'Idle',   icon: '·' },
+]
+
+function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose: () => void }) {
+  const [filter, setFilter] = useState<DecisionKind | 'all'>('all')
+  const urgent = decisions.filter((d) => d.severity !== 'info').length
+  // Chips for the kinds present, each with its count; hide the row if there's
+  // only one kind (nothing to filter).
+  const present = KIND_FILTERS.map((k) => ({ ...k, n: decisions.filter((d) => d.kind === k.id).length })).filter((k) => k.n > 0)
+  const eff = filter !== 'all' && present.some((k) => k.id === filter) ? filter : 'all'
+  const shown = eff === 'all' ? decisions : decisions.filter((d) => d.kind === eff)
+  const chipBase = 'flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] whitespace-nowrap transition-colors'
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
+      <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
+        <span className="text-sm font-semibold text-game-text">⚑ Decisions</span>
+        <span className="text-[11px] text-game-text-dim">{urgent ? `${urgent} want you` : `${decisions.length} to review`}</span>
+        <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
+      </header>
+      {/* Type filter — scroll-safe chip row; only present kinds appear. */}
+      {present.length > 1 && (
+        <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-game-border/60 bg-game-surface/30 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setFilter('all')}
+            className={[chipBase, eff === 'all' ? 'border-game-primary/60 bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
+          >All <span className="tabular-nums opacity-70">{decisions.length}</span></button>
+          {present.map((k) => (
+            <button
+              key={k.id}
+              onClick={() => setFilter(k.id)}
+              className={[chipBase, eff === k.id ? 'border-game-primary/60 bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
+            ><span>{k.icon}</span>{k.label} <span className="tabular-nums opacity-70">{k.n}</span></button>
+          ))}
+        </div>
+      )}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+        <div className="max-w-xl w-full mx-auto space-y-3" style={{ zoom: 1.12 }}>
+          {decisions.length === 0 && (
+            <div className="text-center py-10">
+              <div className="text-3xl mb-2 opacity-40">✓</div>
+              <div className="text-sm text-game-text-dim">Nothing needs you right now.</div>
+            </div>
+          )}
+          {SEV_SECTION.map(({ sev, label }) => {
+            const rows = shown.filter((d) => d.severity === sev)
+            if (!rows.length) return null
+            return (
+              <section key={sev} className="space-y-1.5">
+                <div className="flex items-center gap-2 px-0.5">
+                  <span className="text-[10px] uppercase tracking-widest text-game-muted">{label}</span>
+                  <span className="text-[10px] text-game-muted tabular-nums">{rows.length}</span>
+                  <span className="flex-1 h-px bg-game-border/60" />
+                </div>
+                {rows.map((d) => (
+                  <button
+                    key={d.id}
+                    onClick={() => { d.go(); onClose() }}
+                    className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left hover:brightness-125 transition-all ${SEV_CLS[d.severity]}`}
+                  >
+                    <span className={`w-5 text-center shrink-0 text-base ${SEV_ICON_CLS[d.severity]}`}>{d.icon}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm text-game-text font-medium leading-tight truncate">{d.title}</span>
+                      {d.detail && <span className="block text-[11px] text-game-text-dim leading-tight truncate">{d.detail}</span>}
+                    </span>
+                    <span className="shrink-0 opacity-50 text-game-text-dim">›</span>
+                  </button>
+                ))}
+              </section>
+            )
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
-// The Quests nav button carries a live "ready to collect" badge as the nudge.
-function QuestsNavButton({ active, onClick }: { active: boolean; onClick: () => void }) {
-  const board = useQuestBoard()
-  const ready = board.reduce((n, e) => n + (e.status === 'ready' ? 1 : 0), 0)
-  return <NavBtn icon="📜" label="Quests" active={active} badge={ready} onClick={onClick} />
+// ── Nav drawer — the single global-nav surface (the reclaimed top row folded in
+// here). Decisions + Town lead (they were the two on-bar buttons); the rest are
+// the lower-frequency destinations. Decisions carries the urgent count.
+function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => void; onClose: () => void; urgent: number }) {
+  const items: { id: DrawerDest; icon: string; label: string; sub: string; badge?: number }[] = [
+    { id: 'decisions', icon: '⚑', label: 'Decisions', sub: 'everything waiting on you', badge: urgent },
+    { id: 'town',     icon: '🏪', label: 'Town',     sub: 'market · stash · resupply' },
+    { id: 'guild',    icon: '⚜', label: 'Guild',    sub: 'roster spreadsheet · doctrine · recruit' },
+    { id: 'quests',   icon: '📜', label: 'Quests',   sub: 'the full journal, all locations' },
+    { id: 'reports',  icon: '📊', label: 'Reports',  sub: 'combat + progression history' },
+    { id: 'time',     icon: '⏳', label: 'Time',     sub: 'pace, offline rules, debug' },
+    { id: 'settings', icon: '⚙', label: 'Settings', sub: 'preferences · classic UI' },
+  ]
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60" />
+      <div className="relative w-72 max-w-[80vw] h-full bg-game-surface border-r border-game-border flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <header className="shrink-0 flex items-center gap-2 px-3 h-12 border-b border-game-border">
+          <span className="text-sm font-semibold text-game-text">Menu</span>
+          <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-sm">✕</button>
+        </header>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {items.map((it) => (
+            <button
+              key={it.id}
+              onClick={() => onPick(it.id)}
+              className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+            >
+              <span className="relative text-lg w-6 text-center shrink-0">
+                {it.icon}
+                {it.badge ? (
+                  <span className="absolute -top-1.5 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-surface tabular-nums">{it.badge}</span>
+                ) : null}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm text-game-text font-medium">{it.label}</span>
+                <span className="block text-[10px] text-game-muted truncate">{it.sub}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 // Full-screen overlay hosting a global game screen (Guild / Reports / Time) or
@@ -253,7 +467,7 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
         <span className="text-sm font-semibold text-game-text">{PANEL_TITLE[panel]}</span>
-        <button onClick={onClose} className="ml-auto flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-[11px]">✕ Close</button>
+        <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
       <div className="flex-1 min-h-0 overflow-y-auto" style={{ zoom: 1.15 }}>
         {panel === 'guild'   && <GuildBoard onHero={openHeroInLens} />}
@@ -302,20 +516,47 @@ export function ProtoApp() {
     if (loc) {
       useGameStore.getState().setMapPage(loc.region)
       useGameStore.getState().setSelectedLocation(e.locationId)
+      useProtoStore.getState().setScopeFocus('location')
       requestZoom(1)
       requestLocationTab()
     }
     setPanel(null)
   }
 
+  // The Decisions inbox (top-right) aggregates everything that wants the player.
+  const decisions = useDecisions(gotoQuest)
+  const urgent = decisions.filter((d) => d.severity !== 'info').length
+
   const [sortMode, setSortMode] = useState<SortMode>('location')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
+  const [drawer, setDrawer] = useState(false)
+  const [decisionsOpen, setDecisionsOpen] = useState(false)
   useExpeditionDriver()   // §expedition: advance deployed heroes' runs each tick
   // Multi-select: when on, single-tap toggles a hero in/out of the selection for
   // bulk deploy (Location lens). Off = single-select (tap replaces).
   const [multi, setMulti] = useState(false)
+  // Roster density: compact (default) = a slim avatar-only strip for glancing +
+  // switching; expanded adds names, group labels, and the sort/multi tools for
+  // managing. Ephemeral UI state — its own localStorage key, like tab state.
+  const [rosterExpanded, setRosterExpanded] = useState(() => {
+    try { return localStorage.getItem('proto-roster-expanded') === '1' } catch { return false }
+  })
+  function toggleRoster() {
+    setRosterExpanded((v) => {
+      const next = !v
+      try { localStorage.setItem('proto-roster-expanded', next ? '1' : '0') } catch { /* private mode */ }
+      if (!next) setMulti(false)   // multi-select is an expanded-mode tool
+      return next
+    })
+  }
   const groups = useMemo(() => groupRoster(units, sortMode, sortDir, viewed, locations), [units, sortMode, sortDir, viewed, locations])
+  // Publish the rail's flat visual order so the scope bar's ‹ › hero cycling
+  // steps through heroes in the same order the player sees here.
+  const setRosterOrder = useProtoStore((s) => s.setRosterOrder)
+  useEffect(() => {
+    setRosterOrder(groups.flatMap((g) => g.units.map((u) => u.id)))
+  }, [groups, setRosterOrder])
   function pickSort(m: SortMode) {
     if (m === sortMode) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else { setSortMode(m); setSortDir(SORT_MODES.find((x) => x.id === m)!.defaultDir) }
@@ -409,6 +650,9 @@ export function ProtoApp() {
         combatLocationId: hero.locationId ?? null,
         battleFollowId: hero.locationId ? hero.id : null,
       })
+      // Land on the LOCATION scope (the site they're at) rather than the hero
+      // dossier — you've just dropped onto a battlefield; show where you are.
+      if (hero.locationId) useProtoStore.getState().setScopeFocus('location')
       // Returning after a real absence pops the offline report. Don't dive the
       // camera world→battle BEHIND the modal — that rapid zoom under the report is
       // jarring. Land calm: selecting the hero's location centers the world map
@@ -451,6 +695,7 @@ export function ProtoApp() {
     }
     // A roster pick dismisses any open battlefield detail card (it isn't a modal)
     // and clears an inspected foe so the Unit tab shows the picked hero.
+    useProtoStore.getState().setScopeFocus('hero')
     dismissBattleCard()
     useProtoStore.getState().clearFoe()
   }
@@ -461,10 +706,20 @@ export function ProtoApp() {
       selectedUnitIds: [u.id],
       ...(u.locationId ? { selectedLocationId: u.locationId, combatLocationId: u.locationId, battleFollowId: u.id } : {}),
     })
+    useProtoStore.getState().setScopeFocus('hero')
     if (u.locationId) requestZoom(2)
     requestHeroTab()
     dismissBattleCard()
     useProtoStore.getState().clearFoe()
+  }
+
+  // Tap a roster group label → select that location (location scope) so the
+  // strip doubles as a location picker, not just a hero picker.
+  function pickGroupLocation(locId: string) {
+    const loc = locations.find((l) => l.id === locId)
+    if (loc && loc.region !== useGameStore.getState().mapPageId) useGameStore.getState().setMapPage(loc.region)
+    useGameStore.getState().setSelectedLocation(locId)
+    useProtoStore.getState().setScopeFocus('location')
   }
 
   // Drop to the legacy tab-bar UI (kept as a fallback behind ?classic=1).
@@ -477,40 +732,54 @@ export function ProtoApp() {
 
   return (
     <div className="h-full flex flex-col bg-game-bg overflow-hidden">
-      {/* global nav bar — guild/reports/time + settings (placeholders) */}
-      <header className="shrink-0 flex items-center gap-1.5 px-2 h-11 border-b border-game-border bg-game-surface/70">
-        <NavBtn icon="⚜" label="Guild"   active={panel === 'guild'}   onClick={() => setPanel('guild')} />
-        <NavBtn icon="🏪" label="Town"    active={panel === 'town'}    onClick={() => setPanel('town')} />
-        <QuestsNavButton active={panel === 'quests'} onClick={() => setPanel('quests')} />
-        <NavBtn icon="📊" label="Reports" active={panel === 'reports'} onClick={() => setPanel('reports')} />
-        <NavBtn icon="⏳" label="Time"    active={panel === 'time'}    onClick={() => setPanel('time')} />
-        <div className="ml-auto flex items-center gap-1.5">
-          <NavBtn icon="🏆" label="Achievements" disabled />
-          <NavBtn icon="🔔" label="Alerts" disabled />
-          <NavBtn icon="⚙" label="Settings" active={panel === 'settings'} onClick={() => setPanel('settings')} />
-        </div>
-      </header>
-
-      {/* roster rail — always visible, shared selector + sort (grouped) */}
+      {/* roster rail — now the TOPMOST bar: the old Menu/Town/Decisions header row
+          was reclaimed for the stage/lens, and those global destinations moved
+          into the ☰ Menu drawer. The rail is the shared selector driving stage +
+          lens; a slim avatar strip by default, the ▸ handle expands it into the
+          managing view (names, group labels, sort, multi-select). */}
       <div className="shrink-0 flex items-stretch gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
-        {/* filter (sort) + multi-select share a column to the left of the roster */}
-        <div className="flex flex-col gap-1 shrink-0">
-          <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
-          {/* multi-select toggle — build a selection for bulk deploy */}
-          <button
-            onClick={() => setMulti((v) => !v)}
-            title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
-            aria-label="Toggle multi-select"
-            className={['flex items-center justify-center gap-0.5 w-10 h-6 rounded-md border',
-              multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
-          >
-            <span className="text-[11px] leading-none">{multi ? '✓' : '⊕'}</span>
-            <span className="text-[9px] leading-none">{multi ? selectedUnitIds.length : 'multi'}</span>
-          </button>
-        </div>
+        {/* ☰ Menu — the single global-nav anchor (Decisions · Town · Guild ·
+            Quests · Reports · Time · Settings). Carries the urgent-decisions
+            badge so that count stays glanceable now that Decisions has no row. */}
+        <button
+          onClick={() => setDrawer(true)}
+          title="Menu — Decisions, Town, Guild, Quests, Reports, Time…"
+          aria-label="Menu"
+          className="relative shrink-0 w-9 self-stretch rounded-md border border-game-border/60 bg-game-bg/40 text-game-text-dim hover:text-game-text flex items-center justify-center"
+        >
+          <span className="text-base leading-none">☰</span>
+          {urgent > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-game-gold text-game-bg text-[9px] font-bold flex items-center justify-center border border-game-bg tabular-nums">{urgent}</span>
+          )}
+        </button>
+        <button
+          onClick={toggleRoster}
+          title={rosterExpanded ? 'Collapse the roster to a slim strip' : 'Expand the roster — names, groups, sort & multi-select'}
+          aria-label={rosterExpanded ? 'Collapse roster' : 'Expand roster'}
+          className="shrink-0 w-5 self-stretch rounded-md border border-game-border/60 bg-game-bg/40 text-game-text-dim hover:text-game-text flex items-center justify-center"
+        >
+          <span className="text-[10px] leading-none">{rosterExpanded ? '▾' : '▸'}</span>
+        </button>
+        {/* sort + multi-select are managing tools — they ride expanded mode only,
+            each taking half the rail's height (self-stretch column + flex-1 kids). */}
+        {rosterExpanded && (
+          <div className="flex flex-col gap-1.5 shrink-0 self-stretch">
+            <SortControl mode={sortMode} dir={sortDir} onPick={pickSort} />
+            <button
+              onClick={() => setMulti((v) => !v)}
+              title={multi ? 'Multi-select on — tap heroes to add; deploy them from the Location lens' : 'Multi-select heroes for bulk deploy'}
+              aria-label="Toggle multi-select"
+              className={['flex-1 flex items-center justify-center gap-0.5 w-12 min-h-[24px] rounded-md border',
+                multi ? 'border-game-primary bg-game-primary/15 text-game-text' : 'border-game-border text-game-text-dim hover:text-game-text bg-game-bg/60'].join(' ')}
+            >
+              <span className="text-[11px] leading-none">{multi ? '✓' : '⊕'}</span>
+              <span className="text-[9px] leading-none">{multi ? selectedUnitIds.length : 'multi'}</span>
+            </button>
+          </div>
+        )}
         <div className="relative flex-1 min-w-0">
-          <div ref={rosterScrollRef} className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar h-full">
-            {groups.map((g) => {
+          <div ref={rosterScrollRef} className="flex items-stretch gap-1.5 overflow-x-auto no-scrollbar h-full snap-x scroll-px-1">
+            {groups.map((g, gi) => {
               const chips = g.units.map((u) => (
                 <RosterChip
                   key={u.id}
@@ -518,6 +787,7 @@ export function ProtoApp() {
                   selected={multi ? selectedUnitIds.includes(u.id) : selectedUnitIds[0] === u.id}
                   here={!!selectedLocId && u.locationId === selectedLocId}
                   following={battleFollowId === u.id}
+                  compact={!rosterExpanded}
                   innerRef={battleFollowId === u.id ? followChipRef : undefined}
                   onSelect={() => selectQuiet(u)}
                   onFocus={() => focusHero(u)}
@@ -526,12 +796,34 @@ export function ProtoApp() {
               // Flat (name/level): no container.
               if (g.label === null) return <div key={g.key} className="flex items-center gap-0.5">{chips}</div>
               const isCurrent = g.locId !== undefined && g.locId === selectedLocId
+              // Compact: no group chrome — a hairline divider between groups and a
+              // soft tint under the currently-viewed location's heroes. The group
+              // name rides the tooltip.
+              if (!rosterExpanded) {
+                return (
+                  <div
+                    key={g.key}
+                    title={g.label ?? undefined}
+                    className={['flex items-center gap-0.5 shrink-0 snap-start rounded-full px-0.5',
+                      isCurrent ? 'bg-game-accent/10' : '',
+                      gi > 0 ? 'border-l border-game-border/60 pl-1.5 rounded-l-none' : ''].join(' ')}
+                  >{chips}</div>
+                )
+              }
               return (
-                <div key={g.key} className={['flex flex-col rounded-lg border px-1 pb-0.5 shrink-0',
-                  isCurrent ? 'border-game-accent/50 bg-game-accent/5' : 'border-game-border/50 bg-white/[0.02]'].join(' ')}>
-                  <span className="text-[8px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
-                    {g.icon} {g.label}
-                  </span>
+                <div key={g.key} className={['flex flex-col rounded-lg px-1 pb-0.5 shrink-0 snap-start',
+                  isCurrent ? 'bg-game-accent/10' : 'bg-white/[0.03]'].join(' ')}>
+                  {g.locId ? (
+                    <button
+                      onClick={() => pickGroupLocation(g.locId!)}
+                      title={`Select ${g.label} (location scope)`}
+                      className="text-[9px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-left text-game-muted hover:text-game-text"
+                    >{g.icon} {g.label}</button>
+                  ) : (
+                    <span className="text-[9px] uppercase tracking-wide leading-none px-0.5 pt-0.5 pb-0.5 truncate max-w-[140px] text-game-muted">
+                      {g.icon} {g.label}
+                    </span>
+                  )}
                   <div className="flex items-center gap-0.5">{chips}</div>
                 </div>
               )
@@ -548,6 +840,7 @@ export function ProtoApp() {
                   selected={multi ? selectedUnitIds.includes(followUnit.id) : selectedUnitIds[0] === followUnit.id}
                   here={!!selectedLocId && followUnit.locationId === selectedLocId}
                   following
+                  compact={!rosterExpanded}
                   onSelect={() => selectQuiet(followUnit)}
                   onFocus={() => focusHero(followUnit)}
                 />
@@ -572,6 +865,10 @@ export function ProtoApp() {
         : panel === 'town'
         ? <Town onClose={() => setPanel(null)} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
+
+      {drawer && <NavDrawer urgent={urgent} onPick={(p) => { setDrawer(false); if (p === 'decisions') setDecisionsOpen(true); else setPanel(p) }} onClose={() => setDrawer(false)} />}
+      {decisionsOpen && <DecisionsInbox decisions={decisions} onClose={() => setDecisionsOpen(false)} />}
+      <DeploySheetHost />
     </div>
   )
 }
