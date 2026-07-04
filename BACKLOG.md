@@ -98,6 +98,43 @@ What's left:
   *Weapon-set A/B switch* has no production analog (weapon sets aren't a real
   game feature yet); the shell intentionally edits only the active set.
 
+### Tactician shell — plumbing gaps (mock → real, audited 2026-07)
+
+Screen-reachability audit (2026-07): **no** classic screen is unreachable from the
+shell — Map = the stage, Heroes = the Hero lens, Guild/Reports/Time/Settings = the
+☰ drawer, and Inventory = **Town → Stash** (gear · cards · mats · consumables ·
+craft) + the per-hero Equipment lens. (So the "Crafting — not surfaced in the
+shell" note above is now stale: `Town.tsx`'s Stash already has a `craft` sub-tab.
+The *data* break — `drop-*`/`craft-*` aren't real item defs — still stands.) The
+remaining work is wiring these display-only / mock seams to real, persisted state:
+
+- **Card sockets — inert.** The shell's socket pips read `protoStore.sockets`
+  (mock, display-only) and `getDerivedStats` **doesn't read sockets at all**, so
+  cards currently change nothing. The real persisted slice (`itemSockets`,
+  `socketsCodec`) exists, but the shell UI (`CardBits`/`EquipmentLens`) neither
+  reads nor writes it. → point the socket UI at `itemSockets` and have derived
+  stats apply socket bonuses. (See also *Items, cards & sockets*.)
+- **Pack carry — half-real.** `unit.pack` (consumables) is real + persisted, but
+  the carried "loot bag" weight in `PackStrip`/`economy.ts` comes from
+  `protoStore.packs` (fake drops from `simulateHunt`, unpersisted), and the
+  **overweight penalty is displayed but not applied** ("coming soon" in
+  `PackStrip`/`ExpeditionPanel`). → feed real combat loot into carry and apply the
+  penalty. (Overlaps *Loot realism* / *Consumables*.)
+- **Quest board — commit/completion state is ephemeral.** `useQuestBoard`
+  computes progress from REAL state (kills, items) and class-change paths do real
+  work (write `unit.class`), but the commitment/bounty/completion bookkeeping
+  (`protoStore.classQuestCommit`/`bountyDone`/`bountyClaimed`/`questCompletions`)
+  is unpersisted — lost on reload, and bounty rewards aren't fully plumbed. This
+  feeds the Decisions "Quest ready / New quest" rows and the journal. → move that
+  state into a save codec. (See *Quest system*.)
+- **Settings panel** (`ProtoApp` `GlobalOverlay`) — Audio / Notifications /
+  Display / Save&sync / Accessibility are all "soon" placeholders; only Pause +
+  "Classic UI" work. → build the real toggles or trim to what exists.
+- **Nav cost from the 2026-07 top-row reclaim:** Town + Decisions moved off the
+  always-on header into the ☰ drawer (one extra tap each); the ☰ badge keeps the
+  urgent-decisions count glanceable. Re-surface either on the rail if the extra
+  tap proves annoying in play.
+
 ## Long-horizon shape changes
 
 - **✅ Combat lives inside the Map tab.** Done — the standalone Combat tab is

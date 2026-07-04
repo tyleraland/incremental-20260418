@@ -121,16 +121,24 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   )
 }
 
-// ── Prototype shell ─────────────────────────────────────────────────────────--
+// ── Tactician shell (the DEFAULT UI) ─────────────────────────────────────────--
 //
-// A radical re-layout exploration (gated behind ?proto=1): instead of paging
-// between Map / Heroes / Inventory, the screen is split so the WORLD is always
-// live on one side and a context LENS on the hero is always on the other. The
-// roster rail across the top is the shared selector that drives both — pick a
-// hero and the world flies to them while their dossier fills the lens.
+// The split-screen re-layout, now the default render (the legacy tab-bar UI is
+// the fallback behind ?classic=1). Instead of paging between Map / Heroes /
+// Inventory, the screen is split so the WORLD is always live on one side and a
+// context LENS on the selection is always on the other. The roster rail across
+// the top is the shared selector that drives both — pick a hero and the world
+// flies to them while their dossier fills the lens; the ☰ Menu (rail, far-left)
+// holds the global destinations (Decisions · Town · Guild · Quests · Reports ·
+// Time · Settings).
 //
-// Mock-grade: it leans on the real store + BattleView, fakes the narrative lens,
-// and isn't wired into the tab bar / save format. Purpose is to feel the shape.
+// It runs on the real store + save codecs (units, inventory, battles, sockets,
+// stats, …) — the same live tick loop and persisted game as classic. What is
+// still PROTOTYPE-only mock (unpersisted, in `protoStore`): the quest board's
+// commit/bounty/completion bookkeeping, the card-socket display (getDerivedStats
+// doesn't read sockets yet), the fake per-hero loot bag + overweight penalty,
+// the ArmyMatrix Optimize/locks, hero lore flavor, and placeholder skill icons.
+// Tracked in BACKLOG.md → "Tactician shell — plumbing gaps".
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
