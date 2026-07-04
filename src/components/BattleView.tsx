@@ -88,6 +88,27 @@ function arenaCamera(cols = COLS, rows = ROWS): Cam {
   return { x: (cols - size) / 2, y: (rows - size) / 2, size }
 }
 
+// Encounters DEFAULT to that static full-arena frame, but honor manual zoom/pan
+// once the player takes control (zoom buttons / pinch / drag) — the same
+// manualZoom/manualCenter seam open-world uses, just anchored to the arena
+// centre instead of following the party. At full zoom-out (want ≥ the whole
+// board) with no pan it returns the exact stable frame, so the default is
+// unchanged and byte-identical to before. Otherwise it windows a `want`-cell
+// view around `center`, CLAMPED inside the arena's own square (the arenaCamera
+// origin is its min corner) so it never scrolls past the board.
+function encounterCamera(cols: number, rows: number, want: number, center: Vec2 | null): Cam {
+  const full = arenaCamera(cols, rows)
+  if (want >= full.size && !center) return full
+  const size = Math.min(want, full.size)
+  const cx = center ? center.x : cols / 2
+  const cy = center ? center.y : rows / 2
+  return {
+    x: Math.max(full.x, Math.min(full.x + full.size - size, cx - size / 2)),
+    y: Math.max(full.y, Math.min(full.y + full.size - size, cy - size / 2)),
+    size,
+  }
+}
+
 // Open-world: a fixed-size window that follows the centroid of the given points
 // (alive combatants), clamped so it never shows past the map edges. The whole
 // open-world field can't fit at once — the player pans to look around.
@@ -1234,9 +1255,14 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
   // Free-look (minimap tap / drag-pan) may overscroll past the map rim into the
   // surrounding empty space; party/hero auto-follow stays pinned to the field.
   const freeLook = !focusUnit && !!manualCenter
+  // Encounters: full-arena frame by default; once the player zooms or pans, hold
+  // their chosen size (frozen into camSize when either takes control) and window
+  // around the pan point. Mirrors open-world's "manualCenter holds camSize" so a
+  // drag doesn't spring the zoom back to auto.
+  const encSize = manualZoom || manualCenter ? camSize : Math.max(cols, rows)
   const cam = isOpen
     ? followCamera(followPts, cols, rows, effSize, freeLook)
-    : arenaCamera(cols, rows)
+    : encounterCamera(cols, rows, encSize, manualCenter)
 
   // ── Camera mode (open-world): three explicit states the ⊳ toggle cycles ────────
   //   party — auto-fit + centre on the whole party (the default)
@@ -1384,10 +1410,17 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
     return bySource
   }, [castLabels])
 
-  const maxSize = Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
+  // Open-world caps zoom-out below the whole field (you pan to look around);
+  // encounters cap at the WHOLE board — zooming all the way out frames the full
+  // arena, the stable default.
+  const maxSize = isOpen ? Math.min(OPEN_CAM_MAX_SIZE, cols, rows) : Math.max(cols, rows)
   const zoomBy = (factor: number) => {
+    const next = Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, cam.size * factor))
+    // Encounter: zooming out to the full board drops manual control, snapping
+    // back to the stable full-arena frame (also the built-in "reset zoom").
+    if (!isOpen && next >= maxSize) { setManualZoom(false); setManualCenter(null); return }
     setManualZoom(true)
-    setCamSize(Math.max(OPEN_CAM_MIN_SIZE, Math.min(maxSize, cam.size * factor)))
+    setCamSize(next)
   }
 
   // The battle-state snapshot copy now lives in the unit debug menu
@@ -1405,42 +1438,41 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
         closeDetail()
       }}
     >
-      {isOpen && (
-        <>
-          {/* Zoom (top-left; minimap owns the top-right). Pinch the arena too. The
-              middle chip is the camera-mode toggle: tap to cycle party → hero →
-              free. In 'free' you drag the board to pan. `insetTopControls` drops the
-              cluster below a host's top-left chrome (the proto stage breadcrumb). */}
-          <div className={`absolute ${insetTopControls ? 'top-11' : 'top-1.5'} left-1.5 z-20 flex items-center gap-1`}>
-            <button
-              onClick={() => zoomBy(1 / 0.8)}
-              aria-label="Zoom out"
-              className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
-            >−</button>
-            <button
-              onClick={cycleMode}
-              aria-label="Camera mode"
-              title={
-                camMode === 'hero' ? 'Camera: following hero — tap for free-look'
-                : camMode === 'free' ? 'Camera: free-look (drag to pan) — tap to frame the party'
-                : 'Camera: framing the party — tap to follow your hero'
-              }
-              className={`px-1.5 h-6 flex items-center gap-1 rounded-md border text-[10px] backdrop-blur-sm ${
-                camMode === 'party'
-                  ? 'border-emerald-600/60 bg-emerald-950/70 text-emerald-200'
-                  : 'border-game-border bg-game-surface/90 text-game-text-dim hover:bg-white/5'
-              }`}
-            >
-              {camMode === 'hero' ? '◎ Hero' : camMode === 'free' ? '⊹ Free' : '⌖ Party'}
-            </button>
-            <button
-              onClick={() => zoomBy(0.8)}
-              aria-label="Zoom in"
-              className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
-            >+</button>
-          </div>
-        </>
-      )}
+      {/* Zoom (top-left; minimap owns the top-right). Pinch/drag the arena too.
+          Open-world adds the middle camera-mode chip (party → hero → free);
+          encounters just get −/+ (zoom out to the full board = reset).
+          `insetTopControls` drops the cluster below a host's top-left chrome
+          (the proto stage breadcrumb). */}
+      <div className={`absolute ${insetTopControls ? 'top-11' : 'top-1.5'} left-1.5 z-20 flex items-center gap-1`}>
+        <button
+          onClick={() => zoomBy(1 / 0.8)}
+          aria-label="Zoom out"
+          className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
+        >−</button>
+        {isOpen && (
+          <button
+            onClick={cycleMode}
+            aria-label="Camera mode"
+            title={
+              camMode === 'hero' ? 'Camera: following hero — tap for free-look'
+              : camMode === 'free' ? 'Camera: free-look (drag to pan) — tap to frame the party'
+              : 'Camera: framing the party — tap to follow your hero'
+            }
+            className={`px-1.5 h-6 flex items-center gap-1 rounded-md border text-[10px] backdrop-blur-sm ${
+              camMode === 'party'
+                ? 'border-emerald-600/60 bg-emerald-950/70 text-emerald-200'
+                : 'border-game-border bg-game-surface/90 text-game-text-dim hover:bg-white/5'
+            }`}
+          >
+            {camMode === 'hero' ? '◎ Hero' : camMode === 'free' ? '⊹ Free' : '⌖ Party'}
+          </button>
+        )}
+        <button
+          onClick={() => zoomBy(0.8)}
+          aria-label="Zoom in"
+          className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
+        >+</button>
+      </div>
       <div ref={arenaWrapRef} className="flex-1 min-h-0 flex justify-center items-start">
         <Arena
           cam={cam}
@@ -1456,11 +1488,11 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
           terrainAvoid={terrainAvoid}
           mapSpec={mapSpec}
           panEnabled
-          onPanStart={isOpen ? beginPan : undefined}
-          onPanMove={isOpen ? panMove : undefined}
-          onPanEnd={isOpen ? endPan : undefined}
-          onPinch={isOpen ? onPinch : undefined}
-          zoom={isOpen ? { size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } } : undefined}
+          onPanStart={beginPan}
+          onPanMove={panMove}
+          onPanEnd={endPan}
+          onPinch={onPinch}
+          zoom={{ size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } }}
           overlay={isOpen ? (
             <>
               {offscreen.map((c) => <EdgeMarker key={c.id} c={c} pos={rpos(c)} cam={cam} />)}
