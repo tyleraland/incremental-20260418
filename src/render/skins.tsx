@@ -166,6 +166,10 @@ interface BodyPart {
   fill?: 'base' | 'top' | 'outline' | 'text' | PaperRole  // accent paint (tone field or palette role)
   stroke?: boolean                  // accent: draw the tone outline around it
   shadow?: boolean                  // plate: cast a flat drop shadow onto lower parts
+  // melee-attack motion (CSS-driven, off the memo'd body — see `data-atk` +
+  // index.css): 'jab' snaps toward the target (heads/faces), 'trail' lags the
+  // opposite way (tails). Absent = the part holds while the token lunges.
+  atk?: 'jab' | 'trail'
 }
 
 const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
@@ -211,21 +215,21 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   // the move, a forked tongue flicks past the snout, two eyes ride the head
   serpent: [
     { d: 'M76 56 C70 49 63 47 56 49 C48 52 44 60 38 66 C32 72 22 74 14 70 C8 67 5 60 10 57 C16 60 24 60 30 56 C36 52 40 44 48 38 C54 34 63 33 70 37 C76 41 79 49 76 56 Z', c: [42, 52] },
-    { d: 'M77 41 C83 36 92 37 95 44 C98 51 94 59 86 60 C80 61 75 58 73 53 C71 48 72 44 77 41 Z', c: [84, 49], lean: 5, shadow: true },
-    { d: 'M92 48 L100 48 L109 44 L102 49 L109 53 L100 50 L92 50 Z', kind: 'accent', fill: 'bloom', lean: 5 },
-    { d: 'M88 43 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 5 },
-    { d: 'M88 54 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 5 },
+    { d: 'M77 41 C83 36 92 37 95 44 C98 51 94 59 86 60 C80 61 75 58 73 53 C71 48 72 44 77 41 Z', c: [84, 49], lean: 5, shadow: true, atk: 'jab' },
+    { d: 'M92 48 L100 48 L109 44 L102 49 L109 53 L100 50 L92 50 Z', kind: 'accent', fill: 'bloom', lean: 5, atk: 'jab' },
+    { d: 'M88 43 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 5, atk: 'jab' },
+    { d: 'M88 54 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 5, atk: 'jab' },
   ],
   // WOLF (canines: wolves, hounds, foxes) — the reference read is a SPIKY MANE
   // ruff behind a snarling eared head, over a tapered torso with a bushy tail.
   // Five stacked cutouts back→front: tail plume (lags on the move) · torso with
   // leg bumps · jagged mane ruff · eared head (leads) · a nose accent.
   canine: [
-    { d: 'M31 50 C25 40 15 35 7 37 C-1 39 0 47 7 49 C-1 51 0 60 8 62 C16 64 26 60 31 50 Z', c: [15, 50], lean: -8 },
+    { d: 'M31 50 C25 40 15 35 7 37 C-1 39 0 47 7 49 C-1 51 0 60 8 62 C16 64 26 60 31 50 Z', c: [15, 50], lean: -8, atk: 'trail' },
     { d: 'M64 50 C64 41 58 34 49 33 C47 26 41 26 39 33 C34 33 29 36 26 41 C23 43 21 47 22 50 C21 53 23 57 26 59 C29 64 34 67 39 67 C41 74 47 74 49 67 C58 66 64 59 64 50 Z', c: [42, 50] },
     { d: 'M78 50 L67 45 L73 34 L61 40 L60 27 L52 39 L45 31 L45 43 L34 41 L43 50 L34 59 L45 57 L45 69 L52 61 L60 73 L61 60 L73 66 L67 55 L78 50 Z', c: [55, 50], lean: 1 },
-    { d: 'M95 50 C95 46 91 43 86 43 C81 38 75 36 68 37 L64 26 L60 37 C55 40 53 45 53 50 C53 55 55 60 60 63 L64 74 L68 63 C75 64 81 62 86 57 C91 57 95 54 95 50 Z', c: [72, 50], lean: 5, shadow: true },
-    { d: 'M89 46 L98 50 L89 54 Z', kind: 'accent', fill: 'outline', lean: 5 },
+    { d: 'M95 50 C95 46 91 43 86 43 C81 38 75 36 68 37 L64 26 L60 37 C55 40 53 45 53 50 C53 55 55 60 60 63 L64 74 L68 63 C75 64 81 62 86 57 C91 57 95 54 95 50 Z', c: [72, 50], lean: 5, shadow: true, atk: 'jab' },
+    { d: 'M89 46 L98 50 L89 54 Z', kind: 'accent', fill: 'outline', lean: 5, atk: 'jab' },
   ],
 }
 
@@ -310,9 +314,21 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
           // single flat fill (eyes/teeth/nose). No filters, no gradients.
           parts.map((pl, i) =>
             (pl.kind ?? 'plate') === 'accent' ? (
-              <path key={i} d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
+              // accent: a lone path carries its own facing transform, so an
+              // animated one needs a transform-less <g data-atk> wrapper to hang
+              // the CSS jab on (static accents stay a bare path — no extra node).
+              pl.atk ? (
+                <g key={i} data-atk={pl.atk}>
+                  <path d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
+                </g>
+              ) : (
+                <path key={i} d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
+              )
             ) : (
-              <g key={i}>
+              // plate: already a transform-less <g> holding shadow/base/lit — so
+              // `data-atk` rides it for free (the CSS jab targets the g in screen
+              // space; the inner paths keep their own facing/lit transforms).
+              <g key={i} data-atk={pl.atk}>
                 {pl.shadow && <path d={pl.d} fill={PAL.shadow} fillOpacity={0.3} transform={`translate(2.5 3.5) ${partT(pl) ?? ''}`} />}
                 <path d={pl.d} fill={p.base} stroke={outline} strokeWidth="4.5" transform={partT(pl)} />
                 <path d={pl.d} fill={p.top} transform={litT(pl, '-2.5 -3.5', 0.93)} />

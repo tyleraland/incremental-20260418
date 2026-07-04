@@ -93,6 +93,31 @@
 .animate-lunge-a { animation: lunge-a 0.3s ease-out; }
 .animate-lunge-b { animation: lunge-b 0.3s ease-out; }
 
+/* Part-level melee jab: the attacker's HEAD group snaps toward the target and
+   settles; TRAILING parts (the tail) lag the opposite way — so the token reads
+   as lunging with its body, not sliding as a rigid disc. Direction rides in
+   --atk-x/--atk-y (SVG user units, set per attack on the chip wrapper); the
+   classes select on the wrapper and animate `[data-atk]` DESCENDANTS inside the
+   memo'd token svg (the body never re-renders — its data-atk tags are static).
+   Two identical a/b sets so back-to-back attacks retrigger on a class swap. */
+@keyframes atk-jab-a   { 0% { transform: none } 40% { transform: translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: none } }
+@keyframes atk-jab-b   { 0% { transform: none } 40% { transform: translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: none } }
+@keyframes atk-trail-a { 0% { transform: none } 45% { transform: translate(calc(var(--atk-x, 0) * -0.55), calc(var(--atk-y, 0) * -0.55)) } 100% { transform: none } }
+@keyframes atk-trail-b { 0% { transform: none } 45% { transform: translate(calc(var(--atk-x, 0) * -0.55), calc(var(--atk-y, 0) * -0.55)) } 100% { transform: none } }
+.animate-atk-a [data-atk="jab"]   { animation: atk-jab-a   0.3s ease-out; }
+.animate-atk-b [data-atk="jab"]   { animation: atk-jab-b   0.3s ease-out; }
+.animate-atk-a [data-atk="trail"] { animation: atk-trail-a 0.3s ease-out; }
+.animate-atk-b [data-atk="trail"] { animation: atk-trail-b 0.3s ease-out; }
+
+/* Hit recoil: a struck token jerks back along the blow (--hit-x/--hit-y, % of
+   the token box) with a brief squash, then settles. A whole-token wrapper
+   animation (compositor-only), so it composes with an in-flight lunge and never
+   touches the memo'd body. Two a/b sets to retrigger on consecutive hits. */
+@keyframes hit-recoil-a { 0% { transform: none } 30% { transform: translate(var(--hit-x, 0), var(--hit-y, 0)) } 100% { transform: none } }
+@keyframes hit-recoil-b { 0% { transform: none } 30% { transform: translate(var(--hit-x, 0), var(--hit-y, 0)) } 100% { transform: none } }
+.animate-hit-a { animation: hit-recoil-a 0.24s ease-out; }
+.animate-hit-b { animation: hit-recoil-b 0.24s ease-out; }
+
 /* Attack arc line fades shortly after the strike lands. */
 @keyframes line-fade {
   from { opacity: 0.7; }

@@ -107,7 +107,13 @@ teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
    motion (head leads, tail lags), then trust the renderer — it casts the
    `shadow` plates' flat drop shadow, keeps the lit nudge up-left in screen
    space, rotates the whole token to facing, and concats the `plate`s for the KO
-   crumple (accents drop).
+   crumple (accents drop). For a melee reaction, tag parts `atk: 'jab'` (heads —
+   snaps toward the target) / `'trail'` (tails — lags back): the renderer emits
+   `data-atk` on the part (free on plates, one wrapper `<g>` on an accent) and
+   BattleView drives it with a CSS descendant animation on the chip wrapper
+   (`--atk-x/y` user units) — so it stays OFF the memo'd body, and a struck token
+   also recoils (`animate-hit-*`). All LOD-gated; keep `atk` parts few (each
+   promotes a compositor layer during its 0.3s — ~0.8 fps on a 20-token pit).
 4. Stay lean — **a handful of flat paths per token** (a `plate` is 2–3 paths, an
    `accent` is 1) — because every element multiplies across 50+ gliding tokens
    and the memo only holds if the body receives primitives (no live engine
