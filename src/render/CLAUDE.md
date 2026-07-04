@@ -74,7 +74,7 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 ## Adding a body, weapon, or biome
 
 - **Monster silhouette / class weapon:** add the shape in `skins.tsx`
-  (`PAPER_BODY_PATHS` / `WEAPON_SHAPES`, palette roles only), then map ids in
+  (`PAPER_BODY_LAYERS` / `WEAPON_SHAPES`, palette roles only), then map ids in
   `appearance.ts` (`MONSTER_SHAPE` / `CLASS_WEAPON`). Skins switch on
   `bodyShape`/`weapon` — never on entity ids.
 - **Biome:** extend `Biome` + `biomeForLocation` in `appearance.ts`, add a
@@ -83,6 +83,31 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 - **Whole new skin:** a new `TOKEN_SKINS` body + `ARENA_SKINS`/`FX_SKINS`
   entries. Read the contract comment atop `skins.tsx` first (memo'd bodies,
   quantized props, lean element counts).
+
+### Monster-body runbook (reference sprite → layered cutout)
+
+Five rules that keep every new creature in the language:
+
+1. Redraw the reference as a **top-down** silhouette facing **+x** (nose right)
+   in the 100×100 box, split into an `under` body/limbs plate and an `over`
+   head/shell/core plate in `PAPER_BODY_LAYERS`, and map its id in
+   `MONSTER_SHAPE` — the shape carries heading, so no side views and no id
+   checks anywhere downstream.
+2. Paint only with palette **roles**/tone fields (no hex, no filters, no
+   gradients — `Palette.test.tsx` enforces it), give the `over` plate a
+   lit-scale origin `c` at its own centre, and add **at most one** extra
+   `BODY_DETAILS` primitive (a shell spiral, a muzzle) when the plates alone
+   don't read.
+3. Set a small `lean` (±4–6 units) on whichever plate should lead or lag in
+   motion, then trust the renderer to do the rest — cast the over-plate's flat
+   drop shadow, keep the lit nudge up-left in screen space, rotate the whole
+   token to facing, and concat both plates for the KO crumple.
+4. Stay lean — **~5 flat paths per token** — because every element multiplies
+   across 50+ gliding tokens and the memo only holds if the body receives
+   primitives (no live engine objects, no per-token gradients).
+5. Iterate in a scratchpad Playwright preview (a rotation grid, idle vs
+   moving), then verify with `?gallery=1` / `npm run gallery-shot` for the
+   whole-language read and `npm run skin-ab` for the fps delta before you commit.
 
 ## Perf contracts (why the weird constraints)
 
