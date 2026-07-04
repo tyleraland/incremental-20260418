@@ -66,6 +66,16 @@ const OPEN_CAM_MAX_SIZE = 60  // most zoomed-out (still less than the whole map)
 const LOD_CAM_SIZE      = 18   // cells shown above which tokens are too small to label
 const LOD_TOKEN_COUNT   = 16   // on-screen tokens above which labels are dropped
 
+// Dev profiling lever (read once): `?lod=off` forces full detail (labels/nubs/
+// attack animations) at any density — the worst-case render; `?lod=on` forces
+// the low-detail path. null = the normal LOD_* thresholds above decide.
+const LOD_FORCED: boolean | null = (() => {
+  try {
+    const v = new URLSearchParams(window.location.search).get('lod')
+    return v === 'off' ? true : v === 'on' ? false : null
+  } catch { return null }
+})()
+
 // Reference zoom the ground layer is LAID OUT at (cells across the arena at
 // scale 1). Camera zoom is a compositor `scale(GROUND_BASE_CELLS / cam.size)`
 // on top — never an animated width/height (layout), which desynced from the
@@ -739,6 +749,7 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
               facingDeg={facingDeg}
               moving={c.alive && !!c.moving}
               creature={c.team === 'enemy'}
+              simple={!detail}
               dims={chipDims(cam, appearance.scale)}
             />
           </div>
@@ -1358,7 +1369,10 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
   // EdgeMarkers instead); encounters render everyone. LOD (drop labels/nubs) when
   // zoomed far out OR many tokens are on-screen — computed once from this list.
   const visibleTokens = isOpen ? battle.combatants.filter((c) => isOnScreen(cam, rpos(c))) : battle.combatants
-  const tokenDetail = cam.size <= LOD_CAM_SIZE && visibleTokens.length <= LOD_TOKEN_COUNT
+  // `?lod=off` forces full detail (labels + facing nubs + attack/hit animations)
+  // regardless of zoom/count — a dev lever for profiling the worst case (a dense
+  // mob all animating) and A/B'ing LOD thresholds. Read once.
+  const tokenDetail = (LOD_FORCED ?? (cam.size <= LOD_CAM_SIZE && visibleTokens.length <= LOD_TOKEN_COUNT))
 
   // Ground effects (zones / firewalls) rendered into the Arena's GROUND LAYER, in
   // map-fraction coords (% of the whole map), NOT screen-space. As children of the

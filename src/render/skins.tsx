@@ -68,6 +68,12 @@ export interface TokenBodyProps {
   // along the heading. A boolean edge, not a phase — flips only on start/stop,
   // so it can't defeat the memo per round. Optional: absent reads as idle.
   moving?: boolean
+  // Body LOD: at far/dense zoom (the chip's `detail` is off) the paper skin
+  // collapses its stacked parts into ONE merged two-tone silhouette (2 paths vs
+  // ~12) — the per-token node count is what drives style-recalc across a big
+  // mob, and the inner depth/accents aren't legible at that size anyway. A
+  // boolean edge (flips only when LOD flips), so it never churns the memo.
+  simple?: boolean
   // A monster (vs a hero/NPC). The paper skin draws creatures SILHOUETTE-ONLY —
   // no centered text label — so the layered body carries identity; the circle
   // debug skin keeps the initials either way. Heroes/NPCs (false) keep their
@@ -86,7 +92,7 @@ const BODY_PROPS_EQUAL = (a: TokenBodyProps, b: TokenBodyProps) =>
   a.glyph === b.glyph && a.tone === b.tone && a.tint === b.tint &&
   a.bodyShape === b.bodyShape && a.weapon === b.weapon &&
   a.alive === b.alive && a.selected === b.selected && a.facingDeg === b.facingDeg &&
-  a.moving === b.moving && a.creature === b.creature &&
+  a.moving === b.moving && a.creature === b.creature && a.simple === b.simple &&
   a.dims.width === b.dims.width && a.dims.fontSize === b.dims.fontSize
 
 // True when the skin's body itself shows facing (so BattleChip drops the
@@ -261,10 +267,19 @@ const WEAPON_SHAPES: Record<Weapon, ReactNode> = {
   ),
 }
 
+// Per-shape merged silhouette: every PLATE's path concatenated (all wind the
+// same way) into one outline — used by the KO crumple AND the far-LOD body, so
+// a dense mob draws 2 paths/token instead of ~12. Precomputed at module load.
+const PAPER_MERGED: Record<BodyShape, string> = Object.fromEntries(
+  (Object.keys(PAPER_BODIES) as BodyShape[]).map((k) => [
+    k, PAPER_BODIES[k].filter((pl) => (pl.kind ?? 'plate') === 'plate').map((pl) => pl.d).join(' '),
+  ]),
+) as Record<BodyShape, string>
+
 // One SVG per token: ground shadow, facing weapon (heroes), then the STACK of
 // body parts drawn back-to-front. Merged into a single <svg> to keep the
 // per-token element count down (see contract).
-const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon, alive, selected, facingDeg, moving, creature, dims }: TokenBodyProps) {
+const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon, alive, selected, facingDeg, moving, creature, simple, dims }: TokenBodyProps) {
   BODY_RENDER_PROBE.count++
   const p = PAPER_TONE[tone]
   const outline = tone !== 'casting' && tint ? tint : p.outline
@@ -304,7 +319,17 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
             {WEAPON_SHAPES[heroWeapon]}
           </g>
         )}
-        {alive ? (
+        {alive && simple ? (
+          // FAR-LOD body: the whole creature as ONE merged two-tone silhouette
+          // rotated to facing — 2 paths instead of ~12. At this on-screen size
+          // the inner depth/accents aren't legible anyway, and the per-token node
+          // count is what drives style-recalc across a dense mob (the profiling
+          // lever). Same shape + facing + two-tone read as the full body.
+          <>
+            <path d={PAPER_MERGED[bodyShape]} fill={p.base} stroke={outline} strokeWidth="5" transform={angle != null ? `rotate(${angle} 50 50)` : undefined} />
+            <path d={PAPER_MERGED[bodyShape]} fill={p.top} transform={`translate(-2.5 -3.5) ${angle != null ? `rotate(${angle} 50 50) ` : ''}translate(50 50) scale(0.93) translate(-50 -50)`} />
+          </>
+        ) : alive ? (
           // The part stack, back→front. Each PLATE is a two-tone cutout — dark
           // base + outline, then the same path as a lit face with the up-left
           // nudge composed OUTSIDE the rotation (transforms apply right-to-left,
@@ -341,15 +366,10 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
           // line and tipped over, lit copy keeping the standard up-left nudge,
           // so the heap still reads as cut paper (and as this body, not a
           // generic ✕). Accents dropped. Two paths; no filters.
-          (() => {
-            const merged = parts.filter((pl) => (pl.kind ?? 'plate') === 'plate').map((pl) => pl.d).join(' ')
-            return (
-              <>
-                <path d={merged} fill={p.base} stroke={p.outline} strokeWidth="6" transform="translate(50 80) rotate(-9) scale(1.05 0.42) translate(-50 -50)" />
-                <path d={merged} fill={p.top} transform="translate(-3 -4) translate(50 80) rotate(-9) scale(0.99 0.4) translate(-50 -50)" />
-              </>
-            )
-          })()
+          <>
+            <path d={PAPER_MERGED[bodyShape]} fill={p.base} stroke={p.outline} strokeWidth="6" transform="translate(50 80) rotate(-9) scale(1.05 0.42) translate(-50 -50)" />
+            <path d={PAPER_MERGED[bodyShape]} fill={p.top} transform="translate(-3 -4) translate(50 80) rotate(-9) scale(0.99 0.4) translate(-50 -50)" />
+          </>
         )}
       </svg>
       {/* heroes/NPCs keep a small centered icon (class glyph / merchant mark);
