@@ -124,6 +124,38 @@ teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
    silhouette), then verify with `?gallery=1` / `npm run gallery-shot` for the
    whole-language read and `npm run skin-ab` for the fps delta before you commit.
 
+## Preferred monster style (what we've converged on — keep new creatures here)
+
+The point of the layered system is that every monster reads as *one family* even
+though nobody hand-tunes them together. New models stay cohesive by matching
+these, not by taste:
+
+- **Silhouette first, one signature.** Redraw the reference top-down (nose +x)
+  and find the ONE shape that identifies it, then give it exactly one memorable
+  accent — wolf = a spiky mane ruff; snake = a bulbous head + forked tongue;
+  harpy = a beaked head; slime = eyes. A distinctive outline + a single accent
+  beats a detailed blob. Monsters carry NO text label, so the shape does it all.
+- **Read at every scale.** The token is tiny and rotating in play. If it only
+  works big-and-static it's wrong. Check the far-LOD *merged* silhouette (the
+  gallery's "motion + LOD" row) — that 2-path collapse is what a dense mob draws.
+- **Flat two-tone, palette roles, deterministic.** Base + up-left lit, no
+  filters/gradients, no hex at use sites, no `Math.random`. (Enforced.)
+- **Lean = life.** Set a static `lean` so the head leads and the tail/foot lags
+  in motion — locomotion without an animation loop.
+- **Attack = the body lunges, not the disc slides.** Melee creatures tag their
+  head/face `atk: 'jab'` and tail `atk: 'trail'`; struck tokens recoil. Motion
+  is CSS on the chip wrapper (`data-atk`), never a body re-render. Prefer a
+  reaction that comes from the reference's *attack* frames (the snake strike, the
+  wolf bite) over a generic wiggle. Keep animated parts to 2–3 (compositor cost).
+- **Lean on the part count.** ~5–12 paths per token; a `plate` is 2–3, an
+  `accent` is 1. If a detail doesn't survive the far-LOD collapse, it's probably
+  not worth its node.
+
+Cohesion checklist for a PR adding a monster: distinct family silhouette? one
+signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
+`jab`/`trail` tagged if it melees? palette roles only? — all visible on one
+`npm run gallery-shot`.
+
 ## Perf contracts (why the weird constraints)
 
 - **Token bodies are `memo`'d** and receive only primitives — quantized
