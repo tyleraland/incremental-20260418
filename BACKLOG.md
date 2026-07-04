@@ -1410,26 +1410,31 @@ Next slices, roughly in order:
   Still open: blood-splatter decals (a bounded ring buffer of ~64 tiny divs on
   damage events; a canvas layer only if they should accumulate indefinitely).
 
-- **City tile catalog — SHIPPED 2026-07.** The town-asset layer for cities like
-  Prontera, built material-first so procgen plugs straight in. `src/render/
-  buildings.ts` is a CATALOG keyed off `BarrierMaterial` (`BUILDING_LOOKS`:
-  cut-stone → slate-roof stone hall, wood → terracotta-tile timber house, rubble
-  → roofless ruin): `buildingMarkup()` draws a wall rect as a paper-cutout
-  **building** — pitched two-tone roof split by a ridge (hipped, lit slope
-  up-left), a lit wall sliver at the down-right eaves (the "height"), roof
-  courses, and a flat cast shadow. `terrain.tsx` splits a city spec's BUILT-
-  material walls into buildings (natural rock walls stay organic blobs), and
-  paints the surface plane's paved materials — cobbled `road`, flagstone
-  `stone-floor`, packed `dirt`, grass `yard` — as washes plus a seeded stone-
-  mosaic paving overlay (tighter boundary wonk than natural coastlines so
-  streets read engineered). All flat fills / palette roles (Palette.test), all
-  baked into the one terrain data-URI image (zero runtime cost). `prontera-city`
-  is the first live consumer (wired to `recipe: 'city'`, 50×50; merchants moved
-  onto the plaza). Catalog + in-situ bake reviewable in `?gallery=1` → "city
-  tile catalog". Same seam rule as everything else: switch on material/kind,
-  never location ids — so a future procedural city recipe inherits the look.
-  Open polish: window/door detail on larger footprints, per-theme roof palettes
-  (desert/haunted), a landmark POI → a big silhouette (well/statue) on the plaza.
+- **City tile catalog — SHIPPED 2026-07, styled after Ragnarok's Prontera.**
+  The town-asset layer for cities like Prontera, built material-first so procgen
+  plugs straight in. `src/render/buildings.ts` is a CATALOG keyed off
+  `BarrierMaterial` (`BUILDING_LOOKS`: `wood` → half-timbered townhouse — cream
+  daub + dark timber studs + brown shingled roof, `cut-stone` → blue-slate stone
+  hall, `rubble` → roofless ruin): `buildingMarkup()` draws a wall rect as a
+  paper-cutout **building** — pitched two-tone roof split by a ridge (hipped, lit
+  slope up-left), a lit wall sliver at the down-right eaves (the "height"),
+  shingle/slate texture, and a flat cast shadow. `terrain.tsx` splits a city
+  spec's BUILT-material walls into buildings (natural rock walls stay organic
+  blobs) and dresses the plaza: **pale rounded-cobblestone** `road`/`stone-floor`
+  + `dirt`/grass washes with a seeded per-cell cobble-blob overlay (light stone
+  face veined by dark seams — the signature Prontera paving), the `landmark` POI
+  → a **fountain** (concentric stone basin → water → jet) ringed by heraldic
+  **banners** + street **lamps**, and city `tree` scatter → top-down **conifers**
+  (`props.ts`). All flat fills / palette roles (Palette.test), all baked into the
+  one terrain data-URI image (zero runtime cost). `prontera-city` is the first
+  live consumer (wired to `recipe: 'city'`, 50×50; merchants on the plaza).
+  Catalog + in-situ bake reviewable in `?gallery=1` → "city tile catalog". Same
+  seam rule as everything else: switch on material/kind, never location ids — so
+  a future procedural city recipe inherits the look. Open polish: window/door
+  detail on larger footprints, per-theme roof/wall palettes (desert/haunted),
+  crenellated city-wall rim, lamps/banners lining streets (needs the recipe to
+  place them, not just the plaza ring), and NPC/merchant placement reading the
+  spec's semantic plane.
 
 - **SVG asset pipeline & authoring tooling (groundwork for many fast
   iterations).** Findings from landing the paper variants, against the

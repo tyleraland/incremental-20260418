@@ -34,7 +34,7 @@ Polish comes from consistency, not path complexity:
 | `palette.ts` | the color vocabulary: `PAPER_TONE` (token tones) + `PAPER_PALETTE` (~20 material roles) |
 | `authoring.ts` | seeded geometry: `wonk` / `blobPath` / `polyPath` / `rectOutline` / `roughCircle` / `scatter` / `hash01` / `hashString` |
 | `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor) |
-| `buildings.ts` | the CITY tile catalog: `BUILDING_LOOKS` keyed off `BarrierMaterial` (cut-stone/wood/rubble) + `buildingMarkup()` — a wall rect → pitched-roof cutout (two-tone roof, lit wall sliver, cast shadow). Procgen plugs in by tagging a rect's material; switches on material, never ids |
+| `buildings.ts` | the CITY tile catalog (styled after Prontera): `BUILDING_LOOKS` keyed off `BarrierMaterial` — `wood` half-timbered townhouse (daub + timber studs + brown shingle roof), `cut-stone` blue-slate stone hall, `rubble` roofless ruin — + `buildingMarkup()` emitting the pitched-roof cutout (two-tone roof, lit wall sliver, cast shadow). Procgen plugs in by tagging a rect's material; switches on material, never ids |
 | `terrain.tsx` | the renderer: per-location terrain model + baked data-URI emitter, `propMarkup()` (the one PropDef→svg translation); §mapgen spec consumption (surface washes incl. city road/plaza/dirt + a seeded paving mosaic, scatter-plane props, material-aware collision paint — BUILT-material walls become `buildings.ts` structures, natural walls stay organic blobs) |
 | `appearance.ts` | entity → visual resolver (glyph/tone/bodyShape/weapon/biome) — the ONLY id→visual translation |
 | `skins.tsx` | token bodies (`TokenBodyProps` contract), `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |

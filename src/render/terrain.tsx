@@ -60,6 +60,13 @@ const LIT_NUDGE = 'translate(-0.14 -0.18)'   // one light direction (up-left), e
 // is their renderer. `propMarkup` below is the single PropDef → svg-markup
 // emitter, shared with the ?workshop=1 authoring page.
 
+// Plaza street furniture the city landmark ring draws, looked up by prop id from
+// the plaza set (base archetypes, before seeded variants) — keeps the emit a
+// dumb propMarkup call, same as scatter.
+const PLAZA_DECOR: Record<string, PropDef> = Object.fromEntries(
+  TERRAIN_PROPS.plaza.filter((d) => d.id === 'banner' || d.id === 'lamppost').map((d) => [d.id, d]),
+)
+
 const MOTTLE_SHADES: Record<Biome, [string, string]> = {
   grass: [P.grassLight, P.grassDark],
   stone: [P.stoneLight, P.stoneDark],
@@ -85,6 +92,10 @@ export interface TerrainModel {
   // pitched-roof cutout structures (render/buildings.ts) instead of rock blobs.
   // Rects are in svg coords (y already flipped); the markup is emitted in terrainSvg.
   buildings: { x: number; y: number; w: number; h: number; material: BarrierMaterial; seed: number }[]
+  // §city plaza dressing: the landmark fountain (from the spec's `landmark` POI)
+  // + a ring of heraldic banners / street lamps around the plaza. All in svg coords.
+  landmark: { x: number; y: number; r: number } | null
+  decor: { id: string; x: number; y: number; s: number; rot: number }[]
   rim: { d: string; inner: string } | null
 }
 
@@ -111,6 +122,30 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     const s = toSvg(r)
     return { x: s.x, y: s.y, w: s.w, h: s.h, material: r.material, seed: seed + 8100 + i * 613 }
   })
+
+  // City plaza dressing: the fountain at the spec's `landmark` POI, ringed by
+  // banners + lamps at the plaza rim (the Prontera market-square read). Derived
+  // deterministically from the spec — no Math.random.
+  let landmark: TerrainModel['landmark'] = null
+  const decor: TerrainModel['decor'] = []
+  if (spec && spec.recipe === 'city') {
+    const lm = spec.semantic.pois.find((pp) => pp.kind === 'landmark')
+    if (lm) landmark = { x: r2(lm.at.x), y: r2(rows - lm.at.y), r: 1.7 }
+    const plazaR = Math.max(4.5, cols * 0.1)
+    const ringR = plazaR + 0.9
+    const ring = 8
+    for (let i = 0; i < ring; i++) {
+      const a = (i / ring) * Math.PI * 2 + 0.4
+      const wx = cols / 2 + Math.cos(a) * ringR, wy = rows / 2 + Math.sin(a) * ringR
+      const banner = i % 2 === 0
+      decor.push({
+        id: banner ? 'banner' : 'lamppost',
+        x: r2(wx), y: r2(rows - wy),
+        s: banner ? 0.95 : 0.7,
+        rot: banner ? r2((a * 180) / Math.PI + 90) : 0,
+      })
+    }
+  }
 
   // walls: cluster rects whose overhang-expanded boxes touch, then paint each
   // cluster as ONE multi-subpath blob (same fill → the union reads as one rock).
@@ -188,39 +223,29 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
     })
 
-    // Paving texture: a seeded stone mosaic over the paved cells. Roads get
-    // irregular cobble dashes; the plaza gets a coarse flagstone seam grid.
-    // Cheap & bounded (one pass over the paved cells only) and baked into the
-    // single terrain image, so it costs nothing at runtime.
+    // Paving texture: rounded cobblestones (Prontera's signature) — each paved
+    // cell gets ONE seeded rounded blob outline, so adjacent stones' outlines
+    // read as mortar seams: a light stone face (the wash) veined by dark gaps.
+    // Plaza slabs run a touch larger/dressed than the street cobbles. Bounded
+    // (one blob per paved cell) and baked into the single image → free at runtime.
     if (isCity) {
       let cobble = ''
       let flags = ''
       for (let y = 0; y < spec.rows; y++) {
         for (let x = 0; x < spec.cols; x++) {
           const v = g[y * spec.cols + x]
-          const cx = x + 0.5, sy = rows - y - 0.5   // cell centre in svg coords
-          if (v === road) {
-            // 1–2 short round-capped dabs per cell → packed cobbles (lit stone)
-            const s = seed + x * 73 + y * 179
-            const dabs = hash01(s) < 0.35 ? 2 : 1
-            for (let k = 0; k < dabs; k++) {
-              const t = s + k * 991
-              const len = 0.16 + hash01(t + 1) * 0.14
-              const ang = hash01(t + 2) * Math.PI
-              const ux = Math.cos(ang) * len * 0.5, uy = Math.sin(ang) * len * 0.5
-              const jx = (hash01(t + 3) - 0.5) * 0.62, jy = (hash01(t + 4) - 0.5) * 0.62
-              cobble += `M${r2(cx + jx - ux)} ${r2(sy + jy - uy)}L${r2(cx + jx + ux)} ${r2(sy + jy + uy)}`
-            }
-          } else if (v === floor) {
-            // slab seams on a coarse lattice → ~2-cell flagstones, lightly jittered
-            const jt = (hash01(seed + x * 11 + y * 17) - 0.5) * 0.14
-            if (x % 2 === 0) flags += `M${r2(x + jt)} ${r2(rows - y)}L${r2(x + jt)} ${r2(rows - y - 1)}`
-            if (y % 2 === 0) flags += `M${r2(x)} ${r2(rows - y + jt)}L${r2(x + 1)} ${r2(rows - y + jt)}`
-          }
+          if (v !== road && v !== floor) continue
+          const s = seed + x * 73 + y * 179
+          const cx = x + 0.5 + (hash01(s) - 0.5) * 0.28
+          const sy = rows - y - 0.5 + (hash01(s + 1) - 0.5) * 0.28
+          const base = v === floor ? 0.54 : 0.46
+          const d = blobPath(roughCircle(cx, sy, base * (0.85 + hash01(s + 2) * 0.4), 6, s + 3))
+          if (v === floor) flags += d
+          else cobble += d
         }
       }
-      if (cobble) paving.push({ d: cobble, stroke: 'roadPaveLit', sw: 0.2, opacity: 0.5 })
-      if (flags) paving.push({ d: flags, stroke: 'flagSeam', sw: 0.08, opacity: 0.55 })
+      if (cobble) paving.push({ d: cobble, stroke: 'roadSeam', sw: 0.06, opacity: 0.55 })
+      if (flags) paving.push({ d: flags, stroke: 'flagSeam', sw: 0.06, opacity: 0.6 })
     }
   }
 
@@ -286,7 +311,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     })
   }
 
-  return { mottles, surface, paving, props, cliffs, walls, buildings, rim }
+  return { mottles, surface, paving, props, cliffs, walls, buildings, landmark, decor, rim }
 }
 
 // ScatterKind → biome prop ARCHETYPE (base id; seeded variants ride along).
@@ -295,7 +320,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
 const KIND_ARCHETYPE: Record<Biome, Partial<Record<ScatterKind, string>>> = {
   grass: { tree: 'bush', bush: 'bush', rock: 'pebble', stump: 'stump', flower: 'bloom', reed: 'reeds' },
   stone: { tree: 'spikes', bush: 'moss', rock: 'shard', stump: 'rubble', flower: 'bone', reed: 'crack' },
-  plaza: { tree: 'signpost', bush: 'pot', rock: 'sack', stump: 'crate', flower: 'pot', reed: 'coil' },
+  plaza: { tree: 'conifer', bush: 'pot', rock: 'sack', stump: 'crate', flower: 'pot', reed: 'coil' },
 }
 // Catalog helper (?gallery=1): the archetype a scatter kind resolves to in a
 // biome — so the gallery can show the mapgen vocabulary next to the raw props.
@@ -383,6 +408,25 @@ export function terrainSvg(p: TerrainProps): string {
   // (render/buildings.ts). Each carries its own fills/shadow — a dumb emit here.
   for (const b of m.buildings) {
     parts.push(buildingMarkup({ x: b.x, y: b.y, w: b.w, h: b.h }, b.material, b.seed))
+  }
+  // §city plaza dressing: the fountain (concentric stone basin → water → jet) +
+  // the banner/lamp ring, all above the plaza paving.
+  if (m.landmark) {
+    const { x, y, r } = m.landmark
+    const basin = blobPath(roughCircle(x, y, r, 12, p.seed + 9999))
+    const lip = blobPath(roughCircle(x, y, r * 0.82, 12, p.seed + 9999))
+    parts.push(
+      `<ellipse cx='${r2(x + 0.18)}' cy='${r2(y + 0.24)}' rx='${r2(r)}' ry='${r2(r * 0.8)}' fill='${P.shadow}' fill-opacity='0.22'/>` +
+      `<path d='${basin}' fill='${P.stoneWallDark}' stroke='${P.roofRidge}' stroke-width='0.14' stroke-linejoin='round'/>` +
+      `<path d='${lip}' fill='${P.stoneWall}' transform='${LIT_NUDGE}'/>` +
+      `<ellipse cx='${r2(x)}' cy='${r2(y)}' rx='${r2(r * 0.6)}' ry='${r2(r * 0.56)}' fill='${P.fountainWater}'/>` +
+      `<ellipse cx='${r2(x - r * 0.18)}' cy='${r2(y - r * 0.16)}' rx='${r2(r * 0.22)}' ry='${r2(r * 0.16)}' fill='${P.cream}' fill-opacity='0.4'/>` +
+      `<ellipse cx='${r2(x)}' cy='${r2(y)}' rx='${r2(r * 0.16)}' ry='${r2(r * 0.16)}' fill='${P.cream}'/>`,
+    )
+  }
+  for (const d of m.decor) {
+    const def = PLAZA_DECOR[d.id]
+    if (def) parts.push(`<g transform='translate(${d.x} ${d.y}) rotate(${d.rot}) scale(${d.s})'>${propMarkup(def)}</g>`)
   }
   if (m.rim) {
     parts.push(

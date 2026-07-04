@@ -79,17 +79,33 @@ export const PAPER_PALETTE = {
   roofSlate:     '#5d6879',
   roofSlateDark: '#38404e',
 
+  // half-timbered (Tudor) house — cream daub panels + dark timber framing +
+  // a warm brown shingled roof (the iconic Ragnarok-Prontera townhouse)
+  plasterWhite: '#d6cbb2',
+  timberFrame:  '#34261a',
+  roofShingle:  '#6f4b30',
+  roofShingleDark: '#3f2717',
+
+  // city landmarks / street furniture (render/terrain.tsx + props.ts)
+  fountainWater: '#2f6f86',   // fountain basin water (reads bluer than pond water)
+  lampGlow:      '#ecc665',   // lit street-lamp head
+  lampPost:      '#2b2a26',
+  bannerBlue:    '#3c5ba6',   // hanging heraldic banner
+  bannerBlueDk:  '#243a71',
+  bannerGold:    '#c7a54a',   // banner trim / crest
+  pineLit:       '#41562a',   // conifer highlight (over foliageDeep)
+
   // ── City ground surfaces (render/terrain.tsx spec consumption) ─────────────
   // Paved regions of a city's surface plane read as distinct materials over the
   // biome ground: warm cobbled roads, a pale flagstone plaza, packed-dirt yards.
   // Two tones each drive a seeded stone-mosaic texture (flat marks, no gradient).
-  roadPave:    '#565040',   // cobbled street — a warm grey that reads paved, not muddy
-  roadPaveLit: '#6f6753',   // lit cobble stones dabbed over the base
-  roadSeam:    '#221e15',
-  flagstone:   '#5a5039',   // plaza paving slabs
-  flagstoneLit:'#6d6247',
-  flagSeam:    '#231f16',
-  dirtPath:    '#3f2f1d',   // packed-dirt lot (browner + dimmer than the streets)
+  roadPave:    '#a99f85',   // pale cobbled street (Prontera's light flagstone read)
+  roadPaveLit: '#c1b79a',   // lit cobble face
+  roadSeam:    '#6a6150',   // mortar seams between rounded cobbles
+  flagstone:   '#b6ac90',   // plaza paving — the palest, most dressed stone
+  flagstoneLit:'#cabfa2',
+  flagSeam:    '#726954',
+  dirtPath:    '#5a4a30',   // packed-dirt lot (browner + dimmer than the paving)
   yardWash:    '#26331a',   // grass yards/commons between the streets
 } as const
 

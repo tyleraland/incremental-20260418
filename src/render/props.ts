@@ -72,6 +72,22 @@ const SKULL_D = 'M-0.4 0.08C-0.46 -0.35 -0.16 -0.56 0.05 -0.54C0.31 -0.5 0.49 -0
 const POT_D = 'M-0.38 -0.12C-0.42 0.08 -0.3 0.48 -0.19 0.55L0.2 0.55C0.31 0.48 0.42 0.08 0.38 -0.12L0.46 -0.26L-0.46 -0.24Z'
 const BOARD_D = 'M-0.55 -0.56L0.5 -0.62L0.53 -0.26L-0.52 -0.21Z'
 
+// Deterministic radial STAR (a top-down conifer crown / cog): `n` points, outer
+// radius `ro`, valley radius `ri`. Pure trig, no Math.random — a static path
+// string, so it wonks + variants like any hand-authored prop.
+function starPath(n: number, ro: number, ri: number, rot = 0): string {
+  let d = ''
+  for (let i = 0; i < n * 2; i++) {
+    const a = rot + (i / (n * 2)) * Math.PI * 2
+    const r = i % 2 ? ri : ro
+    d += (i ? 'L' : 'M') + (Math.cos(a) * r).toFixed(3) + ' ' + (Math.sin(a) * r).toFixed(3)
+  }
+  return d + 'Z'
+}
+const CONIFER_OUT = starPath(9, 0.92, 0.44, 0.2)
+const CONIFER_IN = starPath(9, 0.66, 0.3, 0.2)
+const BANNER_D = 'M0.02 -0.52L0.44 -0.46L0.5 0.5L0.12 0.56Z'
+
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
   grass: withVariants([
     { id: 'tuft', size: 0.9, paths: [
@@ -152,6 +168,30 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     { id: 'coil', size: 0.8, paths: [
       { d: 'M-0.5 0A0.5 0.5 0 1 0 0.5 0A0.5 0.5 0 1 0 -0.5 0ZM-0.27 0A0.27 0.27 0 1 0 0.27 0A0.27 0.27 0 1 0 -0.27 0Z', stroke: 'canvas', sw: 0.13 },
       { d: 'M-0.1 0A0.1 0.1 0 1 0 0.1 0A0.1 0.1 0 1 0 -0.1 0Z', fill: 'shadow', opacity: 0.3 },
+    ] },
+    // top-down conifer (the pines lining Prontera's avenues): a two-tone spiky
+    // crown with a lit inner star + a small trunk core
+    { id: 'conifer', size: 1.15, wonk: 0.05, paths: [
+      { d: 'M0.14 0.62A0.5 0.28 0 1 0 0.16 0.66Z', fill: 'shadow', opacity: 0.28 },
+      { d: CONIFER_OUT, fill: 'foliageDeep' },
+      { d: CONIFER_IN, fill: 'foliage', lit: true },
+      { d: 'M-0.14 -0.05A0.14 0.14 0 1 0 0.14 -0.05A0.14 0.14 0 1 0 -0.14 -0.05Z', fill: 'pineLit' },
+    ] },
+    // top-down street lamp: an iron collar with a lit head (the ornate lamps
+    // that ring the plaza)
+    { id: 'lamppost', size: 0.6, wonk: 0.03, paths: [
+      { d: 'M-0.3 0A0.3 0.3 0 1 0 0.3 0A0.3 0.3 0 1 0 -0.3 0Z', fill: 'lampPost' },
+      { d: 'M-0.18 0A0.18 0.18 0 1 0 0.18 0A0.18 0.18 0 1 0 -0.18 0Z', fill: 'lampGlow' },
+      { d: 'M-0.34 0L-0.14 0M0.14 0L0.34 0M0 -0.34L0 -0.14M0 0.14L0 0.34', stroke: 'lampGlow', sw: 0.07, opacity: 0.7 },
+    ] },
+    // top-down heraldic banner: a short pole with a hanging blue flag + gold
+    // trim and a pale crest
+    { id: 'banner', size: 0.85, wonk: 0.03, paths: [
+      { d: 'M0.06 -0.5L0.5 -0.44L0.56 0.5L0.14 0.56Z', fill: 'shadow', opacity: 0.24 },
+      ...cutout(BANNER_D, 'bannerBlueDk', 'bannerBlue'),
+      { d: 'M0.04 -0.34L0.47 -0.29M0.08 0.34L0.5 0.4', stroke: 'bannerGold', sw: 0.06, opacity: 0.85 },
+      { d: 'M0.2 0A0.11 0.13 0 1 0 0.42 0A0.11 0.13 0 1 0 0.2 0Z', fill: 'bannerGold', opacity: 0.9 },
+      { d: 'M-0.16 -0.52A0.12 0.12 0 1 0 0.08 -0.52A0.12 0.12 0 1 0 -0.16 -0.52Z', fill: 'lampPost' },
     ] },
   ]),
 }

@@ -61,6 +61,8 @@ const GEN_CITY: MapSpec = generateMap(CITY_RECIPE, { recipe: 'city', seed: 'pron
 // treatment is reviewable next to the in-situ bake.
 const BUILDING_MATS = Object.keys(BUILDING_LOOKS) as BarrierMaterial[]
 const buildingSwatch = (material: BarrierMaterial): string => buildingMarkup({ x: 1.4, y: 1.8, w: 5.2, h: 4 }, material, 42)
+// The new top-down street furniture (conifer / lamp / banner) the city plaza uses.
+const CITY_FURNITURE = ['conifer', 'lamppost', 'banner'].map((id) => TERRAIN_PROPS.plaza.find((p) => p.id === id)!).filter(Boolean)
 
 function Cell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -276,6 +278,14 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
                 <svg viewBox="0 0 8 8" className="w-14 h-14" aria-hidden dangerouslySetInnerHTML={{ __html: buildingSwatch(mat) }} />
               </div>
               <span className="text-[8px] text-neutral-600 leading-none">{mat}</span>
+            </div>
+          ))}
+          {CITY_FURNITURE.map((def) => (
+            <div key={def.id} className="flex flex-col items-center gap-1">
+              <div className="w-12 h-12 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+                <svg viewBox="-1.1 -1.1 2.2 2.2" className="w-10 h-10" aria-hidden dangerouslySetInnerHTML={{ __html: propMarkup(def) }} />
+              </div>
+              <span className="text-[8px] text-neutral-600 leading-none">{def.id}</span>
             </div>
           ))}
           <div className="flex flex-col items-center gap-1">

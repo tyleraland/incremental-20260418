@@ -21,9 +21,9 @@ import type { BarrierMaterial } from '@/mapgen'
 import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
 import { hash01, polyPath, wonk, type Pt, type Rect } from '@/render/authoring'
 
-// Roof texture family — a few flat course/beam strokes over each slope so a bare
-// two-tone reads as tile vs. slate vs. bare ruin.
-export type RoofTexture = 'tile' | 'slate' | 'none'
+// Roof texture family — flat strokes over each slope so a bare two-tone reads as
+// staggered shingles (Ragnarok-Prontera townhouse), dressed slate, or bare ruin.
+export type RoofTexture = 'shingle' | 'slate' | 'none'
 
 export interface BuildingLook {
   wall: PaperRole        // the lit wall sliver under the eaves
@@ -32,16 +32,20 @@ export interface BuildingLook {
   roofShade: PaperRole   // slope facing away
   texture: RoofTexture
   roofed: boolean        // false → a ruin: broken walls, no roof
+  framed?: boolean       // half-timbered: dark studs on the exposed wall sliver
 }
 
-// The catalog. cut-stone and wood are what the city recipe emits today; rubble
-// rounds out the vocabulary (ruins motif) so a procgen ruin/among-the-city tile
-// is already covered. Every other BarrierMaterial (rock/hedge/water/…) is NOT a
-// building — terrain.tsx leaves those to the organic blob/cliff dressing.
+// The catalog, styled after Prontera's architecture:
+//   wood      → a half-timbered townhouse (cream daub + dark timber, brown roof)
+//   cut-stone → a stone hall / keep (dressed stone + a cool blue-slate roof)
+//   rubble    → a roofless ruin (the ruins/history motif)
+// cut-stone and wood are what the city recipe emits today; every other
+// BarrierMaterial (rock/hedge/water/…) is NOT a building — terrain.tsx leaves
+// those to the organic blob/cliff dressing.
 export const BUILDING_LOOKS: Partial<Record<BarrierMaterial, BuildingLook>> = {
-  'cut-stone': { wall: 'stoneWall', wallShade: 'stoneWallDark', roofLit: 'roofSlate', roofShade: 'roofSlateDark', texture: 'slate', roofed: true },
-  'wood':      { wall: 'plaster',   wallShade: 'plasterDark',   roofLit: 'roofTile',  roofShade: 'roofTileDark',  texture: 'tile',  roofed: true },
-  'rubble':    { wall: 'stoneWall', wallShade: 'stoneWallDark', roofLit: 'stoneWall', roofShade: 'stoneWallDark', texture: 'none',  roofed: false },
+  'wood':      { wall: 'plasterWhite', wallShade: 'plasterDark',   roofLit: 'roofShingle', roofShade: 'roofShingleDark', texture: 'shingle', roofed: true, framed: true },
+  'cut-stone': { wall: 'stoneWall',    wallShade: 'stoneWallDark', roofLit: 'roofSlate',   roofShade: 'roofSlateDark',   texture: 'slate',   roofed: true },
+  'rubble':    { wall: 'stoneWall',    wallShade: 'stoneWallDark', roofLit: 'stoneWall',   roofShade: 'stoneWallDark',   texture: 'none',    roofed: false },
 }
 
 export function isBuildingMaterial(m: BarrierMaterial | undefined): boolean {
@@ -87,6 +91,39 @@ function courses(a: Pt, b: Pt, c: Pt, d: Pt, n: number, role: PaperRole, sw: num
   return out
 }
 
+// Staggered shingle rows across a slope quad [A,B,C,D] (A-B ridge, D-C eave):
+// `rows` course lines, each with short cross-ticks offset half a step per row →
+// the staggered-tile read (brick-bond, top-down).
+function shingles(a: Pt, b: Pt, c: Pt, d: Pt, rows: number, role: PaperRole): string {
+  const step = 1 / (rows + 1)
+  let out = ''
+  for (let i = 1; i <= rows; i++) {
+    const t = i * step
+    const l = lerp(a, d, t), r = lerp(b, c, t)             // this course line
+    const l2 = lerp(a, d, t + step * 0.6), r2 = lerp(b, c, t + step * 0.6)   // toward the eave
+    out += `<path d='M${f(l.x)} ${f(l.y)}L${f(r.x)} ${f(r.y)}' stroke='${P[role]}' stroke-width='0.055' stroke-opacity='0.45'/>`
+    const cols = 5
+    for (let j = 0; j < cols; j++) {
+      const u = (j + (i % 2 ? 0.25 : 0.75)) / cols
+      const p = lerp(l, r, u), q = lerp(l2, r2, u)
+      out += `<path d='M${f(p.x)} ${f(p.y)}L${f(q.x)} ${f(q.y)}' stroke='${P[role]}' stroke-width='0.05' stroke-opacity='0.33' stroke-linecap='round'/>`
+    }
+  }
+  return out
+}
+
+// Timber studs along an exposed wall edge a→b, each poking `inward` (a vector
+// into the wall band). The half-timber framing that reads even top-down.
+function studs(a: Pt, b: Pt, inward: Pt, n: number, role: PaperRole): string {
+  let out = ''
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n
+    const p = lerp(a, b, t)
+    out += `<path d='M${f(p.x)} ${f(p.y)}L${f(p.x + inward.x)} ${f(p.y + inward.y)}' stroke='${P[role]}' stroke-width='0.11' stroke-opacity='0.75' stroke-linecap='round'/>`
+  }
+  return out
+}
+
 // Emit ONE building as svg markup, footprint `r` already in the terrain's svg
 // coords (y down). Layers bottom→top: cast shadow · wall base · lit wall sliver ·
 // two-slope roof (+ ridge, eaves, texture). ~8–10 flat paths; baked into the
@@ -114,6 +151,13 @@ export function buildingMarkup(r: Rect, material: BarrierMaterial, seed: number)
   parts.push(`<path d='${poly([tl, tr, br, bl])}' fill='${P[look.wallShade]}'/>`)
   const wallLit = [tl, tr, br, bl].map((p) => shift(p, 0.08, 0.05))
   parts.push(`<path d='${poly(wallLit)}' fill='${P[look.wall]}'/>`)
+  // half-timbered: dark studs along the two exposed eaves (the plaster panels
+  // between them read as the light wall). Poke into the ~LIFT-wide wall band.
+  if (look.framed) {
+    const nB = Math.max(3, Math.round(r.w / 1.1)), nR = Math.max(2, Math.round(r.h / 1.1))
+    parts.push(studs(bl, br, { x: 0, y: -LIFT * 0.9 }, nB, 'timberFrame'))      // bottom eave
+    parts.push(studs(tr, br, { x: -LIFT * 0.9, y: 0 }, nR, 'timberFrame'))      // right eave
+  }
 
   // roof: the footprint lifted up-left, split by a ridge along the LONG axis into
   // a lit slope (up-left) and a shade slope. Ridge ends inset → a hipped read.
@@ -137,11 +181,13 @@ export function buildingMarkup(r: Rect, material: BarrierMaterial, seed: number)
   }
   parts.push(`<path d='${poly(shadeQuad)}' fill='${P[look.roofShade]}'/>`)
   parts.push(`<path d='${poly(litQuad)}' fill='${P[look.roofLit]}'/>`)
-  // roof texture: courses parallel to the ridge on each slope
-  if (look.texture !== 'none') {
-    const n = look.texture === 'slate' ? 3 : 2
-    parts.push(courses(litQuad[0], litQuad[1], litQuad[2], litQuad[3], n, look.roofShade, 0.07))
-    parts.push(courses(shadeQuad[0], shadeQuad[1], shadeQuad[2], shadeQuad[3], n, look.roofShade, 0.07))
+  // roof texture: staggered shingles (townhouse) or dressed slate courses (hall)
+  if (look.texture === 'shingle') {
+    parts.push(shingles(litQuad[0], litQuad[1], litQuad[2], litQuad[3], 3, look.roofShade))
+    parts.push(shingles(shadeQuad[0], shadeQuad[1], shadeQuad[2], shadeQuad[3], 3, look.roofShade))
+  } else if (look.texture === 'slate') {
+    parts.push(courses(litQuad[0], litQuad[1], litQuad[2], litQuad[3], 3, look.roofShade, 0.07))
+    parts.push(courses(shadeQuad[0], shadeQuad[1], shadeQuad[2], shadeQuad[3], 3, look.roofShade, 0.07))
   }
   // eaves outline + the ridge beam — the crisp "cut paper" edges
   parts.push(`<path d='${poly([rtl, rtr, rbr, rbl])}' fill='none' stroke='${P.roofRidge}' stroke-width='0.13' stroke-linejoin='round'/>`)
