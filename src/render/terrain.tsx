@@ -470,7 +470,17 @@ export function terrainSvg(p: TerrainProps): string {
 // decode runs async (the arena shows immediately; the terrain fades in). We
 // trade infinite-zoom crispness (unneeded) for smoothness. RES caps the bitmap
 // so a big city doesn't allocate an enormous texture.
-const TERRAIN_RES = (cols: number) => Math.min(1536, Math.max(768, Math.round(cols * 26)))
+//
+// The bitmap gets scaled UP by the camera when you zoom in toward hero scale,
+// so its raster resolution is the crispness ceiling. Scale RES by the device
+// pixel ratio (clamped) — mobile retina is exactly where the upscale shows —
+// while the cap keeps the one texture bounded (2048² ≈ 16MB; the async decode
+// scales with SVG path count, not much with area, so this stays off the
+// critical path). Desktop (dpr 1) is unchanged at cols*26.
+const TERRAIN_RES = (cols: number) => {
+  const dpr = typeof window !== 'undefined' ? Math.min(1.6, window.devicePixelRatio || 1) : 1
+  return Math.min(2048, Math.max(768, Math.round(cols * 26 * dpr)))
+}
 
 export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   const sig = sigOf(p)
@@ -498,7 +508,13 @@ export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
       try { ctx.drawImage(img, 0, 0, res, res) } catch { return }
       setReady(true)
     }
-    img.src = `data:image/svg+xml,${encodeURIComponent(svg)}`
+    // Stamp explicit width/height on the SVG root so the browser rasterizes it
+    // AT `res` before the draw. A viewBox-only SVG has no intrinsic size, so
+    // <img> rasterizes it at the default 300×150 and drawImage then UPSCALES
+    // that to res — a blurry bitmap regardless of `res`. Sizing the root makes
+    // the bake a true res×res raster (the actual crispness fix).
+    const sized = svg.replace('<svg ', `<svg width='${res}' height='${res}' `)
+    img.src = `data:image/svg+xml,${encodeURIComponent(sized)}`
     return () => { cancelled = true }
   }, [svg, p.cols])
 

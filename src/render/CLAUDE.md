@@ -230,8 +230,12 @@ signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
   the map transition ~4s. `PaperTerrain` now draws the SVG to a fixed-res
   `<canvas>` **raster** once (async): pan/zoom composite the bitmap on the GPU
   (free), the decode is off the critical path (terrain fades in). Keep the source
-  piece density BOUNDED — the one-time decode scales with path count. Pinned by
-  `Terrain.test.tsx`.
+  piece density BOUNDED — the one-time decode scales with path count. The bake
+  stamps explicit `width`/`height=res` on the SVG root before decoding (a
+  viewBox-only SVG has no intrinsic size, so `<img>` rasterizes it at the default
+  300×150 and `drawImage` then UPSCALES that — a blurry bake regardless of `res`)
+  and `res` scales with clamped `devicePixelRatio` so mobile retina (where the
+  hero-scale upscale shows) is crisp. Pinned by `Terrain.test.tsx`.
 - **Quantize relative to the element.** A viewport-sized element needs coarse
   steps (the hero light uses 8-cqmin); token-sized ones use eighth-cqmin.
 - Verify any visual change with `npm run skin-ab` (median-of-windows fps A/B
