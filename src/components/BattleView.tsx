@@ -243,10 +243,20 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, spec: mapSpec, onReady: onTerrainReady })
   const terrainSig = terrainEl ? `${biome}|${mapCols}x${mapRows}|${terrainSeed}|${mapSpec ? mapSpec.recipe + mapSpec.seed : ''}` : ''
   useEffect(() => { if (terrainSig) setTerrainReady(false) }, [terrainSig])
-  // When a terrain hook is present, the base ground/grid wait for it; otherwise
-  // (circle skin / no terrain) they show immediately as before.
-  const groundReveal = terrainEl ? { opacity: terrainReady ? 1 : 0, transition: 'opacity 240ms ease-out' } : undefined
-  const gridReveal = terrainEl ? { opacity: terrainReady ? 0.4 : 0, transition: 'opacity 240ms ease-out' } : undefined
+  // Reveal the WHOLE field — terrain + ground + grid + tokens — atomically once
+  // the terrain bitmap is drawn, so nothing renders on a bare surface ahead of
+  // it (the "tokens first, map an instant later" stagger). With prewarm this is
+  // the first painted frame; on a cold miss it's a brief bare arena, then the
+  // full scene at once. No fade (a transition would re-stagger vs the tokens).
+  // Only when a terrain hook is present; circle skin / hookless maps show as before.
+  const fieldReveal = terrainEl ? { opacity: terrainReady ? 1 : 0 } : undefined
+  // Safety: never leave the field hidden if readiness never arrives (decode
+  // failure/hang) — reveal after a cap so tokens always come back.
+  useEffect(() => {
+    if (!terrainSig || terrainReady) return
+    const id = setTimeout(() => setTerrainReady(true), 4000)
+    return () => clearTimeout(id)
+  }, [terrainSig, terrainReady])
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -405,7 +415,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, willChange: 'transform' }}>
+      <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, willChange: 'transform', ...fieldReveal }}>
         {/* team-half tints, split at the arena's center line. The split eases with
             the camera (CSS) so it pans in sync with the tokens — the divs stay
             anchored to the viewport edges, so only the split line moves (no gap). */}
@@ -449,7 +459,6 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
               style={{
                 backgroundImage: ground.image,
                 backgroundSize: `${(100 / mapCols) * ground.cellsPerTile}% ${(100 / mapRows) * ground.cellsPerTile}%`,
-                ...groundReveal,
               }}
             />
           )}
@@ -458,7 +467,6 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
           <div
             className="absolute inset-0 opacity-40 pointer-events-none"
             style={{
-              ...gridReveal,
               backgroundImage:
                 `linear-gradient(to right, ${arenaSkin.gridLine} 1px, transparent 1px),` +
                 `linear-gradient(to bottom, ${arenaSkin.gridLine} 1px, transparent 1px)`,

@@ -1,4 +1,4 @@
-import { memo, useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useMemo, useLayoutEffect, useRef, useState } from 'react'
 import type { Barrier } from '@/engine'
 import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
 import { SURFACE_MATERIALS } from '@/mapgen'
@@ -577,24 +577,34 @@ export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
     if (cached) { paint(cached); return }
     setReady(false)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    rasterizeTerrain(svg, res).then((cv) => { if (cancelled) return; cacheSet(key, cv); paint(cv) }).catch(() => {})
+    rasterizeTerrain(svg, res)
+      .then((cv) => { if (cancelled) return; cacheSet(key, cv); paint(cv) })
+      // Reveal anyway on decode failure — a bare arena beats a field hidden
+      // forever (the caller gates the whole scene on this readiness).
+      .catch(() => { if (!cancelled) setReady(true) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps — svg is a pure fn of sig
   }, [sig, p.cols])
 
-  // Tell the caller the moment the bitmap is ready so it can reveal the base
-  // ground/grid in sync (they'd otherwise pop in early under a blank terrain).
-  useEffect(() => { if (ready) p.onReady?.() }, [ready, p.onReady])
+  // Tell the caller the moment the bitmap is ready so it reveals the base
+  // ground/grid in the SAME frame. useLayoutEffect (not useEffect) so on a cache
+  // hit terrainReady flips before the browser paints — the map is whole on the
+  // first frame, not a frame behind the tokens.
+  useLayoutEffect(() => { if (ready) p.onReady?.() }, [ready, p.onReady])
 
   // The canvas fills the ground layer and scales with the camera transform as a
-  // plain bitmap (GPU composite). A short fade hides the one-time async decode.
+  // plain bitmap (GPU composite). NO fade: the bitmap is either drawn (prewarm/
+  // cache hit → present on the first paint, coeval with the tokens) or not yet
+  // decoded (hidden until it is). A fade would delay the terrain ~240ms behind
+  // the un-faded tokens — reading as the "tokens first, map an instant later"
+  // stagger. Appears instantly the moment it's ready.
   return (
     <canvas
       ref={canvasRef}
       data-terrain
       aria-hidden
       className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{ opacity: ready ? 1 : 0, transition: 'opacity 240ms ease-out' }}
+      style={{ opacity: ready ? 1 : 0 }}
     />
   )
 })

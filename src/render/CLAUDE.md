@@ -240,9 +240,14 @@ signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
   while the location's detail panel is up (`prewarmLocationTerrain` in BattleView
   → LocationDetail), so dropping in paints the map on the FIRST frame (a
   `useLayoutEffect` draws the cached bitmap pre-paint) instead of after the
-  ~200ms+ parse — no blank arena. `ready` gates BOTH the terrain fade AND the base
-  ground/grid reveal (Arena `groundReveal`/`gridReveal`) so the whole map appears
-  as one, never layer-by-layer. Pinned by `Terrain.test.tsx`.
+  ~200ms+ parse — no blank arena. `ready` (surfaced via `onReady`, fired in a
+  `useLayoutEffect`) gates the Arena's ENTIRE field — terrain + ground + grid +
+  **tokens** (the pan div's `fieldReveal`) — so the whole scene appears
+  atomically, never tokens-on-a-bare-surface-then-map. **No fade**: a 240ms
+  opacity transition delayed the terrain behind the un-faded tokens (read as
+  "tokens first, map an instant later"); the reveal is an instant opacity flip the
+  moment the bitmap is drawn. A 4s safety timeout + a decode-failure reveal keep
+  the field from ever staying hidden. Pinned by `Terrain.test.tsx`.
 - **Quantize relative to the element.** A viewport-sized element needs coarse
   steps (the hero light uses 8-cqmin); token-sized ones use eighth-cqmin.
 - Verify any visual change with `npm run skin-ab` (median-of-windows fps A/B
