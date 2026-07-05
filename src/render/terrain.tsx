@@ -50,6 +50,11 @@ export interface TerrainProps {
   // vanish under the lake instead of reading as stone; hedges go green).
   // Absent → the classic barrier-derived dressing, byte-identical to before.
   spec?: MapSpec
+  // Fires once the baked bitmap is decoded and drawn (the moment it fades in),
+  // so the caller can reveal the base ground/grid IN SYNC with it instead of
+  // popping them in early under a not-yet-ready terrain. Must be stable (the
+  // component is memo'd on its other props).
+  onReady?: () => void
 }
 
 // How far the visual blob overhangs its collision rect. Purely cosmetic slack —
@@ -517,6 +522,10 @@ export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
     img.src = `data:image/svg+xml,${encodeURIComponent(sized)}`
     return () => { cancelled = true }
   }, [svg, p.cols])
+
+  // Tell the caller the moment the bitmap is ready so it can reveal the base
+  // ground/grid in sync (they'd otherwise pop in early under a blank terrain).
+  useEffect(() => { if (ready) p.onReady?.() }, [ready, p.onReady])
 
   // The canvas fills the ground layer and scales with the camera transform as a
   // plain bitmap (GPU composite). A short fade hides the one-time async decode.

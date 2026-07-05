@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, type CSSProperties } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, type CSSProperties } from 'react'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { expectedRoundGapMs, glideMs } from '@/render/cadence'
 import { getDerivedStats } from '@/lib/stats'
@@ -229,11 +229,23 @@ interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => 
 function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, sidePx = null, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; sidePx?: number | null; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
+  // The baked terrain bitmap decodes async and fades in; the base ground/grid
+  // below would otherwise pop in early under it (the "grayish swoops first,
+  // cobbles/buildings later" stagger). Gate them on the terrain's readiness so
+  // the whole map reveals as one. Reset when the location (terrain sig) changes.
+  const [terrainReady, setTerrainReady] = useState(false)
+  const onTerrainReady = useCallback(() => setTerrainReady(true), [])
   // Organic terrain layer (render/terrain.tsx): one static per-location SVG
   // inside the ground layer. When a skin carries it, it REPLACES the rect
   // barrier divs and the classic perimeter ring below. §mapgen locations hand
   // it their baked MapSpec so the surface/scatter planes drive the dressing.
-  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, spec: mapSpec })
+  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, spec: mapSpec, onReady: onTerrainReady })
+  const terrainSig = terrainEl ? `${biome}|${mapCols}x${mapRows}|${terrainSeed}|${mapSpec ? mapSpec.recipe + mapSpec.seed : ''}` : ''
+  useEffect(() => { if (terrainSig) setTerrainReady(false) }, [terrainSig])
+  // When a terrain hook is present, the base ground/grid wait for it; otherwise
+  // (circle skin / no terrain) they show immediately as before.
+  const groundReveal = terrainEl ? { opacity: terrainReady ? 1 : 0, transition: 'opacity 240ms ease-out' } : undefined
+  const gridReveal = terrainEl ? { opacity: terrainReady ? 0.4 : 0, transition: 'opacity 240ms ease-out' } : undefined
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -436,6 +448,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
               style={{
                 backgroundImage: ground.image,
                 backgroundSize: `${(100 / mapCols) * ground.cellsPerTile}% ${(100 / mapRows) * ground.cellsPerTile}%`,
+                ...groundReveal,
               }}
             />
           )}
@@ -444,6 +457,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
           <div
             className="absolute inset-0 opacity-40 pointer-events-none"
             style={{
+              ...gridReveal,
               backgroundImage:
                 `linear-gradient(to right, ${arenaSkin.gridLine} 1px, transparent 1px),` +
                 `linear-gradient(to bottom, ${arenaSkin.gridLine} 1px, transparent 1px)`,
