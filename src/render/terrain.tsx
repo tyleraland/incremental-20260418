@@ -1,4 +1,4 @@
-import { memo, useMemo, useEffect, useRef, useState } from 'react'
+import { memo, useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Barrier } from '@/engine'
 import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
 import { SURFACE_MATERIALS } from '@/mapgen'
@@ -487,6 +487,65 @@ const TERRAIN_RES = (cols: number) => {
   return Math.min(3072, Math.max(768, Math.round(cols * 32 * dpr)))
 }
 
+// Decoded-bitmap cache. The transition cost of the inked city map is the SVG
+// parse+raster (~3k paths, hundreds of ms) — NOT the pixel count. Once a bitmap
+// is drawn we keep the canvas, so a prewarm (from the location detail panel,
+// before drop-in) or a revisit paints the map on the FIRST frame instead of
+// after that parse — no blank arena, no staged reveal. LRU-capped since each
+// entry is a res² bitmap (a city ≈ 38MB).
+const TERRAIN_BITMAPS = new Map<string, HTMLCanvasElement>()
+const TERRAIN_CACHE_MAX = 3
+const terrainKey = (sig: string, res: number) => `${res}|${sig}`
+const cacheGet = (k: string): HTMLCanvasElement | undefined => {
+  const v = TERRAIN_BITMAPS.get(k)
+  if (v) { TERRAIN_BITMAPS.delete(k); TERRAIN_BITMAPS.set(k, v) } // bump to MRU
+  return v
+}
+const cacheSet = (k: string, cv: HTMLCanvasElement) => {
+  TERRAIN_BITMAPS.set(k, cv)
+  while (TERRAIN_BITMAPS.size > TERRAIN_CACHE_MAX) {
+    const oldest = TERRAIN_BITMAPS.keys().next().value
+    if (oldest === undefined) break
+    TERRAIN_BITMAPS.delete(oldest)
+  }
+}
+
+// Rasterize the terrain SVG into an offscreen canvas at `res` (async — the
+// browser SVG decode). Stamps explicit width/height so it rasterizes AT `res`:
+// a viewBox-only SVG has no intrinsic size, so <img> would raster it at the
+// default 300×150 and the draw would UPSCALE that (blurry). Shared by the live
+// mount and prewarm.
+function rasterizeTerrain(svg: string, res: number): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => {
+      const cv = document.createElement('canvas')
+      cv.width = res; cv.height = res
+      const ctx = cv.getContext('2d')
+      if (!ctx) { reject(new Error('no 2d')); return }
+      try { ctx.drawImage(img, 0, 0, res, res) } catch (e) { reject(e); return }
+      resolve(cv)
+    }
+    img.onerror = () => reject(new Error('terrain decode failed'))
+    const sized = svg.replace('<svg ', `<svg width='${res}' height='${res}' `)
+    img.src = `data:image/svg+xml,${encodeURIComponent(sized)}`
+  })
+}
+
+// Prewarm a location's terrain bitmap into the cache so entering its battle
+// paints the map on the first frame instead of after the multi-hundred-ms
+// parse. Fire-and-forget; a no-op if already cached. Call while the location is
+// on screen but not yet entered (its detail panel) so the parse overlaps the
+// user's read. Props MUST match what the Arena will pass (same sig → cache hit).
+export function prewarmTerrain(p: TerrainProps): void {
+  if (typeof document === 'undefined') return
+  const res = TERRAIN_RES(p.cols)
+  const key = terrainKey(sigOf(p), res)
+  if (TERRAIN_BITMAPS.has(key)) return
+  rasterizeTerrain(terrainSvg(p), res).then((cv) => cacheSet(key, cv)).catch(() => {})
+}
+
 export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   const sig = sigOf(p)
   // eslint-disable-next-line react-hooks/exhaustive-deps — sig covers every input
@@ -497,31 +556,31 @@ export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [ready, setReady] = useState(false)
 
-  useEffect(() => {
+  // Layout effect so a CACHE HIT draws before the browser paints — the map is
+  // there on the first frame (no blank). A miss decodes async, caches, then
+  // paints; `ready` gates the fade + the base ground/grid reveal (Arena) so the
+  // whole map appears as one instead of layer-by-layer.
+  useLayoutEffect(() => {
     let cancelled = false
-    setReady(false)
     const res = TERRAIN_RES(p.cols)
-    const img = new Image()
-    img.decoding = 'async'
-    img.onload = () => {
+    const key = terrainKey(sig, res)
+    const paint = (src: CanvasImageSource) => {
       const cv = canvasRef.current
       if (cancelled || !cv) return
-      cv.width = res
-      cv.height = res
+      cv.width = res; cv.height = res
       const ctx = cv.getContext('2d')
       if (!ctx) return
-      try { ctx.drawImage(img, 0, 0, res, res) } catch { return }
+      try { ctx.drawImage(src, 0, 0, res, res) } catch { return }
       setReady(true)
     }
-    // Stamp explicit width/height on the SVG root so the browser rasterizes it
-    // AT `res` before the draw. A viewBox-only SVG has no intrinsic size, so
-    // <img> rasterizes it at the default 300×150 and drawImage then UPSCALES
-    // that to res — a blurry bitmap regardless of `res`. Sizing the root makes
-    // the bake a true res×res raster (the actual crispness fix).
-    const sized = svg.replace('<svg ', `<svg width='${res}' height='${res}' `)
-    img.src = `data:image/svg+xml,${encodeURIComponent(sized)}`
+    const cached = cacheGet(key)
+    if (cached) { paint(cached); return }
+    setReady(false)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    rasterizeTerrain(svg, res).then((cv) => { if (cancelled) return; cacheSet(key, cv); paint(cv) }).catch(() => {})
     return () => { cancelled = true }
-  }, [svg, p.cols])
+    // eslint-disable-next-line react-hooks/exhaustive-deps — svg is a pure fn of sig
+  }, [sig, p.cols])
 
   // Tell the caller the moment the bitmap is ready so it can reveal the base
   // ground/grid in sync (they'd otherwise pop in early under a blank terrain).

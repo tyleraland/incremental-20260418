@@ -235,7 +235,14 @@ signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
   viewBox-only SVG has no intrinsic size, so `<img>` rasterizes it at the default
   300×150 and `drawImage` then UPSCALES that — a blurry bake regardless of `res`)
   and `res` scales with clamped `devicePixelRatio` so mobile retina (where the
-  hero-scale upscale shows) is crisp. Pinned by `Terrain.test.tsx`.
+  hero-scale upscale shows) is crisp. **The decoded canvas is cached**
+  (`TERRAIN_BITMAPS`, LRU, keyed by terrain sig+res): `prewarmTerrain()` bakes it
+  while the location's detail panel is up (`prewarmLocationTerrain` in BattleView
+  → LocationDetail), so dropping in paints the map on the FIRST frame (a
+  `useLayoutEffect` draws the cached bitmap pre-paint) instead of after the
+  ~200ms+ parse — no blank arena. `ready` gates BOTH the terrain fade AND the base
+  ground/grid reveal (Arena `groundReveal`/`gridReveal`) so the whole map appears
+  as one, never layer-by-layer. Pinned by `Terrain.test.tsx`.
 - **Quantize relative to the element.** A viewport-sized element needs coarse
   steps (the hero light uses 8-cqmin); token-sized ones use eighth-cqmin.
 - Verify any visual change with `npm run skin-ab` (median-of-windows fps A/B

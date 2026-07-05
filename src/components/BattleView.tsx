@@ -1,12 +1,13 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, type CSSProperties } from 'react'
-import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
+import { useGameStore, waveComposition, locationBarriers, type Location, type Unit } from '@/stores/useGameStore'
 import { expectedRoundGapMs, glideMs } from '@/render/cadence'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSkin } from '@/render/skins'
 import { hashString, type Rect } from '@/render/authoring'
-import { generateForLocationCached, type MapSpec } from '@/mapgen'
+import { generateForLocationCached, specBarriers, type MapSpec } from '@/mapgen'
+import { prewarmTerrain } from '@/render/terrain'
 import { partyProficiencyTags } from '@/lib/proficiencies'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
@@ -1823,6 +1824,26 @@ export function Preview({ location }: { location: Location | null }) {
 // outside the battle view — e.g. the proto Hero lens. Nonce-driven so repeats
 // re-fire. `onFollow` (when provided) surfaces a Follow action in the card.
 export interface BattleInspectRequest { unitId: string; nonce: number }
+
+// Prewarm a generated location's terrain bitmap while its detail panel is on
+// screen (before drop-in), so entering paints the map on the first frame. The
+// props MUST mirror what the Arena passes at stand-up (createOpenBattleFor):
+// size + barriers from the same spec, rim=true (generated live maps are
+// open-world), portal keep-clear boxes as `avoid`. A mismatch just misses the
+// cache and decodes on mount as before — no correctness risk.
+export function prewarmLocationTerrain(location: Location, units: Unit[]): void {
+  if (!location.mapGen) return
+  const spec = generateForLocationCached(location, { proficiencies: partyProficiencyTags(units.filter((u) => u.locationId === location.id)) }).spec
+  prewarmTerrain({
+    biome: biomeForLocation(location),
+    cols: spec.cols, rows: spec.cols,          // battle is square: size = spec.cols for both dims
+    barriers: specBarriers(spec),
+    seed: hashString(location.id),
+    rim: true,
+    avoid: (location.portals ?? []).map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
+    spec,
+  })
+}
 
 export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: {
   locationId: string | null
