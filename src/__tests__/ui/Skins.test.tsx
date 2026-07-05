@@ -7,7 +7,7 @@ import { render, cleanup, act } from '@testing-library/react'
 import { useGameStore } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
-import { bootBattleSkin, BODY_RENDER_PROBE } from '@/render/skins'
+import { bootBattleSkin, BODY_RENDER_PROBE, TOKEN_SKINS } from '@/render/skins'
 import { eu } from '../engine/helpers'
 import type { Location } from '@/types'
 
@@ -79,6 +79,25 @@ describe('battlefield skins', () => {
     b.combatants[0].facing = { x: 1, y: 0 }              // hero turns east (was north)
     act(() => useGameStore.setState({ battles: { L1: { ...b, round: b.round + 1 } } }))
     expect(BODY_RENDER_PROBE.count).toBe(before + 1)     // hero body only, not the foe's
+  })
+
+  // Body LOD: the far/dense-zoom body collapses the stacked parts into one
+  // merged silhouette (2 paths). Per-token node count is what drives style-recalc
+  // across a big mob, so this must stay a big reduction (the dense-mob perf win).
+  it('simple (far-LOD) body renders far fewer paths than the full body', () => {
+    const Paper = TOKEN_SKINS.paper
+    const dims = { width: '32px', height: '32px', fontSize: '13px' }
+    const paths = (simple: boolean) => {
+      const { container, unmount } = render(
+        <Paper glyph="" tone="enemy" bodyShape="canine" alive selected={false} facingDeg={0} creature simple={simple} dims={dims} />,
+      )
+      const n = container.querySelectorAll('svg path').length
+      unmount()
+      return n
+    }
+    const full = paths(false), simple = paths(true)
+    expect(simple).toBeLessThanOrEqual(2)          // merged base + lit
+    expect(full).toBeGreaterThan(simple * 3)        // the full wolf is many plates+accents
   })
 
   it('bootBattleSkin: localStorage > default, garbage ignored', () => {

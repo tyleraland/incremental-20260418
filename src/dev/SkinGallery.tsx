@@ -23,6 +23,7 @@ import type { Barrier } from '@/engine'
 // one generated field swatch).
 
 const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine']
+const CREATURES: BodyShape[] = ['blob', 'beast', 'flyer', 'snail', 'serpent', 'canine']
 const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
 const WEAPONS: Weapon[] = ['sword', 'dagger', 'bow', 'staff']
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
@@ -128,6 +129,30 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
         <Cell label="moving (plate lean)">
           <Body glyph="WO" tone="enemy" bodyShape="canine" alive selected={false} facingDeg={0} moving dims={dims(56)} />
         </Cell>
+      </Section>
+
+      {/* Cohesion review row: per creature, idle vs a FROZEN attack pose (the
+          `data-atk` jab/trail transform held mid-swing via the .gjab CSS below —
+          only wolf/snake carry it today, so a still-idle "attack" cell flags a
+          creature that has no attack motion yet) vs the far-LOD merged
+          silhouette (`simple` — what a dense mob actually draws). One glance says
+          whether a new monster reads at every scale and lunges on attack. */}
+      <Section title="motion + LOD (per creature: idle · attack jab (frozen) · far-LOD silhouette)">
+        {CREATURES.map((shape) => (
+          <div key={shape} className="flex items-end gap-1 mr-3">
+            <Cell label={`${shape} idle`}>
+              <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+            </Cell>
+            <Cell label="jab">
+              <div className="gjab">
+                <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
+              </div>
+            </Cell>
+            <Cell label="far-LOD">
+              <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} simple dims={dims(56)} />
+            </Cell>
+          </div>
+        ))}
       </Section>
 
       <Section title="facing wheel (15° quantized in play) — weapon carry + rotating top-down body">
@@ -342,6 +367,11 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
 export default function SkinGallery() {
   return (
     <div data-gallery className="min-h-full bg-[#0b0b10] p-4 overflow-auto">
+      {/* Freeze the melee jab mid-swing for the "motion + LOD" review row: the
+          same `data-atk` transform BattleView animates, held statically so a
+          screenshot shows the attack pose. Nose is +x in the gallery, so jab
+          pushes forward (+x) and trail lags (−x). */}
+      <style>{'.gjab [data-atk="jab"]{transform:translate(11px,0)}.gjab [data-atk="trail"]{transform:translate(-6px,0)}'}</style>
       <p className="text-[10px] text-neutral-500 mb-4">
         skin gallery — the whole visual language on one sheet (dev-only, ?gallery=1 · npm run gallery-shot)
       </p>

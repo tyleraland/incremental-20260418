@@ -66,6 +66,16 @@ const OPEN_CAM_MAX_SIZE = 60  // most zoomed-out (still less than the whole map)
 const LOD_CAM_SIZE      = 18   // cells shown above which tokens are too small to label
 const LOD_TOKEN_COUNT   = 16   // on-screen tokens above which labels are dropped
 
+// Dev profiling lever (read once): `?lod=off` forces full detail (labels/nubs/
+// attack animations) at any density — the worst-case render; `?lod=on` forces
+// the low-detail path. null = the normal LOD_* thresholds above decide.
+const LOD_FORCED: boolean | null = (() => {
+  try {
+    const v = new URLSearchParams(window.location.search).get('lod')
+    return v === 'off' ? true : v === 'on' ? false : null
+  } catch { return null }
+})()
+
 // Reference zoom the ground layer is LAID OUT at (cells across the arena at
 // scale 1). Camera zoom is a compositor `scale(GROUND_BASE_CELLS / cam.size)`
 // on top — never an animated width/height (layout), which desynced from the
@@ -646,7 +656,7 @@ function MovingChevron({ c, cam, isPlayer, sizeScale = 1 }: { c: Combatant; cam:
 // The token body itself lives in `src/render/skins.tsx` (CircleBody / PaperBody),
 // picked by the store's `battleSkin` and fed the appearance resolver's output —
 // restyling an entity is a skins-file change, never a BattleView one.
-function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, skin, castLabels, spawnPop = true, lungeDeg = null, lungeFlip = false }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; skin: BattleSkin; castLabels?: CastLabelEntry[]; spawnPop?: boolean; lungeDeg?: number | null; lungeFlip?: boolean }) {
+function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, scale, detail, skin, castLabels, spawnPop = true, lungeDeg = null, lungeFlip = false, hitDeg = null }: { c: Combatant; cam: Cam; pos: Vec2; animatePos: boolean; selected: boolean; onSelect: () => void; appearance: Appearance; scale: number; detail: boolean; skin: BattleSkin; castLabels?: CastLabelEntry[]; spawnPop?: boolean; lungeDeg?: number | null; lungeFlip?: boolean; hitDeg?: number | null }) {
   const isPlayer = c.team === 'player'
   const isNeutral = c.team === 'neutral'   // town NPC: stationary, no facing/HP bar
   const casting = c.alive && !!c.channel
@@ -705,25 +715,44 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
             sets on round parity — a class swap, never a remount. % translate is
             relative to this wrapper's own box = the token, so the nudge scales
             with zoom for free. */}
+        {/* Hit recoil (PERMANENT wrapper, same remount-avoidance rule as the
+            lunge): a struck token jerks back along the blow + a brief squash.
+            --hit-x/y ride in as % of the token box, direction from hitDeg. */}
         <div
-          className={lungeDeg != null ? (lungeFlip ? 'animate-lunge-a' : 'animate-lunge-b') : undefined}
-          style={lungeDeg != null ? {
-            '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
-            '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,
+          className={hitDeg != null ? (lungeFlip ? 'animate-hit-a' : 'animate-hit-b') : undefined}
+          style={hitDeg != null ? {
+            '--hit-x': `${Math.round(Math.cos((hitDeg * Math.PI) / 180) * 14)}%`,
+            '--hit-y': `${Math.round(Math.sin((hitDeg * Math.PI) / 180) * 14)}%`,
           } as CSSProperties : undefined}
         >
-          <Body
-            glyph={appearance.glyph}
-            tone={appearance.tone}
-            bodyShape={appearance.bodyShape}
-            tint={appearance.tint}
-            weapon={appearance.weapon}
-            alive={c.alive}
-            selected={selected}
-            facingDeg={facingDeg}
-            moving={c.alive && !!c.moving}
-            dims={chipDims(cam, appearance.scale)}
-          />
+          <div
+            // whole-token lunge (self animation) + part jab (animate-atk targets
+            // the body's [data-atk] descendants — no-op for shapes without them):
+            // the head snaps ahead of the sliding token, the tail lags. --atk-x/y
+            // are SVG user units (viewBox is 0–100) so the jab reads at any zoom.
+            className={lungeDeg != null ? (lungeFlip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b') : undefined}
+            style={lungeDeg != null ? {
+              '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
+              '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,
+              '--atk-x': `${(Math.cos((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
+              '--atk-y': `${(Math.sin((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
+            } as CSSProperties : undefined}
+          >
+            <Body
+              glyph={appearance.glyph}
+              tone={appearance.tone}
+              bodyShape={appearance.bodyShape}
+              tint={appearance.tint}
+              weapon={appearance.weapon}
+              alive={c.alive}
+              selected={selected}
+              facingDeg={facingDeg}
+              moving={c.alive && !!c.moving}
+              creature={c.team === 'enemy'}
+              simple={!detail}
+              dims={chipDims(cam, appearance.scale)}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -1151,7 +1180,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
   // identity changes each round), NOT on the 60fps motion re-renders. One pass
   // buckets this round's events by type instead of six separate `.filter()`s,
   // and tallies alive/party/counts in the same sweep.
-  const { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies, lungeDegs } = useMemo(() => {
+  const { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies, lungeDegs, hitDegs } = useMemo(() => {
     const alive: Combatant[] = []
     const party: Combatant[] = []
     let playersAlive = 0, enemiesAlive = 0
@@ -1167,12 +1196,24 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
     // to the facing grid. Drives the one-shot lunge nudge on the attacker's chip
     // (melee only — a bow/spell "lunge" would read as a flinch).
     const lungeDegs = new Map<string, number>()
+    // Struck combatants this round → screen angle of the blow (source→target),
+    // quantized. Drives the one-shot hit recoil on the TARGET's chip (any damage
+    // type — the flinch reads whether it was a bite, an arrow, or a spell).
+    const hitDegs = new Map<string, number>()
+    const recordHit = (e: Ev[number]) => {
+      if (!e.targetId) return
+      const src = byId(e.sourceId), tgt = byId(e.targetId)
+      if (!tgt) return
+      const dx = tgt.pos.x - (src?.pos.x ?? tgt.pos.x), dy = tgt.pos.y - (src?.pos.y ?? tgt.pos.y)
+      hitDegs.set(e.targetId, dx || dy ? Math.round(((Math.atan2(-dy, dx) * 180) / Math.PI) / 15) * 15 : 90)
+    }
     for (const e of battle.events) {
       if (e.round !== battle.round) continue
       switch (e.type) {
         case 'melee_attack':
           if (e.value != null) {
             hits.push(e)
+            recordHit(e)
             const src = byId(e.sourceId), tgt = byId(e.targetId)
             if (src?.alive && tgt) {
               const dx = tgt.pos.x - src.pos.x, dy = tgt.pos.y - src.pos.y
@@ -1180,14 +1221,14 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
             }
           }
           break
-        case 'ranged_attack': case 'skill_use': if (e.value != null) hits.push(e); break
+        case 'ranged_attack': case 'skill_use': if (e.value != null) { hits.push(e); recordHit(e) } break
         case 'tactic_use': tacticUses.push(e); break
         case 'spawn': spawns.push(e); break
         case 'aggro': aggros.push(e); break
         case 'rally': rallies.push(e); break
       }
     }
-    return { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies, lungeDegs }
+    return { alive, party, playersAlive, enemiesAlive, hits, tacticUses, spawns, aggros, rallies, lungeDegs, hitDegs }
     // eslint-disable-next-line react-hooks/exhaustive-deps — byId derives from battle
   }, [battle])
 
@@ -1328,7 +1369,10 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
   // EdgeMarkers instead); encounters render everyone. LOD (drop labels/nubs) when
   // zoomed far out OR many tokens are on-screen — computed once from this list.
   const visibleTokens = isOpen ? battle.combatants.filter((c) => isOnScreen(cam, rpos(c))) : battle.combatants
-  const tokenDetail = cam.size <= LOD_CAM_SIZE && visibleTokens.length <= LOD_TOKEN_COUNT
+  // `?lod=off` forces full detail (labels + facing nubs + attack/hit animations)
+  // regardless of zoom/count — a dev lever for profiling the worst case (a dense
+  // mob all animating) and A/B'ing LOD thresholds. Read once.
+  const tokenDetail = (LOD_FORCED ?? (cam.size <= LOD_CAM_SIZE && visibleTokens.length <= LOD_TOKEN_COUNT))
 
   // Ground effects (zones / firewalls) rendered into the Arena's GROUND LAYER, in
   // map-fraction coords (% of the whole map), NOT screen-space. As children of the
@@ -1627,6 +1671,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
               // zoomed out (measured ~-7 fps on the ?perf scene un-gated).
               lungeDeg={tokenDetail ? lungeDegs.get(c.id) ?? null : null}
               lungeFlip={battle.round % 2 === 0}
+              hitDeg={tokenDetail ? hitDegs.get(c.id) ?? null : null}
             />
           ))}
 
@@ -1672,6 +1717,7 @@ function PreviewChip({ cam, pos, label, name, title, isPlayer, skin, bodyShape =
         alive
         selected={false}
         facingDeg={isPlayer ? -90 : 90}
+        creature={!isPlayer}
         dims={chipDims(cam)}
       />
     </div>

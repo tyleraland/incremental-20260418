@@ -19,6 +19,7 @@
     "ci": "tsc --noEmit && vitest run",
     "e2e": "playwright test",
     "skin-ab": "playwright test skin-compare.spec.ts --project=mobile-chrome",
+    "perf-probe": "playwright test dense-probe.spec.ts --project=mobile-chrome --workers=1",
     "e2e:install": "playwright install chromium",
     "gallery-shot": "playwright test gallery.spec.ts --project=mobile-chrome"
   },
