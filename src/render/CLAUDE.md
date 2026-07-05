@@ -141,6 +141,23 @@ plaza (`src/data/npcs.ts`) — merchant/questgiver placement isn't spec-driven y
 5. Review the in-situ bake in `?gallery=1` → "city tile catalog" (add a panel
    for a new recipe), and screenshot a live location.
 
+**Hard-won rules for baked map layers** (each cost real debug time — heed them):
+- **The raster cost is PATH COUNT (SVG parse), not pixel res.** Bumping
+  `TERRAIN_RES` for crispness is nearly free on the transition; adding thousands
+  of paths is not. Don't lower res to speed a slow load — bound path count and
+  prewarm instead.
+- **A viewBox-only SVG has NO intrinsic size:** `<img>` rasterizes it at the
+  default 300×150 and `drawImage` upscales that → blurry regardless of `res`.
+  Always stamp `width`/`height=res` on the `<svg>` root before decoding.
+- **Prewarm + cache any new baked raster** (see `prewarmTerrain`/`TERRAIN_BITMAPS`
+  in `terrain.tsx`, prewarmed at boot in `App.tsx` and on the detail panel). The
+  first cold decode is the ONLY slow moment; get it off the transition.
+- **Reveal the whole field ATOMICALLY, never per-layer, never with a fade.** A
+  240ms fade on the terrain while the tokens are instantly solid reads as "tokens
+  first, map an instant later." Gate terrain + ground + grid + tokens on one
+  readiness flag (`fieldReveal` in BattleView) and flip it pre-paint
+  (`useLayoutEffect`) so a cache hit lands everything on the first frame.
+
 **New building material** = a `BUILDING_LOOKS` entry (roof pool + ink, `roofed`).
 **New paved/ground material** = a wash band + `cobble`/texture pass in the city
 block of `buildTerrainModel`. Both are pure data keyed off the mapgen vocab, so a
