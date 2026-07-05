@@ -6,12 +6,23 @@
 // `monsterOverrides.ts`, so tweaks take effect for subsequent spawns/waves (in
 // this session and after "← Game"). "Generate change request" diffs the live defs
 // against the authored baseline and emits a copy/downloadable markdown report.
-import { useMemo, useState } from 'react'
-import type { MonsterDef, MonsterSize } from '@/types'
+//
+// Battle Simulator (▶ button): drops the tuned monster into a real battlefield
+// against heroes you build — fresh class templates or shallow copies of your save
+// roster — sharing the Density Sandbox's save-safe scene seeder (simBattle.ts).
+// App.tsx gates ?monsterlab no-persist, so the synthetic scene NEVER touches a
+// save (sandbox or curated).
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Location, MonsterDef, MonsterSize } from '@/types'
+import { useGameStore, type Unit } from '@/stores/useGameStore'
+import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { TACTIC_REGISTRY } from '@/engine/tactics'
 import { ALL_ELEMENTS, type Element } from '@/engine/elements'
+import { TICKS_PER_SECOND } from '@/lib/time'
+import { BattleView } from '@/components/BattleView'
+import { seedSimBattle } from './simBattle'
 import {
   buildChangeReport,
   currentDef,
@@ -68,6 +79,15 @@ export default function MonsterLab() {
   const [draft, setDraft] = useState<MonsterDef>(() => clone(currentDef(MONSTER_LIST[0]?.id ?? '')!))
   const [search, setSearch] = useState('')
   const [reportOpen, setReportOpen] = useState(false)
+  const [simOpen, setSimOpen] = useState(false)
+  // The real save roster, captured ONCE before the simulator ever overwrites the
+  // store scene — so "copy from save" keeps working across rebuilds. Deep-cloned,
+  // so nothing the sim does can reach back to a persisted unit.
+  const savedRoster = useRef<Unit[] | null>(null)
+  function openSim() {
+    if (!savedRoster.current) savedRoster.current = useGameStore.getState().units.map((u) => clone(u))
+    setSimOpen(true)
+  }
   // Bumped after any mutation to refresh override markers / the changed-count.
   const [rev, setRev] = useState(0)
   const bump = () => setRev((r) => r + 1)
@@ -107,6 +127,11 @@ export default function MonsterLab() {
         <span className="text-sm font-semibold">🧟 Monster Lab</span>
         <span className="text-[10px] text-game-muted hidden sm:inline">live tuning · applies to the next spawn</span>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={openSim}
+            title={`Drop ${draft.name} into a battlefield`}
+            className="px-3 py-1.5 rounded-lg border border-game-green/60 bg-game-green/15 text-xs text-game-green font-medium hover:bg-game-green/25"
+          >▶ Battle sim</button>
           <button
             onClick={() => { if (confirm('Revert ALL monster overrides to their authored values?')) { resetAllOverrides(); pick(selectedId); bump() } }}
             disabled={changedCount === 0}
@@ -250,6 +275,7 @@ export default function MonsterLab() {
       </div>
 
       {reportOpen && <ReportModal onClose={() => setReportOpen(false)} />}
+      {simOpen && <BattleSim monsterId={selectedId} savedRoster={savedRoster.current ?? []} onClose={() => setSimOpen(false)} />}
     </div>
   )
 }
@@ -396,6 +422,209 @@ function ReportModal({ onClose }: { onClose: () => void }) {
           <button onClick={copy} className="px-3 py-1.5 rounded-lg border border-game-primary/60 bg-game-primary/15 text-xs font-medium hover:bg-game-primary/25">{copied ? '✓ Copied' : '📋 Copy'}</button>
           <button onClick={download} className="px-3 py-1.5 rounded-lg border border-game-border text-xs text-game-text-dim hover:text-game-text">⬇ Download .md</button>
         </footer>
+      </div>
+    </div>
+  )
+}
+
+// ── Battle Simulator ─────────────────────────────────────────────────────────
+// Drops the tuned monster into a real battlefield against a hero roster you build
+// (fresh class templates and/or shallow copies of the save roster), on the shared
+// save-safe seeder. Full-screen BattleView + a floating control card, same shape
+// as the Density Sandbox. Owns its own paused tick loop; App gates ?monsterlab
+// no-persist so none of this reaches a save.
+const SIM_LOC = 'monster-lab-sim'
+const SIM_MONSTERS = Object.values(MONSTER_REGISTRY)
+  .slice()
+  .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
+const HERO_TEMPLATES = INITIAL_UNITS.filter((u) => u.class)
+const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
+
+function BattleSim({ monsterId, savedRoster, onClose }: { monsterId: string; savedRoster: Unit[]; onClose: () => void }) {
+  const nextId = useRef(0)
+  const reid = (u: Unit): Unit => ({ ...clone(u), id: `mlab-hero-${nextId.current++}` })
+  const seedRoster = () => {
+    const fromSave = savedRoster.filter((u) => u.class).slice(0, 3)
+    const base = fromSave.length ? fromSave : HERO_TEMPLATES.slice(0, 3)
+    return base.map(reid)
+  }
+
+  const [roster, setRoster] = useState<Unit[]>(seedRoster)
+  const [comp, setComp] = useState<Record<string, number>>({ [monsterId]: 3 })
+  const [mapId, setMapId] = useState('custom')
+  const [customSize, setCustomSize] = useState(48)
+  const [panelOpen, setPanelOpen] = useState(true)
+  const [addHero, setAddHero] = useState('')
+
+  const paused = useGameStore((s) => s.paused)
+  // Real open-world maps for the dropdown, captured once (before seeding injects
+  // the sim loc). seedSimBattle preserves the others, so re-opens still see them.
+  const realMaps = useMemo(
+    () => useGameStore.getState().locations.filter((l: Location) => l.openWorld && l.id !== SIM_LOC),
+    [],
+  )
+  const live = useGameStore((s) => {
+    const b = s.battles[SIM_LOC]
+    if (!b) return { heroes: 0, foes: 0, round: 0 }
+    return {
+      heroes: b.combatants.filter((c) => c.team === 'player' && c.alive).length,
+      foes: b.combatants.filter((c) => c.team === 'enemy' && c.alive).length,
+      round: b.round,
+    }
+  })
+
+  const rebuild = useMemo(
+    () => () => {
+      const base = mapId === 'custom' ? null : realMaps.find((l) => l.id === mapId) ?? null
+      seedSimBattle({
+        locationId: SIM_LOC,
+        roster,
+        monsters: Object.entries(comp).map(([id, count]) => ({ id, count })),
+        base,
+        customSize,
+      })
+    },
+    [roster, comp, mapId, customSize, realMaps],
+  )
+
+  // Own a paused tick loop (App's is disabled under ?monsterlab / noPersist).
+  useEffect(() => {
+    useGameStore.setState({ paused: true })
+    const id = setInterval(() => {
+      const s = useGameStore.getState()
+      if (!s.paused) s.tick()
+    }, 1000 / TICKS_PER_SECOND)
+    return () => clearInterval(id)
+  }, [])
+
+  // Re-seed on any control change (and once on mount).
+  useEffect(() => { rebuild() }, [rebuild])
+
+  const close = () => { useGameStore.getState().exitBattleView(); onClose() }
+  const bumpMon = (id: string, d: number) =>
+    setComp((c) => {
+      const n = Math.max(0, (c[id] ?? 0) + d)
+      const next = { ...c }
+      if (n === 0) delete next[id]
+      else next[id] = n
+      return next
+    })
+
+  const totalMonsters = Object.values(comp).reduce((s, n) => s + n, 0)
+  const rowBtn = 'w-7 h-7 shrink-0 flex items-center justify-center rounded-md border border-game-border text-game-text hover:bg-white/10 text-sm leading-none'
+  const monsterName = MONSTER_REGISTRY[monsterId]?.name ?? monsterId
+
+  return (
+    <div className="fixed inset-0 z-[150] flex flex-col bg-game-bg text-game-text">
+      <div className="flex-1 min-h-0 flex flex-col">
+        <BattleView locationId={SIM_LOC} />
+      </div>
+
+      <div className="absolute top-2 right-2 z-[160] w-72 max-w-[85vw] max-h-[92vh] flex flex-col rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl">
+        <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border">
+          <span className="text-sm font-semibold">⚔ Battle Sim</span>
+          <button onClick={() => setPanelOpen((v) => !v)} className="ml-auto text-xs text-game-text-dim hover:text-game-text">{panelOpen ? 'Hide ▲' : 'Show ▼'}</button>
+          <button onClick={close} title="Back to editor" className="w-7 h-7 flex items-center justify-center rounded-md border border-game-border text-game-text-dim hover:text-game-text text-xs">✕</button>
+        </header>
+
+        {panelOpen && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4 text-sm">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => useGameStore.getState().togglePause()}
+                className={['flex-1 h-9 rounded-lg border text-sm font-medium', paused ? 'border-game-green/60 bg-game-green/15 text-game-green' : 'border-game-gold/60 bg-game-gold/15 text-game-gold'].join(' ')}
+              >{paused ? '▶ Play' : '⏸ Pause'}</button>
+              <button onClick={rebuild} className="h-9 px-3 rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-xs" title="Re-seed the scene">↻ Rebuild</button>
+            </div>
+            <div className="text-[11px] text-game-text-dim tabular-nums">
+              live: <span className="text-blue-300">{live.heroes} heroes</span> · <span className="text-red-300">{live.foes} foes</span> · round {live.round}
+            </div>
+
+            {/* Heroes */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase tracking-widest text-game-muted">Heroes</span>
+              <div className="space-y-1">
+                {roster.length === 0 && <div className="text-[11px] text-game-text-dim italic">No heroes — add some below.</div>}
+                {roster.map((u) => (
+                  <div key={u.id} className="flex items-center gap-2 rounded-md bg-game-bg/60 border border-game-border px-2 py-1">
+                    <span className="text-[10px] w-4 text-center shrink-0" title={u.class ?? 'Novice'}>{CLASS_ICON[u.class ?? ''] ?? '◆'}</span>
+                    <span className="flex-1 truncate text-xs">{u.name}</span>
+                    <span className="text-[9px] text-game-muted">Lv{u.level}</span>
+                    <button onClick={() => setRoster((r) => r.filter((x) => x.id !== u.id))} className="w-6 h-6 rounded bg-game-surface border border-game-border text-red-400/80 hover:text-red-400 text-xs" title="Remove">✕</button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <select value={addHero} onChange={(e) => setAddHero(e.target.value)} className="flex-1 h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs min-w-0">
+                  <option value="">Add hero…</option>
+                  <optgroup label="Class templates">
+                    {HERO_TEMPLATES.map((u) => <option key={`t:${u.id}`} value={`t:${u.id}`}>{u.class} · {u.name}</option>)}
+                  </optgroup>
+                  {savedRoster.length > 0 && (
+                    <optgroup label="Copy from save">
+                      {savedRoster.map((u) => <option key={`s:${u.id}`} value={`s:${u.id}`}>{u.name} (Lv{u.level} {u.class ?? 'Novice'})</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                <button
+                  className={rowBtn}
+                  title="Add hero"
+                  onClick={() => {
+                    if (!addHero) return
+                    const [kind, id] = [addHero[0], addHero.slice(2)]
+                    const src = (kind === 's' ? savedRoster : HERO_TEMPLATES).find((u) => u.id === id)
+                    if (src) setRoster((r) => [...r, reid(src)])
+                    setAddHero('')
+                  }}
+                >＋</button>
+              </div>
+            </div>
+
+            {/* Map */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] uppercase tracking-widest text-game-muted">Map</span>
+              <select value={mapId} onChange={(e) => setMapId(e.target.value)} className="w-full h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs">
+                <option value="custom">Custom square</option>
+                {realMaps.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.openWorldSize ?? 50}²)</option>)}
+              </select>
+              {mapId === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input type="range" min={20} max={120} step={2} value={customSize} onChange={(e) => setCustomSize(Number(e.target.value))} className="flex-1" />
+                  <span className="w-12 text-right text-xs tabular-nums text-game-text-dim">{customSize}²</span>
+                </div>
+              )}
+            </div>
+
+            {/* Monsters */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-widest text-game-muted flex-1">Monsters</span>
+                <span className="text-[10px] text-game-text-dim tabular-nums">{totalMonsters} total</span>
+              </div>
+              <div className="text-[10px] text-game-gold">featured: {monsterName}</div>
+              <div className="flex items-center gap-1.5">
+                <select value="" onChange={(e) => { if (e.target.value) bumpMon(e.target.value, 1) }} className="flex-1 h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs min-w-0">
+                  <option value="">Add monster…</option>
+                  {SIM_MONSTERS.map((m) => <option key={m.id} value={m.id}>Lv{m.level} · {m.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                {Object.entries(comp).map(([id, n]) => (
+                  <div key={id} className="flex items-center gap-2">
+                    <span className={['flex-1 truncate text-xs', id === monsterId ? 'text-game-gold' : ''].join(' ')}>{MONSTER_REGISTRY[id]?.name ?? id}</span>
+                    <button className={rowBtn} onClick={() => bumpMon(id, -1)}>−</button>
+                    <span className="w-8 text-center tabular-nums text-xs">{n}</span>
+                    <button className={rowBtn} onClick={() => bumpMon(id, 1)}>+</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-[10px] text-game-text-dim leading-snug border-t border-game-border/40 pt-2">
+              Uses the monster's LIVE tuned stats. Composing rebuilds the scene (positions reset) — set it up paused, then ▶ Play. Shallow copies only; never touches your save.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -120,7 +120,13 @@ function App() {
   // The density sandbox (`?sandbox=1`) seeds + drives its OWN synthetic scene and
   // must never load or overwrite the real save — same no-persist gate as ?perf.
   const sandboxMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('sandbox')
-  const noPersist = perfMode || sandboxMode
+  // The Monster Lab (?monsterlab=1) hosts a Battle Simulator that seeds a
+  // synthetic scene into the store (same seeder as the Density Sandbox). Gate it
+  // no-persist so those shallow-copied heroes + tuned monsters can NEVER be
+  // autosaved over a real save — but unlike ?sandbox we still LOAD the save (below)
+  // so the simulator can copy the real roster into the fight.
+  const monsterLabMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('monsterlab')
+  const noPersist = perfMode || sandboxMode || monsterLabMode
 
   // The split-screen "Tactician" shell (src/proto) is now the DEFAULT UI. The
   // legacy tab-bar UI is kept as a fallback behind `?classic=1` (and the perf

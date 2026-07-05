@@ -8,26 +8,14 @@
 // cadence tick loop. Reachable in sandbox mode (or a DEV build) from the ☰ Menu →
 // Developer. Sibling of the deterministic `?perf` scene (src/dev/perfSeed.ts).
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useGameStore, spawnMonsterAt, type Unit } from '@/stores/useGameStore'
+import { useGameStore, type Unit } from '@/stores/useGameStore'
 import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { BattleView } from '@/components/BattleView'
 import { TICKS_PER_SECOND } from '@/lib/time'
-import type { Location } from '@/types'
+import { seedSimBattle } from './simBattle'
 
 const SANDBOX_LOC = 'perf-sandbox'
-
-// A random point a few cells off the edges, retried a handful of times so a
-// monster never lands inside a wall — a local copy of the store's scatterPos (not
-// exported), good enough for placement here.
-type Rect = { x: number; y: number; w: number; h: number }
-function scatterPos(size: number, barriers: Rect[]): { x: number; y: number } {
-  const m = Math.min(4, size / 2 - 0.5)
-  const roll = () => ({ x: m + Math.random() * (size - 2 * m), y: m + Math.random() * (size - 2 * m) })
-  let p = roll()
-  for (let i = 0; i < 12 && barriers.some((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h); i++) p = roll()
-  return p
-}
 
 // Monsters offered in the "add" picker, cheapest (lowest level) first.
 const MONSTERS = Object.values(MONSTER_REGISTRY).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
@@ -64,12 +52,7 @@ export default function PerfSandbox() {
   // kills back to that density. Cheap — do it on any control change (start paused,
   // so composing never fights live motion).
   const rebuild = useCallback(() => {
-    const store = useGameStore.getState()
     const base = mapId === 'custom' ? null : realMaps.find((l) => l.id === mapId) ?? null
-    const size = base ? base.openWorldSize ?? 60 : customSize
-    const present = Object.entries(comp).filter(([, n]) => n > 0)
-    const total = present.reduce((s, [, n]) => s + n, 0)
-    const monsterIds = present.map(([id]) => id)
 
     // Fully-kitted heroes (blank recruits carry no class/skills, so the engine would
     // only do basic-attack work) — clone the starters, cycling through the classes.
@@ -80,31 +63,13 @@ export default function PerfSandbox() {
       roster.push({ ...structuredClone(tpl), id: `sbx-hero-${i}`, name: `${tpl.name.split(' ')[0]} ${i + 1}` })
     }
 
-    // Synthetic location: copy a real map's terrain/size (mapGen/scenario/traits ride
-    // along on the spread) or a plain custom square. cap 0 → stand up with no scatter.
-    const loc: Location = base
-      ? { ...base, id: SANDBOX_LOC, openWorld: true, openWorldCap: 0, openWorldSize: size, monsterIds, connections: [], portals: [] }
-      : { id: SANDBOX_LOC, name: 'Sandbox Field', region: 'world', description: 'Perf sandbox', traits: ['plains'], monsterIds, familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 0, openWorldSize: size }
-
-    useGameStore.setState((s) => ({
-      units: roster,
-      battles: {},
-      monsterSpawnTimers: {},
-      locations: [...s.locations.filter((l) => l.id !== SANDBOX_LOC), loc],
-    }))
-    store.assignUnits(roster.map((u) => u.id), SANDBOX_LOC)
-    store.tick()   // stands up the empty open battle with the heroes fielded
-
-    const battle = useGameStore.getState().battles[SANDBOX_LOC]
-    if (battle) {
-      for (const [id, n] of present) for (let k = 0; k < n; k++) spawnMonsterAt(battle, id, scatterPos(size, battle.barriers))
-      useGameStore.setState((s) => ({
-        // Bump the cap now the field's populated, so trickle refills to this density.
-        locations: s.locations.map((l) => (l.id === SANDBOX_LOC ? { ...l, openWorldCap: total } : l)),
-        battles: { ...s.battles, [SANDBOX_LOC]: battle },
-      }))
-    }
-    store.enterBattleView(SANDBOX_LOC)   // make it the WATCHED battle (full sim, not off-screen credit)
+    seedSimBattle({
+      locationId: SANDBOX_LOC,
+      roster,
+      monsters: Object.entries(comp).map(([id, count]) => ({ id, count })),
+      base,
+      customSize,
+    })
   }, [heroes, comp, mapId, customSize, realMaps])
 
   // Start paused so the scene is composed at rest; own the tick loop (App.tsx's is

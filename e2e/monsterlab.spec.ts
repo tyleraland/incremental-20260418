@@ -29,3 +29,38 @@ test('monster lab tunes live + generates a change request', async ({ page }) => 
   expect(report).toContain('health')
   expect(report).toContain('| `health` | 25 | **40** |')
 })
+
+// Verify the Battle Simulator seeds a real battle with the tuned monster and
+// never writes the save.
+test('battle simulator fields heroes vs the tuned monster, save-safe', async ({ page }) => {
+  await page.goto('/?monsterlab=1')
+  await page.getByRole('button', { name: /^Wolf/ }).first().click()
+
+  const saveBefore = await page.evaluate(() => localStorage.getItem('save:sandbox'))
+
+  // Open the sim; a battle should stand up on the synthetic sim location.
+  await page.getByRole('button', { name: /Battle sim/ }).click()
+  await expect(page.getByText('Battle Sim', { exact: false }).first()).toBeVisible()
+
+  await page.waitForFunction(() => {
+    const g = (window as unknown as { __game?: { getState: () => { battles: Record<string, unknown> } } }).__game
+    return !!g && !!g.getState().battles['monster-lab-sim']
+  })
+
+  const scene = await page.evaluate(() => {
+    const g = (window as unknown as { __game: { getState: () => { battles: Record<string, { combatants: { team: string }[] }> } } }).__game
+    const b = g.getState().battles['monster-lab-sim']
+    return {
+      heroes: b.combatants.filter((c) => c.team === 'player').length,
+      foes: b.combatants.filter((c) => c.team === 'enemy').length,
+    }
+  })
+  expect(scene.heroes).toBeGreaterThan(0)
+  expect(scene.foes).toBeGreaterThan(0)
+
+  // Play a few ticks, then confirm the persisted save was never touched.
+  await page.getByRole('button', { name: /Play/ }).click()
+  await page.waitForTimeout(600)
+  const saveAfter = await page.evaluate(() => localStorage.getItem('save:sandbox'))
+  expect(saveAfter).toBe(saveBefore)
+})
