@@ -208,16 +208,17 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     // engineered shape instead of meandering like a natural coastline.
     const isCity = spec.recipe === 'city'
     const grass = mi('grass'), dirt = mi('dirt'), road = mi('road'), floor = mi('stone-floor')
-    const NAT = 0.3, PAVED = 0.14   // organic vs. built boundary jitter
+    const NAT = 0.3   // organic boundary jitter for natural washes
+    // NOTE: road/stone-floor get NO surface wash — the single big "swooping"
+    // pavement blob read too heavy and its smooth boundary fought the inked look.
+    // Instead the paved area is defined entirely by the cobblestones below (the
+    // cell mask is just their placement guide), so the street edge is the ragged
+    // stone edge, not a smooth wash outline.
     const bands: { want: (v: number) => boolean; fill: string; opacity: number; amp: number; shore?: boolean }[] = [
       ...(isCity ? [{ want: (v: number) => v === grass, fill: P.yardWash, opacity: 0.5, amp: NAT }] : []),
       { want: (v) => v === meadow, fill: P.meadowWash, opacity: 0.5, amp: NAT },
       { want: (v) => v === sand, fill: P.sandWash, opacity: 0.6, amp: NAT },
-      ...(isCity ? [
-        { want: (v: number) => v === dirt, fill: P.dirtPath, opacity: 0.6, amp: 0.22 },
-        { want: (v: number) => v === road, fill: P.roadPave, opacity: 0.96, amp: PAVED },
-        { want: (v: number) => v === floor, fill: P.flagstone, opacity: 0.96, amp: PAVED },
-      ] : []),
+      ...(isCity ? [{ want: (v: number) => v === dirt, fill: P.dirtPath, opacity: 0.6, amp: 0.22 }] : []),
       { want: (v) => v === shallow || v === deep, fill: P.waterShallow, opacity: 0.85, amp: NAT, shore: true },
       { want: (v) => v === deep, fill: P.waterDeep, opacity: 0.9, amp: NAT },
     ]
@@ -226,21 +227,28 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
     })
 
-    // Paving: inked cobblestones over the pale paved washes (kit technique) —
-    // one filled+outlined stone per paved cell from the cobble value pool, so
-    // the street reads as packed stones veined by light mortar seams. Plaza
-    // slabs run a touch larger. Bounded (one stone per paved cell) and baked
-    // into the single terrain image → free at runtime.
+    // Paving: inked cobblestones ARE the paved surface (no underlying wash). Each
+    // paved cell is filled with a jittered 2×2 cluster of pooled stones — finer,
+    // packed cobbles (an "upscale" from one-stone-per-cell) veined by dark mortar
+    // gaps, with the outer stones giving the street a ragged hand-laid edge.
+    // Plaza slabs run a touch larger/dressed than the street cobbles. Bounded
+    // (4 stones per paved cell) and baked into the single terrain image → free.
     if (isCity) {
+      const NSUB = 2
       for (let y = 0; y < spec.rows; y++) {
         for (let x = 0; x < spec.cols; x++) {
           const v = g[y * spec.cols + x]
           if (v !== road && v !== floor) continue
-          const s = seed + x * 73 + y * 179
-          const cx = x + 0.5 + (hash01(s) - 0.5) * 0.24
-          const sy = rows - y - 0.5 + (hash01(s + 1) - 0.5) * 0.24
-          const rad = (v === floor ? 0.56 : 0.5) * (0.85 + hash01(s + 2) * 0.35)
-          paving.push(cobble(cx, sy, rad, s + 3))
+          const baseR = v === floor ? 0.34 : 0.3
+          for (let sj = 0; sj < NSUB; sj++) {
+            for (let si = 0; si < NSUB; si++) {
+              const s = seed + (x * NSUB + si) * 131 + (y * NSUB + sj) * 271
+              const cx = x + (si + 0.5) / NSUB + (hash01(s) - 0.5) * 0.3
+              const wy = y + (sj + 0.5) / NSUB + (hash01(s + 1) - 0.5) * 0.3
+              const rad = baseR * (0.82 + hash01(s + 2) * 0.42)
+              paving.push(cobble(cx, rows - wy, rad, s + 3))
+            }
+          }
         }
       }
     }

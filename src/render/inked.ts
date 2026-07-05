@@ -38,7 +38,7 @@ export function ink(d: string, fill: string, inkColor?: string, w = 0.02, op?: n
 
 // Running-bond masonry band: fill a rect region with jittered stone blocks in
 // half-block-offset alternating rows, each block a pooled grey + mortar ink.
-export function masonryBand(x: number, y: number, w: number, h: number, seed: number, courseH = 0.3): string {
+export function masonryBand(x: number, y: number, w: number, h: number, seed: number, courseH = 0.34): string {
   let out = ''
   let yy = y
   let row = 0
@@ -48,7 +48,7 @@ export function masonryBand(x: number, y: number, w: number, h: number, seed: nu
     let xx = x - off
     let col = 0
     while (xx < x + w - 0.01) {
-      const bw = 0.34 + hash01(seed + row * 31 + col * 17) * 0.24
+      const bw = 0.4 + hash01(seed + row * 31 + col * 17) * 0.26
       const x0 = Math.max(xx, x)
       const wdraw = Math.min(xx + bw, x + w) - x0
       if (wdraw > 0.05 && ch > 0.05) {
@@ -67,7 +67,7 @@ export function masonryBand(x: number, y: number, w: number, h: number, seed: nu
 // ~5% broken-dark and ~5% moss tiles (the kit weathering). `darken` biases the
 // pick toward the darker end of the pool (the shaded, lower/eave slope) — our
 // flat stand-in for the kit's slope gradient.
-export function roofSlope(x: number, y: number, w: number, h: number, seed: number, pool: readonly string[], inkColor: string, darken = false, tileH = 0.22): string {
+export function roofSlope(x: number, y: number, w: number, h: number, seed: number, pool: readonly string[], inkColor: string, darken = false, tileH = 0.26): string {
   let out = ''
   let yy = y
   let row = 0
@@ -77,7 +77,7 @@ export function roofSlope(x: number, y: number, w: number, h: number, seed: numb
     let xx = x - stag
     let col = 0
     while (xx < x + w - 0.01) {
-      const tw = 0.32 + hash01(seed + row * 23 + col * 13) * 0.18
+      const tw = 0.38 + hash01(seed + row * 23 + col * 13) * 0.2
       const x0 = Math.max(xx, x)
       const wdraw = Math.min(xx + tw, x + w) - x0
       if (wdraw > 0.05 && ch > 0.05) {

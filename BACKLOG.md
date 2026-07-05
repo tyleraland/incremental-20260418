@@ -1424,8 +1424,11 @@ Next slices, roughly in order:
   hall, `rubble` → roofless ruin) draws each wall rect as a running-bond masonry
   wall RING around a weathered roof-TILE field split by a ridge (5% broken/moss
   tiles, plank door, dark windows, corner moss, bold silhouette ink).
-  `terrain.tsx` dresses the plaza: **inked cobblestones** (`cobble()`, one pooled
-  stone per paved cell) over `road`/`stone-floor`, an **inked fountain**
+  `terrain.tsx` dresses the plaza: the paved streets/plaza are drawn ENTIRELY as
+  **inked cobblestones** (`cobble()`, a jittered 2×2 cluster per paved cell — no
+  underlying pavement wash; the big single "swooping" road blob was dropped so
+  the ragged stone edge is the street edge, the cell mask only a placement
+  guide), plus an **inked fountain**
   (`fountainMarkup`: masonry ring of tangent blocks + layered water + ripples +
   plinth) at the `landmark` POI, ringed by **banners** + **lamps**, and city
   `tree` scatter → top-down **conifers**. All baked into the ONE terrain
