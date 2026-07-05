@@ -1292,6 +1292,10 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
   const effSize = manualZoom ? camSize
     : focusUnit ? autoFitSize([rpos(focusUnit)], cols, rows)   // tight, fixed single-hero cam
     : manualCenter ? camSize                                    // free-look holds its zoom
+    // A peaceful city is a hub you wander/shop, not a fight to track — frame the
+    // WHOLE town by default (heroes cluster at the plaza, so party-fit would show
+    // only a fraction of a big field). Pinch/pan still overrides via camSize.
+    : battle.peaceful ? Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
     : autoFitSize(partyPts.length ? partyPts : allPts, cols, rows)
   // Free-look (minimap tap / drag-pan) may overscroll past the map rim into the
   // surrounding empty space; party/hero auto-follow stays pinned to the field.
