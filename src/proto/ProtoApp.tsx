@@ -421,7 +421,40 @@ function openDevPage(param: string) {
   window.location.search = q.toString()   // reload; App.tsx renders the page
 }
 
-function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => void; onClose: () => void; urgent: number }) {
+// Codemap — the deterministic code visualizer (tools/codemap). Unlike the other
+// dev pages it isn't a React page swapped in by App.tsx; it's a separate, self-
+// contained static site shipped alongside the game at <base>/codemap/, with its
+// own bundle + deps (ts-morph, cytoscape) that never enter the game bundle. We
+// surface it as an on-demand full-screen iframe, so it costs the game nothing
+// until opened. Built into public/codemap for dev via `npm run codemap`; CI
+// builds it into dist/codemap on deploy.
+function CodemapOverlay({ onClose }: { onClose: () => void }) {
+  const url = import.meta.env.BASE_URL + 'codemap/'
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex flex-col bg-game-bg">
+      <div className="shrink-0 flex items-center gap-3 px-4 h-12 border-b border-game-border bg-game-surface">
+        <span className="text-sm font-semibold text-game-text">Codemap</span>
+        <span className="text-[10px] text-game-muted hidden sm:inline">deterministic code visualizer</span>
+        <a
+          href={url} target="_blank" rel="noreferrer"
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors"
+        >
+          New tab ↗
+        </a>
+        <button
+          onClick={onClose}
+          className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors"
+        >
+          ← Game
+        </button>
+      </div>
+      <iframe src={url} title="Codemap" className="flex-1 w-full border-0" />
+    </div>,
+    document.body,
+  )
+}
+
+function NavDrawer({ onPick, onClose, onCodemap, urgent }: { onPick: (p: DrawerDest) => void; onClose: () => void; onCodemap: () => void; urgent: number }) {
   // Debug/developer tools ride on `main` but only in sandbox (the dev mode);
   // curated stays the clean new-player build.
   const mode = useGameStore((s) => s.progressionMode)
@@ -493,6 +526,18 @@ function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => voi
                   </span>
                 </button>
               ))}
+              {/* Codemap opens a full-screen iframe (a separate static site), not a
+                  query-param reload like the pages above. */}
+              <button
+                onClick={onCodemap}
+                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+              >
+                <span className="text-lg w-6 text-center shrink-0">🧭</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm text-game-text font-medium">Codemap</span>
+                  <span className="block text-[10px] text-game-muted truncate">deterministic code map — modules, features, files, git</span>
+                </span>
+              </button>
             </>
           )}
         </div>
@@ -584,6 +629,7 @@ export function ProtoApp() {
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
   const [drawer, setDrawer] = useState(false)
   const [decisionsOpen, setDecisionsOpen] = useState(false)
+  const [codemapOpen, setCodemapOpen] = useState(false)
   useExpeditionDriver()   // §expedition: advance deployed heroes' runs each tick
   // Multi-select: when on, single-tap toggles a hero in/out of the selection for
   // bulk deploy (Location lens). Off = single-select (tap replaces).
@@ -918,8 +964,9 @@ export function ProtoApp() {
         ? <Town onClose={() => setPanel(null)} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
 
-      {drawer && <NavDrawer urgent={urgent} onPick={(p) => { setDrawer(false); if (p === 'decisions') setDecisionsOpen(true); else setPanel(p) }} onClose={() => setDrawer(false)} />}
+      {drawer && <NavDrawer urgent={urgent} onPick={(p) => { setDrawer(false); if (p === 'decisions') setDecisionsOpen(true); else setPanel(p) }} onCodemap={() => { setDrawer(false); setCodemapOpen(true) }} onClose={() => setDrawer(false)} />}
       {decisionsOpen && <DecisionsInbox decisions={decisions} onClose={() => setDecisionsOpen(false)} />}
+      {codemapOpen && <CodemapOverlay onClose={() => setCodemapOpen(false)} />}
       <DeploySheetHost />
     </div>
   )

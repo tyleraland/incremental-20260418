@@ -1,54 +1,7 @@
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR, type LogCategory } from '@/stores/useGameStore'
 import { exportSave, importSave, persistSave, switchProgressionMode } from '@/save'
 import { CatchUpReadout, SamplingControls } from '@/components/SamplingDebug'
-
-// Codemap — the deterministic code visualizer (tools/codemap). It ships as a
-// separate, self-contained page under the Pages site (dist/codemap/), with its
-// own bundle + deps (ts-morph, cytoscape) that never enter the game bundle. We
-// surface it here by URL only: the iframe loads that isolated bundle on demand,
-// so opening it costs the game nothing until a debug user asks for it.
-function CodemapControl() {
-  const [open, setOpen] = useState(false)
-  const url = import.meta.env.BASE_URL + 'codemap/'
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <div className="text-xs text-game-text-dim">Codemap</div>
-        <div className="text-xs text-game-muted">Deterministic code visualizer — modules, features, files, git.</div>
-      </div>
-      <button
-        onClick={() => setOpen(true)}
-        className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors shrink-0"
-      >
-        Open ↗
-      </button>
-      {open && createPortal(
-        <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
-          <div className="flex items-center gap-3 px-4 py-2 border-b border-game-border bg-game-surface">
-            <span className="text-sm font-medium text-game-text">Codemap</span>
-            <span className="text-xs text-game-muted hidden sm:inline">code visualizer</span>
-            <a
-              href={url} target="_blank" rel="noreferrer"
-              className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors"
-            >
-              New tab ↗
-            </a>
-            <button
-              onClick={() => setOpen(false)}
-              className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors"
-            >
-              Close
-            </button>
-          </div>
-          <iframe src={url} title="Codemap" className="flex-1 w-full border-0" />
-        </div>,
-        document.body,
-      )}
-    </div>
-  )
-}
 
 function ResetSaveButton() {
   const resetSave = useGameStore((s) => s.resetSave)
@@ -458,9 +411,6 @@ export function Time() {
         </div>
         <div className="pt-2 border-t border-game-border/40">
           <BattleSkinControl />
-        </div>
-        <div className="pt-2 border-t border-game-border/40">
-          <CodemapControl />
         </div>
         <SaveTransfer />
         <ResetSaveButton />
