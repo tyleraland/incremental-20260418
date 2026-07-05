@@ -4,6 +4,8 @@ import { PAPER_PALETTE } from '@/render/palette'
 import { ARENA_SKINS } from '@/render/skins'
 import { propMarkup } from '@/render/terrain'
 import { TERRAIN_PROPS, type PropDef } from '@/render/props'
+import { listAssets, assetKey, type AssetDescriptor, type AssetCategory } from '@/render/assets'
+import { SCATTER_KINDS } from '@/mapgen'
 import { hash01, scatter } from '@/render/authoring'
 
 // Dev-only asset workshop (`?workshop=1`): the live authoring loop for paper
@@ -17,6 +19,14 @@ import { hash01, scatter } from '@/render/authoring'
 // and points at the palette board (the same rule Palette.test.tsx enforces in
 // CI). When it looks right, copy the TS snippet and paste it into
 // TERRAIN_PROPS (src/render/props.ts).
+//
+// The ASSET CATALOG panel (render/assets.ts `listAssets()`) lists every asset —
+// prop / monster-body / weapon / building / ground — with its metadata: which
+// mapgen `kinds` place a prop (empty = decor/unscattered), a ★ for
+// player-selectable, tags on hover. Click to multi-SELECT across categories,
+// then "copy names" writes the selected `category:id`s for bulk feedback; a
+// prop's ✎ loads it into the editor. Props' `kinds` live in `PROP_META`
+// (props.ts) — the catalog surfaces them so nothing goes dark on a generated map.
 //
 // Pure render: imports only the render modules — no store, no engine. The
 // draft persists in localStorage (ephemeral-UI tier) so a reload keeps your
@@ -43,7 +53,9 @@ function sceneUrl(def: PropDef, seed: number): string {
   return svgUrl(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${cells} ${cells}'>${parts.join('')}</svg>`)
 }
 
-// Same shape the import-svg script emits — paste-ready for TERRAIN_PROPS.
+// Same shape props are declared in — paste-ready for TERRAIN_PROPS. `kinds` (and
+// playerSelectable/tags) live in PROP_META, so they're emitted as a companion
+// line, not on the literal.
 function toSnippet(def: PropDef): string {
   const lines = def.paths.map((p) => {
     const parts = [`d: '${p.d}'`]
@@ -53,7 +65,14 @@ function toSnippet(def: PropDef): string {
     if (p.lit) parts.push('lit: true')
     return `      { ${parts.join(', ')} },`
   })
-  return `    { id: '${def.id}', size: ${def.size}, paths: [\n${lines.join('\n')}\n    ] },`
+  const meta = def.kinds || def.playerSelectable || def.tags?.length
+    ? `\n  // PROP_META: ${def.id}: { ${[
+        def.kinds ? `kinds: [${def.kinds.map((k) => `'${k}'`).join(', ')}]` : '',
+        def.playerSelectable ? 'playerSelectable: true' : '',
+        def.tags?.length ? `tags: [${def.tags.map((t) => `'${t}'`).join(', ')}]` : '',
+      ].filter(Boolean).join(', ')} },`
+    : ''
+  return `    { id: '${def.id}', size: ${def.size}, paths: [\n${lines.join('\n')}\n    ] },${meta}`
 }
 
 function validate(v: unknown): { def: PropDef | null; errors: string[] } {
@@ -73,10 +92,25 @@ function validate(v: unknown): { def: PropDef | null; errors: string[] } {
     if (!p.fill && !p.stroke) errors.push(`path ${i}: paints nothing (needs a fill or a stroke)`)
     if (p.stroke && typeof p.sw !== 'number') errors.push(`path ${i}: a stroke needs 'sw' (≈0.06–0.16)`)
   })
+  // optional metadata (tolerated so a stamped prop round-trips; surfaced as badges)
+  if (d.kinds !== undefined) {
+    if (!Array.isArray(d.kinds)) errors.push("'kinds' must be an array of ScatterKinds")
+    else d.kinds.forEach((k) => { if (!(SCATTER_KINDS as readonly string[]).includes(k)) errors.push(`kind '${k}' is not a ScatterKind (${SCATTER_KINDS.join('/')})`) })
+  }
   return { def: errors.length ? null : (d as PropDef), errors }
 }
 
 const STARTER = TERRAIN_PROPS.grass.find((p) => p.id === 'bush') ?? TERRAIN_PROPS.grass[0]
+const propOf = (a: AssetDescriptor): PropDef | null =>
+  a.category === 'prop' && a.biome ? TERRAIN_PROPS[a.biome].find((p) => p.id === a.id) ?? null : null
+
+const CATS: { cat: AssetCategory; label: string }[] = [
+  { cat: 'prop', label: 'props' },
+  { cat: 'monster-body', label: 'monster bodies' },
+  { cat: 'weapon', label: 'weapons' },
+  { cat: 'building', label: 'buildings' },
+  { cat: 'ground', label: 'grounds' },
+]
 
 function GroundBox({ biome, size, children }: { biome: Biome; size: number; children?: React.ReactNode }) {
   const g = ARENA_SKINS.paper.grounds?.[biome]
@@ -101,6 +135,15 @@ export default function AssetWorkshop() {
   })
   const [seed, setSeed] = useState(7)
   const [copied, setCopied] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [namesCopied, setNamesCopied] = useState(false)
+
+  const catalog = useMemo(() => listAssets(), [])
+  const byCat = useMemo(() => {
+    const m = new Map<AssetCategory, AssetDescriptor[]>()
+    for (const a of catalog) (m.get(a.category) ?? m.set(a.category, []).get(a.category)!).push(a)
+    return m
+  }, [catalog])
 
   const { def, errors } = useMemo(() => {
     try { return validate(JSON.parse(text)) }
@@ -117,13 +160,25 @@ export default function AssetWorkshop() {
     if (!def) return
     navigator.clipboard?.writeText(toSnippet(def)).then(() => setCopied(true))
   }
+  const toggle = (key: string) => {
+    setNamesCopied(false)
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+  const copyNames = () => {
+    if (!selected.size) return
+    navigator.clipboard?.writeText([...selected].join('\n')).then(() => setNamesCopied(true))
+  }
 
   const url = def ? propUrl(def) : null
 
   return (
     <div data-workshop className="min-h-full bg-[#0b0b10] text-neutral-300 p-4 overflow-auto text-[12px]">
       <p className="text-[10px] text-neutral-500 mb-3">
-        asset workshop — author a paper prop live (dev-only, ?workshop=1 · guide: src/render/CLAUDE.md · sibling: ?gallery=1)
+        asset workshop — author a paper prop + browse/select every asset (dev-only, ?workshop=1 · guide: src/render/CLAUDE.md · sibling: ?gallery=1)
       </p>
 
       <div className="flex flex-wrap gap-6 items-start">
@@ -141,26 +196,19 @@ export default function AssetWorkshop() {
               {errors.map((e, i) => <li key={i}>✗ {e}</li>)}
             </ul>
           ) : (
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
               <span className="text-emerald-400/90">✓ valid — contract-clean</span>
+              {def?.kinds && (
+                <span className="text-[10px] text-neutral-400">
+                  kinds: {def.kinds.length ? def.kinds.join(', ') : <em className="text-amber-400/80">none — decor/unscattered</em>}
+                </span>
+              )}
+              {def?.playerSelectable && <span className="text-[10px] text-yellow-300/90">★ player-selectable</span>}
               <button onClick={copy} className="px-2 py-0.5 rounded border border-neutral-600 hover:bg-white/5">
                 {copied ? 'copied ✓' : 'copy TS snippet'}
               </button>
             </div>
           )}
-
-          <h2 className="text-[11px] uppercase tracking-widest text-neutral-400 mt-4 mb-1">start from an existing prop</h2>
-          <div className="flex flex-wrap gap-1.5">
-            {BIOMES.flatMap((b) => TERRAIN_PROPS[b].map((p) => (
-              <button
-                key={`${b}-${p.id}`}
-                onClick={() => load(p)}
-                title={`${b}/${p.id}`}
-                className="w-11 h-11 rounded border border-neutral-800 hover:border-neutral-500"
-                style={{ ...ARENA_SKINS.paper.surface, backgroundImage: `${propUrl(p)}, ${ARENA_SKINS.paper.grounds?.[b]?.image ?? ''}`, backgroundSize: '100% 100%, 22px' }}
-              />
-            )))}
-          </div>
 
           <h2 className="text-[11px] uppercase tracking-widest text-neutral-400 mt-4 mb-1">palette roles (click = copy name)</h2>
           <div className="flex flex-wrap gap-1">
@@ -213,6 +261,83 @@ export default function AssetWorkshop() {
             imported art: <code>npm run import-svg -- file.svg</code> normalizes an editor SVG into this exact shape.
           </p>
         </div>
+      </div>
+
+      {/* ── Asset catalog: every asset, discoverable + multi-selectable ── */}
+      <div className="mt-6 border-t border-neutral-800 pt-4">
+        <div className="flex items-center gap-3 mb-2 flex-wrap">
+          <h2 className="text-[11px] uppercase tracking-widest text-neutral-400">asset catalog ({catalog.length})</h2>
+          <span className="text-[10px] text-neutral-500">click = select · ✎ = edit prop · ★ = player-selectable</span>
+          <span className="ml-auto flex items-center gap-2">
+            <span className="text-[10px] text-neutral-400">{selected.size} selected</span>
+            <button
+              onClick={copyNames}
+              disabled={!selected.size}
+              className="px-2 py-0.5 rounded border border-neutral-600 hover:bg-white/5 disabled:opacity-40"
+            >
+              {namesCopied ? 'copied ✓' : 'copy names'}
+            </button>
+            <button
+              onClick={() => { setSelected(new Set()); setNamesCopied(false) }}
+              disabled={!selected.size}
+              className="px-2 py-0.5 rounded border border-neutral-800 hover:bg-white/5 disabled:opacity-40"
+            >
+              clear
+            </button>
+          </span>
+        </div>
+
+        {CATS.map(({ cat, label }) => {
+          const items = byCat.get(cat) ?? []
+          if (!items.length) return null
+          return (
+            <div key={cat} className="mb-3">
+              <div className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">{label} ({items.length})</div>
+              <div className="flex flex-wrap gap-1.5">
+                {items.map((a) => {
+                  const key = assetKey(a)
+                  const pdef = propOf(a)
+                  const sel = selected.has(key)
+                  const title = [key, a.kinds?.length ? `kinds: ${a.kinds.join(', ')}` : (cat === 'prop' ? 'kinds: none' : ''), a.tags.length ? `tags: ${a.tags.join(', ')}` : '']
+                    .filter(Boolean).join('\n')
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => toggle(key)}
+                      title={title}
+                      className={`relative w-[74px] rounded border cursor-pointer select-none ${sel ? 'border-emerald-400 ring-1 ring-emerald-400/60' : 'border-neutral-800 hover:border-neutral-600'}`}
+                    >
+                      {pdef && a.biome ? (
+                        <div
+                          className="h-[46px] rounded-t"
+                          style={{ ...ARENA_SKINS.paper.surface, backgroundImage: `${propUrl(pdef)}, ${ARENA_SKINS.paper.grounds?.[a.biome]?.image ?? ''}`, backgroundSize: '100% 100%, 20px' }}
+                        />
+                      ) : (
+                        <div className="h-[46px] rounded-t bg-[#12121a] flex items-center justify-center text-[9px] text-neutral-500 px-1 text-center">{a.material ?? a.biome ?? cat}</div>
+                      )}
+                      <div className="px-1 py-0.5 flex items-center gap-0.5">
+                        <span className="text-[10px] text-neutral-300 truncate">{a.id}</span>
+                        {a.playerSelectable && <span className="text-[9px] text-yellow-300/90">★</span>}
+                        {pdef && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); load(pdef) }}
+                            title="edit in the authoring panel"
+                            className="ml-auto text-[10px] text-neutral-500 hover:text-emerald-300"
+                          >✎</button>
+                        )}
+                      </div>
+                      {cat === 'prop' && (
+                        <div className="px-1 pb-0.5 text-[8px] leading-tight text-neutral-500 truncate">
+                          {a.kinds?.length ? a.kinds.join(' ') : <span className="text-amber-400/70">decor</span>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

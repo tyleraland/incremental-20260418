@@ -49,8 +49,12 @@ fills roughly ±0.5–0.9. Three ways to make one, cheapest first:
 1. **Workshop (start here):** run `npm run dev`, open `?workshop=1`. Click an
    existing prop as a starting point, edit the JSON, and watch it live on every
    biome ground, at every LOD size, and scattered with the game's real jitter.
-   Validation names any rule violation as you type. When it reads well, "copy
-   TS snippet" → paste into `TERRAIN_PROPS` in `props.ts`.
+   Validation names any rule violation as you type (incl. bad `kinds`), and the
+   valid banner surfaces the prop's `kinds` / ★player-selectable. When it reads
+   well, "copy TS snippet" → paste into `TERRAIN_PROPS` in `props.ts`. The
+   **Asset catalog** panel below lists EVERY asset (`listAssets()`): browse by
+   category, ✎ to edit a prop, multi-select across categories → "copy names"
+   dumps the `category:id`s for bulk feedback.
 2. **Draw in a real editor:** draw flat shapes in Inkscape/Figma (any colors,
    any transforms), export SVG, then
    `npm run import-svg -- art.svg --id my-prop`. The script flattens
