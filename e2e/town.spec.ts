@@ -40,8 +40,10 @@ test('lens tabs + market cart/tone + party nav', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: /Close/ }).click().catch(() => {})
   await page.waitForTimeout(200)
 
-  // Market: buy cart (+/-) and sell tone toggle.
-  await page.getByRole('button', { name: 'Town', exact: true }).click()
+  // Market: buy cart (+/-) and sell tone toggle. Reached via the ☰ menu → Market.
+  await page.getByRole('button', { name: 'Menu', exact: true }).click()
+  await page.waitForTimeout(200)
+  await page.getByRole('button', { name: /Market/ }).first().click()
   await page.waitForTimeout(300)
   await page.getByText('Prontera General Store').first().click().catch(() => {})
   await page.waitForTimeout(300)

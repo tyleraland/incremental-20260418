@@ -563,8 +563,8 @@ type TownTab = 'market' | 'stash'
 const TOWN_TABS: { id: TownTab; label: string; icon: string }[] = [
   { id: 'market', label: 'Market', icon: '🏪' }, { id: 'stash', label: 'Stash', icon: '📦' },
 ]
-export function Town({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<TownTab>('market')
+export function Town({ onClose, initialTab = 'market' }: { onClose: () => void; initialTab?: TownTab }) {
+  const [tab, setTab] = useState<TownTab>(initialTab)
   useEffect(() => { seedProtoMocks() }, [])
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
