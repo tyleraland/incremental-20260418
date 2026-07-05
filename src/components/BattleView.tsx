@@ -381,8 +381,14 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   return (
     <div
       ref={ref}
-      className={`relative w-full max-h-full aspect-square bg-game-surface overflow-hidden select-none${framed ? ' rounded-lg border border-game-border' : ''}`}
-      style={{ touchAction: 'none', containerType: 'size', ...arenaSkin.surface }}
+      className={`relative aspect-square bg-game-surface overflow-hidden select-none${framed ? ' rounded-lg border border-game-border' : ''}`}
+      // Largest square that fits the parent (a size-container): `min(100cqw,
+      // 100cqh)` sizes to the SHORTER parent dimension, so the arena is always a
+      // centred square — never the wide rectangle `w-full + max-h-full` degrades
+      // to when height-constrained (which letterboxed the whole-field city view).
+      // `aspect-square` is kept (redundant with the equal w/h) so selectors that
+      // key on it still find the arena.
+      style={{ width: 'min(100cqw, 100cqh)', height: 'min(100cqw, 100cqh)', touchAction: 'none', containerType: 'size', ...arenaSkin.surface }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -1521,7 +1527,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
           className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
         >+</button>
       </div>
-      <div ref={arenaWrapRef} className="flex-1 min-h-0 flex justify-center items-start">
+      <div ref={arenaWrapRef} className="flex-1 min-h-0 flex justify-center items-center" style={{ containerType: 'size' }}>
         <Arena
           cam={cam}
           barriers={battle.barriers}
