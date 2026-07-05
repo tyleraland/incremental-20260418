@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react'
+import { useEffect, lazy, Suspense, type ReactNode } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
@@ -22,17 +22,47 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
   ;(window as unknown as { __game?: typeof useGameStore }).__game = useGameStore
 }
 
-// Dev-only skin gallery (`?gallery=1`): a pure-render contact sheet of the whole
-// visual language (src/dev/SkinGallery.tsx). Lazy so the chunk stays out of the
-// main bundle; the DEV gate keeps the route out of production entirely.
-const SkinGallery = import.meta.env.DEV ? lazy(() => import('@/dev/SkinGallery')) : null
-// Dev-only asset workshop (`?workshop=1`): live paper-prop authoring — edit a
-// PropDef as JSON, see it on every biome at every size, copy the snippet.
-// Same gating as the gallery. Guide: src/render/CLAUDE.md.
-const AssetWorkshop = import.meta.env.DEV ? lazy(() => import('@/dev/AssetWorkshop')) : null
-// Dev-only mapgen lab (`?mapgen=1`): seed contact sheet + layer inspector +
-// validation readout for the procedural map generator (src/mapgen/CLAUDE.md).
-const MapgenLab = import.meta.env.DEV ? lazy(() => import('@/dev/MapgenLab')) : null
+// Developer tool pages, reached from the ☰ Menu (Developer section) or by URL.
+// They now ship in PRODUCTION too so `main`/Pages carries the debug kit — but
+// only in sandbox (the dev progression mode); curated stays the clean onramp.
+// See `devToolsEnabled` below. Lazy so each stays a separate chunk out of the
+// main bundle.
+//   ?gallery=1  — pure-render contact sheet of the whole visual language.
+//   ?workshop=1 — live paper-prop authoring (edit a PropDef, see + copy it).
+//   ?mapgen=1   — seed contact sheet + layer inspector for the map generator.
+const SkinGallery  = lazy(() => import('@/dev/SkinGallery'))
+const AssetWorkshop = lazy(() => import('@/dev/AssetWorkshop'))
+const MapgenLab    = lazy(() => import('@/dev/MapgenLab'))
+
+// The dev tool pages and perf harness are gated to sandbox mode (or a real DEV
+// build). Sandbox is the dev/everything-open mode; curated is the new-player
+// build and stays free of debug surfaces. Read once at render (a full reload
+// mounts the page fresh, so the bootstrapped mode is current).
+const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen'] as const
+function devToolsEnabled() {
+  return import.meta.env.DEV || useGameStore.getState().progressionMode === 'sandbox'
+}
+
+// The dev pages have no chrome of their own, so wrap them with a fixed "← Game"
+// button that drops the query param and reloads back into the app — otherwise a
+// menu-reached page is a dead end (you'd have to hand-edit the URL).
+function DevPage({ children }: { children: ReactNode }) {
+  const back = () => {
+    const q = new URLSearchParams(window.location.search)
+    DEV_TOOL_PARAMS.forEach((k) => q.delete(k))
+    const s = q.toString()
+    window.location.search = s
+  }
+  return (
+    <Suspense fallback={null}>
+      {children}
+      <button
+        onClick={back}
+        className="fixed top-2 left-2 z-[100] px-3 py-1.5 rounded-lg border border-game-border bg-game-surface/90 text-game-text text-sm shadow-lg hover:bg-game-surface"
+      >← Game</button>
+    </Suspense>
+  )
+}
 
 // Reads elapsed time since lastTickAt and applies the right number of ticks.
 // Called both by the interval (background throttle catch-up) and visibilitychange.
@@ -117,14 +147,11 @@ function App() {
     return () => clearInterval(id)
   }, [perfMode])
 
-  if (SkinGallery && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('gallery')) {
-    return <Suspense fallback={null}><SkinGallery /></Suspense>
-  }
-  if (AssetWorkshop && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('workshop')) {
-    return <Suspense fallback={null}><AssetWorkshop /></Suspense>
-  }
-  if (MapgenLab && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('mapgen')) {
-    return <Suspense fallback={null}><MapgenLab /></Suspense>
+  if (typeof window !== 'undefined' && devToolsEnabled()) {
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('gallery'))  return <DevPage><SkinGallery /></DevPage>
+    if (params.has('workshop')) return <DevPage><AssetWorkshop /></DevPage>
+    if (params.has('mapgen'))   return <DevPage><MapgenLab /></DevPage>
   }
 
   if (!classicMode) {

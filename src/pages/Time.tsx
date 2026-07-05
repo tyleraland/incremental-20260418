@@ -188,8 +188,7 @@ function SaveTransfer() {
   )
 }
 
-declare const __GIT_HASH__: string
-declare const __GIT_LOG__: { hash: string; message: string }[]
+// __GIT_HASH__ / __GIT_LOG__ are Vite `define` globals — declared in src/vite-env.d.ts.
 
 const LOG_META: Record<LogCategory, { label: string; chip: string }> = {
   victory: { label: 'Victory', chip: 'bg-game-green/20 text-game-green border-game-green/30' },

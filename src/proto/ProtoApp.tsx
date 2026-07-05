@@ -406,7 +406,25 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
 // ── Nav drawer — the single global-nav surface (the reclaimed top row folded in
 // here). Decisions + Town lead (they were the two on-bar buttons); the rest are
 // the lower-frequency destinations. Decisions carries the urgent count.
+// Developer tool pages (src/dev/*), reached by setting a query param + reloading
+// — App.tsx swaps them in for the whole app. Sandbox-only (see `devEnabled`).
+const DEV_PAGES: { param: string; icon: string; label: string; sub: string }[] = [
+  { param: 'mapgen',   icon: '🗺', label: 'Mapgen Lab',     sub: 'procedural map generator — seeds, planes, validation' },
+  { param: 'gallery',  icon: '🎨', label: 'Skin Gallery',   sub: 'the whole visual language on one contact sheet' },
+  { param: 'workshop', icon: '🛠', label: 'Asset Workshop',  sub: 'live paper-prop authoring — edit + copy a PropDef' },
+]
+function openDevPage(param: string) {
+  const q = new URLSearchParams(window.location.search)
+  q.set(param, '1')
+  window.location.search = q.toString()   // reload; App.tsx renders the page
+}
+
 function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => void; onClose: () => void; urgent: number }) {
+  // Debug/developer tools ride on `main` but only in sandbox (the dev mode);
+  // curated stays the clean new-player build.
+  const mode = useGameStore((s) => s.progressionMode)
+  const devEnabled = import.meta.env.DEV || mode === 'sandbox'
+  const latest = __GIT_LOG__.length > 0 ? __GIT_LOG__[0] : null
   const items: { id: DrawerDest; icon: string; label: string; sub: string; badge?: number }[] = [
     { id: 'decisions', icon: '⚑', label: 'Decisions', sub: 'everything waiting on you', badge: urgent },
     { id: 'town',     icon: '🏪', label: 'Town',     sub: 'market · stash · resupply' },
@@ -424,6 +442,14 @@ function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => voi
           <span className="text-sm font-semibold text-game-text">Menu</span>
           <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-sm">✕</button>
         </header>
+        {/* Latest commit — the build this session is running (Time→Debug shows the
+            full log; this is the one-line glance). */}
+        {latest && (
+          <div className="shrink-0 flex gap-2 items-baseline px-3 py-2 border-b border-game-border/60 text-[10px] leading-snug">
+            <span className="font-mono text-game-accent shrink-0">{latest.hash}</span>
+            <span className="text-game-text-dim truncate" title={latest.message}>{latest.message}</span>
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {items.map((it) => (
             <button
@@ -443,6 +469,30 @@ function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => voi
               </span>
             </button>
           ))}
+          {/* Developer — the hidden dev-tool pages, surfaced here in sandbox so
+              `main` doubles as the debug build. Each reloads into a full-screen
+              page (← Game returns). */}
+          {devEnabled && (
+            <>
+              <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+                <span className="text-[10px] uppercase tracking-widest text-game-muted">Developer</span>
+                <span className="flex-1 h-px bg-game-border/60" />
+              </div>
+              {DEV_PAGES.map((p) => (
+                <button
+                  key={p.param}
+                  onClick={() => openDevPage(p.param)}
+                  className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+                >
+                  <span className="text-lg w-6 text-center shrink-0">{p.icon}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm text-game-text font-medium">{p.label}</span>
+                    <span className="block text-[10px] text-game-muted truncate">{p.sub}</span>
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>,
