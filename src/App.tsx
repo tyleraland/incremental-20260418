@@ -13,6 +13,13 @@ import { Guild } from '@/pages/Guild'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
 import { ProtoApp } from '@/proto/ProtoApp'
+import { applyPersistedOverrides } from '@/data/monsterOverrides'
+
+// Re-apply any Monster Lab (?monsterlab=1) experiments onto the live registry at
+// boot, so tuned stats/skills persist across reloads and take effect on the next
+// spawn. No-op when nothing has been tuned; dev-only surface, but the apply is
+// cheap and harmless in any build.
+applyPersistedOverrides()
 
 // Dev-only: expose the store on `window.__game` so a Playwright (or devtools)
 // session can read and drive live game state — `page.evaluate(() => __game.getState())`
@@ -31,16 +38,18 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 //   ?workshop=1 — live paper-prop authoring (edit a PropDef, see + copy it).
 //   ?mapgen=1   — seed contact sheet + layer inspector for the map generator.
 //   ?sandbox=1  — interactive density rig (heroes/monsters/map/play-pause).
+//   ?monsterlab=1 — live monster stat/skill tuning + change-request generator.
 const SkinGallery  = lazy(() => import('@/dev/SkinGallery'))
 const AssetWorkshop = lazy(() => import('@/dev/AssetWorkshop'))
 const MapgenLab    = lazy(() => import('@/dev/MapgenLab'))
 const PerfSandbox  = lazy(() => import('@/dev/PerfSandbox'))
+const MonsterLab   = lazy(() => import('@/dev/MonsterLab'))
 
 // The dev tool pages and perf harness are gated to sandbox mode (or a real DEV
 // build). Sandbox is the dev/everything-open mode; curated is the new-player
 // build and stays free of debug surfaces. Read once at render (a full reload
 // mounts the page fresh, so the bootstrapped mode is current).
-const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox'] as const
+const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox', 'monsterlab'] as const
 function devToolsEnabled() {
   return import.meta.env.DEV || useGameStore.getState().progressionMode === 'sandbox'
 }
@@ -160,6 +169,7 @@ function App() {
     if (params.has('workshop')) return <DevPage><AssetWorkshop /></DevPage>
     if (params.has('mapgen'))   return <DevPage><MapgenLab /></DevPage>
     if (params.has('sandbox'))  return <DevPage><PerfSandbox /></DevPage>
+    if (params.has('monsterlab')) return <DevPage><MonsterLab /></DevPage>
   }
 
   if (!classicMode) {
