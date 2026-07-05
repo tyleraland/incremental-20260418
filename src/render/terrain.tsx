@@ -474,12 +474,12 @@ export function terrainSvg(p: TerrainProps): string {
 // The bitmap gets scaled UP by the camera when you zoom in toward hero scale,
 // so its raster resolution is the crispness ceiling. Scale RES by the device
 // pixel ratio (clamped) — mobile retina is exactly where the upscale shows —
-// while the cap keeps the one texture bounded (2048² ≈ 16MB; the async decode
+// while the cap keeps the one texture bounded (2560² ≈ 26MB; the async decode
 // scales with SVG path count, not much with area, so this stays off the
-// critical path). Desktop (dpr 1) is unchanged at cols*26.
+// critical path).
 const TERRAIN_RES = (cols: number) => {
-  const dpr = typeof window !== 'undefined' ? Math.min(1.6, window.devicePixelRatio || 1) : 1
-  return Math.min(2048, Math.max(768, Math.round(cols * 26 * dpr)))
+  const dpr = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1
+  return Math.min(2560, Math.max(768, Math.round(cols * 30 * dpr)))
 }
 
 export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
