@@ -6,6 +6,7 @@ import { TabBar } from '@/components/TabBar'
 import { RosterCarousel } from '@/components/RosterCarousel'
 import { UnitReportSheet } from '@/components/UnitReportSheet'
 import { OfflineSummary } from '@/components/OfflineSummary'
+import { prewarmLocationTerrain } from '@/components/BattleView'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
@@ -152,6 +153,25 @@ function App() {
     if (perfMode) { import('@/dev/perfSeed').then((m) => m.seedPerfBattle()) }
     else if (!sandboxMode) { loadPersistedSave() }
   }, [perfMode, sandboxMode])
+
+  // Prewarm generated map bitmaps at idle after boot, so the FIRST drop into a
+  // city/field paints the terrain on the first frame — no solid-surface decode
+  // window (the inked city SVG is ~3k paths / hundreds of ms to raster). Party
+  // locations first (the likeliest first battle); staggered so it never competes
+  // with the initial render. Cheap + LRU-capped + cache-skipping in terrain.tsx;
+  // only mapGen locations (hand-authored maps are light enough to decode inline).
+  useEffect(() => {
+    if (perfMode) return
+    const run = () => {
+      const { locations, units } = useGameStore.getState()
+      const hasUnits = (l: (typeof locations)[number]) => units.some((u) => u.locationId === l.id)
+      const gen = locations.filter((l) => l.mapGen).sort((a, b) => Number(hasUnits(b)) - Number(hasUnits(a)))
+      gen.forEach((l, i) => window.setTimeout(() => prewarmLocationTerrain(l, units), i * 150))
+    }
+    const w = window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
+    const id = w.requestIdleCallback ? w.requestIdleCallback(run, { timeout: 1500 }) : window.setTimeout(run, 500)
+    return () => { if (w.cancelIdleCallback) w.cancelIdleCallback(id); else clearTimeout(id) }
+  }, [perfMode])
 
   // Auto-save every 60 s, foreground only. Skipped for the synthetic-scene
   // harnesses so they never overwrite a real save.
