@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, type CSSProperties } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, type CSSProperties } from 'react'
 import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
 import { expectedRoundGapMs, glideMs } from '@/render/cadence'
 import { getDerivedStats } from '@/lib/stats'
@@ -226,7 +226,7 @@ const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(c
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, sidePx = null, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; sidePx?: number | null; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
   // Organic terrain layer (render/terrain.tsx): one static per-location SVG
@@ -381,14 +381,12 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   return (
     <div
       ref={ref}
-      className={`relative aspect-square bg-game-surface overflow-hidden select-none${framed ? ' rounded-lg border border-game-border' : ''}`}
-      // Largest square that fits the parent (a size-container): `min(100cqw,
-      // 100cqh)` sizes to the SHORTER parent dimension, so the arena is always a
-      // centred square — never the wide rectangle `w-full + max-h-full` degrades
-      // to when height-constrained (which letterboxed the whole-field city view).
-      // `aspect-square` is kept (redundant with the equal w/h) so selectors that
-      // key on it still find the arena.
-      style={{ width: 'min(100cqw, 100cqh)', height: 'min(100cqw, 100cqh)', touchAction: 'none', containerType: 'size', ...arenaSkin.surface }}
+      // `sidePx` (measured by BattleView) makes the arena a real centred square —
+      // the largest that fits its wrapper. Pure CSS can't do min(w,h)-square
+      // across the app's layouts, so it's measured in JS. Until measured (and in
+      // tests without ResizeObserver) fall back to the classic `w-full max-h-full`.
+      className={`relative aspect-square bg-game-surface overflow-hidden select-none${sidePx == null ? ' w-full max-h-full' : ''}${framed ? ' rounded-lg border border-game-border' : ''}`}
+      style={{ ...(sidePx == null ? null : { width: sidePx, height: sidePx }), touchAction: 'none', containerType: 'size', ...arenaSkin.surface }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -997,6 +995,26 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
   const lastSegRef = useRef(ROUND_MS)        // last computed glide duration (ms), to restore after a pan
   const panningRef = useRef(false)           // true while a finger is actively dragging the camera
   const panStartRef = useRef<Vec2 | null>(null)  // view centre captured at pan start
+  // The arena is a SQUARE sized to the largest square fitting the wrap. Pure CSS
+  // can't express min(width,height)-square across the app's layouts (`w-full +
+  // max-h-full aspect-square` degrades to a wide rectangle when the wrap is
+  // shorter than it is wide — e.g. a tall detail panel compresses it — and a
+  // `containerType`/`cqmin` approach collapses where the height chain is
+  // indefinite). So measure the wrap and size the arena in px. Layout-effect so
+  // the first paint is already square (no black/letterboxed frame).
+  const [arenaSide, setArenaSide] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    const el = arenaWrapRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const measure = () => {
+      const side = Math.floor(Math.min(el.clientWidth, el.clientHeight))
+      if (side > 0) setArenaSide((s) => (s === side ? s : side))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   useEffect(() => {
     const el = arenaWrapRef.current
     if (!el) return
@@ -1527,8 +1545,9 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
           className="w-6 h-6 flex items-center justify-center rounded-md border border-game-border bg-game-surface/90 text-game-text text-sm leading-none backdrop-blur-sm hover:bg-white/5"
         >+</button>
       </div>
-      <div ref={arenaWrapRef} className="flex-1 min-h-0 flex justify-center items-center" style={{ containerType: 'size' }}>
+      <div ref={arenaWrapRef} className="flex-1 min-h-0 flex justify-center items-center">
         <Arena
+          sidePx={arenaSide}
           cam={cam}
           barriers={battle.barriers}
           centerY={rows / 2}
