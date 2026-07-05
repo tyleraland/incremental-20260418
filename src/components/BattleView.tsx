@@ -127,14 +127,20 @@ function encounterCamera(cols: number, rows: number, want: number, center: Vec2 
 // rim — auto-follow (party/hero) passes 0 so it never drifts off the action.
 function followCamera(pts: Vec2[], cols: number, rows: number, want: number, overscroll = false): Cam {
   const size = Math.min(want, cols, rows)
-  if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
+  // When the view already spans a whole axis (size == that dimension — e.g. a
+  // peaceful city framed whole), CENTER it and allow no pan on that axis: there's
+  // nothing more to reveal, so free-look overscroll would only push the field
+  // into empty space (the "void beside the town" bug). Only axes with something
+  // off-screen get the follow + overscroll slack.
+  const fitsX = size >= cols, fitsY = size >= rows
+  if (pts.length === 0 || (fitsX && fitsY)) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
   let sx = 0, sy = 0
   for (const p of pts) { sx += p.x; sy += p.y }
   const cx = sx / pts.length, cy = sy / pts.length
   const slack = overscroll ? size / 2 : 0
   return {
-    x: Math.max(-slack, Math.min(cols - size + slack, cx - size / 2)),
-    y: Math.max(-slack, Math.min(rows - size + slack, cy - size / 2)),
+    x: fitsX ? (cols - size) / 2 : Math.max(-slack, Math.min(cols - size + slack, cx - size / 2)),
+    y: fitsY ? (rows - size) / 2 : Math.max(-slack, Math.min(rows - size + slack, cy - size / 2)),
     size,
   }
 }
@@ -385,7 +391,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
       // the largest that fits its wrapper. Pure CSS can't do min(w,h)-square
       // across the app's layouts, so it's measured in JS. Until measured (and in
       // tests without ResizeObserver) fall back to the classic `w-full max-h-full`.
-      className={`relative aspect-square bg-game-surface overflow-hidden select-none${sidePx == null ? ' w-full max-h-full' : ''}${framed ? ' rounded-lg border border-game-border' : ''}`}
+      className={`relative m-auto aspect-square bg-game-surface overflow-hidden select-none${sidePx == null ? ' w-full max-h-full' : ''}${framed ? ' rounded-lg border border-game-border' : ''}`}
       style={{ ...(sidePx == null ? null : { width: sidePx, height: sidePx }), touchAction: 'none', containerType: 'size', ...arenaSkin.surface }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
