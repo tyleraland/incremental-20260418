@@ -1309,6 +1309,35 @@ offset-shape shadow (no CSS filters), one-data-URI parquet ground. Restyle
 iteration = editing shapes/palettes in that one file, A/B-able live against
 `circle` on the same battle.
 
+### Asset discoverability + gallery + procgen wiring (foundation shipped 2026-07)
+
+*Shipped (the plumbing):* every prop self-declares its mapgen `kinds` +
+`playerSelectable`/`tags` (`PROP_META` in `render/props.ts`), scatter placement
+spreads a kind across ALL tagged props (so no authored prop goes dark on a
+generated map — `AssetCatalog.test.ts` guards it), and `render/assets.ts`
+`listAssets()` is the single discoverable catalog of every prop/body/weapon/
+building/ground as `AssetDescriptor`. This is the seam the items below hang off.
+
+*Next slices (build on the catalog, not new registries):*
+- **Dev asset gallery (`?gallery=1` extension or a new `?assets=1` page):** render
+  every `listAssets()` entry as a swatch, grouped by category, with search/filter
+  (by biome, kind, `playerSelectable`). **Multi-select + "copy names"**: click to
+  toggle selection, a Copy button writes the selected `assetKey()`s (`category:id`,
+  one per line) to the clipboard for bulk feedback. Pure read of the catalog +
+  the existing `propMarkup`/`Body` renderers.
+- **Procgen option wiring:** expose per-recipe knobs (scatter density, which
+  `ScatterKind`s a recipe emits + weights, biome) as MapSpec params surfaced in
+  `?mapgen=1`, so a designer tunes what a map grows without editing recipe code.
+  The city recipe emitting `reed` (currently never) would light up the reed-tagged
+  props (`coil`/`crack`/`reeds`).
+- **Player-selectable assets:** `playerSelectable` is wired through the catalog but
+  no asset is flagged `true` yet — designate which (guild banner crest? town
+  building style?) and build the picker that reads `playerSelectableAssets()`.
+- **More building looks:** the timber-house + half-timbered "Ragnarok townhouse"
+  palette families (`PAPER_PALETTE`, ~13 roles) are authored but unwired — add
+  `BUILDING_LOOKS` entries so Prontera has >3 building types (they'll appear in the
+  catalog automatically).
+
 *Perf lesson from landing it* (measured on the `?perf` scene, mobile-chrome 4×
 throttle, via the new `skin-compare.spec.ts` A/B (`npm run skin-ab`) +
 `skin-trace.spec.ts` CDP attribution): a richer body's cost is NOT the SVG

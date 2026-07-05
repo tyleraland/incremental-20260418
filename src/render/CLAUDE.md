@@ -33,7 +33,8 @@ Polish comes from consistency, not path complexity:
 |---|---|
 | `palette.ts` | the color vocabulary: `PAPER_TONE` (token tones) + `PAPER_PALETTE` (~20 material roles) |
 | `authoring.ts` | seeded geometry: `wonk` / `blobPath` / `polyPath` / `rectOutline` / `roughCircle` / `scatter` / `hash01` / `hashString` |
-| `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor) |
+| `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor). Each prop SELF-DECLARES its mapgen `kinds` (which `ScatterKind`s place it) + `playerSelectable`/`tags` via `PROP_META` — stamped onto the def and its variants |
+| `assets.ts` | the discoverable asset CATALOG: `listAssets()` enumerates every prop/monster-body/weapon/building/ground as `AssetDescriptor{category,id,kinds,playerSelectable,tags,…}`. One source for the dev asset gallery + a future player cosmetic picker — add an asset in its home module and it appears here |
 | `inked.ts` | the "inked toolkit" — a flat-fill port of the top-down battlemap kit: `ink()` (fill+stroke in one path), `masonryBand()` (running-bond stone), `roofSlope()` (weathered tile field), `mossClump()`, `cobble()`. Surfaces are MANY small individually-inked jittered pieces picked from `INK_POOLS` (palette.ts) — no gradients/filters, all seeded, all baked into the terrain image |
 | `buildings.ts` | the CITY tile catalog (inked top-down, styled after Prontera): `BUILDING_LOOKS` keyed off `BarrierMaterial` — `wood` red-tile townhouse, `cut-stone` slate-tile hall, `rubble` roofless ruin — + `buildingMarkup()` emitting a masonry wall RING around a weathered roof-TILE field split by a ridge (moss, doors, windows, silhouette ink), via `inked.ts`. Procgen plugs in by tagging a rect's material; switches on material, never ids |
 | `terrain.tsx` | the renderer: per-location terrain model + the `terrainSvg()` emitter, `propMarkup()` (the one PropDef→svg translation), `fountainMarkup()`; §mapgen spec consumption (surface washes incl. city dirt/grass + inked cobblestone paving, scatter-plane props, material-aware collision paint — BUILT-material walls become `buildings.ts` structures, natural walls stay organic blobs). `PaperTerrain` **rasterizes the SVG to a `<canvas>` bitmap once** (`TERRAIN_RES`, async decode) so pan/zoom are GPU-composited, not re-rasterized |
@@ -65,6 +66,15 @@ also what a PR reviewer looks at.
 
 Prop placement (density, rotation/flip/scale jitter, keep-clear from barriers
 and portals) is the terrain builder's job — a new prop entry inherits all of it.
+
+**Tag the prop's `kinds` in `PROP_META` (`props.ts`) or it goes DARK on generated
+maps.** Spec-driven maps place scatter by mapgen `ScatterKind` (tree/bush/rock/
+stump/flower/reed); the placer spreads a kind across ALL props tagged with it. A
+prop with no matching kind is only reachable on legacy hand-authored locations —
+so a new city/field prop MUST list ≥1 kind the recipe emits (the city emits
+tree/bush/rock/stump/flower, never `reed`). Reachability is pinned by
+`AssetCatalog.test.ts`. Decor-ring-only assets (`lamppost`/`banner`, placed by
+the plaza landmark ring) intentionally carry empty `kinds`.
 
 **Variants are free.** Each archetype in `TERRAIN_PROPS` is automatically
 multiplied into seeded siblings (`variants()` in `props.ts`, riding

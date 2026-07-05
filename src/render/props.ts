@@ -1,4 +1,5 @@
 import type { Biome } from '@/render/appearance'
+import type { ScatterKind } from '@/mapgen'
 import type { PaperRole } from '@/render/palette'
 import { hashString, wonkPathD } from '@/render/authoring'
 
@@ -32,6 +33,18 @@ export interface PropDef {
   // suits chunky silhouettes; props with fine registered detail (a skull's eye
   // sockets) want a gentler re-cut. Undefined → the default.
   wonk?: number
+  // ── discoverable asset metadata (see assets.ts / render/CLAUDE.md) ──
+  // Which mapgen ScatterKind(s) this prop can stand in for. Spec-driven maps
+  // place scatter by kind; the placer spreads a kind across ALL props tagged
+  // with it, so a prop with no matching kind never appears on a generated map.
+  // Empty/absent = not placed by scatter (e.g. `banner`/`lamppost`, placed by
+  // the plaza decor ring). Stamped from PROP_META below; carried onto variants.
+  kinds?: ScatterKind[]
+  // True once an asset is a PLAYER choice (a cosmetic they pick), not just
+  // procedural decor. Default false; the catalog + a future picker read it.
+  playerSelectable?: boolean
+  // Freeform labels for gallery grouping / search / procgen filters.
+  tags?: string[]
 }
 
 // The standard two-tone cutout: base silhouette + lit top copy. THE way to give
@@ -52,10 +65,55 @@ export function variants(def: PropDef, n: number, amp = def.wonk ?? 0.07): PropD
     id: `${def.id}~${i + 1}`,
     size: def.size,
     paths: def.paths.map((p) => ({ ...p, d: wonkPathD(p.d, base + (i + 1) * 7919, amp) })),
+    kinds: def.kinds,
+    playerSelectable: def.playerSelectable,
+    tags: def.tags,
   }))
 }
 
-const withVariants = (defs: PropDef[], n = 2): PropDef[] => defs.flatMap((d) => [d, ...variants(d, n)])
+// Per-prop discoverable metadata, co-located so the PropDef path literals stay
+// terse. `kinds` = the mapgen scatter kinds this prop can fill (see PropDef);
+// props with no entry get an empty kinds set and are scatter-invisible on
+// generated maps (fine for decor-ring-only assets). Stamped onto each base def
+// (and its variants) by withVariants.
+const PROP_META: Record<string, Pick<PropDef, 'kinds' | 'playerSelectable' | 'tags'>> = {
+  // grass
+  tuft:     { kinds: ['bush', 'flower'] },
+  bush:     { kinds: ['tree', 'bush'] },
+  pebble:   { kinds: ['rock'] },
+  bloom:    { kinds: ['flower'] },
+  stump:    { kinds: ['stump'] },
+  mushroom: { kinds: ['flower', 'bush'] },
+  reeds:    { kinds: ['reed', 'bush'] },
+  log:      { kinds: ['stump'] },
+  // stone
+  rubble:   { kinds: ['stump', 'rock'] },
+  crack:    { kinds: ['reed', 'rock'] },
+  shard:    { kinds: ['rock'] },
+  bone:     { kinds: ['flower'] },
+  pillar:   { kinds: ['tree', 'stump'] },
+  skull:    { kinds: ['flower', 'rock'] },
+  spikes:   { kinds: ['tree'] },
+  moss:     { kinds: ['bush'] },
+  // plaza (market clutter fills the generic ground kinds the city recipe emits)
+  crate:    { kinds: ['stump'] },
+  barrel:   { kinds: ['stump', 'rock'] },
+  sack:     { kinds: ['rock', 'stump'] },
+  wheel:    { kinds: ['stump'] },
+  pot:      { kinds: ['bush', 'flower'] },
+  signpost: { kinds: ['tree'] },
+  coil:     { kinds: ['reed', 'rock'] },
+  conifer:  { kinds: ['tree'] },
+  // decor-ring assets: placed by the plaza landmark ring, not scatter
+  lamppost: { kinds: [] },
+  banner:   { kinds: [] },
+}
+
+const withVariants = (defs: PropDef[], n = 2): PropDef[] =>
+  defs.flatMap((d) => {
+    const based: PropDef = { ...d, ...PROP_META[d.id] }
+    return [based, ...variants(based, n)]
+  })
 
 const BUSH_D = 'M0 -0.75C0.55 -0.7 0.9 -0.3 0.85 0.2C0.8 0.65 0.35 0.85 0 0.85C-0.4 0.85 -0.85 0.6 -0.87 0.15C-0.9 -0.35 -0.5 -0.72 0 -0.75Z'
 const PEBBLE_D = 'M-0.45 0.1C-0.42 -0.25 -0.15 -0.38 0.05 -0.35C0.32 -0.31 0.45 -0.12 0.42 0.1C0.38 0.3 0.15 0.38 -0.05 0.36C-0.28 0.34 -0.47 0.28 -0.45 0.1Z'

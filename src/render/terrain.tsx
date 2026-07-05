@@ -324,33 +324,28 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
   return { mottles, surface, paving, props, cliffs, walls, buildings, landmark, decor, rim }
 }
 
-// ScatterKind → biome prop ARCHETYPE (base id; seeded variants ride along).
-// The mapgen vocabulary stays abstract; what a "tree" looks like is this
-// biome's business. Falls back to the whole set for unmapped kinds.
-const KIND_ARCHETYPE: Record<Biome, Partial<Record<ScatterKind, string>>> = {
-  grass: { tree: 'bush', bush: 'bush', rock: 'pebble', stump: 'stump', flower: 'bloom', reed: 'reeds' },
-  stone: { tree: 'spikes', bush: 'moss', rock: 'shard', stump: 'rubble', flower: 'bone', reed: 'crack' },
-  plaza: { tree: 'conifer', bush: 'pot', rock: 'sack', stump: 'crate', flower: 'pot', reed: 'coil' },
-}
-// Catalog helper (?gallery=1): the archetype a scatter kind resolves to in a
-// biome — so the gallery can show the mapgen vocabulary next to the raw props.
-export function scatterArchetype(biome: Biome, kind: ScatterKind): PropDef {
-  return TERRAIN_PROPS[biome][ARCHETYPE_INDEX(biome, kind)[0]]
-}
-
+// ScatterKind → the biome prop indices that can fill it. Props SELF-DECLARE
+// their kinds (props.ts `PROP_META`); the placer spreads a kind across ALL
+// tagged props (base + seeded variants), so every authored prop with a matching
+// kind is reachable on a generated map — no prop goes dark because a 1:1 map
+// skipped it. Unmapped kind → the whole set (never render nothing). The mapgen
+// vocabulary stays abstract; what a "tree" looks like is the prop's business.
 const archetypeCache = new Map<string, number[]>()
 function ARCHETYPE_INDEX(biome: Biome, kind: ScatterKind): number[] {
   const k = `${biome}:${kind}`
   const hit = archetypeCache.get(k)
   if (hit) return hit
-  const base = KIND_ARCHETYPE[biome][kind]
   const defs = TERRAIN_PROPS[biome]
-  let idxs = base
-    ? defs.map((d, i) => [d.id, i] as const).filter(([id]) => id === base || id.startsWith(`${base}~`)).map(([, i]) => i)
-    : []
+  let idxs = defs.map((d, i) => [d, i] as const).filter(([d]) => d.kinds?.includes(kind)).map(([, i]) => i)
   if (idxs.length === 0) idxs = defs.map((_, i) => i)
   archetypeCache.set(k, idxs)
   return idxs
+}
+
+// Catalog helper (?gallery=1): the first archetype a scatter kind resolves to in
+// a biome — so the gallery can show the mapgen vocabulary next to the raw props.
+export function scatterArchetype(biome: Biome, kind: ScatterKind): PropDef {
+  return TERRAIN_PROPS[biome][ARCHETYPE_INDEX(biome, kind)[0]]
 }
 
 // Build-count probe (memo regression guard, like BODY_RENDER_PROBE): an

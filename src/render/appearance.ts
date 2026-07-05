@@ -83,6 +83,17 @@ export function monsterBodyShape(monsterId: string): BodyShape {
   return MONSTER_SHAPE[monsterId] ?? 'beast'
 }
 
+// ── Asset enumeration (for the discoverable catalog, assets.ts) ──
+// Closed lists of the visual families, plus reverse lookups (who uses each), so
+// the dev asset gallery can list bodies/weapons and show what maps to them.
+// `satisfies` keeps these exhaustive against the unions at compile time.
+export const BODY_SHAPES = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine'] as const satisfies readonly BodyShape[]
+export const WEAPONS = ['sword', 'bow', 'staff', 'dagger'] as const satisfies readonly Weapon[]
+export const monstersForShape = (shape: BodyShape): string[] =>
+  Object.entries(MONSTER_SHAPE).filter(([, s]) => s === shape).map(([id]) => id)
+export const classesForWeapon = (w: Weapon): string[] =>
+  Object.entries(CLASS_WEAPON).filter(([, ww]) => ww === w).map(([c]) => c)
+
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
   return parts.length === 1
