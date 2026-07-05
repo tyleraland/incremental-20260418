@@ -144,7 +144,11 @@ export function extractModules({ REPO, HERE }) {
     const matchedTests = testFiles.filter((t) => !claimed.has(t) && testRes.some((re) => re.test(t)))
     matchedTests.forEach((t) => claimed.add(t))
     const owned = new Set()
-    for (const t of matchedTests) if (CORRESPONDS.test(t)) for (const m of srcByBase.get(baseName(t)) || []) owned.add(m)
+    for (const t of matchedTests) {
+      const area = (t.match(CORRESPONDS) || [])[1]
+      if (!area) continue // name-correspondence maps a spec to same-basename modules
+      for (const m of srcByBase.get(baseName(t)) || []) if (nodes.get(m).layer === area) owned.add(m) // ...in the SAME layer only
+    }
     for (const entry of def.entries || []) {
       if (nodes.has(entry)) { owned.add(entry); continue }
       if (entry.includes('*')) {
@@ -168,7 +172,11 @@ export function extractModules({ REPO, HERE }) {
   for (const [dir, tests] of [...byDir.entries()].sort()) {
     const area = dir.split('/')[2] || 'misc'
     const owned = new Set()
-    for (const t of tests) if (CORRESPONDS.test(t)) for (const m of srcByBase.get(baseName(t)) || []) owned.add(m)
+    for (const t of tests) {
+      const a = (t.match(CORRESPONDS) || [])[1]
+      if (!a) continue
+      for (const m of srcByBase.get(baseName(t)) || []) if (nodes.get(m).layer === a) owned.add(m)
+    }
     features.push({
       id: `unmapped-${area}`, name: `Unmapped: ${area}`,
       description: `${tests.length} spec(s) under ${dir} not yet assigned to a named feature.`,

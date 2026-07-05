@@ -11,3 +11,6 @@ e2e/__shots__
 
 # Cached battle-snapshot tokens (scripts/bsnap.mjs)
 .bsnap
+
+# Codemap viewer built into public/ for local dev (npm run codemap); prod builds it in CI
+/public/codemap

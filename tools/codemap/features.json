@@ -104,7 +104,7 @@
       "layer": "engine",
       "description": "The pure, RNG-free spatial sim: round loop, grid, spatial hash, vision cache, damage/element matrix, adapter from game units to engine inputs. Tested as a black box through the @/engine barrel.",
       "tests": ["src/__tests__/engine/**", "src/__tests__/store/combat-engine.test.ts", "src/__tests__/combatTally.test.ts"],
-      "entries": ["src/engine/index.ts", "src/engine/arena.ts", "src/engine/constants.ts", "src/engine/types.ts", "src/data/monsters.ts", "src/lib/combatTally.ts"]
+      "entries": ["src/engine/index.ts", "src/engine/arena.ts", "src/engine/constants.ts", "src/engine/types.ts", "src/data/monsters.ts", "src/lib/combatTally.ts", "src/lib/elements.ts"]
     },
     {
       "id": "combat-ui",
@@ -127,6 +127,7 @@
         "src/components/RosterCarousel.tsx",
         "src/components/MonsterCodex.tsx",
         "src/components/TallyBreakdown.tsx",
+        "src/components/BattleUnitSheet.tsx",
         "src/components/UnitRect.tsx",
         "src/render/appearance.ts",
         "src/lib/combatReport.ts",
@@ -234,6 +235,27 @@
         "src/__tests__/proto/supplies.test.ts"
       ],
       "entries": ["src/proto/**", "src/data/merchants.ts"]
+    },
+    {
+      "id": "mapgen",
+      "name": "Procedural map generation",
+      "layer": "mapgen",
+      "description": "Seeded, deterministic map generation: recipes (city/dungeon/field), stamps, naming, profiles, validation, and the adapter into engine battle terrain.",
+      "tests": ["src/__tests__/mapgen/**"],
+      "entries": ["src/mapgen/**", "src/dev/MapgenLab.tsx"]
+    },
+    {
+      "id": "city-graphics",
+      "name": "City & terrain rendering",
+      "layer": "render",
+      "description": "The hand-inked battlemap look: procedural buildings, props, palette, creature skins, and terrain baked to a raster canvas for smooth pan/zoom.",
+      "tests": ["src/__tests__/ui/Terrain.test.tsx"],
+      "entries": [
+        "src/render/authoring.ts", "src/render/buildings.ts", "src/render/cadence.ts",
+        "src/render/inked.ts", "src/render/palette.ts", "src/render/props.ts",
+        "src/render/skins.tsx", "src/render/terrain.tsx",
+        "src/dev/SkinGallery.tsx", "src/dev/AssetWorkshop.tsx"
+      ]
     },
     {
       "id": "perf",

@@ -14,6 +14,7 @@
     "test": "vitest run",
     "bsnap": "node scripts/bsnap.mjs",
     "import-svg": "node scripts/import-svg.mjs",
+    "codemap": "cd tools/codemap && npm install && npm run build && rm -rf ../../public/codemap && cp -R dist ../../public/codemap",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "ci": "tsc --noEmit && vitest run",
