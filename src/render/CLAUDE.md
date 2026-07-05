@@ -36,7 +36,7 @@ Polish comes from consistency, not path complexity:
 | `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor) |
 | `inked.ts` | the "inked toolkit" — a flat-fill port of the top-down battlemap kit: `ink()` (fill+stroke in one path), `masonryBand()` (running-bond stone), `roofSlope()` (weathered tile field), `mossClump()`, `cobble()`. Surfaces are MANY small individually-inked jittered pieces picked from `INK_POOLS` (palette.ts) — no gradients/filters, all seeded, all baked into the terrain image |
 | `buildings.ts` | the CITY tile catalog (inked top-down, styled after Prontera): `BUILDING_LOOKS` keyed off `BarrierMaterial` — `wood` red-tile townhouse, `cut-stone` slate-tile hall, `rubble` roofless ruin — + `buildingMarkup()` emitting a masonry wall RING around a weathered roof-TILE field split by a ridge (moss, doors, windows, silhouette ink), via `inked.ts`. Procgen plugs in by tagging a rect's material; switches on material, never ids |
-| `terrain.tsx` | the renderer: per-location terrain model + baked data-URI emitter, `propMarkup()` (the one PropDef→svg translation); §mapgen spec consumption (surface washes incl. city road/plaza/dirt + a seeded paving mosaic, scatter-plane props, material-aware collision paint — BUILT-material walls become `buildings.ts` structures, natural walls stay organic blobs) |
+| `terrain.tsx` | the renderer: per-location terrain model + the `terrainSvg()` emitter, `propMarkup()` (the one PropDef→svg translation), `fountainMarkup()`; §mapgen spec consumption (surface washes incl. city dirt/grass + inked cobblestone paving, scatter-plane props, material-aware collision paint — BUILT-material walls become `buildings.ts` structures, natural walls stay organic blobs). `PaperTerrain` **rasterizes the SVG to a `<canvas>` bitmap once** (`TERRAIN_RES`, async decode) so pan/zoom are GPU-composited, not re-rasterized |
 | `appearance.ts` | entity → visual resolver (glyph/tone/bodyShape/weapon/biome) — the ONLY id→visual translation |
 | `skins.tsx` | token bodies (`TokenBodyProps` contract), `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |
 
@@ -91,6 +91,60 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 - **Whole new skin:** a new `TOKEN_SKINS` body + `ARENA_SKINS`/`FX_SKINS`
   entries. Read the contract comment atop `skins.tsx` first (memo'd bodies,
   quantized props, lean element counts).
+
+## Inked top-down maps (the Prontera style — apply it to more maps)
+
+The city look we landed on is a **flat-fill port of an external top-down
+battlemap kit** (checked in at `reference/inked-topdown-battlemap-kit/` — its
+`style_spec/*.json` is the source of truth for the look; the `generators/*.py`
+are worked examples; the `assets/preview/*.png` are the target). We keep the
+kit's *technique* — surfaces built from MANY small, individually-INKED, jittered
+pieces so texture reads from piece-to-piece value variation — but adapt it to
+our two hard rules: the kit fakes light with gradient overlays + gaussian-blur
+shadows; **we use flat pool value-splits + flat offset shadows instead** (no
+gradients/filters — Palette.test), and **seed every piece** (deterministic bake).
+
+The pipeline, all in `src/render/`:
+
+```
+mapgen spec ─▶ terrain.tsx buildTerrainModel()   (reads collision materials,
+   │              surface plane, scatter plane, landmark POI)
+   ├─ BUILT walls (cut-stone/wood/rubble) ─▶ buildings.ts buildingMarkup()
+   ├─ paved cells (road/stone-floor)      ─▶ inked.ts cobble() clusters
+   ├─ landmark POI                        ─▶ terrain.tsx fountainMarkup()
+   └─ everything ─▶ terrainSvg() ─▶ PaperTerrain rasterizes to a <canvas> bitmap
+```
+
+`inked.ts` holds the shared emitters (`ink`, `masonryBand`, `roofSlope`,
+`mossClump`, `cobble`) and `palette.ts` holds `INK_POOLS` (the per-material value
+pools). Everything switches on the mapgen **material/kind**, never a location id.
+
+**To make another city:** nothing in `src/render/` changes. Add a location with
+`mapGen: { recipe: 'city', seed }` + an `openWorldSize` big enough to read as a
+town (Prontera is 50; see `src/data/locations.ts`). The recipe emits
+`cut-stone`/`wood` buildings, `road`/`stone-floor` paving, and a `landmark` POI,
+which the terrain renderer already draws inked. Then hand-place any NPCs on the
+plaza (`src/data/npcs.ts`) — merchant/questgiver placement isn't spec-driven yet.
+
+**To extend the inked look to a NEW recipe/biome** (a field, a dungeon):
+
+1. Pick the mapgen **materials** that should read inked (a dungeon's `cut-stone`
+   walls → `masonryBand`; `deep-water` → inked ripples; `rubble` → the ruin).
+2. Add the emitter to `inked.ts` (a few small jittered pieces from a new
+   `INK_POOLS` entry) and any new roles to `palette.ts`.
+3. Wire it in `terrain.tsx`: branch in `buildTerrainModel` on the material/kind
+   (mirror how BUILT-material walls split off from natural walls), emit in
+   `terrainSvg`.
+4. Keep the total piece count **bounded** — the whole map bakes into one SVG
+   that's rasterized once, and the decode scales with path count (Prontera is
+   ~3k paths / ~1.3MB; that's about the ceiling for a snappy transition).
+5. Review the in-situ bake in `?gallery=1` → "city tile catalog" (add a panel
+   for a new recipe), and screenshot a live location.
+
+**New building material** = a `BUILDING_LOOKS` entry (roof pool + ink, `roofed`).
+**New paved/ground material** = a wash band + `cobble`/texture pass in the city
+block of `buildTerrainModel`. Both are pure data keyed off the mapgen vocab, so a
+procgen recipe that emits the material inherits the look for free.
 
 ### Monster-body runbook (reference sprite → layered cutout)
 
@@ -169,9 +223,15 @@ signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
 - **Token bodies are `memo`'d** and receive only primitives — quantized
   facing/dims, no live engine objects, no hp-bearing strings. Pinned by
   `BODY_RENDER_PROBE` + `Skins.test.tsx`.
-- **Terrain ships as ONE data-URI background image**, never live SVG DOM —
-  static elements inside the per-round-animated ground layer still join every
-  style/layout pass (measured ~9 fps on `?perf`). Pinned by `Terrain.test.tsx`.
+- **Terrain bakes to ONE image, never live SVG DOM** — static elements inside
+  the per-round-animated ground layer still join every style/layout pass
+  (measured ~9 fps on `?perf`). The inked city SVG grew to ~3k paths, so a
+  *vector* background got re-rasterized every zoom/pan (slow) and its parse froze
+  the map transition ~4s. `PaperTerrain` now draws the SVG to a fixed-res
+  `<canvas>` **raster** once (async): pan/zoom composite the bitmap on the GPU
+  (free), the decode is off the critical path (terrain fades in). Keep the source
+  piece density BOUNDED — the one-time decode scales with path count. Pinned by
+  `Terrain.test.tsx`.
 - **Quantize relative to the element.** A viewport-sized element needs coarse
   steps (the hero light uses 8-cqmin); token-sized ones use eighth-cqmin.
 - Verify any visual change with `npm run skin-ab` (median-of-windows fps A/B
