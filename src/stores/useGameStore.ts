@@ -1346,10 +1346,13 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       const cap = openWorldCap(loc)
       let battle = battles[locationId]
       // Recreate when there's no open battle OR its timeScale no longer matches the
-      // field's pace tier (a save from before the tier change, or an edited cap) — so
-      // the live pace + per-round cost are right. timeScale can't be swapped on a live
-      // battle (it would desync in-flight cooldowns), hence a fresh field.
-      if (!battle || battle.mode !== 'open' || battle.timeScale !== timeScaleFor(loc)) {
+      // field's pace tier (a save from before the tier change, or an edited cap) OR
+      // its arena SIZE drifted from the location's current size (a save from before
+      // the field was resized — e.g. Prontera grew 24→50 for the city recipe; a
+      // stale 24-cell battle would render the new 50-cell terrain as a clipped
+      // fraction with mislocated portals). Neither can be swapped on a live battle
+      // without desync, hence a fresh field.
+      if (!battle || battle.mode !== 'open' || battle.timeScale !== timeScaleFor(loc) || battle.cols !== openWorldSize(loc)) {
         battle = createOpenBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], cap, s.portalArrivals)
         battles[locationId] = battle
         monsterSpawnTimers[locationId] = OPEN_WORLD_SPAWN_TICKS
