@@ -37,12 +37,6 @@ export interface Appearance {
   spriteId?: string      // future sprite-sheet key; absent → circle skin
 }
 
-// A discrete visual state derived purely from engine fields, for a sprite skin to
-// pick an animation row from. Kept honest to the data we actually have: 'idle' /
-// 'move' / 'cast' / 'ko'. Discrete attack/hurt frames need per-event triggers
-// (the engine emits attack/damage events) and are deferred to the effects pass.
-export type VisualState = 'idle' | 'move' | 'cast' | 'ko'
-
 export const CLASS_ICON: Record<string, string> = {
   Fighter: '⚔',
   Ranger:  '🏹',
@@ -164,9 +158,3 @@ export function biomeForLocation(loc: { traits?: string[] } | null | undefined):
   return 'grass'
 }
 
-export function visualState(c: Combatant): VisualState {
-  if (!c.alive) return 'ko'
-  if (c.channel) return 'cast'
-  if (c.moving) return 'move'
-  return 'idle'
-}

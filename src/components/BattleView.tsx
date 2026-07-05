@@ -218,6 +218,13 @@ const TOKEN_INSET = 0.7
 const insetX = (cam: Cam, x: number) => Math.max(cam.x + TOKEN_INSET, Math.min(cam.x + cam.size - TOKEN_INSET, x))
 const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(cam.y + cam.size - TOKEN_INSET, y))
 
+// Portal keep-clear boxes for the terrain scatter (a prop sitting on a gateway
+// reads as blocking it). Shared by the live Arena (terrainAvoid) and prewarm so
+// the two `avoid` derivations can't drift — a mismatch silently misses the
+// bitmap cache (sigOf keys on `avoid`) and re-decodes on mount.
+const portalKeepClear = (portals?: Location['portals']): Rect[] =>
+  (portals ?? []).map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 }))
+
 // Pan-aware arena. Owns a pixel-drag pan applied as a CSS transform on the inner
 // world layer; chips/barriers/lines move with the wrapper instantly so the
 // drag tracks the finger. Sizes itself to a square that fits the space it's
@@ -1438,10 +1445,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
   // §terrain: portals are keep-clear boxes for the scatter decor (a crate sitting
   // on a gateway reads as blocking it). World coords; memoized so the memo'd
   // terrain layer sees a stable reference across per-round re-renders.
-  const terrainAvoid = useMemo<Rect[]>(
-    () => (portals ?? []).map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
-    [portals],
-  )
+  const terrainAvoid = useMemo<Rect[]>(() => portalKeepClear(portals), [portals])
 
   // §terrain: hero-anchored light — ONE radial-gradient div gliding with the
   // party centroid on the compositor, layered under the static vignette (city
@@ -1848,7 +1852,7 @@ export function prewarmLocationTerrain(location: Location, units: Unit[]): void 
     barriers: specBarriers(spec),
     seed: hashString(location.id),
     rim: true,
-    avoid: (location.portals ?? []).map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
+    avoid: portalKeepClear(location.portals),
     spec,
   })
 }
