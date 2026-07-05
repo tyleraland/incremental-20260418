@@ -7,6 +7,7 @@ keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 ## Response style
 - Be succinct. Lead with the result; skip preamble, restating the task, and "still watching" boilerplate.
 - PR-preview bot (`pr-preview-action`) events: reply with **only** the preview URL — nothing else.
+- Never schedule PR self check-ins with `send_later` (auto-denied in `.claude/settings.json`); don't ask about it.
 
 ## Priorities
 - Playable feel on mobile first; visual iteration speed over correctness.
