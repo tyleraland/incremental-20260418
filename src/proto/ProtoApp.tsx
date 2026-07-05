@@ -409,6 +409,7 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
 // Developer tool pages (src/dev/*), reached by setting a query param + reloading
 // — App.tsx swaps them in for the whole app. Sandbox-only (see `devEnabled`).
 const DEV_PAGES: { param: string; icon: string; label: string; sub: string }[] = [
+  { param: 'sandbox',  icon: '🧪', label: 'Density Sandbox', sub: 'heroes/monsters/map + play-pause — manual perf rig' },
   { param: 'mapgen',   icon: '🗺', label: 'Mapgen Lab',     sub: 'procedural map generator — seeds, planes, validation' },
   { param: 'gallery',  icon: '🎨', label: 'Skin Gallery',   sub: 'the whole visual language on one contact sheet' },
   { param: 'workshop', icon: '🛠', label: 'Asset Workshop',  sub: 'live paper-prop authoring — edit + copy a PropDef' },

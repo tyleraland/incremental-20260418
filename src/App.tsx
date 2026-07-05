@@ -30,15 +30,17 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 //   ?gallery=1  — pure-render contact sheet of the whole visual language.
 //   ?workshop=1 — live paper-prop authoring (edit a PropDef, see + copy it).
 //   ?mapgen=1   — seed contact sheet + layer inspector for the map generator.
+//   ?sandbox=1  — interactive density rig (heroes/monsters/map/play-pause).
 const SkinGallery  = lazy(() => import('@/dev/SkinGallery'))
 const AssetWorkshop = lazy(() => import('@/dev/AssetWorkshop'))
 const MapgenLab    = lazy(() => import('@/dev/MapgenLab'))
+const PerfSandbox  = lazy(() => import('@/dev/PerfSandbox'))
 
 // The dev tool pages and perf harness are gated to sandbox mode (or a real DEV
 // build). Sandbox is the dev/everything-open mode; curated is the new-player
 // build and stays free of debug surfaces. Read once at render (a full reload
 // mounts the page fresh, so the bootstrapped mode is current).
-const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen'] as const
+const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox'] as const
 function devToolsEnabled() {
   return import.meta.env.DEV || useGameStore.getState().progressionMode === 'sandbox'
 }
@@ -105,6 +107,11 @@ function App() {
   // The import.meta.env.DEV gate dead-code-strips it from production bundles.
   const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
 
+  // The density sandbox (`?sandbox=1`) seeds + drives its OWN synthetic scene and
+  // must never load or overwrite the real save — same no-persist gate as ?perf.
+  const sandboxMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('sandbox')
+  const noPersist = perfMode || sandboxMode
+
   // The split-screen "Tactician" shell (src/proto) is now the DEFAULT UI. The
   // legacy tab-bar UI is kept as a fallback behind `?classic=1` (and the perf
   // harness, which expects the old single-screen BattleView). Both share the same
@@ -117,41 +124,42 @@ function App() {
   // ticks on a FIXED cadence (perfSeed.ts) — wall-clock batching would let a
   // throttled run's sim state diverge from an unthrottled one's.
   useEffect(() => {
-    if (perfMode) return
+    if (noPersist) return
     const id = setInterval(catchUp, TICK_MS)
     return () => clearInterval(id)
-  }, [perfMode])
+  }, [noPersist])
 
   // Immediate catch-up when tab becomes visible again.
   useEffect(() => {
-    if (perfMode) return
+    if (noPersist) return
     const onVisible = () => { if (document.visibilityState === 'visible') catchUp() }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [perfMode])
+  }, [noPersist])
 
-  // Load persisted save once on mount — unless the perf harness is seeding a
-  // synthetic scene, in which case start from its clean roster instead.
+  // Load persisted save once on mount — unless a synthetic-scene harness is
+  // active: ?perf seeds its scene here; ?sandbox seeds itself on mount.
   useEffect(() => {
     if (perfMode) { import('@/dev/perfSeed').then((m) => m.seedPerfBattle()) }
-    else { loadPersistedSave() }
-  }, [perfMode])
+    else if (!sandboxMode) { loadPersistedSave() }
+  }, [perfMode, sandboxMode])
 
-  // Auto-save every 60 s, foreground only. Skipped in perf mode so the synthetic
-  // scene never overwrites a real save.
+  // Auto-save every 60 s, foreground only. Skipped for the synthetic-scene
+  // harnesses so they never overwrite a real save.
   useEffect(() => {
-    if (perfMode) return
+    if (noPersist) return
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') persistSave()
     }, 60_000)
     return () => clearInterval(id)
-  }, [perfMode])
+  }, [noPersist])
 
   if (typeof window !== 'undefined' && devToolsEnabled()) {
     const params = new URLSearchParams(window.location.search)
     if (params.has('gallery'))  return <DevPage><SkinGallery /></DevPage>
     if (params.has('workshop')) return <DevPage><AssetWorkshop /></DevPage>
     if (params.has('mapgen'))   return <DevPage><MapgenLab /></DevPage>
+    if (params.has('sandbox'))  return <DevPage><PerfSandbox /></DevPage>
   }
 
   if (!classicMode) {
