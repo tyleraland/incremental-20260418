@@ -61,6 +61,38 @@ export function polyPath(pts: Pt[]): string {
   return 'M' + pts.map((p) => `${f(p.x)} ${f(p.y)}`).join('L') + 'Z'
 }
 
+// Wobbly hand-drawn rounded rect (the "inked toolkit" `wrect` primitive): the
+// four corners are each jittered by ±`jit`, then emitted with softly rounded
+// (quadratic-bezier) corners of radius `rnd`. Deterministic per `seed` — the
+// hand-drawn wobble that keeps a field of tiles/blocks from reading machine-cut.
+export function wrectPath(x: number, y: number, w: number, h: number, seed: number, jit = 0.03, rnd = 0.05): string {
+  const J = (k: number) => (hash01(seed + k * 101) - 0.5) * 2 * jit
+  const p: Pt[] = [
+    { x: x + J(1), y: y + J(2) },
+    { x: x + w + J(3), y: y + J(4) },
+    { x: x + w + J(5), y: y + h + J(6) },
+    { x: x + J(7), y: y + h + J(8) },
+  ]
+  const r = Math.min(rnd, w / 2.2, h / 2.2)
+  let d = ''
+  for (let i = 0; i < 4; i++) {
+    const a = p[i], b = p[(i + 1) % 4]
+    const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1
+    const ux = dx / L, uy = dy / L
+    const sx = a.x + ux * r, sy = a.y + uy * r, ex = b.x - ux * r, ey = b.y - uy * r
+    d += i === 0 ? `M${f(sx)} ${f(sy)}` : `Q${f(a.x)} ${f(a.y)} ${f(sx)} ${f(sy)}`
+    d += `L${f(ex)} ${f(ey)}`
+  }
+  const a = p[0], b = p[1]
+  const dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1
+  return d + `Q${f(a.x)} ${f(a.y)} ${f(a.x + (dx / L) * r)} ${f(a.y + (dy / L) * r)}Z`
+}
+
+// Seeded pick from an array (the pool-sampling the inked look leans on).
+export function pick<T>(arr: readonly T[], seed: number): T {
+  return arr[Math.floor(hash01(seed) * arr.length) % arr.length]
+}
+
 // Rect outline as a clockwise point ring with intermediate anchors roughly
 // every `spacing` units — the anchors wonk() then displaces. More anchors on a
 // long wall = a wobblier, more organic edge.

@@ -6,7 +6,9 @@ import type { Biome } from '@/render/appearance'
 import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
 import { TERRAIN_PROPS, type PropDef } from '@/render/props'
 import { buildingMarkup, isBuildingMaterial } from '@/render/buildings'
-import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, maskLoops, decimate, type Pt, type Rect } from '@/render/authoring'
+import { ink, cobble, mossClump } from '@/render/inked'
+import { INK_POOLS } from '@/render/palette'
+import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, maskLoops, decimate, wrectPath, pick, type Pt, type Rect } from '@/render/authoring'
 
 // ── Organic terrain layer ────────────────────────────────────────────────────
 //
@@ -81,10 +83,11 @@ export interface TerrainModel {
   mottles: { d: string; fill: string }[]
   // §mapgen surface washes, paint order as listed (meadow under sand under water)
   surface: { d: string; fill: string; opacity: number; shore?: boolean }[]
-  // §city paving texture: a seeded stone-mosaic seam overlay per paved material
-  // (cobbled roads, flagstone plaza), painted over its wash — the ground "varied
-  // texture" read. Empty unless the spec is a city.
-  paving: { d: string; stroke: PaperRole; sw: number; opacity: number }[]
+  // §city paving: inked cobblestones (render/inked.ts) over the paved washes —
+  // one filled+outlined stone per paved cell. Pre-rendered markup strings (the
+  // per-piece pool pick lives in the model so the emit stays a dumb concat).
+  // Empty unless the spec is a city.
+  paving: string[]
   props: { v: number; x: number; y: number; s: number; rot: number; flip: boolean }[]
   cliffs: { d: string; fill: string; edge: string }[]
   walls: { d: string; multi: boolean }[]
@@ -186,7 +189,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
   // evenodd so islands in a lake render). Shallow water is painted under deep
   // (the deep mask is a subset), giving the two-band read for free.
   const surface: TerrainModel['surface'] = []
-  const paving: TerrainModel['paving'] = []
+  const paving: string[] = []
   if (spec) {
     const mi = (m: SurfaceMaterial) => SURFACE_MATERIALS.indexOf(m)
     const g = spec.surface.grid
@@ -223,29 +226,23 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
     })
 
-    // Paving texture: rounded cobblestones (Prontera's signature) — each paved
-    // cell gets ONE seeded rounded blob outline, so adjacent stones' outlines
-    // read as mortar seams: a light stone face (the wash) veined by dark gaps.
-    // Plaza slabs run a touch larger/dressed than the street cobbles. Bounded
-    // (one blob per paved cell) and baked into the single image → free at runtime.
+    // Paving: inked cobblestones over the pale paved washes (kit technique) —
+    // one filled+outlined stone per paved cell from the cobble value pool, so
+    // the street reads as packed stones veined by light mortar seams. Plaza
+    // slabs run a touch larger. Bounded (one stone per paved cell) and baked
+    // into the single terrain image → free at runtime.
     if (isCity) {
-      let cobble = ''
-      let flags = ''
       for (let y = 0; y < spec.rows; y++) {
         for (let x = 0; x < spec.cols; x++) {
           const v = g[y * spec.cols + x]
           if (v !== road && v !== floor) continue
           const s = seed + x * 73 + y * 179
-          const cx = x + 0.5 + (hash01(s) - 0.5) * 0.28
-          const sy = rows - y - 0.5 + (hash01(s + 1) - 0.5) * 0.28
-          const base = v === floor ? 0.54 : 0.46
-          const d = blobPath(roughCircle(cx, sy, base * (0.85 + hash01(s + 2) * 0.4), 6, s + 3))
-          if (v === floor) flags += d
-          else cobble += d
+          const cx = x + 0.5 + (hash01(s) - 0.5) * 0.24
+          const sy = rows - y - 0.5 + (hash01(s + 1) - 0.5) * 0.24
+          const rad = (v === floor ? 0.56 : 0.5) * (0.85 + hash01(s + 2) * 0.35)
+          paving.push(cobble(cx, sy, rad, s + 3))
         }
       }
-      if (cobble) paving.push({ d: cobble, stroke: 'roadSeam', sw: 0.06, opacity: 0.55 })
-      if (flags) paving.push({ d: flags, stroke: 'flagSeam', sw: 0.06, opacity: 0.6 })
     }
   }
 
@@ -366,6 +363,36 @@ export function propMarkup(def: PropDef): string {
     '/>').join('')
 }
 
+// An inked fountain (kit `fountain` recipe, flat): masonry ring of tangent stone
+// blocks around layered water with ripple arcs + a glint, a central plinth, and
+// moss on the shaded stone. All palette roles, seeded — baked into the terrain.
+function fountainMarkup(cx: number, cy: number, r: number, seed: number): string {
+  const parts: string[] = []
+  parts.push(`<ellipse cx='${r2(cx + 0.2)}' cy='${r2(cy + 0.26)}' rx='${r2(r)}' ry='${r2(r * 0.82)}' fill='${P.shadow}' opacity='0.24'/>`)
+  parts.push(`<circle cx='${r2(cx)}' cy='${r2(cy)}' r='${r2(r)}' fill='${P.stoneBase}' stroke='${P.inkKit}' stroke-width='0.03'/>`)
+  const ringN = Math.max(14, Math.round(r * 10))
+  for (let i = 0; i < ringN; i++) {
+    const a = (i / ringN) * Math.PI * 2
+    const rr = r * 0.86
+    const bx = cx + Math.cos(a) * rr, by = cy + Math.sin(a) * rr
+    const bw = ((2 * Math.PI * rr) / ringN) * 0.95, bh = r * 0.26
+    parts.push(
+      `<g transform='rotate(${r2((a * 180) / Math.PI + 90)} ${r2(bx)} ${r2(by)})'>` +
+      ink(wrectPath(bx - bw / 2, by - bh / 2, bw, bh, seed + i * 13, 0.02, 0.03), pick(INK_POOLS.stone, seed + i * 7), P.mortarInk, 0.018) +
+      '</g>',
+    )
+  }
+  parts.push(`<circle cx='${r2(cx)}' cy='${r2(cy)}' r='${r2(r * 0.72)}' fill='${P.wtr1}' stroke='${P.waterInk2}' stroke-width='0.02'/>`)
+  parts.push(`<circle cx='${r2(cx)}' cy='${r2(cy)}' r='${r2(r * 0.58)}' fill='${P.wtr0}'/>`)
+  parts.push(`<circle cx='${r2(cx)}' cy='${r2(cy)}' r='${r2(r * 0.48)}' fill='none' stroke='${P.waterHi}' stroke-width='0.02' opacity='0.5'/>`)
+  parts.push(`<circle cx='${r2(cx)}' cy='${r2(cy)}' r='${r2(r * 0.34)}' fill='none' stroke='${P.waterHi}' stroke-width='0.02' opacity='0.4'/>`)
+  parts.push(`<circle cx='${r2(cx)}' cy='${r2(cy)}' r='${r2(r * 0.2)}' fill='${P.stoneBase}' stroke='${P.mortarInk}' stroke-width='0.02'/>`)
+  parts.push(`<circle cx='${r2(cx)}' cy='${r2(cy)}' r='${r2(r * 0.09)}' fill='${P.waterHi}'/>`)
+  parts.push(`<ellipse cx='${r2(cx - r * 0.28)}' cy='${r2(cy - r * 0.26)}' rx='${r2(r * 0.16)}' ry='${r2(r * 0.09)}' fill='${P.lightWarm}' opacity='0.5'/>`)
+  parts.push(mossClump(cx - r * 0.75, cy + r * 0.55, 0.12, seed + 900))
+  return parts.join('')
+}
+
 // The lit depth face is the base path nudged up-left and CLIPPED to the base
 // silhouette (a clipPath is geometry, not a filter) — dark base peeks out along
 // the bottom-right: the token two-tone trick at terrain scale. The clip lives
@@ -383,10 +410,8 @@ export function terrainSvg(p: TerrainProps): string {
       '/>',
     )
   }
-  // §city paving mosaic: seam strokes over the paved washes (cobble / flagstone)
-  for (const pv of m.paving) {
-    parts.push(`<path d='${pv.d}' fill='none' stroke='${P[pv.stroke]}' stroke-width='${pv.sw}' stroke-opacity='${pv.opacity}' stroke-linecap='round'/>`)
-  }
+  // §city paving: inked cobblestones over the paved washes (pre-rendered markup)
+  for (const pv of m.paving) parts.push(pv)
   for (const pl of m.props) {
     const def = TERRAIN_PROPS[p.biome][pl.v]
     parts.push(`<g transform='translate(${pl.x} ${pl.y}) rotate(${pl.rot}) scale(${pl.flip ? -pl.s : pl.s} ${pl.s})'>${propMarkup(def)}</g>`)
@@ -409,21 +434,10 @@ export function terrainSvg(p: TerrainProps): string {
   for (const b of m.buildings) {
     parts.push(buildingMarkup({ x: b.x, y: b.y, w: b.w, h: b.h }, b.material, b.seed))
   }
-  // §city plaza dressing: the fountain (concentric stone basin → water → jet) +
-  // the banner/lamp ring, all above the plaza paving.
-  if (m.landmark) {
-    const { x, y, r } = m.landmark
-    const basin = blobPath(roughCircle(x, y, r, 12, p.seed + 9999))
-    const lip = blobPath(roughCircle(x, y, r * 0.82, 12, p.seed + 9999))
-    parts.push(
-      `<ellipse cx='${r2(x + 0.18)}' cy='${r2(y + 0.24)}' rx='${r2(r)}' ry='${r2(r * 0.8)}' fill='${P.shadow}' fill-opacity='0.22'/>` +
-      `<path d='${basin}' fill='${P.stoneWallDark}' stroke='${P.roofRidge}' stroke-width='0.14' stroke-linejoin='round'/>` +
-      `<path d='${lip}' fill='${P.stoneWall}' transform='${LIT_NUDGE}'/>` +
-      `<ellipse cx='${r2(x)}' cy='${r2(y)}' rx='${r2(r * 0.6)}' ry='${r2(r * 0.56)}' fill='${P.fountainWater}'/>` +
-      `<ellipse cx='${r2(x - r * 0.18)}' cy='${r2(y - r * 0.16)}' rx='${r2(r * 0.22)}' ry='${r2(r * 0.16)}' fill='${P.cream}' fill-opacity='0.4'/>` +
-      `<ellipse cx='${r2(x)}' cy='${r2(y)}' rx='${r2(r * 0.16)}' ry='${r2(r * 0.16)}' fill='${P.cream}'/>`,
-    )
-  }
+  // §city plaza dressing: an inked fountain — a masonry ring of tangent stone
+  // blocks around layered water (ripple arcs + a glint), a central plinth, and
+  // moss on the shaded stone. Flat fills / palette roles, seeded.
+  if (m.landmark) parts.push(fountainMarkup(m.landmark.x, m.landmark.y, m.landmark.r, p.seed + 9999))
   for (const d of m.decor) {
     const def = PLAZA_DECOR[d.id]
     if (def) parts.push(`<g transform='translate(${d.x} ${d.y}) rotate(${d.rot}) scale(${d.s})'>${propMarkup(def)}</g>`)

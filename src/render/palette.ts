@@ -107,6 +107,49 @@ export const PAPER_PALETTE = {
   flagSeam:    '#726954',
   dirtPath:    '#5a4a30',   // packed-dirt lot (browner + dimmer than the paving)
   yardWash:    '#26331a',   // grass yards/commons between the streets
+
+  // ── "Inked" toolkit pools (render/inked.ts) ────────────────────────────────
+  // Ported from the top-down battlemap kit: surfaces are built from MANY small
+  // individually-inked, jittered pieces picked from a value POOL (not a flat
+  // fill), so texture reads without any gradient. Each pool member is its own
+  // role here; the arrays below compose them. One dark ink per material.
+  inkKit:    '#312619',
+  lightWarm: '#efe6cc',   // flat warm glint (used as a small opaque dab, never a gradient)
+
+  cobbleInk: '#9a917c',
+  cob0: '#c6c0ae', cob1: '#cfcabb', cob2: '#bdb7a6', cob3: '#d3cdbe', cob4: '#c0baa8',
+
+  stoneBase: '#b7b1a0', mortarInk: '#4a4335',
+  st0: '#bdb7a6', st1: '#c6c0ae', st2: '#b2ac9a', st3: '#aaa392', st4: '#c8c2b0',
+
+  roofRedInk: '#3a2016', tileMoss: '#6f8a3f', tileBroken: '#5a3226',
+  rr0: '#a84e33', rr1: '#9c4630', rr2: '#b0553a', rr3: '#8f4028', rr4: '#a24a30', rr5: '#7a3826',
+  roofSlateInk2: '#2a333a',
+  rs0: '#5a6b78', rs1: '#4f606c', rs2: '#6a7b86', rs3: '#455560', rs4: '#63737e',
+
+  mossBase: '#4f6a2c', mossInk: '#33461f',
+  ms0: '#6f8a3f', ms1: '#7f9a4d', ms2: '#567a34',
+
+  woodInk2: '#5a3f22', woodGrain2: '#8a6a40',
+  wd0: '#c39a5e', wd1: '#b8905a', wd2: '#8a5a2c',
+
+  waterInk2: '#274a52', waterHi: '#a9cfd2',
+  wtr0: '#4f7c86', wtr1: '#3f6d78', wtr2: '#5f8b94',
 } as const
 
 export type PaperRole = keyof typeof PAPER_PALETTE
+
+// Inked-toolkit value POOLS — arrays of palette hexes a piece picks from per
+// draw (kit technique: "keep a wide value range within each surface via the
+// piece-color pools"). Members are all registered roles above, so the palette
+// gate (only PAPER_PALETTE values may be emitted) still holds.
+const P = PAPER_PALETTE
+export const INK_POOLS = {
+  cobble: [P.cob0, P.cob1, P.cob2, P.cob3, P.cob4],
+  stone: [P.st0, P.st1, P.st2, P.st3, P.st4],
+  roofRed: [P.rr0, P.rr1, P.rr2, P.rr3, P.rr4, P.rr5],
+  roofSlate: [P.rs0, P.rs1, P.rs2, P.rs3, P.rs4],
+  moss: [P.ms0, P.ms1, P.ms2],
+  wood: [P.wd0, P.wd1, P.wd2],
+  water: [P.wtr0, P.wtr1, P.wtr2],
+} as const
