@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useEffect, useRef, useState } from 'react'
 import type { Barrier } from '@/engine'
 import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
 import { SURFACE_MATERIALS } from '@/mapgen'
@@ -461,19 +461,56 @@ export function terrainSvg(p: TerrainProps): string {
   return `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${p.cols} ${p.rows}' preserveAspectRatio='none'>${parts.join('')}</svg>`
 }
 
+// The vector terrain is baked ONCE to a fixed-resolution RASTER (a canvas
+// bitmap), not shipped as an SVG background. Why: an SVG background with
+// thousands of paths is re-rasterized by the browser on every zoom/pan (to stay
+// crisp at the new scale) — that was the ~1s pan and slow zoom — and its initial
+// parse+raster is the multi-second transition. A raster bitmap composites
+// (scales) entirely on the GPU: pan/zoom are free, and the one-time SVG→bitmap
+// decode runs async (the arena shows immediately; the terrain fades in). We
+// trade infinite-zoom crispness (unneeded) for smoothness. RES caps the bitmap
+// so a big city doesn't allocate an enormous texture.
+const TERRAIN_RES = (cols: number) => Math.min(1536, Math.max(768, Math.round(cols * 26)))
+
 export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   const sig = sigOf(p)
   // eslint-disable-next-line react-hooks/exhaustive-deps — sig covers every input
-  const url = useMemo(() => {
+  const svg = useMemo(() => {
     TERRAIN_BUILD_PROBE.count++
-    return `url("data:image/svg+xml,${encodeURIComponent(terrainSvg(p))}")`
+    return terrainSvg(p)
   }, [sig])
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setReady(false)
+    const res = TERRAIN_RES(p.cols)
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => {
+      const cv = canvasRef.current
+      if (cancelled || !cv) return
+      cv.width = res
+      cv.height = res
+      const ctx = cv.getContext('2d')
+      if (!ctx) return
+      try { ctx.drawImage(img, 0, 0, res, res) } catch { return }
+      setReady(true)
+    }
+    img.src = `data:image/svg+xml,${encodeURIComponent(svg)}`
+    return () => { cancelled = true }
+  }, [svg, p.cols])
+
+  // The canvas fills the ground layer and scales with the camera transform as a
+  // plain bitmap (GPU composite). A short fade hides the one-time async decode.
   return (
-    <div
+    <canvas
+      ref={canvasRef}
       data-terrain
       aria-hidden
-      className="absolute inset-0 pointer-events-none"
-      style={{ backgroundImage: url, backgroundSize: '100% 100%' }}
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      style={{ opacity: ready ? 1 : 0, transition: 'opacity 240ms ease-out' }}
     />
   )
 })

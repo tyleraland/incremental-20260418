@@ -9,7 +9,7 @@ import { render, cleanup, act } from '@testing-library/react'
 import { useGameStore } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
-import { buildTerrainModel, PaperTerrain, TERRAIN_BUILD_PROBE, type TerrainProps } from '@/render/terrain'
+import { buildTerrainModel, PaperTerrain, terrainSvg, TERRAIN_BUILD_PROBE, type TerrainProps } from '@/render/terrain'
 import { PAPER_PALETTE } from '@/render/palette'
 import { generateMap, specBarriers, type MapSpec } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
@@ -92,14 +92,15 @@ describe('terrain model', () => {
     }
   })
 
-  it('bakes ONE background-image div (no live SVG DOM), identical across instances', () => {
-    const bg = (el: HTMLElement) => (el.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage
+  it('bakes to ONE canvas layer (no live SVG DOM); the source svg is deterministic', () => {
     const a = render(<PaperTerrain {...PROPS} />)
-    const b = render(<PaperTerrain {...PROPS} />)
-    expect(a.container.querySelector('svg')).toBeNull()          // zero DOM cost in the animated layer
-    expect(bg(a.container)).toBe(bg(b.container))                // fully deterministic data URI
-    expect(bg(a.container)).toContain('data:image/svg+xml')
-    expect((bg(a.container).match(/%3Cpath/g) ?? []).length).toBeGreaterThan(20)
+    expect(a.container.querySelector('svg')).toBeNull()             // zero DOM cost in the animated layer
+    expect(a.container.querySelector('canvas[data-terrain]')).toBeTruthy()  // rasterized bitmap layer
+    // the vector source it rasterizes IS deterministic + non-trivial (raster
+    // happens async off the real canvas; jsdom can't paint, so assert the source)
+    const svg = terrainSvg({ ...PROPS })
+    expect(svg).toBe(terrainSvg({ ...PROPS }))
+    expect((svg.match(/<path/g) ?? []).length).toBeGreaterThan(20)
   })
 })
 
@@ -151,14 +152,12 @@ describe('terrain consumes a MapSpec (§mapgen phase 2)', () => {
     }
   })
 
-  it('still bakes to ONE background-image div, and the memo signature keys on the spec', () => {
+  it('bakes to ONE canvas layer; the source svg keys on the spec', () => {
     const { container } = render(<PaperTerrain {...props} />)
     expect(container.querySelector('svg')).toBeNull()
-    const bg = (container.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage
-    expect(bg).toContain('data:image/svg+xml')
+    expect(container.querySelector('canvas[data-terrain]')).toBeTruthy()
     // spec-less render of the same geometry differs (washes only exist with a spec)
-    const { container: plain } = render(<PaperTerrain {...{ ...props, spec: undefined }} />)
-    expect((plain.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage).not.toBe(bg)
+    expect(terrainSvg({ ...props })).not.toBe(terrainSvg({ ...props, spec: undefined }))
   })
 })
 
@@ -188,9 +187,8 @@ describe('terrain consumes a CITY MapSpec (§city buildings + paving)', () => {
     rng.mockRestore()
     expect(JSON.stringify(a)).toBe(JSON.stringify(b))
     const { container } = render(<PaperTerrain {...props} />)
-    expect(container.querySelector('svg')).toBeNull()                       // still one baked image
-    const bg = (container.querySelector('[data-terrain]') as HTMLElement).style.backgroundImage
-    expect(bg).toContain('data:image/svg+xml')
+    expect(container.querySelector('svg')).toBeNull()                       // still one baked layer
+    expect(container.querySelector('canvas[data-terrain]')).toBeTruthy()
   })
 })
 
