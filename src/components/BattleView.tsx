@@ -127,20 +127,14 @@ function encounterCamera(cols: number, rows: number, want: number, center: Vec2 
 // rim — auto-follow (party/hero) passes 0 so it never drifts off the action.
 function followCamera(pts: Vec2[], cols: number, rows: number, want: number, overscroll = false): Cam {
   const size = Math.min(want, cols, rows)
-  // When the view already spans a whole axis (size == that dimension — e.g. a
-  // peaceful city framed whole), CENTER it and allow no pan on that axis: there's
-  // nothing more to reveal, so free-look overscroll would only push the field
-  // into empty space (the "void beside the town" bug). Only axes with something
-  // off-screen get the follow + overscroll slack.
-  const fitsX = size >= cols, fitsY = size >= rows
-  if (pts.length === 0 || (fitsX && fitsY)) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
+  if (pts.length === 0) return { x: (cols - size) / 2, y: (rows - size) / 2, size }
   let sx = 0, sy = 0
   for (const p of pts) { sx += p.x; sy += p.y }
   const cx = sx / pts.length, cy = sy / pts.length
   const slack = overscroll ? size / 2 : 0
   return {
-    x: fitsX ? (cols - size) / 2 : Math.max(-slack, Math.min(cols - size + slack, cx - size / 2)),
-    y: fitsY ? (rows - size) / 2 : Math.max(-slack, Math.min(rows - size + slack, cy - size / 2)),
+    x: Math.max(-slack, Math.min(cols - size + slack, cx - size / 2)),
+    y: Math.max(-slack, Math.min(rows - size + slack, cy - size / 2)),
     size,
   }
 }
@@ -942,7 +936,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; mapSpec?: MapSpec; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
+function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity = false, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; mapSpec?: MapSpec; peacefulCity?: boolean; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
   const units = useGameStore((s) => s.units)
   const skin  = useGameStore((s) => s.battleSkin)
   const fx    = FX_SKINS[skin]
@@ -1324,8 +1318,12 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, onFollow, in
     : manualCenter ? camSize                                    // free-look holds its zoom
     // A peaceful city is a hub you wander/shop, not a fight to track — frame the
     // WHOLE town by default (heroes cluster at the plaza, so party-fit would show
-    // only a fraction of a big field). Pinch/pan still overrides via camSize.
-    : battle.peaceful ? Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
+    // only a fraction of a big field). Driven by the LOCATION being a city
+    // (`peacefulCity`), not the tick-set `battle.peaceful` — so it's correct on
+    // the FIRST frame (a restored battle deserializes peaceful=false until the
+    // next tick, which would flash the party-fit fraction). Pinch/pan/zoom-out to
+    // free-look still overrides via camSize — you keep full pan across the town.
+    : (peacefulCity || battle.peaceful) ? Math.min(OPEN_CAM_MAX_SIZE, cols, rows)
     : autoFitSize(partyPts.length ? partyPts : allPts, cols, rows)
   // Free-look (minimap tap / drag-pan) may overscroll past the map rim into the
   // surrounding empty space; party/hero auto-follow stays pinned to the field.
@@ -1846,6 +1844,6 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
     ? generateForLocationCached(location, { proficiencies: partyProficiencyTags(units.filter((u) => u.locationId === location.id)) }).spec
     : undefined
   return battle
-    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} mapSpec={mapSpec} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
+    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} mapSpec={mapSpec} peacefulCity={!!location?.traits.includes('city')} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
     : <Preview location={location} />
 }
