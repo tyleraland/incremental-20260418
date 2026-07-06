@@ -13,9 +13,10 @@ import featuresView from './views/features.js'
 import filesView from './views/files.js'
 import gitView from './views/git.js'
 import inventoryView from './views/inventory.js'
-import { coverageView, complexityView } from './views/placeholder.js'
+import complexityView from './views/complexity.js'
+import coverageView from './views/coverage.js'
 
-const VIEWS = [modulesView, featuresView, filesView, gitView, inventoryView, coverageView, complexityView]
+const VIEWS = [modulesView, featuresView, filesView, gitView, complexityView, coverageView, inventoryView]
 const byId = new Map(VIEWS.map((v) => [v.id, v]))
 
 const el = lib.el
@@ -36,6 +37,8 @@ async function boot() {
     `<span><b>${lib.fmtNum(h.codeLoc)}</b> LOC</span>` +
     `<span><b>${lib.fmtNum(h.edges)}</b> imports</span>` +
     `<span><b>${lib.fmtNum(h.commits)}</b> commits</span>` +
+    (h.coverage != null ? `<span><b>${h.coverage}%</b> cov</span>` : '') +
+    `<span class="${h.over10 ? 'warn' : ''}"><b>${h.over10}</b> CC&gt;10</span>` +
     `<span class="${h.deadModules ? 'warn' : ''}"><b>${h.deadModules}</b> dead</span>` +
     `<span class="${h.cycles ? 'warn' : ''}"><b>${h.cycles}</b> cycles</span>`
 

@@ -37,9 +37,15 @@ jobs:
         env:
           BASE_PATH: /incremental-20260418/
 
+      # Test coverage for the codemap's Coverage lens. Non-fatal: a red test must
+      # not block the deploy — the lens just falls back to "unavailable".
+      - name: Coverage (for codemap)
+        run: npm run coverage || echo "coverage run failed; Coverage lens will show unavailable"
+
       # Deterministic codebase map, built from its own isolated package (its deps
       # never touch the game bundle) into dist/codemap so it ships with the same
-      # publish. Served at /incremental-20260418/codemap/.
+      # publish. Reads ../../coverage/coverage-final.json if present. Served at
+      # /incremental-20260418/codemap/.
       - name: Build codemap
         run: |
           cd tools/codemap

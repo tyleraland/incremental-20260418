@@ -16,7 +16,7 @@ const TEXT_EXT = new Set([
 ])
 const norm = (v, max) => (max > 0 ? v / max : 0)
 
-export function extractFilesystem({ REPO, modules, git }) {
+export function extractFilesystem({ REPO, modules, git, complexity, coverage }) {
   let list = []
   try {
     list = execSync('git ls-files', { cwd: REPO, maxBuffer: 64 * 1024 * 1024 })
@@ -25,6 +25,8 @@ export function extractFilesystem({ REPO, modules, git }) {
 
   const fanIn = new Map((modules?.nodes || []).map((n) => [n.id, n.inbound + n.inboundTest]))
   const churn = git?.files || {}
+  const cx = complexity?.byFile || {}
+  const cov = coverage?.files || {}
 
   // build leaves
   const leaves = []
@@ -41,6 +43,9 @@ export function extractFilesystem({ REPO, modules, git }) {
       fanIn: fanIn.get(path) || 0,
       churn: churn[path]?.commits || 0,
       lastDate: churn[path]?.last || null,
+      maxCc: cx[path]?.maxCyclomatic ?? null,
+      mi: cx[path]?.mi ?? null,
+      coverage: cov[path]?.statements ?? null,
     })
   }
 

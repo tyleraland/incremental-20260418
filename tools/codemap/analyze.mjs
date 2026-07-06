@@ -13,6 +13,8 @@ import { dirname, resolve, join, relative } from 'node:path'
 
 import { extractModules } from './extract/modules.mjs'
 import { extractGit } from './extract/git.mjs'
+import { extractComplexity } from './extract/complexity.mjs'
+import { extractCoverage } from './extract/coverage.mjs'
 import { extractFilesystem } from './extract/filesystem.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -23,14 +25,18 @@ const DATA_DIR = join(OUT_DIR, 'data')
 const gitHash = (() => { try { return execSync('git rev-parse --short HEAD', { cwd: REPO }).toString().trim() } catch { return 'unknown' } })()
 const generatedAt = new Date().toISOString()
 
-// ── run lenses (order matters: filesystem blends in modules + git signals) ────
+// ── run lenses (order matters: filesystem blends the other signals per-file) ──
 const modules = extractModules({ REPO, HERE })
 const git = extractGit({ REPO })
-const filesystem = extractFilesystem({ REPO, modules, git })
+const complexity = extractComplexity({ REPO })
+const coverage = extractCoverage({ REPO })
+const filesystem = extractFilesystem({ REPO, modules, git, complexity, coverage })
 
 const datasets = {
   modules: { ...modules, generatedAt, gitHash },
   git: { ...git, generatedAt, gitHash },
+  complexity: { ...complexity, generatedAt, gitHash },
+  coverage: { ...coverage, generatedAt, gitHash },
   filesystem: { ...filesystem, generatedAt, gitHash },
 }
 
@@ -50,6 +56,8 @@ const manifest = {
     bytes: filesystem.stats.bytes,
     commits: git.stats.commits,
     authors: git.stats.authors,
+    over10: complexity.stats.over10,
+    coverage: coverage.available ? coverage.stats.statements : null,
   },
   datasets: Object.keys(datasets).map((id) => ({ id, file: `data/${id}.json` })),
 }
@@ -80,5 +88,7 @@ console.log(
   `  filesystem: ${filesystem.stats.files} tracked files, ${kb(filesystem.stats.bytes)}\n` +
   `  git:        ${git.stats.commits} commits, ${git.stats.authors} authors` +
     (git.available ? '' : ' (unavailable)') + '\n' +
-  `  -> ${relative(REPO, DATA_DIR)}/{modules,git,filesystem,manifest}.json`,
+  `  complexity: ${complexity.stats.functions} functions, ${complexity.stats.over10} over CC>10, median MI ${complexity.stats.medianMi}\n` +
+  `  coverage:   ` + (coverage.available ? `${coverage.stats.statements}% statements over ${coverage.stats.files} files` : 'unavailable (run `npm run coverage`)') + '\n' +
+  `  -> ${relative(REPO, DATA_DIR)}/{modules,git,complexity,coverage,filesystem,manifest}.json`,
 )

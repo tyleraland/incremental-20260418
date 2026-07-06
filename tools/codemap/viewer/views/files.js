@@ -93,12 +93,14 @@ function colorOf(n, isDir) {
   if (isDir) return '#161b22'
   if (state.colorBy === 'type') return lib.extColor(n.ext)
   if (state.colorBy === 'churn') return lib.heat(Math.min(1, n.churn / 10))
+  if (state.colorBy === 'complexity') return n.maxCc == null ? '#20262e' : lib.heat(Math.min(1, n.maxCc / 25))
+  if (state.colorBy === 'coverage') return n.coverage == null ? '#20262e' : lib.heat(1 - n.coverage / 100)
   return lib.heat(n.importance) // importance
 }
 
 function buildSidebar(fs) {
   const s = ctx.sidebar
-  const modes = [['importance', 'Importance (fan-in+churn+size)'], ['type', 'File type'], ['churn', 'Git churn']]
+  const modes = [['importance', 'Importance (fan-in+churn+size)'], ['type', 'File type'], ['churn', 'Git churn'], ['complexity', 'Complexity (max CC)'], ['coverage', 'Coverage (red = low)']]
   s.innerHTML = '<div class="group-title">Color by</div>' +
     modes.map(([v, label]) => `<label><input type="radio" name="cb" value="${v}" ${state.colorBy === v ? 'checked' : ''}/><span>${label}</span></label>`).join('')
   s.querySelectorAll('input[name=cb]').forEach((r) => r.addEventListener('change', (e) => { state.colorBy = e.target.value; render() }))
@@ -116,6 +118,9 @@ function fileDetail(n) {
   const rows = [
     ['Size', lib.fmtBytes(n.size)], ['Lines', lib.fmtNum(n.loc)], ['Type', n.ext],
     ['Fan-in (importers)', lib.fmtNum(n.fanIn)], ['Git commits', lib.fmtNum(n.churn)],
+    ['Max cyclomatic', n.maxCc != null ? String(n.maxCc) : '–'],
+    ['Maintainability', n.mi != null ? String(n.mi) : '–'],
+    ['Coverage', n.coverage != null ? n.coverage + '%' : '–'],
     ['Last changed', n.lastDate || '–'], ['Importance', n.importance != null ? n.importance.toFixed(3) : '–'],
   ]
   const html =

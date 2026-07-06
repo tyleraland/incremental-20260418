@@ -39,6 +39,11 @@ jobs:
           # Must match where the preview is served from, or asset URLs 404.
           BASE_PATH: /incremental-20260418/pr-preview/pr-${{ github.event.number }}/
 
+      # Test coverage for the codemap Coverage lens (non-fatal).
+      - name: Coverage (for codemap)
+        if: github.event.action != 'closed'
+        run: npm run coverage || echo "coverage run failed; Coverage lens will show unavailable"
+
       # Codemap viewer (relative asset paths, so it works under the preview base).
       - name: Build codemap
         if: github.event.action != 'closed'

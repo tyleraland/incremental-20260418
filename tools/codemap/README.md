@@ -47,24 +47,28 @@ file in **Git** to focus it in **Modules**).
 |---|---|---|
 | **Modules** | modules | import graph; layer color, √LOC size, hubs, dead code |
 | **Features** | modules | directed feature-dependency graph (hybrid semantic layer) |
-| **Files** | filesystem | nested treemap; area ∝ bytes, color by importance / type / churn |
+| **Files** | filesystem | nested treemap; area ∝ bytes, color by importance / type / churn / **complexity** / **coverage** |
 | **Git** | git | commit calendar, authors, most-churned files, recent commits |
+| **Complexity** | complexity, git, coverage | per-function cyclomatic / cognitive / nesting / size + **risk hotspots (complexity × churn)** |
+| **Coverage** | coverage, complexity | per-file test coverage + **best test targets (complex × untested)** |
 | **Inventory** | modules, filesystem | layers, file types, registries, features, dead code, cycles |
-| **Coverage** | — | reserved slot (stub documents how to wire it) |
-| **Complexity** | — | reserved slot (stub documents how to wire it) |
+
+**Complexity** is pure AST (deterministic, no deps beyond ts-morph): cyclomatic
+(exact), cognitive (SonarSource-style, approximate), max nesting, LOC, params, and
+a per-file Maintainability Index. **Coverage** is a test-run artifact — it reads
+`coverage/coverage-final.json` and is graceful when absent. Generate it with
+`npm run coverage` (repo root; needs the `@vitest/coverage-v8` devDep), then re-run
+`npm run codemap`; CI generates it on deploy so the hosted view always has it.
+The payoff is cross-lens: **risk** (complex **and** high-churn) and **test targets**
+(complex **and** low-coverage), plus `colorBy: complexity|coverage` on the treemap.
 
 ### Add a lens
 
-1. Write `extract/<name>.mjs` exporting `extract<Name>({ REPO, modules, git })` that
-   returns a **deterministic** dataset (no clock, no randomness).
+1. Write `extract/<name>.mjs` exporting `extract<Name>({ REPO, modules, git, complexity, coverage })`
+   that returns a **deterministic** dataset (no clock, no randomness).
 2. Register it in `analyze.mjs` so it writes `data/<name>.json` and add it to the manifest headline if useful.
 3. Add `viewer/views/<name>.js` (declare `needs: ['<name>']`, `kind: 'graph'|'html'`,
    implement `mount(ctx)`) and register it in `VIEWS` in `app.js`.
-
-The **Coverage** and **Complexity** lenses are live stubs that print this recipe in
-the UI — replace them when their extractors are wired (coverage from
-`vitest --coverage`; complexity from the ts-morph AST already loaded in the
-modules extractor). Heatmaps are just another `colorBy` mode on an existing lens.
 
 ## The feature layer (Modules / Features)
 
