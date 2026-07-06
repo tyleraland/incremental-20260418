@@ -56,8 +56,12 @@ test('lens tabs + market cart/tone + party nav', async ({ page }, testInfo) => {
   await page.waitForTimeout(200)
   await shot('03b-shop-tone-market')
 
-  // Stash now hosts the Cards sub-tab.
-  await page.getByRole('button', { name: 'Stash', exact: true }).click()
+  // Stash is its own standalone screen (☰ menu → Stash), hosting the Cards sub-tab.
+  await page.getByRole('button', { name: /Close/ }).click().catch(() => {})
+  await page.waitForTimeout(150)
+  await page.getByRole('button', { name: 'Menu', exact: true }).click()
+  await page.waitForTimeout(200)
+  await page.getByRole('button', { name: /Stash/ }).first().click()
   await page.waitForTimeout(200)
   await page.getByRole('button', { name: 'Cards', exact: true }).click().catch(() => {})
   await page.waitForTimeout(250)
