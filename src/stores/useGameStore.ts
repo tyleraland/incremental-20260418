@@ -16,7 +16,7 @@ import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
 import { consumableDef, isConsumable } from '@/data/consumables'
-import { type Pack, heroRoom, itemWeight, packWeight, PACK_FULL_FRACTION } from '@/proto/economy'
+import { type Pack, heroRoom, itemWeight, packWeight, consumablesWeight, WEIGHT_LIMIT, PACK_FULL_FRACTION } from '@/proto/economy'
 import {
   freshHero, loadoutFromPack, newSupplyEntry, cityHops,
   type HeroExpedition, type Loadout, type LootCategory, type ReturnConditionId,
@@ -1878,9 +1878,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     // running guild resources the return-to-town restock draws down (shared across
     // every location's party in this catch-up — one stash, one purse).
     const packAdd: Record<string, Record<string, number>> = {}
+    const packReset = new Set<string>()   // heroes whose pre-existing loot pack was deposited on a town trip
     let goldLeft = s.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0
     const stashCons = s.miscItems.filter((m) => isConsumable(m.id)).map((m) => ({ id: m.id, qty: m.quantity }))
-    let consumablePoolLeft = stashCons.reduce((a, m) => a + m.qty, 0)
 
     for (const loc of s.locations) {
       if (loc.monsterIds.length === 0) continue
@@ -1958,16 +1958,32 @@ export const useGameStore = create<GameState>((set, get) => ({
           return !!he && (he.returnOn.includes('pack-full') || he.returnOn.includes('supplies-out'))
         })
         const lootWeight = Object.entries(loot).reduce((a, [id, q]) => a + itemWeight(id) * q, 0)
-        const roomOf = (u: Unit) => heroRoom(s.packs[u.id], u.pack)
-        const capacityWeight = hunters.reduce((a, u) => a + roomOf(u), 0)
+        // Loot room as if the hero's pre-existing carry is deposited on the first town
+        // trip (like the live driver's phase-0 deposit) — this is the steady-state room
+        // over a long absence, so a hero who starts with a partial pack isn't stuck
+        // modelling tiny fills forever.
+        const fullRoomOf = (u: Unit) => Math.max(0, WEIGHT_LIMIT - consumablesWeight(u.pack))
+        const capacityWeight = hunters.reduce((a, u) => a + fullRoomOf(u), 0)
         if (!!loc.openWorld && hunters.length > 0 && capacityWeight > 0 && lootWeight > 0) {
           const burnPerTick = simTicks > 0 ? simSupplyUsed / simTicks : 0
-          const supplyBudget = consumablePoolLeft + Math.floor(goldLeft / OFFLINE_RESTOCK_PRICE)
+          // Supplies = the loadout consumables the hunters actually use: carried
+          // (Unit.pack) + guild-stash stock of THOSE ids + what gold can buy. Restricting
+          // to loadout ids stops unrelated stash consumables inflating the budget or being
+          // drained (A4); counting carried potions stops a fully-supplied hero stalling to
+          // zero offline yield (A2). `stashSupply` reads the running (shared) stashCons.
+          const supplyIds = new Set<string>()
+          for (const u of hunters) for (const id of Object.keys(s.expeditions[u.id]!.loadout)) if (isConsumable(id)) supplyIds.add(id)
+          const carriedSupply = hunters.reduce((a, u) => a + (u.pack ?? []).reduce((b, p) => b + (supplyIds.has(p.itemId) ? p.count : 0), 0), 0)
+          const stashSupply = stashCons.reduce((a, m) => a + (supplyIds.has(m.id) ? m.qty : 0), 0)
+          const supplyBudget = carriedSupply + stashSupply + Math.floor(goldLeft / OFFLINE_RESTOCK_PRICE)
           const overhead = SAMPLING.cycleTownDwellTicks + 2 * cityHops(loc.id, s.locations) * SAMPLING.cycleTravelPerHopTicks
           const cyc = projectOfflineCycles({
             offlineTicks: n, lootWeightPerTick: lootWeight / n, packCapacityWeight: capacityWeight,
             fillFraction: PACK_FULL_FRACTION, overheadTicks: overhead, supplyBurnPerTick: burnPerTick,
-            supplyBudget, stallOnDry: hunters.some((u) => s.expeditions[u.id]!.returnOn.includes('supplies-out')),
+            supplyBudget,
+            // Only stall on dry when the hero returns on supplies-out AND actually carries
+            // configured supplies to run out of (mirrors live suppliesDry()).
+            stallOnDry: supplyIds.size > 0 && hunters.some((u) => s.expeditions[u.id]!.returnOn.includes('supplies-out')),
           })
           cycles = cyc.cycles; stalled = cyc.stalled
           const huntFraction = Math.min(1, cyc.huntTicks / n)
@@ -1990,22 +2006,32 @@ export const useGameStore = create<GameState>((set, get) => ({
             if (dep > 0) deposited[id] = dep
             if (q - dep > 0) residual[id] = q - dep
           }
+          // On the first town trip the hero also deposits whatever loot they were ALREADY
+          // carrying (A1); flag those packs to clear so residual refills the freed room.
+          const madeTrip = cyc.cycles >= 1
+          if (madeTrip) for (const u of hunters) {
+            const pre = s.packs[u.id]
+            if (!pre) continue
+            for (const [id, q] of Object.entries(pre)) if (q > 0) deposited[id] = (deposited[id] ?? 0) + q
+            packReset.add(u.id)
+          }
           stashLoot = deposited
-          distributeResidualInto(packAdd, residual, hunters.map((u) => ({ id: u.id, room: roomOf(u) })))
-          // Restock: draw the potions spent from the guild stash first, buy the rest
-          // with gold — decrementing the running guild resources + recording deltas.
+          distributeResidualInto(packAdd, residual, hunters.map((u) => ({ id: u.id, room: madeTrip ? fullRoomOf(u) : heroRoom(s.packs[u.id], u.pack) })))
+          // Restock: the potions spent come from the hero's own carry first (free — already
+          // theirs), then the guild stash (loadout ids only), then gold. Decrement the
+          // running shared resources + record the deltas.
           const spent = Math.round(Math.min(cyc.supplyUsed, supplyBudget))
-          const fromStash = Math.min(spent, consumablePoolLeft)
-          let draw = fromStash
+          let fromStash = Math.min(Math.max(0, spent - carriedSupply), stashSupply)
+          const goldPotions = Math.max(0, spent - carriedSupply - fromStash)
           for (const m of stashCons) {
-            if (draw <= 0) break
-            const take = Math.min(m.qty, draw)
+            if (fromStash <= 0) break
+            if (!supplyIds.has(m.id)) continue
+            const take = Math.min(m.qty, fromStash)
             if (take <= 0) continue
-            m.qty -= take; draw -= take
+            m.qty -= take; fromStash -= take
             lootDelta[m.id] = (lootDelta[m.id] ?? 0) - take
           }
-          consumablePoolLeft -= fromStash
-          const goldSpent = Math.min(goldLeft, (spent - fromStash) * OFFLINE_RESTOCK_PRICE)
+          const goldSpent = Math.min(goldLeft, goldPotions * OFFLINE_RESTOCK_PRICE)
           if (goldSpent > 0) { lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) - goldSpent; goldLeft -= goldSpent }
         }
       }
@@ -2121,11 +2147,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       ? applyMiscDeltas(s.miscItems, lootDelta)
       : s.miscItems
 
-    // §logistics: fold the residual carried loot from the return-to-town loop into
-    // each hero's persisted pack (they came home mid-fill on the last trip).
-    const packs = Object.keys(packAdd).length > 0
+    // §logistics: fold the return-to-town loop back into per-hero packs — heroes who
+    // made a town trip deposited their whole carried pack (packReset), then everyone
+    // keeps the residual mid-fill loot from their last trip (packAdd).
+    const packs = (packAdd && (Object.keys(packAdd).length > 0 || packReset.size > 0))
       ? (() => {
           const out = { ...s.packs }
+          for (const uid of packReset) delete out[uid]   // pre-existing pack deposited on the first trip
           for (const [uid, bag] of Object.entries(packAdd)) {
             const cur = { ...(out[uid] ?? {}) }
             for (const [id, q] of Object.entries(bag)) cur[id] = (cur[id] ?? 0) + q

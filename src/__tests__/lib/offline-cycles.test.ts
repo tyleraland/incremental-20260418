@@ -57,6 +57,18 @@ describe('projectOfflineCycles', () => {
     expect(r.supplyUsed).toBe(150)          // spent the whole budget, no more
   })
 
+  it('a positive supply budget (e.g. carried potions) hunts before stalling — never zero yield', () => {
+    // Regression for A2: the offline budget must include the hero's CARRIED potions,
+    // not just the stash. A budget of 200 (burn 1) must buy 200 ticks of hunting
+    // before a supplies-out hero stalls — not stall on tick 0 with no yield.
+    const r = projectOfflineCycles({ ...base, supplyBurnPerTick: 1, supplyBudget: 200, stallOnDry: true })
+    expect(r.huntTicks).toBe(200)
+    expect(r.stalled).toBe(true)
+    // A zero budget is the only path to zero hunt — the batchTick fix makes that
+    // impossible whenever the hero carries any configured supplies.
+    expect(projectOfflineCycles({ ...base, supplyBurnPerTick: 1, supplyBudget: 0, stallOnDry: true }).huntTicks).toBe(0)
+  })
+
   it('never trips with no loot pressure (just hunts the whole span)', () => {
     const r = projectOfflineCycles({ ...base, lootWeightPerTick: 0 })
     expect(r.cycles).toBe(0)

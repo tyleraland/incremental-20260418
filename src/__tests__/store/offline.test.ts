@@ -370,26 +370,61 @@ describe('batchTick — return-to-town loop', () => {
     expect(st.miscItems.find((m) => m.id === 'drop-slime-gel')).toBeUndefined()
   })
 
-  it('deposits pack-loads to the stash and records trips once the pack fills', () => {
+  it('deposits pack-loads (incl. the pre-existing carry) to the stash and records trips', () => {
     resetStore({
       ticks: 1000,
       locations: [OPEN(['slime'], 4)],
       locationStats: { field: STATS() },
-      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      // 180 greater potions carried = 900 wt → only ~100 wt of LOOT room, so packs fill.
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100, pack: [{ itemId: 'potion-hp-greater', count: 180, target: 180 }] })],
       miscItems: [{ id: 'm-gold', name: 'Gold', quantity: 500 }],
-      packs: { u0: { 'drop-boar-hide': 30 } },                 // 900 wt carried → only ~100 wt of room
-      expeditions: { u0: freshHero() },
+      packs: { u0: { 'drop-boar-hide': 5 } },                  // pre-existing carried loot
+      expeditions: { u0: freshHero({ loadout: { 'potion-hp-greater': { qty: 180, storage: true, merchant: true } } }) },
     })
     batchTick(1000)
 
     const st = useGameStore.getState()
     const cu = st.lastCatchUp!.locations.find((l) => l.locationId === 'field')!
-    expect(cu.cycles ?? 0).toBeGreaterThan(0)                  // made town trips
+    expect(cu.cycles ?? 0).toBeGreaterThan(0)                                          // made town trips
     const deposited = st.miscItems.find((m) => m.id === 'drop-slime-gel')?.quantity ?? 0
     const residual = st.packs.u0?.['drop-slime-gel'] ?? 0
-    expect(deposited).toBeGreaterThan(0)                       // loot reached the stash
-    expect(deposited + residual).toBeLessThan(100)             // travel overhead reduced total yield
-    expect(st.packs.u0['drop-boar-hide']).toBe(30)             // pre-existing carry untouched
+    expect(deposited).toBeGreaterThan(0)                                               // hunted loot reached the stash
+    expect(deposited + residual).toBeLessThan(100)                                     // travel overhead reduced yield
+    // A1: on the first town trip the hero also deposits the loot they were already
+    // carrying — it moves from the pack to the stash (not stranded, not duplicated).
+    expect(st.miscItems.find((m) => m.id === 'drop-boar-hide')?.quantity).toBe(5)
+    expect(st.packs.u0?.['drop-boar-hide']).toBeUndefined()
+  })
+
+  it('restock draws the loadout consumable, never an unrelated stash consumable (A4)', () => {
+    resetStore({
+      ticks: 0,
+      locations: [OPEN(['slime'], 8)],
+      locationStats: {},                                   // cold → real sim measures potion burn
+      // A fragile hero (low str/con) still clears slimes but takes real damage → burns
+      // potions heavily; the extrapolated burn exceeds the carried + stash potions.
+      units: [makeUnit({
+        id: 'u0', locationId: 'field', health: 100,
+        abilities: { strength: 8, agility: 5, dexterity: 20, constitution: 3, intelligence: 5 },
+        pack: [{ itemId: 'potion-hp', count: 10, target: 10 }],
+        consumableRules: [{ itemId: 'potion-hp', threshold: 0.95 }],
+      })],
+      // Stash has the loadout item (potion-hp) AND an unrelated consumable (antidote).
+      // Restock must draw potion-hp (then gold) and NEVER touch the antidote — pre-fix
+      // it drew stash consumables in array order and vaporised the antidote first.
+      miscItems: [
+        { id: 'craft-antidote', name: 'Antidote', quantity: 50, kind: 'consumable' as const },
+        { id: 'potion-hp', name: 'Potion', quantity: 20, kind: 'consumable' as const },
+        { id: 'm-gold', name: 'Gold', quantity: 500 },
+      ],
+      expeditions: { u0: freshHero({ loadout: { 'potion-hp': { qty: 10, storage: true, merchant: true } } }) },
+    })
+    batchTick(40000)                                       // long absence → sampled sim → real burn
+
+    const st = useGameStore.getState()
+    expect(st.miscItems.find((m) => m.id === 'craft-antidote')?.quantity).toBe(50)   // untouched
+    expect(st.miscItems.find((m) => m.id === 'potion-hp')?.quantity).toBe(0)          // the RIGHT item drawn
+    expect(st.miscItems.find((m) => m.id === 'm-gold')!.quantity).toBeLessThan(500)   // then paid the rest in gold
   })
 
   it('a party with no expedition plan keeps the legacy path (all loot → stash, no trips)', () => {

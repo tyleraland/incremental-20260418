@@ -356,6 +356,53 @@ independently shippable; ordering rationale in the guide's roadmap):
     the regen/recovery pass owns final unit HP (units fast-heal anyway); priming
     doesn't separately model offline KO downtime.
 
+### Offline return-to-town loop (§logistics) — SHIPPED 2026-07; known gaps
+
+`projectOfflineCycles` (`src/lib/offline.ts`) + the `batchTick` wiring extrapolate the
+hunt→fill→travel→deposit→restock→(stall) loop from the realized loot rate + a slice-
+measured potion burn. Fixed on landing: the offline budget counts CARRIED potions (not
+just stash) so a supplied hero never stalls to zero yield; restock draws only the
+loadout's consumables (never an unrelated stash item); the first town trip deposits the
+hero's pre-existing carried pack too. Remaining gaps (from the post-merge review — most
+are deliberate first-cut simplifications; **numbers need feel-tuning via the Time→Debug
+Offline simulator**):
+
+- **Trip fires on pack-full even for a `supplies-out`-only hero.** `projectOfflineCycles`
+  returns whenever the pack fills, regardless of `returnOn`; live (`expeditionDriver`
+  phase 2e) only returns on pack-full when it's a configured trigger. Pass a
+  `returnOnPackFull` flag and model "pack full, no return trigger → stop gaining
+  (overflow)" to match live. (Med.)
+- **Empty-`returnOn` deployed hero diverges.** With `returnOn: []` the offline loop is
+  skipped (legacy: all loot → stash, no trips) but live overflows-and-loses once the
+  pack saturates. Reconcile the two. (Med.)
+- **Bulky residual can be silently dropped.** `distributeResidualInto` places per-hero,
+  so a single item heavier than any one hero's remaining room is dropped even when the
+  party's *combined* room fits it. Spill to the stash or log it. (Med/low.)
+- **Offline never drains `Unit.pack` carried supplies.** The supply cost is charged to
+  stash/gold only; a hero the model reports `stalled` still shows full carried potions on
+  next load. Decide whether an offline stall should leave carried supplies drained (so the
+  stall is visible) or stay a pure stash/gold cost. (Low.)
+- **`huntFraction` flooring drops rare (qty-1) drops.** Loot is rolled over the full span
+  then floored by `huntFraction`; a `q=1` rare with `huntFraction<1` floors to 0. Roll
+  loot *after* scaling, or round rare drops up. (Low.)
+- **Warm/short absences never model supply drain or stalls** (no sim slice → `burn=0`).
+  Intended for short absences; revisit if it feels off. (Low.)
+- **Burn-rate measurement is rough** — sampled windows never restock between slices (can
+  undercount sustained burn), and a hero KO'd mid-slice counts its whole carry as "used"
+  (over-count). Track cumulative burn instead of an end-of-slice diff. (Low.)
+- **Divergences from the live driver the offline model ignores** (deliberate first cut):
+  party loot/supply **sharing** flags (`shareLoot`/`acceptLoot`/mule); real **merchant
+  prices** + storage-vs-merchant sourcing (offline uses a flat `OFFLINE_RESTOCK_PRICE`=12
+  for any consumable); **`deployMode`** travel (offline always prices `townDwell +
+  2·hops·travel`, even in `instant` mode where live has none); a configured farther
+  **`returnTown`** (offline overheads to `nearestCity`); and the cycle model is gated on
+  `loc.openWorld` (wave-based huntable locations use the legacy path offline). Fold these
+  in as the economy/travel systems become real, or document as live-only.
+- **Feel-tuning** — `OFFLINE_RESTOCK_PRICE` (const in `useGameStore.ts`), `SAMPLING
+  .cycleTownDwellTicks`/`cycleTravelPerHopTicks` (Time→Debug knobs) are conservative
+  guesses; tune against `TOWN_RESUPPLY_TICKS` + real travel time using the Offline
+  simulator, then bake the winners.
+
 ## Economy & resources
 
 - **Passive resource generation from assigned units.** The original prototype
