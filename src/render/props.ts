@@ -86,6 +86,8 @@ const PROP_META: Record<string, Pick<PropDef, 'kinds' | 'playerSelectable' | 'ta
   mushroom: { kinds: ['flower', 'bush'] },
   reeds:    { kinds: ['reed', 'bush'] },
   log:      { kinds: ['stump'] },
+  grassclump: { kinds: ['bush', 'flower'] },
+  leaves:     { kinds: ['flower', 'bush'] },
   // forest (from the inked top-down forest sheet)
   canopy:   { kinds: ['tree'] },
   fern:     { kinds: ['bush', 'flower'] },
@@ -113,6 +115,8 @@ const PROP_META: Record<string, Pick<PropDef, 'kinds' | 'playerSelectable' | 'ta
   signpost: { kinds: ['tree'] },
   coil:     { kinds: ['reed', 'rock'] },
   conifer:  { kinds: ['tree'] },
+  cobbles:  { kinds: ['rock', 'stump'] },
+  flagstone:{ kinds: ['stump', 'rock'] },
   // decor-ring assets: placed by the plaza landmark ring, not scatter
   lamppost: { kinds: [] },
   banner:   { kinds: [] },
@@ -229,6 +233,60 @@ const COBWEB = (() => {
   return { spokes, arcs }
 })()
 
+// ── "Ribbon" pack point-decor (grass clumps, leaf piles, loose paving) ───────
+// A small almond leaf: a lens between two tips, bulged by control points on the
+// perpendicular. M/Q only, so it wonks + variants cleanly.
+const leafD = (cx: number, cy: number, len: number, wid: number, ang: number): string => {
+  const dx = Math.cos(ang), dy = Math.sin(ang)
+  const px = -dy, py = dx
+  const t1x = cx + dx * len, t1y = cy + dy * len
+  const t2x = cx - dx * len, t2y = cy - dy * len
+  const c1x = cx + px * wid, c1y = cy + py * wid
+  const c2x = cx - px * wid, c2y = cy - py * wid
+  return `M${r3(t1x)} ${r3(t1y)}Q${r3(c1x)} ${r3(c1y)} ${r3(t2x)} ${r3(t2y)}Q${r3(c2x)} ${r3(c2y)} ${r3(t1x)} ${r3(t1y)}Z`
+}
+// A seeded scatter of small fallen leaves in one tone (hash01-mixed positions,
+// so the base stays deterministic — three tones layered = the "Leaf Piles" read).
+const leafScatterD = (seed: number, n: number): string => {
+  let d = ''
+  for (let i = 0; i < n; i++) {
+    const x = (hash01(seed + i * 733) - 0.5) * 1.5
+    const y = (hash01(seed + i * 733 + 211) - 0.5) * 1.35
+    const len = 0.16 + hash01(seed + i * 733 + 401) * 0.09
+    const ang = hash01(seed + i * 733 + 577) * Math.PI
+    d += leafD(x, y, len, len * 0.52, ang)
+  }
+  return d
+}
+const LEAVES_WARM = leafScatterD(hashString('leaves-warm'), 5)
+const LEAVES_TAN = leafScatterD(hashString('leaves-tan'), 4)
+const LEAVES_GREEN = leafScatterD(hashString('leaves-green'), 4)
+
+// A lush bushy grass MOUND (Grass 2/3 blobs) — fuller than the thin-bladed
+// tuft: a lumpy two-tone dome with a few tall lit blade tips poking out.
+const GRASSCLUMP_D = 'M-0.82 0.5C-0.9 0.12 -0.72 -0.18 -0.5 -0.28C-0.56 -0.56 -0.18 -0.66 -0.04 -0.44C0.06 -0.7 0.42 -0.64 0.44 -0.34C0.66 -0.52 0.9 -0.22 0.82 0.14C0.79 0.34 0.86 0.42 0.8 0.5Z'
+
+// A loose cluster of round cobbles (Cobble Scattered / Round read): a few pale
+// two-tone paving stones. cutout gives each a dark seam rim on the far side.
+const cobbleClusterD = (seed: number, n: number): string => {
+  let d = ''
+  for (let i = 0; i < n; i++) {
+    const x = (hash01(seed + i * 617) - 0.5) * 1.15
+    const y = (hash01(seed + i * 617 + 149) - 0.5) * 0.95
+    const r = 0.23 + hash01(seed + i * 617 + 331) * 0.13
+    d += ringPath(r, x, y)
+  }
+  return d
+}
+const COBBLES_D = cobbleClusterD(hashString('cobbles'), 5)
+const COBBLES_SHADOW = ringPath(0.92, 0.06, 0.14)
+
+// A single dressed SQUARE paving slab (Cobble Square tile) with a scored mortar
+// edge — the calm counterpoint to the loose cobble cluster.
+const FLAGSTONE_D = rectD(-0.56, -0.52, 1.12, 1.04)
+const FLAGSTONE_SEAM = rectD(-0.42, -0.39, 0.84, 0.78)
+const FLAGSTONE_SHADOW = rectD(-0.48, -0.4, 1.12, 1.04)
+
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
   grass: withVariants([
     { id: 'tuft', size: 0.9, paths: [
@@ -285,6 +343,21 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: 'M-0.4 0.5C-0.5 0.2 -0.3 0.05 -0.1 0.12C-0.28 0.3 -0.24 0.5 -0.4 0.5ZM0.34 0.52C0.5 0.28 0.34 0.05 0.12 0.14C0.3 0.28 0.22 0.52 0.34 0.52Z', fill: 'foliage' },
       { d: 'M-0.34 -0.28A0.15 0.15 0 1 0 -0.04 -0.28A0.15 0.15 0 1 0 -0.34 -0.28ZM0.12 -0.4A0.14 0.14 0 1 0 0.4 -0.4A0.14 0.14 0 1 0 0.12 -0.4ZM-0.02 0A0.13 0.13 0 1 0 0.24 0A0.13 0.13 0 1 0 -0.02 0Z', fill: 'cream' },
       { d: 'M-0.24 -0.28A0.05 0.05 0 1 0 -0.14 -0.28A0.05 0.05 0 1 0 -0.24 -0.28ZM0.22 -0.4A0.05 0.05 0 1 0 0.32 -0.4A0.05 0.05 0 1 0 0.22 -0.4ZM0.06 0A0.05 0.05 0 1 0 0.16 0A0.05 0.05 0 1 0 0.06 0Z', fill: 'bloom' },
+    ] },
+    // lush GRASS CLUMP (Grass 2/3 bushy blobs): a two-tone leafy mound, fuller
+    // than the thin `tuft`, with a few tall lit blade tips breaking the top.
+    { id: 'grassclump', size: 1.05, wonk: 0.03, paths: [
+      ...cutout(GRASSCLUMP_D, 'foliageDeep', 'foliage'),
+      { d: 'M-0.42 -0.34Q-0.5 -0.68 -0.52 -0.94M-0.08 -0.46Q-0.04 -0.78 0.02 -0.98M0.34 -0.4Q0.42 -0.72 0.5 -0.9', stroke: 'mossBase', sw: 0.08, lit: true },
+      { d: 'M-0.6 -0.12Q-0.66 -0.4 -0.72 -0.6M0.18 -0.42Q0.28 -0.64 0.32 -0.84', stroke: 'foliage', sw: 0.06, lit: true },
+    ] },
+    // fallen LEAF PILE: a seeded scatter of small leaves in three mixed
+    // green/warm tones, no two-tone within a leaf — the piece-to-piece color
+    // variation carries the read.
+    { id: 'leaves', size: 0.9, wonk: 0.03, paths: [
+      { d: LEAVES_WARM, fill: 'woodLight' },
+      { d: LEAVES_TAN, fill: 'cliffEdge' },
+      { d: LEAVES_GREEN, fill: 'mossBase' },
     ] },
   ]),
   stone: withVariants([
@@ -384,6 +457,19 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: 'M0.04 -0.34L0.47 -0.29M0.08 0.34L0.5 0.4', stroke: 'bannerGold', sw: 0.06, opacity: 0.85 },
       { d: 'M0.2 0A0.11 0.13 0 1 0 0.42 0A0.11 0.13 0 1 0 0.2 0Z', fill: 'bannerGold', opacity: 0.9 },
       { d: 'M-0.16 -0.52A0.12 0.12 0 1 0 0.08 -0.52A0.12 0.12 0 1 0 -0.16 -0.52Z', fill: 'lampPost' },
+    ] },
+    // loose COBBLES (Cobble Scattered): a small cluster of pale two-tone round
+    // paving stones on the street, over a soft ground shadow.
+    { id: 'cobbles', size: 1, wonk: 0.03, paths: [
+      { d: COBBLES_SHADOW, fill: 'shadow', opacity: 0.2 },
+      ...cutout(COBBLES_D, 'roadSeam', 'stoneBase'),
+    ] },
+    // single dressed FLAGSTONE (Cobble Square): one pale two-tone slab with a
+    // scored mortar edge, casting a flat drop shadow.
+    { id: 'flagstone', size: 0.95, wonk: 0.03, paths: [
+      { d: FLAGSTONE_SHADOW, fill: 'shadow', opacity: 0.22 },
+      ...cutout(FLAGSTONE_D, 'roadSeam', 'flagstoneLit'),
+      { d: FLAGSTONE_SEAM, stroke: 'flagSeam', sw: 0.045 },
     ] },
   ]),
 }
