@@ -1,10 +1,10 @@
 import { memo, useMemo, useLayoutEffect, useRef, useState } from 'react'
 import type { Barrier } from '@/engine'
-import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
+import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial, ThemeTag } from '@/mapgen'
 import { SURFACE_MATERIALS } from '@/mapgen'
 import type { Biome } from '@/render/appearance'
 import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
-import { TERRAIN_PROPS, type PropDef } from '@/render/props'
+import { TERRAIN_PROPS, themeFilteredCands, weightedPick, rotForPolicy, type PropDef } from '@/render/props'
 import { buildingMarkup, isBuildingMaterial } from '@/render/buildings'
 import { ink, cobble, mossClump } from '@/render/inked'
 import { INK_POOLS } from '@/render/palette'
@@ -288,34 +288,43 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
   // to a biome prop archetype here — same seam rule as appearance.ts, kinds
   // never prop ids. Without a spec, the classic seeded random scatter.
   const variants = TERRAIN_PROPS[p.biome]
+  const allIdx = variants.map((_, i) => i)
   let props: TerrainModel['props']
   if (spec) {
+    // The scatter PLANE drives placement; the abstract kind resolves to biome
+    // prop archetypes here. Phase-1 pick: THEME-filter the candidates by the
+    // map's regionTags (a desert `tree` cell won't draw an oak; empty survivors
+    // fall back to the full set), pick WEIGHTED by each prop's `weight` (a rare
+    // signature canopy loses to filler grass), and rotate by the chosen prop's
+    // `rotate` policy (rocks/cobbles free-spin, trees keep a small upright wobble).
+    const themes = (spec.semantic.regionTags ?? []) as ThemeTag[]
     props = spec.scatter.map((it) => {
-      const cands = ARCHETYPE_INDEX(p.biome, it.kind)
-      const v = cands[Math.floor(hash01(it.seed) * cands.length)]
+      const cands = themeFilteredCands(variants, ARCHETYPE_INDEX(p.biome, it.kind), themes)
+      const v = weightedPick(variants, cands, hash01(it.seed))
       return {
         v,
         x: r2(it.x),
         y: r2(rows - it.y),
         s: r2(it.size * variants[v].size),
-        rot: r2((hash01(it.seed + 19) - 0.5) * 24),
+        rot: r2(rotForPolicy(variants[v].rotate, hash01(it.seed + 19))),
         flip: hash01(it.seed + 31) < 0.5,
       }
     })
   } else {
     // seeded placement clear of barrier boxes (+margin) and the caller's
-    // keep-clear rects (portals).
+    // keep-clear rects (portals). No spec → no map themes, so no theme filter;
+    // weight + rotate policy still apply (cheap, and keeps looks consistent).
     const keepClear: Rect[] = [...p.barriers, ...(p.avoid ?? [])]
     const propCount = Math.max(8, Math.min(64, Math.round((cols * rows) / 45)))
     props = scatter(cols, rows, seed + 9000, propCount, keepClear, 0.6).map((pt: Pt, i: number) => {
       const s = seed + 9000 + i * 379
-      const v = Math.floor(hash01(s) * variants.length)
+      const v = weightedPick(variants, allIdx, hash01(s))
       return {
         v,
         x: r2(pt.x),
         y: r2(rows - pt.y),
         s: r2((0.55 + hash01(s + 7) * 0.5) * variants[v].size),
-        rot: r2((hash01(s + 19) - 0.5) * 24),
+        rot: r2(rotForPolicy(variants[v].rotate, hash01(s + 19))),
         flip: hash01(s + 31) < 0.5,
       }
     })

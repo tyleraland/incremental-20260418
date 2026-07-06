@@ -1338,6 +1338,37 @@ building/ground as `AssetDescriptor`. This is the seam the items below hang off.
   `BUILDING_LOOKS` entries so Prontera has >3 building types (they'll appear in the
   catalog automatically).
 
+### Asset placement tags — phased scatter richness (Phase 1 shipped 2026-07)
+
+The uniform, blanket-rotated scatter pick (a rare canopy as likely as filler
+grass; every prop rotated a flat ±12°) is being replaced by a declarative
+**placement-tag schema** on every prop (`PropMeta`/`PropDef` in
+`render/props.ts`: `weight`/`themes`/`role`/`near`/`avoid`/`rotate`/
+`clusterWith`), tagged for the LATER phases but consumed incrementally.
+
+- **Phase 1 (SHIPPED):** the schema + a **weighted, theme-filtered,
+  rotation-aware** render pick (`terrain.tsx` spec + legacy branches, helpers
+  `matchesThemes`/`weightedPick`/`rotForPolicy` in `props.ts`) + `?workshop=1`
+  catalog surfacing (tags shown read-only, emitted in "copy TS snippet"). Every
+  scatterable prop must declare `role` + `themes` (`AssetCatalog.test.ts` gate).
+  Mapgen unchanged beyond `regionTags` already echoing `params.themes`.
+- **Phase 2:** density field + blue-noise placement + `role: 'cluster'` clumps
+  (groves/flowerbeds via `clusterWith`) — a real mapgen scatter pass over the
+  shared substrate, replacing today's independent per-item rolls.
+- **Phase 3:** edge / understory features — the "Ribbon" assets (verge grass,
+  shoreline reeds, wall moss/cobweb) placed along boundaries via `role: 'edge'`/
+  `'understory'` + `near`/`avoid` affinities.
+- **Phase 4:** field trails / desire-paths (nav `desire-path` edges → walkable
+  ribbons, props avoiding them).
+- **Phase 5:** per-material surface texture (finer surface-plane paint feeding
+  distinct washes/patterns per `SurfaceMaterial`).
+
+**Guiding principle:** every phase-2+ clustering behavior must EXPOSE tunable
+dials and land as an ISOLATABLE layer/pass reviewable in `?mapgen=1` — the
+per-pass RNG streams + per-pass skips already support toggling one behavior at a
+time, so density, clumping, edges, and paths can each be reviewed/tweaked
+independently without reshuffling the rest of the map.
+
 *Perf lesson from landing it* (measured on the `?perf` scene, mobile-chrome 4×
 throttle, via the new `skin-compare.spec.ts` A/B (`npm run skin-ab`) +
 `skin-trace.spec.ts` CDP attribution): a richer body's cost is NOT the SVG

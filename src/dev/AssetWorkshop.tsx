@@ -65,13 +65,21 @@ function toSnippet(def: PropDef): string {
     if (p.lit) parts.push('lit: true')
     return `      { ${parts.join(', ')} },`
   })
-  const meta = def.kinds || def.playerSelectable || def.tags?.length
-    ? `\n  // PROP_META: ${def.id}: { ${[
-        def.kinds ? `kinds: [${def.kinds.map((k) => `'${k}'`).join(', ')}]` : '',
-        def.playerSelectable ? 'playerSelectable: true' : '',
-        def.tags?.length ? `tags: [${def.tags.map((t) => `'${t}'`).join(', ')}]` : '',
-      ].filter(Boolean).join(', ')} },`
-    : ''
+  const arr = (xs?: readonly string[]) => `[${(xs ?? []).map((x) => `'${x}'`).join(', ')}]`
+  const metaParts = [
+    def.kinds ? `kinds: ${arr(def.kinds)}` : '',
+    def.playerSelectable ? 'playerSelectable: true' : '',
+    def.tags?.length ? `tags: ${arr(def.tags)}` : '',
+    // placement schema (props.ts) — weighted/theme/rotate pick + procgen hints
+    def.weight !== undefined ? `weight: ${def.weight}` : '',
+    def.themes?.length ? `themes: ${arr(def.themes)}` : '',
+    def.role ? `role: '${def.role}'` : '',
+    def.near?.length ? `near: ${arr(def.near)}` : '',
+    def.avoid?.length ? `avoid: ${arr(def.avoid)}` : '',
+    def.rotate ? `rotate: '${def.rotate}'` : '',
+    def.clusterWith?.length ? `clusterWith: ${arr(def.clusterWith)}` : '',
+  ].filter(Boolean)
+  const meta = metaParts.length ? `\n  // PROP_META: ${def.id}: { ${metaParts.join(', ')} },` : ''
   return `    { id: '${def.id}', size: ${def.size}, paths: [\n${lines.join('\n')}\n    ] },${meta}`
 }
 
@@ -203,6 +211,16 @@ export default function AssetWorkshop() {
                   kinds: {def.kinds.length ? def.kinds.join(', ') : <em className="text-amber-400/80">none — decor/unscattered</em>}
                 </span>
               )}
+              {def && (def.role || def.weight !== undefined || def.themes?.length || def.rotate) && (
+                <span className="text-[10px] text-sky-400/80">
+                  {[
+                    def.role ?? 'field',
+                    `w${def.weight ?? 1}`,
+                    `↻${def.rotate ?? 'upright'}`,
+                    def.themes?.length ? def.themes.join(',') : 'universal',
+                  ].join(' · ')}
+                </span>
+              )}
               {def?.playerSelectable && <span className="text-[10px] text-yellow-300/90">★ player-selectable</span>}
               <button onClick={copy} className="px-2 py-0.5 rounded border border-neutral-600 hover:bg-white/5">
                 {copied ? 'copied ✓' : 'copy TS snippet'}
@@ -298,8 +316,18 @@ export default function AssetWorkshop() {
                   const key = assetKey(a)
                   const pdef = propOf(a)
                   const sel = selected.has(key)
-                  const title = [key, a.kinds?.length ? `kinds: ${a.kinds.join(', ')}` : (cat === 'prop' ? 'kinds: none' : ''), a.tags.length ? `tags: ${a.tags.join(', ')}` : '']
-                    .filter(Boolean).join('\n')
+                  const title = [
+                    key,
+                    a.kinds?.length ? `kinds: ${a.kinds.join(', ')}` : (cat === 'prop' ? 'kinds: none' : ''),
+                    a.role ? `role: ${a.role}` : '',
+                    a.weight !== undefined ? `weight: ${a.weight}` : '',
+                    a.themes?.length ? `themes: ${a.themes.join(', ')}` : (cat === 'prop' ? 'themes: universal' : ''),
+                    a.rotate ? `rotate: ${a.rotate}` : '',
+                    a.near?.length ? `near: ${a.near.join(', ')}` : '',
+                    a.avoid?.length ? `avoid: ${a.avoid.join(', ')}` : '',
+                    a.clusterWith?.length ? `clusterWith: ${a.clusterWith.join(', ')}` : '',
+                    a.tags.length ? `tags: ${a.tags.join(', ')}` : '',
+                  ].filter(Boolean).join('\n')
                   return (
                     <div
                       key={key}
@@ -327,9 +355,23 @@ export default function AssetWorkshop() {
                         )}
                       </div>
                       {cat === 'prop' && (
-                        <div className="px-1 pb-0.5 text-[8px] leading-tight text-neutral-500 truncate">
-                          {a.kinds?.length ? a.kinds.join(' ') : <span className="text-amber-400/70">decor</span>}
-                        </div>
+                        <>
+                          <div className="px-1 text-[8px] leading-tight text-neutral-500 truncate">
+                            {a.kinds?.length ? a.kinds.join(' ') : <span className="text-amber-400/70">decor</span>}
+                          </div>
+                          <div className="px-1 pb-0.5 text-[8px] leading-tight text-sky-400/70 truncate">
+                            {a.role || a.weight !== undefined || a.themes?.length || a.rotate ? (
+                              [
+                                a.role,
+                                a.weight !== undefined ? `w${a.weight}` : '',
+                                a.rotate ? `↻${a.rotate}` : '',
+                                a.themes?.length ? a.themes.join(',') : 'universal',
+                              ].filter(Boolean).join(' · ')
+                            ) : (
+                              <span className="text-amber-400/60">untagged</span>
+                            )}
+                          </div>
+                        </>
                       )}
                     </div>
                   )

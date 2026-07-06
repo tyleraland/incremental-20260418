@@ -17,8 +17,8 @@
 // enough — it shows up here automatically.
 
 import type { Biome } from '@/render/appearance'
-import type { ScatterKind } from '@/mapgen'
-import { TERRAIN_PROPS } from '@/render/props'
+import type { ScatterKind, ThemeTag } from '@/mapgen'
+import { TERRAIN_PROPS, type PropRole, type Affinity, type RotatePolicy } from '@/render/props'
 import { BODY_SHAPES, WEAPONS, monstersForShape, classesForWeapon } from '@/render/appearance'
 import { BUILDING_LOOKS, ROOF_COVERINGS } from '@/render/buildings'
 
@@ -33,6 +33,15 @@ export interface AssetDescriptor {
   variantCount?: number      // props: seeded siblings that ride the archetype
   playerSelectable: boolean  // true = a cosmetic the player can pick; false = procedural-only
   tags: string[]             // freeform: grouping / search / "used by"
+  // props: the declarative PLACEMENT schema (props.ts PROP_META) — read by the
+  // render's weighted/theme/rotate pick + surfaced in the ?workshop=1 catalog.
+  weight?: number
+  themes?: ThemeTag[]
+  role?: PropRole
+  near?: Affinity[]
+  avoid?: Affinity[]
+  rotate?: RotatePolicy
+  clusterWith?: string[]
 }
 
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
@@ -54,6 +63,13 @@ export function listAssets(): AssetDescriptor[] {
         variantCount: TERRAIN_PROPS[biome].filter((d) => d.id.startsWith(`${def.id}~`)).length,
         playerSelectable: def.playerSelectable ?? false,
         tags: def.tags ?? [],
+        weight: def.weight,
+        themes: def.themes,
+        role: def.role,
+        near: def.near,
+        avoid: def.avoid,
+        rotate: def.rotate,
+        clusterWith: def.clusterWith,
       })
     }
   }

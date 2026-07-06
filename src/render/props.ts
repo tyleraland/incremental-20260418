@@ -1,5 +1,5 @@
 import type { Biome } from '@/render/appearance'
-import type { ScatterKind } from '@/mapgen'
+import type { ScatterKind, ThemeTag } from '@/mapgen'
 import type { PaperRole } from '@/render/palette'
 import { hashString, hash01, wonkPathD, blobPath, type Pt } from '@/render/authoring'
 
@@ -45,6 +45,89 @@ export interface PropDef {
   playerSelectable?: boolean
   // Freeform labels for gallery grouping / search / procgen filters.
   tags?: string[]
+  // ── PLACEMENT tags (the declarative scatter schema — see render/CLAUDE.md) ──
+  // Read by the render's weighted/theme/rotate pick TODAY (terrain.tsx) and by
+  // mapgen's clustering/edge/path passes LATER (phases 2–4). Optional; an
+  // untagged prop is universal / field / weight-1 / upright — placeable but
+  // "dumb" (never clumps, never prefers a theme). Stamped onto the def + its
+  // seeded variants exactly like `kinds`, via PROP_META below.
+  //
+  // relative frequency WITHIN a kind (default 1) — signature props low
+  // (a marquee canopy ≈0.2), filler high (a grass tuft 1).
+  weight?: number
+  // biomes/themes it belongs to (undefined = universal — placed anywhere).
+  // The render keeps a candidate iff it's universal OR its themes intersect the
+  // map's `regionTags`; an empty survivor set falls back to the full candidates.
+  themes?: ThemeTag[]
+  // placement archetype: field=area filler · cluster=forms clumps (groves/beds)
+  // · edge=line feature along a boundary/verge · understory=sits near a parent
+  // prop · accent=rare hero prop. Default 'field'.
+  role?: PropRole
+  // relationship HINTS for phase-2 mapgen (density/adjacency): draw it NEAR /
+  // AVOID these features. Unused by the render today; fill them now.
+  near?: Affinity[]
+  avoid?: Affinity[]
+  // rotation policy the render applies: 'upright' → ±12° wobble (things with a
+  // clear "up": trees/flowers/crates); 'free' → full ±180° (radially-symmetric
+  // rocks/gravel/cobbles); 'flat' → full rotation (decals). Default 'upright'.
+  rotate?: RotatePolicy
+  // prop ids that co-occur — phase-2 grove/bed companions (a canopy with ferns
+  // and leaf litter). Fill where obvious; render ignores it today.
+  clusterWith?: string[]
+}
+
+// Placement archetype — how a prop wants to be laid down (read by mapgen phases).
+export type PropRole = 'field' | 'cluster' | 'edge' | 'understory' | 'accent'
+// Feature a prop wants to be near / avoid (phase-2 adjacency hints).
+export type Affinity = 'water' | 'wall' | 'path' | 'tree' | 'rock'
+// Whole-token rotation policy the render applies at placement.
+export type RotatePolicy = 'upright' | 'free' | 'flat'
+
+// The placement-tag fields, as one reusable Pick (stamped by PROP_META + carried
+// onto variants). Kept in sync with the PropDef fields above by construction.
+export type PropPlacement = Pick<
+  PropDef,
+  'kinds' | 'playerSelectable' | 'tags' | 'weight' | 'themes' | 'role' | 'near' | 'avoid' | 'rotate' | 'clusterWith'
+>
+
+// ── Pure placement helpers (deterministic; also used by terrain.tsx) ─────────
+
+// Keep a prop if it's universal (no themes) OR its themes intersect the map's.
+// Unknown map themes ([]) keep everything — never empty a pool on missing data.
+export function matchesThemes(def: PropDef, themes: readonly ThemeTag[]): boolean {
+  if (!def.themes || def.themes.length === 0) return true
+  if (themes.length === 0) return true
+  return def.themes.some((t) => (themes as readonly string[]).includes(t))
+}
+
+// Theme-filter a candidate index list against the map themes, with the same
+// never-render-nothing fallback ARCHETYPE_INDEX uses: an empty survivor set
+// returns the full candidates.
+export function themeFilteredCands(defs: PropDef[], cands: number[], themes: readonly ThemeTag[]): number[] {
+  const kept = cands.filter((i) => matchesThemes(defs[i], themes))
+  return kept.length ? kept : cands
+}
+
+// Weighted pick over an index list into `defs`, driven by a roll ∈ [0,1).
+// Returns the chosen index (an element of `idxs`). Deterministic — the caller
+// supplies the seed-derived roll.
+export function weightedPick(defs: PropDef[], idxs: number[], roll: number): number {
+  if (idxs.length === 0) return 0
+  let total = 0
+  for (const i of idxs) total += defs[i].weight ?? 1
+  let t = roll * total
+  for (const i of idxs) {
+    t -= defs[i].weight ?? 1
+    if (t < 0) return i
+  }
+  return idxs[idxs.length - 1]
+}
+
+// Rotation degrees for a policy, driven by a roll ∈ [0,1): 'upright' → ±12°
+// wobble; 'free'/'flat' → full ±180°. Undefined → 'upright'.
+export function rotForPolicy(policy: RotatePolicy | undefined, roll: number): number {
+  const span = policy === 'free' || policy === 'flat' ? 360 : 24
+  return (roll - 0.5) * span
 }
 
 // The standard two-tone cutout: base silhouette + lit top copy. THE way to give
@@ -68,6 +151,14 @@ export function variants(def: PropDef, n: number, amp = def.wonk ?? 0.07): PropD
     kinds: def.kinds,
     playerSelectable: def.playerSelectable,
     tags: def.tags,
+    // placement tags: variants inherit the parent's exactly (same rule as kinds)
+    weight: def.weight,
+    themes: def.themes,
+    role: def.role,
+    near: def.near,
+    avoid: def.avoid,
+    rotate: def.rotate,
+    clusterWith: def.clusterWith,
   }))
 }
 
@@ -76,48 +167,49 @@ export function variants(def: PropDef, n: number, amp = def.wonk ?? 0.07): PropD
 // props with no entry get an empty kinds set and are scatter-invisible on
 // generated maps (fine for decor-ring-only assets). Stamped onto each base def
 // (and its variants) by withVariants.
-const PROP_META: Record<string, Pick<PropDef, 'kinds' | 'playerSelectable' | 'tags'>> = {
-  // grass
-  tuft:     { kinds: ['bush', 'flower'] },
-  bush:     { kinds: ['tree', 'bush'] },
-  pebble:   { kinds: ['rock'] },
-  bloom:    { kinds: ['flower'] },
-  stump:    { kinds: ['stump'] },
-  mushroom: { kinds: ['flower', 'bush'] },
-  reeds:    { kinds: ['reed', 'bush'] },
-  log:      { kinds: ['stump'] },
-  grassclump: { kinds: ['bush', 'flower'] },
-  leaves:     { kinds: ['flower', 'bush'] },
+const PROP_META: Record<string, PropPlacement> = {
+  // ── grass biome (plains / forest ground) ──
+  tuft:     { kinds: ['bush', 'flower'], weight: 1, themes: ['plains', 'forest'], role: 'field', rotate: 'upright', near: ['path'] },
+  bush:     { kinds: ['tree', 'bush'], weight: 0.8, themes: ['plains', 'forest'], role: 'cluster', rotate: 'upright', near: ['tree'] },
+  pebble:   { kinds: ['rock'], weight: 0.8, themes: ['plains', 'forest', 'mountain', 'beach'], role: 'field', rotate: 'free', near: ['wall', 'rock'] },
+  bloom:    { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['flowers', 'tuft'] },
+  stump:    { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'] },
+  mushroom: { kinds: ['flower', 'bush'], weight: 0.5, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
+  reeds:    { kinds: ['reed', 'bush'], weight: 0.8, themes: ['water', 'beach'], role: 'edge', rotate: 'upright', near: ['water'] },
+  log:      { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'] },
+  grassclump: { kinds: ['bush', 'flower'], weight: 1, themes: ['plains', 'forest'], role: 'field', rotate: 'upright', near: ['path'] },
+  leaves:     { kinds: ['flower', 'bush'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'free', near: ['tree'] },
   // forest (from the inked top-down forest sheet)
-  canopy:   { kinds: ['tree'] },
-  fern:     { kinds: ['bush', 'flower'] },
-  boulder:  { kinds: ['rock'] },
-  flowers:  { kinds: ['flower'] },
-  // stone
-  rubble:   { kinds: ['stump', 'rock'] },
-  crack:    { kinds: ['reed', 'rock'] },
-  shard:    { kinds: ['rock'] },
-  bone:     { kinds: ['flower'] },
-  pillar:   { kinds: ['tree', 'stump'] },
-  skull:    { kinds: ['flower', 'rock'] },
-  spikes:   { kinds: ['tree'] },
-  moss:     { kinds: ['bush'] },
-  column:   { kinds: ['tree', 'stump'] },
-  bricks:   { kinds: ['rock', 'stump'] },
-  gravel:   { kinds: ['rock'] },
-  cobweb:   { kinds: ['flower', 'bush'] },
-  // plaza (market clutter fills the generic ground kinds the city recipe emits)
-  crate:    { kinds: ['stump'] },
-  barrel:   { kinds: ['stump', 'rock'] },
-  sack:     { kinds: ['rock', 'stump'] },
-  wheel:    { kinds: ['stump'] },
-  pot:      { kinds: ['bush', 'flower'] },
-  signpost: { kinds: ['tree'] },
-  coil:     { kinds: ['reed', 'rock'] },
-  conifer:  { kinds: ['tree'] },
-  cobbles:  { kinds: ['rock', 'stump'] },
-  flagstone:{ kinds: ['stump', 'rock'] },
-  // decor-ring assets: placed by the plaza landmark ring, not scatter
+  canopy:   { kinds: ['tree'], weight: 0.2, themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright', near: ['tree'], clusterWith: ['fern', 'leaves', 'mushroom'] },
+  fern:     { kinds: ['bush', 'flower'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
+  boulder:  { kinds: ['rock'], weight: 0.25, themes: ['mountain', 'forest', 'plains'], role: 'accent', rotate: 'free', near: ['wall', 'rock'] },
+  flowers:  { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['bloom', 'tuft'] },
+  // ── stone biome (dungeon / ruins) ──
+  rubble:   { kinds: ['stump', 'rock'], weight: 1, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'free', near: ['wall'] },
+  crack:    { kinds: ['reed', 'rock'], weight: 0.6, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'flat', near: ['wall'] },
+  shard:    { kinds: ['rock'], weight: 0.8, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['rock', 'wall'] },
+  bone:     { kinds: ['flower'], weight: 0.5, themes: ['dungeon', 'ruins', 'haunted'], role: 'field', rotate: 'free' },
+  pillar:   { kinds: ['tree', 'stump'], weight: 0.4, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'] },
+  skull:    { kinds: ['flower', 'rock'], weight: 0.3, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'free' },
+  spikes:   { kinds: ['tree'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright' },
+  moss:     { kinds: ['bush'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'edge', rotate: 'flat', near: ['wall'] },
+  column:   { kinds: ['tree', 'stump'], weight: 0.3, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'] },
+  bricks:   { kinds: ['rock', 'stump'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'free', near: ['wall'] },
+  gravel:   { kinds: ['rock'], weight: 1, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['path', 'wall'] },
+  cobweb:   { kinds: ['flower', 'bush'], weight: 0.4, themes: ['dungeon', 'ruins', 'haunted'], role: 'edge', rotate: 'flat', near: ['wall'] },
+  // ── plaza biome (city market clutter fills the generic ground kinds) ──
+  crate:    { kinds: ['stump'], weight: 1, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'] },
+  barrel:   { kinds: ['stump', 'rock'], weight: 0.9, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'] },
+  sack:     { kinds: ['rock', 'stump'], weight: 0.8, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall'] },
+  wheel:    { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'free', near: ['wall'] },
+  pot:      { kinds: ['bush', 'flower'], weight: 0.7, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'] },
+  signpost: { kinds: ['tree'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'upright', near: ['path'] },
+  coil:     { kinds: ['reed', 'rock'], weight: 0.5, themes: ['city'], role: 'field', rotate: 'free', near: ['wall'] },
+  conifer:  { kinds: ['tree'], weight: 0.4, themes: ['city', 'mountain', 'forest'], role: 'cluster', rotate: 'upright', near: ['path'] },
+  cobbles:  { kinds: ['rock', 'stump'], weight: 0.9, themes: ['city'], role: 'edge', rotate: 'free', near: ['path'] },
+  flagstone:{ kinds: ['stump', 'rock'], weight: 0.8, themes: ['city'], role: 'edge', rotate: 'free', near: ['path'] },
+  // decor-ring assets: placed by the plaza landmark ring, not scatter (no
+  // placement tags needed — empty kinds keeps them off the scatter placer)
   lamppost: { kinds: [] },
   banner:   { kinds: [] },
 }

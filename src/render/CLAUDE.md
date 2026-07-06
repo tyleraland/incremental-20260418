@@ -80,6 +80,31 @@ tree/bush/rock/stump/flower, never `reed`). Reachability is pinned by
 `AssetCatalog.test.ts`. Decor-ring-only assets (`lamppost`/`banner`, placed by
 the plaza landmark ring) intentionally carry empty `kinds`.
 
+**Tag the prop's PLACEMENT so it belongs with the others (strongly encouraged).**
+Beyond `kinds`, `PROP_META` carries a declarative placement schema the render's
+scatter pick READS today (weighted + theme-filtered + rotation-aware — a rare
+signature canopy no longer draws as often as filler grass, a desert `tree` cell
+won't pull an oak, and radially-symmetric rocks free-spin while trees keep a
+small upright wobble) and mapgen's clustering/edge/path passes will read LATER
+(phases 2–4). The fields (all optional; see `PropDef` in `props.ts`):
+`weight` (frequency within a kind, signature low / filler high) · `themes`
+(`ThemeTag[]` biomes it belongs to; undefined = universal) · `role`
+(`field`/`cluster`/`edge`/`understory`/`accent`) · `near`/`avoid`
+(`Affinity[]` adjacency hints) · `rotate` (`upright`/`free`/`flat`) ·
+`clusterWith` (companion prop ids for groves/beds). One-line example:
+
+```ts
+canopy: { kinds: ['tree'], weight: 0.2, themes: ['forest','plains'],
+          role: 'cluster', rotate: 'upright', clusterWith: ['fern','leaves','mushroom'] },
+```
+
+An UNTAGGED prop defaults to universal / `field` / `weight: 1` / `upright` — it
+still places, but leaving it untagged makes generation dumber (it never clumps,
+never prefers a theme, and competes evenly with signature props). The
+`AssetCatalog.test.ts` gate requires every scatterable prop to declare a `role`
+and a non-empty `themes`; the `?workshop=1` catalog surfaces all placement tags
+and the "copy TS snippet" emits them.
+
 **Variants are free.** Each archetype in `TERRAIN_PROPS` is automatically
 multiplied into seeded siblings (`variants()` in `props.ts`, riding
 `wonkPathD` in `authoring.ts`) — author ONE good silhouette and the registry
