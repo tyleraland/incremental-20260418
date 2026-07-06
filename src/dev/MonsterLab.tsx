@@ -22,6 +22,9 @@ import { TACTIC_REGISTRY } from '@/engine/tactics'
 import { ALL_ELEMENTS, type Element } from '@/engine/elements'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { BattleView } from '@/components/BattleView'
+import { getAppearance } from '@/render/appearance'
+import { TOKEN_SKINS, BATTLE_SKIN_IDS } from '@/render/skins'
+import type { Combatant } from '@/engine'
 import { seedSimBattle } from './simBattle'
 import {
   buildChangeReport,
@@ -190,6 +193,11 @@ export default function MonsterLab() {
             >↺ Reset this monster</button>
           </div>
 
+          {/* Asset viewer — the rendered token, live from the draft */}
+          <Section title="Appearance" hint="rendered battlefield token — reflects size, element & name live">
+            <AppearanceViewer def={draft} />
+          </Section>
+
           {/* Core + identity */}
           <Section title="Core">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -276,6 +284,87 @@ export default function MonsterLab() {
 
       {reportOpen && <ReportModal onClose={() => setReportOpen(false)} />}
       {simOpen && <BattleSim monsterId={selectedId} savedRoster={savedRoster.current ?? []} onClose={() => setSimOpen(false)} />}
+    </div>
+  )
+}
+
+// Asset viewer: draws the selected monster's real battlefield token through the
+// production render seam (`getAppearance` → `TOKEN_SKINS[skin]`), so it's exactly
+// what ships — no reimplementation. Reflects the LIVE draft: name → glyph, id →
+// body silhouette, element → rim tint, size → scale. Both skins, the key token
+// states, and a facing wheel (paper leans along heading; circle ignores facing).
+const FACINGS = [0, 45, 90, 135, 180, 225, 270, 315]
+const viewerDims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
+
+function AppearanceViewer({ def }: { def: MonsterDef }) {
+  // getAppearance takes a Combatant; only these fields are read (verified in
+  // appearance.ts), so a minimal cast is safe and routes through the real seam
+  // for the element tint + size scale (those helpers are module-private).
+  const a = useMemo(() => {
+    const fake = {
+      id: def.id, name: def.name, team: 'enemy',
+      alive: true, channel: undefined,
+      attackElement: 'neutral', armorElement: def.element,
+    } as unknown as Combatant
+    return getAppearance(fake, () => null)
+  }, [def.id, def.name, def.element, def.size])
+
+  const px = Math.round(60 * a.scale)
+  const states: { label: string; alive: boolean; facingDeg: number | null; moving: boolean; selected: boolean; simple: boolean }[] = [
+    { label: 'idle',     alive: true,  facingDeg: 0,    moving: false, selected: false, simple: false },
+    { label: 'moving',   alive: true,  facingDeg: 0,    moving: true,  selected: false, simple: false },
+    { label: 'selected', alive: true,  facingDeg: 0,    moving: false, selected: true,  simple: false },
+    { label: 'far LOD',  alive: true,  facingDeg: 0,    moving: false, selected: false, simple: true },
+    { label: 'KO',       alive: false, facingDeg: null, moving: false, selected: false, simple: false },
+  ]
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {BATTLE_SKIN_IDS.map((skin) => {
+          const Body = TOKEN_SKINS[skin]
+          return (
+            <div key={skin} className="rounded-lg border border-game-border bg-game-bg/60 p-3">
+              <div className="text-[10px] uppercase tracking-widest text-game-muted mb-3 capitalize">{skin}</div>
+              <div className="flex items-end justify-between gap-2">
+                {states.map((st) => (
+                  <div key={st.label} className="flex flex-col items-center gap-1.5">
+                    <div className="flex items-end justify-center" style={{ height: `${Math.round(60 * 1.35)}px` }}>
+                      <Body glyph={a.glyph} tone={a.tone} bodyShape={a.bodyShape} tint={a.tint} creature dims={viewerDims(px)}
+                        alive={st.alive} facingDeg={st.facingDeg} moving={st.moving} selected={st.selected} simple={st.simple} />
+                    </div>
+                    <span className="text-[9px] text-game-muted">{st.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Facing wheel — the paper skin rotates the silhouette to heading. */}
+      <div className="rounded-lg border border-game-border bg-game-bg/60 p-3">
+        <div className="text-[10px] uppercase tracking-widest text-game-muted mb-3">Facing · paper</div>
+        <div className="flex items-center justify-between gap-1 flex-wrap">
+          {FACINGS.map((deg) => {
+            const Body = TOKEN_SKINS.paper
+            return (
+              <div key={deg} className="flex flex-col items-center gap-1">
+                <Body glyph={a.glyph} tone={a.tone} bodyShape={a.bodyShape} tint={a.tint} creature alive selected={false} facingDeg={deg} dims={viewerDims(44)} />
+                <span className="text-[9px] text-game-muted tabular-nums">{deg}°</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Resolved descriptor — the values the render seam derived from the draft. */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-game-muted">
+        <span>shape <span className="font-mono text-game-text-dim">{a.bodyShape}</span></span>
+        <span>glyph <span className="font-mono text-game-text-dim">{a.glyph}</span></span>
+        <span>scale <span className="font-mono text-game-text-dim">{a.scale.toFixed(2)}× <span className="text-game-muted">({def.size})</span></span></span>
+        <span>rim tint <span className="font-mono text-game-text-dim">{a.tint ? def.element : 'none'}</span></span>
+      </div>
     </div>
   )
 }
