@@ -186,12 +186,21 @@ const SCATTER_DIALS = {
   clumpFalloff: 1.9,    // radial density falloff exponent (higher = tighter, denser core)
   clumpDensity: 0.7,    // burst attempts per centre ≈ radius² × this — the grove's fill effort
   understoryPerClump: 5, // bush/flower sprigs sprinkled just around each centre (`understory` intent)
+  // ── scatter-edges (verge lines along water + rock boundaries) ──
+  shoreDensity: 0.55,   // chance a placeable land-cell hugging the water gets a reed (0–1) — thins the shore line
+  edgeSpacing: 2.2,     // ≥1 reed per spacing² cell along the shore = min gap (world units); larger = airier verge
+  skirtDensity: 0.5,    // skirt samples per unit of a rock/hedge rect's PERIMETER — higher = denser vegetation ring
+  skirtInset: 0.6,      // how far outside a barrier's edge the skirt sits (world units) — hugs the base
+  skirtRockChance: 0.28,// fraction of skirt props that are pebble/shard 'rock' debris (the rest are grass 'flower')
+  skirtBudget: 0.5,     // fraction of the EDGE cap reserved for skirts before reeds fill the rest — so a long
+                        //   shoreline can't starve the outcrop verges (and few walls leave the surplus for reeds)
   // ── theme density + shared cap ──
   forestMult: 1.6,      // scatter density multiplier under the 'forest' theme (lush)
   desertMult: 0.4,      // ...under 'desert' (sparse)
   maxItems: 96,         // BASELINE total-item cap (× theme mult) — keeps a big map from exploding
   fillShare: 0.6,       // fraction of the cap scatter-fill may spend (clumps get the rest + slack)
   clumpShare: 0.55,     // fraction of the cap scatter-clumps may spend (fill + clump ≤ ~1.15× cap, bounded)
+  edgeShare: 0.35,      // fraction of the cap scatter-edges may spend (fill + clump + edge ≤ ~1.5× cap, bounded)
 }
 
 const r2 = (v: number) => Math.round(v * 100) / 100
@@ -337,6 +346,104 @@ const scatterClumpsPass = {
   },
 }
 
+// scatter-edges (§A layer 9, phase 3): EDGE features — props that hug a
+// BOUNDARY rather than filling area or clumping. Two boundaries, both placing
+// `intent: 'edge'` items on WALKABLE LAND just outside the feature:
+//   1. shoreline reeds — walkable SHORE cells (not water) adjacent to a water
+//      cell get a reed, spaced along the waterline (render resolves reed→reeds,
+//      an edge-role prop that renders near water). NB: hydrology rings every
+//      lake with a fat (~6-cell) sand beach, so the only walkable cell that ever
+//      touches water is that inner sand band — a pure grass "land cell adjacent
+//      to water" never exists here. Placing the reed line on the waterline sand
+//      is what actually hugs the shore (grass 6 cells inland would not); the
+//      predicate stays generator-agnostic ("walkable, non-water, touching
+//      water") so a future no-beach recipe drops reeds straight on grass.
+//   2. rock/hedge SKIRT — a verge ringing each outcrop WALL (material rock or
+//      hedge, never the deep-water/ravine cliffs): a grass tuft (`flower`) or
+//      occasional pebble (`rock`) at the base. NOT `bush`/`reed` — in the grass
+//      biome those resolve to `reeds` (edge role, near-water), which reads wrong
+//      at a dry rock base; `flower`/`rock` give the intended dry verge/debris.
+// One rng stream ('edges'); shares the item cap via `edgeShare` so fill+clump+
+// edge stay bounded near `scatterCap`.
+const scatterEdgesPass = {
+  id: 'scatter-edges',
+  run({ draft, params, rng, note }: PassCtx) {
+    const { size } = params
+    const mult = themeMult(params.themes)
+    const cap = Math.round(scatterCap(size, mult) * SCATTER_DIALS.edgeShare)
+    const r = rng('edges')
+    let placed = 0
+
+    // ── 1. rock / hedge skirt ───────────────────────────────────────────────
+    // Sample each outcrop WALL's perimeter, offset `skirtInset` outward onto the
+    // land at its base. Density scales with perimeter × `skirtDensity`. Skirts
+    // run BEFORE reeds: they're bounded by the (few) walls' perimeter, so taking
+    // their modest slice first keeps a long shoreline's reeds from starving them.
+    const walls = draft.collision.filter((c) => c.material === 'rock' || c.material === 'hedge')
+    const inset = SCATTER_DIALS.skirtInset
+    const skirtCap = Math.round(cap * SCATTER_DIALS.skirtBudget)
+    let skirts = 0
+    for (const rect of walls) {
+      if (placed >= skirtCap) break
+      const perim = 2 * (rect.w + rect.h)
+      const samples = Math.max(3, Math.round(perim * SCATTER_DIALS.skirtDensity))
+      for (let i = 0; i < samples && placed < skirtCap; i++) {
+        // Walk the perimeter; project the boundary point outward along its normal.
+        let t = (i / samples) * perim
+        let bx: number, by: number
+        if (t < rect.w) { bx = rect.x + t; by = rect.y - inset }
+        else if ((t -= rect.w) < rect.h) { bx = rect.x + rect.w + inset; by = rect.y + t }
+        else if ((t -= rect.h) < rect.w) { bx = rect.x + rect.w - t; by = rect.y + rect.h + inset }
+        else { t -= rect.w; bx = rect.x - inset; by = rect.y + rect.h - t }
+        const px = bx + r.range(-0.25, 0.25), py = by + r.range(-0.25, 0.25)
+        if (px < 1 || py < 1 || px > size - 1 || py > size - 1) continue
+        if (onWater(draft, px, py)) continue
+        if (!isPlaceable(draft, { x: px, y: py }, 0.2)) continue
+        const kind: ScatterKind = r.chance(SCATTER_DIALS.skirtRockChance) ? 'rock' : 'flower'
+        pushScatter(draft, px, py, kind, r, 'edge')
+        skirts++; placed++
+      }
+    }
+
+    // ── 2. shoreline reeds ──────────────────────────────────────────────────
+    // One reed per `edgeSpacing` cell along the waterline, thinned by
+    // `shoreDensity`. A walkable non-water cell qualifies when any of its 8
+    // neighbours is water — in this recipe that's the inner sand beach; the reed
+    // line then sits right on the waterline. Reeds fill the edge budget left
+    // after the skirts.
+    const spacing = SCATTER_DIALS.edgeSpacing
+    const spCols = Math.ceil(size / spacing)
+    const taken = new Set<number>()
+    let reeds = 0
+    shore: for (let y = 1; y < size - 1; y++) {
+      for (let x = 1; x < size - 1; x++) {
+        if (placed >= cap) break shore
+        const mat = matAt(draft, x, y)
+        if (mat === 'shallow-water' || mat === 'deep-water') continue
+        let onShore = false
+        for (let dy = -1; dy <= 1 && !onShore; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nm = matAt(draft, x + dx, y + dy)
+            if (nm === 'shallow-water' || nm === 'deep-water') { onShore = true; break }
+          }
+        }
+        if (!onShore) continue
+        const px = x + 0.5, py = y + 0.5
+        if (!isPlaceable(draft, { x: px, y: py }, 0.5)) continue
+        const key = Math.floor(py / spacing) * spCols + Math.floor(px / spacing)
+        if (taken.has(key)) continue
+        if (!r.chance(SCATTER_DIALS.shoreDensity)) continue
+        taken.add(key)
+        pushScatter(draft, px, py, 'reed', r, 'edge')
+        reeds++; placed++
+      }
+    }
+
+    note(`scatter-edges: ${reeds} shore reeds, ${skirts} skirt props (cap ${cap})`)
+    if (placed >= cap) note(`scatter-edges capped at ${cap}`)
+  },
+}
+
 function nearWater(draft: PassCtx['draft'], x: number, y: number): boolean {
   for (let dy = -2; dy <= 2; dy++) {
     for (let dx = -2; dx <= 2; dx++) {
@@ -381,5 +488,5 @@ export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
   description: 'Field-first open-world map: noise substrate → material bands → lake/ford + outcrops → scatter → POIs + tactical profile.',
-  passes: [surfacePass, hydrologyPass, outcropsPass, scatterFillPass, scatterClumpsPass, semanticPass, premisePass],
+  passes: [surfacePass, hydrologyPass, outcropsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
 }
