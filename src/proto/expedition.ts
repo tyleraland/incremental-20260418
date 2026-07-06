@@ -246,3 +246,32 @@ export function nearestCity(fromId: string | null, locations: Location[]): Locat
   }
   return cities[0] ?? null
 }
+
+// Hop distance (portal legs) from `fromId` to the nearest city, over the location
+// connection graph. 0 if already a city; a fallback constant if none is reachable.
+// Used to price the offline return-to-town trip (travel overhead per cycle).
+export function cityHops(fromId: string | null, locations: Location[]): number {
+  if (!fromId) return 1
+  const byId = new Map(locations.map((l) => [l.id, l]))
+  const start = byId.get(fromId)
+  if (!start) return 1
+  if (isCity(start)) return 0
+  const seen = new Set([fromId])
+  let frontier = [fromId]
+  let hops = 0
+  while (frontier.length) {
+    hops++
+    const next: string[] = []
+    for (const id of frontier) {
+      for (const c of byId.get(id)?.connections ?? []) {
+        if (seen.has(c)) continue
+        seen.add(c)
+        const cl = byId.get(c)
+        if (cl && isCity(cl)) return hops
+        next.push(c)
+      }
+    }
+    frontier = next
+  }
+  return 1
+}

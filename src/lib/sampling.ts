@@ -21,6 +21,12 @@ export interface SamplingConfig {
 
   // Off-screen live sim — unwatched locations while you watch one battle:
   offscreenCreditTicks: number  // credit rate-extrapolated rewards every this-many ticks
+
+  // Offline return-to-town loop (§logistics) — how the AFK cycle model prices a
+  // hunt→town→hunt round trip. Overhead per completed cycle = townDwell + 2×hops×travel.
+  // Conservative starting values; tune by feel in Time→Debug + the Offline simulator.
+  cycleTownDwellTicks: number    // deposit + restock dwell at town, per cycle
+  cycleTravelPerHopTicks: number // one-way travel per portal hop between hunt + town
 }
 
 export const SAMPLING: SamplingConfig = {
@@ -31,6 +37,8 @@ export const SAMPLING: SamplingConfig = {
   primeRoundCap: 300,
   primeMsBudget: 50,
   offscreenCreditTicks: 25, // ~5 s
+  cycleTownDwellTicks: 50,   // ~10 s (matches TOWN_RESUPPLY_TICKS)
+  cycleTravelPerHopTicks: 25, // ~5 s per hop each way
 }
 
 // Pristine copy of the shipped values, for a debug "reset" after live tuning.

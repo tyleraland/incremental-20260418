@@ -117,6 +117,87 @@ export function rollOfflineLoot(
   return loot
 }
 
+// ── Offline return-to-town loop (§logistics) ─────────────────────────────────--
+//
+// Live, a hero hunts until their pack fills (or supplies run dry), walks to town,
+// deposits loot into the stash, restocks supplies, and heads back — over and over.
+// Offline we can't run that per-round, so we EXTRAPOLATE the cycle: from the
+// realized kill/loot rate we know how fast a pack fills; each completed fill is one
+// return trip (deposit + restock + travel overhead) that doesn't hunt. Supplies are
+// a finite budget (carried + stash + what gold can buy), drained at the slice-
+// measured burn rate; when they run dry and the hero returns on 'supplies-out', the
+// run STALLS. The result feeds back into batchTick: effective hunt time (< absence
+// when travel/stalls eat into it), how much loot deposits to the stash vs. stays in
+// the carried pack, and supplies consumed. Pure arithmetic — this is how we model
+// "lots of combat + many town trips" cheaply, without simulating every round.
+
+export interface OfflineCycleParams {
+  offlineTicks: number          // the absence span for this party/location
+  lootWeightPerTick: number     // realized loot-weight accrual (party aggregate)
+  packCapacityWeight: number    // combined loot room across the hunting party
+  fillFraction: number          // return at this fraction of capacity (PACK_FULL_FRACTION)
+  overheadTicks: number         // travel + town dwell per completed return trip
+  supplyBurnPerTick: number     // slice-measured potion burn (0 → supplies never gate)
+  supplyBudget: number          // potions the party can field before running dry (stash + gold-buyable)
+  stallOnDry: boolean           // hero returns on 'supplies-out' → a dry run stops hunting
+}
+
+export interface OfflineCycleResult {
+  huntTicks: number             // effective ticks actually hunting (≤ offlineTicks)
+  cycles: number                // completed return trips (each deposits a full pack-load)
+  depositWeight: number         // loot weight deposited to the stash across all trips
+  residualWeight: number        // loot weight still carried (the last, partial fill)
+  supplyUsed: number            // potions consumed over the absence
+  stalled: boolean              // ran dry on supplies and couldn't continue
+}
+
+// Extrapolate the hunt→town→hunt loop over an absence. Deterministic; no RNG.
+export function projectOfflineCycles(p: OfflineCycleParams): OfflineCycleResult {
+  const N = p.offlineTicks
+  const empty: OfflineCycleResult = { huntTicks: 0, cycles: 0, depositWeight: 0, residualWeight: 0, supplyUsed: 0, stalled: false }
+  if (N <= 0) return empty
+
+  const fillWeight = Math.max(0, p.fillFraction * p.packCapacityWeight)
+  // Ticks to fill one pack-load; Infinity when there's no loot pressure or no room
+  // (the hero just hunts the whole time and never triggers a return).
+  const tFill = (p.lootWeightPerTick > 0 && fillWeight > 0) ? fillWeight / p.lootWeightPerTick : Infinity
+  const overhead = Math.max(0, p.overheadTicks)
+  const burn = Math.max(0, p.supplyBurnPerTick)
+
+  let remaining = N, hunt = 0, cycles = 0, supply = Math.max(0, p.supplyBudget), stalled = false
+  let guard = 0
+  while (remaining > 1e-9 && guard++ < 100_000) {
+    // Already dry at the start of a leg → stall if the hero returns on 'supplies-out',
+    // else fight on without potions (burn no longer bites).
+    if (burn > 0 && supply <= 1e-9 && p.stallOnDry) { stalled = true; break }
+    // A hunting leg runs until the pack fills, time runs out, or supplies dry.
+    const supplyTicks = (burn > 0 && supply > 1e-9) ? supply / burn : Infinity
+    const leg = Math.min(tFill, remaining, supplyTicks)
+    if (leg <= 1e-9) break
+    const rBefore = remaining
+    hunt += leg
+    remaining -= leg
+    supply = Math.max(0, supply - leg * burn)
+    if (leg >= tFill - 1e-9) {
+      // Filled a pack → a return trip. Even if the trip runs past the end of the
+      // absence, the hero still made it home and deposited (no idling in the field).
+      cycles++
+      remaining -= overhead
+    } else if (leg >= rBefore - 1e-9) {
+      break   // ran out of clock mid-fill → partial pack, done
+    } else {
+      // Cut short by supplies: stall if configured, else fight on with no potions.
+      if (p.stallOnDry) { stalled = true; break }
+      supply = 0
+    }
+  }
+
+  const totalWeight = hunt * p.lootWeightPerTick
+  const depositWeight = Math.min(totalWeight, cycles * fillWeight)
+  const residualWeight = Math.max(0, totalWeight - depositWeight)
+  return { huntTicks: hunt, cycles, depositWeight, residualWeight, supplyUsed: Math.max(0, p.supplyBudget - supply), stalled }
+}
+
 // ── "While you were away" summary (surfaced as a modal on next load) ──────────
 
 export interface OfflineLocationReward {
@@ -127,6 +208,9 @@ export interface OfflineLocationReward {
   gold: number
   loot: Record<string, number>   // itemId → qty
   primed: boolean                // true if a cold location was primed (Phase 2)
+  // §logistics return-to-town loop (when the party runs the cycle model offline):
+  cycles?: number                // completed hunt→town trips (loot deposited to stash)
+  stalled?: boolean              // a hero ran out of supplies and couldn't resupply
   // Per-hero combat breakdown for the away span (battle-report AFK detail):
   // damage, hits/misses, element & effectiveness maps, etc. Estimated from the
   // simulated slices, scaled over the absence. Empty for sub-minute blips.
@@ -155,6 +239,8 @@ export interface CatchUpLocation {
   kills: number
   exp: number
   gold: number
+  cycles?: number   // §logistics return-to-town trips modelled this catch-up
+  stalled?: boolean // a hero ran dry on supplies
 }
 
 export interface CatchUpDebug {

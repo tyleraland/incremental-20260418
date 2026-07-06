@@ -10,15 +10,15 @@ import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
-import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
+import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, projectOfflineCycles, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
 import { SAMPLING } from '@/lib/sampling'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
 import { consumableDef, isConsumable } from '@/data/consumables'
-import { type Pack, heroRoom, itemWeight } from '@/proto/economy'
+import { type Pack, heroRoom, itemWeight, packWeight, PACK_FULL_FRACTION } from '@/proto/economy'
 import {
-  freshHero, loadoutFromPack, newSupplyEntry,
+  freshHero, loadoutFromPack, newSupplyEntry, cityHops,
   type HeroExpedition, type Loadout, type LootCategory, type ReturnConditionId,
   type ReturnModeId, type SupplyModeId, type ShareFlag,
 } from '@/proto/expedition'
@@ -783,6 +783,11 @@ interface PrimeResult {
   gold: number
   killsByMonster: Record<string, number>
   loot: Record<string, number>
+  // §logistics: potions the party actually spent over the simulated slice — the
+  // engine drains Combatant.pack as it uses consumables, so this is a REAL burn
+  // measurement (0 if nobody carries/uses potions). batchTick derives a per-tick
+  // burn rate from this to price the offline supply drain.
+  supplyUsed: number
   // Rich per-hero combat breakdown harvested from the simulated rounds (damage,
   // hits, element/effectiveness, etc.) — already scaled to the projection span by
   // the sampled path; the cold path returns its raw slice for the caller to scale.
@@ -826,12 +831,22 @@ function trickleField(battle: BattleState, loc: Location, spawnTimer: number): n
 // prime (one slice) and the sampled projection (one per window).
 function runCombatSlice(
   battle: BattleState, loc: Location, roundCap: number, msBudget: number, rng: () => number = Math.random,
-): { killsByMonster: Record<string, number>; loot: Record<string, number>; rounds: number; tally: Record<string, CombatTally> } {
+): { killsByMonster: Record<string, number>; loot: Record<string, number>; rounds: number; supplyUsed: number; tally: Record<string, CombatTally> } {
   const wantOpen = !!loc.openWorld
   const killsByMonster: Record<string, number> = {}
   const loot: Record<string, number> = {}
   const tally: Record<string, CombatTally> = {}
   const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+  // §logistics burn measurement: snapshot each player's carried consumables at first
+  // sight; the engine drains Combatant.pack as it uses them, so the end-of-slice diff
+  // is the real potions spent. Handles open-world joiners (captured when they appear).
+  const packInit: Record<string, Record<string, number>> = {}
+  const snapPack = (c: Combatant): Record<string, number> => {
+    const m: Record<string, number> = {}
+    for (const [id, n] of Object.entries(c.pack ?? {})) if (isConsumable(id)) m[id] = n
+    return m
+  }
+  for (const c of battle.combatants) if (c.team === 'player') packInit[c.id] = snapPack(c)
   let rounds = 0
   let spawnTimer = OPEN_WORLD_SPAWN_TICKS   // local mirror of the live trickle cadence
   const started = Date.now()
@@ -847,7 +862,10 @@ function runCombatSlice(
     rounds++
     // Harvest this round's rich per-hero breakdown (open-world heroes can join
     // mid-slice via respawn reconciliation, so re-derive ids defensively).
-    for (const c of battle.combatants) if (c.team === 'player') playerIds.add(c.id)
+    for (const c of battle.combatants) if (c.team === 'player') {
+      playerIds.add(c.id)
+      if (!(c.id in packInit)) packInit[c.id] = snapPack(c)   // capture a joiner's initial supplies
+    }
     foldRoundEvents(tally, battle.events, battle.round, playerIds)
     // Who landed each killing blow this round (the live path credits kills via
     // rewardKills; the offline slice has to read them off the death events).
@@ -878,7 +896,18 @@ function runCombatSlice(
     }
   }
 
-  return { killsByMonster, loot, rounds, tally }
+  // Potions spent = Σ (initial − final) over each player's consumables (clamped ≥0).
+  let supplyUsed = 0
+  const finalById = new Map(battle.combatants.filter((c) => c.team === 'player').map((c) => [c.id, c]))
+  for (const [id, init] of Object.entries(packInit)) {
+    const c = finalById.get(id)
+    for (const [item, n0] of Object.entries(init)) {
+      const n1 = c?.pack?.[item] ?? 0
+      if (n0 > n1) supplyUsed += n0 - n1
+    }
+  }
+
+  return { killsByMonster, loot, rounds, supplyUsed, tally }
 }
 
 function primeColdLocation(
@@ -886,9 +915,9 @@ function primeColdLocation(
   existing: BattleState | undefined,
 ): PrimeResult {
   const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
-  const { killsByMonster, loot, rounds, tally } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
+  const { killsByMonster, loot, rounds, supplyUsed, tally } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
   const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
-  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot, tally }
+  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot, supplyUsed, tally }
 }
 
 // Sum per-hero tally deltas across many slices (each pre-scaled to its window).
@@ -938,11 +967,13 @@ export function projectOfflineSampled(
   const killsByMonster: Record<string, number> = {}
   const tally: Record<string, CombatTally> = {}
   let simTicks = 0
+  let supplyUsed = 0
   for (let w = 0; w < K; w++) {
     opts.prepareWindow?.(battle, w, Math.round(opts.startTick + w * windowTicks))
     const slice = runCombatSlice(battle, loc, roundCap, msBudget, rng)
     const sliceTicks = Math.max(1, slice.rounds * ROUND_EVERY_TICKS)
     simTicks += sliceTicks
+    supplyUsed += slice.supplyUsed
     const factor = windowTicks / sliceTicks
     const windowKills = scaleKills(slice.killsByMonster, factor)
     for (const [mid, k] of Object.entries(windowKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
@@ -957,7 +988,39 @@ export function projectOfflineSampled(
   }
 
   const totalKills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
-  return { battle, primedTicks: simTicks, exp: totalKills, gold: totalKills, killsByMonster, loot: rollOfflineLoot(killsByMonster, rng), tally }
+  return { battle, primedTicks: simTicks, exp: totalKills, gold: totalKills, killsByMonster, loot: rollOfflineLoot(killsByMonster, rng), supplyUsed, tally }
+}
+
+// §logistics: average gold price of one restock potion offline (a hero buys the
+// supplies they can't pull from the guild stash). Rough — tune by feel.
+const OFFLINE_RESTOCK_PRICE = 12
+
+// Deposit the last, partial pack-load a party carried home short of a full trip into
+// their real per-hero packs — least-full hero first, capped by each hero's remaining
+// weight room, so nobody exceeds capacity. Mutates `dst[unitId][itemId]`. Overflow
+// (rare — residual ≤ one pack-load ≤ party room) is dropped on the ground.
+function distributeResidualInto(
+  dst: Record<string, Record<string, number>>,
+  residual: Record<string, number>,
+  hunters: { id: string; room: number }[],
+): void {
+  const room = new Map(hunters.map((h) => [h.id, h.room]))
+  for (const [itemId, qty] of Object.entries(residual)) {
+    const w = itemWeight(itemId)
+    let left = qty
+    // Refill the least-full hero first each item, so residual spreads evenly.
+    const order = [...hunters].sort((a, b) => (room.get(b.id) ?? 0) - (room.get(a.id) ?? 0))
+    for (const h of order) {
+      if (left <= 0) break
+      const fits = Math.floor((room.get(h.id) ?? 0) / w)
+      const take = Math.min(left, fits)
+      if (take <= 0) continue
+      const bag = dst[h.id] ?? (dst[h.id] = {})
+      bag[itemId] = (bag[itemId] ?? 0) + take
+      room.set(h.id, (room.get(h.id) ?? 0) - take * w)
+      left -= take
+    }
+  }
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -1811,6 +1874,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     const detailByUnit: Record<string, CombatTally> = {}
     const wantBreakdown = Math.round(n / TICKS_PER_SECOND) >= OFFLINE_SUMMARY_MIN_SECS
 
+    // §logistics offline loop: residual loot to fold back into per-hero packs, plus
+    // running guild resources the return-to-town restock draws down (shared across
+    // every location's party in this catch-up — one stash, one purse).
+    const packAdd: Record<string, Record<string, number>> = {}
+    let goldLeft = s.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0
+    const stashCons = s.miscItems.filter((m) => isConsumable(m.id)).map((m) => ({ id: m.id, qty: m.quantity }))
+    let consumablePoolLeft = stashCons.reduce((a, m) => a + m.qty, 0)
+
     for (const loc of s.locations) {
       if (loc.monsterIds.length === 0) continue
       const assigned = s.units.filter((u) => u.locationId === loc.id)
@@ -1818,6 +1889,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       const roster = assigned.filter((u) => u.health > 0)   // bodies able to fight (priming)
 
       let expPool = 0, gold = 0, primed = false, simRounds = 0
+      let simTicks = 0, simSupplyUsed = 0   // §logistics: sim span + measured potion burn (for the cycle model)
       const killsByMonster: Record<string, number> = {}
       let loot: Record<string, number> = {}
       // Rich per-hero breakdown for this location's away span (estimated, scaled).
@@ -1833,6 +1905,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         const r = projectOfflineSampled(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id], n, { samples: windows, startTick: s.ticks })
         battles[loc.id] = r.battle
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
+        simTicks = r.primedTicks; simSupplyUsed = r.supplyUsed
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
         locTally = r.tally   // already scaled across windows
@@ -1854,6 +1927,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         const r = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id])
         battles[loc.id] = r.battle
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
+        simTicks = n; simSupplyUsed = r.supplyUsed * (n / Math.max(1, r.primedTicks))   // burn rate → full span
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
         locTally = scaleTallyMap(r.tally, n / Math.max(1, r.primedTicks))   // prime slice → full span
@@ -1873,6 +1947,69 @@ export const useGameStore = create<GameState>((set, get) => ({
         continue   // no sample and nobody able to fight → nothing to prime
       }
 
+      // §logistics: model the return-to-town loop for a party running expeditions
+      // here. Ineligible parties (no plan / no room / no loot) keep the legacy path —
+      // all loot mails straight to the stash, full hunt time, no trips.
+      let stashLoot = loot
+      let cycles = 0, stalled = false
+      {
+        const hunters = roster.filter((u) => {
+          const he = s.expeditions[u.id]
+          return !!he && (he.returnOn.includes('pack-full') || he.returnOn.includes('supplies-out'))
+        })
+        const lootWeight = Object.entries(loot).reduce((a, [id, q]) => a + itemWeight(id) * q, 0)
+        const roomOf = (u: Unit) => heroRoom(s.packs[u.id], u.pack)
+        const capacityWeight = hunters.reduce((a, u) => a + roomOf(u), 0)
+        if (!!loc.openWorld && hunters.length > 0 && capacityWeight > 0 && lootWeight > 0) {
+          const burnPerTick = simTicks > 0 ? simSupplyUsed / simTicks : 0
+          const supplyBudget = consumablePoolLeft + Math.floor(goldLeft / OFFLINE_RESTOCK_PRICE)
+          const overhead = SAMPLING.cycleTownDwellTicks + 2 * cityHops(loc.id, s.locations) * SAMPLING.cycleTravelPerHopTicks
+          const cyc = projectOfflineCycles({
+            offlineTicks: n, lootWeightPerTick: lootWeight / n, packCapacityWeight: capacityWeight,
+            fillFraction: PACK_FULL_FRACTION, overheadTicks: overhead, supplyBurnPerTick: burnPerTick,
+            supplyBudget, stallOnDry: hunters.some((u) => s.expeditions[u.id]!.returnOn.includes('supplies-out')),
+          })
+          cycles = cyc.cycles; stalled = cyc.stalled
+          const huntFraction = Math.min(1, cyc.huntTicks / n)
+          // Scale kills + found loot down to the effective hunt time (travel + stalls
+          // eat the rest of the absence).
+          for (const mid of Object.keys(killsByMonster)) {
+            const v = Math.floor(killsByMonster[mid] * huntFraction)
+            if (v > 0) killsByMonster[mid] = v; else delete killsByMonster[mid]
+          }
+          const found: Record<string, number> = {}
+          for (const [id, q] of Object.entries(loot)) { const v = Math.floor(q * huntFraction); if (v > 0) found[id] = v }
+          loot = found
+          // Split found loot into deposited (→ stash) vs residual (still carried) by weight.
+          const totalW = cyc.depositWeight + cyc.residualWeight
+          const depositFraction = totalW > 0 ? cyc.depositWeight / totalW : 1
+          const deposited: Record<string, number> = {}
+          const residual: Record<string, number> = {}
+          for (const [id, q] of Object.entries(found)) {
+            const dep = Math.min(q, Math.round(q * depositFraction))
+            if (dep > 0) deposited[id] = dep
+            if (q - dep > 0) residual[id] = q - dep
+          }
+          stashLoot = deposited
+          distributeResidualInto(packAdd, residual, hunters.map((u) => ({ id: u.id, room: roomOf(u) })))
+          // Restock: draw the potions spent from the guild stash first, buy the rest
+          // with gold — decrementing the running guild resources + recording deltas.
+          const spent = Math.round(Math.min(cyc.supplyUsed, supplyBudget))
+          const fromStash = Math.min(spent, consumablePoolLeft)
+          let draw = fromStash
+          for (const m of stashCons) {
+            if (draw <= 0) break
+            const take = Math.min(m.qty, draw)
+            if (take <= 0) continue
+            m.qty -= take; draw -= take
+            lootDelta[m.id] = (lootDelta[m.id] ?? 0) - take
+          }
+          consumablePoolLeft -= fromStash
+          const goldSpent = Math.min(goldLeft, (spent - fromStash) * OFFLINE_RESTOCK_PRICE)
+          if (goldSpent > 0) { lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) - goldSpent; goldLeft -= goldSpent }
+        }
+      }
+
       // Every kill yields exactly 1 gold + 1 exp, so the headline numbers are the
       // kill total — derived here so independent per-path flooring (per-monster
       // kills vs aggregate gold/exp) can't drift them apart in the report.
@@ -1881,7 +2018,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       gold    = kills
       // Record cost/output for the debug readout (even a zero-output prime — its
       // sim rounds still cost something worth seeing).
-      catchUpDebug.push({ locationId: loc.id, locationName: loc.name, windows, rounds: simRounds, kills, exp: expPool, gold })
+      catchUpDebug.push({ locationId: loc.id, locationName: loc.name, windows, rounds: simRounds, kills, exp: expPool, gold, cycles, stalled })
       if (kills === 0) continue
 
       // Credit the XP pool to deployed heroes, split proportional to level (a
@@ -1889,7 +2026,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       const shares = splitExpByLevel(expPool, assigned.map((u) => ({ id: u.id, level: u.level })))
       for (const [id, amt] of Object.entries(shares)) expByUnit[id] = (expByUnit[id] ?? 0) + amt
       totalGold += gold
-      for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
+      // Only the DEPOSITED loot changes the stash; residual stays in the carried packs.
+      for (const [id, q] of Object.entries(stashLoot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
       for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
 
       // Reconcile the estimated breakdown with the actually-credited numbers:
@@ -1918,7 +2056,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
       mergeTally(detailByUnit, locTally)
 
-      rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot, primed, tally: locTally })
+      // Summary shows what actually reached the stash (deposited); residual stays carried.
+      rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot: stashLoot, primed, cycles, stalled, tally: locTally })
     }
 
     // §gold: offline combat, like live combat, no longer credits gold — see the
@@ -1982,6 +2121,20 @@ export const useGameStore = create<GameState>((set, get) => ({
       ? applyMiscDeltas(s.miscItems, lootDelta)
       : s.miscItems
 
+    // §logistics: fold the residual carried loot from the return-to-town loop into
+    // each hero's persisted pack (they came home mid-fill on the last trip).
+    const packs = Object.keys(packAdd).length > 0
+      ? (() => {
+          const out = { ...s.packs }
+          for (const [uid, bag] of Object.entries(packAdd)) {
+            const cur = { ...(out[uid] ?? {}) }
+            for (const [id, q] of Object.entries(bag)) cur[id] = (cur[id] ?? 0) + q
+            out[uid] = cur
+          }
+          return out
+        })()
+      : s.packs
+
     // "While you were away" modal — only worth showing for a real absence with
     // something to report. Otherwise keep whatever summary was already pending.
     const mergedLoot: Record<string, number> = {}
@@ -2003,7 +2156,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     return {
       ticks: newTicks, units, lastTickAt: Date.now(), eventLog,
-      miscItems, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
+      miscItems, packs, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
       unitStats: foldUnitStats(s.unitStats, detailByUnit),
       // Offline damage is a SYNTHETIC estimate (a saturated priming sim, scaled over
       // the absence) — fine for lifetime totals + the "while you were away" summary,

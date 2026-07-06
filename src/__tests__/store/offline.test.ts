@@ -6,6 +6,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore, getLocationCombatReport, projectOfflineSampled } from '@/stores/useGameStore'
 import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills } from '@/lib/offline'
 import type { Location, LocationCombatStats } from '@/types'
+import { freshHero } from '@/proto/expedition'
 import { makeUnit, resetStore, batchTick } from '../helpers'
 
 const FIELD = (overrides: Partial<Location> = {}): Location => ({
@@ -340,5 +341,71 @@ describe('batchTick — cold priming (Phase 2)', () => {
     expect(st.battles.field).toBeDefined()                   // primed battle settled & kept
     expect(st.locationStats.field).toBeDefined()             // a sample now exists
     expect(st.offlineSummary?.locations[0]).toMatchObject({ primed: true })
+  })
+})
+
+// §logistics: with an expedition plan, offline catch-up runs the return-to-town
+// loop — completed pack-loads deposit to the stash, the last partial fill stays in
+// the carried pack, and yield is capped by travel time. Without a plan, the legacy
+// path (all loot → stash, no trips) is preserved.
+describe('batchTick — return-to-town loop', () => {
+  beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
+  afterEach(() => vi.restoreAllMocks())
+
+  it('carries all the loot when the pack never fills (no trips, nothing deposited)', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [OPEN(['slime'], 4)],
+      locationStats: { field: STATS() },                       // warm rate: 100 kills / 1000-tick window
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [],
+      // Empty pack (full 1000-wt room) → 100 gel (800 wt) never hits the 90% mark → no return.
+      expeditions: { u0: freshHero() },                        // returnOn: ['pack-full']
+    })
+    batchTick(1000)
+
+    const st = useGameStore.getState()
+    expect(st.lastCatchUp!.locations.find((l) => l.locationId === 'field')!.cycles ?? 0).toBe(0)
+    expect(st.packs.u0['drop-slime-gel']).toBe(100)            // all loot carried, none deposited
+    expect(st.miscItems.find((m) => m.id === 'drop-slime-gel')).toBeUndefined()
+  })
+
+  it('deposits pack-loads to the stash and records trips once the pack fills', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [OPEN(['slime'], 4)],
+      locationStats: { field: STATS() },
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [{ id: 'm-gold', name: 'Gold', quantity: 500 }],
+      packs: { u0: { 'drop-boar-hide': 30 } },                 // 900 wt carried → only ~100 wt of room
+      expeditions: { u0: freshHero() },
+    })
+    batchTick(1000)
+
+    const st = useGameStore.getState()
+    const cu = st.lastCatchUp!.locations.find((l) => l.locationId === 'field')!
+    expect(cu.cycles ?? 0).toBeGreaterThan(0)                  // made town trips
+    const deposited = st.miscItems.find((m) => m.id === 'drop-slime-gel')?.quantity ?? 0
+    const residual = st.packs.u0?.['drop-slime-gel'] ?? 0
+    expect(deposited).toBeGreaterThan(0)                       // loot reached the stash
+    expect(deposited + residual).toBeLessThan(100)             // travel overhead reduced total yield
+    expect(st.packs.u0['drop-boar-hide']).toBe(30)             // pre-existing carry untouched
+  })
+
+  it('a party with no expedition plan keeps the legacy path (all loot → stash, no trips)', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [OPEN(['slime'], 4)],
+      locationStats: { field: STATS() },
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [],
+      // no expeditions → ineligible for the cycle model
+    })
+    batchTick(1000)
+
+    const st = useGameStore.getState()
+    expect(st.miscItems.find((m) => m.id === 'drop-slime-gel')?.quantity).toBe(100)  // all 100 deposited
+    expect(st.packs.u0).toBeUndefined()                                              // nothing carried
+    expect(st.lastCatchUp!.locations.find((l) => l.locationId === 'field')!.cycles ?? 0).toBe(0)
   })
 })

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR, type LogCategory } from '@/stores/useGameStore'
 import { exportSave, importSave, persistSave, switchProgressionMode } from '@/save'
-import { CatchUpReadout, SamplingControls } from '@/components/SamplingDebug'
+import { CatchUpReadout, SamplingControls, OfflineSimulator } from '@/components/SamplingDebug'
 
 function ResetSaveButton() {
   const resetSave = useGameStore((s) => s.resetSave)
@@ -399,6 +399,9 @@ export function Time() {
         )}
         <div className="pt-2 border-t border-game-border/40">
           <CatchUpReadout />
+        </div>
+        <div className="pt-2 border-t border-game-border/40">
+          <OfflineSimulator />
         </div>
         <div className="pt-2 border-t border-game-border/40">
           <SamplingControls />
