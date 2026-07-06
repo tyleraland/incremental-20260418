@@ -23,13 +23,13 @@ import type { Barrier } from '@/engine'
 // surface — including the §mapgen vocabulary (washes, scatter-kind mapping,
 // one generated field swatch).
 
-const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider']
-const CREATURES: BodyShape[] = ['blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider']
+const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic']
+const CREATURES: BodyShape[] = ['blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic']
 const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
 const WEAPONS: Weapon[] = ['sword', 'dagger', 'bow', 'staff']
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
 const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-up
-const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'BO', flyer: 'HA', snail: 'SN', serpent: 'RS', canine: 'WO', fearrow: 'FA', crampRat: 'CR', mandragora: 'MD', spider: 'SP' }
+const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'BO', flyer: 'HA', snail: 'SN', serpent: 'RS', canine: 'WO', fearrow: 'FA', crampRat: 'CR', mandragora: 'MD', spider: 'SP', mimic: 'MI' }
 
 const dims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
 
