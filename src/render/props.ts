@@ -173,7 +173,7 @@ const PROP_META: Record<string, PropPlacement> = {
   bush:     { kinds: ['tree', 'bush'], weight: 0.8, themes: ['plains', 'forest'], role: 'cluster', rotate: 'upright', near: ['tree'] },
   pebble:   { kinds: ['rock'], weight: 0.8, themes: ['plains', 'forest', 'mountain', 'beach'], role: 'field', rotate: 'free', near: ['wall', 'rock'] },
   bloom:    { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['flowers', 'tuft'] },
-  stump:    { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'] },
+  stump:    { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'upright', near: ['tree'] },
   mushroom: { kinds: ['flower', 'bush'], weight: 0.5, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
   reeds:    { kinds: ['reed', 'bush'], weight: 0.8, themes: ['water', 'beach'], role: 'edge', rotate: 'upright', near: ['water'] },
   log:      { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'] },
@@ -182,7 +182,7 @@ const PROP_META: Record<string, PropPlacement> = {
   // forest (from the inked top-down forest sheet)
   canopy:   { kinds: ['tree'], weight: 0.2, themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright', near: ['tree'], clusterWith: ['fern', 'leaves', 'mushroom'] },
   fern:     { kinds: ['bush', 'flower'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
-  boulder:  { kinds: ['rock'], weight: 0.25, themes: ['mountain', 'forest', 'plains'], role: 'accent', rotate: 'free', near: ['wall', 'rock'] },
+  boulder:  { kinds: ['rock'], weight: 0.25, themes: ['mountain', 'forest', 'plains'], role: 'accent', rotate: 'upright', near: ['wall', 'rock'] },
   flowers:  { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['bloom', 'tuft'] },
   // ── stone biome (dungeon / ruins) ──
   rubble:   { kinds: ['stump', 'rock'], weight: 1, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'free', near: ['wall'] },
@@ -190,11 +190,11 @@ const PROP_META: Record<string, PropPlacement> = {
   shard:    { kinds: ['rock'], weight: 0.8, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['rock', 'wall'] },
   bone:     { kinds: ['flower'], weight: 0.5, themes: ['dungeon', 'ruins', 'haunted'], role: 'field', rotate: 'free' },
   pillar:   { kinds: ['tree', 'stump'], weight: 0.4, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'] },
-  skull:    { kinds: ['flower', 'rock'], weight: 0.3, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'free' },
+  skull:    { kinds: ['flower', 'rock'], weight: 0.3, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'upright' },
   spikes:   { kinds: ['tree'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright' },
   moss:     { kinds: ['bush'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'edge', rotate: 'flat', near: ['wall'] },
   column:   { kinds: ['tree', 'stump'], weight: 0.3, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'] },
-  bricks:   { kinds: ['rock', 'stump'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'free', near: ['wall'] },
+  bricks:   { kinds: ['rock', 'stump'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'upright', near: ['wall'] },
   gravel:   { kinds: ['rock'], weight: 1, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['path', 'wall'] },
   cobweb:   { kinds: ['flower', 'bush'], weight: 0.4, themes: ['dungeon', 'ruins', 'haunted'], role: 'edge', rotate: 'flat', near: ['wall'] },
   // ── plaza biome (city market clutter fills the generic ground kinds) ──
@@ -206,8 +206,8 @@ const PROP_META: Record<string, PropPlacement> = {
   signpost: { kinds: ['tree'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'upright', near: ['path'] },
   coil:     { kinds: ['reed', 'rock'], weight: 0.5, themes: ['city'], role: 'field', rotate: 'free', near: ['wall'] },
   conifer:  { kinds: ['tree'], weight: 0.4, themes: ['city', 'mountain', 'forest'], role: 'cluster', rotate: 'upright', near: ['path'] },
-  cobbles:  { kinds: ['rock', 'stump'], weight: 0.9, themes: ['city'], role: 'edge', rotate: 'free', near: ['path'] },
-  flagstone:{ kinds: ['stump', 'rock'], weight: 0.8, themes: ['city'], role: 'edge', rotate: 'free', near: ['path'] },
+  cobbles:  { kinds: ['rock', 'stump'], weight: 0.9, themes: ['city'], role: 'edge', rotate: 'upright', near: ['path'] },
+  flagstone:{ kinds: ['stump', 'rock'], weight: 0.8, themes: ['city'], role: 'edge', rotate: 'upright', near: ['path'] },
   // decor-ring assets: placed by the plaza landmark ring, not scatter (no
   // placement tags needed — empty kinds keeps them off the scatter placer)
   lamppost: { kinds: [] },
