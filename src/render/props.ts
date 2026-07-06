@@ -1,7 +1,7 @@
 import type { Biome } from '@/render/appearance'
 import type { ScatterKind } from '@/mapgen'
 import type { PaperRole } from '@/render/palette'
-import { hashString, wonkPathD } from '@/render/authoring'
+import { hashString, wonkPathD, blobPath, type Pt } from '@/render/authoring'
 
 // ── Prop assets as data ──────────────────────────────────────────────────────
 //
@@ -86,6 +86,11 @@ const PROP_META: Record<string, Pick<PropDef, 'kinds' | 'playerSelectable' | 'ta
   mushroom: { kinds: ['flower', 'bush'] },
   reeds:    { kinds: ['reed', 'bush'] },
   log:      { kinds: ['stump'] },
+  // forest (from the inked top-down forest sheet)
+  canopy:   { kinds: ['tree'] },
+  fern:     { kinds: ['bush', 'flower'] },
+  boulder:  { kinds: ['rock'] },
+  flowers:  { kinds: ['flower'] },
   // stone
   rubble:   { kinds: ['stump', 'rock'] },
   crack:    { kinds: ['reed', 'rock'] },
@@ -146,6 +151,23 @@ const CONIFER_OUT = starPath(9, 0.92, 0.44, 0.2)
 const CONIFER_IN = starPath(9, 0.66, 0.3, 0.2)
 const BANNER_D = 'M0.02 -0.52L0.44 -0.46L0.5 0.5L0.12 0.56Z'
 
+// Deterministic rounded-LOBE ring (a top-down deciduous crown / cauliflower
+// bush): `n` lobes alternating outer radius `ro` / valley `ri`, smoothed by
+// blobPath. Trig only, no Math.random — a static path that wonks + variants
+// like any hand-authored prop, the leafy round-tree counterpart to starPath's
+// spiky conifer crown.
+function lobeRing(n: number, ro: number, ri: number, cx = 0, cy = 0): Pt[] {
+  const pts: Pt[] = []
+  for (let i = 0; i < n * 2; i++) {
+    const a = (i / (n * 2)) * Math.PI * 2
+    const r = i % 2 ? ri : ro
+    pts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r })
+  }
+  return pts
+}
+const CANOPY_D = blobPath(lobeRing(7, 0.82, 0.6, 0, -0.06))
+const BOULDER_D = 'M-0.6 0.12C-0.64 -0.22 -0.34 -0.5 0.02 -0.52C0.4 -0.54 0.66 -0.28 0.64 0.04C0.62 0.34 0.36 0.5 0.02 0.5C-0.32 0.5 -0.56 0.42 -0.6 0.12Z'
+
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
   grass: withVariants([
     { id: 'tuft', size: 0.9, paths: [
@@ -173,6 +195,35 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     { id: 'log', size: 1.1, paths: [
       ...cutout(LOG_D, 'woodDeep', 'wood'),
       { d: 'M-0.85 0.07A0.12 0.23 0 1 0 -0.61 0.07A0.12 0.23 0 1 0 -0.85 0.07Z', fill: 'woodLight' },
+    ] },
+    // top-down deciduous CANOPY (the big round leafy trees on the sheet): a
+    // two-tone lobed crown over a soft ground shadow, a few dark lobe clefts for
+    // the broccoli read, and one lit sun-clump up-left. The forest's marquee prop.
+    { id: 'canopy', size: 1.3, wonk: 0.05, paths: [
+      { d: 'M0.12 0.66A0.6 0.3 0 1 0 0.14 0.7Z', fill: 'shadow', opacity: 0.22 },
+      ...cutout(CANOPY_D, 'foliage', 'mossBase'),
+      { d: 'M0 -0.06L-0.34 -0.42M0 -0.06L0.34 -0.34M0 -0.06L0.42 0.12M0 -0.06L-0.06 0.44M0 -0.06L-0.44 0.06', stroke: 'foliageDeep', sw: 0.05, opacity: 0.6 },
+      { d: 'M-0.44 -0.3A0.2 0.2 0 1 0 -0.04 -0.3A0.2 0.2 0 1 0 -0.44 -0.3Z', fill: 'tileMoss', opacity: 0.85 },
+    ] },
+    // FERN: a fan of pinnate fronds (stroke art, like tuft/reeds) with a lit
+    // up-left highlight set of the inner fronds.
+    { id: 'fern', size: 0.95, paths: [
+      { d: 'M0 0.72Q-0.3 0.05 -0.6 -0.62M0 0.72Q-0.12 0 -0.24 -0.82M0 0.72Q0.02 -0.02 0.02 -0.9M0 0.72Q0.16 0 0.3 -0.82M0 0.72Q0.34 0.05 0.62 -0.58', stroke: 'foliageDeep', sw: 0.1 },
+      { d: 'M0 0.72Q-0.12 0 -0.24 -0.82M0 0.72Q0.02 -0.02 0.02 -0.9M0 0.72Q0.16 0 0.3 -0.82', stroke: 'foliage', sw: 0.06, lit: true },
+    ] },
+    // mossy BOULDER: a two-tone rock (bigger + lumpier than pebble) with a moss
+    // cap patch + speckle on the lit upper face.
+    { id: 'boulder', size: 1.05, wonk: 0.04, paths: [
+      ...cutout(BOULDER_D, 'rockDeep', 'rock'),
+      { d: 'M-0.5 -0.14C-0.4 -0.4 0 -0.5 0.32 -0.4C0.5 -0.34 0.44 -0.12 0.2 -0.06C-0.08 0 -0.44 0.04 -0.5 -0.14Z', fill: 'mossBase', opacity: 0.85 },
+      { d: 'M-0.2 -0.32A0.08 0.08 0 1 0 -0.04 -0.32A0.08 0.08 0 1 0 -0.2 -0.32ZM0.06 -0.24A0.07 0.07 0 1 0 0.2 -0.24A0.07 0.07 0 1 0 0.06 -0.24Z', fill: 'mossInk', opacity: 0.7 },
+    ] },
+    // wildflower CLUSTER (the white/pink dotted patches): three petal blooms with
+    // bloom-pink centers over a pair of leaves.
+    { id: 'flowers', size: 0.85, wonk: 0.03, paths: [
+      { d: 'M-0.4 0.5C-0.5 0.2 -0.3 0.05 -0.1 0.12C-0.28 0.3 -0.24 0.5 -0.4 0.5ZM0.34 0.52C0.5 0.28 0.34 0.05 0.12 0.14C0.3 0.28 0.22 0.52 0.34 0.52Z', fill: 'foliage' },
+      { d: 'M-0.34 -0.28A0.15 0.15 0 1 0 -0.04 -0.28A0.15 0.15 0 1 0 -0.34 -0.28ZM0.12 -0.4A0.14 0.14 0 1 0 0.4 -0.4A0.14 0.14 0 1 0 0.12 -0.4ZM-0.02 0A0.13 0.13 0 1 0 0.24 0A0.13 0.13 0 1 0 -0.02 0Z', fill: 'cream' },
+      { d: 'M-0.24 -0.28A0.05 0.05 0 1 0 -0.14 -0.28A0.05 0.05 0 1 0 -0.24 -0.28ZM0.22 -0.4A0.05 0.05 0 1 0 0.32 -0.4A0.05 0.05 0 1 0 0.22 -0.4ZM0.06 0A0.05 0.05 0 1 0 0.16 0A0.05 0.05 0 1 0 0.06 0Z', fill: 'bloom' },
     ] },
   ]),
   stone: withVariants([
