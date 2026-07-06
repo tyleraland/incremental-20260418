@@ -93,7 +93,7 @@ export const SCENARIO_REGISTRY: Record<string, ScenarioDef> = {
   'pg-menagerie': {
     id: 'pg-menagerie',
     name: 'The Menagerie',
-    description: 'One of each restyled creature on an open floor — snail, adderwalla, wolf, slime, boar, harpy — a live gallery of the paper token families (snail/serpent/canine/blob/beast/harpy2). Watch the head/shell/wing plates lean as they move.',
+    description: 'One of each restyled creature on an open floor — snail, adderwalla, wolf, slime, boar, harpy — a live gallery of the paper token families (snail/serpent/canine/blob/beast/fearrow). Watch the head/shell/wing plates lean as they move.',
     wave: ['snail', 'adderwalla', 'wolf', 'slime', 'wild-boar', 'harpy'],
   },
 
