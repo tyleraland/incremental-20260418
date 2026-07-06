@@ -1648,8 +1648,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     // fallback — see pendingPackLoot above); merged additively with kill loot.
     const lootIn: Record<string, number> = { ...combat.lootDelta }
     for (const [id, q] of Object.entries(stashFlush)) lootIn[id] = (lootIn[id] ?? 0) + q
-    const miscDeltas = { 'm-gold': combat.goldEarned, ...lootIn, ...stashDraw }
-    const miscItems = (combat.goldEarned > 0 || Object.keys(lootIn).length > 0 || Object.keys(stashDraw).length > 0)
+    // §gold: kills no longer mint gold — the stash currency only grows from selling
+    // loot at the Market (Town). combat.goldEarned stays a notional per-tick kill
+    // count for the dev report, but is never credited to the stash.
+    const miscDeltas = { ...lootIn, ...stashDraw }
+    const miscItems = (Object.keys(lootIn).length > 0 || Object.keys(stashDraw).length > 0)
       ? applyMiscDeltas(s.miscItems, miscDeltas).filter((m) => m.quantity > 0 || !(m.id in stashDraw))
       : s.miscItems
 
@@ -1858,7 +1861,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot, primed, tally: locTally })
     }
 
-    if (totalGold > 0) lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) + totalGold
+    // §gold: offline combat, like live combat, no longer credits gold — see the
+    // tick reducer above. Loot still mails to the stash; gold comes from selling.
 
     // Collapse n ticks of recovery/regen, folding in the offline exp above.
     const unitsPreLevel = s.units.map((u) => {

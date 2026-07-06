@@ -33,7 +33,7 @@ describe('combat engine — battle lifecycle', () => {
     expect(useGameStore.getState().battles['field']).toBeUndefined()
   })
 
-  it('a strong party clears waves: kills, XP, and gold accrue', () => {
+  it('a strong party clears waves: kills and XP accrue; kills mint no gold', () => {
     resetStore({
       locations: [FIELD(['slime'])],
       units: [makeUnit({ id: 'u1', locationId: 'field', health: 100, exp: 0, abilities: { strength: 50, agility: 5, dexterity: 5, constitution: 5, intelligence: 5 } })],
@@ -42,7 +42,7 @@ describe('combat engine — battle lifecycle', () => {
     const s = useGameStore.getState()
     expect(s.monsterDefeated['slime'] ?? 0).toBeGreaterThan(0)
     expect(s.units[0].exp).toBeGreaterThan(0)
-    expect((s.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0)).toBeGreaterThan(0)
+    expect((s.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0)).toBe(0)  // gold only from market sales
   })
 
   it('spawns the fixed 5-enemy wall at Geffen Dungeon Floor 2', () => {

@@ -95,7 +95,7 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
   beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
   afterEach(() => vi.restoreAllMocks())
 
-  it('extrapolates exp/gold/loot/kills for a deployed location with a sample', () => {
+  it('extrapolates exp/loot/kills for a deployed location with a sample (no gold from kills)', () => {
     resetStore({
       ticks: 1000,
       locations: [FIELD()],
@@ -108,7 +108,7 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     const st = useGameStore.getState()
     expect(st.monsterDefeated.slime).toBe(100)       // codex credited
     expect(st.locationStats.field.expDistributed).toBe(200) // 100 prior + 100 offline
-    expect(st.miscItems.find((m) => m.id === 'm-gold')?.quantity).toBe(100)
+    expect(st.miscItems.find((m) => m.id === 'm-gold')).toBeUndefined()  // gold only from market sales
     expect(st.miscItems.find((m) => m.id === 'drop-slime-gel')?.quantity).toBe(100) // 100 kills × qty 1
   })
 

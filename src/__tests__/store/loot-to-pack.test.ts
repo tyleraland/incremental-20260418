@@ -2,7 +2,8 @@
 // the kill — into `pendingPackLoot` (the expedition driver moves them into the
 // hero's pack) — NOT trickled on a wall-clock timer. When no driver is mounted
 // (these headless tests / classic UI / perf harness) the loot self-heals to the
-// shared stash within a tick instead of stranding. Gold stays a stash currency.
+// shared stash within a tick instead of stranding. Kills mint no gold — the
+// stash currency only grows from selling loot at the Market.
 // Guards the Kanto Beach report (pack weight climbing before/async from kills).
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
@@ -27,7 +28,7 @@ const stashDropTotal = () =>
   useGameStore.getState().miscItems.filter((m) => m.id.startsWith('drop-')).reduce((a, m) => a + m.quantity, 0)
 
 describe('kill loot is credited to the killer, batched, kill-gated', () => {
-  it('no drops before any kill; drops appear only with kills; gold → stash', () => {
+  it('no drops before any kill; drops appear only with kills; kills mint no gold', () => {
     resetStore({
       locations: [FIELD(['slime'])],
       units: [makeUnit({ id: 'u1', locationId: 'field', health: 100, exp: 0, abilities: STRONG })],
@@ -45,7 +46,7 @@ describe('kill loot is credited to the killer, batched, kill-gated', () => {
     expect(sawGatedZero).toBe(true)                         // there WAS a pre-kill window
     expect(useGameStore.getState().monsterDefeated['slime'] ?? 0).toBeGreaterThan(0)
     expect(pendingTotal() + stashDropTotal()).toBeGreaterThan(0)  // real drops landed
-    expect(stashQty('m-gold')).toBeGreaterThan(0)          // gold is a stash currency
+    expect(stashQty('m-gold')).toBe(0)                     // gold only comes from market sales
   })
 
   it('loot is neither lost nor double-counted (drops === credited itemsFound)', () => {
