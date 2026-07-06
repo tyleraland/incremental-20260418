@@ -1,7 +1,7 @@
 import type { Biome } from '@/render/appearance'
 import type { ScatterKind } from '@/mapgen'
 import type { PaperRole } from '@/render/palette'
-import { hashString, wonkPathD, blobPath, type Pt } from '@/render/authoring'
+import { hashString, hash01, wonkPathD, blobPath, type Pt } from '@/render/authoring'
 
 // ── Prop assets as data ──────────────────────────────────────────────────────
 //
@@ -100,6 +100,10 @@ const PROP_META: Record<string, Pick<PropDef, 'kinds' | 'playerSelectable' | 'ta
   skull:    { kinds: ['flower', 'rock'] },
   spikes:   { kinds: ['tree'] },
   moss:     { kinds: ['bush'] },
+  column:   { kinds: ['tree', 'stump'] },
+  bricks:   { kinds: ['rock', 'stump'] },
+  gravel:   { kinds: ['rock'] },
+  cobweb:   { kinds: ['flower', 'bush'] },
   // plaza (market clutter fills the generic ground kinds the city recipe emits)
   crate:    { kinds: ['stump'] },
   barrel:   { kinds: ['stump', 'rock'] },
@@ -167,6 +171,63 @@ function lobeRing(n: number, ro: number, ri: number, cx = 0, cy = 0): Pt[] {
 }
 const CANOPY_D = blobPath(lobeRing(7, 0.82, 0.6, 0, -0.06))
 const BOULDER_D = 'M-0.6 0.12C-0.64 -0.22 -0.34 -0.5 0.02 -0.52C0.4 -0.54 0.66 -0.28 0.64 0.04C0.62 0.34 0.36 0.5 0.02 0.5C-0.32 0.5 -0.56 0.42 -0.6 0.12Z'
+
+// ── Dungeon stone props (top-down inked dungeon sheet: round columns, cut-brick
+// courses, loose gravel, corner cobwebs) ────────────────────────────────────
+const r3 = (v: number) => Math.round(v * 1000) / 1000
+// A closed circle as two arcs (wonkPathD-safe: radii wobble, flags stay exact).
+const ringPath = (r: number, cx = 0, cy = 0) =>
+  `M${r3(cx - r)} ${r3(cy)}A${r3(r)} ${r3(r)} 0 1 0 ${r3(cx + r)} ${r3(cy)}A${r3(r)} ${r3(r)} 0 1 0 ${r3(cx - r)} ${r3(cy)}Z`
+const rectD = (x: number, y: number, w: number, h: number) =>
+  `M${r3(x)} ${r3(y)}L${r3(x + w)} ${r3(y)}L${r3(x + w)} ${r3(y + h)}L${r3(x)} ${r3(y + h)}Z`
+
+// Running-bond course of cut stones (three rows, alternating offset) as one
+// multi-rect path — the sheet's "Exterior Bricks" read.
+const BRICK_ROWS: { y: number; xs: [number, number][] }[] = [
+  { y: -0.46, xs: [[-0.58, -0.22], [-0.18, 0.18], [0.22, 0.58]] },
+  { y: -0.2, xs: [[-0.66, -0.3], [-0.26, 0.14], [0.18, 0.62]] },
+  { y: 0.06, xs: [[-0.58, -0.22], [-0.18, 0.18], [0.22, 0.58]] },
+]
+const BRICKS_D = BRICK_ROWS.map((r) => r.xs.map(([x0, x1]) => rectD(x0, r.y, x1 - x0, 0.22)).join('')).join('')
+const BRICK_SEAMS = 'M-0.66 -0.23L0.62 -0.23M-0.66 0.03L0.62 0.03M-0.18 -0.46L-0.18 -0.24M0.22 -0.46L0.22 -0.24M-0.26 -0.2L-0.26 0.02M0.18 -0.2L0.18 0.02'
+
+// A fine scatter of small loose stones (Rubble E/F/G) — seeded, deterministic,
+// so the base+lit cutout pair stays in sync.
+const gravelD = (seed: number, n: number): string => {
+  let d = ''
+  for (let i = 0; i < n; i++) {
+    const x = (hash01(seed + i * 911) - 0.5) * 1.55
+    const y = (hash01(seed + i * 911 + 331) - 0.5) * 1.4
+    const r = 0.1 + hash01(seed + i * 911 + 613) * 0.09
+    d += ringPath(r, x, y)
+  }
+  return d
+}
+const GRAVEL_D = gravelD(hashString('gravel'), 13)
+
+// Corner spider-web: radial spokes from a corner anchor + connecting arcs bowed
+// back toward the corner. Pale strokes at low opacity — a decal, not a solid.
+const COBWEB = (() => {
+  const cx = -0.82, cy = -0.82, S = 5, R = 1.7
+  const dirs = Array.from({ length: S }, (_, i) => {
+    const a = (i / (S - 1)) * (Math.PI / 2)
+    return { x: Math.cos(a), y: Math.sin(a) }
+  })
+  let spokes = ''
+  for (const d of dirs) spokes += `M${r3(cx)} ${r3(cy)}L${r3(cx + d.x * R)} ${r3(cy + d.y * R)}`
+  let arcs = ''
+  for (const rr of [0.55, 0.95, 1.35]) {
+    for (let j = 0; j < S - 1; j++) {
+      const p0 = { x: cx + dirs[j].x * rr, y: cy + dirs[j].y * rr }
+      const p1 = { x: cx + dirs[j + 1].x * rr, y: cy + dirs[j + 1].y * rr }
+      const mx = (dirs[j].x + dirs[j + 1].x) / 2, my = (dirs[j].y + dirs[j + 1].y) / 2
+      const ml = Math.hypot(mx, my) || 1
+      const ctrl = { x: cx + (mx / ml) * rr * 0.72, y: cy + (my / ml) * rr * 0.72 }
+      arcs += `M${r3(p0.x)} ${r3(p0.y)}Q${r3(ctrl.x)} ${r3(ctrl.y)} ${r3(p1.x)} ${r3(p1.y)}`
+    }
+  }
+  return { spokes, arcs }
+})()
 
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
   grass: withVariants([
@@ -249,6 +310,28 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     { id: 'spikes', size: 1, paths: cutout(SPIKES_D, 'rockDeep', 'rock') },
     { id: 'moss', size: 1.1, paths: [
       { d: 'M-0.6 0.1C-0.5 -0.3 0 -0.45 0.4 -0.25C0.7 -0.1 0.6 0.3 0.2 0.38C-0.15 0.46 -0.55 0.4 -0.6 0.1Z', fill: 'foliageDeep', opacity: 0.55 },
+    ] },
+    // top-down ROUND pillar (intact drum, vs the angular broken `pillar`):
+    // concentric two-tone rings + a lit dressed-stone cap disc.
+    { id: 'column', size: 1.1, wonk: 0.03, paths: [
+      { d: ringPath(0.62, 0.08, 0.12), fill: 'shadow', opacity: 0.22 },
+      ...cutout(ringPath(0.6), 'rockDeep', 'rock'),
+      { d: ringPath(0.44), fill: 'rockDeep' },
+      { d: ringPath(0.34), fill: 'stoneBase', lit: true },
+    ] },
+    // stacked course of cut BRICKS with mortar seams (the "Exterior Bricks" tile):
+    // pale dressed faces over a dark base, crisp mortar strokes.
+    { id: 'bricks', size: 1, wonk: 0.03, paths: [
+      ...cutout(BRICKS_D, 'rockDeep', 'stoneBase'),
+      { d: BRICK_SEAMS, stroke: 'mortarInk', sw: 0.035 },
+    ] },
+    // fine GRAVEL scatter (Rubble E/F/G) — many small loose stones, distinct from
+    // the chunky `rubble`.
+    { id: 'gravel', size: 1, wonk: 0.03, paths: cutout(GRAVEL_D, 'rock', 'stoneBase') },
+    // corner COBWEB decal: pale radial spokes + connecting arcs at low opacity.
+    { id: 'cobweb', size: 1.1, wonk: 0.03, paths: [
+      { d: COBWEB.spokes, stroke: 'cream', sw: 0.025, opacity: 0.5 },
+      { d: COBWEB.arcs, stroke: 'cream', sw: 0.02, opacity: 0.42 },
     ] },
   ]),
   plaza: withVariants([
