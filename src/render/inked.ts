@@ -67,7 +67,7 @@ export function masonryBand(x: number, y: number, w: number, h: number, seed: nu
 // ~5% broken-dark and ~5% moss tiles (the kit weathering). `darken` biases the
 // pick toward the darker end of the pool (the shaded, lower/eave slope) — our
 // flat stand-in for the kit's slope gradient.
-export function roofSlope(x: number, y: number, w: number, h: number, seed: number, pool: readonly string[], inkColor: string, darken = false, tileH = 0.26): string {
+export function roofSlope(x: number, y: number, w: number, h: number, seed: number, pool: readonly string[], inkColor: string, darken = false, tileH = 0.26, brokenFill: string = P.tileBroken, brokenInk: string = P.roofRedInk): string {
   let out = ''
   let yy = y
   let row = 0
@@ -83,7 +83,7 @@ export function roofSlope(x: number, y: number, w: number, h: number, seed: numb
       if (wdraw > 0.05 && ch > 0.05) {
         const roll = hash01(seed + row * 57 + col * 29)
         let col2: string, ink2: string
-        if (roll < 0.05) { col2 = P.tileBroken; ink2 = P.roofRedInk }
+        if (roll < 0.05) { col2 = brokenFill; ink2 = brokenInk }
         else if (roll < 0.1) { col2 = P.tileMoss; ink2 = P.mossInk }
         else {
           // bias the index darker on the shaded slope (lower half of the pool)

@@ -1,7 +1,7 @@
 import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } from '@/render/skins'
 import { TERRAIN_PROPS } from '@/render/props'
 import { propMarkup, scatterArchetype } from '@/render/terrain'
-import { buildingMarkup, BUILDING_LOOKS } from '@/render/buildings'
+import { buildingMarkup, BUILDING_LOOKS, ROOF_COVERINGS } from '@/render/buildings'
 import { PAPER_PALETTE } from '@/render/palette'
 import { generateMap, specBarriers, SCATTER_KINDS, type BarrierMaterial, type MapSpec } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
@@ -62,6 +62,10 @@ const GEN_CITY: MapSpec = generateMap(CITY_RECIPE, { recipe: 'city', seed: 'pron
 // treatment is reviewable next to the in-situ bake.
 const BUILDING_MATS = Object.keys(BUILDING_LOOKS) as BarrierMaterial[]
 const buildingSwatch = (material: BarrierMaterial): string => buildingMarkup({ x: 1.4, y: 1.8, w: 5.2, h: 4 }, material, 42)
+// The roof-covering catalog: one house per covering (forced via the coveringId
+// override) so tile/slate/thatch/shingle are reviewable. In the live bake above,
+// roofed houses seed-pick one of these — so a street shows the mix automatically.
+const roofSwatch = (coveringId: string): string => buildingMarkup({ x: 1.4, y: 1.8, w: 5.2, h: 4 }, 'wood', 42, coveringId)
 // The new top-down street furniture (conifer / lamp / banner) the city plaza uses.
 const CITY_FURNITURE = ['conifer', 'lamppost', 'banner'].map((id) => TERRAIN_PROPS.plaza.find((p) => p.id === id)!).filter(Boolean)
 
@@ -303,6 +307,14 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
                 <svg viewBox="0 0 8 8" className="w-14 h-14" aria-hidden dangerouslySetInnerHTML={{ __html: buildingSwatch(mat) }} />
               </div>
               <span className="text-[8px] text-neutral-600 leading-none">{mat}</span>
+            </div>
+          ))}
+          {ROOF_COVERINGS.map((cov) => (
+            <div key={cov.id} className="flex flex-col items-center gap-1">
+              <div className="w-16 h-16 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+                <svg viewBox="0 0 8 8" className="w-14 h-14" aria-hidden dangerouslySetInnerHTML={{ __html: roofSwatch(cov.id) }} />
+              </div>
+              <span className="text-[8px] text-neutral-600 leading-none">roof: {cov.id}</span>
             </div>
           ))}
           {CITY_FURNITURE.map((def) => (

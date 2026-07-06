@@ -20,7 +20,7 @@ import type { Biome } from '@/render/appearance'
 import type { ScatterKind } from '@/mapgen'
 import { TERRAIN_PROPS } from '@/render/props'
 import { BODY_SHAPES, WEAPONS, monstersForShape, classesForWeapon } from '@/render/appearance'
-import { BUILDING_LOOKS } from '@/render/buildings'
+import { BUILDING_LOOKS, ROOF_COVERINGS } from '@/render/buildings'
 
 export type AssetCategory = 'prop' | 'monster-body' | 'weapon' | 'building' | 'ground'
 
@@ -75,6 +75,10 @@ export function listAssets(): AssetDescriptor[] {
       playerSelectable: false,
       tags: [BUILDING_LOOKS[material as keyof typeof BUILDING_LOOKS]!.roofed ? 'roofed' : 'ruin'],
     })
+  }
+  // roof coverings — seed-picked per roofed house, decoupled from wall material
+  for (const cov of ROOF_COVERINGS) {
+    out.push({ category: 'building', id: `roof-${cov.id}`, playerSelectable: false, tags: ['roof', cov.id] })
   }
   for (const biome of BIOMES) {
     out.push({ category: 'ground', id: biome, biome, playerSelectable: false, tags: [] })

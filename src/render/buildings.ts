@@ -8,8 +8,10 @@
 // gradients/filters) and fully seeded, all baked into terrain.tsx's single image.
 //
 // It's a CATALOG keyed off BarrierMaterial, never location ids (same seam rule as
-// appearance.ts): `wood` → red-tile townhouse, `cut-stone` → slate-tile hall,
-// `rubble` → roofless ruin. A procgen city recipe plugs in by tagging a rect.
+// appearance.ts): `wood`/`cut-stone` → a roofed townhouse, `rubble` → roofless
+// ruin. The roof COVERING (red-tile / slate / thatch / shingle) is decoupled from
+// the wall material and picked by SEED (ROOF_COVERINGS), so a street mixes roofs.
+// A procgen city recipe plugs in by tagging a rect.
 
 import type { BarrierMaterial } from '@/mapgen'
 import { PAPER_PALETTE as P, INK_POOLS } from '@/render/palette'
@@ -17,16 +19,35 @@ import { hash01, wrectPath, pick, type Rect } from '@/render/authoring'
 import { ink, masonryBand, roofSlope, mossClump } from '@/render/inked'
 
 export interface BuildingLook {
-  roofPool: readonly string[]   // the tile value pool (INK_POOLS.roofRed / roofSlate)
-  roofInk: string
   roofed: boolean               // false → a ruin: masonry ring + rubble, no roof
+                                // (the roof COVERING is seed-picked, not material-keyed — see ROOF_COVERINGS)
 }
 
 export const BUILDING_LOOKS: Partial<Record<BarrierMaterial, BuildingLook>> = {
-  'wood':      { roofPool: INK_POOLS.roofRed,   roofInk: P.roofRedInk,    roofed: true },
-  'cut-stone': { roofPool: INK_POOLS.roofSlate, roofInk: P.roofSlateInk2, roofed: true },
-  'rubble':    { roofPool: INK_POOLS.roofSlate, roofInk: P.roofSlateInk2, roofed: false },
+  'wood':      { roofed: true },
+  'cut-stone': { roofed: true },
+  'rubble':    { roofed: false },
 }
+
+// ── Roof coverings (decoupled from the wall's collision material) ──────────────
+// A roofed building draws one of these — chosen by SEED, so a street mixes tile,
+// slate, thatch and shingle roofs regardless of whether the wall is wood or
+// cut-stone. `broken`/`tileH` default to the red-tile weathering, so `red-tile`
+// and `slate` stay byte-identical to the old material-keyed roofs.
+export interface RoofCovering {
+  id: string
+  roofPool: readonly string[]         // the tile/straw value pool (INK_POOLS.*)
+  roofInk: string
+  tileH?: number                      // course height (default 0.26)
+  broken?: { fill: string; ink: string }  // the ~5% broken-piece tone
+}
+
+export const ROOF_COVERINGS: readonly RoofCovering[] = [
+  { id: 'red-tile', roofPool: INK_POOLS.roofRed,   roofInk: P.roofRedInk    },
+  { id: 'slate',    roofPool: INK_POOLS.roofSlate, roofInk: P.roofSlateInk2 },
+  { id: 'thatch',   roofPool: INK_POOLS.thatch,    roofInk: P.thatchInk,  tileH: 0.2,  broken: { fill: P.thatchInk,  ink: P.thatchInk  } },
+  { id: 'shingle',  roofPool: INK_POOLS.shingle,   roofInk: P.shingleInk, tileH: 0.22, broken: { fill: P.shingleInk, ink: P.shingleInk } },
+]
 
 export function isBuildingMaterial(m: BarrierMaterial | undefined): boolean {
   return m != null && m in BUILDING_LOOKS
@@ -40,7 +61,7 @@ const SH = { dx: 0.3, dy: 0.36 }
 // down). Layers follow the kit stack: cast shadow → mortar base → masonry ring →
 // roof-tile field (ridge-split) → ridge cap → door/windows → moss → light rim →
 // bold silhouette ink. Deterministic per `seed`.
-export function buildingMarkup(r: Rect, material: BarrierMaterial, seed: number): string {
+export function buildingMarkup(r: Rect, material: BarrierMaterial, seed: number, coveringId?: string): string {
   const look = BUILDING_LOOKS[material] ?? BUILDING_LOOKS['cut-stone']!
   const { x, y, w, h } = r
   const WALL = Math.min(0.55, Math.max(0.24, Math.min(w, h) * 0.22))
@@ -72,10 +93,14 @@ export function buildingMarkup(r: Rect, material: BarrierMaterial, seed: number)
     return parts.join('')
   }
 
-  // roof: two tile slopes split by a ridge; the lower (eave) slope draws darker
+  // roof: two slopes split by a ridge; the lower (eave) slope draws darker. The
+  // covering (tile/slate/thatch/shingle) is seed-picked — decoupled from the
+  // wall material — unless `coveringId` forces one (catalog/gallery).
+  const cov = coveringId ? ROOF_COVERINGS.find((c) => c.id === coveringId) ?? ROOF_COVERINGS[0] : pick(ROOF_COVERINGS, seed + 50)
+  const tH = cov.tileH ?? 0.26, bF = cov.broken?.fill, bI = cov.broken?.ink
   const ridgeY = iy + ih * 0.5
-  parts.push(roofSlope(ix, iy, iw, ridgeY - iy, seed + 100, look.roofPool, look.roofInk, false))
-  parts.push(roofSlope(ix, ridgeY, iw, iy + ih - ridgeY, seed + 200, look.roofPool, look.roofInk, true))
+  parts.push(roofSlope(ix, iy, iw, ridgeY - iy, seed + 100, cov.roofPool, cov.roofInk, false, tH, bF, bI))
+  parts.push(roofSlope(ix, ridgeY, iw, iy + ih - ridgeY, seed + 200, cov.roofPool, cov.roofInk, true, tH, bF, bI))
   // ridge cap (thin masonry) + flat highlight/shade lines (our stand-in for the pitch)
   parts.push(masonryBand(ix - 0.02, ridgeY - 0.06, iw + 0.04, 0.12, seed + 300, 0.12))
   parts.push(ink(`M${f(ix)} ${f(ridgeY - 0.07)}L${f(ix + iw)} ${f(ridgeY - 0.07)}`, 'none', P.lightWarm, 0.02, 0.5))
