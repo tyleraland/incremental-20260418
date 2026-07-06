@@ -1352,14 +1352,29 @@ grass; every prop rotated a flat ±12°) is being replaced by a declarative
   catalog surfacing (tags shown read-only, emitted in "copy TS snippet"). Every
   scatterable prop must declare `role` + `themes` (`AssetCatalog.test.ts` gate).
   Mapgen unchanged beyond `regionTags` already echoing `params.themes`.
-- **Phase 2:** density field + blue-noise placement + `role: 'cluster'` clumps
-  (groves/flowerbeds via `clusterWith`) — a real mapgen scatter pass over the
-  shared substrate, replacing today's independent per-item rolls.
-- **Phase 3:** edge / understory features — the "Ribbon" assets (verge grass,
-  shoreline reeds, wall moss/cobweb) placed along boundaries via `role: 'edge'`/
-  `'understory'` + `near`/`avoid` affinities.
-- **Phase 4:** field trails / desire-paths (nav `desire-path` edges → walkable
-  ribbons, props avoiding them).
+- **Phase 2 (SHIPPED):** density field + blue-noise placement + `role: 'cluster'`
+  clumps (groves/flowerbeds) — `scatter-fill` + `scatter-clumps` passes over the
+  shared substrate, replacing the independent per-item rolls.
+- **Phase 3 (SHIPPED):** edge / understory features — the "Ribbon" assets (verge
+  grass, shoreline reeds, outcrop skirts, wall moss/cobweb) placed along
+  boundaries via `role: 'edge'` + `intent: 'edge'` (`scatter-edges` pass).
+- **Phase 4:** paths / trails. Two layers, function-first:
+  - *Intra-map trail (the render/scatter slice):* a `desire-path` nav edge → a
+    walkable `dirt`/`road` ribbon across the field, props giving it a berth
+    (`avoid: ['path']`); reuses the inked `cobble()`/paving. A `scatter`/paving
+    pass like the others (own stream, dials, skippable in `?mapgen=1`).
+  - *Inter-map connectivity (the semantic/travel slice — the bigger idea):*
+    **paths are for traveling between map LOCATIONS**, so a path is really an
+    edge in the overworld graph surfaced on the tile. A generated map may bake
+    **with** a connecting path (its `pois`/portals wired to a road that reaches
+    the map edge toward the neighbour) or **without** one (isolated / no road to
+    that neighbour). When absent, we can **offer to ADD one to an existing map**
+    — a player-driven "build a road" action (a quest reward, a settlement/map
+    development sink): re-bake or overlay a path pass that connects two portal
+    POIs, unlocking/shortening travel. Ties into §G inter-map adjacency + the
+    interactables/dynamic-barriers work (a path is a benign, reachability-only
+    map mutation). Save = still seed+params (+ a "roads built" set), never the
+    baked spec. Sequence AFTER the intra-map trail primitive exists.
 - **Phase 5:** per-material surface texture (finer surface-plane paint feeding
   distinct washes/patterns per `SurfaceMaterial`).
 
