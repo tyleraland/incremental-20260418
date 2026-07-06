@@ -1369,6 +1369,32 @@ per-pass RNG streams + per-pass skips already support toggling one behavior at a
 time, so density, clumping, edges, and paths can each be reviewed/tweaked
 independently without reshuffling the rest of the map.
 
+**Asset-COVERAGE visibility — SHIPPED 2026-07.** The tags let the generator use
+`role: 'edge'` ribbons (and prefer a theme's props) when a theme HAS them and
+fall back to filler when it doesn't (`terrain.tsx` `themeFilteredCands`/
+`roleFilteredCands` — a gap NEVER breaks generation, it renders cross-theme
+filler). `src/render/coverage.ts` (`assetCoverage()`/`coverageGaps()`, pure) now
+computes, per `ThemeTag`, which scatter capabilities (filler/cluster/edge/
+understory/accent + per-kind counts) exist vs are GAPS, folding in that universal
+props count toward every theme. Surfaced LIVE — do NOT hardcode a gap list here,
+it rots; read the tools:
+- **`?workshop=1` → theme-coverage table** (+ catalog filter/group by theme/role/
+  kind): the per-theme ✓/⚠️ grid, prominent on themes with no edge/ribbon and no
+  themed props.
+- **`?mapgen=1` → per-map ⚠️** beside the validation report: warns when the
+  focused map's themes lack edge assets (field recipe places edge items) or any
+  themed prop.
+
+Known gaps as of 2026-07 (the fill-these-in checklist — confirm against the live
+table, which is the source of truth): **desert / volcanic / arcane** have NO
+props at all (total cross-theme fallback); **plains / forest / mountain** have no
+edge/ribbon prop; **beach / water** are thin (edge-only — no cluster/accent, few
+kinds); `understory` is forest-only. Filling one = tagging (or authoring) a prop
+in `PROP_META` (`props.ts`) with that theme + role; the table updates live. Gaps
+are WARNINGS to a human, never build failures — `AssetCoverage.test.ts` pins the
+coverage MODEL (counts reconcile, deterministic, known-covered themes report
+correctly) but never red-flags an intentional gap.
+
 *Perf lesson from landing it* (measured on the `?perf` scene, mobile-chrome 4×
 throttle, via the new `skin-compare.spec.ts` A/B (`npm run skin-ab`) +
 `skin-trace.spec.ts` CDP attribution): a richer body's cost is NOT the SVG

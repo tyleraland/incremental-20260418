@@ -14,6 +14,7 @@ import {
   generateMap, RECIPE_REGISTRY, SURFACE_MATERIALS, THEME_TAGS, PROFICIENCY_TAGS,
   type GenResult, type MapSpec, type ProficiencyTag, type ThemeTag,
 } from '@/mapgen'
+import { themesMissingEdge, themesWithoutThemedProps } from '@/render/coverage'
 
 const SURFACE_COLOR: Record<string, string> = {
   'grass': '#7aa85c', 'meadow': '#8fbf6a', 'dirt': '#a58a5e', 'sand': '#d9c489',
@@ -128,6 +129,18 @@ export default function MapgenLab() {
   const bigPx = Math.max(2, Math.floor(560 / size))
   const tac = focused.r.spec.semantic.tactical
 
+  // Asset-COVERAGE warning (non-blocking, informational): does the focused map's
+  // theme set have the scatter capabilities the recipe leans on? The field
+  // recipe places `edge` scatter items, so a theme with no edge-role prop renders
+  // its shoreline/skirt as fallback filler; a theme with no themed prop at all
+  // draws entirely cross-theme props. Reads render/coverage.ts — generation is
+  // unchanged (it always falls back gracefully); this only tells a human.
+  const mapThemes = ((focused.r.spec.semantic.regionTags?.length
+    ? focused.r.spec.semantic.regionTags
+    : themes) as ThemeTag[])
+  const noEdge = themesMissingEdge(mapThemes)
+  const noThemed = themesWithoutThemedProps(mapThemes)
+
   return (
     <div className="min-h-full bg-stone-900 text-stone-200 p-4 font-mono text-sm overflow-auto">
       <h1 className="text-lg mb-1">mapgen lab</h1>
@@ -195,6 +208,22 @@ export default function MapgenLab() {
         </div>
 
         <div className="max-w-md">
+          {(noEdge.length > 0 || noThemed.length > 0) && (
+            <div className="mb-3 text-xs border border-amber-500/40 bg-amber-500/5 rounded p-2 space-y-1">
+              <div className="text-amber-400">⚠️ asset coverage (informational — generation stays graceful)</div>
+              {noThemed.length > 0 && (
+                <div className="text-amber-300/90">
+                  theme(s) <b>{noThemed.join(', ')}</b> have no themed props — all scatter renders cross-theme fallback props.
+                </div>
+              )}
+              {noEdge.length > 0 && (
+                <div className="text-amber-300/90">
+                  theme(s) <b>{noEdge.join(', ')}</b> have no edge/ribbon assets — shoreline/skirt edges render as fallback filler.
+                </div>
+              )}
+              <div className="text-stone-500">source: render/coverage.ts · full table in ?workshop=1</div>
+            </div>
+          )}
           <h2 className="text-amber-400 mb-1">validation</h2>
           <ul className="text-xs mb-3">
             {focused.r.report.rules.map((r) => (

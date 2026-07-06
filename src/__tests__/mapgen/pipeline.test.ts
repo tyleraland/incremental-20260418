@@ -27,7 +27,7 @@ describe('mapgen pipeline', () => {
 
   it('skipping a DOWNSTREAM pass leaves upstream planes byte-identical (stream isolation)', () => {
     const full = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept' })
-    const noScatter = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['scatter-fill', 'scatter-clumps'] })
+    const noScatter = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['scatter-fill', 'scatter-clumps', 'scatter-edges'] })
     expect(noScatter.spec.scatter).toEqual([])
     expect(noScatter.spec.collision).toEqual(full.spec.collision)
     expect(Array.from(noScatter.spec.surface.grid)).toEqual(Array.from(full.spec.surface.grid))
@@ -45,6 +45,18 @@ describe('mapgen pipeline', () => {
     // and clumps genuinely added cluster/understory items in the full bake
     expect(full.spec.scatter.some((it) => it.intent === 'cluster')).toBe(true)
     expect(noClumps.spec.scatter.some((it) => it.intent === 'cluster')).toBe(false)
+  })
+
+  it('scatter-edges is stream-isolated: skipping edges leaves fill + clumps byte-identical', () => {
+    const full = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept' })
+    const noEdges = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['scatter-edges'] })
+    // fill ('field') + clump ('cluster'/'understory') items must be untouched —
+    // edges draws only from its own stream and only appends.
+    const nonEdge = (s: typeof full.spec.scatter) => s.filter((it) => it.intent !== 'edge')
+    expect(nonEdge(noEdges.spec.scatter)).toEqual(nonEdge(full.spec.scatter))
+    // edges genuinely added 'edge' items in the full bake (this seed grows a lake)
+    expect(full.spec.scatter.some((it) => it.intent === 'edge')).toBe(true)
+    expect(noEdges.spec.scatter.some((it) => it.intent === 'edge')).toBe(false)
   })
 
   it('skipping an UPSTREAM pass does not reshuffle a later pass\'s own randomness', () => {
