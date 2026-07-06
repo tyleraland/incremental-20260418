@@ -2,6 +2,7 @@ import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } 
 import { TERRAIN_PROPS } from '@/render/props'
 import { propMarkup, scatterArchetype } from '@/render/terrain'
 import { buildingMarkup, BUILDING_LOOKS, ROOF_COVERINGS } from '@/render/buildings'
+import { fanCobble } from '@/render/inked'
 import { PAPER_PALETTE } from '@/render/palette'
 import { generateMap, specBarriers, SCATTER_KINDS, type BarrierMaterial, type MapSpec } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
@@ -66,6 +67,9 @@ const buildingSwatch = (material: BarrierMaterial): string => buildingMarkup({ x
 // override) so tile/slate/thatch/shingle are reviewable. In the live bake above,
 // roofed houses seed-pick one of these — so a street shows the mix automatically.
 const roofSwatch = (coveringId: string): string => buildingMarkup({ x: 1.4, y: 1.8, w: 5.2, h: 4 }, 'wood', 42, coveringId)
+// The plaza fan-cobble: cobbles laid in concentric arc rows (opus arcuatum) over
+// a sample square region, so the fan pattern is reviewable next to the streets.
+const fanSwatch = (): string => fanCobble(4, 4, (x, y) => x >= 0.4 && x <= 7.6 && y >= 0.4 && y <= 7.6, 5, 7, 0.32)
 // The new top-down street furniture (conifer / lamp / banner) the city plaza uses.
 const CITY_FURNITURE = ['conifer', 'lamppost', 'banner'].map((id) => TERRAIN_PROPS.plaza.find((p) => p.id === id)!).filter(Boolean)
 
@@ -325,6 +329,12 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
               <span className="text-[8px] text-neutral-600 leading-none">{def.id}</span>
             </div>
           ))}
+          <div className="flex flex-col items-center gap-1">
+            <div className="w-16 h-16 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+              <svg viewBox="0 0 8 8" className="w-14 h-14" aria-hidden dangerouslySetInnerHTML={{ __html: fanSwatch() }} />
+            </div>
+            <span className="text-[8px] text-neutral-600 leading-none">fan cobble (plaza)</span>
+          </div>
           <div className="flex flex-col items-center gap-1">
             <div
               className="w-64 h-64 rounded border border-neutral-800 relative overflow-hidden"

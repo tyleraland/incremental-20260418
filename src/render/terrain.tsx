@@ -6,7 +6,7 @@ import type { Biome } from '@/render/appearance'
 import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
 import { TERRAIN_PROPS, themeFilteredCands, weightedPick, rotForPolicy, type PropDef } from '@/render/props'
 import { buildingMarkup, isBuildingMaterial } from '@/render/buildings'
-import { ink, cobble, mossClump } from '@/render/inked'
+import { ink, cobble, fanCobble, mossClump } from '@/render/inked'
 import { INK_POOLS } from '@/render/palette'
 import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, maskLoops, decimate, wrectPath, pick, type Pt, type Rect } from '@/render/authoring'
 
@@ -232,19 +232,27 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
     })
 
-    // Paving: inked cobblestones ARE the paved surface (no underlying wash). Each
-    // paved cell is filled with a jittered 2×2 cluster of pooled stones — finer,
-    // packed cobbles (an "upscale" from one-stone-per-cell) veined by dark mortar
-    // gaps, with the outer stones giving the street a ragged hand-laid edge.
-    // Plaza slabs run a touch larger/dressed than the street cobbles. Bounded
-    // (4 stones per paved cell) and baked into the single terrain image → free.
+    // Paving: inked cobblestones ARE the paved surface (no underlying wash).
+    //  • STREETS (`road`) keep the running-laid look: each cell gets a jittered
+    //    2×2 cluster of pooled stones — finer, packed cobbles veined by dark
+    //    mortar gaps, the outer stones giving a ragged hand-laid edge.
+    //  • The PLAZA (`stone-floor`) is laid as ONE fan (opus arcuatum): cobbles in
+    //    concentric ARC ROWS radiating from the plaza centre (its landmark, else
+    //    the cell centroid), staggered ring→ring (the peacock-fan offset) — a
+    //    single fanCobble() clipped to the plaza cell mask, so the arc pattern
+    //    fills exactly the plaza footprint and the ragged stone edge = plaza edge.
+    // Both bounded (streets: 4 stones/cell; plaza: ~area/stone-area, a few
+    // hundred stones for a ~10×10 plaza) and baked into the one terrain image.
     if (isCity) {
       const NSUB = 2
+      // collect plaza (stone-floor) cells while laying the street cobbles
+      const plaza: { x: number; y: number }[] = []
       for (let y = 0; y < spec.rows; y++) {
         for (let x = 0; x < spec.cols; x++) {
           const v = g[y * spec.cols + x]
-          if (v !== road && v !== floor) continue
-          const baseR = v === floor ? 0.34 : 0.3
+          if (v === floor) { plaza.push({ x, y }); continue }
+          if (v !== road) continue
+          const baseR = 0.3
           for (let sj = 0; sj < NSUB; sj++) {
             for (let si = 0; si < NSUB; si++) {
               const s = seed + (x * NSUB + si) * 131 + (y * NSUB + sj) * 271
@@ -255,6 +263,32 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
             }
           }
         }
+      }
+      // The plaza fan. Work in DISPLAY space (y flipped, matching the stones and
+      // the landmark POI). Centre = the landmark (fountain) if present, else the
+      // centroid of plaza cells; maxR = the farthest plaza corner from it; mask =
+      // "is this display point over a stone-floor cell?" (grid lookup, y unflipped).
+      if (plaza.length) {
+        const floorSet = new Set(plaza.map((c) => c.y * spec.cols + c.x))
+        const inMask = (px: number, py: number): boolean => {
+          const gx = Math.floor(px)
+          const gy = Math.floor(rows - py)
+          return gx >= 0 && gx < spec.cols && gy >= 0 && gy < spec.rows && floorSet.has(gy * spec.cols + gx)
+        }
+        let cx: number, cy: number
+        if (landmark) { cx = landmark.x; cy = landmark.y }
+        else {
+          const ax = plaza.reduce((a, c) => a + c.x + 0.5, 0) / plaza.length
+          const ay = plaza.reduce((a, c) => a + c.y + 0.5, 0) / plaza.length
+          cx = ax; cy = rows - ay
+        }
+        let maxR = 0
+        for (const c of plaza) {
+          const dx = c.x + 0.5 - cx
+          const dy = rows - (c.y + 0.5) - cy
+          maxR = Math.max(maxR, Math.hypot(dx, dy))
+        }
+        paving.push(fanCobble(cx, cy, inMask, maxR + 0.8, seed + 4400, 0.32))
       }
     }
   }
