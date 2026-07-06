@@ -34,8 +34,9 @@ describe('scatter reachability (no authored prop goes dark on generated maps)', 
 
   // Phase-1 placement schema: the render pick is theme-filtered + role-aware, so
   // a scatterable prop that declares neither makes generation dumber (universal /
-  // field fallback only). Mirror the kinds-reachability gate: presence, not
-  // correctness — tagging is REQUIRED for every scatter prop.
+  // field fallback only). Like the kinds-reachability gate, this enforces
+  // COVERAGE — every scatter prop must carry these tags. We strive for accurate
+  // tags and refine them as later phases consume the fields.
   it('every scatterable base prop declares a role and a non-empty themes list', () => {
     for (const biome of BIOMES) {
       for (const def of TERRAIN_PROPS[biome]) {
