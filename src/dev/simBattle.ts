@@ -1,5 +1,5 @@
 // Shared battle-simulator harness — the save-safe scene seeder behind both the
-// Density Sandbox (?sandbox=1) and the Monster Lab's Battle Simulator
+// Battle Sandbox (?sandbox=1) and the Monster Lab's Battle Simulator
 // (?monsterlab=1). Stands a real open-world battle up on a SYNTHETIC location
 // with an exact hero roster + monster composition, then makes it the watched
 // battle. Built on the real store + engine + BattleView, so what you observe is
@@ -11,6 +11,7 @@
 // Callers pass fully-formed, re-id'd shallow-copied heroes; nothing here reaches
 // back into a persisted slot.
 import { useGameStore, spawnMonsterAt, type Unit } from '@/stores/useGameStore'
+import { deserializeBattle, type BattleState } from '@/engine'
 import type { Location } from '@/types'
 
 export type Rect = { x: number; y: number; w: number; h: number }
@@ -71,4 +72,38 @@ export function seedSimBattle({ locationId, roster, monsters, base, customSize }
     }))
   }
   store.enterBattleView(locationId)
+}
+
+// Pull the first BSNAP token out of arbitrary pasted text (a bug report, a chat
+// log, a line-wrapped gist), mirroring scripts/bsnap.mjs `extract`. Returns the
+// token from the first `BSNAP.` marker to the end; deserializeBattle then strips
+// the prefix + any inner whitespace. Falls back to the trimmed input so a bare
+// (prefix-less) legacy body still loads.
+export function extractBsnapToken(text: string): string {
+  const trimmed = text.trim()
+  const i = trimmed.indexOf('BSNAP.')
+  return i >= 0 ? trimmed.slice(i) : trimmed
+}
+
+// Load a pasted BSNAP snapshot as the sandbox's watched battle — a LIVE replay:
+// the sandbox's tick loop then advances it round by round (play/pause), exactly
+// like `npm run bsnap` steps it headlessly. Faithful because we bypass the store's
+// open-world orchestration (no spawn/trickle/hero-reconcile) and just render +
+// advance the snapshot's own combatants. Save-safe for the same reason seedSimBattle
+// is: App.tsx runs the sandbox under `noPersist`.
+//
+// No synthetic Location is created — the arena sizes itself from the battle's
+// cols/rows, and BattleView tolerates a null location (plain terrain). Throws on a
+// malformed/incompatible token (surface e.message to the user).
+export function loadBsnapScene(locationId: string, text: string): BattleState {
+  const battle = deserializeBattle(extractBsnapToken(text))
+  const store = useGameStore.getState()
+  useGameStore.setState((s) => ({
+    units: [],
+    battles: { [locationId]: battle },
+    monsterSpawnTimers: {},
+    locations: s.locations.filter((l) => l.id !== locationId),
+  }))
+  store.enterBattleView(locationId)
+  return battle
 }

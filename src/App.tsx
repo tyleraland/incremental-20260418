@@ -117,11 +117,12 @@ function App() {
   // The import.meta.env.DEV gate dead-code-strips it from production bundles.
   const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
 
-  // The density sandbox (`?sandbox=1`) seeds + drives its OWN synthetic scene and
-  // must never load or overwrite the real save — same no-persist gate as ?perf.
+  // The Battle Sandbox (`?sandbox=1`) seeds + drives its OWN synthetic scene (a
+  // composed density scene or a pasted BSNAP replay) and must never load or
+  // overwrite the real save — same no-persist gate as ?perf.
   const sandboxMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('sandbox')
   // The Monster Lab (?monsterlab=1) hosts a Battle Simulator that seeds a
-  // synthetic scene into the store (same seeder as the Density Sandbox). Gate it
+  // synthetic scene into the store (same seeder as the Battle Sandbox). Gate it
   // no-persist so those shallow-copied heroes + tuned monsters can NEVER be
   // autosaved over a real save — but unlike ?sandbox we still LOAD the save (below)
   // so the simulator can copy the real roster into the fight.

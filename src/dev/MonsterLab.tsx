@@ -9,7 +9,7 @@
 //
 // Battle Simulator (▶ button): drops the tuned monster into a real battlefield
 // against heroes you build — fresh class templates or shallow copies of your save
-// roster — sharing the Density Sandbox's save-safe scene seeder (simBattle.ts).
+// roster — sharing the Battle Sandbox's save-safe scene seeder (simBattle.ts).
 // App.tsx gates ?monsterlab no-persist, so the synthetic scene NEVER touches a
 // save (sandbox or curated).
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -431,7 +431,7 @@ function ReportModal({ onClose }: { onClose: () => void }) {
 // Drops the tuned monster into a real battlefield against a hero roster you build
 // (fresh class templates and/or shallow copies of the save roster), on the shared
 // save-safe seeder. Full-screen BattleView + a floating control card, same shape
-// as the Density Sandbox. Owns its own paused tick loop; App gates ?monsterlab
+// as the Battle Sandbox. Owns its own paused tick loop; App gates ?monsterlab
 // no-persist so none of this reaches a save.
 const SIM_LOC = 'monster-lab-sim'
 const SIM_MONSTERS = Object.values(MONSTER_REGISTRY)

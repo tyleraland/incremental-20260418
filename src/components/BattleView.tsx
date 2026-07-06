@@ -1857,12 +1857,8 @@ export function prewarmLocationTerrain(location: Location, units: Unit[]): void 
   })
 }
 
-export function BattleView({ locationId, battleOverride, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: {
+export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: {
   locationId: string | null
-  // Render this BattleState directly instead of looking one up in the store's
-  // `battles` map. Used by the bsnap replay tool (Time→Debug) to view a pasted
-  // snapshot without ever putting it in the store — so it never persists to a save.
-  battleOverride?: BattleState
   onFollow?: (unitId: string) => void
   inspectRequest?: BattleInspectRequest | null
   closeNonce?: number   // bump to dismiss any open detail card (e.g. roster tap)
@@ -1874,8 +1870,7 @@ export function BattleView({ locationId, battleOverride, onFollow, inspectReques
   // proto stage parks its World›Locale›Battle breadcrumb there).
   insetTopControls?: boolean
 }) {
-  const storeBattle = useGameStore((s) => (locationId ? s.battles[locationId] : undefined))
-  const battle    = battleOverride ?? storeBattle
+  const battle    = useGameStore((s) => (locationId ? s.battles[locationId] : undefined))
   const locations = useGameStore((s) => s.locations)
   const location  = locationId ? (locations.find((l) => l.id === locationId) ?? null) : null
 
