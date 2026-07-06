@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
 import { useExpeditionStore } from '@/proto/expeditionStore'
+import { useProtoStore } from '@/proto/protoStore'
 import { consumablesWeight, heroCarried, heroRoom, heroFull, WEIGHT_LIMIT } from '@/proto/economy'
 import { makeUnit, resetStore } from '../helpers'
 
@@ -99,5 +100,36 @@ describe('combined carry weight (loot pack + carried consumables)', () => {
     const pack = [{ itemId: 'potion-hp-greater', count: WEIGHT_LIMIT / 5, target: 0 }] // exactly the cap
     expect(heroFull(undefined, pack)).toBe(true)
     expect(heroRoom(undefined, pack)).toBe(0)
+  })
+})
+
+// Carried loot + configured expedition plans persist to localStorage so a reload
+// doesn't reset a hero's pack or their loadout (interim — not yet in the main save
+// envelope; see gaps.md §2/§3).
+describe('carry + expedition-plan persistence', () => {
+  it('writes the per-hero loot packs to localStorage on change', () => {
+    useProtoStore.setState({ packs: { u1: { 'drop-boar-hide': 3 } }, packsSeeded: true })
+    const raw = localStorage.getItem('protoPacks')
+    expect(raw).toBeTruthy()
+    const parsed = JSON.parse(raw!)
+    expect(parsed.packs.u1['drop-boar-hide']).toBe(3)
+    expect(parsed.packsSeeded).toBe(true)
+    useProtoStore.setState({ packs: {}, packsSeeded: false })
+  })
+
+  it('writes only the durable plan slice of an expedition (not per-tick runtime)', () => {
+    useExpeditionStore.getState().addSupply('u1', 'potion-hp')
+    useExpeditionStore.getState().setSupplyQty('u1', 'potion-hp', 25)
+    useExpeditionStore.getState().commitStep('u1', { suppliesLeft: 0.3, status: 'returning', locationId: 'boar-meadow' })
+
+    const raw = localStorage.getItem('protoExpeditions')
+    expect(raw).toBeTruthy()
+    const parsed = JSON.parse(raw!)
+    // The configured loadout is persisted…
+    expect(parsed.heroes.u1.loadout['potion-hp'].qty).toBe(25)
+    // …but the churny runtime fields are not.
+    expect(parsed.heroes.u1).not.toHaveProperty('suppliesLeft')
+    expect(parsed.heroes.u1).not.toHaveProperty('status')
+    expect(parsed.heroes.u1).not.toHaveProperty('locationId')
   })
 })

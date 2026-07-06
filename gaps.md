@@ -113,8 +113,13 @@ reload and a cold restart; upgrade effects change real numbers.
 
 **Mock today**
 - `packs[unitId]` is a mock pack filled by `simulateHunt` (fake drops);
-  `depositPack` folds it into real `miscItems`. So the *sink* is real but the
-  *source* is fake, the pack is unpersisted, and it isn't wired to combat.
+  `depositPack` folds it into real `miscItems`. So the *sink* is real, and the
+  pack now **survives a reload** (interim `protoPacks` localStorage key + a
+  `packsSeeded` flag so the one-time mock fill doesn't re-roll over it — same
+  pattern as the quest slice §2). The expedition *plans* (loadouts + loot filter +
+  return rules) also persist now (interim `protoExpeditions` key; per-tick runtime
+  is re-derived by the driver). Still-mock: the *source* (fake `simulateHunt`
+  drops, not combat), and neither slice is in the main save envelope yet.
 - Crosses the **crafting gap**: monster drops are `drop-*` ids with no item defs;
   recipe outputs are `craft-*` not in `equipment.ts` (CLAUDE.md known gap), so the
   loot→craft loop is disconnected.

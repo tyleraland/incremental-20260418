@@ -8,8 +8,9 @@ import { type Pack, packRoom, heroRoom, itemWeight } from './economy'
 // State the ?proto=1 exploration needs that the real game store doesn't model
 // yet: the stage's current zoom altitude (so the lens can follow it), the
 // kittens-style per-location "attunement" upgrade economy, story-path choices,
-// and the Army Matrix's hero locks + Optimize proposals. All mock — none of it
-// is persisted or wired into the save format.
+// and the Army Matrix's hero locks + Optimize proposals. Mostly mock and not
+// wired into the save format — but the quest slice and per-hero carry packs now
+// persist across reloads via their own interim localStorage keys (see below).
 
 export type ZoomLevel = 0 | 1 | 2
 
@@ -519,11 +520,13 @@ interface ProtoState {
   // future "quests completed" report. Repeatable bounty claims increment too.
   questCompletions: Record<string, number>
 
-  // ── Per-hero carry (mock) ────────────────────────────────────────────────────
+  // ── Per-hero carry ─────────────────────────────────────────────────────────
   // The "every hero carries their own loot until they reach town" exploration.
   // packs[unitId] is what that hero is carrying; capacity-gated (economy.ts).
-  // Unpersisted + not wired into the combat loop — `simulateHunt` fakes drops so
-  // we can feel packs fill, deposit emptying them into shared storage (miscItems).
+  // Persisted across reloads (interim localStorage key — see the PACKS_KEY block
+  // below; not yet in the main save envelope). Depositing empties a pack into
+  // shared storage (miscItems, which persists via inventoryCodec). Still not wired
+  // into real combat drops — `simulateHunt` fakes drops so we can feel packs fill.
   packs: Record<string, Pack>
   packsSeeded: boolean
   seedPacks: (seed: Record<string, Pack>) => void          // one-time mock fill
@@ -575,6 +578,25 @@ function pickQuests(s: ProtoState): QuestSlice {
 }
 const PERSISTED_QUESTS = loadQuests()
 
+// ── Pack persistence (interim) ──────────────────────────────────────────────--
+// Per-hero carried loot (`packs`) is the other proto slice a player would hate to
+// lose on reload — a hero mid-hunt with a nearly-full pack. Same interim approach
+// as the quest slice above: its own localStorage key, hydrated on load, persisted
+// on change (NOT yet in the main save envelope — see gaps.md §3). `packsSeeded`
+// rides along so the one-time mock fill (`seed.ts`) never re-rolls over a restored
+// pack after a reload.
+const PACKS_KEY = 'protoPacks'
+interface PacksSlice { packs: Record<string, Pack>; packsSeeded: boolean }
+const PACKS_DEFAULTS: PacksSlice = { packs: {}, packsSeeded: false }
+function loadPacks(): PacksSlice {
+  try { return { ...PACKS_DEFAULTS, ...JSON.parse(localStorage.getItem(PACKS_KEY) ?? '{}') } }
+  catch { return { ...PACKS_DEFAULTS } }
+}
+function pickPacks(s: ProtoState): PacksSlice {
+  return { packs: s.packs, packsSeeded: s.packsSeeded }
+}
+const PERSISTED_PACKS = loadPacks()
+
 export const useProtoStore = create<ProtoState>((set) => ({
   zoomLevel: 0,
   zoomRequest: null,
@@ -596,8 +618,10 @@ export const useProtoStore = create<ProtoState>((set) => ({
   bountyDone: PERSISTED_QUESTS.bountyDone,
   bountyClaimed: PERSISTED_QUESTS.bountyClaimed,
   questCompletions: PERSISTED_QUESTS.questCompletions,
-  packs: {},
-  packsSeeded: false,
+  // Carried loot hydrates from localStorage so a hero's in-flight pack (and the
+  // one-time-seeded flag) survives a reload (persistence wired by the subscribe below).
+  packs: PERSISTED_PACKS.packs,
+  packsSeeded: PERSISTED_PACKS.packsSeeded,
   ownedCards: {},
   sockets: {},
   cardsSeeded: false,
@@ -787,13 +811,17 @@ export const useProtoStore = create<ProtoState>((set) => ({
   }),
 }))
 
-// Persist the quest slice whenever it changes. A cheap serialized-diff guard
-// skips the frequent unrelated UI churn (zoom, tab requests, foe inspect).
+// Persist the quest + pack slices whenever they change. Cheap serialized-diff
+// guards skip the frequent unrelated UI churn (zoom, tab requests, foe inspect)
+// and only touch localStorage when the slice they own actually changed.
 let lastQuestJson = JSON.stringify(pickQuests(useProtoStore.getState()))
+let lastPacksJson = JSON.stringify(pickPacks(useProtoStore.getState()))
 useProtoStore.subscribe((s) => {
   try {
-    const json = JSON.stringify(pickQuests(s))
-    if (json !== lastQuestJson) { lastQuestJson = json; localStorage.setItem(QUEST_KEY, json) }
+    const questJson = JSON.stringify(pickQuests(s))
+    if (questJson !== lastQuestJson) { lastQuestJson = questJson; localStorage.setItem(QUEST_KEY, questJson) }
+    const packsJson = JSON.stringify(pickPacks(s))
+    if (packsJson !== lastPacksJson) { lastPacksJson = packsJson; localStorage.setItem(PACKS_KEY, packsJson) }
   } catch { /* localStorage unavailable — skip persistence */ }
 })
 

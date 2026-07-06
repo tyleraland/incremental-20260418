@@ -41,11 +41,12 @@ function loadoutFromPack(pack: PackItem[] | undefined): Loadout | null {
   return loadout
 }
 
-// §logistics — proto-only per-hero state. Each hero carries their own plan
+// §logistics — proto per-hero state. Each hero carries their own plan
 // (supplies loadout + loot categories + return conditions) plus runtime (supplies
 // left, status). The party is just the heroes sharing a location. Capacity is the
 // real proto loot pack (protoStore.packs); this holds the rest. The driver
-// (useExpeditionDriver) advances it each game tick.
+// (useExpeditionDriver) advances it each game tick. The plan persists across
+// reloads (interim localStorage — see the EXP_KEY block below); runtime does not.
 
 export type ShareFlag = 'shareLoot' | 'acceptLoot' | 'shareSupplies' | 'acceptSupplies'
 
@@ -104,9 +105,47 @@ export const freshHero = (e: Partial<HeroExpedition> = {}): HeroExpedition => ({
   locationId: e.locationId ?? null,
 })
 
+// ── Expedition-plan persistence (interim) ───────────────────────────────────--
+// The loadouts a player configures (supplies + loot filter + return rules +
+// sharing) are the durable part of an expedition; the per-tick RUNTIME
+// (suppliesLeft / status / locationId / resupplyUntil) is re-established by the
+// driver within a tick or two of reload, and churns every tick — persisting it
+// would hammer localStorage. So we persist only the PLAN subset, keyed by hero,
+// hydrated on load and written on change (its own key; not yet in the main save
+// envelope — see gaps.md §2/§6). `Unit.pack` carry targets persist independently
+// via unitsCodec; the two are written from the same edit so they stay in sync.
+const EXP_KEY = 'protoExpeditions'
+type ExpPlan = Pick<HeroExpedition,
+  | 'loadout' | 'lootCats' | 'returnOn' | 'supplyMode'
+  | 'shareLoot' | 'acceptLoot' | 'shareSupplies' | 'acceptSupplies' | 'returnTown'>
+interface ExpSlice { heroes: Record<string, ExpPlan>; returnMode: ReturnModeId }
+function planOf(h: HeroExpedition): ExpPlan {
+  return {
+    loadout: h.loadout, lootCats: h.lootCats, returnOn: h.returnOn, supplyMode: h.supplyMode,
+    shareLoot: h.shareLoot, acceptLoot: h.acceptLoot, shareSupplies: h.shareSupplies,
+    acceptSupplies: h.acceptSupplies, returnTown: h.returnTown,
+  }
+}
+function pickExpeditions(s: ExpState): ExpSlice {
+  const heroes: Record<string, ExpPlan> = {}
+  for (const [id, h] of Object.entries(s.heroes)) heroes[id] = planOf(h)
+  return { heroes, returnMode: s.returnMode }
+}
+function loadExpeditions(): { heroes: Record<string, HeroExpedition>; returnMode: ReturnModeId } {
+  try {
+    const raw = JSON.parse(localStorage.getItem(EXP_KEY) ?? '{}') as Partial<ExpSlice>
+    const heroes: Record<string, HeroExpedition> = {}
+    for (const [id, plan] of Object.entries(raw.heroes ?? {})) heroes[id] = freshHero(plan)
+    return { heroes, returnMode: raw.returnMode ?? 'individual' }
+  } catch { return { heroes: {}, returnMode: 'individual' } }
+}
+const PERSISTED_EXP = loadExpeditions()
+
 export const useExpeditionStore = create<ExpState>((set, get) => ({
-  heroes: {},
-  returnMode: 'individual',
+  // The configured plans hydrate from localStorage so loadouts survive a reload;
+  // runtime is re-derived by the driver. Persistence is wired by the subscribe below.
+  heroes: PERSISTED_EXP.heroes,
+  returnMode: PERSISTED_EXP.returnMode,
 
   ensure: (unitId) => {
     if (get().heroes[unitId]) return
@@ -213,6 +252,17 @@ export const useExpeditionStore = create<ExpState>((set, get) => ({
     return { heroes: { ...s.heroes, [unitId]: { ...cur, ...patch } } }
   }),
 }))
+
+// Persist the plan slice whenever it changes. A serialized-diff guard skips the
+// per-tick runtime churn (suppliesLeft / status commits) the plan doesn't cover,
+// so localStorage is only touched on a real loadout edit.
+let lastExpJson = JSON.stringify(pickExpeditions(useExpeditionStore.getState()))
+useExpeditionStore.subscribe((s) => {
+  try {
+    const json = JSON.stringify(pickExpeditions(s))
+    if (json !== lastExpJson) { lastExpJson = json; localStorage.setItem(EXP_KEY, json) }
+  } catch { /* localStorage unavailable — skip persistence */ }
+})
 
 // Dev-only: expose on window for Playwright/devtools (mirrors App.tsx's __game),
 // dead-code-stripped from production by the DEV gate.
