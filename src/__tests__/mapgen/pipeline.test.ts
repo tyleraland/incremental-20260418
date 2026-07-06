@@ -27,12 +27,24 @@ describe('mapgen pipeline', () => {
 
   it('skipping a DOWNSTREAM pass leaves upstream planes byte-identical (stream isolation)', () => {
     const full = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept' })
-    const noScatter = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['scatter'] })
+    const noScatter = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['scatter-fill', 'scatter-clumps'] })
     expect(noScatter.spec.scatter).toEqual([])
     expect(noScatter.spec.collision).toEqual(full.spec.collision)
     expect(Array.from(noScatter.spec.surface.grid)).toEqual(Array.from(full.spec.surface.grid))
     // semantic reads collision + fields only — scatter must not perturb it
     expect(noScatter.spec.semantic).toEqual(full.spec.semantic)
+  })
+
+  it('scatter passes are stream-isolated: skipping clumps leaves fill byte-identical', () => {
+    const full = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept' })
+    const noClumps = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['scatter-clumps'] })
+    // fill items carry intent 'field'; they must be identical with clumps off,
+    // proving the two passes draw from independent rng streams.
+    const fillOf = (s: typeof full.spec.scatter) => s.filter((it) => it.intent === 'field')
+    expect(fillOf(noClumps.spec.scatter)).toEqual(fillOf(full.spec.scatter))
+    // and clumps genuinely added cluster/understory items in the full bake
+    expect(full.spec.scatter.some((it) => it.intent === 'cluster')).toBe(true)
+    expect(noClumps.spec.scatter.some((it) => it.intent === 'cluster')).toBe(false)
   })
 
   it('skipping an UPSTREAM pass does not reshuffle a later pass\'s own randomness', () => {

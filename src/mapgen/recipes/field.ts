@@ -9,8 +9,9 @@
 // Dungeon (graph-first) and city (road-first) are future recipes over this same
 // pipeline; they share the bake/validate tail unchanged.
 
-import type { ScatterKind, SurfaceMaterial } from '../types'
+import type { ScatterIntent, ScatterKind, SurfaceMaterial } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
+import type { Rng } from '../rng'
 import { addBarrier, addPoi, isPlaceable, matAt, paint } from '../draft'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
@@ -156,35 +157,183 @@ const outcropsPass = {
   },
 }
 
-// ── scatter: props follow moisture + surface material (§A layer 9) ───────────
+// ── scatter (§A layer 9): props follow moisture + surface material ───────────
+// Two isolatable passes, each on its OWN rng stream so the ?mapgen=1 lab can
+// skip either independently (skipping one leaves the other byte-identical):
+//   scatter-fill   — density-aware BLUE-NOISE filler (jittered grid) spread
+//                    across the walkable ground, thicker where it's moist,
+//                    thinned toward the spawn apron. `intent: 'field'`.
+//   scatter-clumps — a few grove/bed CENTERS with a radial burst (denser at
+//                    the core) + a ring of understory sprigs, so vegetation
+//                    reads as groves and flower beds, not a uniform dust.
+//                    `intent: 'cluster'` (burst) + `'understory'` (sprigs).
 const KIND_SIZE: Record<ScatterKind, number> = { tree: 1.3, bush: 0.8, rock: 0.9, stump: 0.7, flower: 0.5, reed: 0.7 }
 
-const scatterPass = {
-  id: 'scatter',
+// ── SCATTER_DIALS — the human review knobs (first-pass values) ───────────────
+// Group ALL scatter tunables here so a reviewer tweaks one commented block. The
+// `*Mult` numbers set overall biome density; the `clump*` numbers set how the
+// groves/beds read. These are first guesses — see the report for which move the
+// look most.
+const SCATTER_DIALS = {
+  // ── scatter-fill (blue-noise area filler) ──
+  fillSpacing: 3.2,     // jittered-grid cell size = min gap between fillers (world units); smaller = denser
+  baseDensity: 0.6,     // baseline chance a grid cell emits a prop, before substrate modulation (0–1)
+  moistureBias: 0.6,    // how strongly high moisture thickens the fill (0 = flat everywhere, 1 = moist-only)
+  apronThin: 1,         // fade fill toward the spawn apron: 1 = full fade at the apron edge, 0 = no thinning
+  // ── scatter-clumps (groves / flower beds) ──
+  clumpCount: 5,        // grove/bed centres on a BASELINE (~96-unit) map; scales with area × theme mult
+  clumpRadius: 5.5,     // burst radius around a centre (world units) — the grove's footprint
+  clumpFalloff: 1.9,    // radial density falloff exponent (higher = tighter, denser core)
+  clumpDensity: 0.7,    // burst attempts per centre ≈ radius² × this — the grove's fill effort
+  understoryPerClump: 5, // bush/flower sprigs sprinkled just around each centre (`understory` intent)
+  // ── theme density + shared cap ──
+  forestMult: 1.6,      // scatter density multiplier under the 'forest' theme (lush)
+  desertMult: 0.4,      // ...under 'desert' (sparse)
+  maxItems: 96,         // BASELINE total-item cap (× theme mult) — keeps a big map from exploding
+  fillShare: 0.6,       // fraction of the cap scatter-fill may spend (clumps get the rest + slack)
+  clumpShare: 0.55,     // fraction of the cap scatter-clumps may spend (fill + clump ≤ ~1.15× cap, bounded)
+}
+
+const r2 = (v: number) => Math.round(v * 100) / 100
+
+// Total-item cap near today's ~96×mult so a large map can't explode.
+function scatterCap(size: number, mult: number): number {
+  return Math.round(Math.min(SCATTER_DIALS.maxItems, Math.max(8, (size * size) / 45)) * mult)
+}
+
+function themeMult(themes: readonly string[]): number {
+  return themes.includes('forest') ? SCATTER_DIALS.forestMult : themes.includes('desert') ? SCATTER_DIALS.desertMult : 1
+}
+
+// Kind from the substrate — the phase-1 surface-material + moisture logic, kept.
+function kindFor(draft: PassCtx['draft'], x: number, y: number, m: number, r: Rng): ScatterKind {
+  const mat = matAt(draft, x, y)
+  if (mat === 'sand') return nearWater(draft, x, y) ? 'reed' : 'rock'
+  if (mat === 'dirt') return r.chance(0.6) ? 'rock' : 'stump'
+  return m > 0.55 ? 'tree' : r.chance(0.5) ? 'bush' : 'flower'
+}
+
+// Water cells are never placeable for scatter (fillers or clump members).
+function onWater(draft: PassCtx['draft'], x: number, y: number): boolean {
+  const mat = matAt(draft, x, y)
+  return mat === 'deep-water' || mat === 'shallow-water'
+}
+
+function pushScatter(draft: PassCtx['draft'], x: number, y: number, kind: ScatterKind, r: Rng, intent: ScatterIntent): void {
+  draft.scatter.push({
+    kind, x: r2(x), y: r2(y),
+    size: r2(KIND_SIZE[kind] * r.range(0.75, 1.25)),
+    seed: r.int(1 << 30), solid: false, intent,
+  })
+}
+
+// scatter-fill: a jittered grid gives blue-noise candidates (one per spacing²
+// cell, min-gap by construction). Density modulation is a per-cell WEIGHT
+// (moist thickens, apron thins); the budget is then spread across the WHOLE map
+// proportional to weight — a global scale, never a top-down hard stop (which
+// would pile all the fill in the first rows and leave the rest bare).
+const scatterFillPass = {
+  id: 'scatter-fill',
   run({ draft, params, fields, rng, note }: PassCtx) {
-    const { size } = params
-    const mult = params.themes.includes('forest') ? 2.2 : params.themes.includes('desert') ? 0.5 : 1
-    const target = Math.round(Math.min(96, Math.max(8, (size * size) / 45)) * mult)
-    const r = rng('place')
+    const { size, spawnApron } = params
+    const mult = themeMult(params.themes)
+    const cap = Math.round(scatterCap(size, mult) * SCATTER_DIALS.fillShare)
+    const r = rng('fill')
+    const spacing = SCATTER_DIALS.fillSpacing
+    const cols = Math.ceil(size / spacing)
+    const cx = size / 2, cy = size / 2
+    // Pass A: gather placeable jittered candidates + each cell's density weight.
+    const cand: { x: number; y: number; m: number; w: number }[] = []
+    let totalW = 0
+    for (let gy = 0; gy < cols; gy++) {
+      for (let gx = 0; gx < cols; gx++) {
+        const x = (gx + r.range(0.15, 0.85)) * spacing
+        const y = (gy + r.range(0.15, 0.85)) * spacing
+        if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
+        if (!isPlaceable(draft, { x, y }, 0.5) || onWater(draft, x, y)) continue
+        const m = fields.moisture(x, y)
+        let w = SCATTER_DIALS.baseDensity * mult *
+          (1 - SCATTER_DIALS.moistureBias + SCATTER_DIALS.moistureBias * m)
+        const dist = Math.hypot(x - cx, y - cy)
+        if (dist < spawnApron * 2) {
+          const t = Math.max(0, (dist - spawnApron) / spawnApron) // 0 at apron edge → 1 two-apron out
+          w *= Math.min(1, (1 - SCATTER_DIALS.apronThin) + t * SCATTER_DIALS.apronThin)
+        }
+        cand.push({ x, y, m, w })
+        totalW += w
+      }
+    }
+    // Pass B: scale keep-probability so the EXPECTED count ≈ min(cap, ΣweightW),
+    // spread across the whole field weighted by moisture — no spatial bias.
+    const scale = totalW > cap ? cap / totalW : 1
     let placed = 0
-    for (let guard = 0; placed < target && guard < target * 6; guard++) {
-      const x = r.range(1, size - 1), y = r.range(1, size - 1)
-      if (!isPlaceable(draft, { x, y }, 0.5)) continue
-      const mat = matAt(draft, x, y)
-      if (mat === 'deep-water' || mat === 'shallow-water') continue
-      const m = fields.moisture(x, y)
-      let kind: ScatterKind
-      if (mat === 'sand') kind = nearWater(draft, x, y) ? 'reed' : 'rock'
-      else if (mat === 'dirt') kind = r.chance(0.6) ? 'rock' : 'stump'
-      else kind = m > 0.55 ? 'tree' : r.chance(0.5) ? 'bush' : 'flower'
-      draft.scatter.push({
-        kind, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100,
-        size: Math.round(KIND_SIZE[kind] * r.range(0.75, 1.25) * 100) / 100,
-        seed: r.int(1 << 30), solid: false,
-      })
+    for (const cell of cand) {
+      if (placed >= cap) break
+      if (!r.chance(Math.min(1, cell.w * scale))) continue
+      pushScatter(draft, cell.x, cell.y, kindFor(draft, cell.x, cell.y, cell.m, r), r, 'field')
       placed++
     }
-    if (placed < target) note(`scatter starved: ${placed}/${target} placed`)
+    note(`scatter-fill: ${placed} fillers of ${cand.length} candidates (cap ${cap})`)
+    if (placed >= cap) note(`scatter-fill capped at ${cap}`)
+  },
+}
+
+// scatter-clumps: a few centres, each a radial burst + understory ring. Reads
+// as groves (moist) / flower beds (drier grass) rather than a uniform field.
+const scatterClumpsPass = {
+  id: 'scatter-clumps',
+  run({ draft, params, fields, rng, note }: PassCtx) {
+    const { size } = params
+    const mult = themeMult(params.themes)
+    const cap = Math.round(scatterCap(size, mult) * SCATTER_DIALS.clumpShare)
+    const areaScale = (size * size) / (96 * 96)
+    const count = Math.max(1, Math.round(SCATTER_DIALS.clumpCount * areaScale * mult))
+    const r = rng('clumps')
+    const radius = SCATTER_DIALS.clumpRadius
+    let placed = 0
+    let clumps = 0
+    for (let c = 0; c < count && placed < cap; c++) {
+      // Pick a suitable centre: sample a handful, bias to the MOISTEST placeable
+      // non-water/non-sand ground (groves want good soil, never a lake or dune).
+      let center: { x: number; y: number; m: number } | null = null
+      for (let s = 0; s < 12; s++) {
+        const x = r.range(3, size - 3), y = r.range(3, size - 3)
+        if (!isPlaceable(draft, { x, y }, 1) || onWater(draft, x, y)) continue
+        if (matAt(draft, x, y) === 'sand') continue
+        const m = fields.moisture(x, y)
+        if (!center || m > center.m) center = { x, y, m }
+      }
+      if (!center) continue
+      clumps++
+      // moist → tree grove; drier grass → flower bed.
+      const clumpKind: ScatterKind = center.m > 0.5 ? 'tree' : 'flower'
+      // radial BURST with centre-weighted falloff.
+      const bursts = Math.round(radius * radius * SCATTER_DIALS.clumpDensity)
+      for (let i = 0; i < bursts && placed < cap; i++) {
+        const ang = r.next() * Math.PI * 2
+        const rr = Math.pow(r.next(), SCATTER_DIALS.clumpFalloff) * radius
+        const x = center.x + Math.cos(ang) * rr, y = center.y + Math.sin(ang) * rr
+        if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
+        if (!isPlaceable(draft, { x, y }, 0.4) || onWater(draft, x, y)) continue
+        pushScatter(draft, x, y, clumpKind, r, 'cluster')
+        placed++
+      }
+      // UNDERSTORY: a few low sprigs just around the centre.
+      for (let u = 0; u < SCATTER_DIALS.understoryPerClump && placed < cap; u++) {
+        const ang = r.next() * Math.PI * 2
+        const rr = r.range(0.5, radius * 0.6)
+        const x = center.x + Math.cos(ang) * rr, y = center.y + Math.sin(ang) * rr
+        if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
+        if (!isPlaceable(draft, { x, y }, 0.4) || onWater(draft, x, y)) continue
+        const uk: ScatterKind = clumpKind === 'tree'
+          ? (r.chance(0.5) ? 'bush' : 'flower')
+          : (r.chance(0.6) ? 'flower' : 'bush')
+        pushScatter(draft, x, y, uk, r, 'understory')
+        placed++
+      }
+    }
+    note(`scatter-clumps: ${clumps} clumps, ${placed} items (cap ${cap})`)
+    if (placed >= cap) note(`scatter-clumps capped at ${cap}`)
   },
 }
 
@@ -232,5 +381,5 @@ export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
   description: 'Field-first open-world map: noise substrate → material bands → lake/ford + outcrops → scatter → POIs + tactical profile.',
-  passes: [surfacePass, hydrologyPass, outcropsPass, scatterPass, semanticPass, premisePass],
+  passes: [surfacePass, hydrologyPass, outcropsPass, scatterFillPass, scatterClumpsPass, semanticPass, premisePass],
 }

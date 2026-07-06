@@ -1,6 +1,6 @@
 import { memo, useMemo, useLayoutEffect, useRef, useState } from 'react'
 import type { Barrier } from '@/engine'
-import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial, ThemeTag } from '@/mapgen'
+import type { BarrierMaterial, MapSpec, ScatterIntent, ScatterKind, SurfaceMaterial, ThemeTag } from '@/mapgen'
 import { SURFACE_MATERIALS } from '@/mapgen'
 import type { Biome } from '@/render/appearance'
 import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
@@ -299,7 +299,12 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     // `rotate` policy (rocks/cobbles free-spin, trees keep a small upright wobble).
     const themes = (spec.semantic.regionTags ?? []) as ThemeTag[]
     props = spec.scatter.map((it) => {
-      const cands = themeFilteredCands(variants, ARCHETYPE_INDEX(p.biome, it.kind), themes)
+      // kind → theme-filtered prop candidates (phase 1), then INTENT → prop
+      // role (phase 2): a `cluster` item prefers grove/bed props, an
+      // `understory` item prefers the low sprig props. Each filter falls back to
+      // its input if it would empty the pool — never render nothing.
+      const themed = themeFilteredCands(variants, ARCHETYPE_INDEX(p.biome, it.kind), themes)
+      const cands = roleFilteredCands(variants, themed, it.intent)
       const v = weightedPick(variants, cands, hash01(it.seed))
       return {
         v,
@@ -339,6 +344,18 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
 // kind is reachable on a generated map — no prop goes dark because a 1:1 map
 // skipped it. Unmapped kind → the whole set (never render nothing). The mapgen
 // vocabulary stays abstract; what a "tree" looks like is the prop's business.
+// Scatter INTENT (mapgen) → prop ROLE (props.ts): keep only candidates whose
+// placement role matches the item's intent, so a `cluster` scatter item draws a
+// grove/bed prop and an `understory` item a low sprig. Empty match → the input
+// candidates (never render nothing); no intent → unchanged. Deterministic (pure
+// filter over the seed-ordered candidate list). This is the phase-2 half of the
+// mapgen⇄render seam: mapgen states intent, render owns the intent→role match.
+function roleFilteredCands(defs: PropDef[], cands: number[], intent?: ScatterIntent): number[] {
+  if (!intent) return cands
+  const kept = cands.filter((i) => (defs[i].role ?? 'field') === intent)
+  return kept.length ? kept : cands
+}
+
 const archetypeCache = new Map<string, number[]>()
 function ARCHETYPE_INDEX(biome: Biome, kind: ScatterKind): number[] {
   const k = `${biome}:${kind}`

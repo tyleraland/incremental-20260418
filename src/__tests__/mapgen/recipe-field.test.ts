@@ -42,6 +42,35 @@ describe('field recipe fuzz gate', () => {
     expect(sandy).toBeGreaterThan(desert.spec.surface.grid.length * 0.5)
   })
 
+  it('scatter clumps FIRE and are spatially grouped (not uniform dust)', () => {
+    // Across the sweep, most themed seeds must grow at least one grove/bed, and a
+    // cluster item must have a same-kind neighbour within ~clumpRadius — the
+    // spatial grouping uniform scatter would not guarantee.
+    let seedsWithClusters = 0
+    let groupedSeeds = 0
+    for (const r of sweep(120, ['forest'])) {
+      const clusters = r.spec.scatter.filter((it) => it.intent === 'cluster')
+      if (clusters.length === 0) continue
+      seedsWithClusters++
+      // a cluster item with a same-kind neighbour within the clump radius (6)
+      const grouped = clusters.some((a) =>
+        clusters.some((b) => b !== a && b.kind === a.kind && Math.hypot(a.x - b.x, a.y - b.y) < 6))
+      if (grouped) groupedSeeds++
+    }
+    // clumping must be a real layer, not a lottery
+    expect(seedsWithClusters).toBeGreaterThan(SEEDS.length * 0.7)
+    expect(groupedSeeds).toBeGreaterThan(SEEDS.length * 0.7)
+  })
+
+  it('scatter states placement intent for render (field fill + cluster groves)', () => {
+    const r = generateMap(FIELD_RECIPE, { recipe: 'field', seed: 4, size: 120, themes: ['forest'] })
+    const intents = new Set(r.spec.scatter.map((it) => it.intent))
+    expect(intents.has('field')).toBe(true)
+    expect(intents.has('cluster')).toBe(true)
+    // total stays bounded near the ~96×forestMult cap (fill + clump shares)
+    expect(r.spec.scatter.length).toBeLessThan(96 * 1.6 * 1.2)
+  })
+
   it('the semantic plane self-describes: spawn + landmark POIs, sane tactical profile', () => {
     for (const r of sweep(100, ['plains', 'water']).slice(0, 8)) {
       const kinds = r.spec.semantic.pois.map((p) => p.kind)
