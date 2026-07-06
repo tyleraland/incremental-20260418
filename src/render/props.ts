@@ -175,10 +175,17 @@ const PROP_META: Record<string, PropPlacement> = {
   bloom:    { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['flowers', 'tuft'] },
   stump:    { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'upright', near: ['tree'] },
   mushroom: { kinds: ['flower', 'bush'], weight: 0.5, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
-  reeds:    { kinds: ['reed', 'bush'], weight: 0.8, themes: ['water', 'beach'], role: 'edge', rotate: 'upright', near: ['water'] },
+  // water/wetland edge ONLY — reaches a forest map solely when it also has a
+  // `water`/`beach` feature (a lake/stream); kept off dry forest by NOT being
+  // themed `forest` and by reed-kind only emitting near water.
+  reeds:    { kinds: ['reed', 'bush'], weight: 0.8, themes: ['water', 'beach'], role: 'edge', rotate: 'upright', near: ['water'], tags: ['wetland'] },
   log:      { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'] },
   grassclump: { kinds: ['bush', 'flower'], weight: 1, themes: ['plains', 'forest'], role: 'field', rotate: 'upright', near: ['path'] },
   leaves:     { kinds: ['flower', 'bush'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'free', near: ['tree'] },
+  // forest EDGE verge (fills the forest edge-role gap): a mossy fern skirt for
+  // dry-forest outcrop/wall skirts. `flower` kind so the field recipe's flower
+  // edge items pick it up; `bush` lets it serve as a general forest edge.
+  fernverge:  { kinds: ['flower', 'bush'], weight: 0.8, themes: ['forest'], role: 'edge', rotate: 'upright', near: ['wall', 'path', 'tree'], clusterWith: ['fern', 'mushroom'] },
   // forest (from the inked top-down forest sheet)
   canopy:   { kinds: ['tree'], weight: 0.2, themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright', near: ['tree'], clusterWith: ['fern', 'leaves', 'mushroom'] },
   fern:     { kinds: ['bush', 'flower'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
@@ -450,6 +457,18 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: LEAVES_WARM, fill: 'woodLight' },
       { d: LEAVES_TAN, fill: 'cliffEdge' },
       { d: LEAVES_GREEN, fill: 'mossBase' },
+    ] },
+    // forest FERN VERGE: a low, wide ground-cover moss patch (two-tone cutout,
+    // spreading + flat, hugging a forest edge) with a few short fern fronds
+    // rising from it — a couple lit. Reads as a mossy fern skirt distinct from
+    // the tall thin `reeds`, the round-fan `fern`, and the flat stone `moss`.
+    { id: 'fernverge', size: 1, wonk: 0.04, paths: [
+      ...cutout(
+        'M-0.85 0.3C-0.88 0.06 -0.56 -0.05 -0.32 -0.02C-0.12 -0.15 0.2 -0.13 0.36 0C0.62 -0.09 0.9 0.06 0.82 0.32C0.78 0.52 0.4 0.6 0 0.58C-0.42 0.6 -0.8 0.5 -0.85 0.3Z',
+        'foliageDeep', 'mossBase',
+      ),
+      { d: 'M-0.34 0.4Q-0.42 -0.02 -0.5 -0.44M-0.02 0.44Q0.02 -0.06 -0.04 -0.58M0.3 0.42Q0.4 0 0.52 -0.4', stroke: 'foliage', sw: 0.09 },
+      { d: 'M-0.02 0.44Q0.02 -0.06 -0.04 -0.58M0.3 0.42Q0.4 0 0.52 -0.4', stroke: 'tileMoss', sw: 0.055, lit: true },
     ] },
   ]),
   stone: withVariants([

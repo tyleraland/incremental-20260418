@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest'
 import { THEME_TAGS, SCATTER_KINDS } from '@/mapgen'
 import { assetCoverage, coverageForTheme, coverageGaps, PROP_ROLES, themesMissingEdge } from '@/render/coverage'
+import { listAssets } from '@/render/assets'
 
 describe('asset coverage model', () => {
   const cov = assetCoverage()
@@ -78,10 +79,18 @@ describe('known-covered themes report their capabilities', () => {
   it('city has edge assets (cobbles / flagstone)', () => {
     expect(coverageForTheme('city').hasEdge).toBe(true)
   })
-  it('forest has cluster + understory (canopy / fern)', () => {
+  it('forest has cluster + understory + edge (canopy / fern / fernverge)', () => {
     const f = coverageForTheme('forest')
     expect(f.hasCluster).toBe(true)
     expect(f.hasUnderstory).toBe(true)
+    // fernverge closes the forest edge-role gap (a dry-forest verge, not reeds)
+    expect(f.hasEdge).toBe(true)
+  })
+  it('reeds stays water/beach-themed (not forest) — reeds are water-gated', () => {
+    const props = listAssets().filter((a) => a.category === 'prop')
+    const reeds = props.find((a) => a.id === 'reeds')
+    expect(reeds?.themes).toEqual(['water', 'beach'])
+    expect(reeds?.themes).not.toContain('forest')
   })
 })
 
