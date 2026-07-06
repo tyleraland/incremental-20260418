@@ -62,6 +62,11 @@ a per-file Maintainability Index. **Coverage** is a test-run artifact — it rea
 The payoff is cross-lens: **risk** (complex **and** high-churn) and **test targets**
 (complex **and** low-coverage), plus `colorBy: complexity|coverage` on the treemap.
 
+**Raw source.** The build mirrors tracked text files into `dist/source/`, and the
+viewer opens any file's code (line-numbered, with line-jump) on demand — from the
+Modules/Files detail panels ("⟨⟩ view source") and from each function row in the
+Complexity lens (jumps to `file:line`). Fetched per-file, never bundled into a dataset.
+
 ### Add a lens
 
 1. Write `extract/<name>.mjs` exporting `extract<Name>({ REPO, modules, git, complexity, coverage })`

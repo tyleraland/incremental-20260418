@@ -91,6 +91,7 @@ function detail(id) {
   const html =
     `<h2>${lib.short(id)}</h2><div class="sub muted">${n.layer} · ${n.loc} LOC · ${n.exportCount} exports</div>` +
     tags.join(' ') +
+    `<p>${lib.srcLink(id, null, '⟨⟩ view source')}</p>` +
     (n.features?.length ? lib.sec('Features', n.features.map((f) => lib.goLink('features', f, f))) : '') +
     (n.registries?.length ? lib.sec('Content registries', n.registries.map((r) => `${r.name} <span class="muted">×${r.count}</span>`)) : '') +
     lib.sec(`Imports (${imports.length})`, imports.length ? imports.map(mlink) : ['<span class="muted">— none —</span>']) +

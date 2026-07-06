@@ -9,7 +9,7 @@
 import { execSync } from 'node:child_process'
 import { writeFileSync, mkdirSync, copyFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { dirname, resolve, join, relative } from 'node:path'
+import { dirname, resolve, join, relative, extname } from 'node:path'
 
 import { extractModules } from './extract/modules.mjs'
 import { extractGit } from './extract/git.mjs'
@@ -80,6 +80,25 @@ copyTree(join(HERE, 'viewer'), OUT_DIR)
 // vendor pinned cytoscape (no runtime CDN dependency)
 copyFileSync(join(HERE, 'node_modules', 'cytoscape', 'dist', 'cytoscape.min.js'), join(OUT_DIR, 'cytoscape.min.js'))
 
+// Mirror the tracked text source into dist/source/ so the viewer can show raw
+// code on demand (fetched per-file, not bundled into a dataset). The repo is
+// public, so no confidentiality concern; binary/oversized files are skipped.
+const SOURCE_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.css', '.scss',
+  '.html', '.md', '.yml', '.yaml', '.txt', '.svg', '.sh', '.cfg', '.toml', '.xml', '.nvmrc', ''])
+let sourceFiles = 0
+try {
+  const tracked = execSync('git ls-files', { cwd: REPO, maxBuffer: 64 * 1024 * 1024 }).toString().split('\n').filter(Boolean)
+  for (const p of tracked) {
+    if (!SOURCE_EXT.has(extname(p).toLowerCase())) continue
+    const abs = join(REPO, p)
+    try { if (statSync(abs).size > 512 * 1024) continue } catch { continue }
+    const dest = join(OUT_DIR, 'source', p)
+    mkdirSync(dirname(dest), { recursive: true })
+    copyFileSync(abs, dest)
+    sourceFiles++
+  }
+} catch { /* no git / no files */ }
+
 const kb = (b) => (b / 1024).toFixed(0) + 'kb'
 console.log(
   `codemap @${gitHash}\n` +
@@ -90,5 +109,6 @@ console.log(
     (git.available ? '' : ' (unavailable)') + '\n' +
   `  complexity: ${complexity.stats.functions} functions, ${complexity.stats.over10} over CC>10, median MI ${complexity.stats.medianMi}\n` +
   `  coverage:   ` + (coverage.available ? `${coverage.stats.statements}% statements over ${coverage.stats.files} files` : 'unavailable (run `npm run coverage`)') + '\n' +
+  `  source:     ${sourceFiles} files mirrored to source/\n` +
   `  -> ${relative(REPO, DATA_DIR)}/{modules,git,complexity,coverage,filesystem,manifest}.json`,
 )

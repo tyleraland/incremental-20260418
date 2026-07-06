@@ -50,12 +50,13 @@ function render() {
 
     `<h3>Most complex functions <span class="muted">— by ${METRICS.find((m) => m[0] === state.metric)[1].toLowerCase()}</span></h3>` +
     `<table><thead><tr><th>function</th><th>file</th><th class="num">CC</th><th class="num">cog</th><th class="num">depth</th><th class="num">loc</th></tr></thead><tbody>` +
-    fns.map((f) => `<tr><td class="mono">${esc(f.name)}</td><td>${moduleIds.has(f.file) ? lib.goLink('modules', f.file, lib.short(f.file) + ':' + f.line) : lib.short(f.file) + ':' + f.line}</td>` +
+    fns.map((f) => `<tr><td class="mono">${esc(f.name)}</td><td>${lib.srcLink(f.file, f.line, lib.short(f.file) + ':' + f.line)}</td>` +
       `<td class="num" style="color:${f.cyclomatic > 20 ? 'var(--dead)' : f.cyclomatic > 10 ? 'var(--hub)' : 'inherit'}">${f.cyclomatic}</td>` +
       `<td class="num">${f.cognitive}</td><td class="num">${f.depth}</td><td class="num">${f.loc}</td></tr>`).join('') +
     `</tbody></table>`
 
   ctx.root.querySelectorAll('a[data-go]').forEach((a) => a.addEventListener('click', () => ctx.go(a.dataset.go, a.dataset.arg)))
+  lib.wireSrc(ctx.root)
 }
 
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))

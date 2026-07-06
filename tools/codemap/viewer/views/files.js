@@ -125,7 +125,7 @@ function fileDetail(n) {
   ]
   const html =
     `<h2>${n.name}</h2><div class="sub muted">${n.path}</div>` +
-    (isModule ? `<p>${lib.goLink('modules', n.path, '→ open in Modules graph')}</p>` : '') +
+    `<p>${lib.srcLink(n.path, null, '⟨⟩ view source')}${isModule ? ' · ' + lib.goLink('modules', n.path, 'open in Modules graph') : ''}</p>` +
     '<table class="kv">' + rows.map(([k, v]) => `<tr><td class="muted">${k}</td><td>${v}</td></tr>`).join('') + '</table>'
   lib.setDetail(html, ctx.go)
 }
