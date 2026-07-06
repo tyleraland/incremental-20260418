@@ -5,7 +5,9 @@ import { ARENA_SKINS } from '@/render/skins'
 import { propMarkup } from '@/render/terrain'
 import { TERRAIN_PROPS, type PropDef } from '@/render/props'
 import { listAssets, assetKey, type AssetDescriptor, type AssetCategory } from '@/render/assets'
-import { SCATTER_KINDS } from '@/mapgen'
+import { assetCoverage, PROP_ROLES } from '@/render/coverage'
+import { SCATTER_KINDS, THEME_TAGS, type ThemeTag, type ScatterKind } from '@/mapgen'
+import type { PropRole } from '@/render/props'
 import { hash01, scatter } from '@/render/authoring'
 
 // Dev-only asset workshop (`?workshop=1`): the live authoring loop for paper
@@ -145,13 +147,60 @@ export default function AssetWorkshop() {
   const [copied, setCopied] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [namesCopied, setNamesCopied] = useState(false)
+  // catalog filters (compose with AND) + group-by. All prop-centric: a theme/
+  // role/kind filter narrows to matching props (non-prop assets carry no tags).
+  const [groupBy, setGroupBy] = useState<'category' | 'theme' | 'role'>('category')
+  const [fTheme, setFTheme] = useState<Set<ThemeTag>>(new Set())
+  const [fRole, setFRole] = useState<Set<PropRole>>(new Set())
+  const [fKind, setFKind] = useState<Set<ScatterKind>>(new Set())
 
+  const coverage = useMemo(() => assetCoverage(), [])
   const catalog = useMemo(() => listAssets(), [])
+  const filtered = useMemo(() => {
+    const keep = (a: AssetDescriptor): boolean => {
+      if (fTheme.size) {
+        if (a.category !== 'prop') return false
+        const th = a.themes ?? []
+        if (!(th.length === 0 || th.some((t) => fTheme.has(t)))) return false // universal props match any theme
+      }
+      if (fRole.size) {
+        if (a.category !== 'prop') return false
+        if (!fRole.has(a.role ?? 'field')) return false
+      }
+      if (fKind.size) {
+        if (a.category !== 'prop') return false
+        if (!(a.kinds ?? []).some((k) => fKind.has(k))) return false
+      }
+      return true
+    }
+    return catalog.filter(keep)
+  }, [catalog, fTheme, fRole, fKind])
+
   const byCat = useMemo(() => {
     const m = new Map<AssetCategory, AssetDescriptor[]>()
-    for (const a of catalog) (m.get(a.category) ?? m.set(a.category, []).get(a.category)!).push(a)
+    for (const a of filtered) (m.get(a.category) ?? m.set(a.category, []).get(a.category)!).push(a)
     return m
-  }, [catalog])
+  }, [filtered])
+  // group-by theme / role operate on props only (the taggable category).
+  const props = useMemo(() => filtered.filter((a) => a.category === 'prop'), [filtered])
+  const groups = useMemo((): { label: string; items: AssetDescriptor[] }[] => {
+    if (groupBy === 'theme') {
+      const out: { label: string; items: AssetDescriptor[] }[] =
+        THEME_TAGS.map((t) => ({ label: t as string, items: props.filter((a) => (a.themes ?? []).includes(t)) }))
+      const universal = props.filter((a) => !(a.themes && a.themes.length))
+      if (universal.length) out.push({ label: 'universal (no themes)', items: universal })
+      return out.filter((g) => g.items.length)
+    }
+    return PROP_ROLES.map((r) => ({ label: r, items: props.filter((a) => (a.role ?? 'field') === r) })).filter((g) => g.items.length)
+  }, [groupBy, props])
+  const filtersActive = fTheme.size + fRole.size + fKind.size > 0
+
+  const toggleSet = <T,>(set: (fn: (p: Set<T>) => Set<T>) => void) => (v: T) =>
+    set((prev) => { const n = new Set(prev); n.has(v) ? n.delete(v) : n.add(v); setNamesCopied(false); return n })
+  const toggleTheme = toggleSet(setFTheme)
+  const toggleRole = toggleSet(setFRole)
+  const toggleKind = toggleSet(setFKind)
+  const clearFilters = () => { setFTheme(new Set()); setFRole(new Set()); setFKind(new Set()) }
 
   const { def, errors } = useMemo(() => {
     try { return validate(JSON.parse(text)) }
@@ -182,6 +231,73 @@ export default function AssetWorkshop() {
   }
 
   const url = def ? propUrl(def) : null
+
+  // One asset card — reused by the category / theme / role groupings.
+  const card = (a: AssetDescriptor) => {
+    const key = assetKey(a)
+    const pdef = propOf(a)
+    const sel = selected.has(key)
+    const isProp = a.category === 'prop'
+    const title = [
+      key,
+      a.kinds?.length ? `kinds: ${a.kinds.join(', ')}` : (isProp ? 'kinds: none' : ''),
+      a.role ? `role: ${a.role}` : '',
+      a.weight !== undefined ? `weight: ${a.weight}` : '',
+      a.themes?.length ? `themes: ${a.themes.join(', ')}` : (isProp ? 'themes: universal' : ''),
+      a.rotate ? `rotate: ${a.rotate}` : '',
+      a.near?.length ? `near: ${a.near.join(', ')}` : '',
+      a.avoid?.length ? `avoid: ${a.avoid.join(', ')}` : '',
+      a.clusterWith?.length ? `clusterWith: ${a.clusterWith.join(', ')}` : '',
+      a.tags.length ? `tags: ${a.tags.join(', ')}` : '',
+    ].filter(Boolean).join('\n')
+    return (
+      <div
+        key={key}
+        onClick={() => toggle(key)}
+        title={title}
+        className={`relative w-[74px] rounded border cursor-pointer select-none ${sel ? 'border-emerald-400 ring-1 ring-emerald-400/60' : 'border-neutral-800 hover:border-neutral-600'}`}
+      >
+        {pdef && a.biome ? (
+          <div
+            className="h-[46px] rounded-t"
+            style={{ ...ARENA_SKINS.paper.surface, backgroundImage: `${propUrl(pdef)}, ${ARENA_SKINS.paper.grounds?.[a.biome]?.image ?? ''}`, backgroundSize: '100% 100%, 20px' }}
+          />
+        ) : (
+          <div className="h-[46px] rounded-t bg-[#12121a] flex items-center justify-center text-[9px] text-neutral-500 px-1 text-center">{a.material ?? a.biome ?? a.category}</div>
+        )}
+        <div className="px-1 py-0.5 flex items-center gap-0.5">
+          <span className="text-[10px] text-neutral-300 truncate">{a.id}</span>
+          {a.playerSelectable && <span className="text-[9px] text-yellow-300/90">★</span>}
+          {pdef && (
+            <button
+              onClick={(e) => { e.stopPropagation(); load(pdef) }}
+              title="edit in the authoring panel"
+              className="ml-auto text-[10px] text-neutral-500 hover:text-emerald-300"
+            >✎</button>
+          )}
+        </div>
+        {isProp && (
+          <>
+            <div className="px-1 text-[8px] leading-tight text-neutral-500 truncate">
+              {a.kinds?.length ? a.kinds.join(' ') : <span className="text-amber-400/70">decor</span>}
+            </div>
+            <div className="px-1 pb-0.5 text-[8px] leading-tight text-sky-400/70 truncate">
+              {a.role || a.weight !== undefined || a.themes?.length || a.rotate ? (
+                [
+                  a.role,
+                  a.weight !== undefined ? `w${a.weight}` : '',
+                  a.rotate ? `↻${a.rotate}` : '',
+                  a.themes?.length ? a.themes.join(',') : 'universal',
+                ].filter(Boolean).join(' · ')
+              ) : (
+                <span className="text-amber-400/60">untagged</span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div data-workshop className="min-h-full bg-[#0b0b10] text-neutral-300 p-4 overflow-auto text-[12px]">
@@ -305,81 +421,127 @@ export default function AssetWorkshop() {
           </span>
         </div>
 
-        {CATS.map(({ cat, label }) => {
-          const items = byCat.get(cat) ?? []
-          if (!items.length) return null
-          return (
-            <div key={cat} className="mb-3">
-              <div className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">{label} ({items.length})</div>
-              <div className="flex flex-wrap gap-1.5">
-                {items.map((a) => {
-                  const key = assetKey(a)
-                  const pdef = propOf(a)
-                  const sel = selected.has(key)
-                  const title = [
-                    key,
-                    a.kinds?.length ? `kinds: ${a.kinds.join(', ')}` : (cat === 'prop' ? 'kinds: none' : ''),
-                    a.role ? `role: ${a.role}` : '',
-                    a.weight !== undefined ? `weight: ${a.weight}` : '',
-                    a.themes?.length ? `themes: ${a.themes.join(', ')}` : (cat === 'prop' ? 'themes: universal' : ''),
-                    a.rotate ? `rotate: ${a.rotate}` : '',
-                    a.near?.length ? `near: ${a.near.join(', ')}` : '',
-                    a.avoid?.length ? `avoid: ${a.avoid.join(', ')}` : '',
-                    a.clusterWith?.length ? `clusterWith: ${a.clusterWith.join(', ')}` : '',
-                    a.tags.length ? `tags: ${a.tags.join(', ')}` : '',
-                  ].filter(Boolean).join('\n')
-                  return (
-                    <div
-                      key={key}
-                      onClick={() => toggle(key)}
-                      title={title}
-                      className={`relative w-[74px] rounded border cursor-pointer select-none ${sel ? 'border-emerald-400 ring-1 ring-emerald-400/60' : 'border-neutral-800 hover:border-neutral-600'}`}
-                    >
-                      {pdef && a.biome ? (
-                        <div
-                          className="h-[46px] rounded-t"
-                          style={{ ...ARENA_SKINS.paper.surface, backgroundImage: `${propUrl(pdef)}, ${ARENA_SKINS.paper.grounds?.[a.biome]?.image ?? ''}`, backgroundSize: '100% 100%, 20px' }}
-                        />
-                      ) : (
-                        <div className="h-[46px] rounded-t bg-[#12121a] flex items-center justify-center text-[9px] text-neutral-500 px-1 text-center">{a.material ?? a.biome ?? cat}</div>
-                      )}
-                      <div className="px-1 py-0.5 flex items-center gap-0.5">
-                        <span className="text-[10px] text-neutral-300 truncate">{a.id}</span>
-                        {a.playerSelectable && <span className="text-[9px] text-yellow-300/90">★</span>}
-                        {pdef && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); load(pdef) }}
-                            title="edit in the authoring panel"
-                            className="ml-auto text-[10px] text-neutral-500 hover:text-emerald-300"
-                          >✎</button>
-                        )}
-                      </div>
-                      {cat === 'prop' && (
-                        <>
-                          <div className="px-1 text-[8px] leading-tight text-neutral-500 truncate">
-                            {a.kinds?.length ? a.kinds.join(' ') : <span className="text-amber-400/70">decor</span>}
-                          </div>
-                          <div className="px-1 pb-0.5 text-[8px] leading-tight text-sky-400/70 truncate">
-                            {a.role || a.weight !== undefined || a.themes?.length || a.rotate ? (
-                              [
-                                a.role,
-                                a.weight !== undefined ? `w${a.weight}` : '',
-                                a.rotate ? `↻${a.rotate}` : '',
-                                a.themes?.length ? a.themes.join(',') : 'universal',
-                              ].filter(Boolean).join(' · ')
-                            ) : (
-                              <span className="text-amber-400/60">untagged</span>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )
-                })}
+        {/* filters + group-by (all prop-centric — narrow to matching props) */}
+        <div className="mb-3 space-y-1 text-[10px]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-neutral-500 w-12">group</span>
+            {(['category', 'theme', 'role'] as const).map((g) => (
+              <button
+                key={g}
+                onClick={() => setGroupBy(g)}
+                className={`px-2 py-0.5 rounded border ${groupBy === g ? 'border-emerald-400 text-emerald-300' : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'}`}
+              >{g}</button>
+            ))}
+            <span className="ml-2 text-neutral-500">{filtered.length}/{catalog.length} shown</span>
+            {filtersActive && (
+              <button onClick={clearFilters} className="px-2 py-0.5 rounded border border-neutral-700 text-neutral-400 hover:border-neutral-500">clear filters</button>
+            )}
+          </div>
+          <div className="flex items-start gap-2 flex-wrap">
+            <span className="text-neutral-500 w-12 pt-0.5">theme</span>
+            <span className="flex flex-wrap gap-1">
+              {THEME_TAGS.map((t) => (
+                <button key={t} onClick={() => toggleTheme(t)}
+                  className={`px-1.5 rounded border ${fTheme.has(t) ? 'border-amber-400 text-amber-300' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>{t}</button>
+              ))}
+            </span>
+          </div>
+          <div className="flex items-start gap-2 flex-wrap">
+            <span className="text-neutral-500 w-12 pt-0.5">role</span>
+            <span className="flex flex-wrap gap-1">
+              {PROP_ROLES.map((r) => (
+                <button key={r} onClick={() => toggleRole(r)}
+                  className={`px-1.5 rounded border ${fRole.has(r) ? 'border-sky-400 text-sky-300' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>{r}</button>
+              ))}
+            </span>
+          </div>
+          <div className="flex items-start gap-2 flex-wrap">
+            <span className="text-neutral-500 w-12 pt-0.5">kind</span>
+            <span className="flex flex-wrap gap-1">
+              {SCATTER_KINDS.map((k) => (
+                <button key={k} onClick={() => toggleKind(k)}
+                  className={`px-1.5 rounded border ${fKind.has(k) ? 'border-fuchsia-400 text-fuchsia-300' : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'}`}>{k}</button>
+              ))}
+            </span>
+          </div>
+        </div>
+
+        {groupBy === 'category' ? (
+          CATS.map(({ cat, label }) => {
+            const items = byCat.get(cat) ?? []
+            if (!items.length) return null
+            return (
+              <div key={cat} className="mb-3">
+                <div className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">{label} ({items.length})</div>
+                <div className="flex flex-wrap gap-1.5">{items.map(card)}</div>
               </div>
+            )
+          })
+        ) : (
+          groups.length ? groups.map((g) => (
+            <div key={g.label} className="mb-3">
+              <div className="text-[10px] uppercase tracking-widest text-neutral-500 mb-1">{g.label} ({g.items.length})</div>
+              <div className="flex flex-wrap gap-1.5">{g.items.map(card)}</div>
             </div>
-          )
-        })}
+          )) : <div className="text-[10px] text-neutral-500">no props match the filters</div>
+        )}
+      </div>
+
+      {/* ── Coverage: per-theme scatter capabilities + gaps (render/coverage.ts) ── */}
+      <div className="mt-6 border-t border-neutral-800 pt-4">
+        <div className="flex items-center gap-3 mb-1 flex-wrap">
+          <h2 className="text-[11px] uppercase tracking-widest text-neutral-400">theme coverage</h2>
+          <span className="text-[10px] text-neutral-500">
+            ✓/count = props the generator can draw on a map of this theme (themed + universal) · ⚠️ = a gap that falls back to filler (generation stays graceful)
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="text-[10px] border-collapse">
+            <thead>
+              <tr className="text-neutral-500 text-left">
+                <th className="pr-3 py-1 font-normal">theme</th>
+                <th className="px-2 py-1 font-normal text-right">themed</th>
+                {PROP_ROLES.map((r) => <th key={r} className="px-2 py-1 font-normal">{r}</th>)}
+                <th className="px-2 py-1 font-normal">gaps</th>
+              </tr>
+            </thead>
+            <tbody>
+              {coverage.map((c) => {
+                const cell = (n: number, warn: boolean) => (
+                  <td className={`px-2 py-0.5 ${n ? 'text-emerald-300' : warn ? 'text-amber-400/90' : 'text-neutral-700'}`}>
+                    {n ? `✓ ${n}` : (warn ? '⚠️' : '·')}
+                  </td>
+                )
+                return (
+                  <tr key={c.theme} className="border-t border-neutral-900">
+                    <td className={`pr-3 py-0.5 ${c.hasThemed ? 'text-neutral-300' : 'text-amber-400'}`}>
+                      {c.theme}{!c.hasThemed && ' ⚠️'}
+                    </td>
+                    <td className={`px-2 py-0.5 text-right ${c.hasThemed ? 'text-neutral-400' : 'text-amber-400'}`}>{c.themedCount}</td>
+                    {cell(c.byRole.field, false)}
+                    {cell(c.byRole.cluster, c.hasThemed)}
+                    {cell(c.byRole.edge, c.hasThemed)}
+                    {cell(c.byRole.understory, false)}
+                    {cell(c.byRole.accent, false)}
+                    <td className="px-2 py-0.5">
+                      {c.gaps.length ? (
+                        <span className="text-amber-400/90 cursor-help" title={c.gaps.join('\n')}>⚠️ {c.gaps.length}</span>
+                      ) : (
+                        <span className="text-emerald-400/70">full</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-[10px] text-neutral-500 max-w-2xl leading-relaxed">
+          Gaps are WARNINGS, not failures — the generator falls back to the universal / cross-theme candidate set
+          (terrain.tsx <code>themeFilteredCands</code>/<code>roleFilteredCands</code>), so a theme with no edge/ribbon
+          prop still renders filler grass at its shorelines/verges. Fill a gap by tagging (or authoring) a prop in
+          <code> PROP_META</code> (props.ts) with that theme + role. Live source of truth — this table updates as props change.
+        </p>
       </div>
     </div>
   )
