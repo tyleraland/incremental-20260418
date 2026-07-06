@@ -145,7 +145,7 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
           creature that has no attack motion yet) vs the far-LOD merged
           silhouette (`simple` — what a dense mob actually draws). One glance says
           whether a new monster reads at every scale and lunges on attack. */}
-      <Section title="motion + LOD (per creature: idle · attack jab (frozen) · far-LOD silhouette)">
+      <Section title="motion + LOD (per creature: idle · attack jab (frozen) · walk (live) · far-LOD silhouette)">
         {CREATURES.map((shape) => (
           <div key={shape} className="flex items-end gap-1 mr-3">
             <Cell label={`${shape} idle`}>
@@ -153,6 +153,15 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
             </Cell>
             <Cell label="jab">
               <div className="gjab">
+                <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
+              </div>
+            </Cell>
+            {/* walk (live): the same `animate-walk` wrapper BattleChip adds while a
+                token moves — its [data-walk] feet shuffle. A no-op for bodies with
+                no walk parts (they just stand). Infinite CSS, so a screenshot lands
+                on some frame of the cycle. */}
+            <Cell label="walk">
+              <div className="animate-walk">
                 <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
               </div>
             </Cell>

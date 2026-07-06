@@ -93,6 +93,19 @@
 .animate-lunge-a { animation: lunge-a 0.3s ease-out; }
 .animate-lunge-b { animation: lunge-b 0.3s ease-out; }
 
+/* Optional walk cycle: a foot/leg/arm shuffles a little WHILE the token moves.
+   The chip wrapper carries `animate-walk` (added by BattleChip when c.moving);
+   it animates the body's `[data-walk]` DESCENDANTS (a transform-less <g>, screen
+   space — so a tiny translate reads as a jiggle at any heading). Phases 1/2 are
+   opposite so alternating feet step out of sync. Subtle (≈1.6 SVG user units)
+   and infinite, but naturally LOD-bounded: the far-LOD merge has no accent parts,
+   so a dense mob animates nothing. Declared BEFORE the atk rules so a jab wins if
+   a leg is tagged both and the token attacks mid-stride. */
+@keyframes walk-step-1 { 0%, 100% { transform: translate(0, 0) } 50% { transform: translate(0.9px, -2.6px) } }
+@keyframes walk-step-2 { 0%, 100% { transform: translate(0, 0) } 50% { transform: translate(-0.9px, 2.6px) } }
+.animate-walk [data-walk="1"] { animation: walk-step-1 0.42s ease-in-out infinite; }
+.animate-walk [data-walk="2"] { animation: walk-step-2 0.42s ease-in-out infinite; }
+
 /* Part-level melee jab: the attacker's HEAD group snaps toward the target and
    settles; TRAILING parts (the tail) lag the opposite way — so the token reads
    as lunging with its body, not sliding as a rigid disc. Direction rides in

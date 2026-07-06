@@ -764,7 +764,13 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
             // the body's [data-atk] descendants — no-op for shapes without them):
             // the head snaps ahead of the sliding token, the tail lags. --atk-x/y
             // are SVG user units (viewBox is 0–100) so the jab reads at any zoom.
-            className={lungeDeg != null ? (lungeFlip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b') : undefined}
+            // While moving, `animate-walk` also runs the body's [data-walk] feet
+            // (no-op for shapes without them, and gone at far-LOD where the merged
+            // body has no accent parts) — a subtle per-part shuffle as it walks.
+            className={[
+              lungeDeg != null ? (lungeFlip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b') : '',
+              c.alive && c.moving ? 'animate-walk' : '',
+            ].filter(Boolean).join(' ') || undefined}
             style={lungeDeg != null ? {
               '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
               '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,

@@ -176,6 +176,12 @@ interface BodyPart {
   // index.css): 'jab' snaps toward the target (heads/faces), 'trail' lags the
   // opposite way (tails). Absent = the part holds while the token lunges.
   atk?: 'jab' | 'trail'
+  // OPTIONAL walk cycle (CSS-driven, off the memo'd body — see `data-walk` +
+  // index.css): a foot/leg/arm that shuffles a little WHILE the token is moving.
+  // `1`/`2` are opposite gait phases (alternating feet step out of sync). Runs
+  // only at detail LOD (the far-LOD merge has no accent parts) and only while
+  // moving (the chip wrapper carries `animate-walk`). Absent = the part holds.
+  walk?: 1 | 2
 }
 
 const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
@@ -299,14 +305,14 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   // abdomen + cephalothorax wind the same way so the far-LOD merge is a solid
   // peanut; legs/fang/eyes stay accents out of the merge.
   spider: [
-    { d: 'M65.7 43.8 L71.1 28.4 L87.7 21.7 L69.2 26.1 L62.2 39.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab' },
-    { d: 'M60.6 38.5 L57.1 22.6 L67.6 8.2 L54.3 21.7 L55.4 36.8 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab' },
-    { d: 'M52.6 36.8 L42.3 25.4 L40.4 8.2 L39.5 26.3 L47.4 38.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail' },
-    { d: 'M45.8 39.5 L31.1 35.3 L20.3 21.7 L29.1 37.6 L42.3 43.8 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail' },
-    { d: 'M62.2 60.5 L69.2 73.9 L87.7 78.3 L71.1 71.6 L65.7 56.2 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab' },
-    { d: 'M55.4 63.2 L54.3 78.3 L67.6 91.8 L57.1 77.4 L60.6 61.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab' },
-    { d: 'M47.4 61.5 L39.5 73.7 L40.4 91.8 L42.3 74.6 L52.6 63.2 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail' },
-    { d: 'M42.3 56.2 L29.1 62.4 L20.3 78.3 L31.1 64.7 L45.8 60.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail' },
+    { d: 'M65.7 43.8 L71.1 28.4 L87.7 21.7 L69.2 26.1 L62.2 39.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab', walk: 1 },
+    { d: 'M60.6 38.5 L57.1 22.6 L67.6 8.2 L54.3 21.7 L55.4 36.8 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab', walk: 2 },
+    { d: 'M52.6 36.8 L42.3 25.4 L40.4 8.2 L39.5 26.3 L47.4 38.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail', walk: 1 },
+    { d: 'M45.8 39.5 L31.1 35.3 L20.3 21.7 L29.1 37.6 L42.3 43.8 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail', walk: 2 },
+    { d: 'M62.2 60.5 L69.2 73.9 L87.7 78.3 L71.1 71.6 L65.7 56.2 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab', walk: 2 },
+    { d: 'M55.4 63.2 L54.3 78.3 L67.6 91.8 L57.1 77.4 L60.6 61.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: 2, atk: 'jab', walk: 1 },
+    { d: 'M47.4 61.5 L39.5 73.7 L40.4 91.8 L42.3 74.6 L52.6 63.2 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail', walk: 2 },
+    { d: 'M42.3 56.2 L29.1 62.4 L20.3 78.3 L31.1 64.7 L45.8 60.5 Z', kind: 'accent', fill: 'base', stroke: true, lean: -3, atk: 'trail', walk: 1 },
     { d: 'M46 50 C46 63 37 72 25 72 C13 72 4 63 4 50 C4 37 13 28 25 28 C37 28 46 37 46 50 Z', c: [24, 50], lean: -3 },
     { d: 'M74 50 C74 59 67 66 57 66 C47 66 40 59 40 50 C40 41 47 34 57 34 C67 34 74 41 74 50 Z', c: [57, 50], lean: 3, shadow: true, atk: 'jab' },
     { d: 'M72 47 L86 50 L72 53 Z', kind: 'accent', fill: 'outline', lean: 4, atk: 'jab' },
@@ -322,8 +328,8 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   // + both jaws wind the same way so the far-LOD merge is a solid mouthed box;
   // bands/teeth/arms stay accents out of the merge.
   mimic: [
-    { d: 'M28 38 C18 31 10 21 6 10 C3 2 12 0 12 6 C13 3 18 4 17 9 C22 18 26 28 26 40 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail' },
-    { d: 'M28 62 C18 69 10 79 6 90 C3 98 12 100 12 94 C13 97 18 96 17 91 C22 82 26 72 26 60 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail' },
+    { d: 'M28 38 C18 31 10 21 6 10 C3 2 12 0 12 6 C13 3 18 4 17 9 C22 18 26 28 26 40 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail', walk: 1 },
+    { d: 'M28 62 C18 69 10 79 6 90 C3 98 12 100 12 94 C13 97 18 96 17 91 C22 82 26 72 26 60 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail', walk: 2 },
     { d: 'M16 28 Q8 28 8 38 L8 62 Q8 72 16 72 L42 72 L42 28 Z', c: [24, 50] },
     { d: 'M15 29 L21 29 L21 71 L15 71 Z', kind: 'accent', fill: 'cream' },
     { d: 'M27 29 L33 29 L33 71 L27 71 Z', kind: 'accent', fill: 'cream' },
@@ -341,8 +347,8 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   // the rounded `mimic`. Box + both jaws wind the same way so the far-LOD merge is
   // a solid rectangular mouthed box; bands/teeth/lock/arms stay accents.
   mimic2: [
-    { d: 'M22 30 C16 22 10 14 4 8 C1 5 8 1 9 6 C10 2 15 4 14 9 C18 16 22 24 26 32 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail' },
-    { d: 'M22 70 C16 78 10 86 4 92 C1 95 8 99 9 94 C10 98 15 96 14 91 C18 84 22 76 26 68 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail' },
+    { d: 'M22 30 C16 22 10 14 4 8 C1 5 8 1 9 6 C10 2 15 4 14 9 C18 16 22 24 26 32 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail', walk: 1 },
+    { d: 'M22 70 C16 78 10 86 4 92 C1 95 8 99 9 94 C10 98 15 96 14 91 C18 84 22 76 26 68 Z', kind: 'accent', fill: 'base', stroke: true, lean: -4, atk: 'trail', walk: 2 },
     { d: 'M6 24 L44 24 L44 76 L6 76 Z', c: [24, 50] },
     { d: 'M11 25 L16 25 L16 75 L11 75 Z', kind: 'accent', fill: 'cream' },
     { d: 'M23 25 L28 25 L28 75 L23 75 Z', kind: 'accent', fill: 'cream' },
@@ -458,10 +464,10 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
           parts.map((pl, i) =>
             (pl.kind ?? 'plate') === 'accent' ? (
               // accent: a lone path carries its own facing transform, so an
-              // animated one needs a transform-less <g data-atk> wrapper to hang
-              // the CSS jab on (static accents stay a bare path — no extra node).
-              pl.atk ? (
-                <g key={i} data-atk={pl.atk}>
+              // animated one (jab OR walk) needs a transform-less <g> wrapper to
+              // hang the CSS motion on (static accents stay a bare path — no node).
+              pl.atk || pl.walk ? (
+                <g key={i} data-atk={pl.atk} data-walk={pl.walk}>
                   <path d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
                 </g>
               ) : (
@@ -469,9 +475,9 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
               )
             ) : (
               // plate: already a transform-less <g> holding shadow/base/lit — so
-              // `data-atk` rides it for free (the CSS jab targets the g in screen
-              // space; the inner paths keep their own facing/lit transforms).
-              <g key={i} data-atk={pl.atk}>
+              // `data-atk`/`data-walk` ride it for free (the CSS motion targets the
+              // g in screen space; the inner paths keep their facing/lit transforms).
+              <g key={i} data-atk={pl.atk} data-walk={pl.walk}>
                 {pl.shadow && <path d={pl.d} fill={PAL.shadow} fillOpacity={0.3} transform={`translate(2.5 3.5) ${partT(pl) ?? ''}`} />}
                 <path d={pl.d} fill={p.base} stroke={outline} strokeWidth="4.5" transform={partT(pl)} />
                 <path d={pl.d} fill={p.top} transform={litT(pl, '-2.5 -3.5', 0.93)} />
