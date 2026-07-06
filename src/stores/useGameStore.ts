@@ -15,7 +15,13 @@ import { SAMPLING } from '@/lib/sampling'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { consumableDef } from '@/data/consumables'
+import { consumableDef, isConsumable } from '@/data/consumables'
+import { type Pack, heroRoom, itemWeight } from '@/proto/economy'
+import {
+  freshHero, loadoutFromPack, newSupplyEntry,
+  type HeroExpedition, type Loadout, type LootCategory, type ReturnConditionId,
+  type ReturnModeId, type SupplyModeId, type ShareFlag,
+} from '@/proto/expedition'
 import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { generateForLocationCached, specBarriers } from '@/mapgen'
@@ -134,6 +140,18 @@ export interface GameState {
   // RUNTIME tier — transient hand-off, never persisted.
   pendingPackLoot: Record<string, Record<string, number>>
 
+  // §logistics — per-hero carried loot + expedition plans (PERSISTED via
+  // logisticsCodec). `packs[unitId]` is the loot a hero carries until they reach
+  // town and deposit into the shared stash (`miscItems`); capacity is a total
+  // WEIGHT (economy.ts). `packsSeeded` guards the one-time mock fill (proto/seed).
+  // `expeditions[unitId]` is the hero's configured plan + runtime; the codec saves
+  // only the durable plan subset. The expedition driver (proto) advances it each
+  // tick and, offline, batchTick models the return-to-town loop against it.
+  packs: Record<string, Pack>
+  packsSeeded: boolean
+  expeditions: Record<string, HeroExpedition>
+  expeditionReturnMode: ReturnModeId
+
   // EPHEMERAL_UI — stored in localStorage; not in save string
   activeTab: TabId
   selectedUnitIds: string[]
@@ -192,6 +210,27 @@ export interface GameState {
   // clear it (the driver moves it into packs, capacity-gated). Read-and-reset in
   // one atomic set so no drop is double-consumed or lost across ticks.
   takePendingPackLoot: () => Record<string, Record<string, number>>
+  // §logistics — per-hero carry pack (loot the hero holds until deposited in town).
+  seedPacks: (seed: Record<string, Pack>) => void          // one-time mock fill (proto/seed)
+  simulateHunt: (unitId: string, drops: { itemId: string; qty: number }[]) => void  // add drops, capacity-gated
+  depositPack: (unitId: string) => void                    // pack → shared stash
+  depositAllPacks: () => void
+  // §logistics — per-hero expedition plan + runtime. `ensureExpedition` seeds a
+  // hero's plan (hydrating loadout from surviving pack targets); the setters edit
+  // it; `commitExpeditionStep` is the driver's per-tick runtime patch.
+  ensureExpedition: (unitId: string) => void
+  addExpeditionSupply: (unitId: string, itemId: string) => void
+  setExpeditionSupplyQty: (unitId: string, itemId: string, qty: number) => void
+  toggleExpeditionSupplySource: (unitId: string, itemId: string, source: 'storage' | 'merchant') => void
+  removeExpeditionSupply: (unitId: string, itemId: string) => void
+  toggleExpeditionLootCat: (unitId: string, cat: LootCategory) => void
+  toggleExpeditionReturnOn: (unitId: string, cond: ReturnConditionId) => void
+  setExpeditionSupplyMode: (unitId: string, mode: SupplyModeId) => void
+  toggleExpeditionShareFlag: (unitId: string, flag: ShareFlag) => void
+  setExpeditionReturnTown: (unitId: string, townId: string | null) => void
+  setExpeditionReturnMode: (mode: ReturnModeId) => void
+  applyExpeditionToParty: (srcId: string, targetIds: string[]) => void
+  commitExpeditionStep: (unitId: string, patch: Partial<HeroExpedition>) => void
   grantEquipment: (itemId: string) => void               // add an owned equipment instance (quest item rewards)
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
@@ -940,6 +979,23 @@ function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): Misc
   return out
 }
 
+// §logistics ⇄ §consumables bridge — the loadout is the *target* (what a hero
+// should carry); Unit.pack is the *real* carried inventory. Push the loadout's
+// quantities into each hero's pack carry-targets so the in-town reconcile
+// (reconcilePackInTown) withdraws/deposits from the guild stash toward them, and
+// the carried weight counts against capacity. Removed supplies clear their intent.
+// Runs AFTER the expedition set (calls the store's own carry-target actions).
+function syncCarryTargets(unitId: string, loadout: Loadout): void {
+  const g = useGameStore.getState()
+  const wanted = new Map<string, number>()
+  for (const [id, e] of Object.entries(loadout)) if (e.qty > 0) wanted.set(id, e.qty)
+  for (const [id, qty] of wanted) g.setCarryTarget(unitId, id, qty)
+  const unit = g.units.find((u) => u.id === unitId)
+  for (const p of unit?.pack ?? []) {
+    if (p.target != null && isConsumable(p.itemId) && !wanted.has(p.itemId)) g.clearCarryTarget(unitId, p.itemId)
+  }
+}
+
 // §consumables: max distinct stacks a hero's pack can hold.
 export const PACK_SLOTS = 20
 
@@ -1539,6 +1595,10 @@ export const useGameStore = create<GameState>((set, get) => ({
   questDropRules: [],
   questItems: {},
   pendingPackLoot: {},
+  packs: {},
+  packsSeeded: false,
+  expeditions: {},
+  expeditionReturnMode: 'individual',
   paused: false,
   eventLog: [],
   itemSockets: {},
@@ -1984,6 +2044,133 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (Object.keys(pending).length > 0) set({ pendingPackLoot: {} })
     return pending
   },
+
+  // ── §logistics: per-hero carry packs ─────────────────────────────────────────
+  seedPacks: (seed) => set((s) => (s.packsSeeded ? s : { packs: seed, packsSeeded: true })),
+  // Add drops to a hero's pack, never past capacity (combined loot + carried
+  // consumables weight against WEIGHT_LIMIT). Overflow is left on the ground.
+  simulateHunt: (unitId, drops) => set((s) => {
+    const pack = { ...(s.packs[unitId] ?? {}) }
+    const unitPack = s.units.find((u) => u.id === unitId)?.pack
+    let room = heroRoom(pack, unitPack)
+    for (const d of drops) {
+      const w = itemWeight(d.itemId)
+      const add = Math.min(d.qty, Math.floor(room / w))
+      if (add <= 0) continue
+      pack[d.itemId] = (pack[d.itemId] ?? 0) + add
+      room -= add * w
+    }
+    return { packs: { ...s.packs, [unitId]: pack } }
+  }),
+  // Empty a hero's pack into the shared stash (atomic — folds the misc deltas here
+  // instead of nesting grantMiscItem inside this reducer).
+  depositPack: (unitId) => set((s) => {
+    const pack = s.packs[unitId]
+    if (!pack) return s
+    const deltas: Record<string, number> = {}
+    for (const [id, qty] of Object.entries(pack)) if (qty > 0) deltas[id] = qty
+    const next = { ...s.packs }; delete next[unitId]
+    return { packs: next, miscItems: applyMiscDeltas(s.miscItems, deltas) }
+  }),
+  depositAllPacks: () => set((s) => {
+    const deltas: Record<string, number> = {}
+    for (const pack of Object.values(s.packs))
+      for (const [id, qty] of Object.entries(pack)) if (qty > 0) deltas[id] = (deltas[id] ?? 0) + qty
+    return { packs: {}, miscItems: applyMiscDeltas(s.miscItems, deltas) }
+  }),
+
+  // ── §logistics: per-hero expedition plan + runtime ───────────────────────────
+  ensureExpedition: (unitId) => {
+    if (get().expeditions[unitId]) return
+    // Hydrate the loadout from any surviving pack targets (reload-safe); else default.
+    const unit = get().units.find((u) => u.id === unitId)
+    const hydrated = loadoutFromPack(unit?.pack)
+    const hero = hydrated ? freshHero({ loadout: hydrated }) : freshHero()
+    set((s) => (s.expeditions[unitId] ? s : { expeditions: { ...s.expeditions, [unitId]: hero } }))
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  addExpeditionSupply: (unitId, itemId) => {
+    set((s) => {
+      const cur = s.expeditions[unitId] ?? freshHero()
+      // Persist even if already present so the carry-target bridge can read it back.
+      const loadout = cur.loadout[itemId] ? cur.loadout : { ...cur.loadout, [itemId]: newSupplyEntry() }
+      return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  setExpeditionSupplyQty: (unitId, itemId, qty) => {
+    set((s) => {
+      const cur = s.expeditions[unitId] ?? freshHero()
+      const loadout = { ...cur.loadout }
+      const n = Math.max(0, Math.floor(qty))
+      if (n <= 0) delete loadout[itemId]
+      else loadout[itemId] = { ...(loadout[itemId] ?? newSupplyEntry(n)), qty: n }
+      return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  toggleExpeditionSupplySource: (unitId, itemId, source) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    const entry = cur.loadout[itemId] ?? newSupplyEntry()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout: { ...cur.loadout, [itemId]: { ...entry, [source]: !entry[source] } } } } }
+  }),
+  removeExpeditionSupply: (unitId, itemId) => {
+    set((s) => {
+      const cur = s.expeditions[unitId] ?? freshHero()
+      const loadout = { ...cur.loadout }
+      delete loadout[itemId]
+      return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  toggleExpeditionLootCat: (unitId, cat) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    const lootCats = cur.lootCats.includes(cat) ? cur.lootCats.filter((c) => c !== cat) : [...cur.lootCats, cat]
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, lootCats } } }
+  }),
+  toggleExpeditionReturnOn: (unitId, cond) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    const returnOn = cur.returnOn.includes(cond) ? cur.returnOn.filter((c) => c !== cond) : [...cur.returnOn, cond]
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, returnOn } } }
+  }),
+  toggleExpeditionShareFlag: (unitId, flag) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, [flag]: !cur[flag] } } }
+  }),
+  setExpeditionSupplyMode: (unitId, mode) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, supplyMode: mode } } }
+  }),
+  setExpeditionReturnTown: (unitId, townId) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, returnTown: townId } } }
+  }),
+  setExpeditionReturnMode: (mode) => set({ expeditionReturnMode: mode }),
+  applyExpeditionToParty: (srcId, targetIds) => {
+    set((s) => {
+      const src = s.expeditions[srcId]
+      if (!src) return s
+      const expeditions = { ...s.expeditions }
+      const cloneLoadout = (l: Loadout): Loadout => Object.fromEntries(Object.entries(l).map(([k, e]) => [k, { ...e }]))
+      for (const id of targetIds) {
+        const cur = expeditions[id] ?? freshHero()
+        expeditions[id] = {
+          ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn], supplyMode: src.supplyMode,
+          shareLoot: src.shareLoot, acceptLoot: src.acceptLoot, shareSupplies: src.shareSupplies, acceptSupplies: src.acceptSupplies,
+        }
+      }
+      return { expeditions }
+    })
+    for (const id of targetIds) { const he = get().expeditions[id]; if (he) syncCarryTargets(id, he.loadout) }
+  },
+  commitExpeditionStep: (unitId, patch) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, ...patch } } }
+  }),
   grantEquipment: (itemId) => set((s) => {
     const def = INITIAL_EQUIPMENT.find((e) => e.id === itemId)
     if (!def) return s

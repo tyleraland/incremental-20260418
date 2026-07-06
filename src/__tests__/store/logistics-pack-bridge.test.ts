@@ -3,62 +3,63 @@
 // configured consumables from the guild stash and they count against carry weight.
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
-import { useExpeditionStore } from '@/proto/expeditionStore'
-import { useProtoStore } from '@/proto/protoStore'
 import { consumablesWeight, heroCarried, heroRoom, heroFull, WEIGHT_LIMIT } from '@/proto/economy'
+import { logisticsCodec } from '@/save/logisticsCodec'
 import { makeUnit, resetStore } from '../helpers'
+
+const g = () => useGameStore.getState()
 
 beforeEach(() => {
   resetStore({ units: [makeUnit({ id: 'u1' })] })
-  useExpeditionStore.setState({ heroes: {} })
+  useGameStore.setState({ expeditions: {}, packs: {}, packsSeeded: false, expeditionReturnMode: 'individual' })
 })
 
-const unit = () => useGameStore.getState().units.find((u) => u.id === 'u1')!
+const unit = () => g().units.find((u) => u.id === 'u1')!
 const target = (id: string) => unit().pack?.find((p) => p.itemId === id)?.target
 
 describe('loadout → Unit.pack carry targets', () => {
   it('adding a supply sets a matching carry target on the hero pack', () => {
-    useExpeditionStore.getState().addSupply('u1', 'potion-hp')
-    useExpeditionStore.getState().setSupplyQty('u1', 'potion-hp', 25)
+    g().addExpeditionSupply('u1', 'potion-hp')
+    g().setExpeditionSupplyQty('u1', 'potion-hp', 25)
     expect(target('potion-hp')).toBe(25)
   })
 
-  it('ensure() seeds the default loadout target', () => {
-    useExpeditionStore.getState().ensure('u1')
+  it('ensureExpedition() seeds the default loadout target', () => {
+    g().ensureExpedition('u1')
     // DEFAULT_LOADOUT carries 5 potion-hp
     expect(target('potion-hp')).toBe(5)
   })
 
   it('removing a supply clears the carry target (and any carried stock returns to the stash)', () => {
-    useExpeditionStore.getState().addSupply('u1', 'potion-hp')
-    useExpeditionStore.getState().setSupplyQty('u1', 'potion-hp', 25)
+    g().addExpeditionSupply('u1', 'potion-hp')
+    g().setExpeditionSupplyQty('u1', 'potion-hp', 25)
     expect(target('potion-hp')).toBe(25)
-    useExpeditionStore.getState().removeSupply('u1', 'potion-hp')
+    g().removeExpeditionSupply('u1', 'potion-hp')
     expect(unit().pack?.some((p) => p.itemId === 'potion-hp')).toBe(false)
   })
 
-  it('applyToParty copies the loadout targets onto every target hero', () => {
+  it('applyExpeditionToParty copies the loadout targets onto every target hero', () => {
     resetStore({ units: [makeUnit({ id: 'u1' }), makeUnit({ id: 'u2' })] })
-    useExpeditionStore.setState({ heroes: {} })
-    useExpeditionStore.getState().addSupply('u1', 'potion-hp-greater')
-    useExpeditionStore.getState().setSupplyQty('u1', 'potion-hp-greater', 12)
-    useExpeditionStore.getState().applyToParty('u1', ['u2'])
-    const u2 = useGameStore.getState().units.find((u) => u.id === 'u2')!
+    useGameStore.setState({ expeditions: {} })
+    g().addExpeditionSupply('u1', 'potion-hp-greater')
+    g().setExpeditionSupplyQty('u1', 'potion-hp-greater', 12)
+    g().applyExpeditionToParty('u1', ['u2'])
+    const u2 = g().units.find((u) => u.id === 'u2')!
     expect(u2.pack?.find((p) => p.itemId === 'potion-hp-greater')?.target).toBe(12)
   })
 })
 
-describe('reload safety — ensure() hydrates the loadout from persisted pack targets', () => {
+describe('reload safety — ensureExpedition() hydrates the loadout from persisted pack targets', () => {
   it('does not clobber surviving pack targets with the default loadout', () => {
     // Simulate a reload: the unit's pack (persisted) carries a configured greater
-    // potion (target 12), but the expedition store (unpersisted) is empty.
+    // potion (target 12), but the expedition state (fresh) is empty.
     resetStore({ units: [makeUnit({ id: 'u1', pack: [{ itemId: 'potion-hp-greater', count: 8, target: 12 }] })] })
-    useExpeditionStore.setState({ heroes: {} })
+    useGameStore.setState({ expeditions: {} })
 
-    useExpeditionStore.getState().ensure('u1')
+    g().ensureExpedition('u1')
 
     // Loadout is rebuilt from the surviving target, NOT reset to the default potion-hp.
-    const lo = useExpeditionStore.getState().heroes['u1'].loadout
+    const lo = g().expeditions['u1'].loadout
     expect(lo['potion-hp-greater']?.qty).toBe(12)
     expect(lo['potion-hp']).toBeUndefined()
 
@@ -70,9 +71,9 @@ describe('reload safety — ensure() hydrates the loadout from persisted pack ta
 
   it('falls back to the default loadout for a hero carrying no configured consumables', () => {
     resetStore({ units: [makeUnit({ id: 'u1' })] })
-    useExpeditionStore.setState({ heroes: {} })
-    useExpeditionStore.getState().ensure('u1')
-    expect(useExpeditionStore.getState().heroes['u1'].loadout['potion-hp']?.qty).toBe(5)
+    useGameStore.setState({ expeditions: {} })
+    g().ensureExpedition('u1')
+    expect(g().expeditions['u1'].loadout['potion-hp']?.qty).toBe(5)
     expect(target('potion-hp')).toBe(5)
   })
 })
@@ -103,33 +104,32 @@ describe('combined carry weight (loot pack + carried consumables)', () => {
   })
 })
 
-// Carried loot + configured expedition plans persist to localStorage so a reload
-// doesn't reset a hero's pack or their loadout (interim — not yet in the main save
-// envelope; see gaps.md §2/§3).
-describe('carry + expedition-plan persistence', () => {
-  it('writes the per-hero loot packs to localStorage on change', () => {
-    useProtoStore.setState({ packs: { u1: { 'drop-boar-hide': 3 } }, packsSeeded: true })
-    const raw = localStorage.getItem('protoPacks')
-    expect(raw).toBeTruthy()
-    const parsed = JSON.parse(raw!)
-    expect(parsed.packs.u1['drop-boar-hide']).toBe(3)
-    expect(parsed.packsSeeded).toBe(true)
-    useProtoStore.setState({ packs: {}, packsSeeded: false })
+// Carried loot + configured expedition plans graduate into the save envelope via
+// logisticsCodec, so they round-trip through export/import + persistence. Only the
+// durable plan survives; per-tick runtime resets fresh on load.
+describe('logisticsCodec round-trip', () => {
+  it('preserves packs, packsSeeded, the plan, and returnMode', () => {
+    g().simulateHunt('u1', [{ itemId: 'drop-boar-hide', qty: 3 }])
+    g().addExpeditionSupply('u1', 'potion-hp')
+    g().setExpeditionSupplyQty('u1', 'potion-hp', 25)
+    g().setExpeditionReturnMode('group')
+    useGameStore.setState({ packsSeeded: true })
+
+    const restored = logisticsCodec.roundTrip(useGameStore.getState())
+    expect(restored.packs!['u1']['drop-boar-hide']).toBe(3)
+    expect(restored.packsSeeded).toBe(true)
+    expect(restored.expeditions!['u1'].loadout['potion-hp'].qty).toBe(25)
+    expect(restored.expeditionReturnMode).toBe('group')
   })
 
-  it('writes only the durable plan slice of an expedition (not per-tick runtime)', () => {
-    useExpeditionStore.getState().addSupply('u1', 'potion-hp')
-    useExpeditionStore.getState().setSupplyQty('u1', 'potion-hp', 25)
-    useExpeditionStore.getState().commitStep('u1', { suppliesLeft: 0.3, status: 'returning', locationId: 'boar-meadow' })
+  it('drops per-tick runtime (fresh on load)', () => {
+    g().addExpeditionSupply('u1', 'potion-hp')
+    g().commitExpeditionStep('u1', { suppliesLeft: 0.3, status: 'returning', locationId: 'boar-meadow' })
 
-    const raw = localStorage.getItem('protoExpeditions')
-    expect(raw).toBeTruthy()
-    const parsed = JSON.parse(raw!)
-    // The configured loadout is persisted…
-    expect(parsed.heroes.u1.loadout['potion-hp'].qty).toBe(25)
-    // …but the churny runtime fields are not.
-    expect(parsed.heroes.u1).not.toHaveProperty('suppliesLeft')
-    expect(parsed.heroes.u1).not.toHaveProperty('status')
-    expect(parsed.heroes.u1).not.toHaveProperty('locationId')
+    const restored = logisticsCodec.roundTrip(useGameStore.getState())
+    const hero = restored.expeditions!['u1']
+    expect(hero.suppliesLeft).toBe(1)          // reset, not the 0.3 that was live
+    expect(hero.status).toBe('hunting')        // reset, not 'returning'
+    expect(hero.locationId).toBeNull()         // reset, not 'boar-meadow'
   })
 })

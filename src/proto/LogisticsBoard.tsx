@@ -1,8 +1,6 @@
 import { useGameStore } from '@/stores/useGameStore'
-import { useProtoStore } from './protoStore'
 import { heroCarried, WEIGHT_LIMIT } from './economy'
-import { useExpeditionStore, freshHero } from './expeditionStore'
-import { ALL_LOOT_CATEGORIES, supplyOption, supplyPool } from './expedition'
+import { ALL_LOOT_CATEGORIES, supplyOption, supplyPool, freshHero } from './expedition'
 
 // §logistics — the cross-hero overview (Guild). A spreadsheet of every hero's plan
 // side by side: the column headers say what each box means, the cells are just
@@ -20,10 +18,10 @@ const sub = 'text-[9px] text-game-text-dim font-normal px-2 py-1 text-center whi
 export function LogisticsBoard({ onHero }: { onHero: (id: string) => void }) {
   const units = useGameStore((s) => s.units)
   const locations = useGameStore((s) => s.locations)
-  const packs = useProtoStore((s) => s.packs)
-  const heroes = useExpeditionStore((s) => s.heroes)
-  const toggleReturnOn = useExpeditionStore((s) => s.toggleReturnOn)
-  const toggleShareFlag = useExpeditionStore((s) => s.toggleShareFlag)
+  const packs = useGameStore((s) => s.packs)
+  const heroes = useGameStore((s) => s.expeditions)
+  const toggleReturnOn = useGameStore((s) => s.toggleExpeditionReturnOn)
+  const toggleShareFlag = useGameStore((s) => s.toggleExpeditionShareFlag)
 
   const locName = (id: string | null) => (id ? locations.find((l) => l.id === id)?.name ?? '—' : '—')
 

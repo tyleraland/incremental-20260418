@@ -4,11 +4,10 @@ import { TICKS_PER_SECOND } from '@/lib/time'
 import { CONSUMABLE_REGISTRY } from '@/data/consumables'
 import { MERCHANT_REGISTRY, merchantLocation, buyPriceFor } from '@/data/merchants'
 import type { Location, Unit } from '@/types'
-import { useProtoStore } from './protoStore'
 import { heroCarried, packFullEnough, GOLD_ID, WEIGHT_LIMIT } from './economy'
-import { useExpeditionStore, freshHero, type HeroExpedition } from './expeditionStore'
 import {
-  isHuntable, isCity, nearestCity, categorize, supplyState, suppliesDry, type Loadout,
+  isHuntable, isCity, nearestCity, categorize, supplyState, suppliesDry,
+  freshHero, type HeroExpedition, type Loadout,
 } from './expedition'
 
 // How long a returned hero parks in town (depositing loot + restocking) before
@@ -52,16 +51,16 @@ type Member = { u: Unit; he: HeroExpedition }
 // party fills evenly (the "share the burden" behaviour). Fill is total carry (loot
 // pack + carried consumables). Items with no accepter / no room are left behind.
 function distribute(pool: Drop[], accepters: Member[]) {
-  const proto = useProtoStore.getState()
+  const g = useGameStore.getState()
   for (const item of pool) {
     let best: Member | null = null
     let bestFill = Infinity
     for (const m of accepters) {
-      const w = heroCarried(useProtoStore.getState().packs[m.u.id], m.u.pack)
+      const w = heroCarried(useGameStore.getState().packs[m.u.id], m.u.pack)
       if (w < WEIGHT_LIMIT && w < bestFill) { bestFill = w; best = m }
     }
     if (!best) break
-    proto.simulateHunt(best.u.id, [item])
+    g.simulateHunt(best.u.id, [item])
   }
 }
 
@@ -85,8 +84,6 @@ export function useExpeditionDriver() {
     if (dt <= 0) return
 
     const g = useGameStore.getState()
-    const proto = useProtoStore.getState()
-    const exp = useExpeditionStore.getState()
     const locById = new Map(g.locations.map((l) => [l.id, l]))
     const groupReturnLocs = new Set<string>()
     const groups = new Map<string, Member[]>()
@@ -107,10 +104,10 @@ export function useExpeditionDriver() {
       if (!u.locationId) continue
       const loc = locById.get(u.locationId)
       if (!loc || !isCity(loc)) continue
-      const lootPack = proto.packs[u.id]
-      if (lootPack && Object.keys(lootPack).length > 0) proto.depositPack(u.id)
-      exp.ensure(u.id)
-      const he = useExpeditionStore.getState().heroes[u.id]
+      const lootPack = g.packs[u.id]
+      if (lootPack && Object.keys(lootPack).length > 0) g.depositPack(u.id)
+      g.ensureExpedition(u.id)
+      const he = useGameStore.getState().expeditions[u.id]
       if (he) buyMerchantSupplies(u, loc.id, he.loadout)
     }
 
@@ -119,7 +116,7 @@ export function useExpeditionDriver() {
     // TOWN_RESUPPLY_TICKS to deposit loot + restock supplies (handled by phase 0 +
     // the game tick's in-town pack reconcile), then redeploys to the hunt anchor.
     for (const u of g.units) {
-      const he = exp.heroes[u.id]
+      const he = g.expeditions[u.id]
       if (!he || he.status !== 'returning') continue
 
       if (g.deployMode !== 'instant') {
@@ -134,20 +131,20 @@ export function useExpeditionDriver() {
           if (walking) continue                                   // still on the road
           if (loc && isCity(loc)) {
             // Arrived: park to deposit (phase 0) + restock, then head back.
-            exp.commitStep(u.id, { resupplyUntil: g.ticks + TOWN_RESUPPLY_TICKS })
+            g.commitExpeditionStep(u.id, { resupplyUntil: g.ticks + TOWN_RESUPPLY_TICKS })
           } else {
             // Start the trip: remember the hunt anchor, route to the town on foot.
             const from = he.locationId ?? (loc && isHuntable(loc) ? u.locationId : null)
             const town = returnTownFor(he, from, g.locations)
-            if (!town || !from) { exp.commitStep(u.id, { status: 'hunting', resupplyUntil: undefined }); continue }
-            exp.commitStep(u.id, { status: 'returning', locationId: from })
+            if (!town || !from) { g.commitExpeditionStep(u.id, { status: 'hunting', resupplyUntil: undefined }); continue }
+            g.commitExpeditionStep(u.id, { status: 'returning', locationId: from })
             g.routeUnitTo(u.id, town.id)
           }
         } else if (g.ticks >= he.resupplyUntil) {
           // Resupply done → walk back to where they were hunting.
           if (walking) continue
           if (u.locationId === he.locationId) {
-            exp.commitStep(u.id, { status: 'hunting', suppliesLeft: 1, resupplyUntil: undefined })
+            g.commitExpeditionStep(u.id, { status: 'hunting', suppliesLeft: 1, resupplyUntil: undefined })
           } else {
             g.routeUnitTo(u.id, he.locationId!)
           }
@@ -159,20 +156,20 @@ export function useExpeditionDriver() {
       // Player manually redeployed mid-trip → abandon the resupply trip and let
       // phase 1's fresh-run detection take over.
       if (he.resupplyUntil != null && loc && isHuntable(loc) && u.locationId !== he.locationId) {
-        exp.commitStep(u.id, { status: 'hunting', resupplyUntil: undefined })
+        g.commitExpeditionStep(u.id, { status: 'hunting', resupplyUntil: undefined })
         continue
       }
       if (he.resupplyUntil == null) {
         // Start the trip: capture the hunt anchor, instant-deploy to the town.
         const from = he.locationId ?? (loc && isHuntable(loc) ? u.locationId : null)
         const town = returnTownFor(he, from, g.locations)
-        if (!town || !from) { exp.commitStep(u.id, { status: 'hunting', resupplyUntil: undefined }); continue }
+        if (!town || !from) { g.commitExpeditionStep(u.id, { status: 'hunting', resupplyUntil: undefined }); continue }
         g.assignUnits([u.id], town.id)
-        exp.commitStep(u.id, { status: 'returning', resupplyUntil: g.ticks + TOWN_RESUPPLY_TICKS, locationId: from })
+        g.commitExpeditionStep(u.id, { status: 'returning', resupplyUntil: g.ticks + TOWN_RESUPPLY_TICKS, locationId: from })
       } else if (g.ticks >= he.resupplyUntil) {
         // Trip's done: redeploy to where they were hunting, full supplies, hunting.
         g.assignUnits([u.id], he.locationId!)
-        exp.commitStep(u.id, { status: 'hunting', suppliesLeft: 1, resupplyUntil: undefined })
+        g.commitExpeditionStep(u.id, { status: 'hunting', suppliesLeft: 1, resupplyUntil: undefined })
       }
     }
 
@@ -190,12 +187,12 @@ export function useExpeditionDriver() {
       // Hydrate from persisted pack carry-targets on first sight, so a reloaded
       // hero keeps its configured supplies loadout instead of the default (the
       // loadout itself isn't in the save — Unit.pack targets are; see ensure()).
-      exp.ensure(u.id)
-      const he = useExpeditionStore.getState().heroes[u.id] ?? freshHero({ locationId: u.locationId })
+      g.ensureExpedition(u.id)
+      const he = useGameStore.getState().expeditions[u.id] ?? freshHero({ locationId: u.locationId })
 
       if (he.status === 'returning') continue   // phase R owns returning heroes
       if (he.locationId !== u.locationId) {   // (re)deployed → fresh run
-        exp.commitStep(u.id, { suppliesLeft: 1, status: 'hunting', locationId: u.locationId })
+        g.commitExpeditionStep(u.id, { suppliesLeft: 1, status: 'hunting', locationId: u.locationId })
         continue
       }
       const arr = groups.get(u.locationId) ?? []
@@ -230,7 +227,7 @@ export function useExpeditionDriver() {
           .map(([itemId, qty]) => ({ itemId, qty }))
         if (drops.length === 0) continue
         if (he.shareLoot) pool.push(...drops)
-        else proto.simulateHunt(u.id, drops)
+        else g.simulateHunt(u.id, drops)
       }
       // 2d. hand the pooled loot to accepters, least-full first
       distribute(pool, members.filter((m) => m.he.acceptLoot))
@@ -239,16 +236,16 @@ export function useExpeditionDriver() {
       for (const { u, he } of members) {
         // "Full" = at/above 90% capacity (a flat rule), so a pack that saturates a
         // few units short of the cap still heads home instead of hunting forever.
-        const full = packFullEnough(useProtoStore.getState().packs[u.id], u.pack)
+        const full = packFullEnough(useGameStore.getState().packs[u.id], u.pack)
         // Dry = supplies run out, per the hero's any/all mode (one supply vs every one).
         const dry = supSt[u.id].total > 0 && suppliesDry(u.pack, he.loadout, he.supplyMode)
         const triggered = (he.returnOn.includes('pack-full') && full) || (he.returnOn.includes('supplies-out') && dry)
         if (triggered) {
           // Flag the return; phase R next tick whisks them to town and back.
-          exp.commitStep(u.id, { suppliesLeft: newSup[u.id], status: 'returning', locationId: u.locationId })
-          if (exp.returnMode === 'group') groupReturnLocs.add(locId)
+          g.commitExpeditionStep(u.id, { suppliesLeft: newSup[u.id], status: 'returning', locationId: u.locationId })
+          if (g.expeditionReturnMode === 'group') groupReturnLocs.add(locId)
         } else {
-          exp.commitStep(u.id, { suppliesLeft: newSup[u.id], status: 'hunting', locationId: u.locationId })
+          g.commitExpeditionStep(u.id, { suppliesLeft: newSup[u.id], status: 'hunting', locationId: u.locationId })
         }
       }
     }
@@ -258,8 +255,8 @@ export function useExpeditionDriver() {
       for (const u of g.units) {
         if (!u.locationId || !groupReturnLocs.has(u.locationId)) continue
         if ((u.travelPath?.length ?? 0) > 0) continue   // just passing through — not part of this party
-        const he = useExpeditionStore.getState().heroes[u.id]
-        if (he && he.status !== 'returning') exp.commitStep(u.id, { status: 'returning', locationId: u.locationId })
+        const he = useGameStore.getState().expeditions[u.id]
+        if (he && he.status !== 'returning') g.commitExpeditionStep(u.id, { status: 'returning', locationId: u.locationId })
       }
     }
 

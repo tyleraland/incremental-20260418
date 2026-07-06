@@ -48,6 +48,11 @@ export function resetStore(overrides: object = {}) {
     unitStatHistory: {},
     locationStats: {},
     pendingPackLoot: {},
+    // §logistics — carry packs + expedition plans (moved into the game store).
+    packs: {},
+    packsSeeded: false,
+    expeditions: {},
+    expeditionReturnMode: 'individual',
     eventLog: [],
     itemSockets: {},
     ticks: 0,

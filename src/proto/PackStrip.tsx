@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { DROP_ITEMS } from '@/data/monsters'
 import { consumableDef } from '@/data/consumables'
 import { useGameStore } from '@/stores/useGameStore'
-import { useProtoStore } from './protoStore'
 import { WEIGHT_LIMIT, heroCarried, heroFull, isOverweight, materialValue, itemWeight } from './economy'
 import { categorize } from './expedition'
 import type { EquipSlot, Unit } from '@/types'
@@ -55,7 +54,7 @@ function ItemDetail({ item, onClose }: { item: InvItem; onClose: () => void }) {
 }
 
 export function PackStrip({ unit }: { unit: Unit }) {
-  const loot = useProtoStore((s) => s.packs[unit.id])
+  const loot = useGameStore((s) => s.packs[unit.id])
   const equipment = useGameStore((s) => s.equipment)
   const [open, setOpen] = useState(false)
   const [included, setIncluded] = useState<Set<Group>>(() => new Set<Group>(DEFAULT_INCLUDED))

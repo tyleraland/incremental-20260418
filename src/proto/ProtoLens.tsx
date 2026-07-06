@@ -16,7 +16,6 @@ import { useProtoStore } from './protoStore'
 import { GOLD_ID, materialValue, equipmentValue } from './economy'
 import { SocketPips, socketsOf } from './CardBits'
 import { PackStrip } from './PackStrip'
-import { useExpeditionStore } from './expeditionStore'
 import { supplyOption } from './expedition'
 import { seedProtoMocks } from './seed'
 import { UnitDetailOverlay, StatusList } from '@/components/BattleUnitSheet'
@@ -1046,9 +1045,9 @@ function SkillsLens({ unit }: { unit: Unit }) {
     setActionSlot(unit.id, i, { kind: 'consumable', id })
     if (isHealing(id) && !rules.some((r) => r.itemId === id)) addConsumableRule(unit.id, id, 0.3)
     if (supplyOption(id)) {
-      const exp = useExpeditionStore.getState()
-      exp.ensure(unit.id)
-      if (!exp.heroes[unit.id]?.loadout[id]) exp.addSupply(unit.id, id)
+      const g = useGameStore.getState()
+      g.ensureExpedition(unit.id)
+      if (!g.expeditions[unit.id]?.loadout[id]) g.addExpeditionSupply(unit.id, id)
     }
     setSlotIdx(null)
   }
