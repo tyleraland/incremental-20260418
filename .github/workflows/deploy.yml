@@ -9,6 +9,13 @@ on:
 permissions:
   contents: write
 
+# Codemap's Coverage lens needs a `vitest run --coverage` (~1 min). ON by default.
+# To skip it for a faster deploy: flip this to 'false' here, OR — without editing
+# the file — set repo variable CODEMAP_COVERAGE=false (Settings → Secrets and
+# variables → Actions → Variables). The lens then falls back to "unavailable".
+env:
+  CODEMAP_COVERAGE: ${{ vars.CODEMAP_COVERAGE || 'true' }}
+
 # Serialize every writer of the gh-pages branch (this job + PR previews) so
 # concurrent pushes don't collide. Don't cancel in-flight deploys — let them
 # finish and queue, otherwise a cancelled push can leave the branch half-written.
@@ -37,9 +44,11 @@ jobs:
         env:
           BASE_PATH: /incremental-20260418/
 
-      # Test coverage for the codemap's Coverage lens. Non-fatal: a red test must
-      # not block the deploy — the lens just falls back to "unavailable".
+      # Test coverage for the codemap's Coverage lens. Gated by CODEMAP_COVERAGE
+      # (see top of file). Non-fatal: a red test must not block the deploy — the
+      # lens just falls back to "unavailable".
       - name: Coverage (for codemap)
+        if: env.CODEMAP_COVERAGE != 'false'
         run: npm run coverage || echo "coverage run failed; Coverage lens will show unavailable"
 
       # Deterministic codebase map, built from its own isolated package (its deps
