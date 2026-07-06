@@ -98,6 +98,49 @@ export function SamplingControls() {
   )
 }
 
+// §bugwatch: banked live-bug reports. The live tick flags stuck heroes + broken
+// invariants and banks a repro token (a BSNAP for combat, a JSON blob for state);
+// this lists them with copy-to-clipboard so you can replay/inspect later.
+export function BugReports() {
+  const reports = useGameStore((s) => s.bugReports)
+  const clear = useGameStore((s) => s.clearBugReports)
+  const [copied, setCopied] = useState<string | null>(null)
+  const copy = (id: string, token?: string) => {
+    if (!token) return
+    try { navigator.clipboard?.writeText(token); setCopied(id); setTimeout(() => setCopied(null), 1200) } catch { /* no clipboard */ }
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-widest text-game-muted">Bug watch {reports.length > 0 ? `(${reports.length})` : ''}</div>
+        {reports.length > 0 && (
+          <button onClick={clear} className="text-[10px] px-2 py-0.5 rounded border border-game-border text-game-text-dim hover:bg-white/5">Clear</button>
+        )}
+      </div>
+      {reports.length === 0 ? (
+        <div className="text-[10px] text-game-muted">No bugs flagged this session. The live tick banks stuck heroes + broken item invariants here with a repro token.</div>
+      ) : (
+        <div className="space-y-1">
+          {reports.map((r) => (
+            <div key={r.id} className="text-[10px] leading-snug border border-game-border/40 rounded px-2 py-1">
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-game-accent shrink-0">{r.kind}</span>
+                <span className="text-game-muted shrink-0">t{r.tick}</span>
+                {r.token && (
+                  <button onClick={() => copy(r.id, r.token)} className="ml-auto shrink-0 text-game-text-dim hover:text-game-text underline decoration-dotted">
+                    {copied === r.id ? 'copied' : `copy ${r.tokenKind ?? 'token'}`}
+                  </button>
+                )}
+              </div>
+              <div className="text-game-text-dim">{r.description}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // On-demand offline fast-forward: advance the game clock by a chosen span and run
 // the offline catch-up now (the same batchTick a real absence triggers), so you can
 // watch/tune the return-to-town loop without actually going AFK. Deploy heroes with

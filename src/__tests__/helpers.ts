@@ -58,6 +58,8 @@ export function resetStore(overrides: object = {}) {
     ticks: 0,
     lastTickAt: Date.now(),
     offlineSummary: null,
+    bugReports: [],
+    bugWatch: { stuck: {}, active: [] },
     ...overrides,
   })
 }

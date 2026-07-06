@@ -112,6 +112,9 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 ## Expand/collapse persistence (localStorage)
 `expandedLocationIds` `[]`, `expandedUnitIds` `[]`, `expandedInventorySections` (all expanded), `expandedRegionIds` `["world","geffen-dungeon"]`.
 
+## Live bug watchdog (`src/lib/bugwatch.ts`)
+- The live tick runs a cheap, purely-observational pass that banks a **bug report** when it catches a real bug in flight: a **stuck hero** (`detectStuck` — alive, non-peaceful battle, enemies present, but no position change AND no damage dealt/taken for `STUCK_ROUNDS`=10 *advancing* rounds — the `bsnap --reach` case; keyed to battle round so a frozen off-screen battle can't false-positive) or a broken **state invariant** (`detectInvariants` — negative stash/pack stock, HP over max, an over-capacity loot pack; run every `INVARIANT_EVERY_TICKS`=10). Each report banks a repro **token** (a `BSNAP` for combat, a small JSON blob for state) + description. Reports persist to their own `bugReports` localStorage key (kept out of the game save so exports don't bloat), cap at `MAX_BUG_REPORTS`=25, and surface in **Time→Debug → Bug watch** (copy-token + clear). Never mutates the engine/RNG/battle → replays stay byte-identical. Runtime detector memory is `bugWatch` (not saved). `serializeBattle` is injectable in `detectStuck` for testing.
+
 ## Testing & verification
 - `npm run ci` = `tsc --noEmit` + full vitest suite. Keep green; engine changes must keep snapshot replays byte-identical.
 - Browser: use **Playwright, not the chrome-devtools MCP** (flaky here). `npm run e2e:install` once, then `npm run e2e` (mobile CPU-throttled 4×; logged fps is the signal; screenshot at `e2e/__shots__/<project>.png`). `?perf=1` drops into the heavy open-world scene (`src/dev/perfSeed.ts`) — **deterministic** (seeded `Math.random`, `?seed=`, + fixed-cadence ticks), so one fps run is a trustworthy verdict. In DEV the store is on `window.__game`.

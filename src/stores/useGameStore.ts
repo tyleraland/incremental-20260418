@@ -12,6 +12,7 @@ import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
 import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, projectOfflineCycles, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
 import { SAMPLING } from '@/lib/sampling'
+import { detectStuck, detectInvariants, emptyBugWatch, MAX_BUG_REPORTS, INVARIANT_EVERY_TICKS, type BugReport, type BugWatchState } from '@/lib/bugwatch'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
@@ -127,6 +128,13 @@ export interface GameState {
   // and weigh sampling cost vs output. Runtime-only, not saved.
   lastCatchUp: CatchUpDebug | null
 
+  // §bugwatch: banked live-bug reports (a description + a repro token), newest first.
+  // Persisted to their own localStorage key (diagnostic; kept out of the game save so
+  // they don't bloat exports). `bugWatch` is the detector's runtime memory — NOT saved,
+  // never in engine snapshots.
+  bugReports: BugReport[]
+  bugWatch: BugWatchState
+
   // Quest-item drops (runtime; the proto quest layer owns the quest defs). Active
   // collect objectives register a QuestDropRule; `rewardKills` rolls a drop on a
   // matching kill and accumulates the count here, keyed by itemId. Tracked here
@@ -197,6 +205,7 @@ export interface GameState {
   tick: () => void
   batchTick: (n: number) => void
   dismissOfflineSummary: () => void
+  clearBugReports: () => void         // §bugwatch: wipe the banked report list
   // Quest-item drops + consumption (driven by the proto quest layer). Arm a drop
   // rule when a collect objective begins (resets its item ledger); disarm on
   // cancel/complete (drops the rule + clears any leftover items). Hand-in quests
@@ -1617,6 +1626,15 @@ function freshGameSeed(mode: ProgressionMode) {
 const BOOT_MODE = bootstrapProgressionMode()
 const BOOT_SEED = freshGameSeed(BOOT_MODE)
 
+// §bugwatch: banked reports live in their own localStorage key (diagnostic; not in
+// the game save envelope). Loaded once at boot, re-persisted on change by a subscribe
+// below.
+const BUG_REPORTS_KEY = 'bugReports'
+function loadBugReports(): BugReport[] {
+  try { const a = JSON.parse(localStorage.getItem(BUG_REPORTS_KEY) ?? '[]'); return Array.isArray(a) ? a : [] }
+  catch { return [] }
+}
+
 export const useGameStore = create<GameState>((set, get) => ({
   units:    BOOT_SEED.units,
   progressionMode: BOOT_MODE,
@@ -1655,6 +1673,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   lastTickAt: Date.now(),
   offlineSummary: null,
   lastCatchUp: null,
+  bugReports: loadBugReports(),
+  bugWatch: emptyBugWatch(),
   questDropRules: [],
   questItems: {},
   pendingPackLoot: {},
@@ -1813,9 +1833,28 @@ export const useGameStore = create<GameState>((set, get) => ({
     // instant-crossing them off-screen ahead of the camera.
     const followCross = s.battleFollowId ? combat.travelMoves[s.battleFollowId] : undefined
 
+    // §bugwatch: scan the freshly-stepped state for stuck heroes (every tick) + broken
+    // state invariants (throttled), banking a repro token for each NEW incident. Pure
+    // observation — never touches the engine/RNG, so replays stay byte-identical.
+    let bugReports = s.bugReports
+    const stuckRes = detectStuck(combat.battles, s.bugWatch.stuck)
+    const freshBugs: BugReport[] = []
+    for (const b of stuckRes.bugs) freshBugs.push({ id: `b${newTicks}-${freshBugs.length}`, at: Date.now(), tick: newTicks, ...b })
+    let bugActive = s.bugWatch.active
+    if (newTicks % INVARIANT_EVERY_TICKS === 0) {
+      const violations = detectInvariants(units, s.equipment, miscItems, s.packs)
+      const prevActive = new Set(s.bugWatch.active)
+      for (const v of violations) if (!prevActive.has(v.signature)) freshBugs.push({ id: `b${newTicks}-${freshBugs.length}`, at: Date.now(), tick: newTicks, ...v.bug })
+      bugActive = violations.map((v) => v.signature)
+    }
+    if (freshBugs.length > 0) bugReports = [...freshBugs, ...s.bugReports].slice(0, MAX_BUG_REPORTS)
+    const bugWatch: BugWatchState = { stuck: stuckRes.next, active: bugActive }
+
     return {
       ticks: newTicks,
       units,
+      bugReports,
+      bugWatch,
       ...(followCross ? { combatLocationId: followCross.locationId, selectedLocationId: followCross.locationId } : {}),
       dpsWindow,
       battles: combat.battles,
@@ -2198,6 +2237,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   }),
 
   dismissOfflineSummary: () => set({ offlineSummary: null }),
+  clearBugReports: () => set((s) => (s.bugReports.length === 0 ? s : { bugReports: [] })),
   armQuestDrop: (rule) => set((s) => ({
     questDropRules: [...s.questDropRules.filter((r) => r.id !== rule.id), rule],
     questItems: { ...s.questItems, [rule.itemId]: 0 },   // fresh ledger for this objective
@@ -2868,3 +2908,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     })
   },
 }))
+
+// §bugwatch: persist the banked reports to their own localStorage key whenever the
+// list changes (a reference check skips the per-tick churn of everything else).
+let lastBugReports = useGameStore.getState().bugReports
+useGameStore.subscribe((s) => {
+  if (s.bugReports === lastBugReports) return
+  lastBugReports = s.bugReports
+  try { localStorage.setItem(BUG_REPORTS_KEY, JSON.stringify(s.bugReports)) } catch { /* localStorage unavailable */ }
+})
