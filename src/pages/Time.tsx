@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR, type LogCategory } from '@/stores/useGameStore'
 import { exportSave, importSave, persistSave, switchProgressionMode } from '@/save'
 import { CatchUpReadout, SamplingControls } from '@/components/SamplingDebug'
+import { BattleView } from '@/components/BattleView'
+import { advanceRound, deserializeBattle, type BattleState } from '@/engine'
 
 function ResetSaveButton() {
   const resetSave = useGameStore((s) => s.resetSave)
@@ -185,6 +188,110 @@ function SaveTransfer() {
       />
       {status && <div className="text-xs text-game-accent">{status}</div>}
     </div>
+  )
+}
+
+// Paste a BSNAP.<…> token and watch it back in the real battle view — the same
+// snapshot format the ⎘-state button emits and `npm run bsnap` replays, now in
+// the app. Purely a viewer: the deserialized battle lives in local component
+// state and is passed straight to BattleView; it never enters the store's
+// `battles` map, so it's never serialized to a save (bug-repro without clobbering
+// your game). Step advances one engine round (deterministic, byte-identical to
+// the headless replay); Play auto-advances until the fight resolves.
+function BsnapReplayControl() {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [status, setStatus] = useState<string | null>(null)
+  const [battle, setBattle] = useState<BattleState | null>(null)
+  const [playing, setPlaying] = useState(false)
+
+  const load = () => {
+    const raw = text.trim()
+    // Tolerate surrounding prose/line-wraps like scripts/bsnap.mjs: take from the
+    // first BSNAP marker on (deserializeBattle strips the prefix + inner whitespace).
+    const i = raw.indexOf('BSNAP.')
+    const token = i >= 0 ? raw.slice(i) : raw
+    if (!token) { setStatus('Paste a BSNAP token first'); return }
+    try {
+      const b = deserializeBattle(token)
+      setBattle(b)
+      setPlaying(false)
+      setStatus(`Loaded — round ${b.round}, ${b.combatants.length} combatants`)
+    } catch (e) {
+      setBattle(null)
+      setStatus(e instanceof Error ? e.message : 'Could not read that snapshot')
+    }
+  }
+
+  const step = useCallback(() => {
+    setBattle((b) => {
+      if (!b || b.outcome !== 'ongoing') return b
+      advanceRound(b)          // mutates in place (engine ambient set per round)
+      return { ...b }          // new ref so BattleView/LiveBattle re-render
+    })
+  }, [])
+
+  // Auto-advance while playing. Cadence roughly mirrors the live game's round pace.
+  useEffect(() => {
+    if (!playing) return
+    const id = setInterval(step, 350)
+    return () => clearInterval(id)
+  }, [playing, step])
+  // Stop auto-play the moment the fight resolves (Step/Play then no-op).
+  useEffect(() => { if (battle && battle.outcome !== 'ongoing') setPlaying(false) }, [battle])
+
+  const close = () => { setBattle(null); setPlaying(false); setStatus(null) }
+
+  const trigger = !open ? (
+    <button
+      onClick={() => setOpen(true)}
+      className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors"
+    >
+      BSNAP Replay
+    </button>
+  ) : (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <button onClick={load} disabled={!text.trim()} className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${text.trim() ? 'border-game-border text-game-text-dim hover:border-game-primary/50' : 'border-game-border/40 text-game-muted cursor-not-allowed'}`}>Load snapshot</button>
+        <button onClick={() => { setOpen(false); setStatus(null) }} className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors ml-auto">Close</button>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Paste a BSNAP.<…> token to replay it (view-only — never saved)."
+        spellCheck={false}
+        className="w-full h-24 text-[10px] font-mono p-2 rounded-lg border border-game-border bg-game-bg text-game-text-dim resize-none"
+      />
+      <p className="text-[10px] text-game-muted leading-snug">
+        The ⎘-state button in a battle copies a token; <span className="font-mono">npm run bsnap</span> replays the same one headlessly.
+      </p>
+      {status && <div className="text-xs text-game-accent">{status}</div>}
+    </div>
+  )
+
+  return (
+    <>
+      {trigger}
+      {battle && createPortal(
+        <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-game-border bg-game-surface/90 shrink-0">
+            <span className="text-xs uppercase tracking-widest text-game-text-dim">BSNAP Replay</span>
+            <span className="text-xs text-game-muted tabular-nums">
+              round {battle.round} · {battle.combatants.length} combatants · {battle.outcome}
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={step} disabled={battle.outcome !== 'ongoing'} className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${battle.outcome === 'ongoing' ? 'border-game-border text-game-text-dim hover:border-game-primary/50' : 'border-game-border/40 text-game-muted cursor-not-allowed'}`}>Step</button>
+              <button onClick={() => setPlaying((p) => !p)} disabled={battle.outcome !== 'ongoing'} className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${battle.outcome === 'ongoing' ? 'border-game-primary/60 bg-game-primary/15 text-game-primary hover:bg-game-primary/25' : 'border-game-border/40 text-game-muted cursor-not-allowed'}`}>{playing ? 'Pause' : 'Play'}</button>
+              <button onClick={close} className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors">Close ✕</button>
+            </div>
+          </div>
+          <div className="relative flex-1 min-h-0">
+            <BattleView locationId={null} battleOverride={battle} />
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }
 
@@ -411,6 +518,9 @@ export function Time() {
         </div>
         <div className="pt-2 border-t border-game-border/40">
           <BattleSkinControl />
+        </div>
+        <div className="pt-2 border-t border-game-border/40">
+          <BsnapReplayControl />
         </div>
         <SaveTransfer />
         <ResetSaveButton />
