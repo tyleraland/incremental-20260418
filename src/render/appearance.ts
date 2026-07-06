@@ -21,7 +21,7 @@ export type Tone = 'player' | 'enemy' | 'neutral' | 'casting'
 // Silhouette family for the token body. A skin picks its body path by this —
 // NEVER by entity id (that translation happens here). A handful of shared
 // shapes cover the whole bestiary; per-monster art stays a non-goal.
-export type BodyShape = 'humanoid' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine'
+export type BodyShape = 'humanoid' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine' | 'harpy2'
 
 // A hero's handheld, keyed off class — the paper skin swaps its facing-blade
 // layer by this. Absent (Novice / monsters) → the skin's generic pointer.
@@ -66,7 +66,7 @@ const MONSTER_SHAPE: Partial<Record<string, BodyShape>> = {
   'slime': 'blob', 'tough-slime': 'blob', 'dark-slime': 'blob', 'fire-slime': 'blob',
   'egg-sac': 'blob', 'living-nightshade': 'blob', 'giant-frog': 'blob',
   // flyers — wings or floating
-  'harpy': 'flyer', 'bat': 'flyer', 'hornet': 'flyer', 'rat-fly': 'flyer',
+  'harpy': 'harpy2', 'bat': 'flyer', 'hornet': 'flyer', 'rat-fly': 'flyer',
   'forest-sprite': 'flyer', 'wraith': 'flyer', 'ruins-specter': 'flyer',
   // humanoids — two legs, tools, armor
   'poacher': 'humanoid', 'skeleton-archer': 'humanoid', 'animated-armor': 'humanoid',
@@ -87,7 +87,7 @@ export function monsterBodyShape(monsterId: string): BodyShape {
 // Closed lists of the visual families, plus reverse lookups (who uses each), so
 // the dev asset gallery can list bodies/weapons and show what maps to them.
 // `satisfies` keeps these exhaustive against the unions at compile time.
-export const BODY_SHAPES = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine'] as const satisfies readonly BodyShape[]
+export const BODY_SHAPES = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'harpy2'] as const satisfies readonly BodyShape[]
 export const WEAPONS = ['sword', 'bow', 'staff', 'dagger'] as const satisfies readonly Weapon[]
 export const monstersForShape = (shape: BodyShape): string[] =>
   Object.entries(MONSTER_SHAPE).filter(([, s]) => s === shape).map(([id]) => id)
