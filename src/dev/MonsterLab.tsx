@@ -25,7 +25,7 @@ import { ALL_ELEMENTS, type Element } from '@/engine/elements'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { BattleView } from '@/components/BattleView'
 import { getAppearance } from '@/render/appearance'
-import { TOKEN_SKINS, BATTLE_SKIN_IDS } from '@/render/skins'
+import { TOKEN_SKINS } from '@/render/skins'
 import type { Combatant } from '@/engine'
 import { seedSimBattle } from './simBattle'
 import {
@@ -204,10 +204,14 @@ export default function MonsterLab() {
             >↺ Reset this monster</button>
           </div>
 
-          {/* Appearance — paper-skin body preview + an idle/walk/attack state
-              machine driving the real CSS animations (same tags BattleView uses). */}
-          <Section title="Appearance" hint="paper-skin body · animation states">
-            <MonsterAnimPreview monsterId={selectedId} />
+          {/* Appearance — an interactive idle/walk/attack state machine (top) over
+              a paper-only reference: token states, facing wheel, resolved descriptor
+              (live from the draft — size/element/name). No circle debug token. */}
+          <Section title="Appearance" hint="paper-skin body · animation states + rendered token reference">
+            <div className="space-y-3">
+              <MonsterAnimPreview monsterId={selectedId} />
+              <AppearanceViewer def={draft} />
+            </div>
           </Section>
 
           {/* Core + identity */}
@@ -300,11 +304,12 @@ export default function MonsterLab() {
   )
 }
 
-// Asset viewer: draws the selected monster's real battlefield token through the
-// production render seam (`getAppearance` → `TOKEN_SKINS[skin]`), so it's exactly
-// what ships — no reimplementation. Reflects the LIVE draft: name → glyph, id →
-// body silhouette, element → rim tint, size → scale. Both skins, the key token
-// states, and a facing wheel (paper leans along heading; circle ignores facing).
+// Asset reference: draws the selected monster's real battlefield token through the
+// production render seam (`getAppearance` → the PAPER skin — the circle debug token
+// isn't wanted here), so it's exactly what ships — no reimplementation. Reflects
+// the LIVE draft: name → glyph, id → body silhouette, element → rim tint, size →
+// scale. The key token states, a facing wheel, and the resolved descriptor;
+// complements the interactive idle/walk/attack preview above it.
 const FACINGS = [0, 45, 90, 135, 180, 225, 270, 315]
 const viewerDims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
 
@@ -330,43 +335,35 @@ function AppearanceViewer({ def }: { def: MonsterDef }) {
     { label: 'KO',       alive: false, facingDeg: null, moving: false, selected: false, simple: false },
   ]
 
+  const Body = TOKEN_SKINS.paper
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {BATTLE_SKIN_IDS.map((skin) => {
-          const Body = TOKEN_SKINS[skin]
-          return (
-            <div key={skin} className="rounded-lg border border-game-border bg-game-bg/60 p-3">
-              <div className="text-[10px] uppercase tracking-widest text-game-muted mb-3 capitalize">{skin}</div>
-              <div className="flex items-end justify-between gap-2">
-                {states.map((st) => (
-                  <div key={st.label} className="flex flex-col items-center gap-1.5">
-                    <div className="flex items-end justify-center" style={{ height: `${Math.round(60 * 1.35)}px` }}>
-                      <Body glyph={a.glyph} tone={a.tone} bodyShape={a.bodyShape} tint={a.tint} creature dims={viewerDims(px)}
-                        alive={st.alive} facingDeg={st.facingDeg} moving={st.moving} selected={st.selected} simple={st.simple} />
-                    </div>
-                    <span className="text-[9px] text-game-muted">{st.label}</span>
-                  </div>
-                ))}
+      {/* Key token states (paper only) — idle/moving/selected/far-LOD/KO. */}
+      <div className="rounded-lg border border-game-border bg-game-bg/60 p-3">
+        <div className="text-[10px] uppercase tracking-widest text-game-muted mb-3">token states · paper</div>
+        <div className="flex items-end justify-between gap-2">
+          {states.map((st) => (
+            <div key={st.label} className="flex flex-col items-center gap-1.5">
+              <div className="flex items-end justify-center" style={{ height: `${Math.round(60 * 1.35)}px` }}>
+                <Body glyph={a.glyph} tone={a.tone} bodyShape={a.bodyShape} tint={a.tint} creature dims={viewerDims(px)}
+                  alive={st.alive} facingDeg={st.facingDeg} moving={st.moving} selected={st.selected} simple={st.simple} />
               </div>
+              <span className="text-[9px] text-game-muted">{st.label}</span>
             </div>
-          )
-        })}
+          ))}
+        </div>
       </div>
 
       {/* Facing wheel — the paper skin rotates the silhouette to heading. */}
       <div className="rounded-lg border border-game-border bg-game-bg/60 p-3">
         <div className="text-[10px] uppercase tracking-widest text-game-muted mb-3">Facing · paper</div>
         <div className="flex items-center justify-between gap-1 flex-wrap">
-          {FACINGS.map((deg) => {
-            const Body = TOKEN_SKINS.paper
-            return (
-              <div key={deg} className="flex flex-col items-center gap-1">
-                <Body glyph={a.glyph} tone={a.tone} bodyShape={a.bodyShape} tint={a.tint} creature alive selected={false} facingDeg={deg} dims={viewerDims(44)} />
-                <span className="text-[9px] text-game-muted tabular-nums">{deg}°</span>
-              </div>
-            )
-          })}
+          {FACINGS.map((deg) => (
+            <div key={deg} className="flex flex-col items-center gap-1">
+              <Body glyph={a.glyph} tone={a.tone} bodyShape={a.bodyShape} tint={a.tint} creature alive selected={false} facingDeg={deg} dims={viewerDims(44)} />
+              <span className="text-[9px] text-game-muted tabular-nums">{deg}°</span>
+            </div>
+          ))}
         </div>
       </div>
 
