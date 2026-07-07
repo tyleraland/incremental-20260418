@@ -12,13 +12,13 @@
 // roster — sharing the Battle Sandbox's save-safe scene seeder (simBattle.ts).
 // App.tsx gates ?monsterlab no-persist, so the synthetic scene NEVER touches a
 // save (sandbox or curated).
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Location, MonsterDef, MonsterSize } from '@/types'
 import { useGameStore, type Unit } from '@/stores/useGameStore'
 import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
-import { TOKEN_SKINS } from '@/render/skins'
 import { monsterBodyShape, BODY_SHAPES, type BodyShape } from '@/render/appearance'
+import { BodyAnimPreview } from './BodyAnimPreview'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { TACTIC_REGISTRY } from '@/engine/tactics'
 import { ALL_ELEMENTS, type Element } from '@/engine/elements'
@@ -96,6 +96,15 @@ export default function MonsterLab() {
   // Bumped after any mutation to refresh override markers / the changed-count.
   const [rev, setRev] = useState(0)
   const bump = () => setRev((r) => r + 1)
+
+  // The Monster Lab is an ART surface — always show the real paper skin (never the
+  // circle debug token) in the preview AND the Battle Sim. Force it on mount,
+  // restore the player's choice on the way out.
+  useEffect(() => {
+    const prev = useGameStore.getState().battleSkin
+    useGameStore.setState({ battleSkin: 'paper' })
+    return () => useGameStore.setState({ battleSkin: prev })
+  }, [])
 
   const overrides = useMemo(() => new Set(overriddenIds()), [rev])
   const filtered = useMemo(() => {
@@ -385,80 +394,21 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 }
 
 // ── Appearance preview ───────────────────────────────────────────────────────
-// Renders the monster's paper-skin body (the token BattleView draws) and toggles
-// it through an idle/walk/attack STATE MACHINE, driving the exact same CSS the
-// live battlefield uses: `moving` + `animate-walk` shuffle the [data-walk] feet,
-// and `animate-lunge`/`animate-atk` (+ --atk-x/y, --lunge-x/y) fire the jab. The
-// body is authored facing +x, so the token faces right here and the jab/lunge
-// push that way. Attack loops (re-trigger on a class-parity swap, exactly like
-// consecutive-round attacks in play) so the one-shot reads as a repeating strike.
-type AnimState = 'idle' | 'walk' | 'attack'
-const ANIM_STATES: { id: AnimState; label: string }[] = [
-  { id: 'idle', label: 'Idle' },
-  { id: 'walk', label: 'Walk' },
-  { id: 'attack', label: 'Attack' },
-]
-
+// The monster's paper-skin body with an idle/walk/attack state machine (shared
+// BodyAnimPreview — the same CSS the battlefield uses). A body-shape override
+// lets you preview ANY silhouette, not just the one this monster resolves to — so
+// the walk-cycle bodies (spider/mimic) are inspectable even though no monster maps
+// to them yet; it resets to the monster's shape when you switch monsters.
 function MonsterAnimPreview({ monsterId }: { monsterId: string }) {
-  const [state, setState] = useState<AnimState>('idle')
-  const [atkFlip, setAtkFlip] = useState(false)
-  // Body-shape override: preview any silhouette, not just the one this monster
-  // resolves to — so the walk-cycle bodies (spider/mimic) are inspectable here
-  // even though no monster maps to them yet. Resets to the monster's shape when
-  // you switch monsters.
   const [shapeOverride, setShapeOverride] = useState<BodyShape | ''>('')
   useEffect(() => setShapeOverride(''), [monsterId])
-  // Attack: replay the one-shot jab on a ~0.56s cadence by swapping the a/b class
-  // pair (a class change restarts the keyframes — the same retrigger the live game
-  // uses for back-to-back attacks). Idle/walk need no timer.
-  useEffect(() => {
-    if (state !== 'attack') return
-    setAtkFlip((f) => !f)
-    const id = setInterval(() => setAtkFlip((f) => !f), 560)
-    return () => clearInterval(id)
-  }, [state, monsterId])
-
-  const Body = TOKEN_SKINS.paper
   const monShape = monsterBodyShape(monsterId)
   const shape = shapeOverride || monShape
-  const attacking = state === 'attack'
-  const wrapperCls = state === 'walk'
-    ? 'animate-walk'
-    : attacking
-      ? (atkFlip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b')
-      : undefined
-  // facing +x → jab/lunge point right (SVG user units for --atk, % for --lunge).
-  const style = attacking
-    ? ({ '--atk-x': '13px', '--atk-y': '0px', '--lunge-x': '26%', '--lunge-y': '0%' } as CSSProperties)
-    : undefined
 
   return (
-    <div className="flex items-center gap-4 flex-wrap">
-      <div className="relative w-28 h-28 shrink-0 rounded-lg border border-game-border bg-game-bg grid place-items-center overflow-hidden">
-        <div className={wrapperCls} style={style}>
-          <Body
-            glyph=""
-            tone="enemy"
-            bodyShape={shape}
-            creature
-            alive
-            selected={false}
-            facingDeg={0}
-            moving={state === 'walk'}
-            dims={{ width: '92px', height: '92px', fontSize: '0px' }}
-          />
-        </div>
-      </div>
+    <div className="flex items-start gap-4 flex-wrap">
+      <BodyAnimPreview shape={shape} states={['idle', 'walk', 'attack']} />
       <div className="space-y-2 min-w-0">
-        <div className="inline-flex rounded-lg border border-game-border overflow-hidden">
-          {ANIM_STATES.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setState(s.id)}
-              className={['px-3 py-1.5 text-xs border-r border-game-border last:border-r-0', state === s.id ? 'bg-game-primary/25 text-game-text font-medium' : 'text-game-text-dim hover:bg-white/5'].join(' ')}
-            >{s.label}</button>
-          ))}
-        </div>
         <div className="flex items-center gap-2 text-[10px] text-game-muted">
           <span>body</span>
           <select

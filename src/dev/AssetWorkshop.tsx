@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import type { Biome } from '@/render/appearance'
+import { type Biome, BODY_SHAPES, type BodyShape } from '@/render/appearance'
 import { PAPER_PALETTE } from '@/render/palette'
-import { ARENA_SKINS } from '@/render/skins'
+import { ARENA_SKINS, TOKEN_SKINS } from '@/render/skins'
+import { BodyAnimPreview } from './BodyAnimPreview'
 import { propMarkup } from '@/render/terrain'
 import { TERRAIN_PROPS, type PropDef } from '@/render/props'
 import { listAssets, assetKey, type AssetDescriptor, type AssetCategory } from '@/render/assets'
@@ -144,6 +145,7 @@ export default function AssetWorkshop() {
     catch { return JSON.stringify(STARTER, null, 2) }
   })
   const [seed, setSeed] = useState(7)
+  const [monBody, setMonBody] = useState<BodyShape>('canine')
   const [copied, setCopied] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [namesCopied, setNamesCopied] = useState(false)
@@ -394,6 +396,44 @@ export default function AssetWorkshop() {
             direction everywhere; or use <code>cutout()</code> in props.ts) · no gradients, no filters ·
             imported art: <code>npm run import-svg -- file.svg</code> normalizes an editor SVG into this exact shape.
           </p>
+        </div>
+      </div>
+
+      {/* ── Monster bodies: the animated token families, grouped, with a state
+             machine (idle / attack / walk / hit — the same CSS the battlefield
+             uses, via the shared BodyAnimPreview). Pick a body on the left; it
+             drives the live preview on the right. ── */}
+      <div className="mt-6 border-t border-neutral-800 pt-4">
+        <div className="flex items-center gap-3 mb-2 flex-wrap">
+          <h2 className="text-[11px] uppercase tracking-widest text-neutral-400">monster bodies ({BODY_SHAPES.length})</h2>
+          <span className="text-[10px] text-neutral-500">click a body · toggle idle / attack / walk / hit (more states as they land)</span>
+        </div>
+        <div className="flex flex-wrap gap-4 items-start">
+          <div className="flex flex-wrap gap-1.5 max-w-[430px]">
+            {BODY_SHAPES.map((s) => {
+              const Body = TOKEN_SKINS.paper
+              const sel = s === monBody
+              return (
+                <button
+                  key={s}
+                  onClick={() => setMonBody(s)}
+                  title={s}
+                  className={`w-[60px] rounded border ${sel ? 'border-emerald-400 ring-1 ring-emerald-400/60' : 'border-neutral-800 hover:border-neutral-600'}`}
+                >
+                  <div className="h-[46px] grid place-items-center bg-[#141019] rounded-t overflow-hidden">
+                    <Body glyph="" tone="enemy" bodyShape={s} creature alive selected={false} facingDeg={0} dims={{ width: '40px', height: '40px', fontSize: '0px' }} />
+                  </div>
+                  <div className="px-1 py-0.5 text-[9px] text-neutral-400 truncate text-center">{s}</div>
+                </button>
+              )
+            })}
+          </div>
+          <div className="rounded-lg border border-neutral-800 p-3 bg-[#0f0f16]">
+            <BodyAnimPreview shape={monBody} size={120} />
+            <p className="mt-2 text-[10px] text-neutral-500 max-w-[19rem] leading-snug">
+              Live paper token (facing right). <b className="text-neutral-300">Idle</b> · <b className="text-neutral-300">Attack</b> (jab + lunge, loops back to idle) · <b className="text-neutral-300">Walk</b> (foot shuffle — legged bodies only) · <b className="text-neutral-300">Hit</b> (recoil). More states slot in as they're authored.
+            </p>
+          </div>
         </div>
       </div>
 
