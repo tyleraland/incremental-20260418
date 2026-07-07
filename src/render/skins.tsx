@@ -361,6 +361,25 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
     { d: 'M54 60 L64 60 L64 72 L54 72 Z', kind: 'accent', fill: 'cream', lean: 5, atk: 'jab' },
     { d: 'M58 64 a1.8 1.8 0 1 0 0.1 0 Z', kind: 'accent', fill: 'outline', lean: 5, atk: 'jab' },
   ],
+  // ZOMBIE (a shambling undead humanoid) — the reference read is a hunched,
+  // lopsided corpse with both arms thrown FORWARD in the classic grasping reach.
+  // Top-down that reach IS the silhouette: a hunched torso plate, two forward
+  // arms (upper longer, both snap out on a jab), and a lolling head leading at
+  // the prow; a dragging foot lags behind. The signature accent is a sickly
+  // GREEN rot patch on the torso + a dribble of green ooze past the slack mouth,
+  // plus two pale hollow eyes. Torso + both arms + head wind the same way, so the
+  // far-LOD merge is one lumpy grasping blob; foot/rot/ooze/eyes stay accents.
+  zombie: [
+    { d: 'M18 60 C12 64 5 66 2 63 C-1 61 1 56 6 57 C11 59 15 58 20 54 Z', kind: 'accent', fill: 'base', stroke: true, lean: -6, atk: 'trail' },
+    { d: 'M34 30 C50 30 58 40 58 50 C58 62 48 72 34 72 C20 71 12 62 12 50 C12 40 20 30 34 30 Z', c: [34, 50] },
+    { d: 'M30 46 C35 46 37 49 36 53 C35 58 30 59 26 57 C21 55 23 47 30 46 Z', kind: 'accent', fill: 'tileMoss' },
+    { d: 'M46 60 C60 58 76 62 90 66 C94 68 93 74 88 75 C76 76 62 74 48 68 C44 66 43 62 46 60 Z', c: [70, 68], lean: 4, atk: 'jab' },
+    { d: 'M46 34 C60 30 78 24 92 22 C96 24 96 30 91 31 C78 34 62 40 48 42 C44 40 43 36 46 34 Z', c: [72, 30], lean: 5, shadow: true, atk: 'jab' },
+    { d: 'M60 40 C72 39 80 44 80 51 C80 60 71 64 63 62 C55 60 52 55 53 50 C54 44 56 41 60 40 Z', c: [66, 51], lean: 4, shadow: true, atk: 'jab' },
+    { d: 'M74 47 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 4, atk: 'jab' },
+    { d: 'M74 54 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 4, atk: 'jab' },
+    { d: 'M80 52 C85 52 89 56 87 60 C85 63 82 60 81 56 C80 54 80 53 80 52 Z', kind: 'accent', fill: 'tileMoss', lean: 4, atk: 'jab' },
+  ],
 }
 
 // Facing-layer shapes (drawn under the body, rotated to facingDeg, so only the
