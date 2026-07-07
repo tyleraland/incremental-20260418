@@ -232,14 +232,24 @@ teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
    (`--atk-x/y` user units) — so it stays OFF the memo'd body, and a struck token
    also recoils (`animate-hit-*`). All LOD-gated; keep `atk` parts few (each
    promotes a compositor layer during its 0.3s — ~0.8 fps on a 20-token pit).
+   For a resting idle, tag parts `idle: 'breathe'` (the torso/abdomen swells
+   through three poses: rest → inhale → exhale undershoot) / `'sway'` (antennae/
+   fronds drift a few degrees): the same `data-idle` seam, run by `animate-idle`
+   only while the token is at detail LOD, alive, still and not casting, with
+   per-token phase/tempo seeded off the unit id so a nest never pulses in
+   lockstep. It's a CONTINUOUS animation (a promoted compositor layer for the
+   token's whole resting life) — keep idle parts to 1–3 and never un-gate it.
 4. Stay lean — **a handful of flat paths per token** (a `plate` is 2–3 paths, an
    `accent` is 1) — because every element multiplies across 50+ gliding tokens
    and the memo only holds if the body receives primitives (no live engine
    objects, no per-token gradients). Dropping the monster text label pays for a
    couple of extra parts (measured net-flat on `skin-ab`).
-5. Iterate in a scratchpad Playwright preview (a rotation grid, idle vs moving;
-   inject CSS to hide `[data-skin="paper"] > span` so labels don't cover the
-   silhouette), then verify with `?gallery=1` / `npm run gallery-shot` for the
+5. Iterate against the **body sheet** (`?bodyshot=<shape>`, screenshot via
+   `SHAPE=<shape> npm run body-shot`): one image renders the creature's full
+   state machine as deterministic stills — the real index.css keyframes frozen
+   at authored phases (3 idle breathe/sway poses, attack wind/strike/recover,
+   hit recoil, walk gait) plus the facing wheel, scale ladder, far-LOD merge and
+   KO crumple. Then verify with `?gallery=1` / `npm run gallery-shot` for the
    whole-language read and `npm run skin-ab` for the fps delta before you commit.
 
 ## Preferred monster style (what we've converged on — keep new creatures here)
@@ -265,14 +275,21 @@ these, not by taste:
   is CSS on the chip wrapper (`data-atk`), never a body re-render. Prefer a
   reaction that comes from the reference's *attack* frames (the snake strike, the
   wolf bite) over a generic wiggle. Keep animated parts to 2–3 (compositor cost).
+- **Idle = the body breathes, from the reference's idle frames.** Tag the main
+  torso/abdomen plate `idle: 'breathe'` and one trailing feature (antennae,
+  fronds, a tail tip) `idle: 'sway'` so a resting creature reads alive instead
+  of frozen (the thief bug: carapace swells, antennae drift). Same rules as atk:
+  CSS on the wrapper (`data-idle`), 1–3 parts, LOD-gated by BattleChip — the
+  far-LOD merge drops idle with the other accents.
 - **Lean on the part count.** ~5–12 paths per token; a `plate` is 2–3, an
   `accent` is 1. If a detail doesn't survive the far-LOD collapse, it's probably
   not worth its node.
 
 Cohesion checklist for a PR adding a monster: distinct family silhouette? one
 signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
-`jab`/`trail` tagged if it melees? palette roles only? — all visible on one
-`npm run gallery-shot`.
+`jab`/`trail` tagged if it melees? `breathe`/`sway` idle tagged? palette roles
+only? — all visible on one `SHAPE=<shape> npm run body-shot` plus the
+whole-language `npm run gallery-shot`.
 
 ## Perf contracts (why the weird constraints)
 

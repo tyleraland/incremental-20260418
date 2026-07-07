@@ -1664,38 +1664,31 @@ Next slices, roughly in order:
   hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an
   atlas, falling back to `paper`/`circle` when absent.
 
-- **Monster idle / breathing loop — PROPOSED (scorpion prototype 2026-07).**
-  Give monster tokens a continuous, subtle idle so a resting field feels alive
-  instead of frozen. Prototype (scratchpad preview, not yet integrated): a new
-  `scorpion` bodyShape whose idle = abdomen breathe (scale), pincers flex
-  open/closed out of phase, and the raised stinger hovers. Mechanism stays in
-  the language: compositor-only CSS (`transform` scale/translate) on
-  transform-less `data-idle` wrapper `<g>`s — the SAME seam as `data-atk`, so it
-  composes with the part's facing/lean transform and never touches the memo'd
-  body. Per-token phase/tempo variety (via `--idle-delay`/`--idle-dur` seeded
-  off the unit id) so a nest doesn't pulse in lockstep; "two alternate idles"
-  (an occasional claw-clack / tail-twitch) layer on top. **This deliberately
-  bumps the governing rule below — "keep *idle* tokens from continuously
-  repainting."** A transform-only anim is compositor-cheap in isolation, but a
-  *continuous* per-token animation keeps a compositor layer promoted for the
-  token's whole life, and promotion re-uploads the SVG token texture (the lunge
-  lesson: ~−7 fps of per-round layer churn across a zoomed-out mob). So:
-  - **Gate idle behind the existing `tokenDetail` LOD** exactly like the lunge/
-    jab — the watched, close party idles; the far/dense crowd (already merged to
-    the 2-path silhouette) does not. Idle also suppressed while moving/casting/KO.
-  - **TODO — performance test with many idle monsters (REQUIRED before shipping):**
-    extend the deterministic `?perf` scene (or a new `e2e/idle-probe.spec.ts`
-    off `dense-probe`) to a field of N *simultaneously idling* tokens and measure
-    median fps vs. the static baseline via `npm run skin-ab` / `skin-trace`.
-    Confirm the LOD gate holds the 75/130/250-token budget (Performance blocks
-    above), find the on-screen animated-token cap, and decide the fallback if the
-    cap is exceeded (freeze idle → static pose, never drop to circle). Also
-    decide whether idle runs in the live game at all or stays a
-    gallery/preview-only flourish.
-  - Generalize past the scorpion once proven: an optional `idle` tag per
-    `BodyPart` (which compositor group it rides) + a small keyframe vocabulary
-    (breathe/bob/flex) so any bodyShape opts in by tagging parts, no per-monster
-    CSS. Review in `?gallery=1` (add an "idle motion" row) + `npm run skin-ab`.
+- **Monster idle / breathing loop — SHIPPED 2026-07 (`thiefBug` first).** The
+  generalized mechanism from the proposal, live in the game: an optional
+  `idle: 'breathe' | 'sway'` tag per `BodyPart` (skins.tsx) emits `data-idle`
+  on the part's compositor group — the SAME seam as `data-atk`/`data-walk`, so
+  it composes with facing/lean and never touches the memo'd body. index.css
+  runs it (`animate-idle`, three authored poses: rest → inhale → exhale
+  undershoot; sway for antennae/fronds) only while BattleChip says the token is
+  at **detail LOD, alive, still and not casting**, with `--idle-delay`/
+  `--idle-dur` seeded off the unit id so a nest doesn't pulse in lockstep (the
+  far-LOD merge carries no data-idle nodes, so a dense mob animates nothing —
+  the LOD gate the proposal required). Gating pinned in `Skins.test.tsx`;
+  reviewable per body in `?bodyshot=<shape>` (frozen keyframe stills +
+  live loop; `npm run body-shot`) and in the gallery's motion row ("breathe"
+  frozen-inhale cell — a still-identical cell flags a body with no idle yet).
+  Measured: `skin-ab` on the dense `?perf` scene is unchanged (11.4 vs 11.7
+  median fps baseline, within this rig's noise) — as expected, since the gate
+  keeps the dense crowd static. Still open:
+  - *Dedicated many-idlers probe* — `?perf` never idles (dense → far-LOD), so
+    the worst case (≤`LOD_TOKEN_COUNT`=16 on-screen tokens all breathing at
+    close zoom) is bounded but unmeasured; an `e2e/idle-probe.spec.ts` off
+    `dense-probe` with `?lod=on` forced would pin the number.
+  - *Alternate/occasional idles* (claw-clack, tail-twitch) layered over the
+    breathe, and a `bob` keyframe for floaters (wraiths, sprites).
+  - Retro-tag the existing bestiary (wolf ribcage breathe, slime core wobble,
+    mandragora frond sway…) — each is a one-line `idle:` tag now.
 
 Raised 2026-06 (original analysis, still governing). Goal: replace the circle tokens with **animated sprites** and the
 flat color-tint arena with a **detailed background**. The render architecture is

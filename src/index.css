@@ -93,6 +93,24 @@
 .animate-lunge-a { animation: lunge-a 0.3s ease-out; }
 .animate-lunge-b { animation: lunge-b 0.3s ease-out; }
 
+/* Continuous idle: a RESTING token stays subtly alive instead of frozen.
+   'breathe' swells a body plate through three authored poses (rest → inhale →
+   exhale undershoot); 'sway' drifts a part (antennae, fronds) a few degrees.
+   The chip wrapper carries `animate-idle` (added by BattleChip only while the
+   token is at detail LOD, alive, still and not casting — so a dense far-LOD mob,
+   whose merged body has no data-idle nodes anyway, animates nothing); it runs
+   the body's `[data-idle]` DESCENDANTS — the same seam as data-atk/data-walk,
+   so the memo'd body never re-renders. Per-token phase/tempo ride in
+   --idle-delay/--idle-dur (seeded off the unit id in BattleChip) so a nest
+   doesn't pulse in lockstep. transform-box:fill-box centers the scale/sway on
+   the part's own box at any facing. Declared BEFORE the walk/atk rules so those
+   win when a part is tagged for both and the token acts mid-breath. */
+@keyframes idle-breathe { 0%, 100% { transform: scale(1) } 42% { transform: scale(1.055) } 72% { transform: scale(0.985) } }
+@keyframes idle-sway    { 0%, 100% { transform: rotate(0deg) } 42% { transform: rotate(3.5deg) } 72% { transform: rotate(-1.6deg) } }
+.animate-idle [data-idle] { transform-box: fill-box; transform-origin: center; }
+.animate-idle [data-idle="breathe"] { animation: idle-breathe var(--idle-dur, 2.6s) ease-in-out var(--idle-delay, 0s) infinite; }
+.animate-idle [data-idle="sway"]    { animation: idle-sway    var(--idle-dur, 2.6s) ease-in-out var(--idle-delay, 0s) infinite; }
+
 /* Optional walk cycle: a foot/leg/arm shuffles a little WHILE the token moves.
    The chip wrapper carries `animate-walk` (added by BattleChip when c.moving);
    it animates the body's `[data-walk]` DESCENDANTS (a transform-less <g>, screen

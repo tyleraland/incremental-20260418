@@ -767,16 +767,28 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
             // While moving, `animate-walk` also runs the body's [data-walk] feet
             // (no-op for shapes without them, and gone at far-LOD where the merged
             // body has no accent parts) — a subtle per-part shuffle as it walks.
+            // While RESTING (detail LOD, alive, still, not casting), `animate-idle`
+            // runs the body's [data-idle] parts — the continuous breathe/sway that
+            // keeps a resting field alive. Same LOD gate as the lunge (a continuous
+            // animation holds a compositor layer promoted, so only the watched,
+            // zoomed-in handful idles — never the dense far-LOD mob). Phase/tempo
+            // are seeded off the unit id so a nest doesn't pulse in lockstep; the
+            // vars are deterministic per id, so they never churn the style.
             className={[
               lungeDeg != null ? (lungeFlip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b') : '',
               c.alive && c.moving ? 'animate-walk' : '',
+              detail && c.alive && !c.moving && !casting ? 'animate-idle' : '',
             ].filter(Boolean).join(' ') || undefined}
-            style={lungeDeg != null ? {
-              '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
-              '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,
-              '--atk-x': `${(Math.cos((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
-              '--atk-y': `${(Math.sin((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
-            } as CSSProperties : undefined}
+            style={{
+              '--idle-delay': `${-((hashString(c.id) % 1000) / 1000 * 2.6).toFixed(2)}s`,
+              '--idle-dur': `${(2.2 + ((hashString(c.id) >>> 10) % 1000) / 1000 * 0.9).toFixed(2)}s`,
+              ...(lungeDeg != null ? {
+                '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
+                '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,
+                '--atk-x': `${(Math.cos((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
+                '--atk-y': `${(Math.sin((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
+              } : null),
+            } as CSSProperties}
           >
             <Body
               glyph={appearance.glyph}

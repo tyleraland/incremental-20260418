@@ -23,13 +23,13 @@ import type { Barrier } from '@/engine'
 // surface — including the §mapgen vocabulary (washes, scatter-kind mapping,
 // one generated field swatch).
 
-const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2']
-const CREATURES: BodyShape[] = ['blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2']
+const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug']
+const CREATURES: BodyShape[] = ['blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug']
 const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
 const WEAPONS: Weapon[] = ['sword', 'dagger', 'bow', 'staff']
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
 const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-up
-const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'BO', flyer: 'HA', snail: 'SN', serpent: 'RS', canine: 'WO', fearrow: 'FA', crampRat: 'CR', mandragora: 'MD', spider: 'SP', mimic: 'MI', mimic2: 'M2' }
+const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'BO', flyer: 'HA', snail: 'SN', serpent: 'RS', canine: 'WO', fearrow: 'FA', crampRat: 'CR', mandragora: 'MD', spider: 'SP', mimic: 'MI', mimic2: 'M2', thiefBug: 'TB' }
 
 const dims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
 
@@ -145,11 +145,19 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
           creature that has no attack motion yet) vs the far-LOD merged
           silhouette (`simple` — what a dense mob actually draws). One glance says
           whether a new monster reads at every scale and lunges on attack. */}
-      <Section title="motion + LOD (per creature: idle · attack jab (frozen) · walk (live) · far-LOD silhouette)">
+      <Section title="motion + LOD (per creature: idle · breathe (frozen inhale) · attack jab (frozen) · walk (live) · far-LOD silhouette)">
         {CREATURES.map((shape) => (
           <div key={shape} className="flex items-end gap-1 mr-3">
             <Cell label={`${shape} idle`}>
               <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+            </Cell>
+            {/* breathe (frozen inhale): the `data-idle` transforms held at the
+                inhale pose via the .gidle CSS below — a still-identical "breathe"
+                cell flags a creature with no idle motion yet. */}
+            <Cell label="breathe">
+              <div className="gidle">
+                <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+              </div>
             </Cell>
             <Cell label="jab">
               <div className="gjab">
@@ -403,6 +411,9 @@ export default function SkinGallery() {
           screenshot shows the attack pose. Nose is +x in the gallery, so jab
           pushes forward (+x) and trail lags (−x). */}
       <style>{'.gjab [data-atk="jab"]{transform:translate(11px,0)}.gjab [data-atk="trail"]{transform:translate(-6px,0)}'}</style>
+      {/* Freeze the idle loop at its inhale pose for the "motion + LOD" row:
+          the same [data-idle] transforms index.css animates, held statically. */}
+      <style>{'.gidle [data-idle]{transform-box:fill-box;transform-origin:center}.gidle [data-idle="breathe"]{transform:scale(1.055)}.gidle [data-idle="sway"]{transform:rotate(3.5deg)}'}</style>
       <p className="text-[10px] text-neutral-500 mb-4">
         skin gallery — the whole visual language on one sheet (dev-only, ?gallery=1 · npm run gallery-shot)
       </p>

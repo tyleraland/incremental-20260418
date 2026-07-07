@@ -182,6 +182,16 @@ interface BodyPart {
   // only at detail LOD (the far-LOD merge has no accent parts) and only while
   // moving (the chip wrapper carries `animate-walk`). Absent = the part holds.
   walk?: 1 | 2
+  // OPTIONAL continuous idle (CSS-driven, off the memo'd body — see `data-idle`
+  // + index.css): a RESTING token stays subtly alive. 'breathe' swells the part
+  // through three poses (rest → inhale → exhale undershoot); 'sway' drifts it a
+  // few degrees (antennae, fronds, tails). The chip wrapper carries
+  // `animate-idle` ONLY while the token is at detail LOD, alive, still and not
+  // casting (BattleChip), with per-token phase/tempo vars seeded off the unit
+  // id — so a nest never pulses in lockstep and a dense far-LOD mob (merged,
+  // no data-idle nodes) animates nothing. Keep idle parts to 1–3 per body:
+  // each holds a compositor layer promoted for the token's whole resting life.
+  idle?: 'breathe' | 'sway'
 }
 
 const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
@@ -361,6 +371,26 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
     { d: 'M54 60 L64 60 L64 72 L54 72 Z', kind: 'accent', fill: 'cream', lean: 5, atk: 'jab' },
     { d: 'M58 64 a1.8 1.8 0 1 0 0.1 0 Z', kind: 'accent', fill: 'outline', lean: 5, atk: 'jab' },
   ],
+  // THIEF BUG (a scuttling roach) — the reference read is a LOW two-lobe
+  // carapace (a big oval abdomen behind a smaller head-shield) trailing two very
+  // LONG antennae swept back over the body, six splayed legs, and small pincer
+  // mandibles at the prow. The antennae are the signature. The six legs ship as
+  // TWO tripod-gait accents (three legs per path, opposite walk phases — half
+  // the spider's leg nodes). First body on the `data-idle` seam: the abdomen
+  // BREATHES (scale pulse; the wing seam rides it) and the antennae SWAY while
+  // the bug rests; the head-shield + mandibles snap forward on a jab and the
+  // antennae whip back. Abdomen + head-shield wind the same way so the far-LOD
+  // merge is a solid two-lobe bug; legs/antennae/seam/mandibles stay accents.
+  thiefBug: [
+    { d: 'M58 40 L66 26 L79 17 L63 27 L54 38 Z M45 62 L45 76 L54 88 L42 78 L40 61 Z M31 40 L21 29 L8 24 L19 32 L27 42 Z', kind: 'accent', fill: 'base', stroke: true, walk: 1 },
+    { d: 'M58 60 L66 74 L79 83 L63 73 L54 62 Z M45 38 L45 24 L54 12 L42 22 L40 39 Z M31 60 L21 71 L8 76 L19 68 L27 58 Z', kind: 'accent', fill: 'base', stroke: true, walk: 2 },
+    { d: 'M82 41 C64 19 38 8 13 5 C7 5 7 11 13 13 C36 17 58 27 76 46 Z', kind: 'accent', fill: 'base', stroke: true, lean: -5, atk: 'trail', idle: 'sway' },
+    { d: 'M82 59 C64 81 38 92 13 95 C7 95 7 89 13 87 C36 83 58 73 76 54 Z', kind: 'accent', fill: 'base', stroke: true, lean: -5, atk: 'trail', idle: 'sway' },
+    { d: 'M68 50 C68 65 55 75 35 75 C16 75 4 64 4 50 C4 36 16 25 35 25 C55 25 68 35 68 50 Z', c: [36, 50], lean: -2, idle: 'breathe' },
+    { d: 'M66 50 L8 48.8 L8 51.2 L66 51 Z', kind: 'accent', fill: 'outline', lean: -2, idle: 'breathe' },
+    { d: 'M92 50 C92 58 85 64 76 64 C67 64 61 58 61 50 C61 42 67 36 76 36 C85 36 92 42 92 50 Z', c: [76, 50], lean: 4, shadow: true, atk: 'jab' },
+    { d: 'M90 45 L102 40 L96 49 Z M90 55 L102 60 L96 51 Z', kind: 'accent', fill: 'outline', lean: 5, atk: 'jab' },
+  ],
 }
 
 // Facing-layer shapes (drawn under the body, rotated to facingDeg, so only the
@@ -464,10 +494,10 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
           parts.map((pl, i) =>
             (pl.kind ?? 'plate') === 'accent' ? (
               // accent: a lone path carries its own facing transform, so an
-              // animated one (jab OR walk) needs a transform-less <g> wrapper to
-              // hang the CSS motion on (static accents stay a bare path — no node).
-              pl.atk || pl.walk ? (
-                <g key={i} data-atk={pl.atk} data-walk={pl.walk}>
+              // animated one (jab, walk OR idle) needs a transform-less <g> wrapper
+              // to hang the CSS motion on (static accents stay a bare path — no node).
+              pl.atk || pl.walk || pl.idle ? (
+                <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle}>
                   <path d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
                 </g>
               ) : (
@@ -475,9 +505,10 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
               )
             ) : (
               // plate: already a transform-less <g> holding shadow/base/lit — so
-              // `data-atk`/`data-walk` ride it for free (the CSS motion targets the
-              // g in screen space; the inner paths keep their facing/lit transforms).
-              <g key={i} data-atk={pl.atk} data-walk={pl.walk}>
+              // `data-atk`/`data-walk`/`data-idle` ride it for free (the CSS motion
+              // targets the g in screen space; the inner paths keep their facing/lit
+              // transforms).
+              <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle}>
                 {pl.shadow && <path d={pl.d} fill={PAL.shadow} fillOpacity={0.3} transform={`translate(2.5 3.5) ${partT(pl) ?? ''}`} />}
                 <path d={pl.d} fill={p.base} stroke={outline} strokeWidth="4.5" transform={partT(pl)} />
                 <path d={pl.d} fill={p.top} transform={litT(pl, '-2.5 -3.5', 0.93)} />
