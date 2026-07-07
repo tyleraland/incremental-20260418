@@ -1664,6 +1664,39 @@ Next slices, roughly in order:
   hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an
   atlas, falling back to `paper`/`circle` when absent.
 
+- **Monster idle / breathing loop — PROPOSED (scorpion prototype 2026-07).**
+  Give monster tokens a continuous, subtle idle so a resting field feels alive
+  instead of frozen. Prototype (scratchpad preview, not yet integrated): a new
+  `scorpion` bodyShape whose idle = abdomen breathe (scale), pincers flex
+  open/closed out of phase, and the raised stinger hovers. Mechanism stays in
+  the language: compositor-only CSS (`transform` scale/translate) on
+  transform-less `data-idle` wrapper `<g>`s — the SAME seam as `data-atk`, so it
+  composes with the part's facing/lean transform and never touches the memo'd
+  body. Per-token phase/tempo variety (via `--idle-delay`/`--idle-dur` seeded
+  off the unit id) so a nest doesn't pulse in lockstep; "two alternate idles"
+  (an occasional claw-clack / tail-twitch) layer on top. **This deliberately
+  bumps the governing rule below — "keep *idle* tokens from continuously
+  repainting."** A transform-only anim is compositor-cheap in isolation, but a
+  *continuous* per-token animation keeps a compositor layer promoted for the
+  token's whole life, and promotion re-uploads the SVG token texture (the lunge
+  lesson: ~−7 fps of per-round layer churn across a zoomed-out mob). So:
+  - **Gate idle behind the existing `tokenDetail` LOD** exactly like the lunge/
+    jab — the watched, close party idles; the far/dense crowd (already merged to
+    the 2-path silhouette) does not. Idle also suppressed while moving/casting/KO.
+  - **TODO — performance test with many idle monsters (REQUIRED before shipping):**
+    extend the deterministic `?perf` scene (or a new `e2e/idle-probe.spec.ts`
+    off `dense-probe`) to a field of N *simultaneously idling* tokens and measure
+    median fps vs. the static baseline via `npm run skin-ab` / `skin-trace`.
+    Confirm the LOD gate holds the 75/130/250-token budget (Performance blocks
+    above), find the on-screen animated-token cap, and decide the fallback if the
+    cap is exceeded (freeze idle → static pose, never drop to circle). Also
+    decide whether idle runs in the live game at all or stays a
+    gallery/preview-only flourish.
+  - Generalize past the scorpion once proven: an optional `idle` tag per
+    `BodyPart` (which compositor group it rides) + a small keyframe vocabulary
+    (breathe/bob/flex) so any bodyShape opts in by tagging parts, no per-monster
+    CSS. Review in `?gallery=1` (add an "idle motion" row) + `npm run skin-ab`.
+
 Raised 2026-06 (original analysis, still governing). Goal: replace the circle tokens with **animated sprites** and the
 flat color-tint arena with a **detailed background**. The render architecture is
 DOM + CSS-`transform` (see the two Performance blocks above), and that decides what's

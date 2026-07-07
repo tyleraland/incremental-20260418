@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "allow": ["Artifact"],
     "deny": ["mcp__chrome-devtools", "mcp__Claude_Code_Remote__send_later"]
   },
   "hooks": {
