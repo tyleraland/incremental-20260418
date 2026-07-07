@@ -40,10 +40,19 @@ export default function PerfSandbox() {
   const [source, setSource] = useState<SandboxSource>('compose')
   const [bsnapText, setBsnapText] = useState('')
   const [bsnapStatus, setBsnapStatus] = useState<string | null>(null)
-  // The tick loop is installed once (mount) but must read the CURRENT source each
-  // tick — a ref keeps it live without re-installing the interval.
+  // Perf-test lever: freeze "normal play" (the full store tick — world clock,
+  // spawns/trickle, per-unit regen/KO/pack reconcile) and advance ONLY the battle
+  // under test. Tokens keep moving (the render load a perf test measures) while the
+  // heavy store orchestration the probe flags as the dominant Script cost is off,
+  // and the roster is held (no respawns) for a steady, reproducible load.
+  const [pauseNormalPlay, setPauseNormalPlay] = useState(false)
+  // The tick loop is installed once (mount) but must read the CURRENT source +
+  // freeze flag each tick — refs keep it live without re-installing the interval.
   const sourceRef = useRef(source)
   sourceRef.current = source
+  const engineOnlyRef = useRef(false)
+  // BSNAP replay is engine-only by construction; Compose honours the freeze toggle.
+  engineOnlyRef.current = source === 'bsnap' || pauseNormalPlay
 
   const paused = useGameStore((s) => s.paused)
   // Real open-world maps for the dropdown, captured once (before the sandbox loc
@@ -102,16 +111,17 @@ export default function PerfSandbox() {
   }, [bsnapText])
 
   // Start paused so the scene stands at rest; own the tick loop (App.tsx's is
-  // disabled under ?sandbox). One step per interval, honouring pause. In BSNAP
-  // mode we advance the snapshot's own combatants directly (a faithful replay —
-  // byte-identical to `npm run bsnap`), bypassing the store's open-world spawn/
-  // reconcile machinery; in Compose mode the store tick drives spawns + trickle.
+  // disabled under ?sandbox). One step per interval, honouring pause. Engine-only
+  // (BSNAP replay, or Compose with "pause normal play") advances just the watched
+  // battle's rounds directly, bypassing the store's world clock + open-world spawn/
+  // reconcile machinery; a full Compose tick drives spawns + trickle + per-unit
+  // systems (the "normal play" a perf test may want frozen).
   useEffect(() => {
     useGameStore.setState({ paused: true })
     const id = setInterval(() => {
       const s = useGameStore.getState()
       if (s.paused) return
-      if (sourceRef.current === 'bsnap') {
+      if (engineOnlyRef.current) {
         const b = s.battles[SANDBOX_LOC]
         if (b && b.outcome === 'ongoing') {
           advanceRound(b)   // mutates in place; sets its own arena/timescale ambient
@@ -183,6 +193,24 @@ export default function PerfSandbox() {
             <div className="text-[11px] text-game-text-dim tabular-nums">
               live: <span className="text-blue-300">{live.heroes} heroes</span> · <span className="text-red-300">{live.foes} foes</span> · round {live.round}
             </div>
+
+            {/* Perf test: freeze normal play (advance only the battle under test) */}
+            {source === 'compose' ? (
+              <label className="flex items-start gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={pauseNormalPlay}
+                  onChange={(e) => setPauseNormalPlay(e.target.checked)}
+                  className="mt-0.5 accent-game-primary"
+                />
+                <span className="text-[11px] leading-snug">
+                  <span className="text-game-text">Pause normal play</span>
+                  <span className="block text-[10px] text-game-muted">Advance only the battle — freeze spawns, trickle, world clock &amp; per-unit systems. Isolates render for perf profiling; roster held (no respawns).</span>
+                </span>
+              </label>
+            ) : (
+              <div className="text-[10px] text-game-muted leading-snug">Normal play is always paused in BSNAP replay — only the battle advances.</div>
+            )}
 
             {/* BSNAP replay source */}
             {source === 'bsnap' && (
