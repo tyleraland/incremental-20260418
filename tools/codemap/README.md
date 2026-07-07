@@ -48,6 +48,7 @@ file in **Git** to focus it in **Modules**).
 | **Modules** | modules | import graph; layer color, √LOC size, hubs, dead code |
 | **Features** | modules | directed feature-dependency graph (hybrid semantic layer) |
 | **Files** | filesystem | nested treemap; area ∝ bytes, color by importance / type / churn / **complexity** / **coverage** |
+| **Heatmap** | filesystem, modules | expandable file tree with a heat cell per metric (size, LOC, CC, MI, line %, branch %, churn, smells, dead exports); folders bubble up their worst descendant; click a file to browse source + deps |
 | **Git** | git | commit calendar, authors, most-churned files, recent commits |
 | **Complexity** | complexity, git, coverage | per-function cyclomatic / cognitive / nesting / size + **risk hotspots (complexity × churn)** |
 | **Coverage** | coverage, complexity | per-file test coverage + **best test targets (complex × untested)** |
@@ -61,6 +62,14 @@ a per-file Maintainability Index. **Coverage** is a test-run artifact — it rea
 `npm run codemap`; CI generates it on deploy so the hosted view always has it.
 The payoff is cross-lens: **risk** (complex **and** high-churn) and **test targets**
 (complex **and** low-coverage), plus `colorBy: complexity|coverage` on the treemap.
+
+**Finding bugs / dead code.** The **Inventory** lens lists dead **modules** (no
+importer), dead **exports** (exported names no other module imports — best-effort;
+barrels/entries exempt, test usage counts), and **bug smells** (a deterministic
+text scan: TODO/FIXME/HACK, `@ts-ignore`, `eslint-disable`, `: any`/`as any`,
+empty `catch {}`, stray `console.log`). Those signals are also heat columns on the
+**Heatmap**, and the risk/test-target tables point at complex-and-churny /
+complex-and-untested code.
 
 **Raw source.** The build mirrors tracked text files into `dist/source/`, and the
 viewer opens any file's code (line-numbered, with line-jump) on demand — from the

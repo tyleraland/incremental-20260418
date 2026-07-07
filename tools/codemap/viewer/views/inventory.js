@@ -3,9 +3,9 @@
 import * as lib from '../lib.js'
 
 export default {
-  id: 'inventory', label: 'Inventory', kind: 'html', needs: ['modules', 'filesystem'],
+  id: 'inventory', label: 'Inventory', kind: 'html', needs: ['modules', 'filesystem', 'smells'],
   mount(c) {
-    const G = c.data.modules, FS = c.data.filesystem
+    const G = c.data.modules, FS = c.data.filesystem, SM = c.data.smells
     const s = G.stats
     c.sidebar.innerHTML = '<div class="group-title">Report</div><p class="muted">A static snapshot: structure, content, features, and the gaps worth acting on.</p>'
 
@@ -42,6 +42,22 @@ export default {
       (G.deadModules.length
         ? `<table><tbody>` + G.deadModules.map((m) => `<tr><td>${lib.goLink('modules', m, lib.short(m))}</td></tr>`).join('') + `</tbody></table>`
         : `<p class="muted">none — every module has an importer.</p>`) +
+
+      `<h3>Dead exports <span class="muted">(${G.stats.deadExports}, best-effort)</span></h3>` +
+      `<p class="muted">Exported names no other module imports — unused, or only used internally so the <span class="mono">export</span> is superfluous. Barrels/entries exempt; test usage counts.</p>` +
+      (G.deadExports.length
+        ? `<table><thead><tr><th>module</th><th class="num">count</th><th>names</th></tr></thead><tbody>` +
+          G.deadExports.slice(0, 25).map((d) => `<tr><td>${lib.goLink('modules', d.id, lib.short(d.id))}</td>` +
+            `<td class="num">${d.names.length}</td><td class="mono muted" style="font-size:11px">${d.names.slice(0, 8).join(', ')}${d.names.length > 8 ? ' …' : ''}</td></tr>`).join('') + `</tbody></table>`
+        : `<p class="muted">none.</p>`) +
+
+      `<h3>Bug smells <span class="muted">(${SM.stats.total} in ${SM.stats.files} files)</span></h3>` +
+      `<p class="muted">Heuristic text scan: ${Object.entries(SM.stats.byKind).map(([k, v]) => `${k} ${v}`).join(' · ') || 'none'}. Approximate — a hint to eyeball.</p>` +
+      (SM.top.length
+        ? `<table><thead><tr><th>file</th><th class="num">smells</th><th>kinds</th></tr></thead><tbody>` +
+          SM.top.slice(0, 15).map((f) => `<tr><td>${lib.goLink('modules', f.path, lib.short(f.path))}</td><td class="num">${f.total}</td>` +
+            `<td class="mono muted" style="font-size:11px">${Object.keys(f).filter((k) => k !== 'path' && k !== 'total').join(', ')}</td></tr>`).join('') + `</tbody></table>`
+        : `<p class="muted">none.</p>`) +
 
       `<h3>Import cycles <span class="muted">(${G.cycles.length})</span></h3>` +
       (G.cycles.length ? G.cycles.map((cy) => `<div class="callout mono">${cy.map(lib.short).join(' → ')} → ${lib.short(cy[0])}</div>`).join('') : `<p class="muted">none.</p>`) +

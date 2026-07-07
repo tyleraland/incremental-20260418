@@ -96,6 +96,49 @@ export function extractModules({ REPO, HERE }) {
   deadModules.sort()
   for (const id of deadModules) nodes.get(id).dead = true
 
+  // 4b. Dead exports (best-effort): exported names no other module imports.
+  // Tracks named imports + re-exports; a namespace/default import marks the whole
+  // target "used" (we can't see which names). Barrels (index.*) and entries are
+  // exempt (they legitimately re-export for tests/consumers). Noisy by nature —
+  // a hint to investigate, not a verdict.
+  const usedNames = new Set()   // "file\x1fname" consumed by a named import
+  const fullyUsed = new Set()   // files reached by namespace/default/star import
+  const reExported = new Map()  // file -> Set of names it re-exports (`export {x} from`)
+  const hasStarExport = new Set()
+  const US = '\x1f'
+  for (const f of files) {
+    const self = rel(f.getFilePath())
+    for (const imp of f.getImportDeclarations()) {
+      const t = imp.getModuleSpecifierSourceFile?.(); if (!t) continue
+      const to = rel(t.getFilePath()); if (!nodes.has(to)) continue
+      if (imp.getNamespaceImport()) fullyUsed.add(to)
+      if (imp.getDefaultImport()) usedNames.add(to + US + 'default')
+      for (const ni of imp.getNamedImports()) usedNames.add(to + US + (ni.getName()))
+    }
+    for (const ex of f.getExportDeclarations()) {
+      if (!ex.getModuleSpecifier()) continue // `export { x }` (local) — not a re-export
+      // names this file forwards are its own re-exports (barrel-style, exempt below)
+      if (!reExported.has(self)) reExported.set(self, new Set())
+      if (ex.isNamespaceExport?.() || !ex.hasNamedExports?.()) hasStarExport.add(self)
+      for (const ne of ex.getNamedExports()) reExported.get(self).add(ne.getName())
+      // and they mark the TARGET's names as used
+      const t = ex.getModuleSpecifierSourceFile?.(); if (!t) continue
+      const to = rel(t.getFilePath()); if (!nodes.has(to)) continue
+      if (ex.isNamespaceExport?.() || !ex.hasNamedExports?.()) fullyUsed.add(to)
+      for (const ne of ex.getNamedExports()) usedNames.add(to + US + (ne.getName()))
+    }
+  }
+  for (const f of files) {
+    const path = rel(f.getFilePath())
+    const n = nodes.get(path)
+    if (n.test || n.dead || ENTRYISH(path) || /(^|\/)index\.[tj]sx?$/.test(path) || fullyUsed.has(path) || hasStarExport.has(path)) continue
+    const forwarded = reExported.get(path) || new Set()
+    const dead = n.exports.filter((name) => name !== 'default' && !forwarded.has(name) && !usedNames.has(path + US + name))
+    if (dead.length) { n.deadExports = dead; n.deadExportCount = dead.length }
+  }
+  const deadExports = [...nodes.values()].filter((n) => n.deadExportCount).map((n) => ({ id: n.id, names: n.deadExports }))
+    .sort((a, b) => b.names.length - a.names.length)
+
   // 5. Import cycles (Tarjan SCC over non-test modules)
   const cycles = (() => {
     const ids = [...nodes.keys()].filter((k) => !nodes.get(k).test)
@@ -223,11 +266,12 @@ export function extractModules({ REPO, HERE }) {
       files: nodes.size, codeFiles: codeNodes.length, testFiles: nodes.size - codeNodes.length,
       loc: [...nodes.values()].reduce((s, n) => s + n.loc, 0), codeLoc: codeNodes.reduce((s, n) => s + n.loc, 0),
       edges: edges.length, deadModules: deadModules.length, cycles: cycles.length,
-      features: features.length, unownedModules: unownedModules.length, byLayer, registryTotals,
+      features: features.length, unownedModules: unownedModules.length,
+      deadExports: deadExports.reduce((s, d) => s + d.names.length, 0), byLayer, registryTotals,
     },
     nodes: [...nodes.values()].sort((a, b) => a.id.localeCompare(b.id)),
     edges: edges.sort((a, b) => (a.source + a.target).localeCompare(b.source + b.target)),
     features: features.sort((a, b) => b.modules.length - a.modules.length),
-    featureEdges, unownedModules, deadModules, cycles,
+    featureEdges, unownedModules, deadModules, deadExports, cycles,
   }
 }

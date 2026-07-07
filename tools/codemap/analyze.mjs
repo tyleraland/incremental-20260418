@@ -15,6 +15,7 @@ import { extractModules } from './extract/modules.mjs'
 import { extractGit } from './extract/git.mjs'
 import { extractComplexity } from './extract/complexity.mjs'
 import { extractCoverage } from './extract/coverage.mjs'
+import { extractSmells } from './extract/smells.mjs'
 import { extractFilesystem } from './extract/filesystem.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -30,13 +31,15 @@ const modules = extractModules({ REPO, HERE })
 const git = extractGit({ REPO })
 const complexity = extractComplexity({ REPO })
 const coverage = extractCoverage({ REPO })
-const filesystem = extractFilesystem({ REPO, modules, git, complexity, coverage })
+const smells = extractSmells({ REPO })
+const filesystem = extractFilesystem({ REPO, modules, git, complexity, coverage, smells })
 
 const datasets = {
   modules: { ...modules, generatedAt, gitHash },
   git: { ...git, generatedAt, gitHash },
   complexity: { ...complexity, generatedAt, gitHash },
   coverage: { ...coverage, generatedAt, gitHash },
+  smells: { ...smells, generatedAt, gitHash },
   filesystem: { ...filesystem, generatedAt, gitHash },
 }
 
@@ -58,6 +61,8 @@ const manifest = {
     authors: git.stats.authors,
     over10: complexity.stats.over10,
     coverage: coverage.available ? coverage.stats.statements : null,
+    deadExports: modules.stats.deadExports,
+    smells: smells.stats.total,
   },
   datasets: Object.keys(datasets).map((id) => ({ id, file: `data/${id}.json` })),
 }
@@ -109,6 +114,7 @@ console.log(
     (git.available ? '' : ' (unavailable)') + '\n' +
   `  complexity: ${complexity.stats.functions} functions, ${complexity.stats.over10} over CC>10, median MI ${complexity.stats.medianMi}\n` +
   `  coverage:   ` + (coverage.available ? `${coverage.stats.statements}% statements over ${coverage.stats.files} files` : 'unavailable (run `npm run coverage`)') + '\n' +
+  `  smells:     ${smells.stats.total} across ${smells.stats.files} files · ${modules.stats.deadExports} dead exports\n` +
   `  source:     ${sourceFiles} files mirrored to source/\n` +
-  `  -> ${relative(REPO, DATA_DIR)}/{modules,git,complexity,coverage,filesystem,manifest}.json`,
+  `  -> ${relative(REPO, DATA_DIR)}/{modules,git,complexity,coverage,smells,filesystem,manifest}.json`,
 )
