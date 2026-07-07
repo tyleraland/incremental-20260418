@@ -8,7 +8,7 @@ import { generateMap, specBarriers, SCATTER_KINDS, type BarrierMaterial, type Ma
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
 import { CITY_RECIPE } from '@/mapgen/recipes/city'
-import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
+import { BODY_SHAPES, type BodyShape, type Weapon, type Tone, type Biome } from '@/render/appearance'
 import type { Barrier } from '@/engine'
 
 // Dev-only skin gallery (`?gallery=1`): a contact sheet of the ENTIRE visual
@@ -23,13 +23,16 @@ import type { Barrier } from '@/engine'
 // surface — including the §mapgen vocabulary (washes, scatter-kind mapping,
 // one generated field swatch).
 
-const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug']
-const CREATURES: BodyShape[] = ['blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug']
+// Derived from BODY_SHAPES — registering a body in appearance.ts is the ONE
+// registration; the gallery (and ?bodyshot, and the workshop) pick it up free.
+const SHAPES: BodyShape[] = [...BODY_SHAPES]
+const CREATURES: BodyShape[] = SHAPES.filter((s) => s !== 'humanoid')
 const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
 const WEAPONS: Weapon[] = ['sword', 'dagger', 'bow', 'staff']
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
 const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-up
-const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'BO', flyer: 'HA', snail: 'SN', serpent: 'RS', canine: 'WO', fearrow: 'FA', crampRat: 'CR', mandragora: 'MD', spider: 'SP', mimic: 'MI', mimic2: 'M2', thiefBug: 'TB' }
+// Circle-skin cell text only (paper creatures are silhouette-only anyway).
+const GLYPH = (s: BodyShape): string => (s === 'humanoid' ? '⚔' : s.slice(0, 2).toUpperCase())
 
 const dims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
 
@@ -104,7 +107,7 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
         {SHAPES.map((shape) =>
           TONES.map((tone) => (
             <Cell key={`${shape}-${tone}`} label={`${shape} · ${tone}`}>
-              <Body glyph={GLYPH[shape]} tone={tone} bodyShape={shape} alive selected={false} facingDeg={0} dims={dims(56)} />
+              <Body glyph={GLYPH(shape)} tone={tone} bodyShape={shape} alive selected={false} facingDeg={0} dims={dims(56)} />
             </Cell>
           )),
         )}
@@ -149,19 +152,19 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
         {CREATURES.map((shape) => (
           <div key={shape} className="flex items-end gap-1 mr-3">
             <Cell label={`${shape} idle`}>
-              <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+              <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
             </Cell>
             {/* breathe (frozen inhale): the `data-idle` transforms held at the
                 inhale pose via the .gidle CSS below — a still-identical "breathe"
                 cell flags a creature with no idle motion yet. */}
             <Cell label="breathe">
               <div className="gidle">
-                <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+                <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
               </div>
             </Cell>
             <Cell label="jab">
               <div className="gjab">
-                <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
+                <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
               </div>
             </Cell>
             {/* walk (live): the same `animate-walk` wrapper BattleChip adds while a
@@ -170,11 +173,11 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
                 on some frame of the cycle. */}
             <Cell label="walk">
               <div className="animate-walk">
-                <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
+                <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
               </div>
             </Cell>
             <Cell label="far-LOD">
-              <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} simple dims={dims(56)} />
+              <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} simple dims={dims(56)} />
             </Cell>
           </div>
         ))}

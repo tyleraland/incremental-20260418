@@ -1690,6 +1690,31 @@ Next slices, roughly in order:
   - Retro-tag the existing bestiary (wolf ribcage breathe, slime core wobble,
     mandragora frond sway…) — each is a one-line `idle:` tag now.
 
+- **Monster asset pipeline at scale (2026-07 assessment).** Shipped this pass,
+  aimed at "author many bodies fast, with rules not taste": ONE registration
+  point (`BODY_SHAPES` — gallery/`?bodyshot`/workshop/catalog all derive; the
+  old triple-list drift in SkinGallery is gone), the **body contract test**
+  (`Bodies.test.ts`: plate-winding consistency — it immediately caught
+  counter-wound plates in fearrow/mandragora/mimic/mimic2 that were silently
+  holing their far-LOD merges, now fixed — plus part/idle budgets, walk-phase
+  pairing, paint names) and the **animation perf lint** (every index.css
+  keyframe transform/opacity-only; `data-*` rules only start animations — the
+  compositor contract as a gate instead of prose). Next, in leverage order:
+  1. *`import-body`* — extend `scripts/import-svg.mjs` to read a LAYERED svg
+     (one named layer per part, name encodes tags: `head:jab:lean5`) and emit a
+     `BodyPart[]` snippet: layer order = stack order, fills snapped to tone
+     fields, fitted to the 100-box, winding normalized. Turns "type beziers
+     blind" into "draw" for human-authored bodies; agents mostly don't need it
+     (they iterate via `body-shot` stills).
+  2. *Golden regression for the shared renderer* — one skins.tsx tweak restyles
+     every creature; a vitest SNAPSHOT of each body's rendered svg markup (per
+     shape, one pose) rides `npm run ci` and names exactly which creatures a
+     change touched (pixel goldens don't fit ci — Playwright isn't in it).
+  3. *Part-generator helpers* (`oval()`, `limb()` — winding-guaranteed) once
+     the next couple of bodies confirm the shapes repeat; animations-as-data
+     (a MOTION table generating the css) only if the keyframe vocabulary
+     outgrows the current 3 tags — both premature today.
+
 Raised 2026-06 (original analysis, still governing). Goal: replace the circle tokens with **animated sprites** and the
 flat color-tint arena with a **detailed background**. The render architecture is
 DOM + CSS-`transform` (see the two Performance blocks above), and that decides what's

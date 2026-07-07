@@ -116,8 +116,13 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 
 - **Monster silhouette / class weapon:** add the part stack in `skins.tsx`
   (`PAPER_BODIES` / `WEAPON_SHAPES`, palette roles only — see the runbook
-  below), then map ids in `appearance.ts` (`MONSTER_SHAPE` / `CLASS_WEAPON`).
-  Skins switch on `bodyShape`/`weapon` — never on entity ids.
+  below), then register in `appearance.ts` (the `BodyShape` union +
+  `BODY_SHAPES` — the ONE registration; the gallery, `?bodyshot`, the workshop
+  and the asset catalog all derive from it) and map monster ids in
+  `MONSTER_SHAPE` / classes in `CLASS_WEAPON`. Skins switch on
+  `bodyShape`/`weapon` — never on entity ids. `Bodies.test.ts` mechanically
+  enforces the body contract (winding, budgets, paints) — if it passes, the
+  body composes correctly at every LOD.
 - **Biome:** extend `Biome` + `biomeForLocation` in `appearance.ts`, add a
   ground tile in `skins.tsx`, mottle shades in `terrain.tsx`
   (`MOTTLE_SHADES`), and a prop set in `props.ts`.
@@ -243,7 +248,20 @@ teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
    `accent` is 1) — because every element multiplies across 50+ gliding tokens
    and the memo only holds if the body receives primitives (no live engine
    objects, no per-token gradients). Dropping the monster text label pays for a
-   couple of extra parts (measured net-flat on `skin-ab`).
+   couple of extra parts (measured net-flat on `skin-ab`). **Pack repeated thin
+   features into ONE multi-subpath accent** (`M…Z M…Z`): the thief bug's six
+   legs are two tripod-gait paths, its antenna pair one scissoring sway part —
+   budgets and compositor layers count PARTS, not subpaths.
+   **The contract is enforced, not prose** (`Bodies.test.ts` — run
+   `npx vitest run Bodies` first when a body misbehaves): every plate winds the
+   SAME direction (a counter-wound plate punches a hole in the far-LOD merge /
+   KO crumple — invisible until zoomed out; flip a path by reversing its point
+   order), ≤14 parts, ≤3 `idle` parts, `walk` phases in 1/2 pairs, absolute
+   M/L/C/Q/A commands only, fills must be real tone fields/palette roles.
+   Two visibility gotchas the contract can't see: a THIN feature filled
+   `'outline'` (near-black) vanishes against the dark arena — use
+   `fill: 'base', stroke: true` like legs; and anything inside x≈92 hides
+   under the body silhouette (weapon-tip rule above).
 5. Iterate against the **body sheet** (`?bodyshot=<shape>`, screenshot via
    `SHAPE=<shape> npm run body-shot`): one image renders the creature's full
    state machine as deterministic stills — the real index.css keyframes frozen
@@ -331,6 +349,10 @@ whole-language `npm run gallery-shot`.
 
 - `Palette.test.tsx` — palette contract: roles only, no filters/gradients, in
   data AND emitted svg AND rendered bodies.
+- `Bodies.test.ts` — body contract: plate winding consistency (the far-LOD
+  merge/KO invariant), part/idle budgets, walk-phase pairing, path parse +
+  bounds, paint names; PLUS the animation perf contract on `index.css` (every
+  keyframe transform/opacity-only; `data-*` part rules only start animations).
 - `Terrain.test.tsx` — terrain determinism (no `Math.random`), scatter
   keep-clear, blob merging, baked single-div delivery, build memo.
 - `Skins.test.tsx` — token body memo contract + skin swap.

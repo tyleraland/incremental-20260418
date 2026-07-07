@@ -112,7 +112,7 @@ describe('battlefield skins', () => {
       <Paper glyph="" tone="enemy" bodyShape="thiefBug" alive selected={false} facingDeg={0} creature dims={dims} />,
     )
     expect(container.querySelectorAll('[data-idle="breathe"]').length).toBe(2)   // abdomen plate + wing seam
-    expect(container.querySelectorAll('[data-idle="sway"]').length).toBe(2)      // both antennae
+    expect(container.querySelectorAll('[data-idle="sway"]').length).toBe(1)      // both antennae, one scissoring part
     unmount()
     const { container: far } = render(
       <Paper glyph="" tone="enemy" bodyShape="thiefBug" alive selected={false} facingDeg={0} creature simple dims={dims} />,

@@ -164,7 +164,7 @@ const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive,
 // the move/idle edge, never a running animation. Keep the part count lean: every
 // path multiplies across 50+ gliding tokens (see the contract atop this file).
 type PaperRole = keyof typeof PAL
-interface BodyPart {
+export interface BodyPart {
   d: string
   c?: [number, number]              // lit-scale origin (plates); defaults to box center
   lean?: number                     // +x shift along heading while moving (can be negative = lag)
@@ -194,7 +194,9 @@ interface BodyPart {
   idle?: 'breathe' | 'sway'
 }
 
-const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
+// Exported for the body contract test (Bodies.test.ts) + the asset catalog —
+// the entries themselves stay authored here.
+export const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   // hero/NPC: round torso, head disc riding center-front; head leads on the
   // move (heading otherwise reads from the carried weapon)
   humanoid: [
@@ -259,8 +261,8 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   // front: forked tail plume (lags) · upper wing · lower wing · slim torso ·
   // crested head (leads) · a gold flame-crest, a pale beak, and an eye accent.
   fearrow: [
-    { d: 'M50 44 C40 45 30 46 20 47 L6 43 L14 48 L4 50 L14 52 L6 57 L20 53 C30 54 40 55 50 56 C56 51 56 49 50 44 Z', c: [26, 50], lean: -8, atk: 'trail' },
-    { d: 'M62 46 C50 34 34 20 18 10 C10 5 4 9 8 16 C14 24 22 30 30 34 C22 33 15 34 12 39 C21 42 32 43 41 44 C34 45 28 47 27 50 C39 50 52 49 62 46 Z', c: [34, 38], lean: 2, shadow: true },
+    { d: 'M50 44 C56 49 56 51 50 56 C40 55 30 54 20 53 L6 57 L14 52 L4 50 L14 48 L6 43 L20 47 C30 46 40 45 50 44 Z', c: [26, 50], lean: -8, atk: 'trail' },
+    { d: 'M62 46 C52 49 39 50 27 50 C28 47 34 45 41 44 C32 43 21 42 12 39 C15 34 22 33 30 34 C22 30 14 24 8 16 C4 9 10 5 18 10 C34 20 50 34 62 46 Z', c: [34, 38], lean: 2, shadow: true },
     { d: 'M62 54 C50 66 34 80 18 90 C10 95 4 91 8 84 C14 76 22 70 30 66 C22 67 15 66 12 61 C21 58 32 57 41 56 C34 55 28 53 27 50 C39 50 52 51 62 54 Z', c: [34, 62], lean: 2, shadow: true },
     { d: 'M42 43 C58 41 72 44 80 47 C84 48 84 52 80 53 C72 56 58 59 42 57 C36 55 34 52 34 50 C34 48 36 45 42 43 Z', c: [58, 50], lean: 1 },
     { d: 'M80 50 C80 44 85 40 91 41 C89 34 92 28 98 27 C97 33 98 39 99 44 C101 46 102 48 102 50 C102 53 99 56 94 57 C88 58 82 55 80 50 Z', c: [91, 49], lean: 5, shadow: true, atk: 'jab' },
@@ -302,7 +304,7 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
     { d: 'M30 56 a5 5 0 1 0 0.1 0 Z', kind: 'accent', fill: 'outline' },
     { d: 'M56 52 L97 32 L97 72 Z', kind: 'accent', fill: 'bloom', lean: 5, atk: 'jab' },
     { d: 'M50 46 C64 38 82 30 98 28 C100 35 97 44 88 48 C74 51 60 51 50 51 Z', c: [80, 42], lean: 5, shadow: true, atk: 'jab' },
-    { d: 'M50 54 C64 62 82 70 98 72 C100 65 97 56 88 52 C74 49 60 49 50 54 Z', c: [80, 58], lean: 5, shadow: true, atk: 'jab' },
+    { d: 'M50 54 C60 49 74 49 88 52 C97 56 100 65 98 72 C82 70 64 62 50 54 Z', c: [80, 58], lean: 5, shadow: true, atk: 'jab' },
     { d: 'M34 24 a4 4 0 1 0 0.1 0 Z', kind: 'accent', fill: 'cream', lean: 1 },
     { d: 'M28 27 a3 3 0 1 0 0.1 0 Z', kind: 'accent', fill: 'cream', lean: 1 },
     { d: 'M40 27 a3 3 0 1 0 0.1 0 Z', kind: 'accent', fill: 'cream', lean: 1 },
@@ -346,7 +348,7 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
     { d: 'M40 48 L74 42 L74 58 L40 52 Z', kind: 'accent', fill: 'outline', lean: 5, atk: 'jab' },
     { d: 'M40 70 L64 69 Q74 67 74 58 L40 52 Z', c: [56, 62], lean: 5, shadow: true, atk: 'jab' },
     { d: 'M40 53 L74 58 L72 52 L67 57 L62 51 L57 56 L52 50 L47 55 L42 49 Z', kind: 'accent', fill: 'cream', lean: 5, atk: 'jab' },
-    { d: 'M40 30 L64 31 Q74 33 74 42 L40 48 Z', c: [56, 38], lean: 5, shadow: true, atk: 'jab' },
+    { d: 'M40 30 L40 48 L74 42 Q74 33 64 31 Z', c: [56, 38], lean: 5, shadow: true, atk: 'jab' },
     { d: 'M40 47 L74 42 L72 48 L67 43 L62 49 L57 44 L52 50 L47 45 L42 51 Z', kind: 'accent', fill: 'cream', lean: 5, atk: 'jab' },
   ],
   // MIMIC2 (a boxier, rectangular treasure-chest mimic) — the crate cousin of
@@ -364,7 +366,7 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
     { d: 'M23 25 L28 25 L28 75 L23 75 Z', kind: 'accent', fill: 'cream' },
     { d: 'M35 25 L40 25 L40 75 L35 75 Z', kind: 'accent', fill: 'cream' },
     { d: 'M42 46 L78 44 L78 56 L42 54 Z', kind: 'accent', fill: 'outline', lean: 5, atk: 'jab' },
-    { d: 'M42 76 L78 80 L78 56 L42 54 Z', c: [60, 66], lean: 5, shadow: true, atk: 'jab' },
+    { d: 'M42 76 L42 54 L78 56 L78 80 Z', c: [60, 66], lean: 5, shadow: true, atk: 'jab' },
     { d: 'M42 54 L78 56 L75.3 55.8 L75.3 50.8 L70.8 50.6 L70.8 55.6 L68.1 55.4 L68.1 50.4 L63.6 50.2 L63.6 55.2 L60.9 55 L60.9 50 L56.4 49.8 L56.4 54.8 L53.7 54.6 L53.7 49.6 L49.2 49.4 L49.2 54.4 L46.5 54.2 L46.5 49.2 L42 49 Z', kind: 'accent', fill: 'cream', lean: 5, atk: 'jab' },
     { d: 'M42 24 L78 20 L78 44 L42 46 Z', c: [60, 34], lean: 5, shadow: true, atk: 'jab' },
     { d: 'M42 46 L78 44 L75.3 44.2 L75.3 49.2 L70.8 49.4 L70.8 44.4 L68.1 44.6 L68.1 49.6 L63.6 49.8 L63.6 44.8 L60.9 45 L60.9 50 L56.4 50.2 L56.4 45.2 L53.7 45.4 L53.7 50.4 L49.2 50.6 L49.2 45.6 L46.5 45.8 L46.5 50.8 L42 51 Z', kind: 'accent', fill: 'cream', lean: 5, atk: 'jab' },
@@ -384,8 +386,10 @@ const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   thiefBug: [
     { d: 'M58 40 L66 26 L79 17 L63 27 L54 38 Z M45 62 L45 76 L54 88 L42 78 L40 61 Z M31 40 L21 29 L8 24 L19 32 L27 42 Z', kind: 'accent', fill: 'base', stroke: true, walk: 1 },
     { d: 'M58 60 L66 74 L79 83 L63 73 L54 62 Z M45 38 L45 24 L54 12 L42 22 L40 39 Z M31 60 L21 71 L8 76 L19 68 L27 58 Z', kind: 'accent', fill: 'base', stroke: true, walk: 2 },
-    { d: 'M82 41 C64 19 38 8 13 5 C7 5 7 11 13 13 C36 17 58 27 76 46 Z', kind: 'accent', fill: 'base', stroke: true, lean: -5, atk: 'trail', idle: 'sway' },
-    { d: 'M82 59 C64 81 38 92 13 95 C7 95 7 89 13 87 C36 83 58 73 76 54 Z', kind: 'accent', fill: 'base', stroke: true, lean: -5, atk: 'trail', idle: 'sway' },
+    // both antennae in ONE two-subpath accent: the sway rotation pivots on their
+    // shared center, so they scissor open/closed — and it's one compositor layer
+    // instead of two (the idle budget is per-part, not per-path).
+    { d: 'M82 41 C64 19 38 8 13 5 C7 5 7 11 13 13 C36 17 58 27 76 46 Z M82 59 C64 81 38 92 13 95 C7 95 7 89 13 87 C36 83 58 73 76 54 Z', kind: 'accent', fill: 'base', stroke: true, lean: -5, atk: 'trail', idle: 'sway' },
     { d: 'M68 50 C68 65 55 75 35 75 C16 75 4 64 4 50 C4 36 16 25 35 25 C55 25 68 35 68 50 Z', c: [36, 50], lean: -2, idle: 'breathe' },
     { d: 'M66 50 L8 48.8 L8 51.2 L66 51 Z', kind: 'accent', fill: 'outline', lean: -2, idle: 'breathe' },
     { d: 'M92 50 C92 58 85 64 76 64 C67 64 61 58 61 50 C61 42 67 36 76 36 C85 36 92 42 92 50 Z', c: [76, 50], lean: 4, shadow: true, atk: 'jab' },
