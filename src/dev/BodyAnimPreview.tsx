@@ -7,10 +7,13 @@ import type { BodyShape } from '@/render/appearance'
 // here is what a token does in play. Reused by the Monster Lab (?monsterlab) and
 // the Asset Workshop (?workshop).
 //
-//   idle    — the resting pose (default).
+//   idle    — the resting pose + `animate-idle`: the continuous [data-idle]
+//             breathe/sway loop (a no-op for bodies without idle parts).
 //   walk    — `moving` + `animate-walk`: the lean + the [data-walk] foot shuffle.
 //   attack  — `animate-lunge` + `animate-atk` (+ --atk-x/y, --lunge-x/y): the head
 //             /limbs jab and the whole token lunges, then settles back to idle.
+//             `animate-idle` stays on (a standing attacker keeps breathing in play;
+//             the atk rules out-cascade idle on parts tagged for both).
 //   hit     — `animate-hit` (+ --hit-x/y): the token recoils from a frontal blow.
 //
 // The one-shot states (attack/hit) LOOP by swapping the a/b class pair on an
@@ -46,9 +49,9 @@ export function BodyAnimPreview({
   const Body = TOKEN_SKINS.paper
   const cls =
     state === 'walk' ? 'animate-walk'
-    : state === 'attack' ? (flip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b')
-    : state === 'hit' ? (flip ? 'animate-hit-a' : 'animate-hit-b')
-    : undefined
+    : state === 'attack' ? `animate-idle ${flip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b'}`
+    : state === 'hit' ? `animate-idle ${flip ? 'animate-hit-a' : 'animate-hit-b'}`
+    : 'animate-idle'
   const style =
     state === 'attack' ? ({ '--atk-x': '13px', '--atk-y': '0px', '--lunge-x': '26%', '--lunge-y': '0%' } as CSSProperties)
     : state === 'hit' ? ({ '--hit-x': '-15%', '--hit-y': '0%' } as CSSProperties)

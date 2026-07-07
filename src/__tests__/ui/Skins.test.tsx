@@ -100,6 +100,38 @@ describe('battlefield skins', () => {
     expect(full).toBeGreaterThan(simple * 3)        // the full wolf is many plates+accents
   })
 
+  // The idle (breathe/sway) seam: the same data-* contract as atk/walk. The
+  // body statically tags its idle parts; BattleChip flips `animate-idle` on the
+  // wrapper only while a detail-LOD token is alive + still — a class swap that
+  // never touches the memo'd body, and a no-op at far-LOD (the merged body
+  // carries no data-idle nodes).
+  it('idle parts: the thiefBug body emits data-idle groups at full detail, none at far-LOD', () => {
+    const Paper = TOKEN_SKINS.paper
+    const dims = { width: '32px', height: '32px', fontSize: '13px' }
+    const { container, unmount } = render(
+      <Paper glyph="" tone="enemy" bodyShape="thiefBug" alive selected={false} facingDeg={0} creature dims={dims} />,
+    )
+    expect(container.querySelectorAll('[data-idle="breathe"]').length).toBe(2)   // abdomen plate + wing seam
+    expect(container.querySelectorAll('[data-idle="sway"]').length).toBe(1)      // both antennae, one scissoring part
+    unmount()
+    const { container: far } = render(
+      <Paper glyph="" tone="enemy" bodyShape="thiefBug" alive selected={false} facingDeg={0} creature simple dims={dims} />,
+    )
+    expect(far.querySelectorAll('[data-idle]').length).toBe(0)
+    expect(far.querySelectorAll('svg path').length).toBeLessThanOrEqual(2)       // merged base + lit
+  })
+
+  it('idle gating: a still detail-LOD token carries animate-idle; a moving one swaps to animate-walk', () => {
+    useGameStore.setState({ battleSkin: 'paper' })
+    const b = openBattle()
+    const { container } = show(b)
+    expect(container.querySelectorAll('.animate-idle').length).toBe(2)
+    b.combatants[0].moving = true
+    act(() => useGameStore.setState({ battles: { L1: { ...b, round: b.round + 1 } } }))
+    expect(container.querySelectorAll('.animate-idle').length).toBe(1)
+    expect(container.querySelectorAll('.animate-walk').length).toBe(1)
+  })
+
   it('bootBattleSkin: localStorage > default, garbage ignored', () => {
     expect(bootBattleSkin()).toBe('circle')
     localStorage.setItem('battle-skin', 'paper')
