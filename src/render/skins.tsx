@@ -38,7 +38,8 @@ export type BattleSkin = 'circle' | 'paper'
 export const BATTLE_SKIN_IDS: BattleSkin[] = ['circle', 'paper']
 
 // Resolve the boot skin: URL ?skin=… (also persists, like ?mode=) > localStorage
-// > circle. Ephemeral-UI tier — never part of the save string.
+// > paper. Ephemeral-UI tier — never part of the save string. `circle` remains
+// the explicit debug skin; the authored paper assets are the live-game default.
 export function bootBattleSkin(): BattleSkin {
   const valid = (v: string | null): v is BattleSkin => v === 'circle' || v === 'paper'
   try {
@@ -47,7 +48,7 @@ export function bootBattleSkin(): BattleSkin {
     const saved = localStorage.getItem('battle-skin')
     if (valid(saved)) return saved
   } catch { /* SSR/tests without window */ }
-  return 'circle'
+  return 'paper'
 }
 
 // Bodies are `memo`'d, and combatants MUTATE IN PLACE each round — so a body may

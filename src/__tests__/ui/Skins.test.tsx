@@ -36,7 +36,8 @@ beforeEach(() => {
 })
 
 describe('battlefield skins', () => {
-  it('renders circle bodies by default, with the chip title handle', () => {
+  it('battleSkin=circle renders classic debug bodies, with the chip title handle', () => {
+    useGameStore.setState({ battleSkin: 'circle' })
     const { container, getByTitle } = show(openBattle())
     expect(container.querySelectorAll('[data-skin="circle"]').length).toBe(2)
     expect(getByTitle(/Hero —/)).toBeTruthy()   // title rides the chip wrapper
@@ -133,10 +134,10 @@ describe('battlefield skins', () => {
   })
 
   it('bootBattleSkin: localStorage > default, garbage ignored', () => {
-    expect(bootBattleSkin()).toBe('circle')
-    localStorage.setItem('battle-skin', 'paper')
     expect(bootBattleSkin()).toBe('paper')
-    localStorage.setItem('battle-skin', 'sprite-sheet-3000')
+    localStorage.setItem('battle-skin', 'circle')
     expect(bootBattleSkin()).toBe('circle')
+    localStorage.setItem('battle-skin', 'sprite-sheet-3000')
+    expect(bootBattleSkin()).toBe('paper')
   })
 })

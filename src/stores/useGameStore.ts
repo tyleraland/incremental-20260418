@@ -196,7 +196,8 @@ export interface GameState {
   // The unit whose lifetime-stats Report sheet is open (null = closed).
   reportUnitId: string | null
   // Battlefield look (render-only; token bodies + arena ground live in
-  // src/render/skins.tsx). Toggle in Time → Debug or ?skin=paper.
+  // src/render/skins.tsx). Paper is the default; toggle in Time → Debug or
+  // override with ?skin=circle / ?skin=paper.
   battleSkin: BattleSkin
 
   paused: boolean

@@ -74,7 +74,8 @@ function ProgressionModeControl() {
 }
 
 // Battlefield skin — render-only A/B of the token/ground look (the seam for the
-// graphics restyle; see src/render/skins.tsx). Also switchable via ?skin=paper.
+// graphics restyle; see src/render/skins.tsx). Also switchable via ?skin=paper
+// or ?skin=circle.
 function BattleSkinControl() {
   const skin = useGameStore((s) => s.battleSkin)
   const setSkin = useGameStore((s) => s.setBattleSkin)
