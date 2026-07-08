@@ -16,6 +16,7 @@ import type { MonsterDef } from '@/types'
 import { MONSTER_REGISTRY } from './monsters'
 
 const STORAGE_KEY = 'monster-overrides'
+const DRAFT_STORAGE_KEY = 'monster-drafts'
 
 // Plain-data deep clone. MonsterDef carries no functions (skills are {id,level}),
 // so a JSON round-trip is a safe, dependency-free structuredClone.
@@ -30,6 +31,7 @@ export const ORIGINAL_MONSTERS: Record<string, MonsterDef> = clone(MONSTER_REGIS
 // The experiment: full resolved snapshots keyed by monster id. Stored whole (not
 // as a patch) so the editor round-trips cleanly; the report derives the diff.
 type OverrideMap = Record<string, MonsterDef>
+type DraftMap = Record<string, MonsterDef>
 
 function readStored(): OverrideMap {
   if (typeof localStorage === 'undefined') return {}
@@ -38,6 +40,18 @@ function readStored(): OverrideMap {
     if (!raw) return {}
     const parsed = JSON.parse(raw)
     return parsed && typeof parsed === 'object' ? (parsed as OverrideMap) : {}
+  } catch {
+    return {}
+  }
+}
+
+function readDrafts(): DraftMap {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? (parsed as DraftMap) : {}
   } catch {
     return {}
   }
@@ -53,9 +67,21 @@ function writeStored(map: OverrideMap): void {
   }
 }
 
+function writeDrafts(map: DraftMap): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    if (Object.keys(map).length === 0) localStorage.removeItem(DRAFT_STORAGE_KEY)
+    else localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(map))
+  } catch {
+    /* private mode / quota — local drafts just won't persist */
+  }
+}
+
 // Apply every persisted override onto the live registry. Idempotent; call once
-// at boot. Skips ids that no longer exist in the registry.
+// at boot. Local draft monsters are injected first, then authored-monster
+// overrides patch the original registry entries.
 export function applyPersistedOverrides(): void {
+  for (const [id, def] of Object.entries(readDrafts())) MONSTER_REGISTRY[id] = clone(def)
   const stored = readStored()
   for (const [id, def] of Object.entries(stored)) {
     if (MONSTER_REGISTRY[id]) MONSTER_REGISTRY[id] = clone(def)
@@ -69,6 +95,34 @@ export function overriddenIds(): string[] {
 
 export function isOverridden(id: string): boolean {
   return id in readStored()
+}
+
+export function draftIds(): string[] {
+  return Object.keys(readDrafts())
+}
+
+export function isDraftMonster(id: string): boolean {
+  return id in readDrafts()
+}
+
+export function setDraftMonster(def: MonsterDef): void {
+  const drafts = readDrafts()
+  drafts[def.id] = clone(def)
+  writeDrafts(drafts)
+  MONSTER_REGISTRY[def.id] = clone(def)
+}
+
+export function deleteDraftMonster(id: string): void {
+  const drafts = readDrafts()
+  delete drafts[id]
+  writeDrafts(drafts)
+  delete MONSTER_REGISTRY[id]
+}
+
+export function buildDraftExport(id: string): string {
+  const def = MONSTER_REGISTRY[id]
+  if (!def) return ''
+  return JSON.stringify(def, null, 2)
 }
 
 // The live (possibly overridden) def; the authored baseline.
@@ -145,9 +199,11 @@ export function diffMonster(id: string): FieldChange[] {
     if (JSON.stringify(from) !== JSON.stringify(to)) changes.push({ path, from, to })
   }
   cmp('level', orig.level, cur.level)
+  cmp('name', orig.name, cur.name)
   cmp('health', orig.health, cur.health)
   cmp('element', orig.element, cur.element)
   cmp('size', orig.size, cur.size)
+  cmp('bodyShape', orig.bodyShape, cur.bodyShape)
   cmp('attackName', orig.attackName, cur.attackName)
   cmp('stats.attack', orig.stats.attack, cur.stats.attack)
   cmp('stats.defense[ability]', orig.stats.defense[0], cur.stats.defense[0])

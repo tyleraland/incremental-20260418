@@ -89,6 +89,8 @@ const MONSTER_SHAPE: Partial<Record<string, BodyShape>> = {
   'wolf': 'canine', 'dire-wolf': 'canine', 'shadow-wolf': 'canine',
 }
 export function monsterBodyShape(monsterId: string): BodyShape {
+  const defShape = MONSTER_REGISTRY[monsterId]?.bodyShape
+  if (defShape && BODY_SHAPES.includes(defShape as BodyShape)) return defShape as BodyShape
   return MONSTER_SHAPE[monsterId] ?? 'beast'
 }
 

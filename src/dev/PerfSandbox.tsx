@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore, type Unit } from '@/stores/useGameStore'
 import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
+import { isDraftMonster, setDraftMonster } from '@/data/monsterOverrides'
 import { BattleView } from '@/components/BattleView'
 import { advanceRound } from '@/engine'
 import { TICKS_PER_SECOND } from '@/lib/time'
@@ -25,16 +26,25 @@ type SandboxSource = 'compose' | 'bsnap'
 
 const SANDBOX_LOC = 'perf-sandbox'
 
-// Monsters offered in the "add" picker, cheapest (lowest level) first.
-const MONSTERS = Object.values(MONSTER_REGISTRY).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
+const initialMonsterId = () => {
+  const requested = new URLSearchParams(window.location.search).get('monster')
+  return requested && MONSTER_REGISTRY[requested] ? requested : 'slime'
+}
 
 export default function PerfSandbox() {
   const [heroes, setHeroes] = useState(4)
-  const [comp, setComp] = useState<Record<string, number>>({ slime: 12 })
-  const [picker, setPicker] = useState(MONSTERS[0]?.id ?? '')
+  const [comp, setComp] = useState<Record<string, number>>(() => ({ [initialMonsterId()]: 1 }))
+  const [picker, setPicker] = useState(() => initialMonsterId())
   const [mapId, setMapId] = useState('custom')     // 'custom' | a real open-world location id
   const [customSize, setCustomSize] = useState(60)
   const [panelOpen, setPanelOpen] = useState(true)
+  const [monsterRev, setMonsterRev] = useState(0)
+  // Monsters offered in the "add" picker, cheapest (lowest level) first.
+  // Recompute when a local draft is renamed so the label updates in-place.
+  const monsters = useMemo(
+    () => Object.values(MONSTER_REGISTRY).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)),
+    [monsterRev],
+  )
 
   // Scene source: composed density scene vs a pasted BSNAP replay.
   const [source, setSource] = useState<SandboxSource>('compose')
@@ -146,8 +156,16 @@ export default function PerfSandbox() {
       return next
     })
 
+  const renameDraft = (id: string, name: string) => {
+    const def = MONSTER_REGISTRY[id]
+    if (!def || !isDraftMonster(id)) return
+    setDraftMonster({ ...structuredClone(def), name: name || 'Unnamed Monster' })
+    setMonsterRev((n) => n + 1)
+  }
+
   const totalMonsters = Object.values(comp).reduce((s, n) => s + n, 0)
   const rowBtn = 'w-7 h-7 shrink-0 flex items-center justify-center rounded-md border border-game-border text-game-text hover:bg-white/10 text-sm leading-none'
+  const draftIds = Object.keys(comp).filter((id) => isDraftMonster(id) && MONSTER_REGISTRY[id])
 
   return (
     <div className="fixed inset-0 flex flex-col bg-game-bg text-game-text">
@@ -257,20 +275,37 @@ export default function PerfSandbox() {
               </div>
               <div className="flex items-center gap-1.5">
                 <select value={picker} onChange={(e) => setPicker(e.target.value)} className="flex-1 h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs min-w-0">
-                  {MONSTERS.map((m) => (
+                  {monsters.map((m) => (
                     <option key={m.id} value={m.id}>Lv{m.level} · {m.name}</option>
                   ))}
                 </select>
                 <button className={rowBtn} onClick={() => bump(picker, 1)} title="Add one">＋</button>
               </div>
+              {draftIds.length > 0 && (
+                <div className="space-y-1.5 rounded-lg border border-game-primary/30 bg-game-primary/10 p-2">
+                  <span className="text-[10px] uppercase tracking-widest text-game-primary">Local draft name</span>
+                  {draftIds.map((id) => (
+                    <label key={id} className="flex items-center gap-2">
+                      <span className="w-14 truncate text-[10px] text-game-text-dim">{id}</span>
+                      <input
+                        value={MONSTER_REGISTRY[id]?.name ?? id}
+                        onChange={(e) => renameDraft(id, e.target.value)}
+                        className="min-w-0 flex-1 h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs text-game-text"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
               <div className="space-y-1">
                 {Object.keys(comp).length === 0 && <div className="text-[11px] text-game-text-dim italic">No monsters — add some above.</div>}
                 {Object.entries(comp).map(([id, n]) => (
                   <div key={id} className="flex items-center gap-2">
                     <span className="flex-1 truncate text-xs">{MONSTER_REGISTRY[id]?.name ?? id}</span>
-                    <button className={rowBtn} onClick={() => bump(id, -1)}>−</button>
+                    <button className={rowBtn} onClick={() => bump(id, -10)}>−10</button>
+                    <button className={rowBtn} onClick={() => bump(id, -1)}>−1</button>
                     <span className="w-8 text-center tabular-nums text-xs">{n}</span>
-                    <button className={rowBtn} onClick={() => bump(id, 1)}>+</button>
+                    <button className={rowBtn} onClick={() => bump(id, 1)}>+1</button>
+                    <button className={rowBtn} onClick={() => bump(id, 10)}>+10</button>
                   </div>
                 ))}
               </div>

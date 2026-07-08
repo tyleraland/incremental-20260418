@@ -30,21 +30,22 @@ import type { Combatant } from '@/engine'
 import { seedSimBattle } from './simBattle'
 import {
   buildChangeReport,
+  buildDraftExport,
   currentDef,
+  deleteDraftMonster,
   diffMonster,
+  draftIds,
+  isDraftMonster,
   isOverridden,
   originalDef,
   overriddenIds,
   resetAllOverrides,
   resetOverride,
+  setDraftMonster,
   setOverride,
 } from '@/data/monsterOverrides'
 
 const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T
-
-const MONSTER_LIST = Object.values(MONSTER_REGISTRY)
-  .map((m) => ({ id: m.id, name: m.name }))
-  .sort((a, b) => a.name.localeCompare(b.name))
 
 const SIZES: MonsterSize[] = ['small', 'medium', 'large']
 
@@ -80,11 +81,13 @@ const ALL_SKILLS = Object.values(SKILL_REGISTRY).sort((a, b) => a.name.localeCom
 const ALL_TACTICS = Object.values(TACTIC_REGISTRY).sort((a, b) => a.name.localeCompare(b.name))
 
 export default function MonsterLab() {
-  const [selectedId, setSelectedId] = useState(MONSTER_LIST[0]?.id ?? '')
-  const [draft, setDraft] = useState<MonsterDef>(() => clone(currentDef(MONSTER_LIST[0]?.id ?? '')!))
+  const firstId = () => Object.values(MONSTER_REGISTRY).sort((a, b) => a.name.localeCompare(b.name))[0]?.id ?? 'slime'
+  const [selectedId, setSelectedId] = useState(firstId)
+  const [draft, setDraft] = useState<MonsterDef>(() => clone(currentDef(firstId())!))
   const [search, setSearch] = useState('')
   const [reportOpen, setReportOpen] = useState(false)
   const [simOpen, setSimOpen] = useState(false)
+  const [copiedDraft, setCopiedDraft] = useState(false)
   // The real save roster, captured ONCE before the simulator ever overwrites the
   // store scene — so "copy from save" keeps working across rebuilds. Deep-cloned,
   // so nothing the sim does can reach back to a persisted unit.
@@ -107,14 +110,22 @@ export default function MonsterLab() {
   }, [])
 
   const overrides = useMemo(() => new Set(overriddenIds()), [rev])
+  const drafts = useMemo(() => new Set(draftIds()), [rev])
+  const monsterList = useMemo(
+    () => Object.values(MONSTER_REGISTRY)
+      .map((m) => ({ id: m.id, name: m.name, draft: isDraftMonster(m.id) }))
+      .sort((a, b) => Number(b.draft) - Number(a.draft) || a.name.localeCompare(b.name)),
+    [rev],
+  )
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return q ? MONSTER_LIST.filter((m) => m.name.toLowerCase().includes(q) || m.id.includes(q)) : MONSTER_LIST
-  }, [search])
+    return q ? monsterList.filter((m) => m.name.toLowerCase().includes(q) || m.id.includes(q)) : monsterList
+  }, [monsterList, search])
 
   function pick(id: string) {
     setSelectedId(id)
     setDraft(clone(currentDef(id)!))
+    setCopiedDraft(false)
   }
 
   // Apply a mutation to the working draft, push it live, and refresh markers.
@@ -122,18 +133,64 @@ export default function MonsterLab() {
     const next = clone(draft)
     mut(next)
     setDraft(next)
-    setOverride(selectedId, next)
+    if (isDraftMonster(selectedId)) setDraftMonster(next)
+    else setOverride(selectedId, next)
     bump()
   }
 
   function reset() {
+    if (isDraftMonster(selectedId)) return
     resetOverride(selectedId)
     setDraft(clone(originalDef(selectedId)!))
     bump()
   }
 
-  const dirty = diffMonster(selectedId)
+  function createDraft() {
+    const src = currentDef(selectedId) ?? MONSTER_REGISTRY.slime
+    const id = `draft-${Date.now().toString(36)}`
+    const next: MonsterDef = {
+      ...clone(src),
+      id,
+      name: 'New Monster',
+      bodyShape: monsterBodyShape(src.id),
+      drops: [],
+    }
+    setDraftMonster(next)
+    setSelectedId(id)
+    setDraft(clone(next))
+    bump()
+  }
+
+  function deleteDraft() {
+    if (!isDraftMonster(selectedId)) return
+    if (!confirm(`Delete local draft "${draft.name}"?`)) return
+    deleteDraftMonster(selectedId)
+    const nextId = firstId()
+    setSelectedId(nextId)
+    setDraft(clone(currentDef(nextId)!))
+    bump()
+  }
+
+  function copyDraft() {
+    const text = buildDraftExport(selectedId)
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopiedDraft(true)
+      setTimeout(() => setCopiedDraft(false), 1500)
+    }, () => {})
+  }
+
+  function openInSandbox() {
+    const q = new URLSearchParams(window.location.search)
+    q.delete('monsterlab')
+    q.set('sandbox', '1')
+    q.set('monster', selectedId)
+    window.location.search = q.toString()
+  }
+
+  const isDraft = drafts.has(selectedId)
+  const dirty = isDraft ? [] : diffMonster(selectedId)
   const changedCount = overrides.size
+  const baseline = originalDef(selectedId) ?? draft
 
   return (
     <div className="fixed inset-0 bg-game-bg text-game-text flex flex-col">
@@ -146,6 +203,11 @@ export default function MonsterLab() {
             title={`Drop ${draft.name} into a battlefield`}
             className="px-3 py-1.5 rounded-lg border border-game-green/60 bg-game-green/15 text-xs text-game-green font-medium hover:bg-game-green/25"
           >▶ Battle sim</button>
+          <button
+            onClick={openInSandbox}
+            title="Open this monster in the Battle Sandbox"
+            className="px-3 py-1.5 rounded-lg border border-game-border text-xs text-game-text-dim hover:text-game-text"
+          >🧪 Sandbox</button>
           <button
             onClick={() => { if (confirm('Revert ALL monster overrides to their authored values?')) { resetAllOverrides(); pick(selectedId); bump() } }}
             disabled={changedCount === 0}
@@ -163,6 +225,10 @@ export default function MonsterLab() {
         {/* Monster list */}
         <aside className="w-40 sm:w-52 shrink-0 border-r border-game-border flex flex-col bg-game-surface/30">
           <div className="p-2 border-b border-game-border">
+            <button
+              onClick={createDraft}
+              className="mb-2 w-full px-2 py-1.5 rounded-md border border-game-primary/60 bg-game-primary/15 text-xs text-game-text font-medium hover:bg-game-primary/25"
+            >+ Draft New</button>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -181,6 +247,7 @@ export default function MonsterLab() {
                 ].join(' ')}
               >
                 <span className="truncate flex-1">{m.name}</span>
+                {m.draft && <span className="text-game-primary text-[9px]" title="Local draft">draft</span>}
                 {overrides.has(m.id) && <span className="text-game-gold text-[9px]" title="Overridden">●</span>}
               </button>
             ))}
@@ -192,6 +259,11 @@ export default function MonsterLab() {
           <div className="flex items-center gap-2">
             <h2 className="text-base font-semibold">{draft.name}</h2>
             <code className="text-[10px] text-game-muted">{draft.id}</code>
+            {isDraft && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-game-primary/20 text-game-primary border border-game-primary/40">
+                local draft
+              </span>
+            )}
             {isOverridden(selectedId) && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-game-gold/20 text-game-gold border border-game-gold/40">
                 {dirty.length} change{dirty.length === 1 ? '' : 's'}
@@ -199,9 +271,21 @@ export default function MonsterLab() {
             )}
             <button
               onClick={reset}
-              disabled={!isOverridden(selectedId)}
+              disabled={isDraft || !isOverridden(selectedId)}
               className="ml-auto px-2.5 py-1 rounded-lg border border-game-border text-[11px] text-game-text-dim hover:text-game-text disabled:opacity-40"
             >↺ Reset this monster</button>
+            {isDraft && (
+              <>
+                <button
+                  onClick={copyDraft}
+                  className="px-2.5 py-1 rounded-lg border border-game-primary/60 bg-game-primary/15 text-[11px] text-game-text font-medium hover:bg-game-primary/25"
+                >{copiedDraft ? '✓ Copied' : '📋 Copy JSON'}</button>
+                <button
+                  onClick={deleteDraft}
+                  className="px-2.5 py-1 rounded-lg border border-red-500/50 text-[11px] text-red-300 hover:bg-red-500/10"
+                >Delete draft</button>
+              </>
+            )}
           </div>
 
           {/* Appearance — an interactive idle/walk/attack state machine (top) over
@@ -209,7 +293,11 @@ export default function MonsterLab() {
               (live from the draft — size/element/name). No circle debug token. */}
           <Section title="Appearance" hint="paper-skin body · animation states + rendered token reference">
             <div className="space-y-3">
-              <MonsterAnimPreview monsterId={selectedId} />
+              <MonsterAnimPreview
+                monsterId={selectedId}
+                bodyShape={draft.bodyShape}
+                onBodyShape={(shape) => edit((d) => { d.bodyShape = shape })}
+              />
               <AppearanceViewer def={draft} />
             </div>
           </Section>
@@ -218,8 +306,10 @@ export default function MonsterLab() {
           <Section title="Core">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {CORE_FIELDS.map((f) => (
-                <NumberField key={f.label} field={f} draft={draft} orig={originalDef(selectedId)!} onEdit={edit} />
+                <NumberField key={f.label} field={f} draft={draft} orig={baseline} onEdit={edit} />
               ))}
+              <TextField label="Name" value={draft.name} base={baseline.name} onEdit={(v) => edit((d) => { d.name = v || 'Unnamed Monster' })} />
+              <TextField label="Attack name" value={draft.attackName} base={baseline.attackName} onEdit={(v) => edit((d) => { d.attackName = v || 'Attack' })} />
               <label className="flex flex-col gap-1">
                 <span className="text-[10px] text-game-muted">Element</span>
                 <select
@@ -247,7 +337,7 @@ export default function MonsterLab() {
           <Section title="Stats">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {STAT_FIELDS.map((f) => (
-                <NumberField key={f.label} field={f} draft={draft} orig={originalDef(selectedId)!} onEdit={edit} />
+                <NumberField key={f.label} field={f} draft={draft} orig={baseline} onEdit={edit} />
               ))}
             </div>
           </Section>
@@ -324,7 +414,7 @@ function AppearanceViewer({ def }: { def: MonsterDef }) {
       attackElement: 'neutral', armorElement: def.element,
     } as unknown as Combatant
     return getAppearance(fake, () => null)
-  }, [def.id, def.name, def.element, def.size])
+  }, [def.id, def.name, def.element, def.size, def.bodyShape])
 
   const px = Math.round(60 * a.scale)
   const states: { label: string; alive: boolean; facingDeg: number | null; moving: boolean; selected: boolean; simple: boolean }[] = [
@@ -396,11 +486,9 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 // lets you preview ANY silhouette, not just the one this monster resolves to — so
 // the walk-cycle bodies (spider/mimic) are inspectable even though no monster maps
 // to them yet; it resets to the monster's shape when you switch monsters.
-function MonsterAnimPreview({ monsterId }: { monsterId: string }) {
-  const [shapeOverride, setShapeOverride] = useState<BodyShape | ''>('')
-  useEffect(() => setShapeOverride(''), [monsterId])
+function MonsterAnimPreview({ monsterId, bodyShape, onBodyShape }: { monsterId: string; bodyShape?: string; onBodyShape: (shape: BodyShape | undefined) => void }) {
   const monShape = monsterBodyShape(monsterId)
-  const shape = shapeOverride || monShape
+  const shape = ((bodyShape && BODY_SHAPES.includes(bodyShape as BodyShape)) ? bodyShape : monShape) as BodyShape
 
   return (
     <div className="flex items-start gap-4 flex-wrap">
@@ -409,20 +497,37 @@ function MonsterAnimPreview({ monsterId }: { monsterId: string }) {
         <div className="flex items-center gap-2 text-[10px] text-game-muted">
           <span>body</span>
           <select
-            value={shapeOverride}
-            onChange={(e) => setShapeOverride(e.target.value as BodyShape | '')}
+            value={bodyShape ?? ''}
+            onChange={(e) => onBodyShape(e.target.value ? (e.target.value as BodyShape) : undefined)}
             className="px-1.5 py-1 rounded-md bg-game-bg border border-game-border text-[11px] text-game-text"
           >
             <option value="">monster ({monShape})</option>
             {BODY_SHAPES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {shape === 'beast' && shapeOverride === '' && <span className="text-game-border">generic fallback</span>}
+          {shape === 'beast' && !bodyShape && <span className="text-game-border">generic fallback</span>}
         </div>
         <p className="text-[10px] text-game-muted leading-snug max-w-[18rem]">
           Live paper-skin token, facing right. <b className="text-game-text-dim">Walk</b> shuffles the feet; <b className="text-game-text-dim">Attack</b> loops the jab + lunge. Bodies with no legs/feet just hold on Walk (try <code>spider</code> / <code>mimic</code>).
         </p>
       </div>
     </div>
+  )
+}
+
+function TextField({ label, value, base, onEdit }: { label: string; value: string; base: string; onEdit: (v: string) => void }) {
+  const changed = value !== base
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] text-game-muted flex items-center gap-1">
+        {label}
+        {changed && <span className="text-game-gold" title={`was ${base}`}>•</span>}
+      </span>
+      <input
+        value={value}
+        onChange={(e) => onEdit(e.target.value)}
+        className={['px-2 py-1.5 rounded-md bg-game-bg border border-game-border text-xs', changed ? 'text-game-gold font-medium' : 'text-game-text'].join(' ')}
+      />
+    </label>
   )
 }
 
@@ -568,9 +673,6 @@ function ReportModal({ onClose }: { onClose: () => void }) {
 // as the Battle Sandbox. Owns its own paused tick loop; App gates ?monsterlab
 // no-persist so none of this reaches a save.
 const SIM_LOC = 'monster-lab-sim'
-const SIM_MONSTERS = Object.values(MONSTER_REGISTRY)
-  .slice()
-  .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
 const HERO_TEMPLATES = INITIAL_UNITS.filter((u) => u.class)
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
@@ -589,6 +691,10 @@ function BattleSim({ monsterId, savedRoster, onClose }: { monsterId: string; sav
   const [customSize, setCustomSize] = useState(48)
   const [panelOpen, setPanelOpen] = useState(true)
   const [addHero, setAddHero] = useState('')
+  const simMonsters = useMemo(
+    () => Object.values(MONSTER_REGISTRY).slice().sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)),
+    [monsterId],
+  )
 
   const paused = useGameStore((s) => s.paused)
   // Real open-world maps for the dropdown, captured once (before seeding injects
@@ -739,16 +845,18 @@ function BattleSim({ monsterId, savedRoster, onClose }: { monsterId: string; sav
               <div className="flex items-center gap-1.5">
                 <select value="" onChange={(e) => { if (e.target.value) bumpMon(e.target.value, 1) }} className="flex-1 h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs min-w-0">
                   <option value="">Add monster…</option>
-                  {SIM_MONSTERS.map((m) => <option key={m.id} value={m.id}>Lv{m.level} · {m.name}</option>)}
+                  {simMonsters.map((m) => <option key={m.id} value={m.id}>Lv{m.level} · {m.name}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
                 {Object.entries(comp).map(([id, n]) => (
                   <div key={id} className="flex items-center gap-2">
                     <span className={['flex-1 truncate text-xs', id === monsterId ? 'text-game-gold' : ''].join(' ')}>{MONSTER_REGISTRY[id]?.name ?? id}</span>
-                    <button className={rowBtn} onClick={() => bumpMon(id, -1)}>−</button>
+                    <button className={rowBtn} onClick={() => bumpMon(id, -10)}>−10</button>
+                    <button className={rowBtn} onClick={() => bumpMon(id, -1)}>−1</button>
                     <span className="w-8 text-center tabular-nums text-xs">{n}</span>
-                    <button className={rowBtn} onClick={() => bumpMon(id, 1)}>+</button>
+                    <button className={rowBtn} onClick={() => bumpMon(id, 1)}>+1</button>
+                    <button className={rowBtn} onClick={() => bumpMon(id, 10)}>+10</button>
                   </div>
                 ))}
               </div>
