@@ -45,6 +45,15 @@ export default function PerfSandbox() {
   const sourceRef = useRef(source)
   sourceRef.current = source
 
+  // The sandbox is primarily a visual/perf surface for the live battle renderer:
+  // show authored paper assets by default even if an older localStorage toggle
+  // still says circle. Keep `?skin=circle` as the explicit debug override.
+  useEffect(() => {
+    const explicitSkin = new URLSearchParams(window.location.search).get('skin')
+    if (explicitSkin === 'circle' || explicitSkin === 'paper') return
+    useGameStore.getState().setBattleSkin('paper')
+  }, [])
+
   const paused = useGameStore((s) => s.paused)
   // Real open-world maps for the dropdown, captured once (before the sandbox loc
   // is injected). Cities included — they carry their own inked terrain.
