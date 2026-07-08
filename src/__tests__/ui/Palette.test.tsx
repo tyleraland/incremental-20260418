@@ -14,7 +14,7 @@ import { generateMap, specBarriers } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import { CITY_RECIPE } from '@/mapgen/recipes/city'
 import { TOKEN_SKINS } from '@/render/skins'
-import type { Biome, BodyShape, Weapon } from '@/render/appearance'
+import { BODY_SHAPES, type Biome, type Weapon } from '@/render/appearance'
 
 const ROLE_VALUES = new Set<string>(Object.values(PAPER_PALETTE))
 const TONE_VALUES = new Set<string>(Object.values(PAPER_TONE).flatMap((t) => [t.top, t.base, t.outline, t.text]))
@@ -86,10 +86,9 @@ describe('palette contract', () => {
   it('paper token bodies use only palette + tone colors, no filters/gradients', () => {
     const Paper = TOKEN_SKINS.paper
     const dims = { width: '56px', height: '56px', fontSize: '22px' }
-    const shapes: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2']
     const weapons: (Weapon | undefined)[] = ['sword', 'bow', 'staff', 'dagger', undefined]
     const cases = [
-      ...shapes.map((s) => ({ bodyShape: s, weapon: undefined, alive: true })),
+      ...BODY_SHAPES.map((s) => ({ bodyShape: s, weapon: undefined, alive: true })),
       ...weapons.map((w) => ({ bodyShape: 'humanoid' as const, weapon: w, alive: true })),
       { bodyShape: 'humanoid' as const, weapon: 'sword' as const, alive: false },
     ]
