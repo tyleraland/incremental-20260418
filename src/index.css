@@ -126,7 +126,8 @@
 
 /* Part-level melee jab: the attacker's HEAD group snaps toward the target and
    settles; TRAILING parts (the tail) lag the opposite way — so the token reads
-   as lunging with its body, not sliding as a rigid disc. Direction rides in
+   as lunging with its body, not sliding as a rigid disc. Sword/dagger weapons
+   use the same seam but rotate around the hand for a small slash. Direction rides in
    --atk-x/--atk-y (SVG user units, set per attack on the chip wrapper); the
    classes select on the wrapper and animate `[data-atk]` DESCENDANTS inside the
    memo'd token svg (the body never re-renders — its data-atk tags are static).
@@ -135,10 +136,16 @@
 @keyframes atk-jab-b   { 0% { transform: none } 40% { transform: translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: none } }
 @keyframes atk-trail-a { 0% { transform: none } 45% { transform: translate(calc(var(--atk-x, 0) * -0.55), calc(var(--atk-y, 0) * -0.55)) } 100% { transform: none } }
 @keyframes atk-trail-b { 0% { transform: none } 45% { transform: translate(calc(var(--atk-x, 0) * -0.55), calc(var(--atk-y, 0) * -0.55)) } 100% { transform: none } }
+@keyframes atk-swing-a { 0% { transform: rotate(-18deg) translate(calc(var(--atk-x, 0) * -0.25), calc(var(--atk-y, 0) * -0.25)) } 42% { transform: rotate(28deg) translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: rotate(0deg) translate(0, 0) } }
+@keyframes atk-swing-b { 0% { transform: rotate(-18deg) translate(calc(var(--atk-x, 0) * -0.25), calc(var(--atk-y, 0) * -0.25)) } 42% { transform: rotate(28deg) translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: rotate(0deg) translate(0, 0) } }
 .animate-atk-a [data-atk="jab"]   { animation: atk-jab-a   0.3s ease-out; }
 .animate-atk-b [data-atk="jab"]   { animation: atk-jab-b   0.3s ease-out; }
 .animate-atk-a [data-atk="trail"] { animation: atk-trail-a 0.3s ease-out; }
 .animate-atk-b [data-atk="trail"] { animation: atk-trail-b 0.3s ease-out; }
+.animate-atk-a [data-atk="swing"],
+.animate-atk-b [data-atk="swing"] { transform-box: fill-box; transform-origin: 35% 50%; }
+.animate-atk-a [data-atk="swing"] { animation: atk-swing-a 0.3s ease-out; }
+.animate-atk-b [data-atk="swing"] { animation: atk-swing-b 0.3s ease-out; }
 
 /* Hit recoil: a struck token jerks back along the blow (--hit-x/--hit-y, % of
    the token box) with a brief squash, then settles. A whole-token wrapper

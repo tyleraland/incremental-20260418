@@ -224,8 +224,10 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
         {/* ground-contact shadow: an offset flat ellipse, NOT filter:drop-shadow */}
         <ellipse cx="54" cy={alive ? 55 : 80} rx="46" ry={alive ? 45 : 17} fill={PAL.shadow} fillOpacity={0.35} />
         {angle != null && heroWeapon && (
-          <g transform={partT(parts[0])}>
-            {WEAPON_SHAPES[heroWeapon]}
+          <g data-atk={heroWeapon === 'sword' || heroWeapon === 'dagger' ? 'swing' : 'jab'}>
+            <g transform={partT(parts[0])}>
+              {WEAPON_SHAPES[heroWeapon]}
+            </g>
           </g>
         )}
         {alive && simple ? (
@@ -284,7 +286,7 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
       </svg>
       {/* heroes/NPCs keep a small centered icon (class glyph / merchant mark);
           monsters are silhouette-only — the layered body IS the identity. */}
-      {!creature && (
+      {!creature && bodyShape !== 'knight' && (
         <span className="relative font-bold leading-none" style={{ fontSize: dims.fontSize, color: p.text }}>
           {alive ? glyph : ''}
         </span>

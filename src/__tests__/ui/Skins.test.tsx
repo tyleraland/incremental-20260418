@@ -122,6 +122,17 @@ describe('battlefield skins', () => {
     expect(far.querySelectorAll('svg path').length).toBeLessThanOrEqual(2)       // merged base + lit
   })
 
+  it('hero sword layer rides the attack seam without body rerenders', () => {
+    const Paper = TOKEN_SKINS.paper
+    const dims = { width: '48px', height: '48px', fontSize: '13px' }
+    const { container } = render(
+      <Paper glyph="F" tone="player" bodyShape="knight" weapon="sword" alive selected={false} facingDeg={0} dims={dims} />,
+    )
+    expect(container.querySelector('[data-atk="swing"]')).toBeTruthy()
+    expect(container.querySelector('[data-atk="jab"]')).toBeTruthy()
+    expect(container.textContent).toBe('') // the knight silhouette carries the read
+  })
+
   it('idle gating: a still detail-LOD token carries animate-idle; a moving one swaps to animate-walk', () => {
     useGameStore.setState({ battleSkin: 'paper' })
     const b = openBattle()
