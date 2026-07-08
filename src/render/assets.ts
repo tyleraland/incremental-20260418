@@ -8,7 +8,7 @@
 //
 // Categories map to where the asset lives:
 //   prop         → TERRAIN_PROPS (scatter decor)          [render/props.ts]
-//   monster-body → PAPER_BODIES silhouette families        [render/skins.tsx]
+//   monster-body → PAPER_BODIES silhouette families        [render/bodies/*]
 //   weapon       → WEAPON_SHAPES class weapons             [render/skins.tsx]
 //   building     → BUILDING_LOOKS city structures          [render/buildings.ts]
 //   ground       → ARENA_SKINS per-biome ground tiles      [render/skins.tsx]

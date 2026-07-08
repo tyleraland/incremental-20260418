@@ -17,7 +17,8 @@ import { describe, it, expect } from 'vitest'
 // vitest runs on node ( `?raw` css imports come back empty through its css
 // pipeline, so reading the file is the reliable way to lint index.css ).
 import { readFileSync } from 'node:fs'
-import { PAPER_BODIES, type BodyPart } from '@/render/skins'
+import { PAPER_BODIES } from '@/render/bodies'
+import type { BodyPart } from '@/render/bodyTypes'
 import { PAPER_PALETTE } from '@/render/palette'
 import { BODY_SHAPES } from '@/render/appearance'
 

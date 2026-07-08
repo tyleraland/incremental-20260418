@@ -35,11 +35,13 @@ Polish comes from consistency, not path complexity:
 | `authoring.ts` | seeded geometry: `wonk` / `blobPath` / `polyPath` / `rectOutline` / `roughCircle` / `scatter` / `hash01` / `hashString` |
 | `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor). Each prop SELF-DECLARES its mapgen `kinds` (which `ScatterKind`s place it) + `playerSelectable`/`tags` via `PROP_META` — stamped onto the def and its variants |
 | `assets.ts` | the discoverable asset CATALOG: `listAssets()` enumerates every prop/monster-body/weapon/building/ground as `AssetDescriptor{category,id,kinds,playerSelectable,tags,…}`. One source for the dev asset gallery + a future player cosmetic picker — add an asset in its home module and it appears here |
+| `bodyTypes.ts` | the `BodyPart` authoring contract shared by every paper body asset |
+| `bodies/*` | one file per paper body (`centipede.ts`, `thief-bug.ts`, …) plus `bodies/index.ts` assembling `PAPER_BODIES`; this is the token-efficient entry point for monster-body authoring |
 | `inked.ts` | the "inked toolkit" — a flat-fill port of the top-down battlemap kit: `ink()` (fill+stroke in one path), `masonryBand()` (running-bond stone), `roofSlope()` (weathered tile field), `mossClump()`, `cobble()`. Surfaces are MANY small individually-inked jittered pieces picked from `INK_POOLS` (palette.ts) — no gradients/filters, all seeded, all baked into the terrain image |
 | `buildings.ts` | the CITY tile catalog (inked top-down, styled after Prontera): `BUILDING_LOOKS` keyed off `BarrierMaterial` — `wood` red-tile townhouse, `cut-stone` slate-tile hall, `rubble` roofless ruin — + `buildingMarkup()` emitting a masonry wall RING around a weathered roof-TILE field split by a ridge (moss, doors, windows, silhouette ink), via `inked.ts`. Procgen plugs in by tagging a rect's material; switches on material, never ids |
 | `terrain.tsx` | the renderer: per-location terrain model + the `terrainSvg()` emitter, `propMarkup()` (the one PropDef→svg translation), `fountainMarkup()`; §mapgen spec consumption (surface washes incl. city dirt/grass + inked cobblestone paving, scatter-plane props, material-aware collision paint — BUILT-material walls become `buildings.ts` structures, natural walls stay organic blobs). `PaperTerrain` **rasterizes the SVG to a `<canvas>` bitmap once** (`TERRAIN_RES`, async decode) so pan/zoom are GPU-composited, not re-rasterized |
 | `appearance.ts` | entity → visual resolver (glyph/tone/bodyShape/weapon/biome) — the ONLY id→visual translation |
-| `skins.tsx` | token bodies (`TokenBodyProps` contract), `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |
+| `skins.tsx` | token body renderers (`TokenBodyProps` contract), body LOD/KO merging, `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |
 
 ## Adding a scatter prop (the common case)
 
@@ -114,15 +116,14 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 
 ## Adding a body, weapon, or biome
 
-- **Monster silhouette / class weapon:** add the part stack in `skins.tsx`
-  (`PAPER_BODIES` / `WEAPON_SHAPES`, palette roles only — see the runbook
-  below), then register in `appearance.ts` (the `BodyShape` union +
-  `BODY_SHAPES` — the ONE registration; the gallery, `?bodyshot`, the workshop
-  and the asset catalog all derive from it) and map monster ids in
-  `MONSTER_SHAPE` / classes in `CLASS_WEAPON`. Skins switch on
+- **Monster silhouette / class weapon:** add a body part stack in
+  `render/bodies/<shape>.ts`, register it in `render/bodies/index.ts`, then
+  register the shape in `appearance.ts` (`BodyShape` + `BODY_SHAPES`) and map
+  monster ids in `MONSTER_SHAPE`. Class weapons still live in `skins.tsx`
+  (`WEAPON_SHAPES`) and map via `CLASS_WEAPON`. Skins switch on
   `bodyShape`/`weapon` — never on entity ids. `Bodies.test.ts` mechanically
-  enforces the body contract (winding, budgets, paints) — if it passes, the
-  body composes correctly at every LOD.
+  enforces the body contract (winding, budgets, paints) — if it passes, the body
+  composes correctly at every LOD.
 - **Biome:** extend `Biome` + `biomeForLocation` in `appearance.ts`, add a
   ground tile in `skins.tsx`, mottle shades in `terrain.tsx`
   (`MOTTLE_SHADES`), and a prop set in `props.ts`.
@@ -209,8 +210,8 @@ procgen recipe that emits the material inherits the look for free.
 
 ### Monster-body runbook (reference sprite → layered cutout)
 
-A creature is an ordered **stack of parts** in `PAPER_BODIES[shape]`, drawn
-back-to-front (`skins.tsx`). Each part is either a `plate` (a full two-tone
+A creature is an ordered **stack of parts** in `render/bodies/<shape>.ts`, drawn
+back-to-front by `skins.tsx`. Each part is either a `plate` (a full two-tone
 cutout — dark base+outline + a lit copy nudged up-left; `shadow: true` casts a
 flat drop shadow onto the parts below) or an `accent` (ONE flat fill — eyes,
 teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
