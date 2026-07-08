@@ -203,6 +203,24 @@ export const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
     { d: 'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z', c: [50, 50] },
     { d: 'M60 34 C70 35 76 41 76 50 C76 59 69 66 59 66 C50 66 44 59 44 50 C44 41 51 33 60 34 Z', c: [60, 50], lean: 4, shadow: true },
   ],
+  // KNIGHT (fighter hero body) - a top-down armored humanoid with the tool
+  // silhouette baked in: a raised longsword on the upper arm, a forward shield
+  // on the lower arm, plate torso, shoulder guards, and a closed helmet/visor.
+  knight: [
+    { d: 'M47 62 C46 70 44 80 40 87 C35 92 28 91 27 84 C27 73 31 65 38 60 Z', c: [38, 74], lean: -2, walk: 1 },
+    { d: 'M56 62 C62 67 65 76 64 86 C63 93 55 93 51 87 C48 79 48 69 50 62 Z', c: [56, 75], lean: -2, walk: 2 },
+    { d: 'M32 50 C32 34 42 23 55 23 C68 23 78 34 78 50 C78 66 68 78 55 78 C42 78 32 66 32 50 Z', c: [55, 50], idle: 'breathe' },
+    { d: 'M64 34 C69 28 78 27 86 32 C91 36 91 44 85 47 L68 51 C62 47 60 39 64 34 Z', c: [76, 39], lean: 3, shadow: true, atk: 'jab' },
+    { d: 'M62 63 C69 58 80 59 88 67 C95 76 96 89 89 96 C78 94 69 88 64 79 C60 72 59 67 62 63 Z', c: [78, 78], lean: 2, shadow: true },
+    { d: 'M29 38 C35 31 46 29 54 33 C59 37 58 45 51 49 L34 53 C27 50 24 43 29 38 Z', c: [42, 42], shadow: true, atk: 'trail' },
+    { d: 'M67 50 C67 39 76 31 88 32 C99 33 106 40 106 50 C106 60 99 67 88 68 C76 69 67 61 67 50 Z', c: [88, 50], lean: 4, shadow: true, atk: 'jab' },
+    { d: 'M83 36 L100 34 L123 27 L106 44 L86 50 Z M79 33 L87 29 L93 34 L85 39 Z', kind: 'accent', fill: 'steel', stroke: true, lean: 5, atk: 'jab' },
+    { d: 'M74 39 L86 31 L90 36 L78 44 Z M75 31 L87 43 L84 47 L72 35 Z', kind: 'accent', fill: 'woodLight', stroke: true, lean: 4, atk: 'jab' },
+    { d: 'M75 66 C85 69 91 78 90 89 C83 87 75 82 70 75 C67 70 70 66 75 66 Z', kind: 'accent', fill: 'steel', stroke: true, lean: 2 },
+    { d: 'M79 71 C84 74 86 80 86 86 M74 69 C70 71 69 75 71 79', kind: 'accent', fill: 'cream', stroke: true, lean: 2 },
+    { d: 'M80 44 L103 47 L103 53 L80 56 Z', kind: 'accent', fill: 'outline', lean: 4, atk: 'jab' },
+    { d: 'M46 29 L55 18 L64 29 L57 34 L51 32 Z M42 45 L69 45 M42 55 L69 55 M48 66 L62 66', kind: 'accent', fill: 'cream', stroke: true },
+  ],
   // slime: wobbly puddle with a droplet wake, gel core riding it — the core
   // LAGS behind the heading while moving (inertia); two dark eyes ride the core
   // front so the blob reads as a creature, not a splash
@@ -564,7 +582,7 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
       </svg>
       {/* heroes/NPCs keep a small centered icon (class glyph / merchant mark);
           monsters are silhouette-only — the layered body IS the identity. */}
-      {!creature && (
+      {!creature && bodyShape !== 'knight' && (
         <span className="relative font-bold leading-none" style={{ fontSize: dims.fontSize, color: p.text }}>
           {alive ? glyph : ''}
         </span>

@@ -21,7 +21,7 @@ export type Tone = 'player' | 'enemy' | 'neutral' | 'casting'
 // Silhouette family for the token body. A skin picks its body path by this —
 // NEVER by entity id (that translation happens here). A handful of shared
 // shapes cover the whole bestiary; per-monster art stays a non-goal.
-export type BodyShape = 'humanoid' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine' | 'fearrow' | 'crampRat' | 'mandragora' | 'spider' | 'mimic' | 'mimic2' | 'thiefBug' | 'larva' | 'centipede'
+export type BodyShape = 'humanoid' | 'knight' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine' | 'fearrow' | 'crampRat' | 'mandragora' | 'spider' | 'mimic' | 'mimic2' | 'thiefBug' | 'larva' | 'centipede'
 
 // A hero's handheld, keyed off class — the paper skin swaps its facing-blade
 // layer by this. Absent (Novice / monsters) → the skin's generic pointer.
@@ -87,7 +87,7 @@ export function monsterBodyShape(monsterId: string): BodyShape {
 // Closed lists of the visual families, plus reverse lookups (who uses each), so
 // the dev asset gallery can list bodies/weapons and show what maps to them.
 // `satisfies` keeps these exhaustive against the unions at compile time.
-export const BODY_SHAPES = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug', 'larva', 'centipede'] as const satisfies readonly BodyShape[]
+export const BODY_SHAPES = ['humanoid', 'knight', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug', 'larva', 'centipede'] as const satisfies readonly BodyShape[]
 export const WEAPONS = ['sword', 'bow', 'staff', 'dagger'] as const satisfies readonly Weapon[]
 export const monstersForShape = (shape: BodyShape): string[] =>
   Object.entries(MONSTER_SHAPE).filter(([, s]) => s === shape).map(([id]) => id)
@@ -130,12 +130,13 @@ export function getAppearance(c: Combatant, classFor: (id: string) => string | n
   const casting = c.alive && !!c.channel
   if (c.team === 'player') {
     const cls = classFor(c.id)
+    const bodyShape: BodyShape = cls === 'Fighter' ? 'knight' : 'humanoid'
     return {
       glyph: (cls && CLASS_ICON[cls]) || initials(c.name),
       tone: casting ? 'casting' : 'player',
       scale: 1,
-      bodyShape: 'humanoid',
-      weapon: weaponForClass(cls),
+      bodyShape,
+      weapon: bodyShape === 'knight' ? undefined : weaponForClass(cls),
       // A hero's elemental identity is its weapon-imbued attack element (§3).
       tint: ELEMENT_TINT[c.attackElement],
     }
