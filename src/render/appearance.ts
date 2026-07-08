@@ -68,6 +68,8 @@ const MONSTER_SHAPE: Partial<Record<string, BodyShape>> = {
   // flyers — wings or floating
   'harpy': 'fearrow', 'bat': 'flyer', 'hornet': 'flyer', 'rat-fly': 'flyer',
   'forest-sprite': 'flyer', 'wraith': 'flyer', 'ruins-specter': 'flyer',
+  // many-legged crawlers
+  'centipede': 'centipede',
   // humanoids — two legs, tools, armor
   'poacher': 'humanoid', 'skeleton-archer': 'humanoid', 'animated-armor': 'humanoid',
   'stone-golem': 'humanoid', 'stone-sentinel': 'humanoid',

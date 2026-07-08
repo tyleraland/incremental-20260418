@@ -39,7 +39,7 @@ export const INITIAL_LOCATIONS: Location[] = [
   {
     id: 'geffen-field-1', region: 'fixed-encounters', name: 'Geffen Outskirts',
     description: 'A windswept plain east of Geffen — first proving ground on the road to Prontera.',
-    traits: ['plains'], monsterIds: ['hornet', 'egg-sac'],
+    traits: ['plains'], monsterIds: ['hornet', 'egg-sac', 'centipede'],
     familiarityMax: 100, connections: [],
     testScenarioId: 'open-field',
   },
@@ -189,8 +189,8 @@ export const INITIAL_LOCATIONS: Location[] = [
   },
   {
     id: 'pg-menagerie', region: 'fixed-encounters', name: 'The Menagerie',
-    description: 'A viewing pen with one of each restyled creature — snail, snake, wolf, slime, boar, harpy — to inspect the paper token families up close and in motion.',
-    traits: ['arena'], monsterIds: ['snail', 'adderwalla', 'wolf', 'slime', 'wild-boar', 'harpy'],
+    description: 'A viewing pen with one of each restyled creature — snail, snake, wolf, slime, boar, harpy, centipede — to inspect the paper token families up close and in motion.',
+    traits: ['arena'], monsterIds: ['snail', 'adderwalla', 'wolf', 'slime', 'wild-boar', 'harpy', 'centipede'],
     familiarityMax: 100, connections: [], testScenarioId: 'pg-menagerie',
   },
 
