@@ -1,15 +1,16 @@
 import { create } from 'zustand'
 import { useGameStore } from '@/stores/useGameStore'
 import type { UnitCombatStats, QuestDropRule, Unit } from '@/types'
-import { type Pack, packRoom, heroRoom, itemWeight } from './economy'
 
 // ── Prototype-only mock state ───────────────────────────────────────────────--
 //
 // State the ?proto=1 exploration needs that the real game store doesn't model
 // yet: the stage's current zoom altitude (so the lens can follow it), the
 // kittens-style per-location "attunement" upgrade economy, story-path choices,
-// and the Army Matrix's hero locks + Optimize proposals. All mock — none of it
-// is persisted or wired into the save format.
+// and the Army Matrix's hero locks + Optimize proposals. Mostly mock and not
+// wired into the save format — but the quest slice persists across reloads via its
+// own interim localStorage key (see below). (Per-hero carry packs + expedition
+// plans graduated out of here into useGameStore + logisticsCodec.)
 
 export type ZoomLevel = 0 | 1 | 2
 
@@ -519,19 +520,9 @@ interface ProtoState {
   // future "quests completed" report. Repeatable bounty claims increment too.
   questCompletions: Record<string, number>
 
-  // ── Per-hero carry (mock) ────────────────────────────────────────────────────
-  // The "every hero carries their own loot until they reach town" exploration.
-  // packs[unitId] is what that hero is carrying; capacity-gated (economy.ts).
-  // Unpersisted + not wired into the combat loop — `simulateHunt` fakes drops so
-  // we can feel packs fill, deposit emptying them into shared storage (miscItems).
-  packs: Record<string, Pack>
-  packsSeeded: boolean
-  seedPacks: (seed: Record<string, Pack>) => void          // one-time mock fill
-  addToPack: (unitId: string, itemId: string, qty: number) => void // capacity-gated
-  simulateHunt: (unitId: string, drops: { itemId: string; qty: number }[]) => void
-  clearPack: (unitId: string) => void
-  depositPack: (unitId: string) => void                    // pack → shared storage
-  depositAllPacks: () => void
+  // NB: per-hero carry packs + expedition plans used to live here; they graduated
+  // into `useGameStore` (`packs`/`expeditions`) + `logisticsCodec` so they persist
+  // in the real save envelope and advance through offline catch-up.
 
   // ── Cards & sockets (mock, display-only) ──────────────────────────────────────
   // ownedCards: how many of each card the guild holds. sockets: per equipment
@@ -596,8 +587,6 @@ export const useProtoStore = create<ProtoState>((set) => ({
   bountyDone: PERSISTED_QUESTS.bountyDone,
   bountyClaimed: PERSISTED_QUESTS.bountyClaimed,
   questCompletions: PERSISTED_QUESTS.questCompletions,
-  packs: {},
-  packsSeeded: false,
   ownedCards: {},
   sockets: {},
   cardsSeeded: false,
@@ -720,49 +709,6 @@ export const useProtoStore = create<ProtoState>((set) => ({
     return { bountyDone: [...s.bountyDone, bountyId], questCompletions: completions }
   }),
 
-  seedPacks: (seed) => set((s) => (s.packsSeeded ? s : { packs: seed, packsSeeded: true })),
-  // Add to a hero's pack, but never past capacity — excess is "left on the
-  // ground" (the carry-full mechanic). Drops are added in id order, oldest-room
-  // first, so a full pack silently refuses extras.
-  addToPack: (unitId, itemId, qty) => set((s) => {
-    const pack = s.packs[unitId] ?? {}
-    const add = Math.min(qty, Math.floor(packRoom(pack) / itemWeight(itemId)))   // weight-gated
-    if (add <= 0) return s
-    return { packs: { ...s.packs, [unitId]: { ...pack, [itemId]: (pack[itemId] ?? 0) + add } } }
-  }),
-  simulateHunt: (unitId, drops) => set((s) => {
-    const pack = { ...(s.packs[unitId] ?? {}) }
-    // Room left = WEIGHT_LIMIT minus loot already carried minus carried consumables.
-    const unitPack = useGameStore.getState().units.find((u) => u.id === unitId)?.pack
-    let room = heroRoom(pack, unitPack)
-    for (const d of drops) {
-      const w = itemWeight(d.itemId)
-      const add = Math.min(d.qty, Math.floor(room / w))
-      if (add <= 0) continue
-      pack[d.itemId] = (pack[d.itemId] ?? 0) + add
-      room -= add * w
-    }
-    return { packs: { ...s.packs, [unitId]: pack } }
-  }),
-  clearPack: (unitId) => set((s) => {
-    if (!s.packs[unitId]) return s
-    const next = { ...s.packs }; delete next[unitId]
-    return { packs: next }
-  }),
-  depositPack: (unitId) => set((s) => {
-    const pack = s.packs[unitId]
-    if (!pack) return s
-    const g = useGameStore.getState()
-    for (const [id, qty] of Object.entries(pack)) if (qty > 0) g.grantMiscItem(id, qty)
-    const next = { ...s.packs }; delete next[unitId]
-    return { packs: next }
-  }),
-  depositAllPacks: () => set((s) => {
-    const g = useGameStore.getState()
-    for (const pack of Object.values(s.packs))
-      for (const [id, qty] of Object.entries(pack)) if (qty > 0) g.grantMiscItem(id, qty)
-    return { packs: {} }
-  }),
 
   seedCards: (owned, sockets) => set((s) => (s.cardsSeeded ? s : { ownedCards: owned, sockets, cardsSeeded: true })),
   insertCard: (instanceId, slotIdx, cardId, slotCount) => set((s) => {
@@ -787,13 +733,14 @@ export const useProtoStore = create<ProtoState>((set) => ({
   }),
 }))
 
-// Persist the quest slice whenever it changes. A cheap serialized-diff guard
-// skips the frequent unrelated UI churn (zoom, tab requests, foe inspect).
+// Persist the quest slice whenever it changes. A cheap serialized-diff guard skips
+// the frequent unrelated UI churn (zoom, tab requests, foe inspect) and only touches
+// localStorage when the quest slice actually changed.
 let lastQuestJson = JSON.stringify(pickQuests(useProtoStore.getState()))
 useProtoStore.subscribe((s) => {
   try {
-    const json = JSON.stringify(pickQuests(s))
-    if (json !== lastQuestJson) { lastQuestJson = json; localStorage.setItem(QUEST_KEY, json) }
+    const questJson = JSON.stringify(pickQuests(s))
+    if (questJson !== lastQuestJson) { lastQuestJson = questJson; localStorage.setItem(QUEST_KEY, questJson) }
   } catch { /* localStorage unavailable — skip persistence */ }
 })
 

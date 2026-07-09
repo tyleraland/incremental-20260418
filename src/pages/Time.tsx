@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useGameStore, ticksToCalendar, TICKS_PER_DAY, DAYS_PER_SEASON, SEASONS_PER_YEAR, type LogCategory } from '@/stores/useGameStore'
 import { exportSave, importSave, persistSave, switchProgressionMode } from '@/save'
-import { CatchUpReadout, SamplingControls } from '@/components/SamplingDebug'
+import { CatchUpReadout, SamplingControls, OfflineSimulator, BugReports } from '@/components/SamplingDebug'
 
 function ResetSaveButton() {
   const resetSave = useGameStore((s) => s.resetSave)
@@ -74,7 +74,8 @@ function ProgressionModeControl() {
 }
 
 // Battlefield skin — render-only A/B of the token/ground look (the seam for the
-// graphics restyle; see src/render/skins.tsx). Also switchable via ?skin=paper.
+// graphics restyle; see src/render/skins.tsx). Also switchable via ?skin=paper
+// or ?skin=circle.
 function BattleSkinControl() {
   const skin = useGameStore((s) => s.battleSkin)
   const setSkin = useGameStore((s) => s.setBattleSkin)
@@ -398,7 +399,13 @@ export function Time() {
           </ul>
         )}
         <div className="pt-2 border-t border-game-border/40">
+          <BugReports />
+        </div>
+        <div className="pt-2 border-t border-game-border/40">
           <CatchUpReadout />
+        </div>
+        <div className="pt-2 border-t border-game-border/40">
+          <OfflineSimulator />
         </div>
         <div className="pt-2 border-t border-game-border/40">
           <SamplingControls />

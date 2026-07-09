@@ -356,6 +356,53 @@ independently shippable; ordering rationale in the guide's roadmap):
     the regen/recovery pass owns final unit HP (units fast-heal anyway); priming
     doesn't separately model offline KO downtime.
 
+### Offline return-to-town loop (§logistics) — SHIPPED 2026-07; known gaps
+
+`projectOfflineCycles` (`src/lib/offline.ts`) + the `batchTick` wiring extrapolate the
+hunt→fill→travel→deposit→restock→(stall) loop from the realized loot rate + a slice-
+measured potion burn. Fixed on landing: the offline budget counts CARRIED potions (not
+just stash) so a supplied hero never stalls to zero yield; restock draws only the
+loadout's consumables (never an unrelated stash item); the first town trip deposits the
+hero's pre-existing carried pack too. Remaining gaps (from the post-merge review — most
+are deliberate first-cut simplifications; **numbers need feel-tuning via the Time→Debug
+Offline simulator**):
+
+- **Trip fires on pack-full even for a `supplies-out`-only hero.** `projectOfflineCycles`
+  returns whenever the pack fills, regardless of `returnOn`; live (`expeditionDriver`
+  phase 2e) only returns on pack-full when it's a configured trigger. Pass a
+  `returnOnPackFull` flag and model "pack full, no return trigger → stop gaining
+  (overflow)" to match live. (Med.)
+- **Empty-`returnOn` deployed hero diverges.** With `returnOn: []` the offline loop is
+  skipped (legacy: all loot → stash, no trips) but live overflows-and-loses once the
+  pack saturates. Reconcile the two. (Med.)
+- **Bulky residual can be silently dropped.** `distributeResidualInto` places per-hero,
+  so a single item heavier than any one hero's remaining room is dropped even when the
+  party's *combined* room fits it. Spill to the stash or log it. (Med/low.)
+- **Offline never drains `Unit.pack` carried supplies.** The supply cost is charged to
+  stash/gold only; a hero the model reports `stalled` still shows full carried potions on
+  next load. Decide whether an offline stall should leave carried supplies drained (so the
+  stall is visible) or stay a pure stash/gold cost. (Low.)
+- **`huntFraction` flooring drops rare (qty-1) drops.** Loot is rolled over the full span
+  then floored by `huntFraction`; a `q=1` rare with `huntFraction<1` floors to 0. Roll
+  loot *after* scaling, or round rare drops up. (Low.)
+- **Warm/short absences never model supply drain or stalls** (no sim slice → `burn=0`).
+  Intended for short absences; revisit if it feels off. (Low.)
+- **Burn-rate measurement is rough** — sampled windows never restock between slices (can
+  undercount sustained burn), and a hero KO'd mid-slice counts its whole carry as "used"
+  (over-count). Track cumulative burn instead of an end-of-slice diff. (Low.)
+- **Divergences from the live driver the offline model ignores** (deliberate first cut):
+  party loot/supply **sharing** flags (`shareLoot`/`acceptLoot`/mule); real **merchant
+  prices** + storage-vs-merchant sourcing (offline uses a flat `OFFLINE_RESTOCK_PRICE`=12
+  for any consumable); **`deployMode`** travel (offline always prices `townDwell +
+  2·hops·travel`, even in `instant` mode where live has none); a configured farther
+  **`returnTown`** (offline overheads to `nearestCity`); and the cycle model is gated on
+  `loc.openWorld` (wave-based huntable locations use the legacy path offline). Fold these
+  in as the economy/travel systems become real, or document as live-only.
+- **Feel-tuning** — `OFFLINE_RESTOCK_PRICE` (const in `useGameStore.ts`), `SAMPLING
+  .cycleTownDwellTicks`/`cycleTravelPerHopTicks` (Time→Debug knobs) are conservative
+  guesses; tune against `TOWN_RESUPPLY_TICKS` + real travel time using the Offline
+  simulator, then bake the winners.
+
 ## Economy & resources
 
 - **Passive resource generation from assigned units.** The original prototype
@@ -1309,6 +1356,107 @@ offset-shape shadow (no CSS filters), one-data-URI parquet ground. Restyle
 iteration = editing shapes/palettes in that one file, A/B-able live against
 `circle` on the same battle.
 
+### Asset discoverability + gallery + procgen wiring (foundation shipped 2026-07)
+
+*Shipped (the plumbing):* every prop self-declares its mapgen `kinds` +
+`playerSelectable`/`tags` (`PROP_META` in `render/props.ts`), scatter placement
+spreads a kind across ALL tagged props (so no authored prop goes dark on a
+generated map — `AssetCatalog.test.ts` guards it), and `render/assets.ts`
+`listAssets()` is the single discoverable catalog of every prop/body/weapon/
+building/ground as `AssetDescriptor`. This is the seam the items below hang off.
+
+*Next slices (build on the catalog, not new registries):*
+- **Dev asset gallery (`?gallery=1` extension or a new `?assets=1` page):** render
+  every `listAssets()` entry as a swatch, grouped by category, with search/filter
+  (by biome, kind, `playerSelectable`). **Multi-select + "copy names"**: click to
+  toggle selection, a Copy button writes the selected `assetKey()`s (`category:id`,
+  one per line) to the clipboard for bulk feedback. Pure read of the catalog +
+  the existing `propMarkup`/`Body` renderers.
+- **Procgen option wiring:** expose per-recipe knobs (scatter density, which
+  `ScatterKind`s a recipe emits + weights, biome) as MapSpec params surfaced in
+  `?mapgen=1`, so a designer tunes what a map grows without editing recipe code.
+  The city recipe emitting `reed` (currently never) would light up the reed-tagged
+  props (`coil`/`crack`/`reeds`).
+- **Player-selectable assets:** `playerSelectable` is wired through the catalog but
+  no asset is flagged `true` yet — designate which (guild banner crest? town
+  building style?) and build the picker that reads `playerSelectableAssets()`.
+- **More building looks:** the timber-house + half-timbered "Ragnarok townhouse"
+  palette families (`PAPER_PALETTE`, ~13 roles) are authored but unwired — add
+  `BUILDING_LOOKS` entries so Prontera has >3 building types (they'll appear in the
+  catalog automatically).
+
+### Asset placement tags — phased scatter richness (Phase 1 shipped 2026-07)
+
+The uniform, blanket-rotated scatter pick (a rare canopy as likely as filler
+grass; every prop rotated a flat ±12°) is being replaced by a declarative
+**placement-tag schema** on every prop (`PropMeta`/`PropDef` in
+`render/props.ts`: `weight`/`themes`/`role`/`near`/`avoid`/`rotate`/
+`clusterWith`), tagged for the LATER phases but consumed incrementally.
+
+- **Phase 1 (SHIPPED):** the schema + a **weighted, theme-filtered,
+  rotation-aware** render pick (`terrain.tsx` spec + legacy branches, helpers
+  `matchesThemes`/`weightedPick`/`rotForPolicy` in `props.ts`) + `?workshop=1`
+  catalog surfacing (tags shown read-only, emitted in "copy TS snippet"). Every
+  scatterable prop must declare `role` + `themes` (`AssetCatalog.test.ts` gate).
+  Mapgen unchanged beyond `regionTags` already echoing `params.themes`.
+- **Phase 2 (SHIPPED):** density field + blue-noise placement + `role: 'cluster'`
+  clumps (groves/flowerbeds) — `scatter-fill` + `scatter-clumps` passes over the
+  shared substrate, replacing the independent per-item rolls.
+- **Phase 3 (SHIPPED):** edge / understory features — the "Ribbon" assets (verge
+  grass, shoreline reeds, outcrop skirts, wall moss/cobweb) placed along
+  boundaries via `role: 'edge'` + `intent: 'edge'` (`scatter-edges` pass).
+- **Phase 4:** paths / trails. Two layers, function-first:
+  - *Intra-map trail (the render/scatter slice):* a `desire-path` nav edge → a
+    walkable `dirt`/`road` ribbon across the field, props giving it a berth
+    (`avoid: ['path']`); reuses the inked `cobble()`/paving. A `scatter`/paving
+    pass like the others (own stream, dials, skippable in `?mapgen=1`).
+  - *Inter-map connectivity (the semantic/travel slice — the bigger idea):*
+    **paths are for traveling between map LOCATIONS**, so a path is really an
+    edge in the overworld graph surfaced on the tile. A generated map may bake
+    **with** a connecting path (its `pois`/portals wired to a road that reaches
+    the map edge toward the neighbour) or **without** one (isolated / no road to
+    that neighbour). When absent, we can **offer to ADD one to an existing map**
+    — a player-driven "build a road" action (a quest reward, a settlement/map
+    development sink): re-bake or overlay a path pass that connects two portal
+    POIs, unlocking/shortening travel. Ties into §G inter-map adjacency + the
+    interactables/dynamic-barriers work (a path is a benign, reachability-only
+    map mutation). Save = still seed+params (+ a "roads built" set), never the
+    baked spec. Sequence AFTER the intra-map trail primitive exists.
+- **Phase 5:** per-material surface texture (finer surface-plane paint feeding
+  distinct washes/patterns per `SurfaceMaterial`).
+
+**Guiding principle:** every phase-2+ clustering behavior must EXPOSE tunable
+dials and land as an ISOLATABLE layer/pass reviewable in `?mapgen=1` — the
+per-pass RNG streams + per-pass skips already support toggling one behavior at a
+time, so density, clumping, edges, and paths can each be reviewed/tweaked
+independently without reshuffling the rest of the map.
+
+**Asset-COVERAGE visibility — SHIPPED 2026-07.** The tags let the generator use
+`role: 'edge'` ribbons (and prefer a theme's props) when a theme HAS them and
+fall back to filler when it doesn't (`terrain.tsx` `themeFilteredCands`/
+`roleFilteredCands` — a gap NEVER breaks generation, it renders cross-theme
+filler). `src/render/coverage.ts` (`assetCoverage()`/`coverageGaps()`, pure) now
+computes, per `ThemeTag`, which scatter capabilities (filler/cluster/edge/
+understory/accent + per-kind counts) exist vs are GAPS, folding in that universal
+props count toward every theme. Surfaced LIVE — do NOT hardcode a gap list here,
+it rots; read the tools:
+- **`?workshop=1` → theme-coverage table** (+ catalog filter/group by theme/role/
+  kind): the per-theme ✓/⚠️ grid, prominent on themes with no edge/ribbon and no
+  themed props.
+- **`?mapgen=1` → per-map ⚠️** beside the validation report: warns when the
+  focused map's themes lack edge assets (field recipe places edge items) or any
+  themed prop.
+
+Known gaps as of 2026-07 (the fill-these-in checklist — confirm against the live
+table, which is the source of truth): **desert / volcanic / arcane** have NO
+props at all (total cross-theme fallback); **plains / forest / mountain** have no
+edge/ribbon prop; **beach / water** are thin (edge-only — no cluster/accent, few
+kinds); `understory` is forest-only. Filling one = tagging (or authoring) a prop
+in `PROP_META` (`props.ts`) with that theme + role; the table updates live. Gaps
+are WARNINGS to a human, never build failures — `AssetCoverage.test.ts` pins the
+coverage MODEL (counts reconcile, deterministic, known-covered themes report
+correctly) but never red-flags an intentional gap.
+
 *Perf lesson from landing it* (measured on the `?perf` scene, mobile-chrome 4×
 throttle, via the new `skin-compare.spec.ts` A/B (`npm run skin-ab`) +
 `skin-trace.spec.ts` CDP attribution): a richer body's cost is NOT the SVG
@@ -1515,6 +1663,57 @@ Next slices, roughly in order:
 - **If licensed/bespoke art ever lands**: `Appearance.spriteId` is the reserved
   hook — a sprite skin is just another `TOKEN_SKINS` entry that maps it to an
   atlas, falling back to `paper`/`circle` when absent.
+
+- **Monster idle / breathing loop — SHIPPED 2026-07 (`thiefBug` first).** The
+  generalized mechanism from the proposal, live in the game: an optional
+  `idle: 'breathe' | 'sway'` tag per `BodyPart` (skins.tsx) emits `data-idle`
+  on the part's compositor group — the SAME seam as `data-atk`/`data-walk`, so
+  it composes with facing/lean and never touches the memo'd body. index.css
+  runs it (`animate-idle`, three authored poses: rest → inhale → exhale
+  undershoot; sway for antennae/fronds) only while BattleChip says the token is
+  at **detail LOD, alive, still and not casting**, with `--idle-delay`/
+  `--idle-dur` seeded off the unit id so a nest doesn't pulse in lockstep (the
+  far-LOD merge carries no data-idle nodes, so a dense mob animates nothing —
+  the LOD gate the proposal required). Gating pinned in `Skins.test.tsx`;
+  reviewable per body in `?bodyshot=<shape>` (frozen keyframe stills +
+  live loop; `npm run body-shot`) and in the gallery's motion row ("breathe"
+  frozen-inhale cell — a still-identical cell flags a body with no idle yet).
+  Measured: `skin-ab` on the dense `?perf` scene is unchanged (11.4 vs 11.7
+  median fps baseline, within this rig's noise) — as expected, since the gate
+  keeps the dense crowd static. Still open:
+  - *Dedicated many-idlers probe* — `?perf` never idles (dense → far-LOD), so
+    the worst case (≤`LOD_TOKEN_COUNT`=16 on-screen tokens all breathing at
+    close zoom) is bounded but unmeasured; an `e2e/idle-probe.spec.ts` off
+    `dense-probe` with `?lod=on` forced would pin the number.
+  - *Alternate/occasional idles* (claw-clack, tail-twitch) layered over the
+    breathe, and a `bob` keyframe for floaters (wraiths, sprites).
+  - Retro-tag the existing bestiary (wolf ribcage breathe, slime core wobble,
+    mandragora frond sway…) — each is a one-line `idle:` tag now.
+
+- **Monster asset pipeline at scale (2026-07 assessment).** Shipped this pass,
+  aimed at "author many bodies fast, with rules not taste": ONE registration
+  point (`BODY_SHAPES` — gallery/`?bodyshot`/workshop/catalog all derive; the
+  old triple-list drift in SkinGallery is gone), the **body contract test**
+  (`Bodies.test.ts`: plate-winding consistency — it immediately caught
+  counter-wound plates in fearrow/mandragora/mimic/mimic2 that were silently
+  holing their far-LOD merges, now fixed — plus part/idle budgets, walk-phase
+  pairing, paint names) and the **animation perf lint** (every index.css
+  keyframe transform/opacity-only; `data-*` rules only start animations — the
+  compositor contract as a gate instead of prose). Next, in leverage order:
+  1. *`import-body`* — extend `scripts/import-svg.mjs` to read a LAYERED svg
+     (one named layer per part, name encodes tags: `head:jab:lean5`) and emit a
+     `BodyPart[]` snippet: layer order = stack order, fills snapped to tone
+     fields, fitted to the 100-box, winding normalized. Turns "type beziers
+     blind" into "draw" for human-authored bodies; agents mostly don't need it
+     (they iterate via `body-shot` stills).
+  2. *Golden regression for the shared renderer* — one skins.tsx tweak restyles
+     every creature; a vitest SNAPSHOT of each body's rendered svg markup (per
+     shape, one pose) rides `npm run ci` and names exactly which creatures a
+     change touched (pixel goldens don't fit ci — Playwright isn't in it).
+  3. *Part-generator helpers* (`oval()`, `limb()` — winding-guaranteed) once
+     the next couple of bodies confirm the shapes repeat; animations-as-data
+     (a MOTION table generating the css) only if the keyframe vocabulary
+     outgrows the current 3 tags — both premature today.
 
 Raised 2026-06 (original analysis, still governing). Goal: replace the circle tokens with **animated sprites** and the
 flat color-tint arena with a **detailed background**. The render architecture is

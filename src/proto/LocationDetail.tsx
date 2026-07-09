@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { useGameStore, getDerivedStats, MONSTER_REGISTRY, type Location, type Unit } from '@/stores/useGameStore'
 import { MonsterCodex } from '@/components/MonsterCodex'
 import { ItemCodex } from '@/components/ItemCodex'
@@ -12,6 +12,7 @@ import {
 } from './protoStore'
 import { isRegionUnlocked } from '@/lib/unlocks'
 import { generateForLocationCached } from '@/mapgen'
+import { prewarmLocationTerrain } from '@/components/BattleView'
 
 const ELEMENT_DOT: Record<string, string> = {
   fire: 'bg-orange-400', lightning: 'bg-yellow-300', ice: 'bg-sky-300', earth: 'bg-amber-600',
@@ -652,6 +653,7 @@ export function LocationQuestsPanel({ location }: { location: Location }) {
 
 export function LocationDetail({ location }: { location: Location }) {
   const locations           = useGameStore((s) => s.locations)
+  const units               = useGameStore((s) => s.units)
   const setSelectedLocation = useGameStore((s) => s.setSelectedLocation)
   const setMapPage          = useGameStore((s) => s.setMapPage)
   const locationMonstersSeen = useGameStore((s) => s.locationMonstersSeen)
@@ -661,6 +663,11 @@ export function LocationDetail({ location }: { location: Location }) {
   // pages are sandbox-only (the fixed-encounters test dungeon): hide the entry
   // entirely in curated so the region is unreachable there.
   const progressionMode     = useGameStore((s) => s.progressionMode)
+
+  // Prewarm this location's terrain bitmap while its panel is on screen, so
+  // dropping in paints the map on the first frame instead of after the parse.
+  useEffect(() => { prewarmLocationTerrain(location, units) }, [location.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const entryRegion = location.dungeonEntryRegion && isRegionUnlocked(progressionMode, location.dungeonEntryRegion)
     ? location.dungeonEntryRegion
     : undefined

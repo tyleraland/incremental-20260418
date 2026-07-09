@@ -99,7 +99,7 @@ function LocationCard({ name, stats, units }: { name: string; stats: LocationCom
   const byUnit = stats.byUnit ?? {}
   const total = emptyTally()
   for (const t of Object.values(byUnit)) addInto(total, t)
-  // Location's lifetime kill/exp/gold headline still comes from the aggregate.
+  // Location's lifetime kill/exp headline still comes from the aggregate.
   total.monstersDefeated = Object.values(stats.monstersDefeated).reduce((a, b) => a + b, 0)
   total.expGained = stats.expDistributed
   const heroes = Object.entries(byUnit)
@@ -112,7 +112,7 @@ function LocationCard({ name, stats, units }: { name: string; stats: LocationCom
   return (
     <Collapsible
       title={<span className="text-sm text-game-text">{name}</span>}
-      meta={`${fmt(total.monstersDefeated)} kills · ${stats.goldEarned} gold`}
+      meta={`${fmt(total.monstersDefeated)} kills · ${fmt(stats.expDistributed)} exp`}
     >
       <div className="space-y-3">
         <TallyBreakdown tally={total} />

@@ -1,44 +1,68 @@
-// Dev-only density sandbox (`?sandbox=1`): an interactive perf/density rig. Pick
-// a hero count, compose an exact monster mix (any type, ±), choose a real map (its
-// terrain + size) or a custom square, and play/pause the sim — a manual way to
-// dial in "how many tokens on which map" and watch fps + behaviour. Built on the
-// same real BattleView + engine + store the game uses, so what you measure here is
-// what ships. It NEVER touches the save: App.tsx skips load/autosave/catch-up when
-// `?sandbox=1` is set (same gate as `?perf`), and this page owns its own fixed-
-// cadence tick loop. Reachable in sandbox mode (or a DEV build) from the ☰ Menu →
-// Developer. Sibling of the deterministic `?perf` scene (src/dev/perfSeed.ts).
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useGameStore, spawnMonsterAt, type Unit } from '@/stores/useGameStore'
+// Dev-only Battle Sandbox (`?sandbox=1`): an interactive perf/density + replay rig.
+// Two sources feed the same live field:
+//   • Compose — pick a hero count, an exact monster mix (any type, ±), a real map
+//     (its terrain + size) or a custom square. A manual way to dial in "how many
+//     tokens on which map" and watch fps + behaviour.
+//   • BSNAP — paste a snapshot token (the ⎘-state button in a battle copies one;
+//     `npm run bsnap` replays it headlessly) and watch it back LIVE, play/pause,
+//     with the full camera / inspect / minimap. Same deterministic advance as the
+//     headless tool — one engine round per tick.
+// Built on the same real BattleView + engine + store the game uses, so what you
+// observe is what ships. NEVER touches the save: App.tsx skips load/autosave/
+// catch-up when `?sandbox=1` is set (same gate as `?perf`), and this page owns its
+// own fixed-cadence tick loop. Reachable in sandbox mode (or a DEV build) from the
+// ☰ Menu → Developer. Sibling of the deterministic `?perf` scene (perfSeed.ts).
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useGameStore, type Unit } from '@/stores/useGameStore'
 import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
+import { isDraftMonster, setDraftMonster } from '@/data/monsterOverrides'
 import { BattleView } from '@/components/BattleView'
+import { advanceRound } from '@/engine'
 import { TICKS_PER_SECOND } from '@/lib/time'
-import type { Location } from '@/types'
+import { seedSimBattle, loadBsnapScene } from './simBattle'
+
+type SandboxSource = 'compose' | 'bsnap'
 
 const SANDBOX_LOC = 'perf-sandbox'
 
-// A random point a few cells off the edges, retried a handful of times so a
-// monster never lands inside a wall — a local copy of the store's scatterPos (not
-// exported), good enough for placement here.
-type Rect = { x: number; y: number; w: number; h: number }
-function scatterPos(size: number, barriers: Rect[]): { x: number; y: number } {
-  const m = Math.min(4, size / 2 - 0.5)
-  const roll = () => ({ x: m + Math.random() * (size - 2 * m), y: m + Math.random() * (size - 2 * m) })
-  let p = roll()
-  for (let i = 0; i < 12 && barriers.some((b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h); i++) p = roll()
-  return p
+const initialMonsterId = () => {
+  const requested = new URLSearchParams(window.location.search).get('monster')
+  return requested && MONSTER_REGISTRY[requested] ? requested : 'slime'
 }
-
-// Monsters offered in the "add" picker, cheapest (lowest level) first.
-const MONSTERS = Object.values(MONSTER_REGISTRY).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
 
 export default function PerfSandbox() {
   const [heroes, setHeroes] = useState(4)
-  const [comp, setComp] = useState<Record<string, number>>({ slime: 12 })
-  const [picker, setPicker] = useState(MONSTERS[0]?.id ?? '')
+  const [comp, setComp] = useState<Record<string, number>>(() => ({ [initialMonsterId()]: 1 }))
+  const [picker, setPicker] = useState(() => initialMonsterId())
   const [mapId, setMapId] = useState('custom')     // 'custom' | a real open-world location id
   const [customSize, setCustomSize] = useState(60)
   const [panelOpen, setPanelOpen] = useState(true)
+  const [monsterRev, setMonsterRev] = useState(0)
+  // Monsters offered in the "add" picker, cheapest (lowest level) first.
+  // Recompute when a local draft is renamed so the label updates in-place.
+  const monsters = useMemo(
+    () => Object.values(MONSTER_REGISTRY).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)),
+    [monsterRev],
+  )
+
+  // Scene source: composed density scene vs a pasted BSNAP replay.
+  const [source, setSource] = useState<SandboxSource>('compose')
+  const [bsnapText, setBsnapText] = useState('')
+  const [bsnapStatus, setBsnapStatus] = useState<string | null>(null)
+  // The tick loop is installed once (mount) but must read the CURRENT source each
+  // tick — a ref keeps it live without re-installing the interval.
+  const sourceRef = useRef(source)
+  sourceRef.current = source
+
+  // The sandbox is primarily a visual/perf surface for the live battle renderer:
+  // show authored paper assets by default even if an older localStorage toggle
+  // still says circle. Keep `?skin=circle` as the explicit debug override.
+  useEffect(() => {
+    const explicitSkin = new URLSearchParams(window.location.search).get('skin')
+    if (explicitSkin === 'circle' || explicitSkin === 'paper') return
+    useGameStore.getState().setBattleSkin('paper')
+  }, [])
 
   const paused = useGameStore((s) => s.paused)
   // Real open-world maps for the dropdown, captured once (before the sandbox loc
@@ -64,12 +88,7 @@ export default function PerfSandbox() {
   // kills back to that density. Cheap — do it on any control change (start paused,
   // so composing never fights live motion).
   const rebuild = useCallback(() => {
-    const store = useGameStore.getState()
     const base = mapId === 'custom' ? null : realMaps.find((l) => l.id === mapId) ?? null
-    const size = base ? base.openWorldSize ?? 60 : customSize
-    const present = Object.entries(comp).filter(([, n]) => n > 0)
-    const total = present.reduce((s, [, n]) => s + n, 0)
-    const monsterIds = present.map(([id]) => id)
 
     // Fully-kitted heroes (blank recruits carry no class/skills, so the engine would
     // only do basic-attack work) — clone the starters, cycling through the classes.
@@ -80,46 +99,53 @@ export default function PerfSandbox() {
       roster.push({ ...structuredClone(tpl), id: `sbx-hero-${i}`, name: `${tpl.name.split(' ')[0]} ${i + 1}` })
     }
 
-    // Synthetic location: copy a real map's terrain/size (mapGen/scenario/traits ride
-    // along on the spread) or a plain custom square. cap 0 → stand up with no scatter.
-    const loc: Location = base
-      ? { ...base, id: SANDBOX_LOC, openWorld: true, openWorldCap: 0, openWorldSize: size, monsterIds, connections: [], portals: [] }
-      : { id: SANDBOX_LOC, name: 'Sandbox Field', region: 'world', description: 'Perf sandbox', traits: ['plains'], monsterIds, familiarityMax: 100, connections: [], openWorld: true, openWorldCap: 0, openWorldSize: size }
-
-    useGameStore.setState((s) => ({
-      units: roster,
-      battles: {},
-      monsterSpawnTimers: {},
-      locations: [...s.locations.filter((l) => l.id !== SANDBOX_LOC), loc],
-    }))
-    store.assignUnits(roster.map((u) => u.id), SANDBOX_LOC)
-    store.tick()   // stands up the empty open battle with the heroes fielded
-
-    const battle = useGameStore.getState().battles[SANDBOX_LOC]
-    if (battle) {
-      for (const [id, n] of present) for (let k = 0; k < n; k++) spawnMonsterAt(battle, id, scatterPos(size, battle.barriers))
-      useGameStore.setState((s) => ({
-        // Bump the cap now the field's populated, so trickle refills to this density.
-        locations: s.locations.map((l) => (l.id === SANDBOX_LOC ? { ...l, openWorldCap: total } : l)),
-        battles: { ...s.battles, [SANDBOX_LOC]: battle },
-      }))
-    }
-    store.enterBattleView(SANDBOX_LOC)   // make it the WATCHED battle (full sim, not off-screen credit)
+    seedSimBattle({
+      locationId: SANDBOX_LOC,
+      roster,
+      monsters: Object.entries(comp).map(([id, count]) => ({ id, count })),
+      base,
+      customSize,
+    })
   }, [heroes, comp, mapId, customSize, realMaps])
 
-  // Start paused so the scene is composed at rest; own the tick loop (App.tsx's is
-  // disabled under ?sandbox). One tick per interval, honouring pause.
+  // Load the pasted BSNAP as the watched battle. Pauses so the user hits ▶ Play.
+  const loadBsnap = useCallback(() => {
+    try {
+      const b = loadBsnapScene(SANDBOX_LOC, bsnapText)
+      setSource('bsnap')
+      useGameStore.setState({ paused: true })
+      setBsnapStatus(`Loaded — round ${b.round} · ${b.combatants.length} combatants · ${b.mode} · ${b.cols}×${b.rows}`)
+    } catch (e) {
+      setBsnapStatus(e instanceof Error ? e.message : 'Could not read that snapshot')
+    }
+  }, [bsnapText])
+
+  // Start paused so the scene stands at rest; own the tick loop (App.tsx's is
+  // disabled under ?sandbox). One step per interval, honouring pause. In BSNAP
+  // mode we advance the snapshot's own combatants directly (a faithful replay —
+  // byte-identical to `npm run bsnap`), bypassing the store's open-world spawn/
+  // reconcile machinery; in Compose mode the store tick drives spawns + trickle.
   useEffect(() => {
     useGameStore.setState({ paused: true })
     const id = setInterval(() => {
       const s = useGameStore.getState()
-      if (!s.paused) s.tick()
+      if (s.paused) return
+      if (sourceRef.current === 'bsnap') {
+        const b = s.battles[SANDBOX_LOC]
+        if (b && b.outcome === 'ongoing') {
+          advanceRound(b)   // mutates in place; sets its own arena/timescale ambient
+          useGameStore.setState({ battles: { ...s.battles, [SANDBOX_LOC]: { ...b } } })
+        }
+      } else {
+        s.tick()
+      }
     }, 1000 / TICKS_PER_SECOND)
     return () => clearInterval(id)
   }, [])
 
-  // Re-seed whenever a control changes (and once on mount).
-  useEffect(() => { rebuild() }, [rebuild])
+  // Re-seed whenever a Compose control changes (and once on mount). Skipped in
+  // BSNAP mode so tweaking a control never clobbers a loaded replay.
+  useEffect(() => { if (source === 'compose') rebuild() }, [rebuild, source])
 
   const bump = (id: string, d: number) =>
     setComp((c) => {
@@ -130,8 +156,16 @@ export default function PerfSandbox() {
       return next
     })
 
+  const renameDraft = (id: string, name: string) => {
+    const def = MONSTER_REGISTRY[id]
+    if (!def || !isDraftMonster(id)) return
+    setDraftMonster({ ...structuredClone(def), name: name || 'Unnamed Monster' })
+    setMonsterRev((n) => n + 1)
+  }
+
   const totalMonsters = Object.values(comp).reduce((s, n) => s + n, 0)
   const rowBtn = 'w-7 h-7 shrink-0 flex items-center justify-center rounded-md border border-game-border text-game-text hover:bg-white/10 text-sm leading-none'
+  const draftIds = Object.keys(comp).filter((id) => isDraftMonster(id) && MONSTER_REGISTRY[id])
 
   return (
     <div className="fixed inset-0 flex flex-col bg-game-bg text-game-text">
@@ -143,24 +177,65 @@ export default function PerfSandbox() {
       {/* control panel — a floating card so it overlays the field */}
       <div className="absolute top-2 right-2 z-[90] w-72 max-w-[85vw] max-h-[88vh] flex flex-col rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl">
         <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border">
-          <span className="text-sm font-semibold">Density Sandbox</span>
+          <span className="text-sm font-semibold">Battle Sandbox</span>
           <button onClick={() => setPanelOpen((v) => !v)} className="ml-auto text-xs text-game-text-dim hover:text-game-text">{panelOpen ? 'Hide ▲' : 'Show ▼'}</button>
         </header>
 
         {panelOpen && (
           <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4 text-sm">
-            {/* Play / pause + live readout */}
+            {/* Source: composed density scene vs a pasted BSNAP replay */}
+            <div className="grid grid-cols-2 gap-1.5">
+              {(['compose', 'bsnap'] as SandboxSource[]).map((src) => (
+                <button
+                  key={src}
+                  onClick={() => setSource(src)}
+                  className={['h-8 rounded-lg border text-xs font-medium capitalize', source === src ? 'border-game-primary bg-game-primary/15 text-game-primary' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
+                >{src === 'bsnap' ? 'BSNAP replay' : 'Compose'}</button>
+              ))}
+            </div>
+
+            {/* Play / pause + reset + live readout */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => useGameStore.getState().togglePause()}
                 className={['flex-1 h-9 rounded-lg border text-sm font-medium', paused ? 'border-game-green/60 bg-game-green/15 text-game-green' : 'border-game-gold/60 bg-game-gold/15 text-game-gold'].join(' ')}
               >{paused ? '▶ Play' : '⏸ Pause'}</button>
-              <button onClick={rebuild} className="h-9 px-3 rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-xs" title="Re-seed the scene">↻ Rebuild</button>
+              <button
+                onClick={source === 'bsnap' ? loadBsnap : rebuild}
+                disabled={source === 'bsnap' && !bsnapText.trim()}
+                className="h-9 px-3 rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-xs disabled:opacity-40 disabled:hover:text-game-text-dim"
+                title={source === 'bsnap' ? 'Reload the snapshot from its first round' : 'Re-seed the scene'}
+              >{source === 'bsnap' ? '↻ Reset' : '↻ Rebuild'}</button>
             </div>
             <div className="text-[11px] text-game-text-dim tabular-nums">
               live: <span className="text-blue-300">{live.heroes} heroes</span> · <span className="text-red-300">{live.foes} foes</span> · round {live.round}
             </div>
 
+            {/* BSNAP replay source */}
+            {source === 'bsnap' && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] uppercase tracking-widest text-game-muted">Snapshot token</span>
+                <textarea
+                  value={bsnapText}
+                  onChange={(e) => setBsnapText(e.target.value)}
+                  placeholder="Paste a BSNAP.<…> token — the ⎘-state button in a battle copies one."
+                  spellCheck={false}
+                  className="w-full h-24 text-[10px] font-mono p-2 rounded-lg border border-game-border bg-game-bg text-game-text-dim resize-none"
+                />
+                <button
+                  onClick={loadBsnap}
+                  disabled={!bsnapText.trim()}
+                  className="w-full h-8 rounded-lg border border-game-border text-xs text-game-text-dim hover:text-game-text disabled:opacity-40 disabled:hover:text-game-text-dim"
+                >Load snapshot</button>
+                {bsnapStatus && <div className="text-[11px] text-game-accent leading-snug">{bsnapStatus}</div>}
+                <p className="text-[10px] text-game-text-dim leading-snug">
+                  Advances one engine round per tick — a faithful, byte-identical replay of <span className="font-mono">npm run bsnap</span>. Play/pause, follow a token, inspect. Does not touch your save.
+                </p>
+              </div>
+            )}
+
+            {/* Compose source — heroes / map / monsters */}
+            {source === 'compose' && (<>
             {/* Heroes */}
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
@@ -200,20 +275,37 @@ export default function PerfSandbox() {
               </div>
               <div className="flex items-center gap-1.5">
                 <select value={picker} onChange={(e) => setPicker(e.target.value)} className="flex-1 h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs min-w-0">
-                  {MONSTERS.map((m) => (
+                  {monsters.map((m) => (
                     <option key={m.id} value={m.id}>Lv{m.level} · {m.name}</option>
                   ))}
                 </select>
                 <button className={rowBtn} onClick={() => bump(picker, 1)} title="Add one">＋</button>
               </div>
+              {draftIds.length > 0 && (
+                <div className="space-y-1.5 rounded-lg border border-game-primary/30 bg-game-primary/10 p-2">
+                  <span className="text-[10px] uppercase tracking-widest text-game-primary">Local draft name</span>
+                  {draftIds.map((id) => (
+                    <label key={id} className="flex items-center gap-2">
+                      <span className="w-14 truncate text-[10px] text-game-text-dim">{id}</span>
+                      <input
+                        value={MONSTER_REGISTRY[id]?.name ?? id}
+                        onChange={(e) => renameDraft(id, e.target.value)}
+                        className="min-w-0 flex-1 h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs text-game-text"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
               <div className="space-y-1">
                 {Object.keys(comp).length === 0 && <div className="text-[11px] text-game-text-dim italic">No monsters — add some above.</div>}
                 {Object.entries(comp).map(([id, n]) => (
                   <div key={id} className="flex items-center gap-2">
                     <span className="flex-1 truncate text-xs">{MONSTER_REGISTRY[id]?.name ?? id}</span>
-                    <button className={rowBtn} onClick={() => bump(id, -1)}>−</button>
+                    <button className={rowBtn} onClick={() => bump(id, -10)}>−10</button>
+                    <button className={rowBtn} onClick={() => bump(id, -1)}>−1</button>
                     <span className="w-8 text-center tabular-nums text-xs">{n}</span>
-                    <button className={rowBtn} onClick={() => bump(id, 1)}>+</button>
+                    <button className={rowBtn} onClick={() => bump(id, 1)}>+1</button>
+                    <button className={rowBtn} onClick={() => bump(id, 10)}>+10</button>
                   </div>
                 ))}
               </div>
@@ -222,6 +314,7 @@ export default function PerfSandbox() {
             <p className="text-[10px] text-game-text-dim leading-snug border-t border-game-border/40 pt-2">
               Composing rebuilds the scene (positions reset) — set it up paused, then ▶ Play. Does not touch your save.
             </p>
+            </>)}
           </div>
         )}
       </div>

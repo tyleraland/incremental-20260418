@@ -56,7 +56,7 @@ export function buildCardSeed(equipment: EquipmentItem[]): { owned: Record<strin
 export function seedProtoMocks(): void {
   const g = useGameStore.getState()
   const p = useProtoStore.getState()
-  if (!p.packsSeeded) p.seedPacks(buildPackSeed(g.units, g.locations))
+  if (!g.packsSeeded) g.seedPacks(buildPackSeed(g.units, g.locations))
   if (!p.cardsSeeded) {
     const c = buildCardSeed(g.equipment)
     p.seedCards(c.owned, c.sockets)

@@ -1,7 +1,8 @@
 {
   "permissions": {
+    "allow": ["Artifact"],
     "allow": ["mcp__Claude_Code_Remote__delete_trigger"],
-    "deny": ["mcp__chrome-devtools"]
+    "deny": ["mcp__chrome-devtools", "mcp__Claude_Code_Remote__send_later"]
   },
   "hooks": {
     "SessionStart": [

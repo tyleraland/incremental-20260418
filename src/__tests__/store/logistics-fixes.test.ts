@@ -5,7 +5,6 @@
 //  • a reloaded hero re-hydrates its supplies loadout from persisted pack targets
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
-import { useExpeditionStore } from '@/proto/expeditionStore'
 import type { Location } from '@/types'
 import { makeUnit, resetStore, tick } from '../helpers'
 
@@ -19,7 +18,7 @@ const MAPS: Location[] = [
 ]
 const unit = (id: string) => useGameStore.getState().units.find((u) => u.id === id)!
 
-beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0); useExpeditionStore.setState({ heroes: {} }) })
+beforeEach(() => { vi.spyOn(Math, 'random').mockReturnValue(0); useGameStore.setState({ expeditions: {} }) })
 afterEach(() => vi.restoreAllMocks())
 
 describe('camera follows a hero across map transitions', () => {
@@ -100,7 +99,7 @@ describe('consumables are tagged so the loadout recognises them', () => {
 describe('supplies loadout persists across a reload (via pack carry-targets)', () => {
   it('ensure() rehydrates the loadout from a surviving pack target', () => {
     resetStore({ units: [makeUnit({ id: 'u1', pack: [{ itemId: 'potion-hp', count: 0, target: 7 }] })] })
-    useExpeditionStore.getState().ensure('u1')
-    expect(useExpeditionStore.getState().heroes['u1']?.loadout['potion-hp']?.qty).toBe(7)
+    useGameStore.getState().ensureExpedition('u1')
+    expect(useGameStore.getState().expeditions['u1']?.loadout['potion-hp']?.qty).toBe(7)
   })
 })

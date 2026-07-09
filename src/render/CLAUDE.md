@@ -33,12 +33,15 @@ Polish comes from consistency, not path complexity:
 |---|---|
 | `palette.ts` | the color vocabulary: `PAPER_TONE` (token tones) + `PAPER_PALETTE` (~20 material roles) |
 | `authoring.ts` | seeded geometry: `wonk` / `blobPath` / `polyPath` / `rectOutline` / `roughCircle` / `scatter` / `hash01` / `hashString` |
-| `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor) |
+| `props.ts` | prop assets AS DATA: `PropDef`/`PropPath`, `cutout()`, the `TERRAIN_PROPS` registry (per-biome scatter decor). Each prop SELF-DECLARES its mapgen `kinds` (which `ScatterKind`s place it) + `playerSelectable`/`tags` via `PROP_META` — stamped onto the def and its variants |
+| `assets.ts` | the discoverable asset CATALOG: `listAssets()` enumerates every prop/monster-body/weapon/building/ground as `AssetDescriptor{category,id,kinds,playerSelectable,tags,…}`. One source for the dev asset gallery + a future player cosmetic picker — add an asset in its home module and it appears here |
+| `bodyTypes.ts` | the `BodyPart` authoring contract shared by every paper body asset |
+| `bodies/*` | one file per paper body (`centipede.ts`, `thief-bug.ts`, …) plus `bodies/index.ts` assembling `PAPER_BODIES`; this is the token-efficient entry point for monster-body authoring |
 | `inked.ts` | the "inked toolkit" — a flat-fill port of the top-down battlemap kit: `ink()` (fill+stroke in one path), `masonryBand()` (running-bond stone), `roofSlope()` (weathered tile field), `mossClump()`, `cobble()`. Surfaces are MANY small individually-inked jittered pieces picked from `INK_POOLS` (palette.ts) — no gradients/filters, all seeded, all baked into the terrain image |
 | `buildings.ts` | the CITY tile catalog (inked top-down, styled after Prontera): `BUILDING_LOOKS` keyed off `BarrierMaterial` — `wood` red-tile townhouse, `cut-stone` slate-tile hall, `rubble` roofless ruin — + `buildingMarkup()` emitting a masonry wall RING around a weathered roof-TILE field split by a ridge (moss, doors, windows, silhouette ink), via `inked.ts`. Procgen plugs in by tagging a rect's material; switches on material, never ids |
 | `terrain.tsx` | the renderer: per-location terrain model + the `terrainSvg()` emitter, `propMarkup()` (the one PropDef→svg translation), `fountainMarkup()`; §mapgen spec consumption (surface washes incl. city dirt/grass + inked cobblestone paving, scatter-plane props, material-aware collision paint — BUILT-material walls become `buildings.ts` structures, natural walls stay organic blobs). `PaperTerrain` **rasterizes the SVG to a `<canvas>` bitmap once** (`TERRAIN_RES`, async decode) so pan/zoom are GPU-composited, not re-rasterized |
 | `appearance.ts` | entity → visual resolver (glyph/tone/bodyShape/weapon/biome) — the ONLY id→visual translation |
-| `skins.tsx` | token bodies (`TokenBodyProps` contract), `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |
+| `skins.tsx` | token body renderers (`TokenBodyProps` contract), body LOD/KO merging, `ARENA_SKINS` (grounds/terrain/heroLight/vignette), `FX_SKINS` |
 
 ## Adding a scatter prop (the common case)
 
@@ -48,8 +51,12 @@ fills roughly ±0.5–0.9. Three ways to make one, cheapest first:
 1. **Workshop (start here):** run `npm run dev`, open `?workshop=1`. Click an
    existing prop as a starting point, edit the JSON, and watch it live on every
    biome ground, at every LOD size, and scattered with the game's real jitter.
-   Validation names any rule violation as you type. When it reads well, "copy
-   TS snippet" → paste into `TERRAIN_PROPS` in `props.ts`.
+   Validation names any rule violation as you type (incl. bad `kinds`), and the
+   valid banner surfaces the prop's `kinds` / ★player-selectable. When it reads
+   well, "copy TS snippet" → paste into `TERRAIN_PROPS` in `props.ts`. The
+   **Asset catalog** panel below lists EVERY asset (`listAssets()`): browse by
+   category, ✎ to edit a prop, multi-select across categories → "copy names"
+   dumps the `category:id`s for bulk feedback.
 2. **Draw in a real editor:** draw flat shapes in Inkscape/Figma (any colors,
    any transforms), export SVG, then
    `npm run import-svg -- art.svg --id my-prop`. The script flattens
@@ -66,6 +73,40 @@ also what a PR reviewer looks at.
 Prop placement (density, rotation/flip/scale jitter, keep-clear from barriers
 and portals) is the terrain builder's job — a new prop entry inherits all of it.
 
+**Tag the prop's `kinds` in `PROP_META` (`props.ts`) or it goes DARK on generated
+maps.** Spec-driven maps place scatter by mapgen `ScatterKind` (tree/bush/rock/
+stump/flower/reed); the placer spreads a kind across ALL props tagged with it. A
+prop with no matching kind is only reachable on legacy hand-authored locations —
+so a new city/field prop MUST list ≥1 kind the recipe emits (the city emits
+tree/bush/rock/stump/flower, never `reed`). Reachability is pinned by
+`AssetCatalog.test.ts`. Decor-ring-only assets (`lamppost`/`banner`, placed by
+the plaza landmark ring) intentionally carry empty `kinds`.
+
+**Tag the prop's PLACEMENT so it belongs with the others (strongly encouraged).**
+Beyond `kinds`, `PROP_META` carries a declarative placement schema the render's
+scatter pick READS today (weighted + theme-filtered + rotation-aware — a rare
+signature canopy no longer draws as often as filler grass, a desert `tree` cell
+won't pull an oak, and radially-symmetric rocks free-spin while trees keep a
+small upright wobble) and mapgen's clustering/edge/path passes will read LATER
+(phases 2–4). The fields (all optional; see `PropDef` in `props.ts`):
+`weight` (frequency within a kind, signature low / filler high) · `themes`
+(`ThemeTag[]` biomes it belongs to; undefined = universal) · `role`
+(`field`/`cluster`/`edge`/`understory`/`accent`) · `near`/`avoid`
+(`Affinity[]` adjacency hints) · `rotate` (`upright`/`free`/`flat`) ·
+`clusterWith` (companion prop ids for groves/beds). One-line example:
+
+```ts
+canopy: { kinds: ['tree'], weight: 0.2, themes: ['forest','plains'],
+          role: 'cluster', rotate: 'upright', clusterWith: ['fern','leaves','mushroom'] },
+```
+
+An UNTAGGED prop defaults to universal / `field` / `weight: 1` / `upright` — it
+still places, but leaving it untagged makes generation dumber (it never clumps,
+never prefers a theme, and competes evenly with signature props). The
+`AssetCatalog.test.ts` gate requires every scatterable prop to declare a `role`
+and a non-empty `themes`; the `?workshop=1` catalog surfaces all placement tags
+and the "copy TS snippet" emits them.
+
 **Variants are free.** Each archetype in `TERRAIN_PROPS` is automatically
 multiplied into seeded siblings (`variants()` in `props.ts`, riding
 `wonkPathD` in `authoring.ts`) — author ONE good silhouette and the registry
@@ -75,10 +116,14 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
 
 ## Adding a body, weapon, or biome
 
-- **Monster silhouette / class weapon:** add the part stack in `skins.tsx`
-  (`PAPER_BODIES` / `WEAPON_SHAPES`, palette roles only — see the runbook
-  below), then map ids in `appearance.ts` (`MONSTER_SHAPE` / `CLASS_WEAPON`).
-  Skins switch on `bodyShape`/`weapon` — never on entity ids.
+- **Monster silhouette / class weapon:** add a body part stack in
+  `render/bodies/<shape>.ts`, register it in `render/bodies/index.ts`, then
+  register the shape in `appearance.ts` (`BodyShape` + `BODY_SHAPES`) and map
+  monster ids in `MONSTER_SHAPE`. Class weapons still live in `skins.tsx`
+  (`WEAPON_SHAPES`) and map via `CLASS_WEAPON`. Skins switch on
+  `bodyShape`/`weapon` — never on entity ids. `Bodies.test.ts` mechanically
+  enforces the body contract (winding, budgets, paints) — if it passes, the body
+  composes correctly at every LOD.
 - **Biome:** extend `Biome` + `biomeForLocation` in `appearance.ts`, add a
   ground tile in `skins.tsx`, mottle shades in `terrain.tsx`
   (`MOTTLE_SHADES`), and a prop set in `props.ts`.
@@ -141,6 +186,23 @@ plaza (`src/data/npcs.ts`) — merchant/questgiver placement isn't spec-driven y
 5. Review the in-situ bake in `?gallery=1` → "city tile catalog" (add a panel
    for a new recipe), and screenshot a live location.
 
+**Hard-won rules for baked map layers** (each cost real debug time — heed them):
+- **The raster cost is PATH COUNT (SVG parse), not pixel res.** Bumping
+  `TERRAIN_RES` for crispness is nearly free on the transition; adding thousands
+  of paths is not. Don't lower res to speed a slow load — bound path count and
+  prewarm instead.
+- **A viewBox-only SVG has NO intrinsic size:** `<img>` rasterizes it at the
+  default 300×150 and `drawImage` upscales that → blurry regardless of `res`.
+  Always stamp `width`/`height=res` on the `<svg>` root before decoding.
+- **Prewarm + cache any new baked raster** (see `prewarmTerrain`/`TERRAIN_BITMAPS`
+  in `terrain.tsx`, prewarmed at boot in `App.tsx` and on the detail panel). The
+  first cold decode is the ONLY slow moment; get it off the transition.
+- **Reveal the whole field ATOMICALLY, never per-layer, never with a fade.** A
+  240ms fade on the terrain while the tokens are instantly solid reads as "tokens
+  first, map an instant later." Gate terrain + ground + grid + tokens on one
+  readiness flag (`fieldReveal` in BattleView) and flip it pre-paint
+  (`useLayoutEffect`) so a cache hit lands everything on the first frame.
+
 **New building material** = a `BUILDING_LOOKS` entry (roof pool + ink, `roofed`).
 **New paved/ground material** = a wash band + `cobble`/texture pass in the city
 block of `buildTerrainModel`. Both are pure data keyed off the mapgen vocab, so a
@@ -148,8 +210,8 @@ procgen recipe that emits the material inherits the look for free.
 
 ### Monster-body runbook (reference sprite → layered cutout)
 
-A creature is an ordered **stack of parts** in `PAPER_BODIES[shape]`, drawn
-back-to-front (`skins.tsx`). Each part is either a `plate` (a full two-tone
+A creature is an ordered **stack of parts** in `render/bodies/<shape>.ts`, drawn
+back-to-front by `skins.tsx`. Each part is either a `plate` (a full two-tone
 cutout — dark base+outline + a lit copy nudged up-left; `shadow: true` casts a
 flat drop shadow onto the parts below) or an `accent` (ONE flat fill — eyes,
 teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
@@ -176,14 +238,37 @@ teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
    (`--atk-x/y` user units) — so it stays OFF the memo'd body, and a struck token
    also recoils (`animate-hit-*`). All LOD-gated; keep `atk` parts few (each
    promotes a compositor layer during its 0.3s — ~0.8 fps on a 20-token pit).
+   For a resting idle, tag parts `idle: 'breathe'` (the torso/abdomen swells
+   through three poses: rest → inhale → exhale undershoot) / `'sway'` (antennae/
+   fronds drift a few degrees): the same `data-idle` seam, run by `animate-idle`
+   only while the token is at detail LOD, alive, still and not casting, with
+   per-token phase/tempo seeded off the unit id so a nest never pulses in
+   lockstep. It's a CONTINUOUS animation (a promoted compositor layer for the
+   token's whole resting life) — keep idle parts to 1–3 and never un-gate it.
 4. Stay lean — **a handful of flat paths per token** (a `plate` is 2–3 paths, an
    `accent` is 1) — because every element multiplies across 50+ gliding tokens
    and the memo only holds if the body receives primitives (no live engine
    objects, no per-token gradients). Dropping the monster text label pays for a
-   couple of extra parts (measured net-flat on `skin-ab`).
-5. Iterate in a scratchpad Playwright preview (a rotation grid, idle vs moving;
-   inject CSS to hide `[data-skin="paper"] > span` so labels don't cover the
-   silhouette), then verify with `?gallery=1` / `npm run gallery-shot` for the
+   couple of extra parts (measured net-flat on `skin-ab`). **Pack repeated thin
+   features into ONE multi-subpath accent** (`M…Z M…Z`): the thief bug's six
+   legs are two tripod-gait paths, its antenna pair one scissoring sway part —
+   budgets and compositor layers count PARTS, not subpaths.
+   **The contract is enforced, not prose** (`Bodies.test.ts` — run
+   `npx vitest run Bodies` first when a body misbehaves): every plate winds the
+   SAME direction (a counter-wound plate punches a hole in the far-LOD merge /
+   KO crumple — invisible until zoomed out; flip a path by reversing its point
+   order), ≤14 parts, ≤3 `idle` parts, `walk` phases in 1/2 pairs, absolute
+   M/L/C/Q/A commands only, fills must be real tone fields/palette roles.
+   Two visibility gotchas the contract can't see: a THIN feature filled
+   `'outline'` (near-black) vanishes against the dark arena — use
+   `fill: 'base', stroke: true` like legs; and anything inside x≈92 hides
+   under the body silhouette (weapon-tip rule above).
+5. Iterate against the **body sheet** (`?bodyshot=<shape>`, screenshot via
+   `SHAPE=<shape> npm run body-shot`): one image renders the creature's full
+   state machine as deterministic stills — the real index.css keyframes frozen
+   at authored phases (3 idle breathe/sway poses, attack wind/strike/recover,
+   hit recoil, walk gait) plus the facing wheel, scale ladder, far-LOD merge and
+   KO crumple. Then verify with `?gallery=1` / `npm run gallery-shot` for the
    whole-language read and `npm run skin-ab` for the fps delta before you commit.
 
 ## Preferred monster style (what we've converged on — keep new creatures here)
@@ -209,14 +294,21 @@ these, not by taste:
   is CSS on the chip wrapper (`data-atk`), never a body re-render. Prefer a
   reaction that comes from the reference's *attack* frames (the snake strike, the
   wolf bite) over a generic wiggle. Keep animated parts to 2–3 (compositor cost).
+- **Idle = the body breathes, from the reference's idle frames.** Tag the main
+  torso/abdomen plate `idle: 'breathe'` and one trailing feature (antennae,
+  fronds, a tail tip) `idle: 'sway'` so a resting creature reads alive instead
+  of frozen (the thief bug: carapace swells, antennae drift). Same rules as atk:
+  CSS on the wrapper (`data-idle`), 1–3 parts, LOD-gated by BattleChip — the
+  far-LOD merge drops idle with the other accents.
 - **Lean on the part count.** ~5–12 paths per token; a `plate` is 2–3, an
   `accent` is 1. If a detail doesn't survive the far-LOD collapse, it's probably
   not worth its node.
 
 Cohesion checklist for a PR adding a monster: distinct family silhouette? one
 signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
-`jab`/`trail` tagged if it melees? palette roles only? — all visible on one
-`npm run gallery-shot`.
+`jab`/`trail` tagged if it melees? `breathe`/`sway` idle tagged? palette roles
+only? — all visible on one `SHAPE=<shape> npm run body-shot` plus the
+whole-language `npm run gallery-shot`.
 
 ## Perf contracts (why the weird constraints)
 
@@ -230,8 +322,24 @@ signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
   the map transition ~4s. `PaperTerrain` now draws the SVG to a fixed-res
   `<canvas>` **raster** once (async): pan/zoom composite the bitmap on the GPU
   (free), the decode is off the critical path (terrain fades in). Keep the source
-  piece density BOUNDED — the one-time decode scales with path count. Pinned by
-  `Terrain.test.tsx`.
+  piece density BOUNDED — the one-time decode scales with path count. The bake
+  stamps explicit `width`/`height=res` on the SVG root before decoding (a
+  viewBox-only SVG has no intrinsic size, so `<img>` rasterizes it at the default
+  300×150 and `drawImage` then UPSCALES that — a blurry bake regardless of `res`)
+  and `res` scales with clamped `devicePixelRatio` so mobile retina (where the
+  hero-scale upscale shows) is crisp. **The decoded canvas is cached**
+  (`TERRAIN_BITMAPS`, LRU, keyed by terrain sig+res): `prewarmTerrain()` bakes it
+  while the location's detail panel is up (`prewarmLocationTerrain` in BattleView
+  → LocationDetail), so dropping in paints the map on the FIRST frame (a
+  `useLayoutEffect` draws the cached bitmap pre-paint) instead of after the
+  ~200ms+ parse — no blank arena. `ready` (surfaced via `onReady`, fired in a
+  `useLayoutEffect`) gates the Arena's ENTIRE field — terrain + ground + grid +
+  **tokens** (the pan div's `fieldReveal`) — so the whole scene appears
+  atomically, never tokens-on-a-bare-surface-then-map. **No fade**: a 240ms
+  opacity transition delayed the terrain behind the un-faded tokens (read as
+  "tokens first, map an instant later"); the reveal is an instant opacity flip the
+  moment the bitmap is drawn. A 4s safety timeout + a decode-failure reveal keep
+  the field from ever staying hidden. Pinned by `Terrain.test.tsx`.
 - **Quantize relative to the element.** A viewport-sized element needs coarse
   steps (the hero light uses 8-cqmin); token-sized ones use eighth-cqmin.
 - Verify any visual change with `npm run skin-ab` (median-of-windows fps A/B
@@ -242,6 +350,10 @@ signature accent? reads merged at far-LOD? head-leads/tail-lags `lean` set?
 
 - `Palette.test.tsx` — palette contract: roles only, no filters/gradients, in
   data AND emitted svg AND rendered bodies.
+- `Bodies.test.ts` — body contract: plate winding consistency (the far-LOD
+  merge/KO invariant), part/idle budgets, walk-phase pairing, path parse +
+  bounds, paint names; PLUS the animation perf contract on `index.css` (every
+  keyframe transform/opacity-only; `data-*` part rules only start animations).
 - `Terrain.test.tsx` — terrain determinism (no `Math.random`), scatter
   keep-clear, blob merging, baked single-div delivery, build memo.
 - `Skins.test.tsx` — token body memo contract + skin swap.

@@ -129,8 +129,8 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
 // context LENS on the selection is always on the other. The roster rail across
 // the top is the shared selector that drives both — pick a hero and the world
 // flies to them while their dossier fills the lens; the ☰ Menu (rail, far-left)
-// holds the global destinations (Decisions · Town · Guild · Quests · Reports ·
-// Time · Settings).
+// holds the global destinations (Inbox · Market · Stash · Guild · Quests ·
+// Reports · Time · Settings).
 //
 // It runs on the real store + save codecs (units, inventory, battles, sockets,
 // stats, …) — the same live tick loop and persisted game as classic. What is
@@ -223,10 +223,11 @@ function RosterChip({ unit, selected, here, following, compact, onSelect, onFocu
 }
 
 // ── Top-bar global nav ─────────────────────────────────────────────────────--
-type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'town'
-const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', town: 'Town' }
+type GlobalPanel = 'guild' | 'reports' | 'time' | 'settings' | 'quests' | 'market' | 'stash'
+const PANEL_TITLE: Record<GlobalPanel, string> = { guild: 'Guild', reports: 'Reports', time: 'Time', settings: 'Settings', quests: 'Quests', market: 'Market', stash: 'Stash' }
 // What the ☰ drawer can open: the global panels above, plus 'decisions' (its own
 // inbox overlay, not a GlobalOverlay). 'decisions' is routed specially in ProtoApp.
+// 'market'/'stash' both open the Town shell at the matching sub-tab.
 type DrawerDest = GlobalPanel | 'decisions'
 
 // The Guild board folds in the Party spreadsheet (all heroes grouped by location).
@@ -341,7 +342,7 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
-        <span className="text-sm font-semibold text-game-text">⚑ Decisions</span>
+        <span className="text-sm font-semibold text-game-text">⚑ Inbox</span>
         <span className="text-[11px] text-game-text-dim">{urgent ? `${urgent} want you` : `${decisions.length} to review`}</span>
         <button onClick={onClose} aria-label="Close" className="ml-auto w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
@@ -404,12 +405,13 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
 }
 
 // ── Nav drawer — the single global-nav surface (the reclaimed top row folded in
-// here). Decisions + Town lead (they were the two on-bar buttons); the rest are
-// the lower-frequency destinations. Decisions carries the urgent count.
+// here). Inbox + Market/Stash lead; the rest are the lower-frequency
+// destinations. Inbox carries the urgent count.
 // Developer tool pages (src/dev/*), reached by setting a query param + reloading
 // — App.tsx swaps them in for the whole app. Sandbox-only (see `devEnabled`).
 const DEV_PAGES: { param: string; icon: string; label: string; sub: string }[] = [
-  { param: 'sandbox',  icon: '🧪', label: 'Density Sandbox', sub: 'heroes/monsters/map + play-pause — manual perf rig' },
+  { param: 'monsterlab', icon: '🧟', label: 'Monster Lab',    sub: 'live-tune monster stats/skills + change-request report' },
+  { param: 'sandbox',  icon: '🧪', label: 'Battle Sandbox', sub: 'compose a scene or replay a BSNAP live — play/pause' },
   { param: 'mapgen',   icon: '🗺', label: 'Mapgen Lab',     sub: 'procedural map generator — seeds, planes, validation' },
   { param: 'gallery',  icon: '🎨', label: 'Skin Gallery',   sub: 'the whole visual language on one contact sheet' },
   { param: 'workshop', icon: '🛠', label: 'Asset Workshop',  sub: 'live paper-prop authoring — edit + copy a PropDef' },
@@ -420,15 +422,49 @@ function openDevPage(param: string) {
   window.location.search = q.toString()   // reload; App.tsx renders the page
 }
 
-function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => void; onClose: () => void; urgent: number }) {
+// Codemap — the deterministic code visualizer (tools/codemap). Unlike the other
+// dev pages it isn't a React page swapped in by App.tsx; it's a separate, self-
+// contained static site shipped alongside the game at <base>/codemap/, with its
+// own bundle + deps (ts-morph, cytoscape) that never enter the game bundle. We
+// surface it as an on-demand full-screen iframe, so it costs the game nothing
+// until opened. Built into public/codemap for dev via `npm run codemap`; CI
+// builds it into dist/codemap on deploy.
+function CodemapOverlay({ onClose }: { onClose: () => void }) {
+  const url = import.meta.env.BASE_URL + 'codemap/'
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex flex-col bg-game-bg">
+      <div className="shrink-0 flex items-center gap-3 px-4 h-12 border-b border-game-border bg-game-surface">
+        <span className="text-sm font-semibold text-game-text">Codemap</span>
+        <span className="text-[10px] text-game-muted hidden sm:inline">deterministic code visualizer</span>
+        <a
+          href={url} target="_blank" rel="noreferrer"
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:border-game-primary/50 transition-colors"
+        >
+          New tab ↗
+        </a>
+        <button
+          onClick={onClose}
+          className="text-xs px-3 py-1.5 rounded-lg border border-game-border text-game-text-dim hover:bg-white/5 transition-colors"
+        >
+          ← Game
+        </button>
+      </div>
+      <iframe src={url} title="Codemap" className="flex-1 w-full border-0" />
+    </div>,
+    document.body,
+  )
+}
+
+function NavDrawer({ onPick, onClose, onCodemap, urgent }: { onPick: (p: DrawerDest) => void; onClose: () => void; onCodemap: () => void; urgent: number }) {
   // Debug/developer tools ride on `main` but only in sandbox (the dev mode);
   // curated stays the clean new-player build.
   const mode = useGameStore((s) => s.progressionMode)
   const devEnabled = import.meta.env.DEV || mode === 'sandbox'
   const latest = __GIT_LOG__.length > 0 ? __GIT_LOG__[0] : null
   const items: { id: DrawerDest; icon: string; label: string; sub: string; badge?: number }[] = [
-    { id: 'decisions', icon: '⚑', label: 'Decisions', sub: 'everything waiting on you', badge: urgent },
-    { id: 'town',     icon: '🏪', label: 'Town',     sub: 'market · stash · resupply' },
+    { id: 'decisions', icon: '⚑', label: 'Inbox',   sub: 'everything waiting on you', badge: urgent },
+    { id: 'market',   icon: '🏪', label: 'Market',   sub: 'merchant shops · buy & sell' },
+    { id: 'stash',    icon: '📦', label: 'Stash',    sub: 'gear · cards · materials · craft' },
     { id: 'guild',    icon: '⚜', label: 'Guild',    sub: 'roster spreadsheet · doctrine · recruit' },
     { id: 'quests',   icon: '📜', label: 'Quests',   sub: 'the full journal, all locations' },
     { id: 'reports',  icon: '📊', label: 'Reports',  sub: 'combat + progression history' },
@@ -492,6 +528,18 @@ function NavDrawer({ onPick, onClose, urgent }: { onPick: (p: DrawerDest) => voi
                   </span>
                 </button>
               ))}
+              {/* Codemap opens a full-screen iframe (a separate static site), not a
+                  query-param reload like the pages above. */}
+              <button
+                onClick={onCodemap}
+                className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/5 transition-colors"
+              >
+                <span className="text-lg w-6 text-center shrink-0">🧭</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm text-game-text font-medium">Codemap</span>
+                  <span className="block text-[10px] text-game-muted truncate">deterministic code map — modules, features, files, git</span>
+                </span>
+              </button>
             </>
           )}
         </div>
@@ -583,6 +631,7 @@ export function ProtoApp() {
   const [panel, setPanel] = useState<GlobalPanel | null>(null)
   const [drawer, setDrawer] = useState(false)
   const [decisionsOpen, setDecisionsOpen] = useState(false)
+  const [codemapOpen, setCodemapOpen] = useState(false)
   useExpeditionDriver()   // §expedition: advance deployed heroes' runs each tick
   // Multi-select: when on, single-tap toggles a hero in/out of the selection for
   // bulk deploy (Location lens). Off = single-select (tap replaces).
@@ -789,12 +838,12 @@ export function ProtoApp() {
           lens; a slim avatar strip by default, the ▸ handle expands it into the
           managing view (names, group labels, sort, multi-select). */}
       <div className="shrink-0 flex items-stretch gap-1.5 px-1.5 py-1 border-b border-game-border bg-game-surface/40">
-        {/* ☰ Menu — the single global-nav anchor (Decisions · Town · Guild ·
-            Quests · Reports · Time · Settings). Carries the urgent-decisions
-            badge so that count stays glanceable now that Decisions has no row. */}
+        {/* ☰ Menu — the single global-nav anchor (Inbox · Market · Stash · Guild ·
+            Quests · Reports · Time · Settings). Carries the urgent-inbox
+            badge so that count stays glanceable now that the Inbox has no row. */}
         <button
           onClick={() => setDrawer(true)}
-          title="Menu — Decisions, Town, Guild, Quests, Reports, Time…"
+          title="Menu — Inbox, Market, Stash, Guild, Quests, Reports, Time…"
           aria-label="Menu"
           className="relative shrink-0 w-9 self-stretch rounded-md border border-game-border/60 bg-game-bg/40 text-game-text-dim hover:text-game-text flex items-center justify-center"
         >
@@ -913,12 +962,13 @@ export function ProtoApp() {
 
       {panel === 'quests'
         ? <QuestJournal onClose={() => setPanel(null)} onGoto={gotoQuest} />
-        : panel === 'town'
-        ? <Town onClose={() => setPanel(null)} />
+        : panel === 'market' || panel === 'stash'
+        ? <Town initialTab={panel} onClose={() => setPanel(null)} />
         : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
 
-      {drawer && <NavDrawer urgent={urgent} onPick={(p) => { setDrawer(false); if (p === 'decisions') setDecisionsOpen(true); else setPanel(p) }} onClose={() => setDrawer(false)} />}
+      {drawer && <NavDrawer urgent={urgent} onPick={(p) => { setDrawer(false); if (p === 'decisions') setDecisionsOpen(true); else setPanel(p) }} onCodemap={() => { setDrawer(false); setCodemapOpen(true) }} onClose={() => setDrawer(false)} />}
       {decisionsOpen && <DecisionsInbox decisions={decisions} onClose={() => setDecisionsOpen(false)} />}
+      {codemapOpen && <CodemapOverlay onClose={() => setCodemapOpen(false)} />}
       <DeploySheetHost />
     </div>
   )

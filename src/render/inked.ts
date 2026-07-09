@@ -67,7 +67,7 @@ export function masonryBand(x: number, y: number, w: number, h: number, seed: nu
 // ~5% broken-dark and ~5% moss tiles (the kit weathering). `darken` biases the
 // pick toward the darker end of the pool (the shaded, lower/eave slope) — our
 // flat stand-in for the kit's slope gradient.
-export function roofSlope(x: number, y: number, w: number, h: number, seed: number, pool: readonly string[], inkColor: string, darken = false, tileH = 0.26): string {
+export function roofSlope(x: number, y: number, w: number, h: number, seed: number, pool: readonly string[], inkColor: string, darken = false, tileH = 0.26, brokenFill: string = P.tileBroken, brokenInk: string = P.roofRedInk): string {
   let out = ''
   let yy = y
   let row = 0
@@ -83,7 +83,7 @@ export function roofSlope(x: number, y: number, w: number, h: number, seed: numb
       if (wdraw > 0.05 && ch > 0.05) {
         const roll = hash01(seed + row * 57 + col * 29)
         let col2: string, ink2: string
-        if (roll < 0.05) { col2 = P.tileBroken; ink2 = P.roofRedInk }
+        if (roll < 0.05) { col2 = brokenFill; ink2 = brokenInk }
         else if (roll < 0.1) { col2 = P.tileMoss; ink2 = P.mossInk }
         else {
           // bias the index darker on the shaded slope (lower half of the pool)
@@ -120,4 +120,49 @@ export function mossClump(cx: number, cy: number, r: number, seed: number): stri
 // the ground recedes under the structures.
 export function cobble(cx: number, cy: number, r: number, seed: number): string {
   return ink(blobPath(roughCircle(cx, cy, r, 7, seed)), pick(INK_POOLS.cobble, seed + 1), P.cobbleInk, 0.014)
+}
+
+// Fan paving (opus arcuatum / peacock-fan): fill a region with cobbles laid in
+// CONCENTRIC ARC ROWS around (cx,cy) instead of a random scatter. Rings step out
+// by ~one stone diameter; along each ring stones sit at arc-length ≈ stone size,
+// with a HALF-STONE angular STAGGER on alternating rings (the fan / fish-scale
+// offset). Each stone is a cobble()-style jittered blob — position/size seeded
+// (hash01) so it reads hand-laid, NO Math.random. A stone is emitted ONLY when
+// its centre passes `inMask` (the paved footprint), so the arc pattern fills the
+// plaza exactly and the ragged stone edge IS the plaza edge — same principle as
+// the per-cell cobbles it replaces.
+//
+// Bounded by construction: rings cap at `maxR`, and stones-per-ring ≈
+// circumference / stone-size, so total ≈ plaza-area / stone-area — for a bounded
+// plaza (Prontera's is ~10×10 cells) that's a few hundred stones, the same order
+// as the per-cell cluster. Baked into the one terrain image → free at runtime.
+export function fanCobble(
+  cx: number,
+  cy: number,
+  inMask: (x: number, y: number) => boolean,
+  maxR: number,
+  seed: number,
+  stoneR = 0.3,
+): string {
+  const ringStep = stoneR * 1.85  // ~one stone diameter — keep rings distinct
+  const arcStep = stoneR * 1.85   // along-ring spacing ≈ stone size
+  let out = ''
+  // the centre stone
+  if (inMask(cx, cy)) out += cobble(cx, cy, stoneR * (0.82 + hash01(seed) * 0.4), seed + 1)
+  let ring = 1
+  for (let r = ringStep; r <= maxR + ringStep; r += ringStep, ring++) {
+    const n = Math.max(6, Math.round((2 * Math.PI * r) / arcStep))
+    const dth = (2 * Math.PI) / n
+    const stagger = ring % 2 ? dth / 2 : 0   // half-stone fan offset every other ring
+    for (let k = 0; k < n; k++) {
+      const s = seed + ring * 9173 + k * 131
+      const th = k * dth + stagger + (hash01(s) - 0.5) * dth * 0.25
+      const rr = r + (hash01(s + 1) - 0.5) * ringStep * 0.16
+      const px = cx + Math.cos(th) * rr
+      const py = cy + Math.sin(th) * rr
+      if (!inMask(px, py)) continue
+      out += cobble(px, py, stoneR * (0.82 + hash01(s + 2) * 0.4), s + 3)
+    }
+  }
+  return out
 }

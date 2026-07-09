@@ -76,6 +76,16 @@ export interface SurfacePlane {
 // archetype (same seam rule as appearance.ts: switch on tags, never ids).
 // `solid: true` is the hook for props that also emit a collision rect; the
 // scaffold places decorative-only scatter.
+//
+// PLACEMENT INTENT (phase 2): the generator states HOW a prop wants to be laid
+// down — an area filler, a grove/bed member, an understory sprig — and the
+// render matches that intent to a prop's `role` (props.ts `PropRole`) when it
+// resolves the kind to a concrete prop. Mapgen stays a pure leaf (it can't
+// import render/props), so it reasons about kind + intent only; render owns the
+// (kind, intent) → prop pick. Phase 2 emits `field`/`cluster`/`understory`;
+// `edge`/`accent` are reserved for phase 3 (verge lines, hero props).
+export const SCATTER_INTENTS = ['field', 'cluster', 'edge', 'understory', 'accent'] as const
+export type ScatterIntent = (typeof SCATTER_INTENTS)[number]
 
 export const SCATTER_KINDS = ['tree', 'bush', 'rock', 'stump', 'flower', 'reed'] as const
 export type ScatterKind = (typeof SCATTER_KINDS)[number]
@@ -85,6 +95,7 @@ export interface ScatterItem extends Pt {
   size: number       // relative footprint, ~0.5–1.5
   seed: number       // per-item wonk seed for the render layer's variant pick
   solid: boolean
+  intent?: ScatterIntent   // placement intent → render matches to a prop role (default 'field')
 }
 
 // ── Semantic plane (consumer: store / gameplay / AI) ─────────────────────────

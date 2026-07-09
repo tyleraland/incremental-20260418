@@ -10,12 +10,19 @@ import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
 import { getLocationCombatReport } from '@/lib/combatReport'
-import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
+import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, projectOfflineCycles, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
 import { SAMPLING } from '@/lib/sampling'
+import { detectStuck, detectInvariants, emptyBugWatch, MAX_BUG_REPORTS, INVARIANT_EVERY_TICKS, type BugReport, type BugWatchState } from '@/lib/bugwatch'
 import { randomFullName } from '@/lib/names'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
-import { consumableDef } from '@/data/consumables'
+import { consumableDef, isConsumable } from '@/data/consumables'
+import { type Pack, heroRoom, itemWeight, packWeight, consumablesWeight, WEIGHT_LIMIT, PACK_FULL_FRACTION } from '@/proto/economy'
+import {
+  freshHero, loadoutFromPack, newSupplyEntry, cityHops,
+  type HeroExpedition, type Loadout, type LootCategory, type ReturnConditionId,
+  type ReturnModeId, type SupplyModeId, type ShareFlag,
+} from '@/proto/expedition'
 import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { generateForLocationCached, specBarriers } from '@/mapgen'
@@ -121,6 +128,13 @@ export interface GameState {
   // and weigh sampling cost vs output. Runtime-only, not saved.
   lastCatchUp: CatchUpDebug | null
 
+  // §bugwatch: banked live-bug reports (a description + a repro token), newest first.
+  // Persisted to their own localStorage key (diagnostic; kept out of the game save so
+  // they don't bloat exports). `bugWatch` is the detector's runtime memory — NOT saved,
+  // never in engine snapshots.
+  bugReports: BugReport[]
+  bugWatch: BugWatchState
+
   // Quest-item drops (runtime; the proto quest layer owns the quest defs). Active
   // collect objectives register a QuestDropRule; `rewardKills` rolls a drop on a
   // matching kill and accumulates the count here, keyed by itemId. Tracked here
@@ -133,6 +147,18 @@ export interface GameState {
   // the tick (survives catchUp's batched ticks), drained by `takePendingPackLoot`.
   // RUNTIME tier — transient hand-off, never persisted.
   pendingPackLoot: Record<string, Record<string, number>>
+
+  // §logistics — per-hero carried loot + expedition plans (PERSISTED via
+  // logisticsCodec). `packs[unitId]` is the loot a hero carries until they reach
+  // town and deposit into the shared stash (`miscItems`); capacity is a total
+  // WEIGHT (economy.ts). `packsSeeded` guards the one-time mock fill (proto/seed).
+  // `expeditions[unitId]` is the hero's configured plan + runtime; the codec saves
+  // only the durable plan subset. The expedition driver (proto) advances it each
+  // tick and, offline, batchTick models the return-to-town loop against it.
+  packs: Record<string, Pack>
+  packsSeeded: boolean
+  expeditions: Record<string, HeroExpedition>
+  expeditionReturnMode: ReturnModeId
 
   // EPHEMERAL_UI — stored in localStorage; not in save string
   activeTab: TabId
@@ -170,7 +196,8 @@ export interface GameState {
   // The unit whose lifetime-stats Report sheet is open (null = closed).
   reportUnitId: string | null
   // Battlefield look (render-only; token bodies + arena ground live in
-  // src/render/skins.tsx). Toggle in Time → Debug or ?skin=paper.
+  // src/render/skins.tsx). Paper is the default; toggle in Time → Debug or
+  // override with ?skin=circle / ?skin=paper.
   battleSkin: BattleSkin
 
   paused: boolean
@@ -179,6 +206,7 @@ export interface GameState {
   tick: () => void
   batchTick: (n: number) => void
   dismissOfflineSummary: () => void
+  clearBugReports: () => void         // §bugwatch: wipe the banked report list
   // Quest-item drops + consumption (driven by the proto quest layer). Arm a drop
   // rule when a collect objective begins (resets its item ledger); disarm on
   // cancel/complete (drops the rule + clears any leftover items). Hand-in quests
@@ -192,6 +220,27 @@ export interface GameState {
   // clear it (the driver moves it into packs, capacity-gated). Read-and-reset in
   // one atomic set so no drop is double-consumed or lost across ticks.
   takePendingPackLoot: () => Record<string, Record<string, number>>
+  // §logistics — per-hero carry pack (loot the hero holds until deposited in town).
+  seedPacks: (seed: Record<string, Pack>) => void          // one-time mock fill (proto/seed)
+  simulateHunt: (unitId: string, drops: { itemId: string; qty: number }[]) => void  // add drops, capacity-gated
+  depositPack: (unitId: string) => void                    // pack → shared stash
+  depositAllPacks: () => void
+  // §logistics — per-hero expedition plan + runtime. `ensureExpedition` seeds a
+  // hero's plan (hydrating loadout from surviving pack targets); the setters edit
+  // it; `commitExpeditionStep` is the driver's per-tick runtime patch.
+  ensureExpedition: (unitId: string) => void
+  addExpeditionSupply: (unitId: string, itemId: string) => void
+  setExpeditionSupplyQty: (unitId: string, itemId: string, qty: number) => void
+  toggleExpeditionSupplySource: (unitId: string, itemId: string, source: 'storage' | 'merchant') => void
+  removeExpeditionSupply: (unitId: string, itemId: string) => void
+  toggleExpeditionLootCat: (unitId: string, cat: LootCategory) => void
+  toggleExpeditionReturnOn: (unitId: string, cond: ReturnConditionId) => void
+  setExpeditionSupplyMode: (unitId: string, mode: SupplyModeId) => void
+  toggleExpeditionShareFlag: (unitId: string, flag: ShareFlag) => void
+  setExpeditionReturnTown: (unitId: string, townId: string | null) => void
+  setExpeditionReturnMode: (mode: ReturnModeId) => void
+  applyExpeditionToParty: (srcId: string, targetIds: string[]) => void
+  commitExpeditionStep: (unitId: string, patch: Partial<HeroExpedition>) => void
   grantEquipment: (itemId: string) => void               // add an owned equipment instance (quest item rewards)
   togglePause: () => void
   setActiveTab: (tab: TabId) => void
@@ -744,6 +793,11 @@ interface PrimeResult {
   gold: number
   killsByMonster: Record<string, number>
   loot: Record<string, number>
+  // §logistics: potions the party actually spent over the simulated slice — the
+  // engine drains Combatant.pack as it uses consumables, so this is a REAL burn
+  // measurement (0 if nobody carries/uses potions). batchTick derives a per-tick
+  // burn rate from this to price the offline supply drain.
+  supplyUsed: number
   // Rich per-hero combat breakdown harvested from the simulated rounds (damage,
   // hits, element/effectiveness, etc.) — already scaled to the projection span by
   // the sampled path; the cold path returns its raw slice for the caller to scale.
@@ -787,12 +841,22 @@ function trickleField(battle: BattleState, loc: Location, spawnTimer: number): n
 // prime (one slice) and the sampled projection (one per window).
 function runCombatSlice(
   battle: BattleState, loc: Location, roundCap: number, msBudget: number, rng: () => number = Math.random,
-): { killsByMonster: Record<string, number>; loot: Record<string, number>; rounds: number; tally: Record<string, CombatTally> } {
+): { killsByMonster: Record<string, number>; loot: Record<string, number>; rounds: number; supplyUsed: number; tally: Record<string, CombatTally> } {
   const wantOpen = !!loc.openWorld
   const killsByMonster: Record<string, number> = {}
   const loot: Record<string, number> = {}
   const tally: Record<string, CombatTally> = {}
   const playerIds = new Set(battle.combatants.filter((c) => c.team === 'player').map((c) => c.id))
+  // §logistics burn measurement: snapshot each player's carried consumables at first
+  // sight; the engine drains Combatant.pack as it uses them, so the end-of-slice diff
+  // is the real potions spent. Handles open-world joiners (captured when they appear).
+  const packInit: Record<string, Record<string, number>> = {}
+  const snapPack = (c: Combatant): Record<string, number> => {
+    const m: Record<string, number> = {}
+    for (const [id, n] of Object.entries(c.pack ?? {})) if (isConsumable(id)) m[id] = n
+    return m
+  }
+  for (const c of battle.combatants) if (c.team === 'player') packInit[c.id] = snapPack(c)
   let rounds = 0
   let spawnTimer = OPEN_WORLD_SPAWN_TICKS   // local mirror of the live trickle cadence
   const started = Date.now()
@@ -808,7 +872,10 @@ function runCombatSlice(
     rounds++
     // Harvest this round's rich per-hero breakdown (open-world heroes can join
     // mid-slice via respawn reconciliation, so re-derive ids defensively).
-    for (const c of battle.combatants) if (c.team === 'player') playerIds.add(c.id)
+    for (const c of battle.combatants) if (c.team === 'player') {
+      playerIds.add(c.id)
+      if (!(c.id in packInit)) packInit[c.id] = snapPack(c)   // capture a joiner's initial supplies
+    }
     foldRoundEvents(tally, battle.events, battle.round, playerIds)
     // Who landed each killing blow this round (the live path credits kills via
     // rewardKills; the offline slice has to read them off the death events).
@@ -839,7 +906,18 @@ function runCombatSlice(
     }
   }
 
-  return { killsByMonster, loot, rounds, tally }
+  // Potions spent = Σ (initial − final) over each player's consumables (clamped ≥0).
+  let supplyUsed = 0
+  const finalById = new Map(battle.combatants.filter((c) => c.team === 'player').map((c) => [c.id, c]))
+  for (const [id, init] of Object.entries(packInit)) {
+    const c = finalById.get(id)
+    for (const [item, n0] of Object.entries(init)) {
+      const n1 = c?.pack?.[item] ?? 0
+      if (n0 > n1) supplyUsed += n0 - n1
+    }
+  }
+
+  return { killsByMonster, loot, rounds, supplyUsed, tally }
 }
 
 function primeColdLocation(
@@ -847,9 +925,9 @@ function primeColdLocation(
   existing: BattleState | undefined,
 ): PrimeResult {
   const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
-  const { killsByMonster, loot, rounds, tally } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
+  const { killsByMonster, loot, rounds, supplyUsed, tally } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
   const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
-  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot, tally }
+  return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot, supplyUsed, tally }
 }
 
 // Sum per-hero tally deltas across many slices (each pre-scaled to its window).
@@ -899,11 +977,13 @@ export function projectOfflineSampled(
   const killsByMonster: Record<string, number> = {}
   const tally: Record<string, CombatTally> = {}
   let simTicks = 0
+  let supplyUsed = 0
   for (let w = 0; w < K; w++) {
     opts.prepareWindow?.(battle, w, Math.round(opts.startTick + w * windowTicks))
     const slice = runCombatSlice(battle, loc, roundCap, msBudget, rng)
     const sliceTicks = Math.max(1, slice.rounds * ROUND_EVERY_TICKS)
     simTicks += sliceTicks
+    supplyUsed += slice.supplyUsed
     const factor = windowTicks / sliceTicks
     const windowKills = scaleKills(slice.killsByMonster, factor)
     for (const [mid, k] of Object.entries(windowKills)) killsByMonster[mid] = (killsByMonster[mid] ?? 0) + k
@@ -918,7 +998,39 @@ export function projectOfflineSampled(
   }
 
   const totalKills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
-  return { battle, primedTicks: simTicks, exp: totalKills, gold: totalKills, killsByMonster, loot: rollOfflineLoot(killsByMonster, rng), tally }
+  return { battle, primedTicks: simTicks, exp: totalKills, gold: totalKills, killsByMonster, loot: rollOfflineLoot(killsByMonster, rng), supplyUsed, tally }
+}
+
+// §logistics: average gold price of one restock potion offline (a hero buys the
+// supplies they can't pull from the guild stash). Rough — tune by feel.
+const OFFLINE_RESTOCK_PRICE = 12
+
+// Deposit the last, partial pack-load a party carried home short of a full trip into
+// their real per-hero packs — least-full hero first, capped by each hero's remaining
+// weight room, so nobody exceeds capacity. Mutates `dst[unitId][itemId]`. Overflow
+// (rare — residual ≤ one pack-load ≤ party room) is dropped on the ground.
+function distributeResidualInto(
+  dst: Record<string, Record<string, number>>,
+  residual: Record<string, number>,
+  hunters: { id: string; room: number }[],
+): void {
+  const room = new Map(hunters.map((h) => [h.id, h.room]))
+  for (const [itemId, qty] of Object.entries(residual)) {
+    const w = itemWeight(itemId)
+    let left = qty
+    // Refill the least-full hero first each item, so residual spreads evenly.
+    const order = [...hunters].sort((a, b) => (room.get(b.id) ?? 0) - (room.get(a.id) ?? 0))
+    for (const h of order) {
+      if (left <= 0) break
+      const fits = Math.floor((room.get(h.id) ?? 0) / w)
+      const take = Math.min(left, fits)
+      if (take <= 0) continue
+      const bag = dst[h.id] ?? (dst[h.id] = {})
+      bag[itemId] = (bag[itemId] ?? 0) + take
+      room.set(h.id, (room.get(h.id) ?? 0) - take * w)
+      left -= take
+    }
+  }
 }
 
 function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): MiscItem[] {
@@ -938,6 +1050,23 @@ function applyMiscDeltas(misc: MiscItem[], deltas: Record<string, number>): Misc
     }
   }
   return out
+}
+
+// §logistics ⇄ §consumables bridge — the loadout is the *target* (what a hero
+// should carry); Unit.pack is the *real* carried inventory. Push the loadout's
+// quantities into each hero's pack carry-targets so the in-town reconcile
+// (reconcilePackInTown) withdraws/deposits from the guild stash toward them, and
+// the carried weight counts against capacity. Removed supplies clear their intent.
+// Runs AFTER the expedition set (calls the store's own carry-target actions).
+function syncCarryTargets(unitId: string, loadout: Loadout): void {
+  const g = useGameStore.getState()
+  const wanted = new Map<string, number>()
+  for (const [id, e] of Object.entries(loadout)) if (e.qty > 0) wanted.set(id, e.qty)
+  for (const [id, qty] of wanted) g.setCarryTarget(unitId, id, qty)
+  const unit = g.units.find((u) => u.id === unitId)
+  for (const p of unit?.pack ?? []) {
+    if (p.target != null && isConsumable(p.itemId) && !wanted.has(p.itemId)) g.clearCarryTarget(unitId, p.itemId)
+  }
 }
 
 // §consumables: max distinct stacks a hero's pack can hold.
@@ -1498,6 +1627,15 @@ function freshGameSeed(mode: ProgressionMode) {
 const BOOT_MODE = bootstrapProgressionMode()
 const BOOT_SEED = freshGameSeed(BOOT_MODE)
 
+// §bugwatch: banked reports live in their own localStorage key (diagnostic; not in
+// the game save envelope). Loaded once at boot, re-persisted on change by a subscribe
+// below.
+const BUG_REPORTS_KEY = 'bugReports'
+function loadBugReports(): BugReport[] {
+  try { const a = JSON.parse(localStorage.getItem(BUG_REPORTS_KEY) ?? '[]'); return Array.isArray(a) ? a : [] }
+  catch { return [] }
+}
+
 export const useGameStore = create<GameState>((set, get) => ({
   units:    BOOT_SEED.units,
   progressionMode: BOOT_MODE,
@@ -1536,9 +1674,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   lastTickAt: Date.now(),
   offlineSummary: null,
   lastCatchUp: null,
+  bugReports: loadBugReports(),
+  bugWatch: emptyBugWatch(),
   questDropRules: [],
   questItems: {},
   pendingPackLoot: {},
+  packs: {},
+  packsSeeded: false,
+  expeditions: {},
+  expeditionReturnMode: 'individual',
   paused: false,
   eventLog: [],
   itemSockets: {},
@@ -1648,8 +1792,11 @@ export const useGameStore = create<GameState>((set, get) => ({
     // fallback — see pendingPackLoot above); merged additively with kill loot.
     const lootIn: Record<string, number> = { ...combat.lootDelta }
     for (const [id, q] of Object.entries(stashFlush)) lootIn[id] = (lootIn[id] ?? 0) + q
-    const miscDeltas = { 'm-gold': combat.goldEarned, ...lootIn, ...stashDraw }
-    const miscItems = (combat.goldEarned > 0 || Object.keys(lootIn).length > 0 || Object.keys(stashDraw).length > 0)
+    // §gold: kills no longer mint gold — the stash currency only grows from selling
+    // loot at the Market (Town). combat.goldEarned stays a notional per-tick kill
+    // count for the dev report, but is never credited to the stash.
+    const miscDeltas = { ...lootIn, ...stashDraw }
+    const miscItems = (Object.keys(lootIn).length > 0 || Object.keys(stashDraw).length > 0)
       ? applyMiscDeltas(s.miscItems, miscDeltas).filter((m) => m.quantity > 0 || !(m.id in stashDraw))
       : s.miscItems
 
@@ -1687,9 +1834,28 @@ export const useGameStore = create<GameState>((set, get) => ({
     // instant-crossing them off-screen ahead of the camera.
     const followCross = s.battleFollowId ? combat.travelMoves[s.battleFollowId] : undefined
 
+    // §bugwatch: scan the freshly-stepped state for stuck heroes (every tick) + broken
+    // state invariants (throttled), banking a repro token for each NEW incident. Pure
+    // observation — never touches the engine/RNG, so replays stay byte-identical.
+    let bugReports = s.bugReports
+    const stuckRes = detectStuck(combat.battles, s.bugWatch.stuck)
+    const freshBugs: BugReport[] = []
+    for (const b of stuckRes.bugs) freshBugs.push({ id: `b${newTicks}-${freshBugs.length}`, at: Date.now(), tick: newTicks, ...b })
+    let bugActive = s.bugWatch.active
+    if (newTicks % INVARIANT_EVERY_TICKS === 0) {
+      const violations = detectInvariants(units, s.equipment, miscItems, s.packs)
+      const prevActive = new Set(s.bugWatch.active)
+      for (const v of violations) if (!prevActive.has(v.signature)) freshBugs.push({ id: `b${newTicks}-${freshBugs.length}`, at: Date.now(), tick: newTicks, ...v.bug })
+      bugActive = violations.map((v) => v.signature)
+    }
+    if (freshBugs.length > 0) bugReports = [...freshBugs, ...s.bugReports].slice(0, MAX_BUG_REPORTS)
+    const bugWatch: BugWatchState = { stuck: stuckRes.next, active: bugActive }
+
     return {
       ticks: newTicks,
       units,
+      bugReports,
+      bugWatch,
       ...(followCross ? { combatLocationId: followCross.locationId, selectedLocationId: followCross.locationId } : {}),
       dpsWindow,
       battles: combat.battles,
@@ -1748,6 +1914,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     const detailByUnit: Record<string, CombatTally> = {}
     const wantBreakdown = Math.round(n / TICKS_PER_SECOND) >= OFFLINE_SUMMARY_MIN_SECS
 
+    // §logistics offline loop: residual loot to fold back into per-hero packs, plus
+    // running guild resources the return-to-town restock draws down (shared across
+    // every location's party in this catch-up — one stash, one purse).
+    const packAdd: Record<string, Record<string, number>> = {}
+    const packReset = new Set<string>()   // heroes whose pre-existing loot pack was deposited on a town trip
+    let goldLeft = s.miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0
+    const stashCons = s.miscItems.filter((m) => isConsumable(m.id)).map((m) => ({ id: m.id, qty: m.quantity }))
+
     for (const loc of s.locations) {
       if (loc.monsterIds.length === 0) continue
       const assigned = s.units.filter((u) => u.locationId === loc.id)
@@ -1755,6 +1929,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       const roster = assigned.filter((u) => u.health > 0)   // bodies able to fight (priming)
 
       let expPool = 0, gold = 0, primed = false, simRounds = 0
+      let simTicks = 0, simSupplyUsed = 0   // §logistics: sim span + measured potion burn (for the cycle model)
       const killsByMonster: Record<string, number> = {}
       let loot: Record<string, number> = {}
       // Rich per-hero breakdown for this location's away span (estimated, scaled).
@@ -1770,6 +1945,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         const r = projectOfflineSampled(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id], n, { samples: windows, startTick: s.ticks })
         battles[loc.id] = r.battle
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
+        simTicks = r.primedTicks; simSupplyUsed = r.supplyUsed
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
         locTally = r.tally   // already scaled across windows
@@ -1791,6 +1967,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         const r = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id])
         battles[loc.id] = r.battle
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
+        simTicks = n; simSupplyUsed = r.supplyUsed * (n / Math.max(1, r.primedTicks))   // burn rate → full span
         Object.assign(killsByMonster, r.killsByMonster)
         loot = { ...r.loot }
         locTally = scaleTallyMap(r.tally, n / Math.max(1, r.primedTicks))   // prime slice → full span
@@ -1810,6 +1987,95 @@ export const useGameStore = create<GameState>((set, get) => ({
         continue   // no sample and nobody able to fight → nothing to prime
       }
 
+      // §logistics: model the return-to-town loop for a party running expeditions
+      // here. Ineligible parties (no plan / no room / no loot) keep the legacy path —
+      // all loot mails straight to the stash, full hunt time, no trips.
+      let stashLoot = loot
+      let cycles = 0, stalled = false
+      {
+        const hunters = roster.filter((u) => {
+          const he = s.expeditions[u.id]
+          return !!he && (he.returnOn.includes('pack-full') || he.returnOn.includes('supplies-out'))
+        })
+        const lootWeight = Object.entries(loot).reduce((a, [id, q]) => a + itemWeight(id) * q, 0)
+        // Loot room as if the hero's pre-existing carry is deposited on the first town
+        // trip (like the live driver's phase-0 deposit) — this is the steady-state room
+        // over a long absence, so a hero who starts with a partial pack isn't stuck
+        // modelling tiny fills forever.
+        const fullRoomOf = (u: Unit) => Math.max(0, WEIGHT_LIMIT - consumablesWeight(u.pack))
+        const capacityWeight = hunters.reduce((a, u) => a + fullRoomOf(u), 0)
+        if (!!loc.openWorld && hunters.length > 0 && capacityWeight > 0 && lootWeight > 0) {
+          const burnPerTick = simTicks > 0 ? simSupplyUsed / simTicks : 0
+          // Supplies = the loadout consumables the hunters actually use: carried
+          // (Unit.pack) + guild-stash stock of THOSE ids + what gold can buy. Restricting
+          // to loadout ids stops unrelated stash consumables inflating the budget or being
+          // drained (A4); counting carried potions stops a fully-supplied hero stalling to
+          // zero offline yield (A2). `stashSupply` reads the running (shared) stashCons.
+          const supplyIds = new Set<string>()
+          for (const u of hunters) for (const id of Object.keys(s.expeditions[u.id]!.loadout)) if (isConsumable(id)) supplyIds.add(id)
+          const carriedSupply = hunters.reduce((a, u) => a + (u.pack ?? []).reduce((b, p) => b + (supplyIds.has(p.itemId) ? p.count : 0), 0), 0)
+          const stashSupply = stashCons.reduce((a, m) => a + (supplyIds.has(m.id) ? m.qty : 0), 0)
+          const supplyBudget = carriedSupply + stashSupply + Math.floor(goldLeft / OFFLINE_RESTOCK_PRICE)
+          const overhead = SAMPLING.cycleTownDwellTicks + 2 * cityHops(loc.id, s.locations) * SAMPLING.cycleTravelPerHopTicks
+          const cyc = projectOfflineCycles({
+            offlineTicks: n, lootWeightPerTick: lootWeight / n, packCapacityWeight: capacityWeight,
+            fillFraction: PACK_FULL_FRACTION, overheadTicks: overhead, supplyBurnPerTick: burnPerTick,
+            supplyBudget,
+            // Only stall on dry when the hero returns on supplies-out AND actually carries
+            // configured supplies to run out of (mirrors live suppliesDry()).
+            stallOnDry: supplyIds.size > 0 && hunters.some((u) => s.expeditions[u.id]!.returnOn.includes('supplies-out')),
+          })
+          cycles = cyc.cycles; stalled = cyc.stalled
+          const huntFraction = Math.min(1, cyc.huntTicks / n)
+          // Scale kills + found loot down to the effective hunt time (travel + stalls
+          // eat the rest of the absence).
+          for (const mid of Object.keys(killsByMonster)) {
+            const v = Math.floor(killsByMonster[mid] * huntFraction)
+            if (v > 0) killsByMonster[mid] = v; else delete killsByMonster[mid]
+          }
+          const found: Record<string, number> = {}
+          for (const [id, q] of Object.entries(loot)) { const v = Math.floor(q * huntFraction); if (v > 0) found[id] = v }
+          loot = found
+          // Split found loot into deposited (→ stash) vs residual (still carried) by weight.
+          const totalW = cyc.depositWeight + cyc.residualWeight
+          const depositFraction = totalW > 0 ? cyc.depositWeight / totalW : 1
+          const deposited: Record<string, number> = {}
+          const residual: Record<string, number> = {}
+          for (const [id, q] of Object.entries(found)) {
+            const dep = Math.min(q, Math.round(q * depositFraction))
+            if (dep > 0) deposited[id] = dep
+            if (q - dep > 0) residual[id] = q - dep
+          }
+          // On the first town trip the hero also deposits whatever loot they were ALREADY
+          // carrying (A1); flag those packs to clear so residual refills the freed room.
+          const madeTrip = cyc.cycles >= 1
+          if (madeTrip) for (const u of hunters) {
+            const pre = s.packs[u.id]
+            if (!pre) continue
+            for (const [id, q] of Object.entries(pre)) if (q > 0) deposited[id] = (deposited[id] ?? 0) + q
+            packReset.add(u.id)
+          }
+          stashLoot = deposited
+          distributeResidualInto(packAdd, residual, hunters.map((u) => ({ id: u.id, room: madeTrip ? fullRoomOf(u) : heroRoom(s.packs[u.id], u.pack) })))
+          // Restock: the potions spent come from the hero's own carry first (free — already
+          // theirs), then the guild stash (loadout ids only), then gold. Decrement the
+          // running shared resources + record the deltas.
+          const spent = Math.round(Math.min(cyc.supplyUsed, supplyBudget))
+          let fromStash = Math.min(Math.max(0, spent - carriedSupply), stashSupply)
+          const goldPotions = Math.max(0, spent - carriedSupply - fromStash)
+          for (const m of stashCons) {
+            if (fromStash <= 0) break
+            if (!supplyIds.has(m.id)) continue
+            const take = Math.min(m.qty, fromStash)
+            if (take <= 0) continue
+            m.qty -= take; fromStash -= take
+            lootDelta[m.id] = (lootDelta[m.id] ?? 0) - take
+          }
+          const goldSpent = Math.min(goldLeft, goldPotions * OFFLINE_RESTOCK_PRICE)
+          if (goldSpent > 0) { lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) - goldSpent; goldLeft -= goldSpent }
+        }
+      }
+
       // Every kill yields exactly 1 gold + 1 exp, so the headline numbers are the
       // kill total — derived here so independent per-path flooring (per-monster
       // kills vs aggregate gold/exp) can't drift them apart in the report.
@@ -1818,7 +2084,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       gold    = kills
       // Record cost/output for the debug readout (even a zero-output prime — its
       // sim rounds still cost something worth seeing).
-      catchUpDebug.push({ locationId: loc.id, locationName: loc.name, windows, rounds: simRounds, kills, exp: expPool, gold })
+      catchUpDebug.push({ locationId: loc.id, locationName: loc.name, windows, rounds: simRounds, kills, exp: expPool, gold, cycles, stalled })
       if (kills === 0) continue
 
       // Credit the XP pool to deployed heroes, split proportional to level (a
@@ -1826,7 +2092,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       const shares = splitExpByLevel(expPool, assigned.map((u) => ({ id: u.id, level: u.level })))
       for (const [id, amt] of Object.entries(shares)) expByUnit[id] = (expByUnit[id] ?? 0) + amt
       totalGold += gold
-      for (const [id, q] of Object.entries(loot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
+      // Only the DEPOSITED loot changes the stash; residual stays in the carried packs.
+      for (const [id, q] of Object.entries(stashLoot)) lootDelta[id] = (lootDelta[id] ?? 0) + q
       for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
 
       // Reconcile the estimated breakdown with the actually-credited numbers:
@@ -1855,10 +2122,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
       mergeTally(detailByUnit, locTally)
 
-      rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot, primed, tally: locTally })
+      // Summary shows what actually reached the stash (deposited); residual stays carried.
+      rewards.push({ locationId: loc.id, locationName: loc.name, kills, exp: expPool, gold, loot: stashLoot, primed, cycles, stalled, tally: locTally })
     }
 
-    if (totalGold > 0) lootDelta['m-gold'] = (lootDelta['m-gold'] ?? 0) + totalGold
+    // §gold: offline combat, like live combat, no longer credits gold — see the
+    // tick reducer above. Loot still mails to the stash; gold comes from selling.
 
     // Collapse n ticks of recovery/regen, folding in the offline exp above.
     const unitsPreLevel = s.units.map((u) => {
@@ -1918,6 +2187,22 @@ export const useGameStore = create<GameState>((set, get) => ({
       ? applyMiscDeltas(s.miscItems, lootDelta)
       : s.miscItems
 
+    // §logistics: fold the return-to-town loop back into per-hero packs — heroes who
+    // made a town trip deposited their whole carried pack (packReset), then everyone
+    // keeps the residual mid-fill loot from their last trip (packAdd).
+    const packs = (packAdd && (Object.keys(packAdd).length > 0 || packReset.size > 0))
+      ? (() => {
+          const out = { ...s.packs }
+          for (const uid of packReset) delete out[uid]   // pre-existing pack deposited on the first trip
+          for (const [uid, bag] of Object.entries(packAdd)) {
+            const cur = { ...(out[uid] ?? {}) }
+            for (const [id, q] of Object.entries(bag)) cur[id] = (cur[id] ?? 0) + q
+            out[uid] = cur
+          }
+          return out
+        })()
+      : s.packs
+
     // "While you were away" modal — only worth showing for a real absence with
     // something to report. Otherwise keep whatever summary was already pending.
     const mergedLoot: Record<string, number> = {}
@@ -1939,7 +2224,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     return {
       ticks: newTicks, units, lastTickAt: Date.now(), eventLog,
-      miscItems, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
+      miscItems, packs, monsterDefeated, locationStats, battles, offlineSummary, lastCatchUp,
       unitStats: foldUnitStats(s.unitStats, detailByUnit),
       // Offline damage is a SYNTHETIC estimate (a saturated priming sim, scaled over
       // the absence) — fine for lifetime totals + the "while you were away" summary,
@@ -1953,6 +2238,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   }),
 
   dismissOfflineSummary: () => set({ offlineSummary: null }),
+  clearBugReports: () => set((s) => (s.bugReports.length === 0 ? s : { bugReports: [] })),
   armQuestDrop: (rule) => set((s) => ({
     questDropRules: [...s.questDropRules.filter((r) => r.id !== rule.id), rule],
     questItems: { ...s.questItems, [rule.itemId]: 0 },   // fresh ledger for this objective
@@ -1980,6 +2266,133 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (Object.keys(pending).length > 0) set({ pendingPackLoot: {} })
     return pending
   },
+
+  // ── §logistics: per-hero carry packs ─────────────────────────────────────────
+  seedPacks: (seed) => set((s) => (s.packsSeeded ? s : { packs: seed, packsSeeded: true })),
+  // Add drops to a hero's pack, never past capacity (combined loot + carried
+  // consumables weight against WEIGHT_LIMIT). Overflow is left on the ground.
+  simulateHunt: (unitId, drops) => set((s) => {
+    const pack = { ...(s.packs[unitId] ?? {}) }
+    const unitPack = s.units.find((u) => u.id === unitId)?.pack
+    let room = heroRoom(pack, unitPack)
+    for (const d of drops) {
+      const w = itemWeight(d.itemId)
+      const add = Math.min(d.qty, Math.floor(room / w))
+      if (add <= 0) continue
+      pack[d.itemId] = (pack[d.itemId] ?? 0) + add
+      room -= add * w
+    }
+    return { packs: { ...s.packs, [unitId]: pack } }
+  }),
+  // Empty a hero's pack into the shared stash (atomic — folds the misc deltas here
+  // instead of nesting grantMiscItem inside this reducer).
+  depositPack: (unitId) => set((s) => {
+    const pack = s.packs[unitId]
+    if (!pack) return s
+    const deltas: Record<string, number> = {}
+    for (const [id, qty] of Object.entries(pack)) if (qty > 0) deltas[id] = qty
+    const next = { ...s.packs }; delete next[unitId]
+    return { packs: next, miscItems: applyMiscDeltas(s.miscItems, deltas) }
+  }),
+  depositAllPacks: () => set((s) => {
+    const deltas: Record<string, number> = {}
+    for (const pack of Object.values(s.packs))
+      for (const [id, qty] of Object.entries(pack)) if (qty > 0) deltas[id] = (deltas[id] ?? 0) + qty
+    return { packs: {}, miscItems: applyMiscDeltas(s.miscItems, deltas) }
+  }),
+
+  // ── §logistics: per-hero expedition plan + runtime ───────────────────────────
+  ensureExpedition: (unitId) => {
+    if (get().expeditions[unitId]) return
+    // Hydrate the loadout from any surviving pack targets (reload-safe); else default.
+    const unit = get().units.find((u) => u.id === unitId)
+    const hydrated = loadoutFromPack(unit?.pack)
+    const hero = hydrated ? freshHero({ loadout: hydrated }) : freshHero()
+    set((s) => (s.expeditions[unitId] ? s : { expeditions: { ...s.expeditions, [unitId]: hero } }))
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  addExpeditionSupply: (unitId, itemId) => {
+    set((s) => {
+      const cur = s.expeditions[unitId] ?? freshHero()
+      // Persist even if already present so the carry-target bridge can read it back.
+      const loadout = cur.loadout[itemId] ? cur.loadout : { ...cur.loadout, [itemId]: newSupplyEntry() }
+      return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  setExpeditionSupplyQty: (unitId, itemId, qty) => {
+    set((s) => {
+      const cur = s.expeditions[unitId] ?? freshHero()
+      const loadout = { ...cur.loadout }
+      const n = Math.max(0, Math.floor(qty))
+      if (n <= 0) delete loadout[itemId]
+      else loadout[itemId] = { ...(loadout[itemId] ?? newSupplyEntry(n)), qty: n }
+      return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  toggleExpeditionSupplySource: (unitId, itemId, source) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    const entry = cur.loadout[itemId] ?? newSupplyEntry()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout: { ...cur.loadout, [itemId]: { ...entry, [source]: !entry[source] } } } } }
+  }),
+  removeExpeditionSupply: (unitId, itemId) => {
+    set((s) => {
+      const cur = s.expeditions[unitId] ?? freshHero()
+      const loadout = { ...cur.loadout }
+      delete loadout[itemId]
+      return { expeditions: { ...s.expeditions, [unitId]: { ...cur, loadout } } }
+    })
+    const he = get().expeditions[unitId]
+    if (he) syncCarryTargets(unitId, he.loadout)
+  },
+  toggleExpeditionLootCat: (unitId, cat) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    const lootCats = cur.lootCats.includes(cat) ? cur.lootCats.filter((c) => c !== cat) : [...cur.lootCats, cat]
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, lootCats } } }
+  }),
+  toggleExpeditionReturnOn: (unitId, cond) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    const returnOn = cur.returnOn.includes(cond) ? cur.returnOn.filter((c) => c !== cond) : [...cur.returnOn, cond]
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, returnOn } } }
+  }),
+  toggleExpeditionShareFlag: (unitId, flag) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, [flag]: !cur[flag] } } }
+  }),
+  setExpeditionSupplyMode: (unitId, mode) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, supplyMode: mode } } }
+  }),
+  setExpeditionReturnTown: (unitId, townId) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, returnTown: townId } } }
+  }),
+  setExpeditionReturnMode: (mode) => set({ expeditionReturnMode: mode }),
+  applyExpeditionToParty: (srcId, targetIds) => {
+    set((s) => {
+      const src = s.expeditions[srcId]
+      if (!src) return s
+      const expeditions = { ...s.expeditions }
+      const cloneLoadout = (l: Loadout): Loadout => Object.fromEntries(Object.entries(l).map(([k, e]) => [k, { ...e }]))
+      for (const id of targetIds) {
+        const cur = expeditions[id] ?? freshHero()
+        expeditions[id] = {
+          ...cur, loadout: cloneLoadout(src.loadout), lootCats: [...src.lootCats], returnOn: [...src.returnOn], supplyMode: src.supplyMode,
+          shareLoot: src.shareLoot, acceptLoot: src.acceptLoot, shareSupplies: src.shareSupplies, acceptSupplies: src.acceptSupplies,
+        }
+      }
+      return { expeditions }
+    })
+    for (const id of targetIds) { const he = get().expeditions[id]; if (he) syncCarryTargets(id, he.loadout) }
+  },
+  commitExpeditionStep: (unitId, patch) => set((s) => {
+    const cur = s.expeditions[unitId] ?? freshHero()
+    return { expeditions: { ...s.expeditions, [unitId]: { ...cur, ...patch } } }
+  }),
   grantEquipment: (itemId) => set((s) => {
     const def = INITIAL_EQUIPMENT.find((e) => e.id === itemId)
     if (!def) return s
@@ -2496,3 +2909,12 @@ export const useGameStore = create<GameState>((set, get) => ({
     })
   },
 }))
+
+// §bugwatch: persist the banked reports to their own localStorage key whenever the
+// list changes (a reference check skips the per-tick churn of everything else).
+let lastBugReports = useGameStore.getState().bugReports
+useGameStore.subscribe((s) => {
+  if (s.bugReports === lastBugReports) return
+  lastBugReports = s.bugReports
+  try { localStorage.setItem(BUG_REPORTS_KEY, JSON.stringify(s.bugReports)) } catch { /* localStorage unavailable */ }
+})

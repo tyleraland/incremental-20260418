@@ -212,6 +212,9 @@ export interface MonsterDef {
   drops: MonsterDrop[]
   element: Element  // §3: defensive armor element; monster attacks are always neutral (default 'neutral')
   size: MonsterSize        // §3: default 'medium'
+  // Dev Monster Lab only: local draft monsters can pin any registered paper body
+  // shape. Authored monsters still resolve through render/appearance.ts.
+  bodyShape?: string
   isBoss?: boolean         // §3: undefined = false
   attackName: string
   // Optional engine-skill kit. Each entry is built via buildEngineSkill(id, level)

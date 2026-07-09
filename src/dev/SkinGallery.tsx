@@ -1,13 +1,14 @@
 import { TOKEN_SKINS, ARENA_SKINS, FX_SKINS, BATTLE_SKIN_IDS, type BattleSkin } from '@/render/skins'
 import { TERRAIN_PROPS } from '@/render/props'
 import { propMarkup, scatterArchetype } from '@/render/terrain'
-import { buildingMarkup, BUILDING_LOOKS } from '@/render/buildings'
+import { buildingMarkup, BUILDING_LOOKS, ROOF_COVERINGS } from '@/render/buildings'
+import { fanCobble } from '@/render/inked'
 import { PAPER_PALETTE } from '@/render/palette'
 import { generateMap, specBarriers, SCATTER_KINDS, type BarrierMaterial, type MapSpec } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
 import { CITY_RECIPE } from '@/mapgen/recipes/city'
-import type { BodyShape, Weapon, Tone, Biome } from '@/render/appearance'
+import { BODY_SHAPES, type BodyShape, type Weapon, type Tone, type Biome } from '@/render/appearance'
 import type { Barrier } from '@/engine'
 
 // Dev-only skin gallery (`?gallery=1`): a contact sheet of the ENTIRE visual
@@ -22,13 +23,16 @@ import type { Barrier } from '@/engine'
 // surface — including the §mapgen vocabulary (washes, scatter-kind mapping,
 // one generated field swatch).
 
-const SHAPES: BodyShape[] = ['humanoid', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine']
-const CREATURES: BodyShape[] = ['blob', 'beast', 'flyer', 'snail', 'serpent', 'canine']
+// Derived from BODY_SHAPES — registering a body in appearance.ts is the ONE
+// registration; the gallery (and ?bodyshot, and the workshop) pick it up free.
+const SHAPES: BodyShape[] = [...BODY_SHAPES]
+const CREATURES: BodyShape[] = SHAPES.filter((s) => s !== 'humanoid')
 const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
 const WEAPONS: Weapon[] = ['sword', 'dagger', 'bow', 'staff']
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
 const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-up
-const GLYPH: Record<BodyShape, string> = { humanoid: '⚔', blob: 'SL', beast: 'BO', flyer: 'HA', snail: 'SN', serpent: 'RS', canine: 'WO' }
+// Circle-skin cell text only (paper creatures are silhouette-only anyway).
+const GLYPH = (s: BodyShape): string => (s === 'humanoid' ? '⚔' : s.slice(0, 2).toUpperCase())
 
 const dims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: `${Math.round(px * 0.4)}px` })
 
@@ -62,6 +66,13 @@ const GEN_CITY: MapSpec = generateMap(CITY_RECIPE, { recipe: 'city', seed: 'pron
 // treatment is reviewable next to the in-situ bake.
 const BUILDING_MATS = Object.keys(BUILDING_LOOKS) as BarrierMaterial[]
 const buildingSwatch = (material: BarrierMaterial): string => buildingMarkup({ x: 1.4, y: 1.8, w: 5.2, h: 4 }, material, 42)
+// The roof-covering catalog: one house per covering (forced via the coveringId
+// override) so tile/slate/thatch/shingle are reviewable. In the live bake above,
+// roofed houses seed-pick one of these — so a street shows the mix automatically.
+const roofSwatch = (coveringId: string): string => buildingMarkup({ x: 1.4, y: 1.8, w: 5.2, h: 4 }, 'wood', 42, coveringId)
+// The plaza fan-cobble: cobbles laid in concentric arc rows (opus arcuatum) over
+// a sample square region, so the fan pattern is reviewable next to the streets.
+const fanSwatch = (): string => fanCobble(4, 4, (x, y) => x >= 0.4 && x <= 7.6 && y >= 0.4 && y <= 7.6, 5, 7, 0.32)
 // The new top-down street furniture (conifer / lamp / banner) the city plaza uses.
 const CITY_FURNITURE = ['conifer', 'lamppost', 'banner'].map((id) => TERRAIN_PROPS.plaza.find((p) => p.id === id)!).filter(Boolean)
 
@@ -96,7 +107,7 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
         {SHAPES.map((shape) =>
           TONES.map((tone) => (
             <Cell key={`${shape}-${tone}`} label={`${shape} · ${tone}`}>
-              <Body glyph={GLYPH[shape]} tone={tone} bodyShape={shape} alive selected={false} facingDeg={0} dims={dims(56)} />
+              <Body glyph={GLYPH(shape)} tone={tone} bodyShape={shape} alive selected={false} facingDeg={0} dims={dims(56)} />
             </Cell>
           )),
         )}
@@ -137,19 +148,36 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
           creature that has no attack motion yet) vs the far-LOD merged
           silhouette (`simple` — what a dense mob actually draws). One glance says
           whether a new monster reads at every scale and lunges on attack. */}
-      <Section title="motion + LOD (per creature: idle · attack jab (frozen) · far-LOD silhouette)">
+      <Section title="motion + LOD (per creature: idle · breathe (frozen inhale) · attack jab (frozen) · walk (live) · far-LOD silhouette)">
         {CREATURES.map((shape) => (
           <div key={shape} className="flex items-end gap-1 mr-3">
             <Cell label={`${shape} idle`}>
-              <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+              <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+            </Cell>
+            {/* breathe (frozen inhale): the `data-idle` transforms held at the
+                inhale pose via the .gidle CSS below — a still-identical "breathe"
+                cell flags a creature with no idle motion yet. */}
+            <Cell label="breathe">
+              <div className="gidle">
+                <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} dims={dims(56)} />
+              </div>
             </Cell>
             <Cell label="jab">
               <div className="gjab">
-                <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
+                <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
+              </div>
+            </Cell>
+            {/* walk (live): the same `animate-walk` wrapper BattleChip adds while a
+                token moves — its [data-walk] feet shuffle. A no-op for bodies with
+                no walk parts (they just stand). Infinite CSS, so a screenshot lands
+                on some frame of the cycle. */}
+            <Cell label="walk">
+              <div className="animate-walk">
+                <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} moving dims={dims(56)} />
               </div>
             </Cell>
             <Cell label="far-LOD">
-              <Body glyph={GLYPH[shape]} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} simple dims={dims(56)} />
+              <Body glyph={GLYPH(shape)} tone="enemy" bodyShape={shape} creature alive selected={false} facingDeg={0} simple dims={dims(56)} />
             </Cell>
           </div>
         ))}
@@ -305,6 +333,14 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
               <span className="text-[8px] text-neutral-600 leading-none">{mat}</span>
             </div>
           ))}
+          {ROOF_COVERINGS.map((cov) => (
+            <div key={cov.id} className="flex flex-col items-center gap-1">
+              <div className="w-16 h-16 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+                <svg viewBox="0 0 8 8" className="w-14 h-14" aria-hidden dangerouslySetInnerHTML={{ __html: roofSwatch(cov.id) }} />
+              </div>
+              <span className="text-[8px] text-neutral-600 leading-none">roof: {cov.id}</span>
+            </div>
+          ))}
           {CITY_FURNITURE.map((def) => (
             <div key={def.id} className="flex flex-col items-center gap-1">
               <div className="w-12 h-12 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
@@ -313,6 +349,12 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
               <span className="text-[8px] text-neutral-600 leading-none">{def.id}</span>
             </div>
           ))}
+          <div className="flex flex-col items-center gap-1">
+            <div className="w-16 h-16 rounded border border-neutral-800 flex items-center justify-center" style={arena.surface}>
+              <svg viewBox="0 0 8 8" className="w-14 h-14" aria-hidden dangerouslySetInnerHTML={{ __html: fanSwatch() }} />
+            </div>
+            <span className="text-[8px] text-neutral-600 leading-none">fan cobble (plaza)</span>
+          </div>
           <div className="flex flex-col items-center gap-1">
             <div
               className="w-64 h-64 rounded border border-neutral-800 relative overflow-hidden"
@@ -372,6 +414,9 @@ export default function SkinGallery() {
           screenshot shows the attack pose. Nose is +x in the gallery, so jab
           pushes forward (+x) and trail lags (−x). */}
       <style>{'.gjab [data-atk="jab"]{transform:translate(11px,0)}.gjab [data-atk="trail"]{transform:translate(-6px,0)}'}</style>
+      {/* Freeze the idle loop at its inhale pose for the "motion + LOD" row:
+          the same [data-idle] transforms index.css animates, held statically. */}
+      <style>{'.gidle [data-idle]{transform-box:fill-box;transform-origin:center}.gidle [data-idle="breathe"]{transform:scale(1.055)}.gidle [data-idle="sway"]{transform:rotate(3.5deg)}'}</style>
       <p className="text-[10px] text-neutral-500 mb-4">
         skin gallery — the whole visual language on one sheet (dev-only, ?gallery=1 · npm run gallery-shot)
       </p>

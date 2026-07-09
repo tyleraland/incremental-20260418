@@ -6,6 +6,7 @@ import { TabBar } from '@/components/TabBar'
 import { RosterCarousel } from '@/components/RosterCarousel'
 import { UnitReportSheet } from '@/components/UnitReportSheet'
 import { OfflineSummary } from '@/components/OfflineSummary'
+import { prewarmLocationTerrain } from '@/components/BattleView'
 import { Map } from '@/pages/Map'
 import { Units } from '@/pages/Units'
 import { Inventory } from '@/pages/Inventory'
@@ -13,6 +14,13 @@ import { Guild } from '@/pages/Guild'
 import { Reports } from '@/pages/Reports'
 import { Time } from '@/pages/Time'
 import { ProtoApp } from '@/proto/ProtoApp'
+import { applyPersistedOverrides } from '@/data/monsterOverrides'
+
+// Re-apply any Monster Lab (?monsterlab=1) experiments onto the live registry at
+// boot, so tuned stats/skills persist across reloads and take effect on the next
+// spawn. No-op when nothing has been tuned; dev-only surface, but the apply is
+// cheap and harmless in any build.
+applyPersistedOverrides()
 
 // Dev-only: expose the store on `window.__game` so a Playwright (or devtools)
 // session can read and drive live game state — `page.evaluate(() => __game.getState())`
@@ -31,16 +39,20 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 //   ?workshop=1 — live paper-prop authoring (edit a PropDef, see + copy it).
 //   ?mapgen=1   — seed contact sheet + layer inspector for the map generator.
 //   ?sandbox=1  — interactive density rig (heroes/monsters/map/play-pause).
+//   ?monsterlab=1 — live monster stat/skill tuning + change-request generator.
+//   ?bodyshot=<shape|all> — per-body animation contact sheet (frozen keyframes).
 const SkinGallery  = lazy(() => import('@/dev/SkinGallery'))
+const BodySheet    = lazy(() => import('@/dev/BodySheet'))
 const AssetWorkshop = lazy(() => import('@/dev/AssetWorkshop'))
 const MapgenLab    = lazy(() => import('@/dev/MapgenLab'))
 const PerfSandbox  = lazy(() => import('@/dev/PerfSandbox'))
+const MonsterLab   = lazy(() => import('@/dev/MonsterLab'))
 
 // The dev tool pages and perf harness are gated to sandbox mode (or a real DEV
 // build). Sandbox is the dev/everything-open mode; curated is the new-player
 // build and stays free of debug surfaces. Read once at render (a full reload
 // mounts the page fresh, so the bootstrapped mode is current).
-const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox'] as const
+const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox', 'monsterlab', 'bodyshot'] as const
 function devToolsEnabled() {
   return import.meta.env.DEV || useGameStore.getState().progressionMode === 'sandbox'
 }
@@ -107,10 +119,17 @@ function App() {
   // The import.meta.env.DEV gate dead-code-strips it from production bundles.
   const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
 
-  // The density sandbox (`?sandbox=1`) seeds + drives its OWN synthetic scene and
-  // must never load or overwrite the real save — same no-persist gate as ?perf.
+  // The Battle Sandbox (`?sandbox=1`) seeds + drives its OWN synthetic scene (a
+  // composed density scene or a pasted BSNAP replay) and must never load or
+  // overwrite the real save — same no-persist gate as ?perf.
   const sandboxMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('sandbox')
-  const noPersist = perfMode || sandboxMode
+  // The Monster Lab (?monsterlab=1) hosts a Battle Simulator that seeds a
+  // synthetic scene into the store (same seeder as the Battle Sandbox). Gate it
+  // no-persist so those shallow-copied heroes + tuned monsters can NEVER be
+  // autosaved over a real save — but unlike ?sandbox we still LOAD the save (below)
+  // so the simulator can copy the real roster into the fight.
+  const monsterLabMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('monsterlab')
+  const noPersist = perfMode || sandboxMode || monsterLabMode
 
   // The split-screen "Tactician" shell (src/proto) is now the DEFAULT UI. The
   // legacy tab-bar UI is kept as a fallback behind `?classic=1` (and the perf
@@ -144,6 +163,25 @@ function App() {
     else if (!sandboxMode) { loadPersistedSave() }
   }, [perfMode, sandboxMode])
 
+  // Prewarm generated map bitmaps at idle after boot, so the FIRST drop into a
+  // city/field paints the terrain on the first frame — no solid-surface decode
+  // window (the inked city SVG is ~3k paths / hundreds of ms to raster). Party
+  // locations first (the likeliest first battle); staggered so it never competes
+  // with the initial render. Cheap + LRU-capped + cache-skipping in terrain.tsx;
+  // only mapGen locations (hand-authored maps are light enough to decode inline).
+  useEffect(() => {
+    if (perfMode) return
+    const run = () => {
+      const { locations, units } = useGameStore.getState()
+      const hasUnits = (l: (typeof locations)[number]) => units.some((u) => u.locationId === l.id)
+      const gen = locations.filter((l) => l.mapGen).sort((a, b) => Number(hasUnits(b)) - Number(hasUnits(a)))
+      gen.forEach((l, i) => window.setTimeout(() => prewarmLocationTerrain(l, units), i * 150))
+    }
+    const w = window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void }
+    const id = w.requestIdleCallback ? w.requestIdleCallback(run, { timeout: 1500 }) : window.setTimeout(run, 500)
+    return () => { if (w.cancelIdleCallback) w.cancelIdleCallback(id); else clearTimeout(id) }
+  }, [perfMode])
+
   // Auto-save every 60 s, foreground only. Skipped for the synthetic-scene
   // harnesses so they never overwrite a real save.
   useEffect(() => {
@@ -160,6 +198,8 @@ function App() {
     if (params.has('workshop')) return <DevPage><AssetWorkshop /></DevPage>
     if (params.has('mapgen'))   return <DevPage><MapgenLab /></DevPage>
     if (params.has('sandbox'))  return <DevPage><PerfSandbox /></DevPage>
+    if (params.has('monsterlab')) return <DevPage><MonsterLab /></DevPage>
+    if (params.has('bodyshot')) return <DevPage><BodySheet /></DevPage>
   }
 
   if (!classicMode) {

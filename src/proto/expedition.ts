@@ -1,5 +1,5 @@
 import type { Location, PackItem } from '@/types'
-import { CONSUMABLE_REGISTRY } from '@/data/consumables'
+import { CONSUMABLE_REGISTRY, isConsumable } from '@/data/consumables'
 
 // §logistics — a lightweight "logistics, not item-management" prototype. You
 // configure each hero's *supplies loadout*, which loot *categories* to keep, and
@@ -147,6 +147,76 @@ export function locationProfile(loc: Location): LocationProfile {
   return { lootItemsPerSec, signatures: signatures.slice(0, 3) }
 }
 
+// ── Per-hero expedition state (source of truth: useGameStore.expeditions) ───────
+//
+// Each hero carries their own plan (supplies loadout + loot categories + return
+// conditions + party-sharing) plus runtime (supplies left, status, run anchor).
+// These are the PURE type + factory pieces the game store builds on; the live
+// state + actions live in `useGameStore` and persist via `logisticsCodec`.
+
+export type ShareFlag = 'shareLoot' | 'acceptLoot' | 'shareSupplies' | 'acceptSupplies'
+
+export interface HeroExpedition {
+  loadout: Loadout                  // supply itemId → { qty, storage, merchant }
+  lootCats: LootCategory[]          // categories to keep
+  returnOn: ReturnConditionId[]     // checked return conditions
+  supplyMode: SupplyModeId          // for 'supplies-out': any one dry vs all dry
+  // §party sharing: loot defaults to give+take (the party fills evenly); supplies
+  // default to take-but-not-give. A hero that accepts but won't share becomes a mule.
+  shareLoot: boolean
+  acceptLoot: boolean
+  shareSupplies: boolean
+  acceptSupplies: boolean
+  returnTown: string | null         // override town to return to; null = auto (nearest)
+  suppliesLeft: number              // 0..1 runtime
+  status: 'hunting' | 'returning'
+  locationId: string | null         // run anchor — a change resets the run
+  // §resupply trip: while 'returning', the absolute game tick at which the hero
+  // redeploys back to the hunt anchor (`locationId`). Undefined until it starts.
+  resupplyUntil?: number
+}
+
+export const freshHero = (e: Partial<HeroExpedition> = {}): HeroExpedition => ({
+  loadout: e.loadout ?? { ...DEFAULT_LOADOUT },
+  lootCats: e.lootCats ?? [...DEFAULT_LOOT_CATS],
+  returnOn: e.returnOn ?? [...DEFAULT_RETURN_ON],
+  supplyMode: e.supplyMode ?? 'any',
+  shareLoot: e.shareLoot ?? true,
+  acceptLoot: e.acceptLoot ?? true,
+  shareSupplies: e.shareSupplies ?? false,
+  acceptSupplies: e.acceptSupplies ?? true,
+  returnTown: e.returnTown ?? null,
+  suppliesLeft: 1,
+  status: 'hunting',
+  locationId: e.locationId ?? null,
+})
+
+// The DURABLE subset of a hero's expedition — the plan they configured. The per-tick
+// runtime (suppliesLeft / status / locationId / resupplyUntil) is re-established by
+// the driver, so it's excluded from the save (see logisticsCodec).
+export type ExpPlan = Pick<HeroExpedition,
+  | 'loadout' | 'lootCats' | 'returnOn' | 'supplyMode'
+  | 'shareLoot' | 'acceptLoot' | 'shareSupplies' | 'acceptSupplies' | 'returnTown'>
+export function planOf(h: HeroExpedition): ExpPlan {
+  return {
+    loadout: h.loadout, lootCats: h.lootCats, returnOn: h.returnOn, supplyMode: h.supplyMode,
+    shareLoot: h.shareLoot, acceptLoot: h.acceptLoot, shareSupplies: h.shareSupplies,
+    acceptSupplies: h.acceptSupplies, returnTown: h.returnTown,
+  }
+}
+
+// Rebuild a loadout FROM a hero's persisted pack carry-targets. `Unit.pack` targets
+// persist via unitsCodec; on first `ensureExpedition` for a hero with no saved plan
+// we hydrate the loadout from surviving targets instead of clobbering them with the
+// default. Returns null when the hero carries no configured consumables → default.
+export function loadoutFromPack(pack: PackItem[] | undefined): Loadout | null {
+  const entries = (pack ?? []).filter((p) => p.target != null && isConsumable(p.itemId) && supplyOption(p.itemId))
+  if (entries.length === 0) return null
+  const loadout: Loadout = {}
+  for (const p of entries) loadout[p.itemId] = newSupplyEntry(p.target!)
+  return loadout
+}
+
 export const isHuntable = (loc: Location): boolean => !loc.traits.includes('city')
 export const isCity = (loc: Location): boolean => loc.traits.includes('city')
 
@@ -175,4 +245,33 @@ export function nearestCity(fromId: string | null, locations: Location[]): Locat
     frontier = next
   }
   return cities[0] ?? null
+}
+
+// Hop distance (portal legs) from `fromId` to the nearest city, over the location
+// connection graph. 0 if already a city; a fallback constant if none is reachable.
+// Used to price the offline return-to-town trip (travel overhead per cycle).
+export function cityHops(fromId: string | null, locations: Location[]): number {
+  if (!fromId) return 1
+  const byId = new Map(locations.map((l) => [l.id, l]))
+  const start = byId.get(fromId)
+  if (!start) return 1
+  if (isCity(start)) return 0
+  const seen = new Set([fromId])
+  let frontier = [fromId]
+  let hops = 0
+  while (frontier.length) {
+    hops++
+    const next: string[] = []
+    for (const id of frontier) {
+      for (const c of byId.get(id)?.connections ?? []) {
+        if (seen.has(c)) continue
+        seen.add(c)
+        const cl = byId.get(c)
+        if (cl && isCity(cl)) return hops
+        next.push(c)
+      }
+    }
+    frontier = next
+  }
+  return 1
 }

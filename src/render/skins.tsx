@@ -1,5 +1,7 @@
 import { memo, type CSSProperties, type ReactNode } from 'react'
 import type { Tone, BodyShape, Weapon, Biome } from '@/render/appearance'
+import { PAPER_BODIES } from '@/render/bodies'
+import type { BodyPart } from '@/render/bodyTypes'
 import { PAPER_TONE, PAPER_PALETTE as PAL } from '@/render/palette'
 import { PaperTerrain, type TerrainProps } from '@/render/terrain'
 
@@ -36,7 +38,8 @@ export type BattleSkin = 'circle' | 'paper'
 export const BATTLE_SKIN_IDS: BattleSkin[] = ['circle', 'paper']
 
 // Resolve the boot skin: URL ?skin=… (also persists, like ?mode=) > localStorage
-// > circle. Ephemeral-UI tier — never part of the save string.
+// > paper. Ephemeral-UI tier — never part of the save string. `circle` remains
+// the explicit debug skin; the authored paper assets are the live-game default.
 export function bootBattleSkin(): BattleSkin {
   const valid = (v: string | null): v is BattleSkin => v === 'circle' || v === 'paper'
   try {
@@ -45,7 +48,7 @@ export function bootBattleSkin(): BattleSkin {
     const saved = localStorage.getItem('battle-skin')
     if (valid(saved)) return saved
   } catch { /* SSR/tests without window */ }
-  return 'circle'
+  return 'paper'
 }
 
 // Bodies are `memo`'d, and combatants MUTATE IN PLACE each round — so a body may
@@ -142,102 +145,8 @@ const CircleBody = memo(function CircleBody({ glyph, tone, tint: rawTint, alive,
 // The two-tone tone palette (`PAPER_TONE`) and the terrain/prop roles live in
 // `render/palette.ts` — the paper language's single color vocabulary.
 
-// Layered silhouettes (100×100 box), an ordered STACK of parts per BodyShape —
-// regular enough to read as unit tokens, wonky enough to feel hand-cut. Each
-// creature is COMPOSED from several separate cutouts (tail, torso, mane, head,
-// …) drawn back-to-front, exactly like the paper-cutout reference art: the
-// silhouette carries the identity, not the text label.
-// TOP-DOWN + DIRECTIONAL (the Unexplored read): authored FACING +x (nose
-// right); the whole token rotates to facingDeg, so the shape telegraphs
-// heading. Lit-copy nudges are composed OUTSIDE the rotation (screen space) —
-// the language's one light direction survives any heading.
-//
-// A part is one of two kinds:
-//   • `plate` (default) — a full two-tone cutout: dark base + outline, with the
-//     SAME path nudged up-left as the lit face. Optionally casts a flat offset
-//     shadow onto the parts below (`shadow: true`) — that shadow is what sells
-//     "stacked sheets of paper". `c` is the plate's own lit-scale origin.
-//   • `accent` — ONE flat fill, no lit copy / no outline unless asked (eyes,
-//     teeth, a nose, a shell spiral). Cheap; the character detail on top.
-// `lean` shifts a part along the local heading while MOVING (the wolf's head
-// leads and its tail lags, the slime's core drags) — a static transform swap on
-// the move/idle edge, never a running animation. Keep the part count lean: every
-// path multiplies across 50+ gliding tokens (see the contract atop this file).
-type PaperRole = keyof typeof PAL
-interface BodyPart {
-  d: string
-  c?: [number, number]              // lit-scale origin (plates); defaults to box center
-  lean?: number                     // +x shift along heading while moving (can be negative = lag)
-  kind?: 'plate' | 'accent'         // default 'plate'
-  fill?: 'base' | 'top' | 'outline' | 'text' | PaperRole  // accent paint (tone field or palette role)
-  stroke?: boolean                  // accent: draw the tone outline around it
-  shadow?: boolean                  // plate: cast a flat drop shadow onto lower parts
-  // melee-attack motion (CSS-driven, off the memo'd body — see `data-atk` +
-  // index.css): 'jab' snaps toward the target (heads/faces), 'trail' lags the
-  // opposite way (tails). Absent = the part holds while the token lunges.
-  atk?: 'jab' | 'trail'
-}
-
-const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
-  // hero/NPC: round torso, head disc riding center-front; head leads on the
-  // move (heading otherwise reads from the carried weapon)
-  humanoid: [
-    { d: 'M50 6 C72 7 90 20 92 42 C94 65 74 90 50 94 C27 91 6 65 8 42 C10 20 29 8 50 6 Z', c: [50, 50] },
-    { d: 'M60 34 C70 35 76 41 76 50 C76 59 69 66 59 66 C50 66 44 59 44 50 C44 41 51 33 60 34 Z', c: [60, 50], lean: 4, shadow: true },
-  ],
-  // slime: wobbly puddle with a droplet wake, gel core riding it — the core
-  // LAGS behind the heading while moving (inertia); two dark eyes ride the core
-  // front so the blob reads as a creature, not a splash
-  blob: [
-    { d: 'M91 52 C92 61 84 71 73 75 C63 83 47 86 36 80 C24 83 12 75 14 63 C7 59 6 48 13 42 C9 35 12 27 20 26 C26 25 31 29 30 35 C36 27 48 23 58 26 C74 25 88 37 91 48 L91 52 Z', c: [50, 52] },
-    { d: 'M50 34 C62 34 70 42 70 52 C70 62 60 69 48 69 C37 69 29 62 29 52 C29 42 38 34 50 34 Z', c: [50, 52], lean: -6, shadow: true },
-    { d: 'M64 45 a3.4 3.4 0 1 0 0.1 0 Z', kind: 'accent', fill: 'outline', lean: -6 },
-    { d: 'M64 59 a3.4 3.4 0 1 0 0.1 0 Z', kind: 'accent', fill: 'outline', lean: -6 },
-  ],
-  // generic quadruped: fat torso oval, smaller blunt eared head — boars,
-  // crabs, lizards
-  beast: [
-    { d: 'M60 32 C48 26 34 26 24 32 C13 38 8 44 8 50 C8 56 13 62 24 68 C34 74 48 74 60 68 C67 63 70 57 70 50 C70 43 67 37 60 32 Z', c: [39, 50] },
-    { d: 'M90 50 C90 44 86 39 79 37 C73 33 67 32 62 33 L56 23 L50 32 C45 34 42 41 42 50 C42 59 45 66 50 68 L56 77 L62 67 C67 68 73 67 79 63 C86 61 90 56 90 50 Z', c: [64, 50], lean: 5, shadow: true },
-  ],
-  // two swept wings (waisted at the hinge) under a slim fuselage with a beaked
-  // head at the prow — harpies, bats; the body+head leads the wings on the move
-  flyer: [
-    { d: 'M54 44 C46 36 36 24 26 16 C16 8 6 12 8 22 C10 32 22 42 40 48 L40 52 C22 58 10 68 8 78 C6 88 16 92 26 84 C36 76 46 64 54 56 C56 52 56 48 54 44 Z', c: [30, 50] },
-    { d: 'M90 50 C90 45 85 42 79 42 C72 38 62 36 50 37 L30 44 C25 45 22 47 22 50 C22 53 25 55 30 56 L50 63 C62 64 72 62 79 58 C85 58 90 55 90 50 Z', c: [55, 50], lean: 4, shadow: true },
-    { d: 'M86 46 L100 50 L86 54 Z', kind: 'accent', fill: 'outline', lean: 4 },
-    { d: 'M78 45 a2.3 2.3 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 4 },
-    { d: 'M78 55 a2.3 2.3 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 4 },
-  ],
-  // foot slab + ball-tipped eyestalks under, spiral shell riding the back —
-  // the foot STRETCHES forward from under the shell on the move; the shell
-  // spiral is a flat accent on top
-  snail: [
-    { d: 'M74 42 C77 36 82 32 87 33 C93 34 94 41 89 43 C86 44 84 46 84 48 L84 52 C84 54 86 56 89 57 C94 59 93 66 87 67 C82 68 77 64 74 58 C70 62 63 65 56 66 L26 68 C16 68 9 61 9 51 C9 41 16 34 26 34 L56 34 C64 35 70 38 74 42 Z', c: [50, 50], lean: 6 },
-    { d: 'M34 24 C49 24 60 35 60 50 C60 65 49 76 34 76 C19 76 8 65 8 50 C8 35 19 24 34 24 Z', c: [34, 50], shadow: true },
-    { d: 'M34 40 C41 42 43 49 38 54 C31 60 20 55 20 46 C20 37 28 30 39 32', kind: 'accent', fill: 'outline', stroke: true },
-  ],
-  // tapered S-band under, bulbous head knob over — the head strikes forward on
-  // the move, a forked tongue flicks past the snout, two eyes ride the head
-  serpent: [
-    { d: 'M76 56 C70 49 63 47 56 49 C48 52 44 60 38 66 C32 72 22 74 14 70 C8 67 5 60 10 57 C16 60 24 60 30 56 C36 52 40 44 48 38 C54 34 63 33 70 37 C76 41 79 49 76 56 Z', c: [42, 52] },
-    { d: 'M77 41 C83 36 92 37 95 44 C98 51 94 59 86 60 C80 61 75 58 73 53 C71 48 72 44 77 41 Z', c: [84, 49], lean: 5, shadow: true, atk: 'jab' },
-    { d: 'M92 48 L100 48 L109 44 L102 49 L109 53 L100 50 L92 50 Z', kind: 'accent', fill: 'bloom', lean: 5, atk: 'jab' },
-    { d: 'M88 43 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 5, atk: 'jab' },
-    { d: 'M88 54 a2.2 2.2 0 1 0 0.1 0 Z', kind: 'accent', fill: 'text', lean: 5, atk: 'jab' },
-  ],
-  // WOLF (canines: wolves, hounds, foxes) — the reference read is a SPIKY MANE
-  // ruff behind a snarling eared head, over a tapered torso with a bushy tail.
-  // Five stacked cutouts back→front: tail plume (lags on the move) · torso with
-  // leg bumps · jagged mane ruff · eared head (leads) · a nose accent.
-  canine: [
-    { d: 'M31 50 C25 40 15 35 7 37 C-1 39 0 47 7 49 C-1 51 0 60 8 62 C16 64 26 60 31 50 Z', c: [15, 50], lean: -8, atk: 'trail' },
-    { d: 'M64 50 C64 41 58 34 49 33 C47 26 41 26 39 33 C34 33 29 36 26 41 C23 43 21 47 22 50 C21 53 23 57 26 59 C29 64 34 67 39 67 C41 74 47 74 49 67 C58 66 64 59 64 50 Z', c: [42, 50] },
-    { d: 'M78 50 L67 45 L73 34 L61 40 L60 27 L52 39 L45 31 L45 43 L34 41 L43 50 L34 59 L45 57 L45 69 L52 61 L60 73 L61 60 L73 66 L67 55 L78 50 Z', c: [55, 50], lean: 1 },
-    { d: 'M95 50 C95 46 91 43 86 43 C81 38 75 36 68 37 L64 26 L60 37 C55 40 53 45 53 50 C53 55 55 60 60 63 L64 74 L68 63 C75 64 81 62 86 57 C91 57 95 54 95 50 Z', c: [72, 50], lean: 5, shadow: true, atk: 'jab' },
-    { d: 'M89 46 L98 50 L89 54 Z', kind: 'accent', fill: 'outline', lean: 5, atk: 'jab' },
-  ],
-}
+// Layered body data lives in `render/bodies/*`; this file owns only how those
+// cutout parts are rendered, merged for LOD, and animated in the paper skin.
 
 // Facing-layer shapes (drawn under the body, rotated to facingDeg, so only the
 // business end shows). Heroes carry their class weapon; a weaponless humanoid
@@ -302,6 +211,8 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
   // accent paint: a tone field (base/top/outline/text) or a palette role.
   const paint = (f: BodyPart['fill']) =>
     f === 'base' || f === 'top' || f === 'outline' || f === 'text' ? p[f] : f ? PAL[f] : p.base
+  const strokePaint = (pl: BodyPart) => pl.stroke === 'fill' ? paint(pl.fill) : pl.stroke ? outline : 'none'
+  const strokeWidth = (pl: BodyPart) => pl.stroke ? 3 : undefined
   const heroWeapon = weapon ?? (bodyShape === 'humanoid' ? 'sword' : undefined)
   return (
     <div
@@ -315,8 +226,10 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
         {/* ground-contact shadow: an offset flat ellipse, NOT filter:drop-shadow */}
         <ellipse cx="54" cy={alive ? 55 : 80} rx="46" ry={alive ? 45 : 17} fill={PAL.shadow} fillOpacity={0.35} />
         {angle != null && heroWeapon && (
-          <g transform={partT(parts[0])}>
-            {WEAPON_SHAPES[heroWeapon]}
+          <g data-atk={heroWeapon === 'sword' || heroWeapon === 'dagger' ? 'swing' : 'jab'}>
+            <g transform={partT(parts[0])}>
+              {WEAPON_SHAPES[heroWeapon]}
+            </g>
           </g>
         )}
         {alive && simple ? (
@@ -340,20 +253,21 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
           parts.map((pl, i) =>
             (pl.kind ?? 'plate') === 'accent' ? (
               // accent: a lone path carries its own facing transform, so an
-              // animated one needs a transform-less <g data-atk> wrapper to hang
-              // the CSS jab on (static accents stay a bare path — no extra node).
-              pl.atk ? (
-                <g key={i} data-atk={pl.atk}>
-                  <path d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
+              // animated/stateful one needs a transform-less <g> wrapper
+              // to hang the CSS motion on (static accents stay a bare path — no node).
+              pl.atk || pl.walk || pl.idle || pl.hit ? (
+                <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle} data-hit={pl.hit}>
+                  <path d={pl.d} fill={paint(pl.fill)} stroke={strokePaint(pl)} strokeWidth={strokeWidth(pl)} strokeLinecap="round" transform={partT(pl)} />
                 </g>
               ) : (
-                <path key={i} d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
+                <path key={i} d={pl.d} fill={paint(pl.fill)} stroke={strokePaint(pl)} strokeWidth={strokeWidth(pl)} strokeLinecap="round" transform={partT(pl)} data-hit={pl.hit} />
               )
             ) : (
               // plate: already a transform-less <g> holding shadow/base/lit — so
-              // `data-atk` rides it for free (the CSS jab targets the g in screen
-              // space; the inner paths keep their own facing/lit transforms).
-              <g key={i} data-atk={pl.atk}>
+              // `data-atk`/`data-walk`/`data-idle` ride it for free (the CSS motion
+              // targets the g in screen space; the inner paths keep their facing/lit
+              // transforms).
+              <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle} data-hit={pl.hit}>
                 {pl.shadow && <path d={pl.d} fill={PAL.shadow} fillOpacity={0.3} transform={`translate(2.5 3.5) ${partT(pl) ?? ''}`} />}
                 <path d={pl.d} fill={p.base} stroke={outline} strokeWidth="4.5" transform={partT(pl)} />
                 <path d={pl.d} fill={p.top} transform={litT(pl, '-2.5 -3.5', 0.93)} />
@@ -374,7 +288,7 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
       </svg>
       {/* heroes/NPCs keep a small centered icon (class glyph / merchant mark);
           monsters are silhouette-only — the layered body IS the identity. */}
-      {!creature && (
+      {!creature && bodyShape !== 'knight' && (
         <span className="relative font-bold leading-none" style={{ fontSize: dims.fontSize, color: p.text }}>
           {alive ? glyph : ''}
         </span>

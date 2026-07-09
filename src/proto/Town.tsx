@@ -558,34 +558,29 @@ function Stash() {
   )
 }
 
-// ── Town shell ─────────────────────────────────────────────────────────────────
-type TownTab = 'market' | 'stash'
-const TOWN_TABS: { id: TownTab; label: string; icon: string }[] = [
-  { id: 'market', label: 'Market', icon: '🏪' }, { id: 'stash', label: 'Stash', icon: '📦' },
-]
-export function Town({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<TownTab>('market')
+// ── Town screens ───────────────────────────────────────────────────────────────
+// Market and Stash are STANDALONE full-screen destinations off the ☰ Menu — no
+// shared tab bar (each opens on its own; switch by returning to the menu). The
+// `Town` shell just picks a view and paints the matching header + body.
+type TownView = 'market' | 'stash'
+const VIEW_META: Record<TownView, { icon: string; label: string; blurb: string; Body: () => JSX.Element }> = {
+  market: { icon: '🏪', label: 'Market', blurb: '— merchant shops · buy & sell', Body: Market },
+  stash:  { icon: '📦', label: 'Stash',  blurb: '— gear, cards, materials & craft', Body: Stash },
+}
+export function Town({ onClose, initialTab = 'market' }: { onClose: () => void; initialTab?: TownView }) {
+  const view = VIEW_META[initialTab]
   useEffect(() => { seedProtoMocks() }, [])
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-game-bg">
       <header className="shrink-0 flex items-center gap-2 px-3 h-11 border-b border-game-border bg-game-surface/70">
-        <span className="text-sm font-semibold text-game-text">🏪 Town</span>
-        <span className="text-[10px] text-game-muted hidden sm:inline">— merchants, cards & workbench</span>
+        <span className="text-sm font-semibold text-game-text">{view.icon} {view.label}</span>
+        <span className="text-[10px] text-game-muted hidden sm:inline">{view.blurb}</span>
         <Gold className="ml-auto text-sm" />
         <button onClick={onClose} aria-label="Close" className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-game-border text-game-text-dim hover:text-game-text hover:bg-white/5 text-sm">✕</button>
       </header>
-      <div className="shrink-0 flex border-b border-game-border bg-game-surface/60">
-        {TOWN_TABS.map((t) => (
-          <button key={t.id} aria-label={t.label} onClick={() => setTab(t.id)} className={['flex-1 flex items-center justify-center gap-1.5 py-2.5 relative', tab === t.id ? 'text-game-primary' : 'text-game-muted hover:text-game-text-dim'].join(' ')}>
-            <span className="text-base leading-none">{t.icon}</span><span className="text-xs font-medium">{t.label}</span>
-            {tab === t.id && <span className="absolute bottom-0 inset-x-6 h-0.5 rounded-full bg-game-primary" />}
-          </button>
-        ))}
-      </div>
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="p-3 max-w-2xl w-full mx-auto" style={{ zoom: 1.12 }}>
-          {tab === 'market' && <Market />}
-          {tab === 'stash' && <Stash />}
+          <view.Body />
         </div>
       </div>
     </div>,

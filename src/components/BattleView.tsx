@@ -1,12 +1,13 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, type CSSProperties } from 'react'
-import { useGameStore, waveComposition, locationBarriers, type Location } from '@/stores/useGameStore'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, type CSSProperties } from 'react'
+import { useGameStore, waveComposition, locationBarriers, type Location, type Unit } from '@/stores/useGameStore'
 import { expectedRoundGapMs, glideMs } from '@/render/cadence'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSkin } from '@/render/skins'
 import { hashString, type Rect } from '@/render/authoring'
-import { generateForLocationCached, type MapSpec } from '@/mapgen'
+import { generateForLocationCached, specBarriers, type MapSpec } from '@/mapgen'
+import { prewarmTerrain } from '@/render/terrain'
 import { partyProficiencyTags } from '@/lib/proficiencies'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
@@ -217,6 +218,13 @@ const TOKEN_INSET = 0.7
 const insetX = (cam: Cam, x: number) => Math.max(cam.x + TOKEN_INSET, Math.min(cam.x + cam.size - TOKEN_INSET, x))
 const insetY = (cam: Cam, y: number) => Math.max(cam.y + TOKEN_INSET, Math.min(cam.y + cam.size - TOKEN_INSET, y))
 
+// Portal keep-clear boxes for the terrain scatter (a prop sitting on a gateway
+// reads as blocking it). Shared by the live Arena (terrainAvoid) and prewarm so
+// the two `avoid` derivations can't drift — a mismatch silently misses the
+// bitmap cache (sigOf keys on `avoid`) and re-decodes on mount.
+const portalKeepClear = (portals?: Location['portals']): Rect[] =>
+  (portals ?? []).map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 }))
+
 // Pan-aware arena. Owns a pixel-drag pan applied as a CSS transform on the inner
 // world layer; chips/barriers/lines move with the wrapper instantly so the
 // drag tracks the finger. Sizes itself to a square that fits the space it's
@@ -229,11 +237,33 @@ interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => 
 function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, sidePx = null, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; sidePx?: number | null; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
+  // The baked terrain bitmap decodes async and fades in; the base ground/grid
+  // below would otherwise pop in early under it (the "grayish swoops first,
+  // cobbles/buildings later" stagger). Gate them on the terrain's readiness so
+  // the whole map reveals as one. Reset when the location (terrain sig) changes.
+  const [terrainReady, setTerrainReady] = useState(false)
+  const onTerrainReady = useCallback(() => setTerrainReady(true), [])
   // Organic terrain layer (render/terrain.tsx): one static per-location SVG
   // inside the ground layer. When a skin carries it, it REPLACES the rect
   // barrier divs and the classic perimeter ring below. §mapgen locations hand
   // it their baked MapSpec so the surface/scatter planes drive the dressing.
-  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, spec: mapSpec })
+  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, spec: mapSpec, onReady: onTerrainReady })
+  const terrainSig = terrainEl ? `${biome}|${mapCols}x${mapRows}|${terrainSeed}|${mapSpec ? mapSpec.recipe + mapSpec.seed : ''}` : ''
+  useEffect(() => { if (terrainSig) setTerrainReady(false) }, [terrainSig])
+  // Reveal the WHOLE field — terrain + ground + grid + tokens — atomically once
+  // the terrain bitmap is drawn, so nothing renders on a bare surface ahead of
+  // it (the "tokens first, map an instant later" stagger). With prewarm this is
+  // the first painted frame; on a cold miss it's a brief bare arena, then the
+  // full scene at once. No fade (a transition would re-stagger vs the tokens).
+  // Only when a terrain hook is present; circle skin / hookless maps show as before.
+  const fieldReveal = terrainEl ? { opacity: terrainReady ? 1 : 0 } : undefined
+  // Safety: never leave the field hidden if readiness never arrives (decode
+  // failure/hang) — reveal after a cap so tokens always come back.
+  useEffect(() => {
+    if (!terrainSig || terrainReady) return
+    const id = setTimeout(() => setTerrainReady(true), 4000)
+    return () => clearTimeout(id)
+  }, [terrainSig, terrainReady])
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
@@ -392,7 +422,7 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, willChange: 'transform' }}>
+      <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)`, willChange: 'transform', ...fieldReveal }}>
         {/* team-half tints, split at the arena's center line. The split eases with
             the camera (CSS) so it pans in sync with the tokens — the divs stay
             anchored to the viewport edges, so only the split line moves (no gap). */}
@@ -734,13 +764,31 @@ function BattleChip({ c, cam, pos, animatePos, selected, onSelect, appearance, s
             // the body's [data-atk] descendants — no-op for shapes without them):
             // the head snaps ahead of the sliding token, the tail lags. --atk-x/y
             // are SVG user units (viewBox is 0–100) so the jab reads at any zoom.
-            className={lungeDeg != null ? (lungeFlip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b') : undefined}
-            style={lungeDeg != null ? {
-              '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
-              '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,
-              '--atk-x': `${(Math.cos((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
-              '--atk-y': `${(Math.sin((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
-            } as CSSProperties : undefined}
+            // While moving, `animate-walk` also runs the body's [data-walk] feet
+            // (no-op for shapes without them, and gone at far-LOD where the merged
+            // body has no accent parts) — a subtle per-part shuffle as it walks.
+            // While RESTING (detail LOD, alive, still, not casting), `animate-idle`
+            // runs the body's [data-idle] parts — the continuous breathe/sway that
+            // keeps a resting field alive. Same LOD gate as the lunge (a continuous
+            // animation holds a compositor layer promoted, so only the watched,
+            // zoomed-in handful idles — never the dense far-LOD mob). Phase/tempo
+            // are seeded off the unit id so a nest doesn't pulse in lockstep; the
+            // vars are deterministic per id, so they never churn the style.
+            className={[
+              lungeDeg != null ? (lungeFlip ? 'animate-lunge-a animate-atk-a' : 'animate-lunge-b animate-atk-b') : '',
+              c.alive && c.moving ? 'animate-walk' : '',
+              detail && c.alive && !c.moving && !casting ? 'animate-idle' : '',
+            ].filter(Boolean).join(' ') || undefined}
+            style={{
+              '--idle-delay': `${-((hashString(c.id) % 1000) / 1000 * 2.6).toFixed(2)}s`,
+              '--idle-dur': `${(2.2 + ((hashString(c.id) >>> 10) % 1000) / 1000 * 0.9).toFixed(2)}s`,
+              ...(lungeDeg != null ? {
+                '--lunge-x': `${Math.round(Math.cos((lungeDeg * Math.PI) / 180) * 30)}%`,
+                '--lunge-y': `${Math.round(Math.sin((lungeDeg * Math.PI) / 180) * 30)}%`,
+                '--atk-x': `${(Math.cos((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
+                '--atk-y': `${(Math.sin((lungeDeg * Math.PI) / 180) * 13).toFixed(1)}px`,
+              } : null),
+            } as CSSProperties}
           >
             <Body
               glyph={appearance.glyph}
@@ -1415,10 +1463,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
   // §terrain: portals are keep-clear boxes for the scatter decor (a crate sitting
   // on a gateway reads as blocking it). World coords; memoized so the memo'd
   // terrain layer sees a stable reference across per-round re-renders.
-  const terrainAvoid = useMemo<Rect[]>(
-    () => (portals ?? []).map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
-    [portals],
-  )
+  const terrainAvoid = useMemo<Rect[]>(() => portalKeepClear(portals), [portals])
 
   // §terrain: hero-anchored light — ONE radial-gradient div gliding with the
   // party centroid on the compositor, layered under the static vignette (city
@@ -1809,6 +1854,26 @@ export function Preview({ location }: { location: Location | null }) {
 // outside the battle view — e.g. the proto Hero lens. Nonce-driven so repeats
 // re-fire. `onFollow` (when provided) surfaces a Follow action in the card.
 export interface BattleInspectRequest { unitId: string; nonce: number }
+
+// Prewarm a generated location's terrain bitmap while its detail panel is on
+// screen (before drop-in), so entering paints the map on the first frame. The
+// props MUST mirror what the Arena passes at stand-up (createOpenBattleFor):
+// size + barriers from the same spec, rim=true (generated live maps are
+// open-world), portal keep-clear boxes as `avoid`. A mismatch just misses the
+// cache and decodes on mount as before — no correctness risk.
+export function prewarmLocationTerrain(location: Location, units: Unit[]): void {
+  if (!location.mapGen) return
+  const spec = generateForLocationCached(location, { proficiencies: partyProficiencyTags(units.filter((u) => u.locationId === location.id)) }).spec
+  prewarmTerrain({
+    biome: biomeForLocation(location),
+    cols: spec.cols, rows: spec.cols,          // battle is square: size = spec.cols for both dims
+    barriers: specBarriers(spec),
+    seed: hashString(location.id),
+    rim: true,
+    avoid: portalKeepClear(location.portals),
+    spec,
+  })
+}
 
 export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: {
   locationId: string | null

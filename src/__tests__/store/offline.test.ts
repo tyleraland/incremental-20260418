@@ -6,6 +6,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore, getLocationCombatReport, projectOfflineSampled } from '@/stores/useGameStore'
 import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills } from '@/lib/offline'
 import type { Location, LocationCombatStats } from '@/types'
+import { freshHero } from '@/proto/expedition'
 import { makeUnit, resetStore, batchTick } from '../helpers'
 
 const FIELD = (overrides: Partial<Location> = {}): Location => ({
@@ -95,7 +96,7 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
   beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
   afterEach(() => vi.restoreAllMocks())
 
-  it('extrapolates exp/gold/loot/kills for a deployed location with a sample', () => {
+  it('extrapolates exp/loot/kills for a deployed location with a sample (no gold from kills)', () => {
     resetStore({
       ticks: 1000,
       locations: [FIELD()],
@@ -108,7 +109,7 @@ describe('batchTick — warm extrapolation (Phase 1)', () => {
     const st = useGameStore.getState()
     expect(st.monsterDefeated.slime).toBe(100)       // codex credited
     expect(st.locationStats.field.expDistributed).toBe(200) // 100 prior + 100 offline
-    expect(st.miscItems.find((m) => m.id === 'm-gold')?.quantity).toBe(100)
+    expect(st.miscItems.find((m) => m.id === 'm-gold')).toBeUndefined()  // gold only from market sales
     expect(st.miscItems.find((m) => m.id === 'drop-slime-gel')?.quantity).toBe(100) // 100 kills × qty 1
   })
 
@@ -340,5 +341,106 @@ describe('batchTick — cold priming (Phase 2)', () => {
     expect(st.battles.field).toBeDefined()                   // primed battle settled & kept
     expect(st.locationStats.field).toBeDefined()             // a sample now exists
     expect(st.offlineSummary?.locations[0]).toMatchObject({ primed: true })
+  })
+})
+
+// §logistics: with an expedition plan, offline catch-up runs the return-to-town
+// loop — completed pack-loads deposit to the stash, the last partial fill stays in
+// the carried pack, and yield is capped by travel time. Without a plan, the legacy
+// path (all loot → stash, no trips) is preserved.
+describe('batchTick — return-to-town loop', () => {
+  beforeEach(() => vi.spyOn(Math, 'random').mockReturnValue(0))
+  afterEach(() => vi.restoreAllMocks())
+
+  it('carries all the loot when the pack never fills (no trips, nothing deposited)', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [OPEN(['slime'], 4)],
+      locationStats: { field: STATS() },                       // warm rate: 100 kills / 1000-tick window
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [],
+      // Empty pack (full 1000-wt room) → 100 gel (800 wt) never hits the 90% mark → no return.
+      expeditions: { u0: freshHero() },                        // returnOn: ['pack-full']
+    })
+    batchTick(1000)
+
+    const st = useGameStore.getState()
+    expect(st.lastCatchUp!.locations.find((l) => l.locationId === 'field')!.cycles ?? 0).toBe(0)
+    expect(st.packs.u0['drop-slime-gel']).toBe(100)            // all loot carried, none deposited
+    expect(st.miscItems.find((m) => m.id === 'drop-slime-gel')).toBeUndefined()
+  })
+
+  it('deposits pack-loads (incl. the pre-existing carry) to the stash and records trips', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [OPEN(['slime'], 4)],
+      locationStats: { field: STATS() },
+      // 180 greater potions carried = 900 wt → only ~100 wt of LOOT room, so packs fill.
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100, pack: [{ itemId: 'potion-hp-greater', count: 180, target: 180 }] })],
+      miscItems: [{ id: 'm-gold', name: 'Gold', quantity: 500 }],
+      packs: { u0: { 'drop-boar-hide': 5 } },                  // pre-existing carried loot
+      expeditions: { u0: freshHero({ loadout: { 'potion-hp-greater': { qty: 180, storage: true, merchant: true } } }) },
+    })
+    batchTick(1000)
+
+    const st = useGameStore.getState()
+    const cu = st.lastCatchUp!.locations.find((l) => l.locationId === 'field')!
+    expect(cu.cycles ?? 0).toBeGreaterThan(0)                                          // made town trips
+    const deposited = st.miscItems.find((m) => m.id === 'drop-slime-gel')?.quantity ?? 0
+    const residual = st.packs.u0?.['drop-slime-gel'] ?? 0
+    expect(deposited).toBeGreaterThan(0)                                               // hunted loot reached the stash
+    expect(deposited + residual).toBeLessThan(100)                                     // travel overhead reduced yield
+    // A1: on the first town trip the hero also deposits the loot they were already
+    // carrying — it moves from the pack to the stash (not stranded, not duplicated).
+    expect(st.miscItems.find((m) => m.id === 'drop-boar-hide')?.quantity).toBe(5)
+    expect(st.packs.u0?.['drop-boar-hide']).toBeUndefined()
+  })
+
+  it('restock draws the loadout consumable, never an unrelated stash consumable (A4)', () => {
+    resetStore({
+      ticks: 0,
+      locations: [OPEN(['slime'], 8)],
+      locationStats: {},                                   // cold → real sim measures potion burn
+      // A fragile hero (low str/con) still clears slimes but takes real damage → burns
+      // potions heavily; the extrapolated burn exceeds the carried + stash potions.
+      units: [makeUnit({
+        id: 'u0', locationId: 'field', health: 100,
+        abilities: { strength: 8, agility: 5, dexterity: 20, constitution: 3, intelligence: 5 },
+        pack: [{ itemId: 'potion-hp', count: 10, target: 10 }],
+        consumableRules: [{ itemId: 'potion-hp', threshold: 0.95 }],
+      })],
+      // Stash has the loadout item (potion-hp) AND an unrelated consumable (antidote).
+      // Restock must draw potion-hp (then gold) and NEVER touch the antidote — pre-fix
+      // it drew stash consumables in array order and vaporised the antidote first.
+      miscItems: [
+        { id: 'craft-antidote', name: 'Antidote', quantity: 50, kind: 'consumable' as const },
+        { id: 'potion-hp', name: 'Potion', quantity: 20, kind: 'consumable' as const },
+        { id: 'm-gold', name: 'Gold', quantity: 500 },
+      ],
+      expeditions: { u0: freshHero({ loadout: { 'potion-hp': { qty: 10, storage: true, merchant: true } } }) },
+    })
+    batchTick(40000)                                       // long absence → sampled sim → real burn
+
+    const st = useGameStore.getState()
+    expect(st.miscItems.find((m) => m.id === 'craft-antidote')?.quantity).toBe(50)   // untouched
+    expect(st.miscItems.find((m) => m.id === 'potion-hp')?.quantity).toBe(0)          // the RIGHT item drawn
+    expect(st.miscItems.find((m) => m.id === 'm-gold')!.quantity).toBeLessThan(500)   // then paid the rest in gold
+  })
+
+  it('a party with no expedition plan keeps the legacy path (all loot → stash, no trips)', () => {
+    resetStore({
+      ticks: 1000,
+      locations: [OPEN(['slime'], 4)],
+      locationStats: { field: STATS() },
+      units: [makeUnit({ id: 'u0', locationId: 'field', health: 100 })],
+      miscItems: [],
+      // no expeditions → ineligible for the cycle model
+    })
+    batchTick(1000)
+
+    const st = useGameStore.getState()
+    expect(st.miscItems.find((m) => m.id === 'drop-slime-gel')?.quantity).toBe(100)  // all 100 deposited
+    expect(st.packs.u0).toBeUndefined()                                              // nothing carried
+    expect(st.lastCatchUp!.locations.find((l) => l.locationId === 'field')!.cycles ?? 0).toBe(0)
   })
 })

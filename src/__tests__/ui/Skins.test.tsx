@@ -8,6 +8,7 @@ import { useGameStore } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
 import { bootBattleSkin, BODY_RENDER_PROBE, TOKEN_SKINS } from '@/render/skins'
+import { getAppearance } from '@/render/appearance'
 import { eu } from '../engine/helpers'
 import type { Location } from '@/types'
 
@@ -36,7 +37,8 @@ beforeEach(() => {
 })
 
 describe('battlefield skins', () => {
-  it('renders circle bodies by default, with the chip title handle', () => {
+  it('battleSkin=circle renders classic debug bodies, with the chip title handle', () => {
+    useGameStore.setState({ battleSkin: 'circle' })
     const { container, getByTitle } = show(openBattle())
     expect(container.querySelectorAll('[data-skin="circle"]').length).toBe(2)
     expect(getByTitle(/Hero —/)).toBeTruthy()   // title rides the chip wrapper
@@ -100,11 +102,63 @@ describe('battlefield skins', () => {
     expect(full).toBeGreaterThan(simple * 3)        // the full wolf is many plates+accents
   })
 
+  // The idle (breathe/sway) seam: the same data-* contract as atk/walk. The
+  // body statically tags its idle parts; BattleChip flips `animate-idle` on the
+  // wrapper only while a detail-LOD token is alive + still — a class swap that
+  // never touches the memo'd body, and a no-op at far-LOD (the merged body
+  // carries no data-idle nodes).
+  it('idle parts: the thiefBug body emits data-idle groups at full detail, none at far-LOD', () => {
+    const Paper = TOKEN_SKINS.paper
+    const dims = { width: '32px', height: '32px', fontSize: '13px' }
+    const { container, unmount } = render(
+      <Paper glyph="" tone="enemy" bodyShape="thiefBug" alive selected={false} facingDeg={0} creature dims={dims} />,
+    )
+    expect(container.querySelectorAll('[data-idle="breathe"]').length).toBe(2)   // abdomen plate + wing seam
+    expect(container.querySelectorAll('[data-idle="sway"]').length).toBe(1)      // both antennae, one scissoring part
+    unmount()
+    const { container: far } = render(
+      <Paper glyph="" tone="enemy" bodyShape="thiefBug" alive selected={false} facingDeg={0} creature simple dims={dims} />,
+    )
+    expect(far.querySelectorAll('[data-idle]').length).toBe(0)
+    expect(far.querySelectorAll('svg path').length).toBeLessThanOrEqual(2)       // merged base + lit
+  })
+
+  it('hero sword layer rides the attack seam without body rerenders', () => {
+    const Paper = TOKEN_SKINS.paper
+    const dims = { width: '48px', height: '48px', fontSize: '13px' }
+    const { container } = render(
+      <Paper glyph="F" tone="player" bodyShape="knight" weapon="sword" alive selected={false} facingDeg={0} dims={dims} />,
+    )
+    expect(container.querySelector('[data-atk="swing"]')).toBeTruthy()
+    expect(container.querySelector('[data-atk="jab"]')).toBeTruthy()
+    expect(container.textContent).toBe('') // the knight silhouette carries the read
+  })
+
+  it('Arnold and Paul use the reusable paper-doll body', () => {
+    const arnold = getAppearance({ id: 'arnold-armorsmith', name: 'Arnold the Armorsmith', team: 'neutral', alive: true } as Parameters<typeof getAppearance>[0], () => null)
+    const paul = getAppearance({ id: 'paul-weaponsmith', name: 'Paul the Weaponsmith', team: 'neutral', alive: true } as Parameters<typeof getAppearance>[0], () => null)
+    const villager = getAppearance({ id: 'town-villager', name: 'Villager', team: 'neutral', alive: true } as Parameters<typeof getAppearance>[0], () => null)
+    expect(arnold.bodyShape).toBe('paperDoll')
+    expect(paul.bodyShape).toBe('paperDoll')
+    expect(villager.bodyShape).toBe('humanoid')
+  })
+
+  it('idle gating: a still detail-LOD token carries animate-idle; a moving one swaps to animate-walk', () => {
+    useGameStore.setState({ battleSkin: 'paper' })
+    const b = openBattle()
+    const { container } = show(b)
+    expect(container.querySelectorAll('.animate-idle').length).toBe(2)
+    b.combatants[0].moving = true
+    act(() => useGameStore.setState({ battles: { L1: { ...b, round: b.round + 1 } } }))
+    expect(container.querySelectorAll('.animate-idle').length).toBe(1)
+    expect(container.querySelectorAll('.animate-walk').length).toBe(1)
+  })
+
   it('bootBattleSkin: localStorage > default, garbage ignored', () => {
-    expect(bootBattleSkin()).toBe('circle')
-    localStorage.setItem('battle-skin', 'paper')
     expect(bootBattleSkin()).toBe('paper')
-    localStorage.setItem('battle-skin', 'sprite-sheet-3000')
+    localStorage.setItem('battle-skin', 'circle')
     expect(bootBattleSkin()).toBe('circle')
+    localStorage.setItem('battle-skin', 'sprite-sheet-3000')
+    expect(bootBattleSkin()).toBe('paper')
   })
 })

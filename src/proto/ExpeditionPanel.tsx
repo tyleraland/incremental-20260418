@@ -7,9 +7,7 @@ import {
   RETURN_CONDITIONS, RETURN_MODES, SUPPLY_MODES, ALL_LOOT_CATEGORIES, SUPPLY_OPTIONS, supplyOption,
   isHuntable, isCity, nearestCity, loadoutWeight, loadoutCost, supplyState, type Choice, type Loadout,
 } from './expedition'
-import { useExpeditionStore } from './expeditionStore'
 import { TOWN_RESUPPLY_TICKS } from './expeditionDriver'
-import { useProtoStore } from './protoStore'
 import { heroCarried, isOverweight, OVERWEIGHT_FRACTION, WEIGHT_LIMIT } from './economy'
 
 // §travel-defend: per-hero behaviour when a hostile is in sight while routing.
@@ -48,10 +46,10 @@ const sourceLabel = (e: { storage: boolean; merchant: boolean }) =>
 function SupplyMenu({ unitId, initial, loadout, onClose }: {
   unitId: string; initial: string | null; loadout: Loadout; onClose: () => void
 }) {
-  const addSupply = useExpeditionStore((s) => s.addSupply)
-  const setSupplyQty = useExpeditionStore((s) => s.setSupplyQty)
-  const toggleSource = useExpeditionStore((s) => s.toggleSupplySource)
-  const removeSupply = useExpeditionStore((s) => s.removeSupply)
+  const addSupply = useGameStore((s) => s.addExpeditionSupply)
+  const setSupplyQty = useGameStore((s) => s.setExpeditionSupplyQty)
+  const toggleSource = useGameStore((s) => s.toggleExpeditionSupplySource)
+  const removeSupply = useGameStore((s) => s.removeExpeditionSupply)
   const [sel, setSel] = useState<string | null>(initial)
 
   const entry = sel ? loadout[sel] : undefined
@@ -117,18 +115,18 @@ export function ExpeditionPanel({ unit }: { unit: Unit }) {
   const units = useGameStore((s) => s.units)
   const ticks = useGameStore((s) => s.ticks)
   const locations = useGameStore((s) => s.locations)
-  const packs = useProtoStore((s) => s.packs)
-  const heroes = useExpeditionStore((s) => s.heroes)
-  const returnMode = useExpeditionStore((s) => s.returnMode)
-  const ensure = useExpeditionStore((s) => s.ensure)
-  const toggleLootCat = useExpeditionStore((s) => s.toggleLootCat)
-  const toggleReturnOn = useExpeditionStore((s) => s.toggleReturnOn)
-  const setSupplyMode = useExpeditionStore((s) => s.setSupplyMode)
-  const toggleShareFlag = useExpeditionStore((s) => s.toggleShareFlag)
-  const setReturnTown = useExpeditionStore((s) => s.setReturnTown)
-  const setReturnMode = useExpeditionStore((s) => s.setReturnMode)
-  const applyToParty = useExpeditionStore((s) => s.applyToParty)
-  const commitStep = useExpeditionStore((s) => s.commitStep)
+  const packs = useGameStore((s) => s.packs)
+  const heroes = useGameStore((s) => s.expeditions)
+  const returnMode = useGameStore((s) => s.expeditionReturnMode)
+  const ensure = useGameStore((s) => s.ensureExpedition)
+  const toggleLootCat = useGameStore((s) => s.toggleExpeditionLootCat)
+  const toggleReturnOn = useGameStore((s) => s.toggleExpeditionReturnOn)
+  const setSupplyMode = useGameStore((s) => s.setExpeditionSupplyMode)
+  const toggleShareFlag = useGameStore((s) => s.toggleExpeditionShareFlag)
+  const setReturnTown = useGameStore((s) => s.setExpeditionReturnTown)
+  const setReturnMode = useGameStore((s) => s.setExpeditionReturnMode)
+  const applyToParty = useGameStore((s) => s.applyExpeditionToParty)
+  const commitStep = useGameStore((s) => s.commitExpeditionStep)
   const setTravelEngage = useGameStore((s) => s.setTravelEngage)
 
   const [menu, setMenu] = useState<{ initial: string | null } | null>(null)

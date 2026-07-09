@@ -127,6 +127,13 @@ export const PAPER_PALETTE = {
   roofSlateInk2: '#2a333a',
   rs0: '#5a6b78', rs1: '#4f606c', rs2: '#6a7b86', rs3: '#455560', rs4: '#63737e',
 
+  // thatch roof — warm golden straw courses (distinct from the red-tile pool)
+  thatchInk: '#6b4a1e',
+  th0: '#c9a24e', th1: '#d4b063', th2: '#bd9243', th3: '#cba066', th4: '#b8863a',
+  // wood-shingle roof — brown split-shingle courses (around roofShingle/Dark)
+  shingleInk: '#2f1c10',
+  sh0: '#6f4b30', sh1: '#7d5638', sh2: '#614026', sh3: '#86603f', sh4: '#573920',
+
   mossBase: '#4f6a2c', mossInk: '#33461f',
   ms0: '#6f8a3f', ms1: '#7f9a4d', ms2: '#567a34',
 
@@ -149,6 +156,8 @@ export const INK_POOLS = {
   stone: [P.st0, P.st1, P.st2, P.st3, P.st4],
   roofRed: [P.rr0, P.rr1, P.rr2, P.rr3, P.rr4, P.rr5],
   roofSlate: [P.rs0, P.rs1, P.rs2, P.rs3, P.rs4],
+  thatch: [P.th0, P.th1, P.th2, P.th3, P.th4],
+  shingle: [P.sh0, P.sh1, P.sh2, P.sh3, P.sh4],
   moss: [P.ms0, P.ms1, P.ms2],
   wood: [P.wd0, P.wd1, P.wd2],
   water: [P.wtr0, P.wtr1, P.wtr2],

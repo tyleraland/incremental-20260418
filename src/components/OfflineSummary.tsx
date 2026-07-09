@@ -36,14 +36,10 @@ export function OfflineSummary() {
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <div className="bg-game-bg rounded-lg py-2.5 text-center">
               <div className="text-xl font-bold font-mono leading-none text-game-primary">{summary.totalKills}</div>
               <div className="text-xs text-game-text-dim mt-1">Kills</div>
-            </div>
-            <div className="bg-game-bg rounded-lg py-2.5 text-center">
-              <div className="text-xl font-bold font-mono leading-none text-game-gold">{summary.totalGold}</div>
-              <div className="text-xs text-game-text-dim mt-1">Gold</div>
             </div>
           </div>
 
@@ -94,7 +90,7 @@ function LocationRow({ r }: { r: OfflineLocationReward }) {
     .sort((a, b) => b.tally.damageDealt - a.tally.damageDealt)
   const expandable = heroes.length > 0
 
-  // The headline (name + kills/exp/gold) — the whole thing is the hit target when
+  // The headline (name + kills/exp) — the whole thing is the hit target when
   // there's a per-hero breakdown to reveal.
   const head = (
     <>
@@ -108,7 +104,7 @@ function LocationRow({ r }: { r: OfflineLocationReward }) {
         )}
       </div>
       <div className={`text-xs text-game-text-dim font-mono mt-1 ${expandable ? 'pl-5' : ''}`}>
-        {r.kills} kills · +{Math.floor(r.exp)} exp · {r.gold} gold
+        {r.kills} kills · +{Math.floor(r.exp)} exp
       </div>
     </>
   )

@@ -1,12 +1,12 @@
-import { memo, useMemo, useEffect, useRef, useState } from 'react'
+import { memo, useMemo, useLayoutEffect, useRef, useState } from 'react'
 import type { Barrier } from '@/engine'
-import type { BarrierMaterial, MapSpec, ScatterKind, SurfaceMaterial } from '@/mapgen'
+import type { BarrierMaterial, MapSpec, ScatterIntent, ScatterKind, SurfaceMaterial, ThemeTag } from '@/mapgen'
 import { SURFACE_MATERIALS } from '@/mapgen'
 import type { Biome } from '@/render/appearance'
 import { PAPER_PALETTE as P, type PaperRole } from '@/render/palette'
-import { TERRAIN_PROPS, type PropDef } from '@/render/props'
+import { TERRAIN_PROPS, themeFilteredCands, weightedPick, rotForPolicy, type PropDef } from '@/render/props'
 import { buildingMarkup, isBuildingMaterial } from '@/render/buildings'
-import { ink, cobble, mossClump } from '@/render/inked'
+import { ink, cobble, fanCobble, mossClump } from '@/render/inked'
 import { INK_POOLS } from '@/render/palette'
 import { hash01, wonk, blobPath, polyPath, rectOutline, roughCircle, scatter, maskLoops, decimate, wrectPath, pick, type Pt, type Rect } from '@/render/authoring'
 
@@ -50,6 +50,11 @@ export interface TerrainProps {
   // vanish under the lake instead of reading as stone; hedges go green).
   // Absent → the classic barrier-derived dressing, byte-identical to before.
   spec?: MapSpec
+  // Fires once the baked bitmap is decoded and drawn (the moment it fades in),
+  // so the caller can reveal the base ground/grid IN SYNC with it instead of
+  // popping them in early under a not-yet-ready terrain. Must be stable (the
+  // component is memo'd on its other props).
+  onReady?: () => void
 }
 
 // How far the visual blob overhangs its collision rect. Purely cosmetic slack —
@@ -227,19 +232,27 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
     })
 
-    // Paving: inked cobblestones ARE the paved surface (no underlying wash). Each
-    // paved cell is filled with a jittered 2×2 cluster of pooled stones — finer,
-    // packed cobbles (an "upscale" from one-stone-per-cell) veined by dark mortar
-    // gaps, with the outer stones giving the street a ragged hand-laid edge.
-    // Plaza slabs run a touch larger/dressed than the street cobbles. Bounded
-    // (4 stones per paved cell) and baked into the single terrain image → free.
+    // Paving: inked cobblestones ARE the paved surface (no underlying wash).
+    //  • STREETS (`road`) keep the running-laid look: each cell gets a jittered
+    //    2×2 cluster of pooled stones — finer, packed cobbles veined by dark
+    //    mortar gaps, the outer stones giving a ragged hand-laid edge.
+    //  • The PLAZA (`stone-floor`) is laid as ONE fan (opus arcuatum): cobbles in
+    //    concentric ARC ROWS radiating from the plaza centre (its landmark, else
+    //    the cell centroid), staggered ring→ring (the peacock-fan offset) — a
+    //    single fanCobble() clipped to the plaza cell mask, so the arc pattern
+    //    fills exactly the plaza footprint and the ragged stone edge = plaza edge.
+    // Both bounded (streets: 4 stones/cell; plaza: ~area/stone-area, a few
+    // hundred stones for a ~10×10 plaza) and baked into the one terrain image.
     if (isCity) {
       const NSUB = 2
+      // collect plaza (stone-floor) cells while laying the street cobbles
+      const plaza: { x: number; y: number }[] = []
       for (let y = 0; y < spec.rows; y++) {
         for (let x = 0; x < spec.cols; x++) {
           const v = g[y * spec.cols + x]
-          if (v !== road && v !== floor) continue
-          const baseR = v === floor ? 0.34 : 0.3
+          if (v === floor) { plaza.push({ x, y }); continue }
+          if (v !== road) continue
+          const baseR = 0.3
           for (let sj = 0; sj < NSUB; sj++) {
             for (let si = 0; si < NSUB; si++) {
               const s = seed + (x * NSUB + si) * 131 + (y * NSUB + sj) * 271
@@ -250,6 +263,32 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
             }
           }
         }
+      }
+      // The plaza fan. Work in DISPLAY space (y flipped, matching the stones and
+      // the landmark POI). Centre = the landmark (fountain) if present, else the
+      // centroid of plaza cells; maxR = the farthest plaza corner from it; mask =
+      // "is this display point over a stone-floor cell?" (grid lookup, y unflipped).
+      if (plaza.length) {
+        const floorSet = new Set(plaza.map((c) => c.y * spec.cols + c.x))
+        const inMask = (px: number, py: number): boolean => {
+          const gx = Math.floor(px)
+          const gy = Math.floor(rows - py)
+          return gx >= 0 && gx < spec.cols && gy >= 0 && gy < spec.rows && floorSet.has(gy * spec.cols + gx)
+        }
+        let cx: number, cy: number
+        if (landmark) { cx = landmark.x; cy = landmark.y }
+        else {
+          const ax = plaza.reduce((a, c) => a + c.x + 0.5, 0) / plaza.length
+          const ay = plaza.reduce((a, c) => a + c.y + 0.5, 0) / plaza.length
+          cx = ax; cy = rows - ay
+        }
+        let maxR = 0
+        for (const c of plaza) {
+          const dx = c.x + 0.5 - cx
+          const dy = rows - (c.y + 0.5) - cy
+          maxR = Math.max(maxR, Math.hypot(dx, dy))
+        }
+        paving.push(fanCobble(cx, cy, inMask, maxR + 0.8, seed + 4400, 0.32))
       }
     }
   }
@@ -283,34 +322,48 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
   // to a biome prop archetype here — same seam rule as appearance.ts, kinds
   // never prop ids. Without a spec, the classic seeded random scatter.
   const variants = TERRAIN_PROPS[p.biome]
+  const allIdx = variants.map((_, i) => i)
   let props: TerrainModel['props']
   if (spec) {
+    // The scatter PLANE drives placement; the abstract kind resolves to biome
+    // prop archetypes here. Phase-1 pick: THEME-filter the candidates by the
+    // map's regionTags (a desert `tree` cell won't draw an oak; empty survivors
+    // fall back to the full set), pick WEIGHTED by each prop's `weight` (a rare
+    // signature canopy loses to filler grass), and rotate by the chosen prop's
+    // `rotate` policy (rocks/cobbles free-spin, trees keep a small upright wobble).
+    const themes = (spec.semantic.regionTags ?? []) as ThemeTag[]
     props = spec.scatter.map((it) => {
-      const cands = ARCHETYPE_INDEX(p.biome, it.kind)
-      const v = cands[Math.floor(hash01(it.seed) * cands.length)]
+      // kind → theme-filtered prop candidates (phase 1), then INTENT → prop
+      // role (phase 2): a `cluster` item prefers grove/bed props, an
+      // `understory` item prefers the low sprig props. Each filter falls back to
+      // its input if it would empty the pool — never render nothing.
+      const themed = themeFilteredCands(variants, ARCHETYPE_INDEX(p.biome, it.kind), themes)
+      const cands = roleFilteredCands(variants, themed, it.intent)
+      const v = weightedPick(variants, cands, hash01(it.seed))
       return {
         v,
         x: r2(it.x),
         y: r2(rows - it.y),
         s: r2(it.size * variants[v].size),
-        rot: r2((hash01(it.seed + 19) - 0.5) * 24),
+        rot: r2(rotForPolicy(variants[v].rotate, hash01(it.seed + 19))),
         flip: hash01(it.seed + 31) < 0.5,
       }
     })
   } else {
     // seeded placement clear of barrier boxes (+margin) and the caller's
-    // keep-clear rects (portals).
+    // keep-clear rects (portals). No spec → no map themes, so no theme filter;
+    // weight + rotate policy still apply (cheap, and keeps looks consistent).
     const keepClear: Rect[] = [...p.barriers, ...(p.avoid ?? [])]
     const propCount = Math.max(8, Math.min(64, Math.round((cols * rows) / 45)))
     props = scatter(cols, rows, seed + 9000, propCount, keepClear, 0.6).map((pt: Pt, i: number) => {
       const s = seed + 9000 + i * 379
-      const v = Math.floor(hash01(s) * variants.length)
+      const v = weightedPick(variants, allIdx, hash01(s))
       return {
         v,
         x: r2(pt.x),
         y: r2(rows - pt.y),
         s: r2((0.55 + hash01(s + 7) * 0.5) * variants[v].size),
-        rot: r2((hash01(s + 19) - 0.5) * 24),
+        rot: r2(rotForPolicy(variants[v].rotate, hash01(s + 19))),
         flip: hash01(s + 31) < 0.5,
       }
     })
@@ -319,18 +372,22 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
   return { mottles, surface, paving, props, cliffs, walls, buildings, landmark, decor, rim }
 }
 
-// ScatterKind → biome prop ARCHETYPE (base id; seeded variants ride along).
-// The mapgen vocabulary stays abstract; what a "tree" looks like is this
-// biome's business. Falls back to the whole set for unmapped kinds.
-const KIND_ARCHETYPE: Record<Biome, Partial<Record<ScatterKind, string>>> = {
-  grass: { tree: 'bush', bush: 'bush', rock: 'pebble', stump: 'stump', flower: 'bloom', reed: 'reeds' },
-  stone: { tree: 'spikes', bush: 'moss', rock: 'shard', stump: 'rubble', flower: 'bone', reed: 'crack' },
-  plaza: { tree: 'conifer', bush: 'pot', rock: 'sack', stump: 'crate', flower: 'pot', reed: 'coil' },
-}
-// Catalog helper (?gallery=1): the archetype a scatter kind resolves to in a
-// biome — so the gallery can show the mapgen vocabulary next to the raw props.
-export function scatterArchetype(biome: Biome, kind: ScatterKind): PropDef {
-  return TERRAIN_PROPS[biome][ARCHETYPE_INDEX(biome, kind)[0]]
+// ScatterKind → the biome prop indices that can fill it. Props SELF-DECLARE
+// their kinds (props.ts `PROP_META`); the placer spreads a kind across ALL
+// tagged props (base + seeded variants), so every authored prop with a matching
+// kind is reachable on a generated map — no prop goes dark because a 1:1 map
+// skipped it. Unmapped kind → the whole set (never render nothing). The mapgen
+// vocabulary stays abstract; what a "tree" looks like is the prop's business.
+// Scatter INTENT (mapgen) → prop ROLE (props.ts): keep only candidates whose
+// placement role matches the item's intent, so a `cluster` scatter item draws a
+// grove/bed prop and an `understory` item a low sprig. Empty match → the input
+// candidates (never render nothing); no intent → unchanged. Deterministic (pure
+// filter over the seed-ordered candidate list). This is the phase-2 half of the
+// mapgen⇄render seam: mapgen states intent, render owns the intent→role match.
+function roleFilteredCands(defs: PropDef[], cands: number[], intent?: ScatterIntent): number[] {
+  if (!intent) return cands
+  const kept = cands.filter((i) => (defs[i].role ?? 'field') === intent)
+  return kept.length ? kept : cands
 }
 
 const archetypeCache = new Map<string, number[]>()
@@ -338,14 +395,17 @@ function ARCHETYPE_INDEX(biome: Biome, kind: ScatterKind): number[] {
   const k = `${biome}:${kind}`
   const hit = archetypeCache.get(k)
   if (hit) return hit
-  const base = KIND_ARCHETYPE[biome][kind]
   const defs = TERRAIN_PROPS[biome]
-  let idxs = base
-    ? defs.map((d, i) => [d.id, i] as const).filter(([id]) => id === base || id.startsWith(`${base}~`)).map(([, i]) => i)
-    : []
+  let idxs = defs.map((d, i) => [d, i] as const).filter(([d]) => d.kinds?.includes(kind)).map(([, i]) => i)
   if (idxs.length === 0) idxs = defs.map((_, i) => i)
   archetypeCache.set(k, idxs)
   return idxs
+}
+
+// Catalog helper (?gallery=1): the first archetype a scatter kind resolves to in
+// a biome — so the gallery can show the mapgen vocabulary next to the raw props.
+export function scatterArchetype(biome: Biome, kind: ScatterKind): PropDef {
+  return TERRAIN_PROPS[biome][ARCHETYPE_INDEX(biome, kind)[0]]
 }
 
 // Build-count probe (memo regression guard, like BODY_RENDER_PROBE): an
@@ -470,7 +530,76 @@ export function terrainSvg(p: TerrainProps): string {
 // decode runs async (the arena shows immediately; the terrain fades in). We
 // trade infinite-zoom crispness (unneeded) for smoothness. RES caps the bitmap
 // so a big city doesn't allocate an enormous texture.
-const TERRAIN_RES = (cols: number) => Math.min(1536, Math.max(768, Math.round(cols * 26)))
+//
+// The bitmap gets scaled UP by the camera when you zoom in toward hero scale,
+// so its raster resolution is the crispness ceiling. Scale RES by the device
+// pixel ratio (clamped) — mobile retina is exactly where the upscale shows —
+// while the cap keeps the one texture bounded (3072² ≈ 38MB; the async decode
+// scales with SVG path count, not much with area, and pan/zoom just composite
+// the one quad on the GPU, so bigger res costs memory + one decode, not fps).
+const TERRAIN_RES = (cols: number) => {
+  const dpr = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1
+  return Math.min(3072, Math.max(768, Math.round(cols * 32 * dpr)))
+}
+
+// Decoded-bitmap cache. The transition cost of the inked city map is the SVG
+// parse+raster (~3k paths, hundreds of ms) — NOT the pixel count. Once a bitmap
+// is drawn we keep the canvas, so a prewarm (from the location detail panel,
+// before drop-in) or a revisit paints the map on the FIRST frame instead of
+// after that parse — no blank arena, no staged reveal. LRU-capped since each
+// entry is a res² bitmap (a city ≈ 38MB).
+const TERRAIN_BITMAPS = new Map<string, HTMLCanvasElement>()
+const TERRAIN_CACHE_MAX = 3
+const terrainKey = (sig: string, res: number) => `${res}|${sig}`
+const cacheGet = (k: string): HTMLCanvasElement | undefined => {
+  const v = TERRAIN_BITMAPS.get(k)
+  if (v) { TERRAIN_BITMAPS.delete(k); TERRAIN_BITMAPS.set(k, v) } // bump to MRU
+  return v
+}
+const cacheSet = (k: string, cv: HTMLCanvasElement) => {
+  TERRAIN_BITMAPS.set(k, cv)
+  while (TERRAIN_BITMAPS.size > TERRAIN_CACHE_MAX) {
+    const oldest = TERRAIN_BITMAPS.keys().next().value
+    if (oldest === undefined) break
+    TERRAIN_BITMAPS.delete(oldest)
+  }
+}
+
+// Rasterize the terrain SVG into an offscreen canvas at `res` (async — the
+// browser SVG decode). Stamps explicit width/height so it rasterizes AT `res`:
+// a viewBox-only SVG has no intrinsic size, so <img> would raster it at the
+// default 300×150 and the draw would UPSCALE that (blurry). Shared by the live
+// mount and prewarm.
+function rasterizeTerrain(svg: string, res: number): Promise<HTMLCanvasElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.decoding = 'async'
+    img.onload = () => {
+      const cv = document.createElement('canvas')
+      cv.width = res; cv.height = res
+      const ctx = cv.getContext('2d')
+      if (!ctx) { reject(new Error('no 2d')); return }
+      try { ctx.drawImage(img, 0, 0, res, res) } catch (e) { reject(e); return }
+      resolve(cv)
+    }
+    img.onerror = () => reject(new Error('terrain decode failed'))
+    const sized = svg.replace('<svg ', `<svg width='${res}' height='${res}' `)
+    img.src = `data:image/svg+xml,${encodeURIComponent(sized)}`
+  })
+}
+
+// Prewarm a location's terrain bitmap into the cache so entering its battle
+// paints the map on the first frame instead of after the multi-hundred-ms
+// parse. Fire-and-forget; a no-op if already cached. Call while the location is
+// on screen but not yet entered (its detail panel) so the parse overlaps the
+// user's read. Props MUST match what the Arena will pass (same sig → cache hit).
+export function prewarmTerrain(p: TerrainProps): void {
+  if (typeof document === 'undefined') return
+  const res = TERRAIN_RES(p.cols)
+  const key = terrainKey(sigOf(p), res)
+  if (TERRAIN_BITMAPS.has(key)) return
+  rasterizeTerrain(terrainSvg(p), res).then((cv) => cacheSet(key, cv)).catch(() => {})
+}
 
 export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   const sig = sigOf(p)
@@ -482,35 +611,55 @@ export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [ready, setReady] = useState(false)
 
-  useEffect(() => {
+  // Layout effect so a CACHE HIT draws before the browser paints — the map is
+  // there on the first frame (no blank). A miss decodes async, caches, then
+  // paints; `ready` gates the fade + the base ground/grid reveal (Arena) so the
+  // whole map appears as one instead of layer-by-layer.
+  useLayoutEffect(() => {
     let cancelled = false
-    setReady(false)
     const res = TERRAIN_RES(p.cols)
-    const img = new Image()
-    img.decoding = 'async'
-    img.onload = () => {
+    const key = terrainKey(sig, res)
+    const paint = (src: CanvasImageSource) => {
       const cv = canvasRef.current
       if (cancelled || !cv) return
-      cv.width = res
-      cv.height = res
+      cv.width = res; cv.height = res
       const ctx = cv.getContext('2d')
       if (!ctx) return
-      try { ctx.drawImage(img, 0, 0, res, res) } catch { return }
+      try { ctx.drawImage(src, 0, 0, res, res) } catch { return }
       setReady(true)
     }
-    img.src = `data:image/svg+xml,${encodeURIComponent(svg)}`
+    const cached = cacheGet(key)
+    if (cached) { paint(cached); return }
+    setReady(false)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    rasterizeTerrain(svg, res)
+      .then((cv) => { if (cancelled) return; cacheSet(key, cv); paint(cv) })
+      // Reveal anyway on decode failure — a bare arena beats a field hidden
+      // forever (the caller gates the whole scene on this readiness).
+      .catch(() => { if (!cancelled) setReady(true) })
     return () => { cancelled = true }
-  }, [svg, p.cols])
+    // eslint-disable-next-line react-hooks/exhaustive-deps — svg is a pure fn of sig
+  }, [sig, p.cols])
+
+  // Tell the caller the moment the bitmap is ready so it reveals the base
+  // ground/grid in the SAME frame. useLayoutEffect (not useEffect) so on a cache
+  // hit terrainReady flips before the browser paints — the map is whole on the
+  // first frame, not a frame behind the tokens.
+  useLayoutEffect(() => { if (ready) p.onReady?.() }, [ready, p.onReady])
 
   // The canvas fills the ground layer and scales with the camera transform as a
-  // plain bitmap (GPU composite). A short fade hides the one-time async decode.
+  // plain bitmap (GPU composite). NO fade: the bitmap is either drawn (prewarm/
+  // cache hit → present on the first paint, coeval with the tokens) or not yet
+  // decoded (hidden until it is). A fade would delay the terrain ~240ms behind
+  // the un-faded tokens — reading as the "tokens first, map an instant later"
+  // stagger. Appears instantly the moment it's ready.
   return (
     <canvas
       ref={canvasRef}
       data-terrain
       aria-hidden
       className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{ opacity: ready ? 1 : 0, transition: 'opacity 240ms ease-out' }}
+      style={{ opacity: ready ? 1 : 0 }}
     />
   )
 })

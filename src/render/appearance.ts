@@ -21,7 +21,7 @@ export type Tone = 'player' | 'enemy' | 'neutral' | 'casting'
 // Silhouette family for the token body. A skin picks its body path by this —
 // NEVER by entity id (that translation happens here). A handful of shared
 // shapes cover the whole bestiary; per-monster art stays a non-goal.
-export type BodyShape = 'humanoid' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine'
+export type BodyShape = 'humanoid' | 'knight' | 'paperDoll' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine' | 'fearrow' | 'crampRat' | 'mandragora' | 'spider' | 'mimic' | 'mimic2' | 'thiefBug' | 'larva' | 'centipede'
 
 // A hero's handheld, keyed off class — the paper skin swaps its facing-blade
 // layer by this. Absent (Novice / monsters) → the skin's generic pointer.
@@ -36,12 +36,6 @@ export interface Appearance {
   weapon?: Weapon        // class handheld (skins pick their blade layer by this)
   spriteId?: string      // future sprite-sheet key; absent → circle skin
 }
-
-// A discrete visual state derived purely from engine fields, for a sprite skin to
-// pick an animation row from. Kept honest to the data we actually have: 'idle' /
-// 'move' / 'cast' / 'ko'. Discrete attack/hurt frames need per-event triggers
-// (the engine emits attack/damage events) and are deferred to the effects pass.
-export type VisualState = 'idle' | 'move' | 'cast' | 'ko'
 
 export const CLASS_ICON: Record<string, string> = {
   Fighter: '⚔',
@@ -64,16 +58,30 @@ export function weaponForClass(cls: string | null | undefined): Weapon | undefin
   return cls ? CLASS_WEAPON[cls] : undefined
 }
 
+const CLASS_BODY: Partial<Record<string, BodyShape>> = {
+  Fighter: 'knight',
+}
+export function bodyForClass(cls: string | null | undefined): BodyShape {
+  return (cls && CLASS_BODY[cls]) || 'humanoid'
+}
+
+const NPC_BODY: Partial<Record<string, BodyShape>> = {
+  'arnold-armorsmith': 'paperDoll',
+  'paul-weaponsmith': 'paperDoll',
+}
+
 // Monster id → silhouette family. Only non-beasts are listed: anything unlisted
 // (including future monsters) reads as 'beast', so a new registry entry gets a
 // sensible token without touching the render layer.
 const MONSTER_SHAPE: Partial<Record<string, BodyShape>> = {
   // blobs — slimes, sacs, rooted things
   'slime': 'blob', 'tough-slime': 'blob', 'dark-slime': 'blob', 'fire-slime': 'blob',
-  'egg-sac': 'blob', 'living-nightshade': 'blob', 'giant-frog': 'blob',
+  'egg-sac': 'blob', 'living-nightshade': 'mandragora', 'giant-frog': 'blob',
   // flyers — wings or floating
-  'harpy': 'flyer', 'bat': 'flyer', 'hornet': 'flyer', 'rat-fly': 'flyer',
+  'harpy': 'fearrow', 'bat': 'flyer', 'hornet': 'flyer', 'rat-fly': 'flyer',
   'forest-sprite': 'flyer', 'wraith': 'flyer', 'ruins-specter': 'flyer',
+  // many-legged crawlers
+  'centipede': 'centipede',
   // humanoids — two legs, tools, armor
   'poacher': 'humanoid', 'skeleton-archer': 'humanoid', 'animated-armor': 'humanoid',
   'stone-golem': 'humanoid', 'stone-sentinel': 'humanoid',
@@ -86,8 +94,21 @@ const MONSTER_SHAPE: Partial<Record<string, BodyShape>> = {
   'wolf': 'canine', 'dire-wolf': 'canine', 'shadow-wolf': 'canine',
 }
 export function monsterBodyShape(monsterId: string): BodyShape {
+  const defShape = MONSTER_REGISTRY[monsterId]?.bodyShape
+  if (defShape && BODY_SHAPES.includes(defShape as BodyShape)) return defShape as BodyShape
   return MONSTER_SHAPE[monsterId] ?? 'beast'
 }
+
+// ── Asset enumeration (for the discoverable catalog, assets.ts) ──
+// Closed lists of the visual families, plus reverse lookups (who uses each), so
+// the dev asset gallery can list bodies/weapons and show what maps to them.
+// `satisfies` keeps these exhaustive against the unions at compile time.
+export const BODY_SHAPES = ['humanoid', 'knight', 'paperDoll', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug', 'larva', 'centipede'] as const satisfies readonly BodyShape[]
+export const WEAPONS = ['sword', 'bow', 'staff', 'dagger'] as const satisfies readonly Weapon[]
+export const monstersForShape = (shape: BodyShape): string[] =>
+  Object.entries(MONSTER_SHAPE).filter(([, s]) => s === shape).map(([id]) => id)
+export const classesForWeapon = (w: Weapon): string[] =>
+  Object.entries(CLASS_WEAPON).filter(([, ww]) => ww === w).map(([c]) => c)
 
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
@@ -129,7 +150,7 @@ export function getAppearance(c: Combatant, classFor: (id: string) => string | n
       glyph: (cls && CLASS_ICON[cls]) || initials(c.name),
       tone: casting ? 'casting' : 'player',
       scale: 1,
-      bodyShape: 'humanoid',
+      bodyShape: bodyForClass(cls),
       weapon: weaponForClass(cls),
       // A hero's elemental identity is its weapon-imbued attack element (§3).
       tint: ELEMENT_TINT[c.attackElement],
@@ -137,7 +158,7 @@ export function getAppearance(c: Combatant, classFor: (id: string) => string | n
   }
   if (c.team === 'neutral') {
     // Town NPC: show its own icon; stationary, no element identity.
-    return { glyph: NPC_REGISTRY[c.id]?.icon ?? initials(c.name), tone: 'neutral', scale: 1, bodyShape: 'humanoid' }
+    return { glyph: NPC_REGISTRY[c.id]?.icon ?? initials(c.name), tone: 'neutral', scale: 1, bodyShape: NPC_BODY[c.id] ?? 'humanoid' }
   }
   const def = monsterDefOf(c)
   return {
@@ -162,11 +183,4 @@ export function biomeForLocation(loc: { traits?: string[] } | null | undefined):
   if (traits.includes('city')) return 'plaza'
   if (STONE_TRAITS.some((t) => traits.includes(t))) return 'stone'
   return 'grass'
-}
-
-export function visualState(c: Combatant): VisualState {
-  if (!c.alive) return 'ko'
-  if (c.channel) return 'cast'
-  if (c.moving) return 'move'
-  return 'idle'
 }

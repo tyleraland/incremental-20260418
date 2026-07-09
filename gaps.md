@@ -113,8 +113,13 @@ reload and a cold restart; upgrade effects change real numbers.
 
 **Mock today**
 - `packs[unitId]` is a mock pack filled by `simulateHunt` (fake drops);
-  `depositPack` folds it into real `miscItems`. So the *sink* is real but the
-  *source* is fake, the pack is unpersisted, and it isn't wired to combat.
+  `depositPack` folds it into real `miscItems`. So the *sink* is real, and the
+  pack now **survives a reload** (interim `protoPacks` localStorage key + a
+  `packsSeeded` flag so the one-time mock fill doesn't re-roll over it — same
+  pattern as the quest slice §2). The expedition *plans* (loadouts + loot filter +
+  return rules) also persist now (interim `protoExpeditions` key; per-tick runtime
+  is re-derived by the driver). Still-mock: the *source* (fake `simulateHunt`
+  drops, not combat), and neither slice is in the main save envelope yet.
 - Crosses the **crafting gap**: monster drops are `drop-*` ids with no item defs;
   recipe outputs are `craft-*` not in `equipment.ts` (CLAUDE.md known gap), so the
   loot→craft loop is disconnected.
@@ -126,9 +131,16 @@ reload and a cold restart; upgrade effects change real numbers.
   deposit into a real per-hero pack: add `unit.pack` (or a `packsCodec`) and roll
   into it on kill instead of straight into shared `miscItems`.
 - [ ] Capacity/“carry full” as a real rule; deposit on returning to town.
-- [ ] Offline: `projectOfflineRewards` should fill packs from projected kills
-  (today it folds loot into `miscItems` directly).
-- [ ] Delete `simulateHunt`.
+- [x] **Persist + offline (done).** `packs` + expedition plans live in `useGameStore`
+  and persist via `logisticsCodec` (export/import + cold restart). Offline catch-up
+  (`batchTick`) models the return-to-town loop — `projectOfflineCycles` extrapolates
+  hunt→fill→travel→deposit→restock→(stall) cycles from the realized rate + a slice-
+  measured supply burn, depositing completed loads to the stash and leaving a residual
+  carried pack. Tunables + an on-demand **Offline simulator** live in Time→Debug.
+  **Still needs feel-tuning** (overhead per hop, restock price, burn) — iterate via the
+  simulator. Live-drop wiring (real kills → packs during online play) still routes
+  through the proto `simulateHunt` mock.
+- [ ] Delete `simulateHunt` (replace with the real online loot→pack path).
 
 **Acceptance**: real kills fill a hero's pack with real drop items, persist, and
 depositing routes them to the stash; crafting can consume them.

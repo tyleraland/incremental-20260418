@@ -52,7 +52,7 @@ export function CombatReport({ locationId, locationName, onClose }: {
             Since first hunt here · {formatDuration(elapsedSecs)}
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <div className="bg-game-bg rounded-lg py-2.5 text-center">
               <div className="text-xl font-bold font-mono leading-none text-game-primary">{totalKills}</div>
               <div className="text-xs text-game-text-dim mt-1">Kills</div>
@@ -60,10 +60,6 @@ export function CombatReport({ locationId, locationName, onClose }: {
             <div className="bg-game-bg rounded-lg py-2.5 text-center">
               <div className="text-xl font-bold font-mono leading-none text-game-green">{report.expDistributed}</div>
               <div className="text-xs text-game-text-dim mt-1">EXP</div>
-            </div>
-            <div className="bg-game-bg rounded-lg py-2.5 text-center">
-              <div className="text-xl font-bold font-mono leading-none text-game-gold">{report.goldEarned}</div>
-              <div className="text-xs text-game-text-dim mt-1">Gold</div>
             </div>
           </div>
 

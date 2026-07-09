@@ -42,6 +42,81 @@ describe('field recipe fuzz gate', () => {
     expect(sandy).toBeGreaterThan(desert.spec.surface.grid.length * 0.5)
   })
 
+  it('scatter clumps FIRE and are spatially grouped (not uniform dust)', () => {
+    // Across the sweep, most themed seeds must grow at least one grove/bed, and a
+    // cluster item must have a same-kind neighbour within ~clumpRadius — the
+    // spatial grouping uniform scatter would not guarantee.
+    let seedsWithClusters = 0
+    let groupedSeeds = 0
+    for (const r of sweep(120, ['forest'])) {
+      const clusters = r.spec.scatter.filter((it) => it.intent === 'cluster')
+      if (clusters.length === 0) continue
+      seedsWithClusters++
+      // a cluster item with a same-kind neighbour within the clump radius (6)
+      const grouped = clusters.some((a) =>
+        clusters.some((b) => b !== a && b.kind === a.kind && Math.hypot(a.x - b.x, a.y - b.y) < 6))
+      if (grouped) groupedSeeds++
+    }
+    // clumping must be a real layer, not a lottery
+    expect(seedsWithClusters).toBeGreaterThan(SEEDS.length * 0.7)
+    expect(groupedSeeds).toBeGreaterThan(SEEDS.length * 0.7)
+  })
+
+  it('scatter states placement intent for render (field fill + cluster groves)', () => {
+    const r = generateMap(FIELD_RECIPE, { recipe: 'field', seed: 4, size: 120, themes: ['forest'] })
+    const intents = new Set(r.spec.scatter.map((it) => it.intent))
+    expect(intents.has('field')).toBe(true)
+    expect(intents.has('cluster')).toBe(true)
+    // total stays bounded near the ~96×forestMult cap (fill + clump + edge shares
+    // ≤ ~1.5×; the passes rarely spend their whole share, so the real total sits
+    // well under the ceiling)
+    expect(r.spec.scatter.length).toBeLessThan(96 * 1.6 * 1.55)
+  })
+
+  it('edge features fire: shoreline reeds hug the water', () => {
+    // Across the water sweep, at least one edge reed must land on the shore — a
+    // land cell whose neighbourhood contains a water cell.
+    const water = [SURFACE_MATERIALS.indexOf('shallow-water'), SURFACE_MATERIALS.indexOf('deep-water')]
+    const nearWaterCell = (r: ReturnType<typeof generateMap>, x: number, y: number) => {
+      const g = r.spec.surface.grid, cols = r.spec.surface.cols
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const cx = Math.floor(x) + dx, cy = Math.floor(y) + dy
+          if (cx < 0 || cy < 0 || cx >= cols || cy >= r.spec.surface.rows) continue
+          if (water.includes(g[cy * cols + cx])) return true
+        }
+      return false
+    }
+    let shoreReeds = 0
+    for (const r of sweep(200, ['plains', 'water'])) {
+      for (const it of r.spec.scatter) {
+        if (it.intent === 'edge' && it.kind === 'reed' && nearWaterCell(r, it.x, it.y)) shoreReeds++
+      }
+    }
+    // reeds hugging the waterline must be a real layer, not a fluke
+    expect(shoreReeds).toBeGreaterThan(0)
+  })
+
+  it('edge features fire: outcrop skirts ring the rock', () => {
+    // On seeds with rock/hedge outcrops, at least one edge skirt prop (flower or
+    // rock, never reed) must sit just outside a wall rect.
+    const nearRect = (p: { x: number; y: number }, c: { x: number; y: number; w: number; h: number }, m: number) => {
+      const cx = Math.max(c.x, Math.min(p.x, c.x + c.w))
+      const cy = Math.max(c.y, Math.min(p.y, c.y + c.h))
+      return Math.hypot(p.x - cx, p.y - cy) <= m
+    }
+    let ringed = 0
+    for (const r of sweep(120, ['forest', 'mountain'])) {
+      const walls = r.spec.collision.filter((c) => c.material === 'rock' || c.material === 'hedge')
+      if (!walls.length) continue
+      for (const it of r.spec.scatter) {
+        if (it.intent !== 'edge' || it.kind === 'reed') continue
+        if (walls.some((w) => nearRect(it, w, 1.2))) ringed++
+      }
+    }
+    expect(ringed).toBeGreaterThan(0)
+  })
+
   it('the semantic plane self-describes: spawn + landmark POIs, sane tactical profile', () => {
     for (const r of sweep(100, ['plains', 'water']).slice(0, 8)) {
       const kinds = r.spec.semantic.pois.map((p) => p.kind)
