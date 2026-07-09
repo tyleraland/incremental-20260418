@@ -26,6 +26,7 @@ Engine changes must keep snapshot replays byte-identical.
 - `BattleState.peaceful` is set by the store for city traits and is not serialized; peaceful heroes mill individually.
 - Neutral NPCs use `team: 'neutral'`: nobody's enemy, nobody's ally, never take a turn, and are immovable.
 - Barriers block movement and LoS. `steerAround` pathfinds over barriers; unreachable targets hold. Arena bounds come from `engine/arena.ts`, not hardcoded clamps.
+- **Grid-size independence (invariant).** No movement clamp may hardcode a size — read active bounds via `setArenaBounds`/`arenaClamp`. No tactic may hardcode absolute coordinates — everything is relative to enemies/allies/edges. Tuned-for-15×15 knobs an *encounter* still depends on (don't blindly scale them with the open-world map): `BASE_MOVE_SPEED`, reach bands in the adapter, `startingPosition` formations, `SEPARATION`, `HERD_BIAS`, kiter probe distance, `DEFAULT_CAM_SIZE`. Open-world has its own `followCamera` + `OPEN_CAM_SIZE`.
 
 ## Combat systems
 - Spatial hash (`spatialhash.ts`) and per-turn vision cache (`spatial.ts`) are pure optimizations and must stay byte-identical to brute scan. The vision cache assumes one battle steps at a time.
