@@ -138,6 +138,8 @@
 @keyframes atk-trail-b { 0% { transform: none } 45% { transform: translate(calc(var(--atk-x, 0) * -0.55), calc(var(--atk-y, 0) * -0.55)) } 100% { transform: none } }
 @keyframes atk-swing-a { 0% { transform: rotate(-18deg) translate(calc(var(--atk-x, 0) * -0.25), calc(var(--atk-y, 0) * -0.25)) } 42% { transform: rotate(28deg) translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: rotate(0deg) translate(0, 0) } }
 @keyframes atk-swing-b { 0% { transform: rotate(-18deg) translate(calc(var(--atk-x, 0) * -0.25), calc(var(--atk-y, 0) * -0.25)) } 42% { transform: rotate(28deg) translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: rotate(0deg) translate(0, 0) } }
+@keyframes atk-swing-down-a { 0% { transform: rotate(8deg) } 42% { transform: rotate(-48deg) translate(0, 9px) } 100% { transform: rotate(0deg) } }
+@keyframes atk-swing-down-b { 0% { transform: rotate(8deg) } 42% { transform: rotate(-48deg) translate(0, 9px) } 100% { transform: rotate(0deg) } }
 .animate-atk-a [data-atk="jab"]   { animation: atk-jab-a   0.3s ease-out; }
 .animate-atk-b [data-atk="jab"]   { animation: atk-jab-b   0.3s ease-out; }
 .animate-atk-a [data-atk="trail"] { animation: atk-trail-a 0.3s ease-out; }
@@ -146,6 +148,10 @@
 .animate-atk-b [data-atk="swing"] { transform-box: fill-box; transform-origin: 35% 50%; }
 .animate-atk-a [data-atk="swing"] { animation: atk-swing-a 0.3s ease-out; }
 .animate-atk-b [data-atk="swing"] { animation: atk-swing-b 0.3s ease-out; }
+.animate-atk-a [data-atk="swingDown"],
+.animate-atk-b [data-atk="swingDown"] { transform-box: fill-box; transform-origin: 65% 18%; }
+.animate-atk-a [data-atk="swingDown"] { animation: atk-swing-down-a 0.3s ease-out; }
+.animate-atk-b [data-atk="swingDown"] { animation: atk-swing-down-b 0.3s ease-out; }
 
 /* Hit recoil: a struck token jerks back along the blow (--hit-x/--hit-y, % of
    the token box) with a brief squash, then settles. A whole-token wrapper
@@ -155,6 +161,11 @@
 @keyframes hit-recoil-b { 0% { transform: none } 30% { transform: translate(var(--hit-x, 0), var(--hit-y, 0)) } 100% { transform: none } }
 .animate-hit-a { animation: hit-recoil-a 0.24s ease-out; }
 .animate-hit-b { animation: hit-recoil-b 0.24s ease-out; }
+[data-hit="show"] { opacity: 0; }
+.animate-hit-a [data-hit="hide"],
+.animate-hit-b [data-hit="hide"] { opacity: 0; }
+.animate-hit-a [data-hit="show"],
+.animate-hit-b [data-hit="show"] { opacity: 1; }
 
 /* Attack arc line fades shortly after the strike lands. */
 @keyframes line-fade {

@@ -49,9 +49,10 @@ const dims = (px: number) => ({ width: `${px}px`, height: `${px}px`, fontSize: '
 
 function ShapeSheet({ shape }: { shape: BodyShape }) {
   const Body = TOKEN_SKINS.paper
+  const tone = shape === 'paperDoll' ? 'player' : 'enemy'
   const token = (px = 96, over: { facingDeg?: number | null; moving?: boolean; simple?: boolean; alive?: boolean } = {}) => (
     <Body
-      glyph="" tone="enemy" bodyShape={shape} creature selected={false}
+      glyph="" tone={tone} bodyShape={shape} creature={shape !== 'paperDoll'} selected={false}
       alive={over.alive ?? true} facingDeg={over.facingDeg === undefined ? 0 : over.facingDeg}
       moving={over.moving} simple={over.simple} dims={dims(px)}
     />

@@ -8,6 +8,7 @@ import { useGameStore } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
 import { bootBattleSkin, BODY_RENDER_PROBE, TOKEN_SKINS } from '@/render/skins'
+import { getAppearance } from '@/render/appearance'
 import { eu } from '../engine/helpers'
 import type { Location } from '@/types'
 
@@ -131,6 +132,15 @@ describe('battlefield skins', () => {
     expect(container.querySelector('[data-atk="swing"]')).toBeTruthy()
     expect(container.querySelector('[data-atk="jab"]')).toBeTruthy()
     expect(container.textContent).toBe('') // the knight silhouette carries the read
+  })
+
+  it('Arnold and Paul use the reusable paper-doll body', () => {
+    const arnold = getAppearance({ id: 'arnold-armorsmith', name: 'Arnold the Armorsmith', team: 'neutral', alive: true } as Parameters<typeof getAppearance>[0], () => null)
+    const paul = getAppearance({ id: 'paul-weaponsmith', name: 'Paul the Weaponsmith', team: 'neutral', alive: true } as Parameters<typeof getAppearance>[0], () => null)
+    const villager = getAppearance({ id: 'town-villager', name: 'Villager', team: 'neutral', alive: true } as Parameters<typeof getAppearance>[0], () => null)
+    expect(arnold.bodyShape).toBe('paperDoll')
+    expect(paul.bodyShape).toBe('paperDoll')
+    expect(villager.bodyShape).toBe('humanoid')
   })
 
   it('idle gating: a still detail-LOD token carries animate-idle; a moving one swaps to animate-walk', () => {

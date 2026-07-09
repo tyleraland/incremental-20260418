@@ -1,5 +1,6 @@
 import { humanoidBody } from '@/render/bodies/humanoid'
 import { knightBody } from '@/render/bodies/knight'
+import { paperDollBody } from '@/render/bodies/paper-doll'
 import { blobBody } from '@/render/bodies/blob'
 import { beastBody } from '@/render/bodies/beast'
 import { flyerBody } from '@/render/bodies/flyer'
@@ -21,6 +22,7 @@ import type { BodyPart } from '@/render/bodyTypes'
 export const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   humanoid: humanoidBody,
   knight: knightBody,
+  paperDoll: paperDollBody,
   blob: blobBody,
   beast: beastBody,
   flyer: flyerBody,

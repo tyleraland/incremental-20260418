@@ -211,6 +211,8 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
   // accent paint: a tone field (base/top/outline/text) or a palette role.
   const paint = (f: BodyPart['fill']) =>
     f === 'base' || f === 'top' || f === 'outline' || f === 'text' ? p[f] : f ? PAL[f] : p.base
+  const strokePaint = (pl: BodyPart) => pl.stroke === 'fill' ? paint(pl.fill) : pl.stroke ? outline : 'none'
+  const strokeWidth = (pl: BodyPart) => pl.stroke ? 3 : undefined
   const heroWeapon = weapon ?? (bodyShape === 'humanoid' ? 'sword' : undefined)
   return (
     <div
@@ -251,21 +253,21 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
           parts.map((pl, i) =>
             (pl.kind ?? 'plate') === 'accent' ? (
               // accent: a lone path carries its own facing transform, so an
-              // animated one (jab, walk OR idle) needs a transform-less <g> wrapper
+              // animated/stateful one needs a transform-less <g> wrapper
               // to hang the CSS motion on (static accents stay a bare path — no node).
-              pl.atk || pl.walk || pl.idle ? (
-                <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle}>
-                  <path d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
+              pl.atk || pl.walk || pl.idle || pl.hit ? (
+                <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle} data-hit={pl.hit}>
+                  <path d={pl.d} fill={paint(pl.fill)} stroke={strokePaint(pl)} strokeWidth={strokeWidth(pl)} strokeLinecap="round" transform={partT(pl)} />
                 </g>
               ) : (
-                <path key={i} d={pl.d} fill={paint(pl.fill)} stroke={pl.stroke ? outline : 'none'} strokeWidth={pl.stroke ? 3 : undefined} strokeLinecap="round" transform={partT(pl)} />
+                <path key={i} d={pl.d} fill={paint(pl.fill)} stroke={strokePaint(pl)} strokeWidth={strokeWidth(pl)} strokeLinecap="round" transform={partT(pl)} data-hit={pl.hit} />
               )
             ) : (
               // plate: already a transform-less <g> holding shadow/base/lit — so
               // `data-atk`/`data-walk`/`data-idle` ride it for free (the CSS motion
               // targets the g in screen space; the inner paths keep their facing/lit
               // transforms).
-              <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle}>
+              <g key={i} data-atk={pl.atk} data-walk={pl.walk} data-idle={pl.idle} data-hit={pl.hit}>
                 {pl.shadow && <path d={pl.d} fill={PAL.shadow} fillOpacity={0.3} transform={`translate(2.5 3.5) ${partT(pl) ?? ''}`} />}
                 <path d={pl.d} fill={p.base} stroke={outline} strokeWidth="4.5" transform={partT(pl)} />
                 <path d={pl.d} fill={p.top} transform={litT(pl, '-2.5 -3.5', 0.93)} />

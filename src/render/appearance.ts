@@ -21,7 +21,7 @@ export type Tone = 'player' | 'enemy' | 'neutral' | 'casting'
 // Silhouette family for the token body. A skin picks its body path by this —
 // NEVER by entity id (that translation happens here). A handful of shared
 // shapes cover the whole bestiary; per-monster art stays a non-goal.
-export type BodyShape = 'humanoid' | 'knight' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine' | 'fearrow' | 'crampRat' | 'mandragora' | 'spider' | 'mimic' | 'mimic2' | 'thiefBug' | 'larva' | 'centipede'
+export type BodyShape = 'humanoid' | 'knight' | 'paperDoll' | 'blob' | 'beast' | 'flyer' | 'snail' | 'serpent' | 'canine' | 'fearrow' | 'crampRat' | 'mandragora' | 'spider' | 'mimic' | 'mimic2' | 'thiefBug' | 'larva' | 'centipede'
 
 // A hero's handheld, keyed off class — the paper skin swaps its facing-blade
 // layer by this. Absent (Novice / monsters) → the skin's generic pointer.
@@ -65,6 +65,11 @@ export function bodyForClass(cls: string | null | undefined): BodyShape {
   return (cls && CLASS_BODY[cls]) || 'humanoid'
 }
 
+const NPC_BODY: Partial<Record<string, BodyShape>> = {
+  'arnold-armorsmith': 'paperDoll',
+  'paul-weaponsmith': 'paperDoll',
+}
+
 // Monster id → silhouette family. Only non-beasts are listed: anything unlisted
 // (including future monsters) reads as 'beast', so a new registry entry gets a
 // sensible token without touching the render layer.
@@ -98,7 +103,7 @@ export function monsterBodyShape(monsterId: string): BodyShape {
 // Closed lists of the visual families, plus reverse lookups (who uses each), so
 // the dev asset gallery can list bodies/weapons and show what maps to them.
 // `satisfies` keeps these exhaustive against the unions at compile time.
-export const BODY_SHAPES = ['humanoid', 'knight', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug', 'larva', 'centipede'] as const satisfies readonly BodyShape[]
+export const BODY_SHAPES = ['humanoid', 'knight', 'paperDoll', 'blob', 'beast', 'flyer', 'snail', 'serpent', 'canine', 'fearrow', 'crampRat', 'mandragora', 'spider', 'mimic', 'mimic2', 'thiefBug', 'larva', 'centipede'] as const satisfies readonly BodyShape[]
 export const WEAPONS = ['sword', 'bow', 'staff', 'dagger'] as const satisfies readonly Weapon[]
 export const monstersForShape = (shape: BodyShape): string[] =>
   Object.entries(MONSTER_SHAPE).filter(([, s]) => s === shape).map(([id]) => id)
@@ -153,7 +158,7 @@ export function getAppearance(c: Combatant, classFor: (id: string) => string | n
   }
   if (c.team === 'neutral') {
     // Town NPC: show its own icon; stationary, no element identity.
-    return { glyph: NPC_REGISTRY[c.id]?.icon ?? initials(c.name), tone: 'neutral', scale: 1, bodyShape: 'humanoid' }
+    return { glyph: NPC_REGISTRY[c.id]?.icon ?? initials(c.name), tone: 'neutral', scale: 1, bodyShape: NPC_BODY[c.id] ?? 'humanoid' }
   }
   const def = monsterDefOf(c)
   return {

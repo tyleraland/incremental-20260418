@@ -137,14 +137,14 @@ describe('animation perf contract (index.css)', () => {
     }
   })
 
-  it('data-* part rules only start animations (never paint/layout properties)', () => {
-    const rules = [...css.matchAll(/^[^\n@]*\[data-(?:idle|walk|atk)[^\n]*\{([^}]*)\}/gm)]
+  it('data-* part rules only animate or toggle compositor visibility', () => {
+    const rules = [...css.matchAll(/^[^\n@]*\[data-(?:idle|walk|atk|hit)[^\n]*\{([^}]*)\}/gm)]
     expect(rules.length).toBeGreaterThan(3)
     for (const r of rules) {
       const props = [...r[1].matchAll(/([\w-]+)\s*:/g)].map((p) => p[1])
       for (const prop of props) {
         expect(
-          prop === 'animation' || prop.startsWith('animation-') || prop === 'transform-box' || prop === 'transform-origin',
+          prop === 'animation' || prop.startsWith('animation-') || prop === 'transform-box' || prop === 'transform-origin' || prop === 'opacity',
           `data-* rule sets '${prop}'`,
         ).toBe(true)
       }
