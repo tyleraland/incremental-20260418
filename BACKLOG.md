@@ -757,12 +757,9 @@ behavior-sensitive, a refactor, or a product decision.
 
 Tick-cadence, LOD, and compositor-transform work already shipped is
 documented in CLAUDE.md → *Combat view* and gated by `Cadence.test.ts` /
-`map-perf-envelope.test.ts` / `tick-cadence.test.ts`. Known dead ends already
-tried for the old "fast-slow" jitter — do NOT retry: entity interpolation,
-per-frame spring-to-latest, extrapolation, constant-velocity CSS glide
-scaling, per-round target EMA, softening `enforceSeparation`, stop-go
-modeling, skipping render content. (The actual bug was a tick-scheduler phase
-issue, not render or engine cost.)
+`map-perf-envelope.test.ts` / `tick-cadence.test.ts`. Past investigations
+(root causes found, approaches tried and abandoned) are archived in
+`performance.md` — check it before re-chasing an old jitter/lag report.
 
 Open items:
 
