@@ -20,7 +20,7 @@ import { supplyOption } from './expedition'
 import { seedProtoMocks } from './seed'
 import { UnitDetailOverlay, StatusList } from '@/components/BattleUnitSheet'
 import { MonsterCodex } from '@/components/MonsterCodex'
-import { LocationDetail, LocationHeroesPanel, LocationQuestsPanel } from './LocationDetail'
+import { LocationDetail } from './LocationDetail'
 import { ExpeditionPanel } from './ExpeditionPanel'
 import { NPC_REGISTRY } from '@/data/npcs'
 import { MERCHANT_REGISTRY } from '@/data/merchants'
@@ -43,7 +43,7 @@ import { fmt } from '@/components/TallyBreakdown'
 // §orchestration: the lens tabs depend on the SELECTION SCOPE — one hero gets
 // the hero dossier tabs, a multi-selection gets party tools, a location gets
 // site management. The roster/map control selection; the tabs follow.
-type Top = 'location' | 'loc-heroes' | 'loc-quests' | 'hero' | 'equipment' | 'skills' | 'tactics' | 'expedition' | 'party' | 'doctrine'
+type Top = 'location' | 'hero' | 'equipment' | 'skills' | 'tactics' | 'expedition' | 'party' | 'doctrine'
 type HeroSub = 'stats' | 'pet'
 type TabDef = { id: Top; label: string; icon: string }
 const HERO_TABS: TabDef[] = [
@@ -57,10 +57,10 @@ const PARTY_TABS: TabDef[] = [
   { id: 'party',    label: 'Party',    icon: '⚑' },
   { id: 'doctrine', label: 'Doctrine', icon: '☷' },
 ]
+// Location scope is a single scrolling section (heroes + quests + site info all
+// folded together) — no sub-tabs. The one-entry row is hidden (see tab bar).
 const LOC_TABS: TabDef[] = [
-  { id: 'location',   label: 'Overview', icon: '⌖' },
-  { id: 'loc-heroes', label: 'Heroes',   icon: '⚑' },
-  { id: 'loc-quests', label: 'Quests',   icon: '📜' },
+  { id: 'location', label: 'Location', icon: '⌖' },
 ]
 // The hero's whole dossier is one container (UnitLens); a Pet sub appears only
 // once a hero has a beast companion.
@@ -374,11 +374,10 @@ function HeroLens({ unit }: { unit: Unit }) {
 // can I do with it?" The roster/map control selection; this bar shows the actions
 // for the current scope — a hero, a multi-selection, or a location. Move/Deploy
 // open the two deploy sheets; both flows end in the same confirm.
-function SelectionCommandBar({ scope, units, location, setTop }: {
+function SelectionCommandBar({ scope, units, location }: {
   scope: 'hero' | 'party' | 'location'
   units: Unit[]
   location: { id: string; name: string } | null
-  setTop: (t: Top) => void
 }) {
   const assignUnits    = useGameStore((s) => s.assignUnits)
   const locations      = useGameStore((s) => s.locations)
@@ -399,13 +398,13 @@ function SelectionCommandBar({ scope, units, location, setTop }: {
   if (scope === 'location') {
     if (!location) return null
     // The scope switcher above already names the site, so this row is pure
-    // action: Deploy is the site's primary verb, its quest board beside it.
+    // action: Deploy is the site's primary verb. Quests now live inline in the
+    // folded location section below, so no cross-link is needed.
     return (
       <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 bg-game-bg/40">
         <button onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })} className={`${primaryBtn} flex-1 justify-center`}>
           ➤ Deploy heroes here
         </button>
-        <button onClick={() => setTop('loc-quests')} className={quietBtn} title="This location's quest board">📜</button>
       </div>
     )
   }
@@ -1555,6 +1554,9 @@ export function ProtoLens() {
           </button>
         </div>
       )}
+      {/* Sub-tab row — only when the scope actually has more than one tab. The
+          location scope is a single folded section, so its lone tab is hidden. */}
+      {tabs.length > 1 && (
       <div className={['shrink-0 overflow-hidden transition-[max-height] duration-200 ease-out', tabsHidden ? 'max-h-0' : 'max-h-20'].join(' ')}>
         <div className="flex border-b border-game-border bg-game-surface/60">
           {tabs.map((t) => (
@@ -1577,11 +1579,12 @@ export function ProtoLens() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Selection command bar — always answers "who/what am I acting on + what
           can I do?" for the current scope. Hidden only when inspecting a foe. */}
       {!selectedFoe && (scope === 'location' ? !!location : selUnits.length > 0) && (
-        <SelectionCommandBar scope={scope} units={selUnits} location={location} setTop={setTop} />
+        <SelectionCommandBar scope={scope} units={selUnits} location={location} />
       )}
 
       {/* Hero sub-tabs only appear when there's a Pet (Report otherwise lives in
@@ -1624,16 +1627,11 @@ export function ProtoLens() {
           {effTop === 'party'    && <PartyLens units={selUnits} />}
           {effTop === 'doctrine' && <PartyDoctrine />}
 
-          {/* Location scope */}
+          {/* Location scope — heroes, quests, and site info folded into one
+              scrolling section (LocationDetail composes all three). */}
           {effTop === 'location' && (location
             ? <LocationDetail location={location} />
             : <Empty icon="⌖" title="No location focused" sub="Tap a location on the map (or zoom into the locale) to manage it." />)}
-          {effTop === 'loc-heroes' && (location
-            ? <LocationHeroesPanel location={location} />
-            : <Empty icon="⚑" title="No location focused" sub="Tap a location to see who's hunting there." />)}
-          {effTop === 'loc-quests' && (location
-            ? <LocationQuestsPanel location={location} />
-            : <Empty icon="📜" title="No location focused" sub="Tap a location to see its quests." />)}
         </div>
       </div>
 

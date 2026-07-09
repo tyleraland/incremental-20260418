@@ -585,7 +585,6 @@ export function LocationHeroesPanel({ location }: { location: Location }) {
   const units       = useGameStore((s) => s.units)
   const locations   = useGameStore((s) => s.locations)
   const equipment   = useGameStore((s) => s.equipment)
-  const openDeploySheet = useProtoStore((s) => s.openDeploySheet)
   const cityIds = new Set(locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
 
   const hunting   = units.filter((u) => u.locationId === location.id && !(u.travelPath && u.travelPath.length))
@@ -632,10 +631,8 @@ export function LocationHeroesPanel({ location }: { location: Location }) {
           ? <div className="text-[11px] text-game-muted italic">Everyone is already committed somewhere.</div>
           : <div className="flex flex-wrap gap-1.5">{available.map((u) => chip(u, 'dim'))}</div>}
       </div>
-      <button
-        onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })}
-        className="w-full text-xs font-semibold px-3 py-2 rounded-md border border-game-primary/60 bg-game-primary/15 text-game-text hover:bg-game-primary/25 transition-colors"
-      >➤ Deploy heroes here</button>
+      {/* The "Deploy heroes here" action lives in the pinned command bar above
+          this folded section, so it's intentionally not repeated here. */}
     </div>
   )
 }
@@ -683,12 +680,33 @@ export function LocationDetail({ location }: { location: Location }) {
   // Inhabitants: the KNOWN enemies that inhabit this map — the location's monster
   // pool, filtered to those already discovered here. A static bestiary (it grows
   // as you meet new foes, then settles once all are known), NOT who's on the field
-  // right now. (Heroes + quests moved to the location's own Heroes/Quests tabs.)
+  // right now. (Heroes + quests are folded into this same section below.)
   const seenHere = new Set(locationMonstersSeen[location.id] ?? [])
   const foeIds = location.monsterIds.filter((id) => MONSTER_REGISTRY[id] && seenHere.has(id))
 
+  // Whether this site has any quest board to show (class-change / bounty / hunt).
+  // Mirrors the render conditions in LocationQuestsPanel so we can skip the whole
+  // Quests header on sites that have none, rather than print an empty section.
+  const hasQuests = CLASS_CHANGE_QUESTS.some((q) => q.locationId === location.id)
+    || LOCATION_BOUNTIES.some((b) => b.locationId === location.id)
+    || location.monsterIds.length > 0
+
   return (
     <div className="space-y-4">
+      {/* Heroes — who's hunting/traveling here + deploy (folded in from the old
+          Heroes sub-tab). */}
+      <Section title="Heroes">
+        <LocationHeroesPanel location={location} />
+      </Section>
+
+      {/* Quests — class-change / bounty / hunt boards (folded in from the old
+          Quests sub-tab). The header is skipped entirely on sites with none. */}
+      {hasQuests && (
+        <Section title="Quests">
+          <LocationQuestsPanel location={location} />
+        </Section>
+      )}
+
       {/* inhabitants — compact chips; tap one to inspect its monster card */}
       {foeIds.length > 0 && (
         <Section title="Inhabitants">
