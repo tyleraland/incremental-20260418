@@ -5,15 +5,17 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore } from '@/stores/useGameStore'
 import {
-  useProtoStore, classQuestStatus, classQuestProgress, classQuestKillCount, objectiveProgress,
+  classQuestStatus, classQuestProgress, classQuestKillCount, objectiveProgress,
   CLASS_CHANGE_QUESTS, MIN_CLASS_CHANGE_LEVEL, LOCATION_BOUNTIES, bountyVisible, buildQuestBoard,
+  beginClassQuest, completeClassQuest, cancelClassQuest, completeBounty,
   type ClassQuestCommit, type KillObjective, type QuestBoardArgs, type QuestBoardEntry,
 } from '@/proto/protoStore'
 import type { Location } from '@/types'
 import { makeUnit, resetStore, tick } from '../helpers'
 import { emptyTally } from '@/lib/combatTally'
+import { questsCodec } from '@/save/questsCodec'
 
-const reset = () => useProtoStore.setState({ classQuestCommit: {} })
+const reset = () => useGameStore.setState({ classQuestCommit: {} })
 const ROGUE  = CLASS_CHANGE_QUESTS.find((q) => q.id === 'path-rogue')!   // collect (ephemeral)
 const RANGER = CLASS_CHANGE_QUESTS.find((q) => q.id === 'path-ranger')!  // hand-in (inventory)
 const setTypeKills = (heroId: string, monsterId: string, n: number) =>
@@ -83,7 +85,6 @@ describe('class-change quest lifecycle', () => {
   })
 
   it('kill path: completes only once the cull objective is met', () => {
-    const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
     beginClassQuest('path-fighter', 'u7')           // cull 3 wild-boar
     setTypeKills('u7', 'wild-boar', 2)
     completeClassQuest('path-fighter')
@@ -94,7 +95,6 @@ describe('class-change quest lifecycle', () => {
   })
 
   it('collect path: arms a drop rule, then consumes the quest items on complete', () => {
-    const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
     beginClassQuest('path-rogue', 'u7')
     expect(useGameStore.getState().questDropRules.find((r) => r.id === 'path-rogue')).toMatchObject({ itemId: 'qi-bone-splinter', monsterId: 'skeleton-archer', heroId: 'u7' })
 
@@ -109,7 +109,6 @@ describe('class-change quest lifecycle', () => {
   })
 
   it('hand-in path: consumes the required materials from the inventory on complete', () => {
-    const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
     useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 5 }] })
     beginClassQuest('path-ranger', 'u7')            // hand in 3 boar hides
     expect(useGameStore.getState().questDropRules.length).toBe(0)   // hand-in arms no drop rule
@@ -120,7 +119,6 @@ describe('class-change quest lifecycle', () => {
   })
 
   it('hand-in path: will not complete without enough materials', () => {
-    const { beginClassQuest, completeClassQuest } = useProtoStore.getState()
     useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 2 }] })
     beginClassQuest('path-ranger', 'u7')
     completeClassQuest('path-ranger')               // only 2/3
@@ -129,11 +127,10 @@ describe('class-change quest lifecycle', () => {
   })
 
   it('cancel discards a collect commitment and its drop rule + items', () => {
-    const { beginClassQuest, cancelClassQuest } = useProtoStore.getState()
     beginClassQuest('path-rogue', 'u7')
     useGameStore.setState((s) => ({ questItems: { ...s.questItems, 'qi-bone-splinter': 2 } }))
     cancelClassQuest('path-rogue')
-    expect(useProtoStore.getState().classQuestCommit['path-rogue']).toBeUndefined()
+    expect(useGameStore.getState().classQuestCommit['path-rogue']).toBeUndefined()
     expect(useGameStore.getState().questDropRules.find((r) => r.id === 'path-rogue')).toBeUndefined()
     expect(useGameStore.getState().questItems['qi-bone-splinter']).toBeUndefined()
   })
@@ -191,8 +188,7 @@ describe('quest-item drops (store plumbing)', () => {
 
 describe('location bounties (hero-less, chained)', () => {
   beforeEach(() => {
-    useProtoStore.setState({ bountyDone: [], bountyClaimed: {} })
-    resetStore({ units: [], unitStats: {}, monsterDefeated: {}, questItems: {}, miscItems: [] })
+    resetStore({ units: [], unitStats: {}, monsterDefeated: {}, questItems: {}, miscItems: [], bountyDone: [], bountyClaimed: {}, questCompletions: {} })
   })
 
   it('the follow-up bounty is hidden until its prerequisite is done', () => {
@@ -202,30 +198,28 @@ describe('location bounties (hero-less, chained)', () => {
   })
 
   it('completes only with enough hides, consumes them, pays gold, and unlocks the chain', () => {
-    const { completeBounty } = useProtoStore.getState()
     useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 12 }] })
 
     completeBounty('boar-hides-20')                 // only 12/20 → no-op
-    expect(useProtoStore.getState().bountyDone).toEqual([])
+    expect(useGameStore.getState().bountyDone).toEqual([])
 
     useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 25 }] })
     completeBounty('boar-hides-20')
-    expect(useProtoStore.getState().bountyDone).toContain('boar-hides-20')
+    expect(useGameStore.getState().bountyDone).toContain('boar-hides-20')
     expect(useGameStore.getState().miscItems.find((m) => m.id === 'drop-boar-hide')!.quantity).toBe(5)   // 25 − 20
     expect(useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')!.quantity).toBe(200)         // gold reward
     expect(useGameStore.getState().equipment.some((e) => e.id.startsWith('eq-leather'))).toBe(true)      // gear reward granted
-    expect(useProtoStore.getState().questCompletions['boar-hides-20']).toBe(1)                           // tallied
+    expect(useGameStore.getState().questCompletions['boar-hides-20']).toBe(1)                           // tallied
   })
 
   it('will not complete a still-locked bounty', () => {
     useGameStore.setState({ miscItems: [{ id: 'drop-boar-hide', name: 'Boar Hide', quantity: 999 }] })
-    useProtoStore.getState().completeBounty('boar-hides-100')   // prerequisite not done
-    expect(useProtoStore.getState().bountyDone).toEqual([])
+    completeBounty('boar-hides-100')   // prerequisite not done
+    expect(useGameStore.getState().bountyDone).toEqual([])
   })
 
   it('the repeatable kill bounty is capped at one claim per cycle; backlog never banks', () => {
     const gold = () => useGameStore.getState().miscItems.find((m) => m.id === 'm-gold')?.quantity ?? 0
-    const { completeBounty } = useProtoStore.getState()
     useGameStore.setState({ monsterDefeated: { 'wild-boar': 99 } })
     completeBounty('boar-cull-repeat')                          // 99/100 → no-op
     expect(gold()).toBe(0)
@@ -234,14 +228,14 @@ describe('location bounties (hero-less, chained)', () => {
     completeBounty('boar-cull-repeat')                          // claims ONCE; overflow discarded
     completeBounty('boar-cull-repeat')                          // immediately re-upped to 0/100 → no-op
     expect(gold()).toBe(1)
-    expect(useProtoStore.getState().bountyClaimed['boar-cull-repeat']).toBe(250)   // baseline = current total
-    expect(useProtoStore.getState().bountyDone).not.toContain('boar-cull-repeat')  // never archives
+    expect(useGameStore.getState().bountyClaimed['boar-cull-repeat']).toBe(250)   // baseline = current total
+    expect(useGameStore.getState().bountyDone).not.toContain('boar-cull-repeat')  // never archives
 
     useGameStore.setState({ monsterDefeated: { 'wild-boar': 350 } })   // cull 100 fresh
     completeBounty('boar-cull-repeat')
     expect(gold()).toBe(2)
     // The completion tally counts every claim (for a future quests-completed report).
-    expect(useProtoStore.getState().questCompletions['boar-cull-repeat']).toBe(2)
+    expect(useGameStore.getState().questCompletions['boar-cull-repeat']).toBe(2)
   })
 })
 
@@ -282,21 +276,38 @@ describe('buildQuestBoard (journal)', () => {
   })
 })
 
-// Quest commitments / bounty progress persist to localStorage so a reload doesn't
-// drop an in-flight class change (interim — not yet in the main save envelope).
-describe('quest persistence', () => {
-  it('writes the quest slice to localStorage on change', () => {
-    useProtoStore.setState({
+// Quest commitments / bounty progress / the collect-objective drop-rule ledger
+// persist through the real save envelope (`questsCodec`) so they round-trip
+// through export/import and per-mode save slots, and a reload mid-collect-quest
+// doesn't silently stop awarding progress.
+describe('quest persistence (questsCodec)', () => {
+  it('round-trips commitments, bounty progress, and the armed drop-rule ledger', () => {
+    const partial = questsCodec.roundTrip({
+      activeQuest: { 'boar-meadow': 'q1' },
+      questProgress: { 'boar-meadow': { q1: 2 } },
+      completedQuests: { 'boar-meadow': ['q0'] },
       classQuestCommit: { 'path-fighter': { heroId: 'h1', killBaseline: 2 } },
       bountyDone: ['boar-hides-20'],
+      bountyClaimed: { 'boar-cull-repeat': 250 },
       questCompletions: { 'boar-hides-20': 1 },
+      questDropRules: [{ id: 'path-rogue', itemId: 'qi-bone-splinter', monsterId: 'skeleton-archer', scope: 'hero', heroId: 'h1', dropRate: 0.5, target: 3 }],
+      questItems: { 'qi-bone-splinter': 2 },
     })
-    const raw = localStorage.getItem('protoQuests')
-    expect(raw).toBeTruthy()
-    const parsed = JSON.parse(raw!)
-    expect(parsed.classQuestCommit['path-fighter']).toEqual({ heroId: 'h1', killBaseline: 2 })
-    expect(parsed.bountyDone).toContain('boar-hides-20')
-    expect(parsed.questCompletions['boar-hides-20']).toBe(1)
-    useProtoStore.setState({ classQuestCommit: {}, bountyDone: [], questCompletions: {} })
+    expect(partial.activeQuest).toEqual({ 'boar-meadow': 'q1' })
+    expect(partial.questProgress).toEqual({ 'boar-meadow': { q1: 2 } })
+    expect(partial.completedQuests).toEqual({ 'boar-meadow': ['q0'] })
+    expect(partial.classQuestCommit).toEqual({ 'path-fighter': { heroId: 'h1', killBaseline: 2 } })
+    expect(partial.bountyDone).toEqual(['boar-hides-20'])
+    expect(partial.bountyClaimed).toEqual({ 'boar-cull-repeat': 250 })
+    expect(partial.questCompletions).toEqual({ 'boar-hides-20': 1 })
+    expect(partial.questDropRules).toEqual([{ id: 'path-rogue', itemId: 'qi-bone-splinter', monsterId: 'skeleton-archer', scope: 'hero', heroId: 'h1', dropRate: 0.5, target: 3 }])
+    expect(partial.questItems).toEqual({ 'qi-bone-splinter': 2 })
+  })
+
+  it('defaults every field when the slice is absent (old save)', () => {
+    expect(questsCodec.empty()).toEqual({
+      activeQuest: {}, questProgress: {}, completedQuests: {}, classQuestCommit: {},
+      bountyDone: [], bountyClaimed: {}, questCompletions: {}, questDropRules: [], questItems: {},
+    })
   })
 })

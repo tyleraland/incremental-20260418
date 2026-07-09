@@ -8,9 +8,10 @@ import type { UnitCombatStats, QuestDropRule, Unit } from '@/types'
 // yet: the stage's current zoom altitude (so the lens can follow it), the
 // kittens-style per-location "attunement" upgrade economy, story-path choices,
 // and the Army Matrix's hero locks + Optimize proposals. Mostly mock and not
-// wired into the save format — but the quest slice persists across reloads via its
-// own interim localStorage key (see below). (Per-hero carry packs + expedition
-// plans graduated out of here into useGameStore + logisticsCodec.)
+// wired into the save format. (Per-hero carry packs + expedition plans, and the
+// quest commitment/progress slice below, graduated out of here into
+// useGameStore + a save codec — this file keeps the quest DEFINITIONS and the
+// action functions, which write into useGameStore directly.)
 
 export type ZoomLevel = 0 | 1 | 2
 
@@ -479,13 +480,10 @@ interface ProtoState {
   attunementSpent: number
   upgrades: Record<string, Record<string, number>>   // locId → upgradeId → level
   storyChoice: Record<string, string>                // locId → chosen path id
-  // Quests (mock): per-location commitment, progress, and completion archive.
-  activeQuest: Record<string, string | null>         // locId → committed quest id
-  questProgress: Record<string, Record<string, number>> // locId → questId → count
-  completedQuests: Record<string, string[]>          // locId → done quest ids (in order)
-  // Class-change quests: which hero (if any) has committed to each path, plus
-  // the kill baseline we measure objective progress against.
-  classQuestCommit: Record<string, ClassQuestCommit>  // questId → commitment
+  // Quest commitment/progress state, and the actions that mutate it, live on
+  // useGameStore (persisted via `questsCodec`) — see `acceptQuest`/`advanceQuest`/
+  // `turnInQuest`/`beginClassQuest`/`completeClassQuest`/`cancelClassQuest`/
+  // `completeBounty` below, exported as plain functions rather than store actions.
 
   setZoomLevel: (z: ZoomLevel) => void
   requestZoom: (level: ZoomLevel) => void
@@ -503,22 +501,6 @@ interface ProtoState {
   closeStageOverlay: () => void
   buyUpgrade: (locId: string, upId: string, cost: number, max: number) => void
   chooseStory: (locId: string, pathId: string) => void
-  acceptQuest: (locId: string, questId: string) => void
-  advanceQuest: (locId: string, questId: string, by: number) => void  // mock progress
-  turnInQuest: (locId: string, questId: string) => void
-  // Class-change quests (hero-relative).
-  beginClassQuest: (questId: string, heroId: string) => void
-  completeClassQuest: (questId: string) => void   // applies the class change to the real unit
-  cancelClassQuest: (questId: string) => void     // discards the commitment, no change
-  // Location bounties (hero-less, chained). Completing one consumes its items,
-  // grants the reward, and may reveal a dependent bounty. Repeatable kill bounties
-  // advance a per-bounty claim baseline instead of archiving.
-  bountyDone: string[]
-  bountyClaimed: Record<string, number>   // bountyId → kills already rewarded (cyclic bounties)
-  completeBounty: (bountyId: string) => void
-  // Lifetime quest/bounty completion tally (questId → times completed), for a
-  // future "quests completed" report. Repeatable bounty claims increment too.
-  questCompletions: Record<string, number>
 
   // NB: per-hero carry packs + expedition plans used to live here; they graduated
   // into `useGameStore` (`packs`/`expeditions`) + `logisticsCodec` so they persist
@@ -538,34 +520,6 @@ interface ProtoState {
   removeCard: (instanceId: string, slotIdx: number) => void
 }
 
-// ── Quest persistence (interim) ─────────────────────────────────────────────--
-// The proto quest layer — class-change commitments + bounty progress/completions
-// (plus the older per-location board) — is the one bit of proto state a player
-// would hate to lose on reload, so we persist just that slice to its own
-// localStorage key and hydrate it on load. Deliberately NOT folded into the main
-// save envelope yet (no export/import round-trip or offline advance) — see
-// gaps.md §2 for graduating quest state into a real save slice.
-const QUEST_KEY = 'protoQuests'
-type QuestSlice = Pick<ProtoState,
-  | 'activeQuest' | 'questProgress' | 'completedQuests'
-  | 'classQuestCommit' | 'bountyDone' | 'bountyClaimed' | 'questCompletions'>
-const QUEST_DEFAULTS: QuestSlice = {
-  activeQuest: {}, questProgress: {}, completedQuests: {},
-  classQuestCommit: {}, bountyDone: [], bountyClaimed: {}, questCompletions: {},
-}
-function loadQuests(): QuestSlice {
-  try { return { ...QUEST_DEFAULTS, ...JSON.parse(localStorage.getItem(QUEST_KEY) ?? '{}') } }
-  catch { return { ...QUEST_DEFAULTS } }
-}
-function pickQuests(s: ProtoState): QuestSlice {
-  return {
-    activeQuest: s.activeQuest, questProgress: s.questProgress, completedQuests: s.completedQuests,
-    classQuestCommit: s.classQuestCommit, bountyDone: s.bountyDone,
-    bountyClaimed: s.bountyClaimed, questCompletions: s.questCompletions,
-  }
-}
-const PERSISTED_QUESTS = loadQuests()
-
 export const useProtoStore = create<ProtoState>((set) => ({
   zoomLevel: 0,
   zoomRequest: null,
@@ -578,15 +532,6 @@ export const useProtoStore = create<ProtoState>((set) => ({
   attunementSpent: 0,
   upgrades: {},
   storyChoice: {},
-  // Quest state hydrates from localStorage so an in-flight class change / bounty
-  // survives a reload (persistence wired by the subscribe below).
-  activeQuest: PERSISTED_QUESTS.activeQuest,
-  questProgress: PERSISTED_QUESTS.questProgress,
-  completedQuests: PERSISTED_QUESTS.completedQuests,
-  classQuestCommit: PERSISTED_QUESTS.classQuestCommit,
-  bountyDone: PERSISTED_QUESTS.bountyDone,
-  bountyClaimed: PERSISTED_QUESTS.bountyClaimed,
-  questCompletions: PERSISTED_QUESTS.questCompletions,
   ownedCards: {},
   sockets: {},
   cardsSeeded: false,
@@ -621,94 +566,6 @@ export const useProtoStore = create<ProtoState>((set) => ({
     }
   }),
   chooseStory: (locId, pathId) => set((s) => ({ storyChoice: { ...s.storyChoice, [locId]: pathId } })),
-  acceptQuest: (locId, questId) => set((s) => {
-    if (s.activeQuest[locId]) return s // one commitment at a time
-    return {
-      activeQuest: { ...s.activeQuest, [locId]: questId },
-      questProgress: { ...s.questProgress, [locId]: { ...(s.questProgress[locId] ?? {}), [questId]: 0 } },
-    }
-  }),
-  advanceQuest: (locId, questId, by) => set((s) => {
-    const def = LOCATION_QUESTS.find((q) => q.id === questId)
-    const cur = s.questProgress[locId]?.[questId] ?? 0
-    const next = def ? Math.min(def.target, cur + by) : cur + by
-    return { questProgress: { ...s.questProgress, [locId]: { ...(s.questProgress[locId] ?? {}), [questId]: next } } }
-  }),
-  turnInQuest: (locId, questId) => set((s) => ({
-    activeQuest: s.activeQuest[locId] === questId ? { ...s.activeQuest, [locId]: null } : s.activeQuest,
-    completedQuests: { ...s.completedQuests, [locId]: [...(s.completedQuests[locId] ?? []), questId] },
-  })),
-
-  beginClassQuest: (questId, heroId) => set((s) => {
-    if (s.classQuestCommit[questId]) return s   // someone's already on this path
-    const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
-    if (!def) return s
-    const g = useGameStore.getState()
-    let killBaseline = 0
-    if (def.objective.kind === 'kill') {
-      // Snapshot the objective's kill count now — progress is measured against it.
-      killBaseline = classQuestKillCount(def.objective, heroId, g.unitStats, g.monsterDefeated)
-    } else if (def.objective.kind === 'collect') {
-      // Start a fresh drop ledger and arm the store drop rule.
-      const rule = dropRuleFor(def, heroId)
-      if (rule) g.armQuestDrop(rule)
-    }
-    // hand-in: nothing to arm — progress reads live inventory / quest items.
-    return { classQuestCommit: { ...s.classQuestCommit, [questId]: { heroId, killBaseline } } }
-  }),
-  completeClassQuest: (questId) => set((s) => {
-    const commit = s.classQuestCommit[questId]
-    const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
-    if (!commit || !def) return s
-    // Gate on the objective: progress must have reached the goal.
-    const g = useGameStore.getState()
-    const o = def.objective
-    const progress = objectiveProgress(o, commit, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questItems: g.questItems, miscItems: g.miscItems })
-    if (progress < o.count) return s
-    // Consume the handed-in items (collect & hand-in), then change class.
-    if (o.kind === 'collect') { g.consumeQuestItem(o.itemId, o.count); g.disarmQuestDrop(questId) }
-    else if (o.kind === 'handin') {
-      if (o.source === 'quest') g.consumeQuestItem(o.itemId, o.count)
-      else g.consumeMiscItem(o.itemId, o.count)
-    }
-    useGameStore.setState((gs) => ({
-      units: gs.units.map((u) => (u.id === commit.heroId ? { ...u, class: def.targetClass } : u)),
-    }))
-    grantRewards(def.rewards)
-    const next = { ...s.classQuestCommit }; delete next[questId]
-    return { classQuestCommit: next, questCompletions: { ...s.questCompletions, [questId]: (s.questCompletions[questId] ?? 0) + 1 } }
-  }),
-  cancelClassQuest: (questId) => set((s) => {
-    if (!s.classQuestCommit[questId]) return s
-    const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
-    if (def?.objective.kind === 'collect') useGameStore.getState().disarmQuestDrop(questId)  // drop the rule + any collected items
-    const next = { ...s.classQuestCommit }; delete next[questId]
-    return { classQuestCommit: next }
-  }),
-  completeBounty: (bountyId) => set((s) => {
-    const def = LOCATION_BOUNTIES.find((b) => b.id === bountyId)
-    if (!def || !bountyVisible(def, s.bountyDone)) return s
-    if (!def.repeatable && s.bountyDone.includes(bountyId)) return s
-    const g = useGameStore.getState()
-    const o = def.objective
-    const claimed = s.bountyClaimed[bountyId] ?? 0
-    const progress = bountyProgress(def, { unitStats: g.unitStats, monsterDefeated: g.monsterDefeated, questItems: g.questItems, miscItems: g.miscItems }, claimed)
-    if (progress < o.count) return s
-    // Consume the handed-in items (kill bounties consume nothing), then pay out.
-    if (o.kind === 'handin') { if (o.source === 'quest') g.consumeQuestItem(o.itemId, o.count); else g.consumeMiscItem(o.itemId, o.count) }
-    else if (o.kind === 'collect') g.consumeQuestItem(o.itemId, o.count)
-    grantRewards(def.rewards)
-    const completions = { ...s.questCompletions, [bountyId]: (s.questCompletions[bountyId] ?? 0) + 1 }
-    // Kill bounties advance the claim baseline to the CURRENT total — overflow past
-    // 100 doesn't bank, so a backlog only ever yields one claim and you must re-up.
-    if (o.kind === 'kill') {
-      const total = o.monsterId ? (g.monsterDefeated[o.monsterId] ?? 0) : Object.values(g.monsterDefeated).reduce((a, b) => a + b, 0)
-      return { bountyClaimed: { ...s.bountyClaimed, [bountyId]: total }, questCompletions: completions }
-    }
-    if (def.repeatable) return { questCompletions: completions }
-    return { bountyDone: [...s.bountyDone, bountyId], questCompletions: completions }
-  }),
-
 
   seedCards: (owned, sockets) => set((s) => (s.cardsSeeded ? s : { ownedCards: owned, sockets, cardsSeeded: true })),
   insertCard: (instanceId, slotIdx, cardId, slotCount) => set((s) => {
@@ -733,16 +590,113 @@ export const useProtoStore = create<ProtoState>((set) => ({
   }),
 }))
 
-// Persist the quest slice whenever it changes. A cheap serialized-diff guard skips
-// the frequent unrelated UI churn (zoom, tab requests, foe inspect) and only touches
-// localStorage when the quest slice actually changed.
-let lastQuestJson = JSON.stringify(pickQuests(useProtoStore.getState()))
-useProtoStore.subscribe((s) => {
-  try {
-    const questJson = JSON.stringify(pickQuests(s))
-    if (questJson !== lastQuestJson) { lastQuestJson = questJson; localStorage.setItem(QUEST_KEY, questJson) }
-  } catch { /* localStorage unavailable — skip persistence */ }
-})
+// ── Quest actions ────────────────────────────────────────────────────────────
+// Plain functions, not zustand actions — the state they mutate lives on
+// useGameStore (persisted via `questsCodec`), not on useProtoStore. Components
+// call these directly (`import { acceptQuest, ... } from './protoStore'`)
+// rather than pulling them out of a hook.
+
+export function acceptQuest(locId: string, questId: string): void {
+  useGameStore.setState((s) => {
+    if (s.activeQuest[locId]) return s // one commitment at a time
+    return {
+      activeQuest: { ...s.activeQuest, [locId]: questId },
+      questProgress: { ...s.questProgress, [locId]: { ...(s.questProgress[locId] ?? {}), [questId]: 0 } },
+    }
+  })
+}
+export function advanceQuest(locId: string, questId: string, by: number): void {
+  useGameStore.setState((s) => {
+    const def = LOCATION_QUESTS.find((q) => q.id === questId)
+    const cur = s.questProgress[locId]?.[questId] ?? 0
+    const next = def ? Math.min(def.target, cur + by) : cur + by
+    return { questProgress: { ...s.questProgress, [locId]: { ...(s.questProgress[locId] ?? {}), [questId]: next } } }
+  })
+}
+export function turnInQuest(locId: string, questId: string): void {
+  useGameStore.setState((s) => ({
+    activeQuest: s.activeQuest[locId] === questId ? { ...s.activeQuest, [locId]: null } : s.activeQuest,
+    completedQuests: { ...s.completedQuests, [locId]: [...(s.completedQuests[locId] ?? []), questId] },
+  }))
+}
+
+export function beginClassQuest(questId: string, heroId: string): void {
+  const s = useGameStore.getState()
+  if (s.classQuestCommit[questId]) return   // someone's already on this path
+  const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
+  if (!def) return
+  let killBaseline = 0
+  if (def.objective.kind === 'kill') {
+    // Snapshot the objective's kill count now — progress is measured against it.
+    killBaseline = classQuestKillCount(def.objective, heroId, s.unitStats, s.monsterDefeated)
+  } else if (def.objective.kind === 'collect') {
+    // Start a fresh drop ledger and arm the store drop rule.
+    const rule = dropRuleFor(def, heroId)
+    if (rule) s.armQuestDrop(rule)
+  }
+  // hand-in: nothing to arm — progress reads live inventory / quest items.
+  useGameStore.setState((gs) => ({ classQuestCommit: { ...gs.classQuestCommit, [questId]: { heroId, killBaseline } } }))
+}
+export function completeClassQuest(questId: string): void {
+  const s = useGameStore.getState()
+  const commit = s.classQuestCommit[questId]
+  const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
+  if (!commit || !def) return
+  // Gate on the objective: progress must have reached the goal.
+  const o = def.objective
+  const progress = objectiveProgress(o, commit, { unitStats: s.unitStats, monsterDefeated: s.monsterDefeated, questItems: s.questItems, miscItems: s.miscItems })
+  if (progress < o.count) return
+  // Consume the handed-in items (collect & hand-in), then change class.
+  if (o.kind === 'collect') { s.consumeQuestItem(o.itemId, o.count); s.disarmQuestDrop(questId) }
+  else if (o.kind === 'handin') {
+    if (o.source === 'quest') s.consumeQuestItem(o.itemId, o.count)
+    else s.consumeMiscItem(o.itemId, o.count)
+  }
+  useGameStore.setState((gs) => {
+    const next = { ...gs.classQuestCommit }; delete next[questId]
+    return {
+      units: gs.units.map((u) => (u.id === commit.heroId ? { ...u, class: def.targetClass } : u)),
+      classQuestCommit: next,
+      questCompletions: { ...gs.questCompletions, [questId]: (gs.questCompletions[questId] ?? 0) + 1 },
+    }
+  })
+  grantRewards(def.rewards)
+}
+export function cancelClassQuest(questId: string): void {
+  const s = useGameStore.getState()
+  if (!s.classQuestCommit[questId]) return
+  const def = CLASS_CHANGE_QUESTS.find((q) => q.id === questId)
+  if (def?.objective.kind === 'collect') s.disarmQuestDrop(questId)  // drop the rule + any collected items
+  useGameStore.setState((gs) => {
+    const next = { ...gs.classQuestCommit }; delete next[questId]
+    return { classQuestCommit: next }
+  })
+}
+export function completeBounty(bountyId: string): void {
+  const s = useGameStore.getState()
+  const def = LOCATION_BOUNTIES.find((b) => b.id === bountyId)
+  if (!def || !bountyVisible(def, s.bountyDone)) return
+  if (!def.repeatable && s.bountyDone.includes(bountyId)) return
+  const o = def.objective
+  const claimed = s.bountyClaimed[bountyId] ?? 0
+  const progress = bountyProgress(def, { unitStats: s.unitStats, monsterDefeated: s.monsterDefeated, questItems: s.questItems, miscItems: s.miscItems }, claimed)
+  if (progress < o.count) return
+  // Consume the handed-in items (kill bounties consume nothing), then pay out.
+  if (o.kind === 'handin') { if (o.source === 'quest') s.consumeQuestItem(o.itemId, o.count); else s.consumeMiscItem(o.itemId, o.count) }
+  else if (o.kind === 'collect') s.consumeQuestItem(o.itemId, o.count)
+  grantRewards(def.rewards)
+  useGameStore.setState((gs) => {
+    const completions = { ...gs.questCompletions, [bountyId]: (gs.questCompletions[bountyId] ?? 0) + 1 }
+    // Kill bounties advance the claim baseline to the CURRENT total — overflow past
+    // 100 doesn't bank, so a backlog only ever yields one claim and you must re-up.
+    if (o.kind === 'kill') {
+      const total = o.monsterId ? (gs.monsterDefeated[o.monsterId] ?? 0) : Object.values(gs.monsterDefeated).reduce((a, b) => a + b, 0)
+      return { bountyClaimed: { ...gs.bountyClaimed, [bountyId]: total }, questCompletions: completions }
+    }
+    if (def.repeatable) return { questCompletions: completions }
+    return { bountyDone: [...gs.bountyDone, bountyId], questCompletions: completions }
+  })
+}
 
 // Dev-only: expose on window for Playwright/devtools (mirrors App.tsx's __game).
 if (import.meta.env.DEV && typeof window !== 'undefined') {

@@ -53,6 +53,17 @@ export function resetStore(overrides: object = {}) {
     packsSeeded: false,
     expeditions: {},
     expeditionReturnMode: 'individual',
+    // Quest commitments/progress + the collect-objective drop-rule ledger (moved
+    // into the game store; see `questsCodec`).
+    questDropRules: [],
+    questItems: {},
+    activeQuest: {},
+    questProgress: {},
+    completedQuests: {},
+    classQuestCommit: {},
+    bountyDone: [],
+    bountyClaimed: {},
+    questCompletions: {},
     eventLog: [],
     itemSockets: {},
     ticks: 0,

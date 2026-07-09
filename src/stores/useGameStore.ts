@@ -23,6 +23,7 @@ import {
   type HeroExpedition, type Loadout, type LootCategory, type ReturnConditionId,
   type ReturnModeId, type SupplyModeId, type ShareFlag,
 } from '@/proto/expedition'
+import type { ClassQuestCommit } from '@/proto/protoStore'
 import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { generateForLocationCached, specBarriers } from '@/mapgen'
@@ -135,12 +136,27 @@ export interface GameState {
   bugReports: BugReport[]
   bugWatch: BugWatchState
 
-  // Quest-item drops (runtime; the proto quest layer owns the quest defs). Active
-  // collect objectives register a QuestDropRule; `rewardKills` rolls a drop on a
-  // matching kill and accumulates the count here, keyed by itemId. Tracked here
-  // (NOT in `miscItems`) so quest items never show up in the Inventory. Not saved.
+  // Quest-item drops (the proto quest layer owns the quest defs). Active collect
+  // objectives register a QuestDropRule; `rewardKills` rolls a drop on a matching
+  // kill and accumulates the count here, keyed by itemId. Tracked here (NOT in
+  // `miscItems`) so quest items never show up in the Inventory. Persisted via
+  // `questsCodec` alongside the commitment state below — a reload mid-collect-quest
+  // used to silently stop awarding progress because the armed rule didn't survive.
   questDropRules: QuestDropRule[]
   questItems: Record<string, number>            // quest-item id → count held
+
+  // Quest commitments + progress (persisted via `questsCodec`). Quest DEFINITIONS
+  // (`CLASS_CHANGE_QUESTS`/`LOCATION_BOUNTIES`/`LOCATION_QUESTS`) and the actions
+  // that mutate this state live in `src/proto/protoStore.ts` — this store only
+  // owns the save-durable state itself, so it round-trips through export/import
+  // and per-mode save slots like everything else here.
+  activeQuest: Record<string, string | null>             // locId → committed board-quest id
+  questProgress: Record<string, Record<string, number>>  // locId → questId → count
+  completedQuests: Record<string, string[]>              // locId → done board-quest ids (in order)
+  classQuestCommit: Record<string, ClassQuestCommit>      // questId → { heroId, killBaseline }
+  bountyDone: string[]
+  bountyClaimed: Record<string, number>                   // bountyId → kills claimed (cyclic bounties)
+  questCompletions: Record<string, number>                // quest/bounty id → lifetime completion count
 
   // §loot: real kill drops credited to a hero, waiting to be moved into their
   // loot pack (proto.packs) by the expedition driver next tick. Accumulated by
@@ -1672,6 +1688,13 @@ export const useGameStore = create<GameState>((set, get) => ({
   bugWatch: emptyBugWatch(),
   questDropRules: [],
   questItems: {},
+  activeQuest: {},
+  questProgress: {},
+  completedQuests: {},
+  classQuestCommit: {},
+  bountyDone: [],
+  bountyClaimed: {},
+  questCompletions: {},
   pendingPackLoot: {},
   packs: {},
   packsSeeded: false,
@@ -2882,6 +2905,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       offlineSummary: null,
       questDropRules: [],
       questItems:    {},
+      activeQuest: {},
+      questProgress: {},
+      completedQuests: {},
+      classQuestCommit: {},
+      bountyDone: [],
+      bountyClaimed: {},
+      questCompletions: {},
       paused:        false,
       eventLog:      [],
       itemSockets:   {},

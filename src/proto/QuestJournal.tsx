@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore } from '@/stores/useGameStore'
 import {
-  useProtoStore, buildQuestBoard, CLASS_CHANGE_QUESTS, LOCATION_BOUNTIES,
+  buildQuestBoard, CLASS_CHANGE_QUESTS, LOCATION_BOUNTIES,
   type QuestBoardEntry, type BoardStatus, type BountyDef,
 } from './protoStore'
 import { ClassQuestRow, BountyRow } from './LocationDetail'
@@ -33,10 +33,10 @@ export function useQuestBoard(): QuestBoardEntry[] {
   const questItems      = useGameStore((s) => s.questItems)
   const miscItems       = useGameStore((s) => s.miscItems)
   const locations       = useGameStore((s) => s.locations)
-  const classCommit     = useProtoStore((s) => s.classQuestCommit)
-  const bountyDone      = useProtoStore((s) => s.bountyDone)
-  const bountyClaimed    = useProtoStore((s) => s.bountyClaimed)
-  const completions      = useProtoStore((s) => s.questCompletions)
+  const classCommit     = useGameStore((s) => s.classQuestCommit)
+  const bountyDone      = useGameStore((s) => s.bountyDone)
+  const bountyClaimed    = useGameStore((s) => s.bountyClaimed)
+  const completions      = useGameStore((s) => s.questCompletions)
   return useMemo(() => buildQuestBoard({
     classCommit, bountyDone, bountyClaimed, completions, units,
     view: { unitStats, monsterDefeated, questItems, miscItems },

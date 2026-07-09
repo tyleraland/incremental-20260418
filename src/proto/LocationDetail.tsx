@@ -8,6 +8,7 @@ import {
   useProtoStore, LOCATION_QUESTS, questStatus, type QuestDef, type QuestStatus, type QuestReward,
   CLASS_CHANGE_QUESTS, classQuestStatus, objectiveProgress, objectiveConsumes, MIN_CLASS_CHANGE_LEVEL,
   LOCATION_BOUNTIES, bountyVisible, bountyProgress, rewardGoldTotal,
+  acceptQuest, advanceQuest, turnInQuest, beginClassQuest, completeClassQuest, cancelClassQuest, completeBounty,
   type ClassChangeQuestDef, type ClassQuestStatus, type BountyDef,
 } from './protoStore'
 import { isRegionUnlocked } from '@/lib/unlocks'
@@ -88,12 +89,9 @@ function RewardChips({ rewards }: { rewards: QuestReward[] }) {
 }
 
 function QuestRow({ q, locId, foe, place }: { q: QuestDef; locId: string; foe: string; place: string }) {
-  const activeId     = useProtoStore((s) => s.activeQuest[locId] ?? null)
-  const progress     = useProtoStore((s) => s.questProgress[locId]?.[q.id] ?? 0)
-  const doneIds      = useProtoStore((s) => s.completedQuests[locId] ?? [])
-  const acceptQuest  = useProtoStore((s) => s.acceptQuest)
-  const advanceQuest = useProtoStore((s) => s.advanceQuest)
-  const turnInQuest  = useProtoStore((s) => s.turnInQuest)
+  const activeId     = useGameStore((s) => s.activeQuest[locId] ?? null)
+  const progress     = useGameStore((s) => s.questProgress[locId]?.[q.id] ?? 0)
+  const doneIds      = useGameStore((s) => s.completedQuests[locId] ?? [])
   const [open, setOpen] = useState(false)
 
   const status = questStatus(q, { activeId, doneIds, progress })
@@ -239,10 +237,7 @@ export function ClassQuestRow({ q, onGoto }: { q: ClassChangeQuestDef; onGoto?: 
   const monsterDefeated    = useGameStore((s) => s.monsterDefeated)
   const questItems         = useGameStore((s) => s.questItems)
   const miscItems          = useGameStore((s) => s.miscItems)
-  const commit             = useProtoStore((s) => s.classQuestCommit)
-  const beginClassQuest    = useProtoStore((s) => s.beginClassQuest)
-  const completeClassQuest = useProtoStore((s) => s.completeClassQuest)
-  const cancelClassQuest   = useProtoStore((s) => s.cancelClassQuest)
+  const commit             = useGameStore((s) => s.classQuestCommit)
   const [open, setOpen] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [confirmComplete, setConfirmComplete] = useState(false)
@@ -407,9 +402,8 @@ export function BountyRow({ def, onGoto }: { def: BountyDef; onGoto?: () => void
   const monsterDefeated = useGameStore((s) => s.monsterDefeated)
   const questItems      = useGameStore((s) => s.questItems)
   const miscItems       = useGameStore((s) => s.miscItems)
-  const claimed         = useProtoStore((s) => s.bountyClaimed[def.id] ?? 0)
-  const done            = useProtoStore((s) => !def.repeatable && s.bountyDone.includes(def.id))
-  const completeBounty  = useProtoStore((s) => s.completeBounty)
+  const claimed         = useGameStore((s) => s.bountyClaimed[def.id] ?? 0)
+  const done            = useGameStore((s) => !def.repeatable && s.bountyDone.includes(def.id))
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState(false)
 
@@ -502,7 +496,7 @@ export function BountyRow({ def, onGoto }: { def: BountyDef; onGoto?: () => void
 }
 
 function LocationBountyBoard({ location }: { location: Location }) {
-  const bountyDone = useProtoStore((s) => s.bountyDone)
+  const bountyDone = useGameStore((s) => s.bountyDone)
   const all = LOCATION_BOUNTIES.filter((b) => b.locationId === location.id)
   if (all.length === 0) return null
   // Hidden until unlocked: only show bounties whose prerequisites are all done.
@@ -518,7 +512,7 @@ function LocationBountyBoard({ location }: { location: Location }) {
 }
 
 function QuestBoard({ location }: { location: Location }) {
-  const doneIds = useProtoStore((s) => s.completedQuests[location.id] ?? [])
+  const doneIds = useGameStore((s) => s.completedQuests[location.id] ?? [])
   const [showDone, setShowDone] = useState(false)
   const foe = MONSTER_REGISTRY[location.monsterIds[0] ?? '']?.name ?? 'beast'
   const place = location.name

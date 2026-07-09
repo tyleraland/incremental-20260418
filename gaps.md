@@ -9,9 +9,10 @@ this file is the **plumbing checklist**.
 
 > **Status (PR #57):** Guild gear/tactics/skills assignment is already real and
 > persisted (the Army Matrix pickers call `equipItem`/`equipTactic`/`setActionSlot`,
-> which save on the `Unit` via `unitsCodec`). Quest commitments/progress now persist
-> across reloads (interim localStorage key — see §2). Everything else below remains
-> **backlogged** for follow-up PRs.
+> which save on the `Unit` via `unitsCodec`). Quest commitments/progress + the
+> collect-objective drop-rule ledger now live on `useGameStore`, persisted via a
+> real `questsCodec` — see §2. Everything else below remains **backlogged** for
+> follow-up PRs.
 
 ## The bridging pattern (apply to every subsystem below)
 
@@ -82,30 +83,40 @@ reload and a cold restart; upgrade effects change real numbers.
 
 **Mock today**
 - Class-change quests **do** write the real outcome (`unit.class` + `grantRewards`
-  into real equipment/gold) — good. But the **commitment + kill baseline +
-  progress** (`classQuestCommit`, `bountyDone`, `bountyClaimed`, `questProgress`,
-  `completedQuests`, `questCompletions`) are unpersisted: a reload mid-quest resets
-  an in-flight quest (BACKLOG calls this out explicitly).
+  into real equipment/gold) — good.
 - `LOCATION_QUESTS` is an older mock board superseded by class-change + bounties.
 - The collect/drop path (`QuestDropRule`, `questItems`) is already wired through
   the real store — that part is production-shaped.
 
 **To plumb**
-- [x] **Reload durability (done, interim).** `useProtoStore` hydrates the quest slice
-  (`classQuestCommit`, `bountyDone`, `bountyClaimed`, `questCompletions`, + the older
-  board fields) from a `protoQuests` localStorage key and persists it on change, so
-  an in-flight class change / bounty survives a reload. Covered by a round-trip test.
-- [ ] **Graduate into the save envelope.** Replace the localStorage key with a real
-  `questsCodec` so quests round-trip through `exportSave`/`importSave` like every
-  other slice (needs the live state to read from `GameState`).
+- [x] **Graduate into the save envelope (done).** The commitment + kill baseline +
+  progress (`activeQuest`, `questProgress`, `completedQuests`, `classQuestCommit`,
+  `bountyDone`, `bountyClaimed`, `questCompletions`) plus the collect-objective
+  drop-rule ledger (`questDropRules`, `questItems`) moved from `useProtoStore`
+  (interim `protoQuests` localStorage key) into `useGameStore`, persisted via a
+  real `questsCodec` (`src/save/questsCodec.ts`). Round-trips through
+  `exportSave`/`importSave` and per-mode save slots like every other slice — a
+  reload, an export/import, or a `switchProgressionMode` no longer drops an
+  in-flight class change or bounty. The action functions
+  (`acceptQuest`/`beginClassQuest`/`completeBounty`/etc.) stay defined in
+  `protoStore.ts` as plain exported functions that read/write `useGameStore`
+  directly (not zustand actions on `useProtoStore`) — sidesteps a `protoStore` ⇄
+  `useGameStore` circular import, since the quest *definitions*
+  (`CLASS_CHANGE_QUESTS`/`LOCATION_BOUNTIES`) still live in `protoStore.ts`.
+  Covered by `questsCodec` round-trip tests in `class-change-quests.test.ts`.
 - [ ] Move the quest *definitions* (`CLASS_CHANGE_QUESTS`, `LOCATION_BOUNTIES`) from
-  `protoStore.ts` into `src/data/quests.ts` (registry), leaving only live state in
-  the store.
-- [ ] Move the live state out of `useProtoStore` into `useGameStore` so offline
-  catch-up can advance kill/collect objectives during `batchTick`.
+  `protoStore.ts` into `src/data/quests.ts` (registry), leaving only the action
+  functions behind.
+- [ ] **Offline advance for collect objectives.** Kill/collect *progress reads*
+  already advance offline (they read live `unitStats`/`monsterDefeated`/
+  `questItems`, all of which `batchTick` advances), but a collect objective's
+  *drop-rule roll itself* has no offline equivalent of `rewardKills`' quest-drop
+  loop — a hero on a collect quest gets no quest-item progress while away.
 
-**Acceptance (interim met)**: an in-flight class change or bounty survives reload.
-**Remaining**: export/import round-trip + correct advance through an offline absence.
+**Acceptance (met)**: an in-flight class change or bounty survives a reload, an
+export/import round-trip, and a `switchProgressionMode` call.
+**Remaining**: quest definitions still colocated with the action functions in
+`protoStore.ts`; collect-objective drops don't advance during offline catch-up.
 
 ---
 
@@ -204,6 +215,5 @@ sockets persist; one source of truth (no proto mock).
 
 1. §1 item `value` + drop/craft catalog (§3 data) — unblocks pricing, packs, cards.
 2. §4 cards onto the real `itemSockets` slice + stats wiring (highest "feel" win).
-3. §2 quests codec (stops reload data-loss).
-4. §3 packs from real drops; §1 merchant/upgrade persistence.
-5. §5 recommendation engine last (pure polish over now-real data).
+3. §3 packs from real drops; §1 merchant/upgrade persistence.
+4. §5 recommendation engine last (pure polish over now-real data).

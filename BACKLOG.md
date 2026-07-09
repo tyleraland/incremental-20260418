@@ -100,14 +100,6 @@ is wiring display-only / mock seams to real, persisted state:
   **overweight penalty is displayed but not applied** ("coming soon" in
   `PackStrip`/`ExpeditionPanel`). → feed real combat loot into carry and apply
   the penalty. (Overlaps *Loot realism* / *Consumables*.)
-- **Quest board — commit/completion state is ephemeral.** `useQuestBoard`
-  computes progress from REAL state (kills, items) and class-change paths do
-  real work (write `unit.class`), but the commitment/bounty/completion
-  bookkeeping (`protoStore.classQuestCommit`/`bountyDone`/`bountyClaimed`/
-  `questCompletions`) is unpersisted — lost on reload, and bounty rewards
-  aren't fully plumbed. This feeds the Decisions "Quest ready / New quest"
-  rows and the journal. → move that state into a save codec. (See *Quest
-  system*.)
 - **Settings panel** (`ProtoApp` `GlobalOverlay`) — Audio / Notifications /
   Display / Save&sync / Accessibility are all "soon" placeholders; only Pause
   + "Classic UI" work. → build the real toggles or trim to what exists.
@@ -308,11 +300,14 @@ Objective types not yet built:
 onto the real bounty-board system (`LOCATION_BOUNTIES`, chained via
 `requires`) when convenient.
 
-**Cross-cutting follow-up:** class-quest commitments + objective progress are
-currently **unpersisted proto state** (a reload resets an in-flight quest)
-and the per-hero `killsByMonster` map is persisted but the *baseline* lives
-in the proto store — fold quest state into a real save slice when the system
-graduates out of `src/proto`.
+Quest commitments/progress/completion state (`activeQuest`, `questProgress`,
+`completedQuests`, `classQuestCommit`, `bountyDone`, `bountyClaimed`,
+`questCompletions`) and the collect-objective drop-rule ledger
+(`questDropRules`/`questItems`) now live on `useGameStore`, persisted via
+`questsCodec` — they round-trip through export/import and per-mode save slots
+like everything else. Quest *definitions* (`CLASS_CHANGE_QUESTS` etc.) and the
+action functions that mutate this state still live in `src/proto/protoStore.ts`
+as plain exported functions (not zustand actions on `useProtoStore`).
 
 **Quest journal follow-ups** (`src/proto/QuestJournal.tsx`): a "completed
 archive" view (repeatable history beyond the ✓N chip); a compact "active
@@ -399,20 +394,15 @@ for the prototype, but revisit stacking/dedupe if the inventory grows noisy.
 
 Mechanics (`Unit.pack`, `consumableRules`, `CONSUMABLE_REGISTRY`,
 `reconcilePackInTown`) are documented in CLAUDE.md → Tactics → *Consumables*.
-The proto logistics loadout (`expeditionStore`) drives `Unit.pack` carry
-targets and the return loop instant-deploys a returning hero to town for
-resupply (`expeditionDriver` phase R). Deferred next slices:
+The proto logistics loadout (`GameState.expeditions`, `src/proto/expedition.ts`,
+persisted via `logisticsCodec`) drives `Unit.pack` carry targets and the return
+loop instant-deploys a returning hero to town for resupply (`expeditionDriver`
+phase R). Deferred next slices:
 
 - **Open-world routing for returns.** The resupply trip teleports for now; the
   `deployMode` lever's `'open-world'` branch still just runs heroes to the map
   edge (no town arrival). Replace with real land routing + travel time, and
   interpolate the trip instead of instant-deploy.
-- **Loadout persistence.** `expeditionStore` is unpersisted; on reload
-  `ensure` rehydrates each hero's loadout from the surviving `Unit.pack`
-  targets (`loadoutFromPack`), so a hero who *deliberately* cleared all
-  potions gets the default re-seeded (can't distinguish "empty" from "never
-  configured"). Persist the loadout (its own slice) to fix this and the
-  share-flag/return-rule churn.
 - **Merchant purchase + cost.** A loadout supply's `merchant` source flag only
   feeds a cost display (`loadoutCost`); reconcile is stash-only, and the gold
   is never charged. Wire **merchant purchase** for the shortfall
@@ -695,12 +685,16 @@ behavior-sensitive, a refactor, or a product decision.
   Touches movement → verify open-world replays after. (Relates to the *Grid-size
   independence* invariant in `src/engine/CLAUDE.md` — these are the known
   violations.)
-- **Reward model duplicated across live / batch / offline.** `tick` vs `batchTick`
-  vs offline `runCombatSlice`/`rewardKills`/`rollOfflineLoot` re-implement
-  kill→loot→reward + recovery/level-up separately; the per-kill drop-roll is
-  copy-pasted 3× and the empty `LocationCombatStats` literal ~4× (no
-  `emptyLocationStats()` factory like `emptyTally()`). Drift risk if drop/exp
-  semantics change. Consolidate the shared core.
+- **`tick` vs `batchTick` KO/recovery/regen duplication.** The per-kill drop-roll
+  and blank `LocationCombatStats` literal duplication is fixed (`rollDrops()` /
+  `emptyLocationStats()`). Still duplicated: `tick`'s per-tick KO→recovery→
+  resting→regen step (`useGameStore.ts`, live) vs `batchTick`'s closed-form
+  n-tick collapse of the same state machine (offline). These are two genuinely
+  different algorithms (iterative vs. closed-form), not copy-paste, so
+  unifying them isn't a small mechanical extraction — the safer route, if ever
+  worth it, is verifying `batchTick`'s closed form specializes correctly to
+  `n=1` and having `tick` call it as a special case. Bigger and riskier than it
+  looks; not a quick win.
 - **Store monolith + duplicated initial state.** `useGameStore.ts` (~1.8k lines)
   holds engine-adjacent offline sim/priming (~lines 220-672) that could move to
   `lib/offline.ts`; the initial-state literals (familiarity/seen/partyTactics/recipe
