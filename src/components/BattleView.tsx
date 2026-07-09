@@ -233,8 +233,13 @@ const portalKeepClear = (portals?: Location['portals']): Rect[] =>
 // (`size` = cells shown; squeeze together → zoom out, spread → zoom in). A single
 // finger still pans.
 interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => void }
+// Sandbox-only "grab a token and drop it somewhere" control. `begin`/`end` bracket
+// a drag (the host holds the glide at 0 for instant tracking); `move` streams the
+// absolute world position under the finger. When present, a finger-drag that starts
+// on a chip repositions it instead of panning; empty-ground drags still pan.
+interface RepositionCtl { begin: (cid: string) => void; move: (cid: string, world: Vec2) => void; end: (cid: string) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, sidePx = null, onPanStart, onPanMove, onPanEnd, onPinch }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; sidePx?: number | null; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, sidePx = null, onPanStart, onPanMove, onPanEnd, onPinch, reposition }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; sidePx?: number | null; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void; reposition?: RepositionCtl }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
   // The baked terrain bitmap decodes async and fades in; the base ground/grid
@@ -266,6 +271,21 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   }, [terrainSig, terrainReady])
   const ref = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ startX: number; startY: number; basePan: Vec2; moved: boolean; pointerId: number; target: Element } | null>(null)
+  // Active token-reposition drag (sandbox only): the grabbed combatant id + whether
+  // the finger has crossed the move threshold yet (a tap still selects).
+  const repoRef = useRef<{ cid: string; startX: number; startY: number; moved: boolean; pointerId: number } | null>(null)
+  // Client (px) → world coords, for dropping a grabbed token under the finger. The
+  // open-world arena's inner layer carries no pixel `pan` (it navigates via camera),
+  // so the arena square's own rect maps straight onto the camera window; y flips.
+  const clientToWorld = (clientX: number, clientY: number): Vec2 | null => {
+    const el = ref.current
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0 || r.height <= 0) return null
+    const fx = (clientX - r.left) / r.width
+    const fy = (clientY - r.top) / r.height
+    return { x: cam.x + fx * cam.size, y: cam.y + (1 - fy) * cam.size }
+  }
   // Active pointers (by id) + the in-progress pinch, for two-finger zoom.
   const pointersRef = useRef<Map<number, Vec2>>(new Map())
   const pinchRef = useRef<{ startDist: number; startSize: number } | null>(null)
@@ -306,6 +326,15 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   const onPointerDown = (e: React.PointerEvent) => {
     suppressClickRef.current = false
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    // Sandbox reposition: a single finger landing ON a chip grabs it (drag to move,
+    // tap to select). Empty-ground presses fall through to the normal pan/pinch.
+    if (reposition && pointersRef.current.size === 1) {
+      const cid = (e.target as Element).closest?.('[data-cid]')?.getAttribute('data-cid')
+      if (cid) {
+        repoRef.current = { cid, startX: e.clientX, startY: e.clientY, moved: false, pointerId: e.pointerId }
+        return
+      }
+    }
     if (zoom && pointersRef.current.size === 2) {
       // Second finger down → start a pinch; abandon any single-finger pan.
       dragRef.current = null
@@ -323,6 +352,24 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   }
   const onPointerMove = (e: React.PointerEvent) => {
     if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    // Token reposition drag: stream the finger's world position onto the grabbed
+    // combatant. Crosses the same 6px threshold before it counts as a drag (so a
+    // tap still selects), captures the pointer, and holds the glide at 0 via begin().
+    const rp = repoRef.current
+    if (rp && reposition) {
+      const dx = e.clientX - rp.startX, dy = e.clientY - rp.startY
+      if (!rp.moved && Math.hypot(dx, dy) > 6) {
+        rp.moved = true
+        try { (e.currentTarget as Element).setPointerCapture(rp.pointerId) } catch { /* noop in tests */ }
+        reposition.begin(rp.cid)
+      }
+      if (rp.moved) {
+        const w = clientToWorld(e.clientX, e.clientY)
+        if (w) reposition.move(rp.cid, w)
+      }
+      return
+    }
 
     // Pinch: scale the camera size by the inverse of the finger spread.
     if (pinchRef.current && zoom && pointersRef.current.size >= 2) {
@@ -360,6 +407,14 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   }
   const onPointerUp = (e: React.PointerEvent) => {
     pointersRef.current.delete(e.pointerId)
+    // End a token reposition. A drag that moved swallows the trailing click (so the
+    // drop doesn't also toggle selection); a mere tap falls through to select.
+    const rp = repoRef.current
+    if (rp && rp.pointerId === e.pointerId) {
+      repoRef.current = null
+      if (rp.moved) { suppressClickRef.current = true; reposition?.end(rp.cid) }
+      return
+    }
     if (pointersRef.current.size < 2 && pinchRef.current) { pinchRef.current = null; onPinch?.(false) }
     const d = dragRef.current
     if (d?.moved) {
@@ -984,7 +1039,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity = false, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; mapSpec?: MapSpec; peacefulCity?: boolean; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean }) {
+function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity = false, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls, repositionEnabled, onReposition }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; mapSpec?: MapSpec; peacefulCity?: boolean; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean; repositionEnabled?: boolean; onReposition?: (combatantId: string, pos: Vec2) => void }) {
   const units = useGameStore((s) => s.units)
   const skin  = useGameStore((s) => s.battleSkin)
   const fx    = FX_SKINS[skin]
@@ -1042,6 +1097,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
   const lastRoundTsRef = useRef(0)
   const lastSegRef = useRef(ROUND_MS)        // last computed glide duration (ms), to restore after a pan
   const panningRef = useRef(false)           // true while a finger is actively dragging the camera
+  const repositioningRef = useRef(false)     // true while a token is being dragged to a new spot (sandbox)
   const panStartRef = useRef<Vec2 | null>(null)  // view centre captured at pan start
   // The arena is a SQUARE sized to the largest square fitting the wrap. Pure CSS
   // can't express min(width,height)-square across the app's layouts (`w-full +
@@ -1082,7 +1138,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
     lastSegRef.current = seg
     // While the player is dragging the camera, hold the glide at 0 so the board
     // tracks the finger instantly instead of easing a beat behind it.
-    el.style.setProperty('--seg-ms', panningRef.current ? '0ms' : `${seg}ms`)
+    el.style.setProperty('--seg-ms', panningRef.current || repositioningRef.current ? '0ms' : `${seg}ms`)
   }, [battle.round])
 
   // Harvest this round's cast events into lingering labels. cast_start (channel
@@ -1441,6 +1497,13 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
     panningRef.current = active
     arenaWrapRef.current?.style.setProperty('--seg-ms', active ? '0ms' : `${lastSegRef.current}ms`)
   }
+  // Sandbox token-drag: hold the glide at 0 for the duration (same seam as pan/pinch)
+  // so the grabbed token tracks the finger instantly, then let the host place it.
+  const repositionCtl: RepositionCtl | undefined = repositionEnabled && onReposition ? {
+    begin: () => { repositioningRef.current = true; arenaWrapRef.current?.style.setProperty('--seg-ms', '0ms') },
+    move: (cid, world) => onReposition(cid, world),
+    end: () => { repositioningRef.current = false; arenaWrapRef.current?.style.setProperty('--seg-ms', `${lastSegRef.current}ms`) },
+  } : undefined
 
   // Party members outside the current viewport → edge bubbles point to them.
   const offscreen = isOpen ? party.filter((c) => !isOnScreen(cam, rpos(c))) : []
@@ -1614,6 +1677,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
           onPanMove={panMove}
           onPanEnd={endPan}
           onPinch={onPinch}
+          reposition={repositionCtl}
           zoom={{ size: cam.size, min: OPEN_CAM_MIN_SIZE, max: maxSize, set: (n) => { setManualZoom(true); setCamSize(n) } }}
           overlay={isOpen ? (
             <>
@@ -1875,7 +1939,7 @@ export function prewarmLocationTerrain(location: Location, units: Unit[]): void 
   })
 }
 
-export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls }: {
+export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls, repositionEnabled, onReposition }: {
   locationId: string | null
   onFollow?: (unitId: string) => void
   inspectRequest?: BattleInspectRequest | null
@@ -1887,6 +1951,10 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
   // Push the top-LEFT camera cluster down so a host can reserve that corner (the
   // proto stage parks its World›Locale›Battle breadcrumb there).
   insetTopControls?: boolean
+  // Sandbox-only: when enabled, dragging a token moves it (host places it via
+  // onReposition); empty-ground drags still pan. Off (undefined) in normal play.
+  repositionEnabled?: boolean
+  onReposition?: (combatantId: string, pos: Vec2) => void
 }) {
   const battle    = useGameStore((s) => (locationId ? s.battles[locationId] : undefined))
   const locations = useGameStore((s) => s.locations)
@@ -1909,6 +1977,6 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
     ? generateForLocationCached(location, { proficiencies: partyProficiencyTags(units.filter((u) => u.locationId === location.id)) }).spec
     : undefined
   return battle
-    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} mapSpec={mapSpec} peacefulCity={!!location?.traits.includes('city')} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} />
+    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} mapSpec={mapSpec} peacefulCity={!!location?.traits.includes('city')} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} repositionEnabled={repositionEnabled} onReposition={onReposition} />
     : <Preview location={location} />
 }

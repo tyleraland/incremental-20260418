@@ -490,7 +490,7 @@ function openWorldSize(loc: Location): number {
 }
 
 // Enemy combatant ids are `${monsterId}#${index}`; players use the unit id.
-function monsterIdOf(combatantId: string): string {
+export function monsterIdOf(combatantId: string): string {
   return combatantId.split('#')[0]
 }
 

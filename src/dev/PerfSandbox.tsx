@@ -13,14 +13,14 @@
 // own fixed-cadence tick loop. Reachable in sandbox mode (or a DEV build) from the
 // ☰ Menu → Developer. Sibling of the deterministic `?perf` scene (perfSeed.ts).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useGameStore, type Unit } from '@/stores/useGameStore'
+import { useGameStore, spawnMonsterAt, monsterIdOf, type Unit } from '@/stores/useGameStore'
 import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { isDraftMonster, setDraftMonster } from '@/data/monsterOverrides'
 import { BattleView } from '@/components/BattleView'
-import { advanceRound } from '@/engine'
+import { advanceRound, type Combatant, type Vec2 } from '@/engine'
 import { TICKS_PER_SECOND } from '@/lib/time'
-import { seedSimBattle, loadBsnapScene } from './simBattle'
+import { seedSimBattle, loadBsnapScene, scatterPos } from './simBattle'
 
 type SandboxSource = 'compose' | 'bsnap'
 
@@ -39,6 +39,8 @@ export default function PerfSandbox() {
   const [customSize, setCustomSize] = useState(60)
   const [panelOpen, setPanelOpen] = useState(true)
   const [monsterRev, setMonsterRev] = useState(0)
+  // Grab-and-place mode: drag a token on the field to a spot (sandbox only).
+  const [repositionMode, setRepositionMode] = useState(false)
   // Monsters offered in the "add" picker, cheapest (lowest level) first.
   // Recompute when a local draft is renamed so the label updates in-place.
   const monsters = useMemo(
@@ -91,11 +93,19 @@ export default function PerfSandbox() {
     }
   })
 
+  // Latest composition, read by rebuild WITHOUT making it a rebuild trigger — so a
+  // monster count edit (which spawns/removes additively, below) never tears the
+  // scene down. A structural change (heroes/map/size) or the Rebuild button re-seeds
+  // from this current tally.
+  const compRef = useRef(comp)
+  compRef.current = comp
+
   // Tear down and re-seed the whole scene from the current controls. Stands the
   // battle up EMPTY (cap 0) then spawns the exact composition, so per-type counts
   // are honoured; then bumps the cap to the total so the store's trickle refills
-  // kills back to that density. Cheap — do it on any control change (start paused,
-  // so composing never fights live motion).
+  // kills back to that density. Cheap — do it on any STRUCTURAL change (start
+  // paused, so composing never fights live motion). Monster counts change
+  // additively (addToField/removeFromField) and don't route through here.
   const rebuild = useCallback(() => {
     const base = mapId === 'custom' ? null : realMaps.find((l) => l.id === mapId) ?? null
 
@@ -111,11 +121,11 @@ export default function PerfSandbox() {
     seedSimBattle({
       locationId: SANDBOX_LOC,
       roster,
-      monsters: Object.entries(comp).map(([id, count]) => ({ id, count })),
+      monsters: Object.entries(compRef.current).map(([id, count]) => ({ id, count })),
       base,
       customSize,
     })
-  }, [heroes, comp, mapId, customSize, realMaps])
+  }, [heroes, mapId, customSize, realMaps])
 
   // Load the pasted BSNAP as the watched battle. Pauses so the user hits ▶ Play.
   const loadBsnap = useCallback(() => {
@@ -153,8 +163,10 @@ export default function PerfSandbox() {
     return () => clearInterval(id)
   }, [])
 
-  // Re-seed whenever a Compose control changes (and once on mount). Skipped in
-  // BSNAP mode so tweaking a control never clobbers a loaded replay.
+  // Re-seed whenever a STRUCTURAL Compose control changes — heroes / map / size
+  // (and once on mount). Monster count edits are additive and NOT in `rebuild`'s
+  // deps, so they never reach here. Skipped in BSNAP mode so tweaking a control
+  // never clobbers a loaded replay.
   useEffect(() => { if (source === 'compose') rebuild() }, [rebuild, source])
 
   const bump = (id: string, d: number) =>
@@ -165,6 +177,61 @@ export default function PerfSandbox() {
       else next[id] = n
       return next
     })
+
+  // Additively spawn n monsters of `id` INTO the live battle (no teardown/reseed),
+  // and keep the comp tally + openWorldCap in step so the trickle refills to the new
+  // density and a later structural rebuild reproduces it. Falls back to a tally-only
+  // bump if no field is up yet (the seed effect will place them).
+  const addToField = (id: string, n: number) => {
+    const s = useGameStore.getState()
+    const battle = s.battles[SANDBOX_LOC]
+    if (!battle) { bump(id, n); return }
+    for (let k = 0; k < n; k++) spawnMonsterAt(battle, id, scatterPos(battle.cols, battle.barriers))
+    useGameStore.setState((st) => ({
+      locations: st.locations.map((l) => (l.id === SANDBOX_LOC ? { ...l, openWorldCap: (l.openWorldCap ?? 0) + n } : l)),
+      battles: { ...st.battles, [SANDBOX_LOC]: { ...battle } },
+    }))
+    bump(id, n)
+  }
+
+  // Remove up to n live monsters of `id` from the field (newest first), lowering the
+  // cap by however many actually went so the trickle doesn't just refill them.
+  const removeFromField = (id: string, n: number) => {
+    const s = useGameStore.getState()
+    const battle = s.battles[SANDBOX_LOC]
+    if (!battle) { bump(id, -n); return }
+    let left = n
+    const keep: Combatant[] = []
+    for (let i = battle.combatants.length - 1; i >= 0; i--) {
+      const c = battle.combatants[i]
+      if (left > 0 && c.team === 'enemy' && c.alive && monsterIdOf(c.id) === id) { left--; continue }
+      keep.push(c)
+    }
+    keep.reverse()
+    battle.combatants = keep
+    const removed = n - left
+    useGameStore.setState((st) => ({
+      locations: st.locations.map((l) => (l.id === SANDBOX_LOC ? { ...l, openWorldCap: Math.max(0, (l.openWorldCap ?? 0) - removed) } : l)),
+      battles: { ...st.battles, [SANDBOX_LOC]: { ...battle } },
+    }))
+    bump(id, -removed)
+  }
+
+  // Drop a grabbed token at a world point (instant teleport). Clears any pending walk
+  // order/wander so a paused-then-played unit stays where it was placed instead of
+  // marching back toward a stale goal.
+  const handleReposition = useCallback((cid: string, pos: Vec2) => {
+    const s = useGameStore.getState()
+    const battle = s.battles[SANDBOX_LOC]
+    if (!battle) return
+    const c = battle.combatants.find((x) => x.id === cid)
+    if (!c) return
+    c.pos = { x: Math.max(0, Math.min(battle.cols, pos.x)), y: Math.max(0, Math.min(battle.rows, pos.y)) }
+    c.moveOrder = null
+    c.wanderTarget = null
+    c.moving = false
+    useGameStore.setState({ battles: { ...s.battles, [SANDBOX_LOC]: { ...battle } } })
+  }, [])
 
   const renameDraft = (id: string, name: string) => {
     const def = MONSTER_REGISTRY[id]
@@ -181,7 +248,7 @@ export default function PerfSandbox() {
     <div className="fixed inset-0 flex flex-col bg-game-bg text-game-text">
       {/* the real battlefield fills the screen */}
       <div className="flex-1 min-h-0 flex flex-col">
-        <BattleView locationId={SANDBOX_LOC} />
+        <BattleView locationId={SANDBOX_LOC} repositionEnabled={repositionMode} onReposition={handleReposition} />
       </div>
 
       {/* control panel — a floating card so it overlays the field */}
@@ -219,6 +286,18 @@ export default function PerfSandbox() {
             </div>
             <div className="text-[11px] text-game-text-dim tabular-nums">
               live: <span className="text-blue-300">{live.heroes} heroes</span> · <span className="text-red-300">{live.foes} foes</span> · round {live.round}
+            </div>
+
+            {/* Grab-and-place: drag a token to a spot; empty-ground drags still pan.
+                Pause first so a placed unit doesn't immediately walk off. */}
+            <div className="space-y-1">
+              <button
+                onClick={() => setRepositionMode((v) => !v)}
+                className={['w-full h-8 rounded-lg border text-xs font-medium', repositionMode ? 'border-game-primary bg-game-primary/15 text-game-primary' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
+              >{repositionMode ? '✥ Reposition: ON' : '✥ Reposition units'}</button>
+              {repositionMode && (
+                <div className="text-[10px] text-game-muted leading-snug">Drag a unit to move it; drag empty ground to pan. Pause to keep it put; hide this panel to reach units behind it.</div>
+              )}
             </div>
 
             {/* Perf test: freeze normal play (advance only the battle under test) */}
@@ -307,7 +386,7 @@ export default function PerfSandbox() {
                     <option key={m.id} value={m.id}>Lv{m.level} · {m.name}</option>
                   ))}
                 </select>
-                <button className={rowBtn} onClick={() => bump(picker, 1)} title="Add one">＋</button>
+                <button className={rowBtn} onClick={() => addToField(picker, 1)} title="Add one to the field">＋</button>
               </div>
               {draftIds.length > 0 && (
                 <div className="space-y-1.5 rounded-lg border border-game-primary/30 bg-game-primary/10 p-2">
@@ -329,18 +408,18 @@ export default function PerfSandbox() {
                 {Object.entries(comp).map(([id, n]) => (
                   <div key={id} className="flex items-center gap-2">
                     <span className="flex-1 truncate text-xs">{MONSTER_REGISTRY[id]?.name ?? id}</span>
-                    <button className={rowBtn} onClick={() => bump(id, -10)}>−10</button>
-                    <button className={rowBtn} onClick={() => bump(id, -1)}>−1</button>
+                    <button className={rowBtn} onClick={() => removeFromField(id, 10)}>−10</button>
+                    <button className={rowBtn} onClick={() => removeFromField(id, 1)}>−1</button>
                     <span className="w-8 text-center tabular-nums text-xs">{n}</span>
-                    <button className={rowBtn} onClick={() => bump(id, 1)}>+1</button>
-                    <button className={rowBtn} onClick={() => bump(id, 10)}>+10</button>
+                    <button className={rowBtn} onClick={() => addToField(id, 1)}>+1</button>
+                    <button className={rowBtn} onClick={() => addToField(id, 10)}>+10</button>
                   </div>
                 ))}
               </div>
             </div>
 
             <p className="text-[10px] text-game-text-dim leading-snug border-t border-game-border/40 pt-2">
-              Composing rebuilds the scene (positions reset) — set it up paused, then ▶ Play. Does not touch your save.
+              Monster ± adds/removes on the live field (positions kept). Changing heroes, map or size re-seeds the scene. Set it up paused, then ▶ Play. Does not touch your save.
             </p>
             </>)}
           </div>
