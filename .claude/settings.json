@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Artifact",
+      "mcp__Claude_Code_Remote__delete_trigger",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git branch:*)",
