@@ -1,7 +1,17 @@
 {
   "permissions": {
-    "allow": ["Artifact"],
-    "allow": ["mcp__Claude_Code_Remote__delete_trigger"],
+    "allow": [
+      "Artifact",
+      "mcp__Claude_Code_Remote__delete_trigger",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git branch:*)",
+      "Bash(git switch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh auth status:*)"
+    ],
     "deny": ["mcp__chrome-devtools", "mcp__Claude_Code_Remote__send_later"]
   },
   "hooks": {
