@@ -30,9 +30,8 @@ keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 - **Drag-and-drop**: PointerSensor only (no TouchSensor); set `touchAction: 'none'` on the draggable's style always (not just while dragging).
 
 ## Save & state tiers
-- A save is a `v1:<base64>` envelope of independently-versioned **slices** (`src/lib/save.ts`). Each `SliceCodec` owns `serialize`/`deserialize`/`empty` + optional `migrate`. Missing slice → `empty()`; corrupt envelope → `{}` (safe no-op). `App.tsx` loads on mount, autosaves every 60s + on tab-hide.
-- Add save concerns as codecs in `src/save/*Codec.ts` and `ALL_CODECS` (`src/save/index.ts`). Persistent state belongs in codecs; runtime state is rebuilt; ephemeral UI owns separate localStorage keys.
-- Battles persist via `battlesCodec` as the engine's `BSNAP.<base64>` token (`serializeBattle`) — serialization lives in one place; the save composes it. `exportSave`/`importSave` round-trip the whole envelope (Time tab → Debug).
+- Saves are sliced `v1:<base64>` envelopes (`src/lib/save.ts`; details in `src/save/CLAUDE.md`). Add persistent concerns as codecs in `src/save/*Codec.ts` and `ALL_CODECS`; runtime state is rebuilt; ephemeral UI owns separate localStorage keys.
+- Battles persist only through `battlesCodec` as engine `BSNAP.<base64>` tokens (`serializeBattle`). Keep serialization in one place; the save composes it.
 
 ## Feature unfolding (`src/lib/unlocks.ts`)
 - `progressionMode: 'sandbox' | 'curated'` (persisted in `worldCodec`; switch in Time→Debug or `?mode=curated`). **Sandbox** = default/dev: everything open. **Curated** = a new-player onramp: gates content and unfolds it through play.
@@ -40,26 +39,15 @@ keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 - Each mode has its own save slot (`save:sandbox` / `save:curated`) plus a `save-active-mode` marker. `switchProgressionMode(target)` is non-destructive: flush current slot, then load or seed the target slot.
 
 ## Combat engine (`src/engine/`)
-Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounters; open-world default 50×50). One battle per location: `BattleState { combatants[], zones[], barriers[], mode, round, outcome, events[], plans, stats, cols/rows, timeScale }`. Combatants are cloned from inputs and **mutated in place** each round.
+Deterministic, round-based **spatial** sim on a per-battle grid. See `src/engine/CLAUDE.md` for mechanics.
 
 - **Determinism**: no RNG; damage variation is a pure fn(round, combatant index). Loot/spawn RNG lives in the *store*, not the engine. Same roster+tactics replays 1:1. Engine changes MUST keep snapshot replays byte-identical.
-- **Modes**: `'encounter'` (discrete wave; ends victory/defeat/draw; fresh wave after `BATTLE_RESPAWN_TICKS`=15) and `'open'` (persistent open-world, `openWorld: true`; never self-terminates; store keeps `openWorldCap` (default 8) monsters scattered, trickling one in every `OPEN_WORLD_SPAWN_TICKS`=30; heroes join/leave via `reconcileOpenPlayers`; store owns teardown).
-- **A round** (`advanceRound`): tick statuses (DoT/age-out) → tick zones → tick cooldowns → turn order (SPD desc, id tiebreak) → each alive combatant `takeTurn` → `evalOutcome` (draw at `MAX_ROUNDS`=200).
-- **Cadence**: store ticks `TICKS_PER_SECOND`=5; one engine round per tick (`ROUND_EVERY_TICKS`=1). Battles run with `ROUND_TIME_SCALE`; `BattleState.timeScale` defaults to **1** for replay compatibility and is applied via the `engine/timescale.ts` ambient. Engine↔render coherence is pinned by `render/cadence.ts` + `Cadence.test.ts`; per-map load params by `map-perf-envelope.test.ts`.
-- **Vision & wander**: `visionRange` gates targeting (open-world fog; heroes 10, monsters 8 cells; `Infinity` in encounters). No target in sight → wander (heroes roam the team `waypoint`; monsters lurk then hop, via `lurkAndHop`). Deterministic (`hash01`, no RNG). **Town wander**: a `BattleState.peaceful` field (a city — set by the store from the location's `'city'` trait, *not* serialized) makes heroes mill **individually** with long pauses + short hops (`TOWN_WANDER_*`) instead of roaming as a party.
-- **Neutral NPCs** (`src/data/npcs.ts`, `NPC_REGISTRY`): a third `team: 'neutral'` faction (town merchants/questgivers). Nobody's enemy (excluded from `visibleEnemiesOf`/`livingEnemies`), nobody's ally, never takes a turn, and immovable (separation slides movers around them). Cities are peaceful open-world fields (`openWorldCap: 0`); their NPCs are spawned into the battle by `createOpenBattleFor` and double as Market merchants (`MERCHANT_REGISTRY`) + bounty sources.
-- **Terrain**: barriers block movement + LoS (casters won't fire through walls; will through cliffs). `steerAround` = Dijkstra over the barrier set; unreachable → hold (`canReach` exposes it). Arena bounds read from the `engine/arena.ts` ambient — no size hardcoded in movement clamps.
-- **Spatial hash** (`spatialhash.ts`) + **per-turn vision cache** (`spatial.ts`): O(local) neighbour scans / memoized `visibleEnemiesOf`. Both are pure optimizations gated to the live round and byte-identical to a brute scan (fall back to brute when no active hash). The vision cache is process-global and assumes one battle is stepped at a time.
-- **Threat & aggro** (WoW-style): targeting = hard taunt (`taunted` status) > targeting tactics > threat fallback (`selectTarget`: `threat − distance`, 25% hysteresis). Threat accrues from all damage ×`threatMult` and from healing; the **Taunt** skill peels.
-- **Zones** (`BattleZone`): persistent ground areas (Lightning Storm damage, Molasses slow, Consecration follow-aura). Damage runs the **element matrix** vs effective armor; three-phase "aura turn" eligibility; DoT once per logical round.
+- Store owns game state/time/stats and loot/spawn RNG. `adapter.ts` is the only `Unit`/`MonsterDef` + `DerivedStats` → `EngineUnitInput` seam and never mutates inputs.
 - **Snapshots** (`snapshot.ts`): `serializeBattle` → `BSNAP.<base64>` (everything the sim reads; not events/trace). `deserializeBattle` replays 1:1; `.<len>x<hash>` integrity guard. ⎘-state button in BattleView; replay via `npm run bsnap`.
-- **Adapter**: defensive passives (Toughness/Evasion/Defensive Stance) set `Combatant.armorReduction`/`dodgePeriod`/`threatMult` here (MonsterDef carries the same fields).
 
 ## Tactics (the player's combat lever)
 - `TACTIC_REGISTRY`; each tactic on exactly one **channel**: movement/targeting/action/reaction/passive. Evaluated per channel in priority order each turn.
 - Unit equips ≤ `MAX_UNIT_TACTICS`=4 (`unit.tactics`); party shares ≤ `MAX_PARTY_TACTICS`=2 (`partyTactics`). Scope enforced by `TacticDef.scope`. Reorder within a channel only.
-- `kind`: `floor` (fires on a basic precondition; `demoteFloors` sorts floors below triggers in their channel) | `trigger` (default).
-- **Skills are injected as action-channel tactics** via the adapter. The biggest ready nuke leads; each turn `reorderAttacksForTarget` re-ranks single-target attacks vs the locked enemy via `estimateDamageVs` (`damage.ts`: element matrix + magic/physical mitigation, amortized over the cast cycle). **Exploit Weakness** lowers the switch margin (default 15%).
 - **Only skills change numbers; tactics are pure behaviour.** Shield Wall / Last Stand are self-cast skills with gated cast tactics.
 - **Consumables**: a hero's `Unit.pack` is separate from the stash. `Unit.consumableRules` generate action-channel item tactics (`src/engine/consumables.ts`) above skills; counts decrement on `Combatant.pack`, serialize in snapshots, and mirror back through the store tick. `reconcilePackInTown` syncs carry targets with stash while a hero is in a city.
 - Per-turn resolution recorded in `Combatant.lastResolution` (BattleView Debug tab); `Combatant.trace` is a 20-entry ring buffer.
@@ -73,18 +61,10 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 - The selected-unit bottom sheet (Stats/Debug tabs, status chips, trace, ⎘-state) lives in `src/components/BattleUnitSheet.tsx`; `BattleView.tsx` is the field renderer (camera/Arena/chips/FX/minimap).
 
 ## Offline progression (`src/lib/offline.ts`)
-`catchUp` (`App.tsx`) → `batchTick(n)` for `n>10`. Does **not** re-simulate combat; **extrapolates rewards from realized rates**.
-- `worldCodec` persists `savedAt` → `lastTickAt` so catch-up survives a full restart.
-- *Warm* (`projectOfflineRewards`): scale a location's realized rate; exp/gold deterministic (floored EV), loot rolled per projected kill; exp pool split by level.
-- *Cold* (`primeColdLocation`): budgeted real-combat slice (`PRIME_ROUND_CAP`=300, `PRIME_MS_BUDGET`=50ms) to seed a rate.
-- *Sampled* (`projectOfflineSampled`): long absences split into independent windows (~`SAMPLE_WINDOW_TICKS`=30min, ≤`SAMPLE_MAX_WINDOWS`=12), re-stocked between, summed for variance.
-- `OfflineSummary` modal shown when absence ≥ `OFFLINE_SUMMARY_MIN_SECS`=60s (rewards still apply below the gate).
+- `catchUp` (`App.tsx`) → `batchTick(n)` for `n>10`. Does **not** re-simulate combat; extrapolates rewards from realized rates. Details live in `src/lib/CLAUDE.md`.
 
 ## Health (covered by `health.test.ts`; `src/lib/stats.ts`)
-- `health` is an integer ≤ `maxHp` = `floor(50 + con*10)`; `Math.floor` applied at the moment damage is written.
-- `health ≤ 0` → KO; KO'd/recovering units don't fight.
-- KO → recovery (`recoveryTicksLeft` from `RECOVERY_TICKS`=5, **no regen**) → resting (`isResting`, `RESTING_REGEN_RATE`=50 HP/tick to `maxHp`).
-- Unassigned units regen `REGEN_RATE`=50 HP/tick. `batchTick` applies the same in bulk offline (no live-combat re-sim).
+- `health` is an integer ≤ `maxHp`; floor when damage is written. KO/recovery/resting/regen rules must match `batchTick` offline behavior. Details live in `src/lib/CLAUDE.md`.
 
 ## Exp & leveling
 - 1 XP per kill into a pool, split across the *surviving* party **proportional to level** (`splitExpByLevel`) — anti-power-leveling. Fractional shares; floored only at display. Same rule offline.
@@ -108,7 +88,7 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 `expandedLocationIds` `[]`, `expandedUnitIds` `[]`, `expandedInventorySections` (all expanded), `expandedRegionIds` `["world","geffen-dungeon"]`.
 
 ## Live bug watchdog (`src/lib/bugwatch.ts`)
-- Cheap, purely-observational live tick checks bank bug reports for stuck heroes and state invariants. Reports store repro tokens outside the game save (`bugReports`) and surface in Time→Debug → Bug watch. Detection must never mutate engine/RNG/battle state, so snapshot replays stay byte-identical.
+- Cheap, purely-observational live tick checks bank bug reports for stuck heroes and state invariants. Reports store repro tokens outside the game save (`bugReports`) and surface in Time→Debug → Bug watch. Detection must never mutate engine/RNG/battle state, so snapshot replays stay byte-identical. Details live in `src/lib/CLAUDE.md`.
 
 ## Testing & verification
 - `npm run ci` = `tsc --noEmit` + full vitest suite. Keep green; engine changes must keep snapshot replays byte-identical.
@@ -118,6 +98,7 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 
 ## Branching & merging
 - Develop on a feature branch; **merge to `main` when a feature is complete** (`git merge --ff-only <branch> && git push origin main`) — `main` is what gets browser-tested. Don't wait to be asked.
-- When the primary worktree is dirty, do shippable work in a clean temp worktree branched from fresh `origin/main` (`git fetch origin main` first). Avoid branching from stale local `main`; it creates rebase friction and can accidentally mix local WIP into commits.
+- When the primary worktree is dirty, do shippable work in a clean temp worktree branched from fresh `origin/main` (`git fetch origin main` first). Avoid branching from stale local `main`; it creates rebase friction and can accidentally mix local WIP into commits. In any mixed worktree, show/stage by explicit paths and call out excluded files.
+- Codex sandbox may require approval for git commands that write `.git` (`switch`, `add`, `commit`, `push`); request it directly. If `gh auth status` fails, push with git and use the GitHub connector to open the PR.
 - After pushing to `main`, include the commit hash in the chat reply.
 - Open PRs auto-deploy to `https://tyleraland.github.io/incremental-20260418/pr-preview/pr-<N>/` (`pr-preview.yml`); share the exact URL.
