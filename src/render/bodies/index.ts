@@ -16,6 +16,7 @@ import { mimic2Body } from '@/render/bodies/mimic2'
 import { thiefBugBody } from '@/render/bodies/thief-bug'
 import { larvaBody } from '@/render/bodies/larva'
 import { centipedeBody } from '@/render/bodies/centipede'
+import { dragonWyrmling } from '@/render/bodies/dragon-wyrmling'
 import type { BodyShape } from '@/render/appearance'
 import type { BodyPart } from '@/render/bodyTypes'
 
@@ -38,4 +39,5 @@ export const PAPER_BODIES: Record<BodyShape, BodyPart[]> = {
   thiefBug: thiefBugBody,
   larva: larvaBody,
   centipede: centipedeBody,
+  dragonWyrmling: dragonWyrmling,
 }
