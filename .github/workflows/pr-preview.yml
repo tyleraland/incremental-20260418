@@ -33,7 +33,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: github.event.action != 'closed'
         with:
-          node-version: 20
+          node-version-file: .nvmrc   # match deploy/CI (Node 22) — the prebuild gate requires it
 
       - run: npm install
         if: github.event.action != 'closed'
