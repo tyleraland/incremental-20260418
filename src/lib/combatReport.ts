@@ -16,6 +16,12 @@ export interface LocationCombatReport {
 
 export type CombatReportWindow = { kind: 'ever' }
 
+// A fresh, empty `LocationCombatStats` starting its window at `startTick` —
+// the persisted-per-location counterpart to `emptyTally()` (combatTally.ts).
+export function emptyLocationStats(startTick: number): LocationCombatStats {
+  return { startTick, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+}
+
 export function getLocationCombatReport(
   stats: LocationCombatStats | undefined,
   currentTick: number,

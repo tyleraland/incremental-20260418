@@ -1,5 +1,5 @@
 import type { LocationCombatReport } from './combatReport'
-import type { CombatTally } from '@/types'
+import type { CombatTally, MonsterDrop } from '@/types'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 
 // ── Sampled Offline Progression ("Warm Catch-up") ────────────────────────────
@@ -93,10 +93,26 @@ export function splitExpByLevel(
   return out
 }
 
-// Roll loot for a pile of projected kills, mirroring the live engine's per-kill
-// drop rolls (`rewardKills` in the store). Probabilistic so rare drops can land
-// over a long absence rather than being floored to zero. `rng` is injectable so
-// tests can pin it (the store already accepts Math.random for live loot).
+// Roll one kill's drops against a monster's drop table — the shared primitive
+// behind every reward path that rolls loot (live `rewardKills`, the cold-prime
+// `runCombatSlice`, and the offline rate-projection below). `rng` is injectable
+// so tests can pin it (defaults to `Math.random` for live/unpinned play).
+export function rollDrops(
+  drops: MonsterDrop[],
+  rng: () => number = Math.random,
+): Record<string, number> {
+  const loot: Record<string, number> = {}
+  for (const d of drops) {
+    if (rng() < d.dropRate) {
+      const qty = d.quantityMin + Math.floor(rng() * (d.quantityMax - d.quantityMin + 1))
+      loot[d.itemId] = (loot[d.itemId] ?? 0) + qty
+    }
+  }
+  return loot
+}
+
+// Roll loot for a pile of projected kills. Probabilistic so rare drops can land
+// over a long absence rather than being floored to zero.
 export function rollOfflineLoot(
   killsByMonster: Record<string, number>,
   rng: () => number = Math.random,
@@ -106,11 +122,8 @@ export function rollOfflineLoot(
     const def = MONSTER_REGISTRY[mid]
     if (!def) continue
     for (let i = 0; i < kills; i++) {
-      for (const d of def.drops) {
-        if (rng() < d.dropRate) {
-          const qty = d.quantityMin + Math.floor(rng() * (d.quantityMax - d.quantityMin + 1))
-          loot[d.itemId] = (loot[d.itemId] ?? 0) + qty
-        }
+      for (const [itemId, qty] of Object.entries(rollDrops(def.drops, rng))) {
+        loot[itemId] = (loot[itemId] ?? 0) + qty
       }
     }
   }

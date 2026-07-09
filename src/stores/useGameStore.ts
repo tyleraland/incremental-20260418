@@ -9,8 +9,8 @@ import { ACTION_SLOT_COUNT } from '@/types'
 import { emptyTally, addInto, scaleTally, foldRoundEvents, foldHistory } from '@/lib/combatTally'
 import { RECOVERY_TICKS, REGEN_RATE, RESTING_REGEN_RATE, TICKS_PER_SECOND, TICKS_PER_YEAR, formatDuration } from '@/lib/time'
 import { getDerivedStats } from '@/lib/stats'
-import { getLocationCombatReport } from '@/lib/combatReport'
-import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills, projectOfflineCycles, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
+import { getLocationCombatReport, emptyLocationStats } from '@/lib/combatReport'
+import { projectOfflineRewards, rollOfflineLoot, rollDrops, splitExpByLevel, offlineWindowCount, scaleKills, projectOfflineCycles, type OfflineLocationReward, type OfflineSummary, type CatchUpDebug, type CatchUpLocation } from '@/lib/offline'
 import { SAMPLING } from '@/lib/sampling'
 import { detectStuck, detectInvariants, emptyBugWatch, MAX_BUG_REPORTS, INVARIANT_EVERY_TICKS, type BugReport, type BugWatchState } from '@/lib/bugwatch'
 import { randomFullName } from '@/lib/names'
@@ -896,12 +896,9 @@ function runCombatSlice(
         t.killsByMonster[mid] = (t.killsByMonster[mid] ?? 0) + 1   // per-type, for cull quests
       }
       const def = MONSTER_REGISTRY[mid]
-      if (def) for (const d of def.drops) {
-        if (rng() < d.dropRate) {
-          const qty = d.quantityMin + Math.floor(rng() * (d.quantityMax - d.quantityMin + 1))
-          loot[d.itemId] = (loot[d.itemId] ?? 0) + qty
-          if (credited) (tally[credited] ?? (tally[credited] = emptyTally())).itemsFound += qty
-        }
+      if (def) for (const [itemId, qty] of Object.entries(rollDrops(def.drops, rng))) {
+        loot[itemId] = (loot[itemId] ?? 0) + qty
+        if (credited) (tally[credited] ?? (tally[credited] = emptyTally())).itemsFound += qty
       }
     }
   }
@@ -1151,7 +1148,7 @@ function foldLocationByUnit(
     const locId = locationOf.get(unitId)
     if (!locId) continue
     if (out === locationStats) out = { ...locationStats }
-    const loc = out[locId] ?? { startTick: tick, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+    const loc = out[locId] ?? emptyLocationStats(tick)
     const byUnit = { ...(loc.byUnit ?? {}) }
     byUnit[unitId] = addInto2(byUnit[unitId], d)
     out[locId] = { ...loc, byUnit }
@@ -1271,24 +1268,21 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         if (Math.random() < rule.dropRate) questDropDelta[rule.itemId] = (questDropDelta[rule.itemId] ?? 0) + 1
       }
       const def = MONSTER_REGISTRY[mid]
-      const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+      const prev = locationStats[loc.id] ?? emptyLocationStats(newTicks)
       const itemsDropped = { ...prev.itemsDropped }
       if (def) {
-        for (const d of def.drops) {
-          if (Math.random() < d.dropRate) {
-            const qty = d.quantityMin + Math.floor(Math.random() * (d.quantityMax - d.quantityMin + 1))
-            itemsDropped[d.itemId] = (itemsDropped[d.itemId] ?? 0) + qty
-            // §loot: a kill's drops go into the KILLER's pack (batched with the
-            // kill, capacity-gated by the expedition driver), NOT straight to the
-            // shared stash — that's the whole "loot fills your pack, deposit in
-            // town" loop. Only a real credited hero carries; a minion kill (no
-            // credit) still mails its drop home to the stash.
-            if (credited) {
-              (foundLootByUnit[credited] ??= {})[d.itemId] = ((foundLootByUnit[credited] ??= {})[d.itemId] ?? 0) + qty
-              bumpUnit(credited, 'itemsFound', qty)
-            } else {
-              lootDelta[d.itemId] = (lootDelta[d.itemId] ?? 0) + qty
-            }
+        for (const [itemId, qty] of Object.entries(rollDrops(def.drops))) {
+          itemsDropped[itemId] = (itemsDropped[itemId] ?? 0) + qty
+          // §loot: a kill's drops go into the KILLER's pack (batched with the
+          // kill, capacity-gated by the expedition driver), NOT straight to the
+          // shared stash — that's the whole "loot fills your pack, deposit in
+          // town" loop. Only a real credited hero carries; a minion kill (no
+          // credit) still mails its drop home to the stash.
+          if (credited) {
+            (foundLootByUnit[credited] ??= {})[itemId] = ((foundLootByUnit[credited] ??= {})[itemId] ?? 0) + qty
+            bumpUnit(credited, 'itemsFound', qty)
+          } else {
+            lootDelta[itemId] = (lootDelta[itemId] ?? 0) + qty
           }
         }
       }
@@ -1389,7 +1383,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     }
     for (const [mid, k] of Object.entries(killsByMonster)) monsterDefeated[mid] = (monsterDefeated[mid] ?? 0) + k
     // Advance the persisted stats so the rate stays coherent for the next interval.
-    const prev = locationStats[loc.id] ?? { startTick: newTicks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+    const prev = locationStats[loc.id] ?? emptyLocationStats(newTicks)
     const nextDefeated = { ...prev.monstersDefeated }
     for (const [mid, k] of Object.entries(killsByMonster)) nextDefeated[mid] = (nextDefeated[mid] ?? 0) + k
     const nextDropped = { ...prev.itemsDropped }
@@ -2105,7 +2099,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       // Advance the location's persisted stats so the rate stays coherent for the
       // next catch-up (window grows by n, rewards grow proportionally), and fold
       // the per-hero breakdown into the location's byUnit table.
-      const prev = locationStats[loc.id] ?? { startTick: s.ticks, monstersDefeated: {}, itemsDropped: {}, expDistributed: 0, goldEarned: 0 }
+      const prev = locationStats[loc.id] ?? emptyLocationStats(s.ticks)
       const nextDefeated = { ...prev.monstersDefeated }
       for (const [mid, k] of Object.entries(killsByMonster)) nextDefeated[mid] = (nextDefeated[mid] ?? 0) + k
       const nextDropped = { ...prev.itemsDropped }
