@@ -123,5 +123,6 @@ Deterministic, round-based **spatial** sim on a per-battle grid (15×15 encounte
 
 ## Branching & merging
 - Develop on a feature branch; **merge to `main` when a feature is complete** (`git merge --ff-only <branch> && git push origin main`) — `main` is what gets browser-tested. Don't wait to be asked.
+- When the primary worktree is dirty, do shippable work in a clean temp worktree branched from fresh `origin/main` (`git fetch origin main` first). Avoid branching from stale local `main`; it creates rebase friction and can accidentally mix local WIP into commits.
 - After pushing to `main`, include the commit hash in the chat reply.
 - Open PRs auto-deploy to `https://tyleraland.github.io/incremental-20260418/pr-preview/pr-<N>/` (`pr-preview.yml`); share the exact URL.
