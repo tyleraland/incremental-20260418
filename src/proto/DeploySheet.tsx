@@ -66,6 +66,8 @@ function LocationList({ locations, units, selectedId, onPick }: {
               return (
                 <button
                   key={l.id}
+                  aria-label={l.name}
+                  aria-pressed={on}
                   onClick={() => onPick(l.id)}
                   className={['w-full flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors',
                     on ? 'border-game-primary bg-game-primary/15 ring-1 ring-game-primary/40' : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}
@@ -133,6 +135,8 @@ function HeroPicker({ locId }: { locId: string }) {
     return (
       <button
         key={u.id}
+        aria-label={u.name}
+        aria-pressed={on}
         onClick={() => toggle(u.id)}
         className={['flex items-center gap-1.5 text-[11px] px-2 py-1.5 rounded-lg border transition-colors',
           on ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
@@ -161,7 +165,10 @@ function HeroPicker({ locId }: { locId: string }) {
         >➤ Deploy {picked.length || ''} {picked.length === 1 ? 'hero' : 'heroes'} to {loc.name}</button>
       }
     >
-      <button onClick={() => setPickingDest((v) => !v)}
+      <button
+        aria-label={`Destination: ${loc.name}. Tap to change.`}
+        aria-expanded={pickingDest}
+        onClick={() => setPickingDest((v) => !v)}
         className="w-full flex items-center gap-2 rounded-lg border border-game-border bg-game-bg px-2.5 py-2 text-left hover:border-game-primary/50 transition-colors">
         <span className="w-5 text-center text-sm shrink-0">{loc.traits.includes('city') ? '⌂' : '⌖'}</span>
         <span className="text-[10px] uppercase tracking-widest text-game-text-dim shrink-0">Destination</span>
