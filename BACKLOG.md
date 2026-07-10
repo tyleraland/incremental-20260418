@@ -472,7 +472,8 @@ same way" by penalising left-side detours.
   opt-in; the default ("close to range and hold") is a deliberate
   placeholder. Needs: a per-role default (blackboard picks from party comp),
   a genuinely robust kite (right skill range, terrain/LoS-aware), and an
-  anchor/formation plan field so "hold" means a specific spot.
+  anchor/formation plan field so "hold" means a specific spot. Design +
+  milestones: `movement-action-coupling.md` (M1/M2).
 - **Threat model — extensions.** WoW-style threat table drives default
   targeting (`selectTarget`, §threat in AGENTS.md). Open: AoE/aura threat (a
   tank holding several mobs at once, not just what it's hitting),
@@ -483,9 +484,9 @@ same way" by penalising left-side detours.
   `estimateDamageVs` is the hook. Open: AoE spread value (score by expected
   total damage across everyone hit — AoE skills are currently excluded from
   the re-rank entirely), positioning for a unit's preferred-range attack
-  rather than its longest, sideboard/weapon-swap candidates (scorer already
-  takes `skill: null` so it's swap-ready), and folding status-synergy/on-hit
-  value into the score.
+  rather than its longest (design: `movement-action-coupling.md`),
+  sideboard/weapon-swap candidates (scorer already takes `skill: null` so
+  it's swap-ready), and folding status-synergy/on-hit value into the score.
 - **Ambush combo** — primitives exist (cloak, back-stab, flanker, ambusher);
   needs an orchestrator holding Cloak until in Back Stab range.
 - **Sneak Attack skill** — a learnable skill scaling the flat
