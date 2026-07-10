@@ -230,22 +230,32 @@ canvas {
 .rounded-md { border-radius: 1px; }
 .rounded-full { border-radius: 9999px; } /* keep dots/badges round */
 
-/* Scanlines + slow phosphor sweep over the whole viewport. */
+/* Scanlines over the whole viewport (static), plus a slow phosphor sweep
+   band that rides transform only — the animation perf contract
+   (Bodies.test.ts) requires compositor-cheap keyframes. */
 body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: 9999;
   pointer-events: none;
-  background:
-    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0px, rgba(0, 0, 0, 0.16) 1px, transparent 1px, transparent 3px),
-    linear-gradient(180deg, transparent 0%, rgba(134, 239, 172, 0.03) 48%, transparent 55%);
-  background-size: 100% 100%, 100% 240px;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0px, rgba(0, 0, 0, 0.16) 1px, transparent 1px, transparent 3px);
+}
+body::before {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: -240px;
+  height: 240px;
+  z-index: 9998;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(134, 239, 172, 0.04) 50%, transparent);
   animation: crt-sweep 9s linear infinite;
 }
 @keyframes crt-sweep {
-  from { background-position: 0 0, 0 -240px; }
-  to   { background-position: 0 0, 0 100vh; }
+  from { transform: translateY(0); }
+  to   { transform: translateY(calc(100vh + 240px)); }
 }
 
 /* Section labels type themselves out — just kidding: they track wide. */
