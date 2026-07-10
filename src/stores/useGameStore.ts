@@ -20,7 +20,7 @@ import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
 import { consumableDef, isConsumable } from '@/data/consumables'
 import { type Pack, heroRoom, itemWeight, packWeight, consumablesWeight, WEIGHT_LIMIT, PACK_FULL_FRACTION } from '@/proto/economy'
 import {
-  freshHero, loadoutFromPack, newSupplyEntry, cityHops,
+  freshHero, loadoutFromPack, newSupplyEntry, cityHops, cityIdSet,
   type HeroExpedition, type Loadout, type LootCategory, type ReturnConditionId,
   type ReturnModeId, type SupplyModeId, type ShareFlag,
 } from '@/proto/expedition'
@@ -1704,7 +1704,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     // §consumables: in-town pack auto-fill. Track stash stock once, drawn down as
     // heroes refill (so two heroes in town don't both claim the same potions); the
     // net withdrawal is folded into miscItems below.
-    const cityLocs = new Set(s.locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
+    const cityLocs = cityIdSet(s.locations)
     const stashAvail: Record<string, number> = {}
     for (const m of s.miscItems) stashAvail[m.id] = m.quantity
     const stashDraw: Record<string, number> = {}

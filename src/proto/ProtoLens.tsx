@@ -381,7 +381,6 @@ function SelectionCommandBar({ scope, units, location }: {
 }) {
   const assignUnits    = useGameStore((s) => s.assignUnits)
   const locations      = useGameStore((s) => s.locations)
-  const allUnits       = useGameStore((s) => s.units)
   const requestZoom    = useProtoStore((s) => s.requestZoom)
   const battleFollowId = useGameStore((s) => s.battleFollowId)
   const battles        = useGameStore((s) => s.battles)
@@ -401,16 +400,10 @@ function SelectionCommandBar({ scope, units, location }: {
     // The scope switcher above already names the site, so this row is pure
     // action: Deploy is the site's primary verb. Quests now live inline in the
     // folded location section below, so no cross-link is needed.
-    // "Available" count folded into the button itself (was a separate "Deploy
-    // selected" list in LocationHeroesPanel — redundant with the picker sheet
-    // this button already opens).
-    const cityIds = new Set(locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
-    const availableCount = allUnits.filter((u) => u.recoveryTicksLeft <= 0 && !(u.travelPath && u.travelPath.length)
-      && u.locationId !== location.id && (!u.locationId || cityIds.has(u.locationId))).length
     return (
       <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 bg-game-bg/40">
         <button onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })} className={`${primaryBtn} flex-1 justify-center`}>
-          ➤ Deploy heroes{availableCount > 0 && ` · ${availableCount} available`}
+          ➤ Deploy heroes
         </button>
       </div>
     )

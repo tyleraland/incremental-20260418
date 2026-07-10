@@ -219,6 +219,7 @@ export function loadoutFromPack(pack: PackItem[] | undefined): Loadout | null {
 
 export const isHuntable = (loc: Location): boolean => !loc.traits.includes('city')
 export const isCity = (loc: Location): boolean => loc.traits.includes('city')
+export const cityIdSet = (locations: Location[]): Set<string> => new Set(locations.filter(isCity).map((l) => l.id))
 
 // The sane default return town: the nearest city to `fromId`, by hops over the
 // location connection graph. Falls back to the first city if none is reachable.

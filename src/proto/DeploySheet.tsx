@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, getDerivedStats, type Unit, type Location } from '@/stores/useGameStore'
 import { useProtoStore } from './protoStore'
+import { cityIdSet } from './expedition'
 
 // ── Deploy sheets ─────────────────────────────────────────────────────────────
 //
@@ -103,7 +104,7 @@ function HeroPicker({ locId }: { locId: string }) {
     setPickingDest(false)
   }
 
-  const cityIds = new Set(locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
+  const cityIds = cityIdSet(locations)
   const busy    = (u: Unit) => u.recoveryTicksLeft > 0
   const here    = units.filter((u) => u.locationId === destination && !(u.travelPath && u.travelPath.length))
   const rest    = units.filter((u) => u.locationId !== destination || (u.travelPath && u.travelPath.length))
