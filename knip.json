@@ -5,6 +5,7 @@
     "scripts/bsnap.mjs",
     "scripts/import-svg.mjs",
     "scripts/gen-icons.cjs",
+    "scripts/ui-probe.mjs",
     ".shot-locks2.mjs"
   ],
   "ignore": [
