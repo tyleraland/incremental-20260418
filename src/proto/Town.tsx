@@ -327,7 +327,7 @@ function recipeMatchesFilter(r: CraftingRecipe, f: CraftFilter): boolean {
     const c = r.outputCategory
     if (f === 'weapon') return c === 'weapon-1h' || c === 'weapon-2h'
     if (f === 'armor') return c === 'shield' || c === 'armor'
-    if (f === 'accessory') return c === 'accessory' || c === 'tool'
+    if (f === 'accessory') return c === 'accessory'
     return false
   }
   const cat = r.category ?? 'misc'

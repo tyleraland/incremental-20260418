@@ -7,6 +7,7 @@ import {
 import { SLOT_LABELS, SLOT_COMPATIBLE } from '@/data/equipment'
 import { ACTION_SLOT_COUNT } from '@/types'
 import type { EquipSlot, EquipmentItem, WeaponRecord, ActionSlotEntry } from '@/types'
+import { CLASS_ICON } from '@/render/appearance'
 import { LogisticsBoard } from './LogisticsBoard'
 // ── Army Matrix ────────────────────────────────────────────────────────────--
 //
@@ -23,7 +24,6 @@ const FACETS: { id: Facet; label: string }[] = [
 ]
 // Action-bar columns for the Skills facet (slot index → header label).
 const SKILL_COLS = Array.from({ length: ACTION_SLOT_COUNT }, (_, i) => ({ id: `slot:${i}`, label: `${i + 1}` }))
-const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 const CHANNELS: { id: string; label: string }[] = [
   { id: 'movement', label: 'Move' }, { id: 'targeting', label: 'Target' },
   { id: 'action', label: 'Action' }, { id: 'reaction', label: 'React' }, { id: 'passive', label: 'Passive' },

@@ -39,7 +39,7 @@ export interface CardDef {
 export const CARD_FIT_OF: Record<ItemCategory, CardFit> = {
   'weapon-1h': 'weapon', 'weapon-2h': 'weapon',
   shield: 'armor', armor: 'armor',
-  accessory: 'accessory', tool: 'accessory',
+  accessory: 'accessory',
 }
 
 export const CARD_REGISTRY: Record<string, CardDef> = {

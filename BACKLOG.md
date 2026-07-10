@@ -682,11 +682,6 @@ behavior-sensitive, a refactor, or a product decision.
   ids) are duplicated verbatim between the store initializer and `resetSave` →
   extract `INITIAL_*` factories. Also: `resetSave` omits clearing persistent
   `unitStatHistory` and `lastCatchUp` (stale data survives a reset).
-- **Vestigial `tool` equip slot.** No `tool` slot in the live 6-slot model
-  (`mainHand/offHand/sideboard1/sideboard2/armor/accessory`); handaxe/pickaxe/
-  lockpick are unreachable gear and CLAUDE.md still lists `tool` as a slot. Decide:
-  remove the plumbing, or wire it to a gather/resource feature (see *Economy &
-  resources*). Update CLAUDE.md either way.
 - **Now-orphaned `'flee'` LogCategory.** After fixing the inverted victory chip,
   `'flee'` is emitted nowhere (only `victory`/`defeat` are). Either wire it to
   monster-flee events or drop it from `LogCategory` + `LOG_META` + the filter list.
@@ -701,16 +696,13 @@ behavior-sensitive, a refactor, or a product decision.
   single-record codecs (codex/combatStats/unitStats/unitHistory/sockets) could share
   a `makeRecordCodec` that also fixes the `?? {}` guard drift in one place. (None are
   `version`-migrated; first required-field shape change needs a migration story.)
-- **Duplicated UI tables — worse after the classic-UI deletion, not better.**
-  `CLASS_ICON` now has **four independent copies** (`render/appearance.ts` —
-  the canonical one BattleView reads; `proto/ArmyMatrix.tsx`;
-  `proto/ProtoApp.tsx`; `dev/MonsterLab.tsx`), all the same 5-entry class→glyph
-  map, byte-identical today but one edit away from silently drifting.
-  `ELEMENT_COLORS` (LocationCodex, while a canonical copy sits unused in
-  `lib/elements.ts`), `fmt` number formatters (SamplingDebug ↔ TallyBreakdown),
-  `Window`/`WINDOWS` (UnitReportSheet ↔ Reports) are the same shape of debt.
-  Hoist to shared modules (verify the class strings are byte-identical before
-  collapsing, to avoid a visual regression).
+- **Duplicated UI tables.** `CLASS_ICON` is fixed — `ArmyMatrix.tsx`,
+  `ProtoApp.tsx`, and `MonsterLab.tsx` now import the canonical copy from
+  `render/appearance.ts` instead of re-declaring it. Still open: `ELEMENT_COLORS`
+  (LocationCodex, while a canonical copy sits unused in `lib/elements.ts`),
+  `fmt` number formatters (SamplingDebug ↔ TallyBreakdown), `Window`/`WINDOWS`
+  (UnitReportSheet ↔ Reports). Hoist to shared modules (verify the class
+  strings are byte-identical before collapsing, to avoid a visual regression).
 - **`src/proto/` buttons mostly lack `aria-label`s (~15% coverage, 174
   buttons).** Fine for a11y today (icon+text usually gives context visually),
   but it's a real testability tax: writing a shell-side RTL test for an

@@ -1227,24 +1227,21 @@ export function SkillsLens({ unit }: { unit: Unit }) {
 const CAT_SLOT: Partial<Record<ItemCategory, EquipSlot>> = {
   'weapon-1h': 'mainHand', 'weapon-2h': 'mainHand', shield: 'offHand', armor: 'armor', accessory: 'accessory',
 }
-const ITEM_CATEGORIES: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'shield', 'armor', 'accessory', 'tool']
 
 // Tri-state type filters (include / exclude / off), modelled on the production
 // Inventory's type chips but each one cycles through three states.
-type FilterKey = 'weapon' | 'armor' | 'accessory' | 'tool' | 'material'
+type FilterKey = 'weapon' | 'armor' | 'accessory' | 'material'
 type FilterState = 'off' | 'include' | 'exclude'
 const FILTERS: { key: FilterKey; label: string; icon: string }[] = [
   { key: 'weapon', label: 'Weapons', icon: '🗡' },
   { key: 'armor', label: 'Armor', icon: '🛡' },
   { key: 'accessory', label: 'Accessory', icon: '💍' },
-  { key: 'tool', label: 'Tools', icon: '🔧' },
   { key: 'material', label: 'Materials', icon: '📦' },
 ]
 function filterKeyOf(cat: ItemCategory): FilterKey {
   if (cat === 'weapon-1h' || cat === 'weapon-2h') return 'weapon'
   if (cat === 'shield' || cat === 'armor') return 'armor'
-  if (cat === 'accessory') return 'accessory'
-  return 'tool'
+  return 'accessory'
 }
 const nextState = (s: FilterState): FilterState => (s === 'off' ? 'include' : s === 'include' ? 'exclude' : 'off')
 

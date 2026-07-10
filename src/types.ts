@@ -41,7 +41,7 @@ export interface SkillDef {
 // ── Equipment & slot types ────────────────────────────────────────────────────
 
 export type EquipSlot    = 'mainHand' | 'offHand' | 'sideboard1' | 'sideboard2' | 'armor' | 'accessory'
-export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'tool' | 'shield' | 'armor' | 'accessory'
+export type ItemCategory = 'weapon-1h' | 'weapon-2h' | 'shield' | 'armor' | 'accessory'
 
 // Each unit has a 6-slot action bar; entries either reference an equipment
 // item id, an active-skill id, or a consumable (miscItem) id.

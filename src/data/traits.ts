@@ -11,7 +11,6 @@ export const TRAIT_REGISTRY: Record<string, Trait> = {
   wind:        { id: 'wind',        label: 'Wind',        category: 'element', description: 'Imbued with wind energy. High speed, reduced weight.', colorClass: 'bg-teal-950 text-teal-300 border-teal-700/50' },
   '1h':        { id: '1h',          label: '1H',          category: 'item-type', description: 'One-handed. Pairs with a shield, off-hand weapon, or accessory.' },
   '2h':        { id: '2h',          label: '2H',          category: 'item-type', description: 'Two-handed. Off-hand slot is locked while equipped.' },
-  'tool':      { id: 'tool',        label: 'Tool',        category: 'item-type', description: 'Utility item for gathering or exploration. Uses the dedicated Tool slot.' },
   'shield':    { id: 'shield',      label: 'Shield',      category: 'item-type', description: 'Off-hand defensive gear. Provides bonus Defense.' },
   dagger:      { id: 'dagger',      label: 'Dagger',      category: 'item-type', description: 'A short, fast blade. High critical potential.' },
   sword:       { id: 'sword',       label: 'Sword',       category: 'item-type', description: 'A balanced bladed weapon. Reliable damage.' },

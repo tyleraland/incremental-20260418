@@ -1,7 +1,7 @@
 import type { EquipmentItem, MiscItem, EquipSlot, ItemCategory } from '@/types'
 
 // Sideboards reserve any equippable category — they're stashes for swap-in.
-const ALL_CATEGORIES: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'tool', 'shield', 'armor', 'accessory']
+const ALL_CATEGORIES: ItemCategory[] = ['weapon-1h', 'weapon-2h', 'shield', 'armor', 'accessory']
 
 export const SLOT_COMPATIBLE: Record<EquipSlot, ItemCategory[]> = {
   mainHand:   ['weapon-1h', 'weapon-2h'],
@@ -18,7 +18,7 @@ export const SLOT_LABELS: Record<EquipSlot, string> = {
 
 export const CATEGORY_LABELS: Record<ItemCategory, string> = {
   'weapon-1h': '1H Weapon', 'weapon-2h': '2H Weapon',
-  tool: 'Tool', shield: 'Shield', armor: 'Armor', accessory: 'Accessory',
+  shield: 'Shield', armor: 'Armor', accessory: 'Accessory',
 }
 
 const KNIFE_CLASSES = ['Novice', 'Fighter', 'Rogue', 'Mage', 'Ranger', 'Cleric']
@@ -39,11 +39,6 @@ export const INITIAL_EQUIPMENT: EquipmentItem[] = [
   { id: 'eq-rod',       name: 'Rod',   category: 'weapon-1h', traits: ['1h', 'bludgeoning', 'staff'], stats: { attack: 15, range: 5 }, slots: 3, description: 'A one-handed magical focus, swung in melee.',             requiredLevel: 1, requiredClasses: ['Novice', 'Cleric', 'Mage'] },
   { id: 'eq-bow',       name: 'Bow',   category: 'weapon-2h', traits: ['2h', 'piercing', 'bow'],              stats: { attack: 15, range: 35 }, slots: 3, description: 'A two-handed ranged weapon. Locks off-hand.', requiredLevel: 4, requiredClasses: ['Fighter', 'Rogue', 'Ranger'] },
   { id: 'eq-sword',     name: 'Sword', category: 'weapon-1h', traits: ['1h', 'slashing', 'sword'],            stats: { attack: 25 }, slots: 3, description: 'A balanced blade with solid damage output.',     requiredLevel: 2, requiredClasses: ['Novice', 'Fighter', 'Rogue'] },
-  // ── Tools ────────────────────────────────────────────────────────────────────
-  { id: 'eq-handaxe',        name: 'Handaxe',        category: 'tool',      traits: ['tool', 'slashing'],       stats: {},               slots: 0, description: 'Good for gathering wood.' },
-  { id: 'eq-pickaxe',        name: 'Pickaxe',        category: 'tool',      traits: ['tool', 'piercing'],                stats: {},               slots: 0, description: 'Essential for mining ore.' },
-  { id: 'eq-skinning-knife', name: 'Skinning Knife', category: 'tool',      traits: ['tool', 'slashing'],       stats: { attack: 1 },    slots: 0, description: 'Sharp blade for preparing game.' },
-  { id: 'eq-lockpick',       name: 'Lockpick',       category: 'tool',      traits: ['tool'],                   stats: {},               slots: 0, description: 'Opens locks without a key.' },
   { id: 'eq-sword-1h',       name: 'Iron Sword',     category: 'weapon-1h', traits: ['1h', 'slashing'],                  stats: { attack: 4 },    slots: 1, description: 'A reliable iron blade.' },
   { id: 'eq-shortsword',     name: 'Shortsword',     category: 'weapon-1h', traits: ['1h', 'slashing'],         stats: { attack: 3 },    slots: 1, description: 'Light and fast.' },
   { id: 'eq-wand',           name: 'Wand',           category: 'weapon-1h', traits: ['1h'],                     stats: { specialAttack: 4, range: 18 }, slots: 1, description: 'Channels magical energy.' },

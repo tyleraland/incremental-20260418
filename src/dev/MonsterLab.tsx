@@ -17,7 +17,7 @@ import type { Location, MonsterDef, MonsterSize } from '@/types'
 import { useGameStore, type Unit } from '@/stores/useGameStore'
 import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
-import { monsterBodyShape, BODY_SHAPES, type BodyShape } from '@/render/appearance'
+import { monsterBodyShape, BODY_SHAPES, CLASS_ICON, type BodyShape } from '@/render/appearance'
 import { BodyAnimPreview } from './BodyAnimPreview'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { TACTIC_REGISTRY } from '@/engine/tactics'
@@ -674,7 +674,6 @@ function ReportModal({ onClose }: { onClose: () => void }) {
 // no-persist so none of this reaches a save.
 const SIM_LOC = 'monster-lab-sim'
 const HERO_TEMPLATES = INITIAL_UNITS.filter((u) => u.class)
-const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
 function BattleSim({ monsterId, savedRoster, onClose }: { monsterId: string; savedRoster: Unit[]; onClose: () => void }) {
   const nextId = useRef(0)

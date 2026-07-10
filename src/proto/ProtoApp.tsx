@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore, getInitials, getDerivedStats, OFFLINE_SUMMARY_MIN_SECS, type Unit } from '@/stores/useGameStore'
+import { CLASS_ICON } from '@/render/appearance'
 import { DeploySheetHost } from './DeploySheet'
 import { ProtoStage } from './ProtoStage'
 import { ProtoLens, PartyDoctrine } from './ProtoLens'
@@ -139,7 +140,6 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
 // lore flavor, and placeholder skill icons. Tracked in BACKLOG.md →
 // "Tactician shell — plumbing gaps".
 
-const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
 // "Needs attention" = the hero has gained a level since you last spent a resource
 // on them (ability point or skill). `viewedUnitLevels[id]` records the level at the

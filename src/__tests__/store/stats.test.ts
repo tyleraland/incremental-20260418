@@ -292,11 +292,11 @@ describe('getDerivedStats — per-ability formula isolation', () => {
 // ---------------------------------------------------------------------------
 describe('getDerivedStats — equipment slot coverage', () => {
   it('sideboard items are reserved but stat-inactive', () => {
-    // Tools (and any other sideboard items) hold inventory but don't contribute
-    // stats — they're staged for a later swap into mainHand/offHand.
-    const TOOL: EquipmentItem = { id: 'eq-tool', name: 'Tool', category: 'tool', traits: [], stats: { attack: 3 } }
-    const unit = makeUnit({ equipment: { armor: null, sideboard1: 'eq-tool', sideboard2: null, accessory: null } })
-    expect(getDerivedStats(unit, [TOOL]).attack).toBe(10)  // base str*2; no sideboard contribution
+    // Sideboard items hold inventory but don't contribute stats — they're
+    // staged for a later swap into mainHand/offHand.
+    const SPARE: EquipmentItem = { id: 'eq-spare', name: 'Spare Sword', category: 'weapon-1h', traits: [], stats: { attack: 3 } }
+    const unit = makeUnit({ equipment: { armor: null, sideboard1: 'eq-spare', sideboard2: null, accessory: null } })
+    expect(getDerivedStats(unit, [SPARE]).attack).toBe(10)  // base str*2; no sideboard contribution
   })
 
   it('accessory slot bonus is applied', () => {
@@ -330,20 +330,20 @@ describe('getDerivedStats — equipment slot coverage', () => {
     expect(getDerivedStats(unit, [SWORD]).attack).toBe(10)
   })
 
-  it('all five slots (mainHand, offHand, armor, tool, accessory) contribute simultaneously', () => {
+  it('all four active slots (mainHand, offHand, armor, accessory) contribute simultaneously; sideboard does not', () => {
     const ALL: EquipmentItem[] = [
       { id: 'eq-mh', name: 'Sword',     category: 'weapon-1h', traits: [], stats: { attack: 2 } },
       { id: 'eq-oh', name: 'Shield',    category: 'shield',    traits: [], stats: { defense: 2 } },
       { id: 'eq-ar', name: 'Armor',     category: 'armor',     traits: [], stats: { defense: 2 } },
-      { id: 'eq-tl', name: 'Tool',      category: 'tool',      traits: [], stats: { attack: 2 } },
+      { id: 'eq-sb', name: 'Spare',     category: 'weapon-1h', traits: [], stats: { attack: 2 } },
       { id: 'eq-ac', name: 'Accessory', category: 'accessory', traits: [], stats: { defense: 2 } },
     ]
     const unit = makeUnit({
       weaponSets: [{ mainHand: 'eq-mh', offHand: 'eq-oh' }, { mainHand: null, offHand: null }],
-      equipment: { armor: 'eq-ar', sideboard1: 'eq-tl', sideboard2: null, accessory: 'eq-ac' },
+      equipment: { armor: 'eq-ar', sideboard1: 'eq-sb', sideboard2: null, accessory: 'eq-ac' },
     })
     const stats = getDerivedStats(unit, ALL)
-    // Sideboard 'eq-tl' is reserved but stat-inactive → no +2 from tool.
+    // Sideboard 'eq-sb' is reserved but stat-inactive → no +2 from it.
     expect(stats.attack).toBe(12)   // 10 + 2 (mainHand)
     expect(stats.defense).toBe(13)  // 7  + 2 (offHand) + 2 (armor) + 2 (accessory)
   })

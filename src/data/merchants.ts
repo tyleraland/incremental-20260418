@@ -83,7 +83,6 @@ export const MERCHANT_REGISTRY: Record<string, MerchantDef> = {
       { kind: 'equipment', id: 'eq-shortsword', price: 45 },
       { kind: 'equipment', id: 'eq-sword', price: 90 },
       { kind: 'equipment', id: 'eq-greatsword', price: 160 },
-      { kind: 'equipment', id: 'eq-handaxe', price: 75 },
     ],
   },
   'payon-lodge': {
