@@ -100,7 +100,7 @@ function HeroPicker({ locId }: { locId: string }) {
 
   const chooseDestination = (id: string) => {
     setDestination(id)
-    setPicked([]) // groups (here/afield/etc) are destination-relative — stale picks would confuse the confirm
+    setPicked([]) // groups (here/off site/etc) are destination-relative — stale picks would confuse the confirm
     setPickingDest(false)
   }
 
@@ -110,8 +110,12 @@ function HeroPicker({ locId }: { locId: string }) {
   const rest    = units.filter((u) => u.locationId !== destination || (u.travelPath && u.travelPath.length))
   const inTown  = rest.filter((u) => !busy(u) && u.locationId && cityIds.has(u.locationId))
   const idle    = rest.filter((u) => !busy(u) && !u.locationId)
-  const afield  = rest.filter((u) => !busy(u) && u.locationId && !cityIds.has(u.locationId))
-  const unavailable = rest.filter(busy)
+  // Off site: hunting elsewhere and busy (still recovering) heroes alike —
+  // deployable regardless. assignUnits just updates where they're headed
+  // (travelPath in open-world walk mode, instant otherwise); it doesn't
+  // gate on recovery, so picking a recovering hero here simply points them
+  // at the new site and they head over as soon as they're able to move.
+  const offSite = rest.filter((u) => busy(u) || (u.locationId && !cityIds.has(u.locationId)))
 
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
   const confirm = () => {
@@ -123,17 +127,15 @@ function HeroPicker({ locId }: { locId: string }) {
     close()
   }
 
-  const chip = (u: Unit, disabled = false) => {
+  const chip = (u: Unit) => {
     const on = picked.includes(u.id)
     const maxHp = getDerivedStats(u, equipment).maxHp
     return (
       <button
         key={u.id}
-        disabled={disabled}
         onClick={() => toggle(u.id)}
         className={['flex items-center gap-1.5 text-[11px] px-2 py-1.5 rounded-lg border transition-colors',
-          disabled ? 'border-game-border/40 text-game-muted opacity-50'
-          : on ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
+          on ? 'border-game-primary bg-game-primary/20 text-game-text ring-1 ring-game-primary/40'
           : 'border-game-border text-game-text hover:border-game-primary/50'].join(' ')}
       >
         <span className={on ? 'text-game-primary' : 'text-game-muted'}>{on ? '☑' : '☐'}</span>
@@ -185,8 +187,7 @@ function HeroPicker({ locId }: { locId: string }) {
           )}
           {inTown.length > 0 && <div><GroupLabel>In town</GroupLabel><div className="flex flex-wrap gap-1.5">{inTown.map((u) => chip(u))}</div></div>}
           {idle.length > 0 && <div><GroupLabel>Idle</GroupLabel><div className="flex flex-wrap gap-1.5">{idle.map((u) => chip(u))}</div></div>}
-          {afield.length > 0 && <div><GroupLabel>Hunting elsewhere</GroupLabel><div className="flex flex-wrap gap-1.5">{afield.map((u) => chip(u))}</div></div>}
-          {unavailable.length > 0 && <div><GroupLabel>Unavailable</GroupLabel><div className="flex flex-wrap gap-1.5">{unavailable.map((u) => chip(u, true))}</div></div>}
+          {offSite.length > 0 && <div><GroupLabel>Off site</GroupLabel><div className="flex flex-wrap gap-1.5">{offSite.map((u) => chip(u))}</div></div>}
         </>
       )}
     </Sheet>
