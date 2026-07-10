@@ -285,7 +285,7 @@ export interface CraftingRecipe {
 // ── Event log ─────────────────────────────────────────────────────────────────
 
 // §7: ring buffer of game events; max 200 entries
-export type LogCategory = 'loot' | 'levelup' | 'ko' | 'victory' | 'defeat' | 'flee' | 'craft' | 'travel' | 'offline'
+export type LogCategory = 'loot' | 'levelup' | 'ko' | 'victory' | 'defeat' | 'craft' | 'travel' | 'offline'
 
 export interface LogEntry {
   tick: number

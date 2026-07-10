@@ -197,7 +197,6 @@ const LOG_META: Record<LogCategory, { label: string; chip: string }> = {
   loot:    { label: 'Loot',    chip: 'bg-game-gold/20 text-game-gold border-game-gold/30' },
   ko:      { label: 'KO',      chip: 'bg-red-500/20 text-red-400 border-red-500/30' },
   levelup: { label: 'Level',   chip: 'bg-game-green/20 text-game-green border-game-green/30' },
-  flee:    { label: 'Flee',    chip: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
   craft:   { label: 'Craft',   chip: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
   travel:  { label: 'Travel',  chip: 'bg-sky-500/20 text-sky-400 border-sky-500/30' },
   offline: { label: 'Away',    chip: 'bg-white/10 text-game-muted border-white/10' },

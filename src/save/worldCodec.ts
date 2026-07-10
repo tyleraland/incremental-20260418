@@ -10,13 +10,13 @@ import type { TacticSlot } from '@/types'
 // so a curated game stays curated across reloads.
 interface WorldSave { ticks: number; partyTactics: TacticSlot[]; progressionMode: ProgressionMode; savedAt: number }
 
-const DEFAULT_PARTY_TACTICS: TacticSlot[] = [{ id: 'finish-them', rank: 1 }]
+export const DEFAULT_PARTY_TACTICS: TacticSlot[] = [{ id: 'finish-them', rank: 1 }]
 
 export const worldCodec = makeCodec<WorldSave>({
   key: 'world',
   version: 4,
   serialize:   (s) => ({ ticks: s.ticks ?? 0, partyTactics: s.partyTactics ?? [], progressionMode: s.progressionMode ?? DEFAULT_PROGRESSION_MODE, savedAt: Date.now() }),
-  deserialize: (data) => ({ ticks: data.ticks, partyTactics: data.partyTactics ?? [], progressionMode: data.progressionMode ?? DEFAULT_PROGRESSION_MODE, lastTickAt: data.savedAt ?? Date.now() }),
+  deserialize: (data) => ({ ticks: data.ticks, partyTactics: data.partyTactics ?? DEFAULT_PARTY_TACTICS, progressionMode: data.progressionMode ?? DEFAULT_PROGRESSION_MODE, lastTickAt: data.savedAt ?? Date.now() }),
   migrate: (data) => {
     const d = data as Partial<WorldSave>
     // Older saves had no savedAt — treat them as "just now" so an upgrade doesn't

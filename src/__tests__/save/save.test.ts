@@ -265,4 +265,9 @@ describe('worldCodec', () => {
     const savedAt = Date.now() - 60_000
     expect(worldCodec.deserialize({ ticks: 5, partyTactics: [], progressionMode: 'sandbox', savedAt }).lastTickAt).toBe(savedAt)
   })
+
+  it('deserialize defaults a missing partyTactics field to the default tactic, not empty', () => {
+    const { partyTactics } = worldCodec.deserialize({ ticks: 5, progressionMode: 'sandbox', savedAt: Date.now() } as any)
+    expect(partyTactics).toEqual([{ id: 'finish-them', rank: 1 }])
+  })
 })

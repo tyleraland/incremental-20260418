@@ -670,31 +670,27 @@ behavior-sensitive, a refactor, or a product decision.
   looks; not a quick win.
 - **Store monolith + duplicated initial state.** `useGameStore.ts` (~1.8k lines)
   holds engine-adjacent offline sim/priming (~lines 220-672) that could move to
-  `lib/offline.ts`; the initial-state literals (familiarity/seen/partyTactics/recipe
-  ids) are duplicated verbatim between the store initializer and `resetSave` →
-  extract `INITIAL_*` factories. Also: `resetSave` omits clearing persistent
-  `unitStatHistory` and `lastCatchUp` (stale data survives a reset).
-- **Now-orphaned `'flee'` LogCategory.** After fixing the inverted victory chip,
-  `'flee'` is emitted nowhere (only `victory`/`defeat` are). Either wire it to
-  monster-flee events or drop it from `LogCategory` + `LOG_META` + the filter list.
+  `lib/offline.ts`; the initial-state literals (familiarity/seen/recipe ids —
+  `partyTactics` is now deduped via `worldCodec`'s exported `DEFAULT_PARTY_TACTICS`)
+  are still duplicated verbatim between the store initializer and `resetSave` →
+  extract `INITIAL_*` factories.
 - **Per-weapon elements / dual-wield.** Attack element is simplified to "mainHand
   wins" (one element per unit, `lib/stats.ts`). The richer model: a fire mainHand +
   frost offHand each strike with their own element on their own cadence — needs real
   dual-wield support (separate attack timing) first.
 - **Save robustness / codec dedup.** `combatStatsCodec.byUnit` is documented to
-  "migrate to {}" but has no `migrate`/backfill; `worldCodec.deserialize` defaults
-  `partyTactics ?? []` while `migrate`/`empty` default to `DEFAULT_PARTY_TACTICS`
-  (a current save with the field absent loses the default tactic). The near-identical
-  single-record codecs (codex/combatStats/unitStats/unitHistory/sockets) could share
-  a `makeRecordCodec` that also fixes the `?? {}` guard drift in one place. (None are
-  `version`-migrated; first required-field shape change needs a migration story.)
+  "migrate to {}" but has no `migrate`/backfill (needs discussion before any
+  implementation). The near-identical single-record codecs (codex/combatStats/
+  unitStats/unitHistory/sockets) could share a `makeRecordCodec` that also fixes
+  the `?? {}` guard drift in one place. (None are `version`-migrated; first
+  required-field shape change needs a migration story.)
 - **Duplicated UI tables.** `CLASS_ICON` is fixed — `ArmyMatrix.tsx`,
   `ProtoApp.tsx`, and `MonsterLab.tsx` now import the canonical copy from
-  `render/appearance.ts` instead of re-declaring it. Still open: `ELEMENT_COLORS`
-  (LocationCodex, while a canonical copy sits unused in `lib/elements.ts`),
-  `fmt` number formatters (SamplingDebug ↔ TallyBreakdown), `Window`/`WINDOWS`
-  (UnitReportSheet ↔ Reports). Hoist to shared modules (verify the class
-  strings are byte-identical before collapsing, to avoid a visual regression).
+  `render/appearance.ts` instead of re-declaring it. Still open: `fmt` number
+  formatters (SamplingDebug ↔ TallyBreakdown — confirmed NOT byte-identical:
+  different rounding precision below 100 and different NaN handling, so this
+  needs a judgment call, not a mechanical hoist), `Window`/`WINDOWS`
+  (UnitReportSheet ↔ Reports).
 - **`src/proto/` buttons mostly lack `aria-label`s (~15% coverage, 174
   buttons).** Fine for a11y today (icon+text usually gives context visually),
   but it's a real testability tax: writing a shell-side RTL test for an
@@ -707,9 +703,7 @@ behavior-sensitive, a refactor, or a product decision.
   (`spatial.ts`) is process-global and correct only because one battle is stepped at
   a time. If concurrent/interleaved battle stepping is ever added, key it on battle
   identity or it can collide on `self.id`.
-- **Latent type traps.** `damage.ts` `StatKey` includes `'magicDef'` but `STAT_KEYS`
-  excludes it (a formula using it silently resolves to 0); `StatModifiers.acc` is
-  tracked/shown but never rolled in combat.
+- **Latent type trap.** `StatModifiers.acc` is tracked/shown but never rolled in combat.
 - **Magic-number literals worth centralizing.** `380ms` token/cam transitions vs
   `ROUND_MS` (BattleView/RosterCarousel), the `300`ms double-tap window + drag
   threshold duplicated across Map/RosterCarousel handlers, and engine tuning literals

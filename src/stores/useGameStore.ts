@@ -14,6 +14,7 @@ import { projectOfflineRewards, rollOfflineLoot, rollDrops, splitExpByLevel, off
 import { SAMPLING } from '@/lib/sampling'
 import { detectStuck, detectInvariants, emptyBugWatch, MAX_BUG_REPORTS, INVARIANT_EVERY_TICKS, type BugReport, type BugWatchState } from '@/lib/bugwatch'
 import { randomFullName } from '@/lib/names'
+import { DEFAULT_PARTY_TACTICS } from '@/save/worldCodec'
 import { SKILL_REGISTRY } from '@/data/skills'
 import { MONSTER_REGISTRY, DROP_ITEMS } from '@/data/monsters'
 import { consumableDef, isConsumable } from '@/data/consumables'
@@ -1659,7 +1660,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   dpsWindow: {},
   viewedUnitLevels: (() => { try { return JSON.parse(localStorage.getItem('viewedUnitLevels') ?? '{}') } catch { return {} } })(),
   reportUnitId: null,
-  partyTactics: [{ id: 'finish-them', rank: 1 }],
+  partyTactics: [...DEFAULT_PARTY_TACTICS],
   lastTickAt: Date.now(),
   offlineSummary: null,
   lastCatchUp: null,
@@ -2848,7 +2849,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       lastCatchUp:     null,
       viewedUnitLevels: {},
       reportUnitId:    null,
-      partyTactics:    [{ id: 'finish-them', rank: 1 }],
+      partyTactics:    [...DEFAULT_PARTY_TACTICS],
       battles:           {},
       battleCooldown:    {},
       monsterSpawnTimers: {},
