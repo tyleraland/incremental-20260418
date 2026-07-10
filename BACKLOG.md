@@ -7,6 +7,28 @@ to do next, not narrate what already shipped. When an item ships, delete it
 (or fold anything load-bearing into the relevant `CLAUDE.md`) rather than
 marking it done in place.
 
+## Quick wins
+
+A handful of genuinely low-effort, low-judgment items pulled up from further
+down, for anyone wanting a small task rather than reading the whole file:
+
+- **Crafted equipment doesn't reach the real equipment array** — `craft()`
+  never branches on equipment-category recipes; likely a small, scoped fix
+  (*Data / spec drift*).
+- **Merchant `goldDiscount` passive** — the shop itself is fully built; only
+  this one class passive is missing (*Economy & resources*).
+- **Reach-a-location quest objective** — trivial given existing
+  `locationId`/map-page state (*Quest system*).
+- **Content orphans** — `earth-bolt` skill, `versatile`/`calm` traits, an
+  element id mismatch: each just needs a wire-up-or-delete decision, no
+  design work (*Code health / tech debt*).
+- **Cheap tactics** — 5 tactics need no new engine plumbing, just a tactic
+  definition + counter-enemy tag (*Proposed tactics & counter-enemies*).
+- **Sneak Attack skill** — scales an existing flat constant with level; small
+  and self-contained (*AI & coordination*).
+- **Location bounties** — fold the remaining mock quest locations onto the
+  real bounty-board system "when convenient" (*Quest system*).
+
 ## Feature unfolding (progression modes)
 
 `progressionMode` mechanics (sandbox/curated, gating, save slots) are
@@ -16,8 +38,8 @@ slices, in rough order):
 - **Recipe unfolding driver.** Curated seeds few recipes but nothing *grants*
   more yet — wire recipe unlocks to quest completion / level / location
   familiarity (add an `unlock` to `RECIPE_REGISTRY` + a `learnRecipe` grant).
-  The crafting loop is also still broken end-to-end (see *Data / spec drift*
-  below).
+  Crafted equipment also doesn't reach the real equipment array yet (see
+  *Data / spec drift* below).
 - **Location / map reveal.** Curated only trims familiarity today; the
   overworld still draws every node. Gate visibility off familiarity/quest
   state in the shell stage, with a "rumored" vs "revealed" state.
@@ -43,11 +65,9 @@ coverage was ported over (`TacticianLens.test.tsx`, `HeroLensSmoke.test.tsx`,
 `RosterChip.test.tsx`, `WorldNode.test.tsx`). What's left:
 
 - **Map polish (P2)** — scenario markers, an open-world badge on world nodes,
-  a round counter in the breadcrumb, and the full `LocationCodex` in the
-  Location lens (only the per-monster `MonsterCodex` card is wired today).
+  a round counter in the breadcrumb.
 - **Proto mock systems** (backed only by `protoStore`, not saved) to resolve
   before they can be considered shipped:
-  - **Saga / lore** (`lore.ts`) — deterministic flavour text; cosmetic.
   - **Auto intelligence** (`ArmyMatrix.tsx`) — the two-tap Auto *assigns* for
     real, but the recommendation logic is a placeholder heuristic (casters →
     Kiter, else Charger; gear → best-in-slot in the worn category).
@@ -63,11 +83,11 @@ coverage was ported over (`TacticianLens.test.tsx`, `HeroLensSmoke.test.tsx`,
 
 ### Tactician shell — plumbing gaps (mock → real)
 
-Screen-reachability audit (2026-07): **no** classic screen is unreachable from
-the shell — Map = the stage, Heroes = the Hero lens, Guild/Reports/Time/
-Settings = the ☰ drawer, and Inventory = **Town → Stash** (gear · cards ·
-mats · consumables · craft) + the per-hero Equipment lens. The remaining work
-is wiring display-only / mock seams to real, persisted state:
+The shell (`src/proto/`) already covers every surface the classic tab-bar UI
+once did — Map = the stage, Heroes = the Hero lens, Guild/Reports/Time/
+Settings = the ☰ drawer, Inventory = **Town → Stash** (gear · cards · mats ·
+consumables · craft) + the per-hero Equipment lens. The remaining work is
+wiring display-only / mock seams to real, persisted state:
 
 - **Card sockets — inert.** The shell's socket pips read `protoStore.sockets`
   (mock, display-only) and `getDerivedStats` **doesn't read sockets at all**,
@@ -83,14 +103,13 @@ is wiring display-only / mock seams to real, persisted state:
   the penalty. (Overlaps *Loot realism* / *Consumables*.)
 - **Settings panel** (`ProtoApp` `GlobalOverlay`) — Audio / Notifications /
   Display / Save&sync / Accessibility are all "soon" placeholders; only Pause
-  + "Classic UI" work. → build the real toggles or trim to what exists.
+  works. → build the real toggles or trim to what exists.
 - **Nav cost from the 2026-07 top-row reclaim:** Town + Decisions moved off
   the always-on header into the ☰ drawer (one extra tap each); the ☰ badge
   keeps the urgent-decisions count glanceable. Re-surface either on the rail
   if the extra tap proves annoying in play.
-- **Crafting data break.** `Town.tsx`'s Stash already has a `craft` sub-tab,
-  but drops are `drop-*` and recipe outputs are `craft-*` — neither are real
-  item defs, so nothing crafted is equippable (see *Data / spec drift*).
+- **Crafting data break** — see *Data / spec drift* below (`craft()` never
+  grants equipment-category outputs into the real equipment array).
 
 ## Long-horizon shape changes
 
@@ -100,9 +119,6 @@ is wiring display-only / mock seams to real, persisted state:
   - *Sizing* — the arena is `aspect-square` filling its flex region; verify it
     on short / landscape viewports (the proportions differ a lot from the
     overworld layout — expect a couple more tuning passes).
-  - *Roster taps in battle mode are currently inert* (no action bar there). A
-    natural next step: tapping a roster hero in battle mode highlights/centres
-    their chip, or surfaces a slim deploy/recall control.
 - **Open world instead of single encounters.** A location can set
   `openWorld: true` for a persistent battle (`BattleState.mode === 'open'`) on
   a large per-battle map (`cols/rows`, `engine/arena.ts`) instead of the
@@ -110,15 +126,16 @@ is wiring display-only / mock seams to real, persisted state:
   deploy/recover, vision-limited targeting + wander via the team blackboard.
   Discrete encounters (scenarios, Elite Four, cities, dungeon) are unchanged.
   Follow-ups still open:
-  - *Overworld travel between locations* — a deployed unit walking from one
-    open-world map to a connected one (the `travelPath` field exists but isn't
-    driven yet). The engine move-order primitive (`issueMoveOrder`, paths to a
-    point / holds if blocked) is the building block; this would make it
-    non-instantaneous and cross-location, and likely add a teleport-style
-    movement ability for an otherwise-impossible path. *En-route hunting*: a
-    unit in transit fights/loots/earns at each waypoint location it passes
-    through — needs a location graph (`connections`) + BFS routing to
-    populate `travelPath`.
+  - *Overworld travel between locations* is shipped for the automatic
+    logistics loop — `travelGraph.ts`'s BFS/Dijkstra routing + `handleTravel`'s
+    per-tick portal-crossing multi-hop a unit toward `routeUnitTo`'s target
+    (used by the town-return trip). Still open: the player-facing Deploy/Move
+    "walk" mode only does a single portal-adjacent hop (`assignUnits`'s
+    `canWalk`), falling back to instant teleport for anything farther —
+    extend it to call `routeUnitTo` for real multi-hop deploys. *En-route
+    hunting* is also still open: a transiting unit only reactively
+    defends/ignores hostiles per `travelEngage` while marching through; it
+    doesn't deliberately stop to fight/loot at waypoints.
   - *Smarter spawns* — per-location monster *distributions* (weights, level
     bands, time-of-day) and non-uniform spawn timers. Today it's an
     equal-weight random pick on a fixed timer, scattered uniformly.
@@ -249,15 +266,11 @@ Time→Debug Offline simulator**):
   drop loot instead. If revived it overlaps the **Gather-and-guard** tactic
   below (resource nodes + a "go work that node" move-order behaviour) — the
   difference is *passive* (just-assigned, ticks yield) vs *active* (a hero
-  peels off to a node while the party screens). Wiring either into crafting
-  would also close the "crafting loop is disconnected at the joints" gap
-  under **Data / spec drift**.
-- **Shop / merchant economy (gold sink).** Gold is *earned* (combat + offline
-  rewards) but there's nowhere to spend it — no shop, no sell. Add a vendor
-  to buy gear/consumables and **sell** surplus loot (pairs with the inventory
-  *sell mode* below), and a **Merchant** class passive that grants a
-  `goldDiscount` (the skill can exist in the tree with no effect until the
-  shop lands). Closes the loot → gold → power loop.
+  peels off to a node while the party screens).
+- **Merchant `goldDiscount` passive.** The buy/sell shop itself is shipped
+  (`Town.tsx`'s Market, backed by `data/merchants.ts` — real gold both ways).
+  Still missing: a **Merchant** class passive that discounts buy prices; the
+  skill can exist in the tree with no effect until then.
 
 ## Quest system (objective types)
 
@@ -272,8 +285,8 @@ Objective types not yet built:
 
 - **Crafting / transformational.** Consume reagents A+B+C → grant reward Z,
   with a clear **"Items consumed"** panel (reagents are ordinary materials,
-  not quest-specific items). Overlaps the dormant `RECIPE_REGISTRY` (see
-  *Data / spec drift* below) — a chance to wire that up.
+  not quest-specific items). `RECIPE_REGISTRY` is live (a real `craft()`
+  action, Town's craft tab) — this would reuse that, not build it fresh.
 - **Reach a location.** Travel-to-X objective (e.g. "reach Geffen Dungeon
   F3"). Tiny given existing `locationId` / map-page state.
 
@@ -309,13 +322,15 @@ for the prototype, but revisit stacking/dedupe if the inventory grows noisy.
   codex, so each cell is more than "the wave it spawns."
 - **Boss monsters with phase / trigger skills.** The **Elite Four**
   (`data/monsters.ts`) are just high-stat monsters with ordinary skills+tactics
-  today — there's no boss *system*. Add an `isBoss` flag (+ stat/HP multipliers,
-  distinct token/border in `BattleView`) and **trigger-driven** skills that fire
-  on events rather than the normal cooldown cadence: on-spawn, on-low-health
-  (**phase transitions** — enrage / new ability set below a HP threshold),
-  on-ally-KO, periodic. The engine already has per-monster `skills`/`tactics` and
-  statuses; this needs a trigger hook in `advanceRound`/`takeTurn` and a place to
-  declare a monster's private (not-in-`SKILL_REGISTRY`) boss kit.
+  today — there's no boss *system*. `isBoss?: boolean` already exists on
+  `MonsterDef` (`types.ts`) but nothing reads it yet; wire it to stat/HP
+  multipliers and a distinct token/border in `BattleView`, and add
+  **trigger-driven** skills that fire on events rather than the normal
+  cooldown cadence: on-spawn, on-low-health (**phase transitions** — enrage /
+  new ability set below a HP threshold), on-ally-KO, periodic. The engine
+  already has per-monster `skills`/`tactics` and statuses; this needs a
+  trigger hook in `advanceRound`/`takeTurn` and a place to declare a
+  monster's private (not-in-`SKILL_REGISTRY`) boss kit.
 - **Consumable combat items (auto-use).** Engine scaffolding exists
   (`EngineUnitInput.potions` → `potionsLeft`/`potionsConsumed`) but isn't wired to
   inventory or any use logic. Let a unit be configured with a `combatItem` (points
@@ -358,18 +373,16 @@ for the prototype, but revisit stacking/dedupe if the inventory grows noisy.
 
 ## Items, cards & sockets
 
-- **Monster cards + socketing (the upgrade layer).** Only the *persistence*
-  scaffolding exists — `EquipmentItem.slots` (0–4) and `itemSockets` (`itemInstanceId
-  → card itemIds`, persisted via `socketsCodec`). The actual system isn't built:
-  - *Card definitions + drops* — one `CardDef` per monster type (a `MiscItem` with
-    a `cardEffect`), dropping at a very low rate (~0.5–2%) from that monster. Folds
-    into the existing loot-roll path (`rewardKills` / `rollOfflineLoot`) and the codex.
-  - *Card effects* — a typed union (`stat-bonus` / `elemental-bonus` / `regen-bonus`
-    / `drop-rate-bonus` to start, extended as cards are designed) folded into
-    `getDerivedStats` the same additive way skill/equipment bonuses already are.
-  - *Socketing UI* — select item → select socket → pick a card from inventory →
-    consume it into `itemSockets[instanceId]` (mobile: tap-through, mirrors the
-    equip-picker flow). Stat deltas shown like the equip picker.
+- **Monster cards + socketing (the upgrade layer).** `CARD_REGISTRY` (12 cards)
+  and the socketing UI (`CardBits.tsx` — `SocketEditor`/`CardChip`/`CardCodex`,
+  insert/remove) are both built, polished, and reachable from the Equipment
+  lens. But it's all mock: `ownedCards`/`sockets` live in `protoStore`
+  (dev-seeded via `seedCards`, not saved), not the real persisted
+  `itemSockets`/`socketsCodec` slice — and cards don't actually drop from
+  monster kills yet (`rewardKills`/`rollOfflineLoot` never grant one). Same
+  root gap as *Card sockets — inert* under **Tactician shell — plumbing
+  gaps** (which also covers `getDerivedStats` not reading socket bonuses at
+  all) — one fix closes both.
 
 ## Consumables — pack & use rules
 
@@ -427,14 +440,15 @@ per-hero attribution is round-robin, not true kill credit.
 
 ## Inventory UX (at scale)
 
-- **Search / pagination / sell / recipe-plan.** Inventory already has
-  **category filter pills** (`InvFilter`: all / consumable / weapon / armor /
-  accessory / misc) and an equipped-state filter (`Inventory.tsx`). Once
-  cards + more gear land the list gets long; still missing: a **name
-  search**, **sort** (stat score / slot count / name), **pagination /
-  virtual list** for cheap mobile render, a **sell mode** (bulk-mark → gold
-  preview → confirm; needs the shop/merchant economy above), and a recipe
-  **"plan"** button that highlights missing ingredients in Misc.
+- **Search / pagination / bulk sell / recipe-plan.** The shell's Items lens
+  (`ProtoLens.tsx`, guild stash) already has tri-state category filters
+  (weapon/armor/accessory/material) and an equipped-state filter. The
+  Market (`Town.tsx`) already sells one item at a time. Once cards + more
+  gear land the list gets long; still missing: a **name search**, **sort**
+  (stat score / slot count / name), **pagination / virtual list** for cheap
+  mobile render, a **bulk sell mode** from the stash itself (multi-mark →
+  gold preview → confirm, vs. today's one-at-a-time Market row), and a
+  recipe **"plan"** button that highlights missing ingredients in Misc.
 
 ## AI & coordination
 
@@ -442,101 +456,47 @@ The biggest open chunk. Today every unit picks targets and paths
 independently; `HERD_BIAS = 4` is a one-line hack that approximates "go the
 same way" by penalising left-side detours.
 
-- **Team blackboard.** Per-team scratchpad (`BattleState.plans`) computed
-  each round by a pluggable planner — wander and focus-fire/finish-them/
-  opportunist targeting already read it. Still open: add `disableTargetId`
-  (an "avoid"/ignore channel), and use the blackboard to replace the
-  `HERD_BIAS` path detour (flanker pulling a rogue the long way around).
+- **Team blackboard.** Per-team scratchpad (`BattleState.plans`), planner-driven;
+  wander/focus-fire/finish-them/opportunist already read it. Open: a
+  `disableTargetId` avoid-channel, and using it to replace the `HERD_BIAS`
+  path-detour hack.
 - **Smart-party baseline (beyond opt-in tactics).** Focus-fire/finish-them are
-  *opt-in* party tactics today — a player has to equip them. A group of competent
-  humans would coordinate by default: softly converge fire on one foe, **avoid
-  over-pulling** (not wake mobs outside the engagement radius into a fight already
-  in progress), **hold ground / a chokepoint** (zone control), and **stay grouped**
-  rather than each peeling off after a different target. Future blackboard
-  iterations: a planner-chosen *party focus* the team biases toward without an
-  equipped tactic; a pull/aggro-radius model so wanderers aren't dragged in; and a
-  "formation/anchor" plan field for zone control + cohesion. (The Charger/Flanker
-  leashes are the first cohesion-over-chase step.)
-- **Strategies = multi-channel tactic bundles.** A `STRATEGY_REGISTRY` where
-  each entry expands to TacticRefs across channels + an optional planner.
-  Examples: *Assassinate* (focus-squishy + flank + cloak/back-stab),
-  *Lock & Focus* (Controller + Focus Fire), *Kite* (existing + maintain LoS).
-- **Robust range selection / positioning (kite vs. hold-and-let-approach).**
-  Kiting is opt-in (Kiter / Wary Caster tactics); the default is "close to
-  `castRange` and hold, letting the enemy approach" — a deliberate *tune-it*
-  state while we decide what the default should be. Open threads: (a) decide
-  the default per role (squishy caster behind a tank may want hold; a solo
-  kiter wants kite) — the **team blackboard** could pick it from the party
-  composition (is there a front line to trust?); (b) make the kite itself
-  *really* robust (anchor on the right skill range, cliffs/LoS, not
-  stranding) — argues for the movement layer asking the action layer "what
-  will I actually cast here, and from how far?" instead of inferring from raw
-  skill ranges; (c) a placement/anchor plan field (hold a line / chokepoint)
-  so "let them approach" can mean "to *this* spot," not just "wherever I
-  stopped."
-- **Threat model — extensions.** A WoW-style threat table drives the default
-  targeting fallback (`selectTarget`); see the §threat section in AGENTS.md.
-  Still open:
-  - *AoE / aura threat* — a tank generating threat on *all* nearby foes each
-    round (a Defensive Stance aura, or a cleave), so one tank can hold several
-    mobs. Today threat is single-target per hit, so a tank holds only what
-    it's hitting and the other mobs drift toward the highest-damage hero.
-  - *Reachability-aware targeting* — fold "can I actually path to it?"
-    (`canReach`) into the threat score so a unit doesn't lock a high-threat
-    foe it can never engage; pairs with the AoE-threat fix above.
-  - *Threat decay / leashing* and *taunt diminishing returns* — WoW niceties
-    for longer fights; not needed for the current encounter lengths.
-  - *Tune the showcase* — the Stone Sentinel / kiter / tank numbers
-    (threatMult, sentinel DPS, Taunt cooldown) want a browser pass to make the
-    wobble feel right; the engine constants (`THREAT_WEIGHT`, `PULL_FRACTION`)
-    are the knobs.
-- **Offensive-option scoring — more scorers.** Target-aware attack selection
-  (`reorderAttacksForTarget` → `estimateDamageVs`) is the hook every future
-  "which option deals the most?" decision should route through. Still open:
-  - *AoE spread value* — score an area skill by **expected total** damage
-    across everyone it'd catch (cluster size × per-target effective dmg), so
-    a unit favors a multi-hit AoE over a single bolt when the foes are
-    bunched. Today AoE/`type:'aoe'` skills are excluded from the re-rank.
-  - *Position for the preferred attack* — the action channel fires the
-    highest-priority *in-range* ready attack, so a longer-range
-    lower-throughput skill (Lightning Bolt r8) can open a fight before the
-    unit closes into its preferred shorter-range skill's band (Frost Bolt
-    r6). Fix options: hold/close to the preferred attack's range rather than
-    the longest skill range, or "hold fire" a beat while closing when the
-    preferred attack is out of range but reachable.
-  - *Sideboard / weapon-swap candidates* — a unit with a stowed loadout (e.g.
-    a fire sword vs a frost sword) evaluates each basic-attack element (and
-    skill set) it could swap to via `estimateDamageVs` and switches when the
-    gain clears a swap cost. Needs a `Loadout`/sideboard on the unit + a swap
-    action; the scorer already takes `skill: null` (basic attack) so it's
-    swap-ready.
-  - *Status-synergy & on-hit value* — fold a skill's rider (freeze→amplify,
-    poison stacks, knockback peel) into its score, not just raw damage, so a
-    setup hit can out-rank a slightly bigger nuke. Also: include the stealth
-    bonus and `vulnerable/armored` factors in the estimate once it scores
-    cross-target (right now they're constant per target, so omitted).
-- **Ambush combo** — primitives exist (cloak, back-stab, flanker,
-  focus-casters, **ambusher** — stalk-while-cloaked); needs an orchestrator
-  that holds Cloak until in Back Stab range of the focus target.
-- **Sneak Attack skill** — a learnable skill that scales the base
-  `STEALTH_ATTACK_BONUS` (currently a flat +25% on any strike from stealth) up
-  with level, so investing in stealth makes the opening ambush hit harder.
-  Today the bonus is a single engine constant; the skill would read its level
-  and feed a per-unit multiplier through the adapter.
-- **1v1 chase circling** — a lone chaser orbits a barrier after a fleeing
-  target forever. Multi-unit fights converge so this rarely bites in
-  practice; would need a "cut the corner" intercept.
-- **Gather-and-guard (open world)** — a tactic that peels a unit off to work a
-  nearby resource node (ore vein, lumber, forage) while the rest of the party
-  screens for it — or lets it solo the node outright when the area's clear of
-  threats. Needs: resource nodes as a new open-world entity (position + yield +
-  work-time), a "go work that node" behavior built on the **move-order**
-  primitive (path to the node, hold and gather on arrival), and a party-side
-  read so guardians interpose between the gatherer and known threats — the
-  **team blackboard** is the natural home (a gather assignment / `protectTargetId`
-  the screening tactic reads, alongside the existing shared `waypoint`). A
-  safety gate keys off vision/threat (no enemies in sight, or the escort
-  outnumbers the threats nearby) so the party only commits when it can afford to.
+  opt-in today; a competent party would default to converging fire, not
+  over-pulling nearby mobs, holding a chokepoint, and staying grouped instead
+  of scattering after separate targets. Blackboard-driven, building on the
+  Charger/Flanker leashes (first cohesion-over-chase step).
+- **Strategies = multi-channel tactic bundles.** A registry where one entry
+  expands to TacticRefs across channels + an optional planner — e.g.
+  Assassinate (focus-squishy + flank + cloak), Lock & Focus, Kite+LoS.
+- **Robust range selection (kite vs. hold-and-let-approach).** Kiting is
+  opt-in; the default ("close to range and hold") is a deliberate
+  placeholder. Needs: a per-role default (blackboard picks from party comp),
+  a genuinely robust kite (right skill range, terrain/LoS-aware), and an
+  anchor/formation plan field so "hold" means a specific spot.
+- **Threat model — extensions.** WoW-style threat table drives default
+  targeting (`selectTarget`, §threat in AGENTS.md). Open: AoE/aura threat (a
+  tank holding several mobs at once, not just what it's hitting),
+  reachability-aware threat (don't lock a foe you can't path to), threat
+  decay/leashing, and a browser-tuning pass on the showcase numbers
+  (`THREAT_WEIGHT`, `PULL_FRACTION`).
+- **Offensive-option scoring — more scorers.** `reorderAttacksForTarget` →
+  `estimateDamageVs` is the hook. Open: AoE spread value (score by expected
+  total damage across everyone hit — AoE skills are currently excluded from
+  the re-rank entirely), positioning for a unit's preferred-range attack
+  rather than its longest, sideboard/weapon-swap candidates (scorer already
+  takes `skill: null` so it's swap-ready), and folding status-synergy/on-hit
+  value into the score.
+- **Ambush combo** — primitives exist (cloak, back-stab, flanker, ambusher);
+  needs an orchestrator holding Cloak until in Back Stab range.
+- **Sneak Attack skill** — a learnable skill scaling the flat
+  `STEALTH_ATTACK_BONUS` with level.
+- **1v1 chase circling** — a lone chaser can orbit a barrier forever behind a
+  fleeing target; rare in multi-unit fights. Needs a "cut the corner" intercept.
+- **Gather-and-guard (open world)** — a tactic peeling a unit off to work a
+  resource node while the party screens (or solos it when clear). Needs
+  resource nodes as a new open-world entity, a move-order-based "work the
+  node" behavior, and a blackboard-read guard assignment gated on
+  vision/threat so the party only commits when safe.
 
 ### Monster aggression & packs (extensions)
 
@@ -583,59 +543,38 @@ guard** — these are the *equippable-tactic* expression of those.
 
 **Cheap — pure tactics on existing hooks:**
 
-- **Spread Out** (movement · floor · unit/party). Hold a minimum gap from allies
-  so one enemy AoE / cleave / ground zone can't catch the whole party. Reads ally
-  `centroid` + the existing separation system. *Counter-enemy:* **Bombardier**
-  (lobs a `zone`) or **Cleaver** (large `aoeRadius` melee). The stack-vs-spread
-  decision the roster currently can't express.
-- **Conserve / Don't Overkill** (action · unit). Basic-attack trash; bank big
-  cooldowns for elites/bosses, and never spend an expensive nuke on a target a
-  basic will finish. Reads target HP, `skillDamageEstimate` / `estimateDamageVs`,
-  `isBoss`. *Unlocks:* higher sustained throughput on long AFK runs — and it
-  shows up directly in the new battle-report DPS/efficiency numbers.
-- **Last Hit (Secure)** (targeting · trigger · unit). Snap to an enemy a single
-  swing can kill, to secure the killing blow. Because kills credit the killer for
-  `monstersDefeated` / `itemsFound` and seed the level-split, this lets a player
-  steer XP/loot to a chosen hero — LoL last-hitting meets our credit model, and
-  now legible in the per-hero reports. Reads `estimateDamageVs`.
-- **Decapitate (Kill the Summoner)** (targeting · trigger · unit). Focus enemies
-  carrying `summon` / buff skills before the adds snowball (Assassinate covers
-  healers; this covers force-multipliers). *Counter-enemy:* **Necromancer /
-  Shaman** using the existing `SkillType: 'summon'`.
-- **Bodyguard / Peel-the-carry** (movement · trigger · unit). Like Guardian but
-  body-blocks for the *highest-damage* ally, not the squishiest. *Counter-enemy:*
-  an **Assassin** that dives the back line. Reads ally damage / `guardPoint`.
+- **Spread Out** (movement · floor). Hold a minimum ally gap so one AoE/cleave/
+  zone can't catch the party. *Counters* Bombardier/Cleaver-style enemies.
+- **Conserve / Don't Overkill** (action). Basic-attack trash; bank cooldowns
+  for elites/bosses. Reads `skillDamageEstimate`/`estimateDamageVs`/`isBoss`.
+- **Last Hit (Secure)** (targeting · trigger). Snap to a kill a basic swing
+  secures — steers XP/loot credit to a chosen hero.
+- **Decapitate (Kill the Summoner)** (targeting · trigger). Focus
+  `SkillType: 'summon'`/buff casters before adds snowball. *Counters*
+  Necromancer/Shaman archetypes.
+- **Bodyguard / Peel-the-carry** (movement · trigger). Body-blocks for the
+  highest-damage ally, not the squishiest. *Counters* a back-line-diving Assassin.
 
 **Needs engine plumbing:**
 
-- **Sidestep (Hazard Dance)** (movement · trigger · unit). If standing in a
-  damaging ground zone, step to the nearest safe cell instead of holding. *Needs:*
-  expose `state.zones` cells to tactics + a "nearest cell not in a damaging zone"
-  helper. *Counter-enemy:* hazard-layers (Molasses/Lightning-Storm casters, a
-  future **Lava Drake** / **Plague Toad**). Today units happily stand in fire.
-- **Break Line of Sight (Juke)** (movement · trigger · unit). A focused squishy
-  ducks behind the nearest wall to break a ranged/caster's LoS (we already block
-  caster fire through walls). *Needs:* an LoS-aware "find cover cell vs threat"
-  helper over `barriers` (`canReach` / `steerAround` exist). *Counter-enemy:*
-  **Sniper / Artillery** (long range, slow channel). Pairs with the open
-  "channeled spells don't recheck LoS at resolve" gap below.
-- **Cleanser / Triage** (targeting + action · unit). Dispel the worst control
-  (`taunted` / `rooted` / `frozen` / `slowed` / `poisoned`) off the ally nearest
-  death. `EngineSkill.dispelCategory` already exists; *needs:* the dispel skill +
-  a "worst-afflicted ally" selector. *Counter-enemy:* a **Hexer** that stacks
-  debuffs.
+- **Sidestep (Hazard Dance)** (movement · trigger). Step out of a damaging
+  ground zone instead of holding. *Counters* hazard-layer casters (a future
+  Lava Drake/Plague Toad). Units currently stand in fire.
+- **Break Line of Sight (Juke)** (movement · trigger). A focused squishy ducks
+  behind cover to break ranged/caster LoS. *Counters* Sniper/Artillery
+  archetypes; pairs with the channeled-LoS-at-resolve engine gap below.
+- **Cleanser / Triage** (targeting + action). Dispel the worst control off the
+  ally nearest death (`EngineSkill.dispelCategory` exists). *Counters* a
+  debuff-stacking Hexer.
 
 **Party positioning (overlaps Smart-party baseline — promote to equippable):**
 
-- **Puller** (movement + targeting · trigger · unit). One hero tags a distant mob
-  and retreats toward the party `waypoint`, dragging it back rather than diving
-  the pack — controlled aggro via `moveOrder` + threat. *Unlocks:* the classic
-  "pull to the party" solo/duo loop; *counters* dense packs (avoids over-pull
-  wipes). Wants the aggro-radius model already noted under Smart-party baseline.
-- **Hold the Line / Chokepoint** (movement · party). Form up on a barrier gap so
-  melee enemies funnel in one or two at a time (`barriers` + `guardPoint` +
-  holds). *Counter-enemy:* a **Swarm** (many weak, high `openWorldCap`). The
-  equippable version of the "hold ground / a chokepoint" zone-control idea above.
+- **Puller** (movement + targeting · trigger). One hero tags a distant mob and
+  retreats toward the party waypoint, dragging it back. *Counters* dense
+  packs (avoids over-pull wipes).
+- **Hold the Line / Chokepoint** (movement · party). Form up on a barrier gap
+  so melee funnels in one or two at a time. *Counters* a high-`openWorldCap`
+  Swarm.
 
 Other archetype counters worth a tactic when the enemy lands: **anti-stealth /
 Detector** (reveal + strike cloaked foes via `removesStatusId`, vs an **Assassin
@@ -705,10 +644,10 @@ behavior-sensitive, a refactor, or a product decision.
   identity or it can collide on `self.id`.
 - **Latent type trap.** `StatModifiers.acc` is tracked/shown but never rolled in combat.
 - **Magic-number literals worth centralizing.** `380ms` token/cam transitions vs
-  `ROUND_MS` (BattleView/RosterCarousel), the `300`ms double-tap window + drag
-  threshold duplicated across Map/RosterCarousel handlers, and engine tuning literals
-  (taunt `+10%`, kite dead-band `0.4`, "arrived" radius `0.6`, summon fan-out offsets).
-  Name them where it reduces drift risk.
+  `ROUND_MS` (`BattleView`), the `300`ms double-tap window duplicated across
+  `ProtoStage`/`ProtoApp`'s tap handlers, and engine tuning literals (taunt
+  `+10%`, kite dead-band `0.4`, "arrived" radius `0.6`, summon fan-out
+  offsets). Name them where it reduces drift risk.
 - **Content orphans (keep-for-future vs remove).** `earth-bolt` skill (defined in both
   registries, equipped by nothing); `versatile`/`calm` traits (unreferenced); element
   id scheme inconsistency (a `lightning` *trait* exists but items use `wind`, e.g.
@@ -799,25 +738,17 @@ Every prop self-declares mapgen `kinds` + `playerSelectable`/`tags`
 the single discoverable catalog. Next slices (build on the catalog, not new
 registries):
 
-- **Dev asset gallery** (`?gallery=1` extension or a new `?assets=1` page):
-  render every `listAssets()` entry as a swatch, grouped by category, with
-  search/filter (by biome, kind, `playerSelectable`). **Multi-select + "copy
-  names"**: click to toggle selection, a Copy button writes the selected
-  `assetKey()`s (`category:id`, one per line) to the clipboard for bulk
-  feedback.
-- **Procgen option wiring** — expose per-recipe knobs (scatter density, which
-  `ScatterKind`s a recipe emits + weights, biome) as MapSpec params surfaced
-  in `?mapgen=1`, so a designer tunes what a map grows without editing recipe
-  code. The city recipe emitting `reed` (currently never) would light up the
-  reed-tagged props (`coil`/`crack`/`reeds`).
-- **Player-selectable assets** — `playerSelectable` is wired through the
-  catalog but no asset is flagged `true` yet — designate which (guild banner
-  crest? town building style?) and build the picker that reads
-  `playerSelectableAssets()`.
-- **More building looks** — the timber-house + half-timbered "Ragnarok
-  townhouse" palette families (`PAPER_PALETTE`, ~13 roles) are authored but
-  unwired — add `BUILDING_LOOKS` entries so Prontera has >3 building types
-  (they'll appear in the catalog automatically).
+- **Dev asset gallery** (`?gallery=1` extension or new `?assets=1`) — every
+  `listAssets()` entry as a searchable/filterable swatch, with multi-select +
+  "copy names" for bulk feedback.
+- **Procgen option wiring** — expose per-recipe knobs (scatter density,
+  `ScatterKind` weights, biome) as tunable MapSpec params in `?mapgen=1`.
+- **Player-selectable assets** — `playerSelectable` is wired but nothing's
+  flagged `true` yet; designate candidates (banner crest? building style?)
+  and build the picker.
+- **More building looks** — the timber-house/half-timbered palette families
+  are authored but unwired; add `BUILDING_LOOKS` entries so Prontera has >3
+  building types.
 
 ### Asset placement tags — phased scatter richness
 
@@ -941,12 +872,15 @@ harnesses, which separate engine vs render cost):
 
 ## Data / spec drift
 
-- **Crafting loop is disconnected at the joints.** Monster drops add
-  `drop-*` items to inventory, but recipes consume the starter items
-  `m1`–`m4` (not the `drop-*` items), and recipe outputs are `craft-*`
-  items that don't exist in `equipment.ts` — so nothing crafted is
-  equippable. Closing drops → recipes → equipment is the main inventory
-  gameplay gap.
+- **Crafted equipment never reaches the real equipment array.** The
+  drops→recipes chain itself works — several recipes already consume
+  `drop-*` monster drops alongside starter `m1`–`m4`/`craft-*` materials, and
+  equipment-category recipes' `outputItemId`s (`eq-shortsword`, `eq-leather`,
+  …) are real defs in `equipment.ts`. The actual bug: `craft()`
+  (`useGameStore.ts`) unconditionally writes every recipe's output into
+  `miscItems` — it never branches on `recipe.category === 'equipment'` to
+  grant it into the real `equipment` array — so a crafted sword sits in
+  Misc as an inert material, unequippable. Likely a small, scoped fix.
 - **No save migrations** — recent INITIAL_UNITS overhauls, new skills, new
   equipment fields (range on rod/wand/staff) would invalidate any saved
   state if persistence assumptions change without a migration story.
@@ -957,7 +891,7 @@ Behaviors not covered by automated tests; apt to regress silently. Run
 through after relevant changes (or before any release-worthy commit),
 then promote to a real test once stable.
 
-**Combat view** (after `Combat.tsx` / render changes):
+**Combat view** (after `BattleView.tsx` / render changes):
 
 - Unit token at the arena edge stays fully on-screen (no clipping).
 - Tap a chip opens a detail card with: name + team, HP bar + integer,
