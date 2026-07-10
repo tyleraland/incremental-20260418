@@ -658,14 +658,6 @@ Detector** (reveal + strike cloaked foes via `removesStatusId`, vs an **Assassin
 Grouped by theme; each is left for a focused pass because it's
 behavior-sensitive, a refactor, or a product decision.
 
-- **15-grid constants used unscaled on big arenas (behavior + replay-sensitive).**
-  `PERIMETER_LEFT=2`/`PERIMETER_RIGHT=13` (`constants.ts`, via `grid.ts` `isPerimeter`)
-  and `steerAround`'s herd-bias pivot `COLS/2` (`barriers.ts:170`) are baked for a
-  15-wide grid; on a 50×50 open-world map "perimeter" and the left-side path
-  surcharge pivot around x≈7.5 regardless of true width. Should read `arenaCols()`.
-  Touches movement → verify open-world replays after. (Relates to the *Grid-size
-  independence* invariant in `src/engine/CLAUDE.md` — these are the known
-  violations.)
 - **`tick` vs `batchTick` KO/recovery/regen duplication.** The per-kill drop-roll
   and blank `LocationCombatStats` literal duplication is fixed (`rollDrops()` /
   `emptyLocationStats()`). Still duplicated: `tick`'s per-tick KO→recovery→

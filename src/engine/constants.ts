@@ -24,8 +24,10 @@ export const STEALTH_ATTACK_BONUS = 0.25
 // query helper; combat behaviour doesn't read ranks).
 export const FRONT_ROWS = 3          // ranks 0–3 = front
 export const MID_ROWS = 7            // 4–7 = mid; 8+ = back
-export const PERIMETER_LEFT = 2      // x < this  → perimeter
-export const PERIMETER_RIGHT = 13    // x > this  → perimeter
+// §2.3 perimeter margin: how close to either edge counts as "perimeter",
+// resolved against the ACTIVE arena width (`arenaCols()`) at call time —
+// not a hardcoded 15-wide assumption. See `isPerimeter` in grid.ts.
+export const PERIMETER_MARGIN = 2
 
 // Deploy model: teams form up a fixed distance from the arena center (not at the
 // far edges), leaving open ground behind to maneuver/retreat and room in the

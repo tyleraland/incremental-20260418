@@ -10,14 +10,16 @@
 // (the interleaved-battles path).
 import { describe, it, expect } from 'vitest'
 import { steerAround, canReach, lineClear, pointBlocked } from '@/engine/barriers'
-import { setArenaBounds, arenaClamp } from '@/engine/arena'
+import { setArenaBounds, arenaClamp, arenaCols } from '@/engine/arena'
 import type { Vec2, Barrier } from '@/engine/types'
 
 // ── Reference: the original per-call steerAround, verbatim ──────────────────
 // (lineClear/pointBlocked are the shipped ones — they're already differential-
-// pinned to the exhaustive scan by barriers-fastpath.test.ts.)
+// pinned to the exhaustive scan by barriers-fastpath.test.ts.) The herd-bias
+// pivot reads the active arena width (`arenaCols()`), not a hardcoded 15 —
+// matching the shipped fix so this stays a pin on cache≡naive parity, not a
+// pin on the old (buggy) fixed-width pivot.
 const HERD_BIAS = 4.0
-const COLS = 15
 const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y)
 const clamp = (p: Vec2): Vec2 => arenaClamp(p)
 
@@ -45,7 +47,7 @@ function refSteerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad: numb
     for (let v = 0; v < n; v++) if (!seen[v] && dArr[v] < bu) { bu = dArr[v]; u = v }
     if (u < 0 || u === T) break
     seen[u] = true
-    const cx = COLS / 2
+    const cx = arenaCols() / 2
     for (let v = 0; v < n; v++) {
       if (seen[v] || !usable[v]) continue
       if (!lineClear(nodes[u], nodes[v], barriers, pad)) continue

@@ -4,10 +4,10 @@
 
 import {
   COLS, ROWS, SEPARATION, IMMOVABLE_CLEARANCE, FRONT_ROWS, MID_ROWS,
-  PERIMETER_LEFT, PERIMETER_RIGHT, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
+  PERIMETER_MARGIN, DEPLOY_FRONT, RANK_SETBACK, FORMATION_ROW_STEP, EPS,
 } from './constants'
 import { slideMove, steerAround } from './barriers'
-import { arenaClamp } from './arena'
+import { arenaClamp, arenaCols } from './arena'
 import { timeScale } from './timescale'
 import { spatialHashFor, SPATIAL_MARGIN } from './spatialhash'
 import type { Vec2, Rank, Team, Combatant, Barrier } from './types'
@@ -45,7 +45,7 @@ export function rankOf(c: Combatant): Rank {
 }
 
 export function isPerimeter(p: Vec2): boolean {
-  return p.x < PERIMETER_LEFT || p.x > PERIMETER_RIGHT
+  return p.x < PERIMETER_MARGIN || p.x > arenaCols() - PERIMETER_MARGIN
 }
 
 // The i-th grid column counting outward from the middle: center, +1, −1, +2, …

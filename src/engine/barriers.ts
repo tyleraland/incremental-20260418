@@ -247,7 +247,10 @@ function visGraphFor(barriers: Barrier[], pad: number): VisGraph {
   }
   const m = nodes.length
   const usable = nodes.map((p) => !pointBlocked(barriers, p, pad))
-  const cx = COLS / 2
+  // Herd-bias pivot reads the battle's actual width (`cols`, computed above via
+  // `arenaCols()`) — not the fixed 15-wide encounter grid — so the left-side
+  // detour penalty centres correctly on a large open-world map too.
+  const cx = cols / 2
   const bias = nodes.map((p) => (p.x < cx ? HERD_BIAS : 0))
   const distM = new Float64Array(m * m)
   const clearM = new Uint8Array(m * m)
