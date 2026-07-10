@@ -622,7 +622,7 @@ export function LocationHeroesPanel({ location }: { location: Location }) {
           ? <div className="text-[11px] text-game-muted italic">Nobody is hunting here.</div>
           : <div className="flex flex-wrap gap-1.5">{hunting.map((u) => chip(u, 'green'))}</div>}
       </div>
-      {/* The "Deploy heroes here" action lives in the pinned command bar above
+      {/* The "Deploy heroes" action lives in the pinned command bar above
           this folded section, so it's intentionally not repeated here. */}
     </div>
   )
@@ -685,7 +685,7 @@ export function LocationDetail({ location }: { location: Location }) {
   return (
     <div className="space-y-4">
       {/* Heroes — who's hunting/traveling here + deploy (folded in from the old
-          Heroes sub-tab). No section label: the pinned "Deploy heroes here"
+          Heroes sub-tab). No section label: the pinned "Deploy heroes"
           command bar above already frames this as the heroes surface. */}
       <LocationHeroesPanel location={location} />
 

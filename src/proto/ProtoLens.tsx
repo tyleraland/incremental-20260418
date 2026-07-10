@@ -410,7 +410,7 @@ function SelectionCommandBar({ scope, units, location }: {
     return (
       <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 bg-game-bg/40">
         <button onClick={() => openDeploySheet({ kind: 'pick-heroes', locId: location.id })} className={`${primaryBtn} flex-1 justify-center`}>
-          ➤ Deploy heroes here{availableCount > 0 && ` · ${availableCount} available`}
+          ➤ Deploy heroes{availableCount > 0 && ` · ${availableCount} available`}
         </button>
       </div>
     )
