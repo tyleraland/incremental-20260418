@@ -121,10 +121,9 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
   )
 }
 
-// ── Tactician shell (the DEFAULT UI) ─────────────────────────────────────────--
+// ── Tactician shell (the app's only UI) ───────────────────────────────────────--
 //
-// The split-screen re-layout, now the default render (the legacy tab-bar UI is
-// the fallback behind ?classic=1). Instead of paging between Map / Heroes /
+// The split-screen re-layout. Instead of paging between Map / Heroes /
 // Inventory, the screen is split so the WORLD is always live on one side and a
 // context LENS on the selection is always on the other. The roster rail across
 // the top is the shared selector that drives both — pick a hero and the world
@@ -133,12 +132,12 @@ function SortControl({ mode, dir, onPick }: { mode: SortMode; dir: SortDir; onPi
 // Reports · Time · Settings).
 //
 // It runs on the real store + save codecs (units, inventory, battles, sockets,
-// stats, …) — the same live tick loop and persisted game as classic. What is
-// still PROTOTYPE-only mock (unpersisted, in `protoStore`): the quest board's
-// commit/bounty/completion bookkeeping, the card-socket display (getDerivedStats
-// doesn't read sockets yet), the fake per-hero loot bag + overweight penalty,
-// the ArmyMatrix Optimize/locks, hero lore flavor, and placeholder skill icons.
-// Tracked in BACKLOG.md → "Tactician shell — plumbing gaps".
+// stats, quest commitments, …) — the same live tick loop and persisted game.
+// What is still PROTOTYPE-only mock (unpersisted, in `protoStore`): the
+// card-socket display (getDerivedStats doesn't read sockets yet), the fake
+// per-hero loot bag + overweight penalty, the ArmyMatrix Optimize/locks, hero
+// lore flavor, and placeholder skill icons. Tracked in BACKLOG.md →
+// "Tactician shell — plumbing gaps".
 
 const CLASS_ICON: Record<string, string> = { Fighter: '⚔', Ranger: '🏹', Mage: '✦', Cleric: '✚', Rogue: '🗡' }
 
@@ -469,7 +468,7 @@ function NavDrawer({ onPick, onClose, onCodemap, urgent }: { onPick: (p: DrawerD
     { id: 'quests',   icon: '📜', label: 'Quests',   sub: 'the full journal, all locations' },
     { id: 'reports',  icon: '📊', label: 'Reports',  sub: 'combat + progression history' },
     { id: 'time',     icon: '⏳', label: 'Time',     sub: 'pace, offline rules, debug' },
-    { id: 'settings', icon: '⚙', label: 'Settings', sub: 'preferences · classic UI' },
+    { id: 'settings', icon: '⚙', label: 'Settings', sub: 'preferences' },
   ]
   return createPortal(
     <div className="fixed inset-0 z-50 flex" onClick={onClose}>
@@ -551,7 +550,7 @@ function NavDrawer({ onPick, onClose, onCodemap, urgent }: { onPick: (p: DrawerD
 
 // Full-screen overlay hosting a global game screen (Guild / Reports / Time) or
 // the settings placeholder. Portal so it escapes the split layout.
-function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose: () => void; onExit: () => void }) {
+function GlobalOverlay({ panel, onClose }: { panel: GlobalPanel; onClose: () => void }) {
   const paused      = useGameStore((s) => s.paused)
   const togglePause = useGameStore((s) => s.togglePause)
   // Aggregate → deep-dive: a Guild-matrix hero tap selects them, drills the lens
@@ -585,7 +584,6 @@ function GlobalOverlay({ panel, onClose, onExit }: { panel: GlobalPanel; onClose
             </div>
             <div className="flex items-center gap-2 pt-2 border-t border-game-border">
               <button onClick={togglePause} className="px-3 py-1.5 rounded-lg border border-game-border text-sm text-game-text hover:bg-white/5">{paused ? '▶ Resume' : '❚❚ Pause'}</button>
-              <button onClick={onExit} className="px-3 py-1.5 rounded-lg border border-game-border text-sm text-game-text-dim hover:bg-white/5" title="Switch to the legacy tab-bar UI">↩ Classic UI</button>
             </div>
           </div>
         )}
@@ -822,14 +820,6 @@ export function ProtoApp() {
     useProtoStore.getState().setScopeFocus('location')
   }
 
-  // Drop to the legacy tab-bar UI (kept as a fallback behind ?classic=1).
-  function exitProto() {
-    const q = new URLSearchParams(window.location.search)
-    q.delete('proto')
-    q.set('classic', '1')
-    window.location.search = q.toString()
-  }
-
   return (
     <div className="h-full flex flex-col bg-game-bg overflow-hidden">
       {/* roster rail — now the TOPMOST bar: the old Menu/Town/Decisions header row
@@ -964,7 +954,7 @@ export function ProtoApp() {
         ? <QuestJournal onClose={() => setPanel(null)} onGoto={gotoQuest} />
         : panel === 'market' || panel === 'stash'
         ? <Town initialTab={panel} onClose={() => setPanel(null)} />
-        : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} onExit={exitProto} />}
+        : panel && <GlobalOverlay panel={panel} onClose={() => setPanel(null)} />}
 
       {drawer && <NavDrawer urgent={urgent} onPick={(p) => { setDrawer(false); if (p === 'decisions') setDecisionsOpen(true); else setPanel(p) }} onCodemap={() => { setDrawer(false); setCodemapOpen(true) }} onClose={() => setDrawer(false)} />}
       {decisionsOpen && <DecisionsInbox decisions={decisions} onClose={() => setDecisionsOpen(false)} />}

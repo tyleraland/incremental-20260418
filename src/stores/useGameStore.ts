@@ -1764,9 +1764,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // §loot: this tick's per-hero kill drops go into `pendingPackLoot` for the
     // expedition driver to move into packs. The driver drains it (→ {}) right
-    // after each tick's commit. If it DIDN'T (classic UI / perf harness — no
-    // driver mounted), last tick's entries are still here: don't strand them —
-    // flush them to the shared stash so loot is never lost when the pack system
+    // after each tick's commit. If it DIDN'T (perf harness / tests — no driver
+    // mounted), last tick's entries are still here: don't strand them — flush
+    // them to the shared stash so loot is never lost when the pack system
     // isn't running. (With the driver present this is always empty → no-op.)
     const stashFlush: Record<string, number> = {}
     for (const items of Object.values(s.pendingPackLoot)) {
@@ -1784,7 +1784,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     }
 
     // §consumables: stashDraw is negative (potions withdrawn into packs in town).
-    // §loot: stashFlush is undrained pack loot mailed to the stash (classic/perf
+    // §loot: stashFlush is undrained pack loot mailed to the stash (no-driver
     // fallback — see pendingPackLoot above); merged additively with kill loot.
     const lootIn: Record<string, number> = { ...combat.lootDelta }
     for (const [id, q] of Object.entries(stashFlush)) lootIn[id] = (lootIn[id] ?? 0) + q
