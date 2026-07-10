@@ -115,7 +115,7 @@ function NodeScatter({ battle, zoom }: { battle: BattleState; zoom: number }) {
 }
 
 // ── WorldNode ───────────────────────────────────────────────────────────────
-function WorldNode({ loc, units, equipment, battle, zoom, selected, questReady, onTap, onDive }: {
+export function WorldNode({ loc, units, equipment, battle, zoom, selected, questReady, onTap, onDive }: {
   loc: Location; units: Unit[]; equipment: ReturnType<typeof useGameStore.getState>['equipment']
   battle?: BattleState; zoom: number
   selected: boolean; questReady: boolean; onTap: () => void; onDive: () => void

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type {
-  Unit, Location, EquipmentItem, MiscItem, TabId, EquipSlot, Abilities,
+  Unit, Location, EquipmentItem, MiscItem, EquipSlot, Abilities,
   WeaponRecord, LogEntry, LogCategory,
   LocationCombatStats, UnitCombatStats, CombatTally, StatBucket, ActionSlotEntry, TacticSlot, CompanionInstance,
   QuestDropRule, PackItem, ConsumableRule,
@@ -177,7 +177,6 @@ export interface GameState {
   expeditionReturnMode: ReturnModeId
 
   // EPHEMERAL_UI — stored in localStorage; not in save string
-  activeTab: TabId
   selectedUnitIds: string[]
   selectedLocationId: string | null
   combatLocationId: string | null
@@ -200,11 +199,6 @@ export interface GameState {
   // null = auto-fit the whole party. Lifted to the store (from the old in-battle
   // FollowStrip) so the single top roster can drive + reflect the follow lock.
   battleFollowId: string | null
-  expandedLocationIds: string[]
-  expandedUnitIds: string[]
-  expandedInventorySections: string[]
-  expandedRegionIds: string[]
-  equipContext: { unitId: string; slot: EquipSlot } | null
   // Per-unit level at which the player last opened that hero's detail page. A
   // unit whose current level exceeds this (or has unspent points) shows a
   // "needs attention" badge in the roster until viewed.
@@ -259,13 +253,6 @@ export interface GameState {
   commitExpeditionStep: (unitId: string, patch: Partial<HeroExpedition>) => void
   grantEquipment: (itemId: string) => void               // add an owned equipment instance (quest item rewards)
   togglePause: () => void
-  setActiveTab: (tab: TabId) => void
-  toggleRegion: (id: string) => void
-  toggleLocation: (id: string) => void
-  toggleUnit: (id: string) => void
-  toggleInventorySection: (id: string) => void
-  toggleSelectUnit: (id: string) => void
-  clearSelection: () => void
   setSelectedLocation: (id: string | null) => void
   setCombatLocation: (id: string | null) => void
   // Drop into a location's battlefield viewer / return to the overworld.
@@ -293,8 +280,6 @@ export interface GameState {
   // battlefield (simulates heading back to town). No-op if not in a live battle.
   runToMapEdge: (unitId: string) => void
   equipItem: (unitId: string, slot: EquipSlot, itemId: string | null) => void
-  openEquipFor: (unitId: string, slot: EquipSlot) => void
-  closeEquipContext: () => void
   spendAbilityPoint: (unitId: string, ability: keyof Abilities) => void
   debugLevelUp: (unitId: string) => void       // §debug: grant exactly enough exp to gain one level
   debugResetLevel: (unitId: string) => void    // §debug: reset to a clean level-1 unit (level/exp/abilities)
@@ -1652,7 +1637,6 @@ export const useGameStore = create<GameState>((set, get) => ({
   locations: INITIAL_LOCATIONS,
   equipment: INITIAL_EQUIPMENT,
   miscItems: INITIAL_MISC,
-  activeTab: 'map',
   selectedUnitIds: [],
   selectedLocationId: null,
   combatLocationId: null,
@@ -1663,11 +1647,6 @@ export const useGameStore = create<GameState>((set, get) => ({
   mapFocusNonce: 0,
   battleFocus: null,
   battleFollowId: null,
-  expandedLocationIds:       (() => { try { return JSON.parse(localStorage.getItem('expandedLocationIds')       ?? '[]') } catch { return [] } })(),
-  expandedUnitIds:           (() => { try { return JSON.parse(localStorage.getItem('expandedUnitIds')           ?? '[]') } catch { return [] } })(),
-  expandedInventorySections: (() => { try { return JSON.parse(localStorage.getItem('expandedInventorySections') ?? '["equipment","misc","crafting"]') } catch { return ['equipment', 'misc', 'crafting'] } })(),
-  expandedRegionIds:         (() => { try { return JSON.parse(localStorage.getItem('expandedRegionIds')         ?? '["world","geffen-dungeon"]') } catch { return ['world', 'geffen-dungeon'] } })(),
-  equipContext: null,
   learnedRecipes: BOOT_SEED.learnedRecipes,
   locationFamiliarity:  BOOT_SEED.locationFamiliarity,
   locationMonstersSeen: BOOT_SEED.locationMonstersSeen,
@@ -2423,29 +2402,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     : { paused: true }
   ),
 
-  setActiveTab: (tab) => set({ activeTab: tab }),
-  toggleRegion: (id) => set((s) => {
-    const next = s.expandedRegionIds.includes(id) ? s.expandedRegionIds.filter((x) => x !== id) : [...s.expandedRegionIds, id]
-    localStorage.setItem('expandedRegionIds', JSON.stringify(next))
-    return { expandedRegionIds: next }
-  }),
-  toggleLocation: (id) => set((s) => {
-    const next = s.expandedLocationIds.includes(id) ? s.expandedLocationIds.filter((x) => x !== id) : [...s.expandedLocationIds, id]
-    localStorage.setItem('expandedLocationIds', JSON.stringify(next))
-    return { expandedLocationIds: next }
-  }),
-  toggleUnit: (id) => set((s) => {
-    const next = s.expandedUnitIds.includes(id) ? s.expandedUnitIds.filter((x) => x !== id) : [...s.expandedUnitIds, id]
-    localStorage.setItem('expandedUnitIds', JSON.stringify(next))
-    return { expandedUnitIds: next }
-  }),
-  toggleInventorySection: (id) => set((s) => {
-    const next = s.expandedInventorySections.includes(id) ? s.expandedInventorySections.filter((x) => x !== id) : [...s.expandedInventorySections, id]
-    localStorage.setItem('expandedInventorySections', JSON.stringify(next))
-    return { expandedInventorySections: next }
-  }),
-  toggleSelectUnit:  (id) => set((s) => ({ selectedUnitIds: s.selectedUnitIds.includes(id) ? s.selectedUnitIds.filter((x) => x !== id) : [...s.selectedUnitIds, id] })),
-  clearSelection:    () => set({ selectedUnitIds: [] }),
   setSelectedLocation: (id) => set({ selectedLocationId: id }),
   setCombatLocation: (id) => set({ combatLocationId: id }),
   // Drop into a location's battlefield: focus it and switch the Map to battle
@@ -2630,9 +2586,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       return { ...u, equipment: { ...u.equipment, [slot]: itemId } }
     }),
   })),
-
-  openEquipFor:    (unitId, slot) => set({ equipContext: { unitId, slot }, activeTab: 'inventory' }),
-  closeEquipContext: () => set({ equipContext: null }),
 
   spendAbilityPoint: (unitId, ability) => set((s) => {
     const unit = s.units.find((u) => u.id === unitId)
@@ -2876,7 +2829,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     // localStorage and the next page load (routine on mobile) restored it, so the
     // reset silently didn't stick. Only THIS mode's slot is wiped — the other
     // mode's game is left untouched (SAVE_KEY = the legacy pre-split key).
-    ;['expandedLocationIds', 'expandedUnitIds', 'expandedInventorySections', 'expandedRegionIds', 'viewedUnitLevels', SAVE_KEY].forEach((k) => localStorage.removeItem(k))
+    ;['viewedUnitLevels', SAVE_KEY].forEach((k) => localStorage.removeItem(k))
     // Re-seed for the *current* mode — a curated reset keeps you in curated.
     set((s) => {
       localStorage.removeItem(saveKeyFor(s.progressionMode))
@@ -2915,7 +2868,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       paused:        false,
       eventLog:      [],
       itemSockets:   {},
-      activeTab:     'map',
       selectedUnitIds: [],
       selectedLocationId: null,
       combatLocationId: null,
@@ -2924,11 +2876,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       mapFocusNonce: 0,
       battleFocus: null,
       battleFollowId: null,
-      expandedLocationIds: [],
-      expandedUnitIds: [],
-      expandedInventorySections: ['equipment', 'misc', 'crafting'],
-      expandedRegionIds: ['world', 'geffen-dungeon'],
-      equipContext: null,
     })
     })
   },

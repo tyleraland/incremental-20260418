@@ -2,17 +2,9 @@ import { useEffect, lazy, Suspense, type ReactNode } from 'react'
 import { useGameStore } from '@/stores/useGameStore'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { persistSave, loadPersistedSave } from '@/save'
-import { TabBar } from '@/components/TabBar'
-import { RosterCarousel } from '@/components/RosterCarousel'
 import { UnitReportSheet } from '@/components/UnitReportSheet'
 import { OfflineSummary } from '@/components/OfflineSummary'
-import { prewarmLocationTerrain } from '@/components/BattleView'
-import { Map } from '@/pages/Map'
-import { Units } from '@/pages/Units'
-import { Inventory } from '@/pages/Inventory'
-import { Guild } from '@/pages/Guild'
-import { Reports } from '@/pages/Reports'
-import { Time } from '@/pages/Time'
+import { BattleView, prewarmLocationTerrain } from '@/components/BattleView'
 import { ProtoApp } from '@/proto/ProtoApp'
 import { applyPersistedOverrides } from '@/data/monsterOverrides'
 
@@ -108,12 +100,6 @@ function catchUp() {
 }
 
 function App() {
-  const activeTab = useGameStore((s) => s.activeTab)
-  const units     = useGameStore((s) => s.units)
-  // The hero roster stays pinned across the gameplay tabs so unit selection
-  // carries between Map, Heroes, and Inventory.
-  const showRoster = activeTab === 'map' || activeTab === 'units' || activeTab === 'inventory'
-
   // Dev-only perf harness: `?perf` deterministically drops into a heavy
   // open-world battle for a Playwright/profiler run (see src/dev/perfSeed.ts).
   // The import.meta.env.DEV gate dead-code-strips it from production bundles.
@@ -131,11 +117,9 @@ function App() {
   const monsterLabMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('monsterlab')
   const noPersist = perfMode || sandboxMode || monsterLabMode
 
-  // The split-screen "Tactician" shell (src/proto) is now the DEFAULT UI. The
-  // legacy tab-bar UI is kept as a fallback behind `?classic=1` (and the perf
-  // harness, which expects the old single-screen BattleView). Both share the same
-  // live tick loop + persisted save — only the render differs.
-  const classicMode = perfMode || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('classic'))
+  // Perf mode renders BattleView directly — no shell chrome, camera controls,
+  // or roster rail to confound the measurement.
+  const combatLocationId = useGameStore((s) => s.combatLocationId)
 
   // Interval fires every second. catchUp() computes how many real seconds
   // have elapsed and applies them all at once, so throttled background tabs
@@ -202,37 +186,16 @@ function App() {
     if (params.has('bodyshot')) return <DevPage><BodySheet /></DevPage>
   }
 
-  if (!classicMode) {
-    return (
-      <>
-        <ProtoApp />
-        <UnitReportSheet />
-        <OfflineSummary />
-      </>
-    )
+  if (perfMode) {
+    return combatLocationId ? <BattleView locationId={combatLocationId} /> : null
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <TabBar />
-      {/* pt-16 clears the fixed TabBar; the roster sits below it, pinned (it
-          doesn't scroll with the page) on the gameplay tabs. */}
-      {showRoster && (
-        <div className="shrink-0 pt-16">
-          <RosterCarousel units={units} />
-        </div>
-      )}
-      <main className={['flex-1 overflow-y-auto min-h-0', showRoster ? '' : 'pt-16'].join(' ')}>
-        {activeTab === 'map'       && <Map />}
-        {activeTab === 'units'     && <Units />}
-        {activeTab === 'inventory' && <Inventory />}
-        {activeTab === 'guild'     && <Guild />}
-        {activeTab === 'reports'   && <Reports />}
-        {activeTab === 'time'      && <Time />}
-      </main>
+    <>
+      <ProtoApp />
       <UnitReportSheet />
       <OfflineSummary />
-    </div>
+    </>
   )
 }
 

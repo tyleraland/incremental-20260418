@@ -1,9 +1,9 @@
 import { test } from '@playwright/test'
 
-// Visual harness for the "Tactician" split-screen shell — now the DEFAULT UI
-// (the legacy tab-bar UI lives behind ?classic=1). Tabs: Location / Hero / Party /
-// Items / Guild / Reports / Time. The stage is navigated by a zoom breadcrumb;
-// tapping a combatant opens a bottom sheet. Not part of CI.
+// Visual harness for the "Tactician" split-screen shell — the app's only UI.
+// Tabs: Location / Hero / Party / Items / Guild / Reports / Time. The stage is
+// navigated by a zoom breadcrumb; tapping a combatant opens a bottom sheet.
+// Not part of CI.
 
 const BASE = '/incremental-20260418/'
 

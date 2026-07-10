@@ -43,6 +43,16 @@ describe('store: per-unit tactics', () => {
     moveTactic('u1', 'charger', -1)             // already first → no-op
     expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['charger', 'opportunist', 'tank-buster'])
   })
+
+  it('moveTactic no-ops (either direction) when a tactic is alone in its channel', () => {
+    const { equipTactic, moveTactic } = useGameStore.getState()
+    // charger (movement, alone) + exploit-weakness (passive, alone) — no same-channel
+    // neighbor for either dir to scan past into a different channel and land on.
+    equipTactic('u1', 'charger'); equipTactic('u1', 'exploit-weakness')
+    moveTactic('u1', 'charger', 1)              // would scan into exploit-weakness's channel — no-op
+    moveTactic('u1', 'exploit-weakness', -1)     // would scan into charger's channel — no-op
+    expect(ids(useGameStore.getState().units[0].tactics)).toEqual(['charger', 'exploit-weakness'])
+  })
 })
 
 describe('store: inherited tactics (skill coupling)', () => {

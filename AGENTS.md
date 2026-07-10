@@ -20,12 +20,11 @@ keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 - `src/lib/` — `stats.ts` (`getDerivedStats` etc.), `offline.ts` (reward extrapolation + `splitExpByLevel`), `save.ts` (codec framework), `time.ts`, combat-report helpers.
 - `src/save/*Codec.ts` — one save slice per concern.
 - `src/data/` — registries + content: monsters, skills, recipes, equipment, traits, locations, scenarios, units.
-- `src/components/` (BattleView, RosterCarousel, …) and `src/pages/` (Map, Units, Inventory, Guild, Time, Reports).
+- `src/proto/` — the "Tactician" shell (`ProtoApp.tsx`), the app's only UI. `src/components/` (`BattleView`, …) and `src/pages/` (`Time`, `Reports`) hold shared pieces the shell embeds.
 
 ## Core patterns
 - **Derived stats computed at render** (`getDerivedStats`, `src/lib/stats.ts`), never stored. Same for `getUnitTraits` (`src/data/traits.ts`) / `getAvailableSkills` (`src/data/skills.ts`).
 - **Registries are plain exported objects**: `TRAIT/MONSTER/SKILL/RECIPE/TACTIC_REGISTRY`. Add entries there.
-- **Collapsible rows**: `expandedXxxIds: string[]` in the store.
 - **Portal modals** (`createPortal`) for popups escaping an overflow container.
 - **Drag-and-drop**: PointerSensor only (no TouchSensor); set `touchAction: 'none'` on the draggable's style always (not just while dragging).
 
@@ -53,7 +52,7 @@ Deterministic, round-based **spatial** sim on a per-battle grid. See `src/engine
 - Per-turn resolution recorded in `Combatant.lastResolution` (BattleView Debug tab); `Combatant.trace` is a 20-entry ring buffer.
 
 ## Combat view (a mode of the Map tab)
-- No standalone Combat tab: `mapMode` is `'world'` | `'battle'`. `BattleView` is the drop-in viewer for `combatLocationId`. `RosterCarousel` stays pinned across both (scopes to the battlefield's heroes in battle mode and drives camera follow via `battleFollowId`).
+- No standalone Combat tab: `mapMode` is `'world'` | `'battle'`. `BattleView` is the drop-in viewer for `combatLocationId`. The shell's roster rail (`RosterChip` in `ProtoApp.tsx`) stays pinned across both (scopes to the battlefield's heroes in battle mode and drives camera follow via `battleFollowId`).
 - Drop in: double-tap a location or the **Drop in ›** button (`enterBattleView`); **⤢ Overworld** exits (`exitBattleView`).
 - Only the *watched* battle full-sims per tick; others advance off-screen via `creditOffscreen` (rate extrapolation every `OFFSCREEN_CREDIT_TICKS`=25). World mode + tests full-sim every location.
 - Motion rides CSS transitions (no rAF loop) via compositor `transform: translate` against the square size-container arena; never animate `left`/`top`. Combatants mutate in place, so `BattleChip` is **not** `React.memo`'d. LOD drops detail and collapses paper bodies to the merged silhouette (`simple` → `PAPER_MERGED`).
@@ -70,7 +69,7 @@ Deterministic, round-based **spatial** sim on a per-battle grid. See `src/engine
 - 1 XP per kill into a pool, split across the *surviving* party **proportional to level** (`splitExpByLevel`) — anti-power-leveling. Fractional shares; floored only at display. Same rule offline.
 
 ## Map & locations
-- Map tab is a pannable overworld (`LOCATION_COORDS` in `Map.tsx` + `ProtoStage.tsx` — keep both in sync), not a list. `region` names the map page (`'world'`, `'geffen-dungeon'`, `'fixed-encounters'`); `mapPageId` selects it. Dungeons (`isDungeon`) are entered from `entryLocationId`.
+- Map tab is a pannable overworld (`LOCATION_COORDS` in `ProtoStage.tsx`), not a list. `region` names the map page (`'world'`, `'geffen-dungeon'`, `'fixed-encounters'`); `mapPageId` selects it. Dungeons (`isDungeon`) are entered from `entryLocationId`.
 - **Overworld = open-world locations only.** Every `region: 'world'` location is `openWorld` (cities included). The fixed-round **discrete-wave encounters** (proving/pathing arenas, Elemental Circle/Frontier, Elite Four, the early discrete fields) live in the **`'fixed-encounters'`** dungeon, entered from Prontera — but **sandbox-only** (`isRegionUnlocked`/`SANDBOX_ONLY_REGIONS` in `unlocks.ts`; the entry is hidden in curated). Curated class-change quests therefore must target monsters on the overworld (guarded by `world-map.test.ts`).
 - Tap a location → select + detail panel (units present, monsters, Familiarity = `locationFamiliarity[id]/familiarityMax`, deploy).
 
@@ -81,11 +80,8 @@ Deterministic, round-based **spatial** sim on a per-battle grid. See `src/engine
 
 ## Equipment & crafting
 - Equip slots: `mainHand`, `offHand`, `sideboard1`, `sideboard2`, `armor`, `accessory`. Sideboard slots hold *reserved, stat-inactive* gear. A 2H weapon (`category 'weapon-2h'`) in `mainHand` locks `offHand`.
-- Equip flow: tap a slot in Units → Inventory opens in equip-context → pick an item (shows stat deltas + `↑ Upgrade`) → back to Units.
+- Equip flow: tap a slot in a hero's Equipment lens (`EquipmentLens`, `src/proto/ProtoLens.tsx`) → `SwapMenu` opens, a full-screen candidate picker (stat-delta chips, class/level gating, cross-hero reservation checks) → tap a candidate to `equipItem`.
 - Crafting: `learnedRecipes[]` + `RECIPE_REGISTRY`; Craft enabled when `miscItems` hold every ingredient; consumes them, produces the output.
-
-## Expand/collapse persistence (localStorage)
-`expandedLocationIds` `[]`, `expandedUnitIds` `[]`, `expandedInventorySections` (all expanded), `expandedRegionIds` `["world","geffen-dungeon"]`.
 
 ## Live bug watchdog (`src/lib/bugwatch.ts`)
 - Cheap, purely-observational live tick checks bank bug reports for stuck heroes and state invariants. Reports store repro tokens outside the game save (`bugReports`) and surface in Time→Debug → Bug watch. Detection must never mutate engine/RNG/battle state, so snapshot replays stay byte-identical. Details live in `src/lib/CLAUDE.md`.

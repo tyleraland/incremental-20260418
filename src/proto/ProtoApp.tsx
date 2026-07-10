@@ -161,7 +161,7 @@ function unitStateColor(u: Unit): { color: string; state: string } {
   return { color: '#9ca3af', state: 'idle' }
 }
 
-function RosterChip({ unit, selected, here, following, compact, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; compact?: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
+export function RosterChip({ unit, selected, here, following, compact, onSelect, onFocus, innerRef }: { unit: Unit; selected: boolean; here: boolean; following: boolean; compact?: boolean; onSelect: () => void; onFocus: () => void; innerRef?: React.Ref<HTMLButtonElement> }) {
   const equipment = useGameStore((s) => s.equipment)
   const { color, state } = unitStateColor(unit)
   const maxHp = getDerivedStats(unit, equipment).maxHp

@@ -20,14 +20,13 @@ slices, in rough order):
   below).
 - **Location / map reveal.** Curated only trims familiarity today; the
   overworld still draws every node. Gate visibility off familiarity/quest
-  state in `Map.tsx` (and the shell stage), with a "rumored" vs "revealed"
-  state.
+  state in the shell stage, with a "rumored" vs "revealed" state.
 - **Quest availability + dependency graph.** The proto quest layer
   (`protoStore.ts`: `LOCATION_QUESTS`, `CLASS_CHANGE_QUESTS`,
-  `LOCATION_BOUNTIES`) is the natural unlock *driver*, but it persists to its
-  own `protoQuests` localStorage key — **graduate it into a real save slice**
-  so completed-quest ids can feed `isUnlocked` (and survive export/import +
-  offline). Then express quest→skill-tree→recipe prereqs as data.
+  `LOCATION_BOUNTIES`) is the natural unlock *driver* — commitment/progress
+  state now persists via `questsCodec` (real save slice), so completed-quest
+  ids are available to feed `isUnlocked`. Still to do: express
+  quest→skill-tree→recipe prereqs as data.
 - **Tactics / equipment-slot / ability unfolding** — same pattern (`unlock`
   metadata + mode-aware predicate) when those should ramp in rather than
   start fully open.
@@ -36,31 +35,13 @@ slices, in rough order):
 
 ## UI — "Tactician" shell (remaining work)
 
-The split-screen Tactician shell (`src/proto/`) is the default app UI (legacy
-tab-bar UI behind `?classic=1`). What's left:
+The split-screen Tactician shell (`src/proto/`) is the app's only UI — the
+legacy tab-bar UI (`components/TabBar.tsx`, `RosterCarousel.tsx`,
+`pages/Map.tsx`, `Units.tsx`, `Inventory.tsx`, `Guild.tsx`, the `?classic=1`
+branch in `App.tsx`) was deleted once the shell's crash-guard and wiring
+coverage was ported over (`TacticianLens.test.tsx`, `HeroLensSmoke.test.tsx`,
+`RosterChip.test.tsx`, `WorldNode.test.tsx`). What's left:
 
-- **Classic-UI retirement (cleanup).** Once the shell is proven in the wild,
-  delete the legacy tab-bar path. Dependency graph traced 2026-06 (importers
-  outside tests + `App.tsx`):
-  - **Removable (classic-only):** `components/TabBar.tsx`,
-    `components/RosterCarousel.tsx` (only `App.tsx` imports it — the shell has
-    its own roster rail; the `ProtoApp` "RosterCarousel" mention is a comment,
-    not an import), `pages/Map.tsx`, `pages/Units.tsx`, `pages/Inventory.tsx`,
-    and the `?classic=1` / `classicMode` branch + those imports in `App.tsx`.
-  - **Keep (shared):** `pages/Guild`, `pages/Reports`, `pages/Time` (embedded
-    in `ProtoApp`), and the shared components `BattleView`, `MonsterCodex`,
-    `TraitBubble`, `UnitReportSheet`, `OfflineSummary`.
-  - **Tests to port, not just delete (real coverage loss otherwise):** the
-    only UI-rendering tests live against the classic pages and have **no
-    proto equivalent** — `__tests__/ui/UnitRect.test.tsx` (3, → `pages/Map`),
-    `__tests__/ui/TacticsTab.test.tsx` (7, → `pages/Units`),
-    `__tests__/ui/UnitsPage.test.tsx` (6, → `pages/Units`) = 16 test blocks.
-    Re-point them at the shell lenses (`TacticianLens`/`GearLens`/the stage)
-    before removing the pages. `TabBar` and `pages/Inventory` have no tests.
-  - **Blocker:** the dev `?perf` harness still renders the classic path for
-    the single-screen `BattleView`, so keep a minimal perf render path (or
-    point it at the shell's battle stage) before deleting the `classicMode`
-    branch.
 - **Map polish (P2)** — scenario markers, an open-world badge on world nodes,
   a round counter in the breadcrumb, and the full `LocationCodex` in the
   Location lens (only the per-monster `MonsterCodex` card is wired today).

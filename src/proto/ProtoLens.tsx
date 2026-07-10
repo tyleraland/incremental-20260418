@@ -232,7 +232,7 @@ function ElementChip({ element }: { element: Element }) {
 // Combat-first: identity + statuses, the action bar with cooldowns, vitals, then
 // the COMBAT STATS (derived) in the upper section and the UPGRADEABLE abilities
 // lower. A link opens the roomy Hero Detail.
-function HeroLens({ unit }: { unit: Unit }) {
+export function HeroLens({ unit }: { unit: Unit }) {
   const equipment = useGameStore((s) => s.equipment)
   const miscItems = useGameStore((s) => s.miscItems)
   const spendAbilityPoint = useGameStore((s) => s.spendAbilityPoint)
@@ -633,7 +633,7 @@ function SwapMenu({ unit, slot, onClose }: { unit: Unit; slot: EquipSlot; onClos
 // ── Equipment lens (gutted "Items") — this hero's gear + personal inventory ────--
 // Equipped slots (with socket pips) + the Inventory strip. Battle consumables now
 // live on the Skills action bar (folded in). Tapping a slot opens the SwapMenu.
-function EquipmentLens({ unit }: { unit: Unit }) {
+export function EquipmentLens({ unit }: { unit: Unit }) {
   const equipment = useGameStore((s) => s.equipment)
   const sockets   = useProtoStore((s) => s.sockets)
   const [swapSlot, setSwapSlot] = useState<EquipSlot | null>(null)
@@ -700,7 +700,7 @@ function TacticDetailModal({ tacticId, onClose }: { tacticId: string; onClose: (
   )
 }
 
-function TacticianLens({ unit }: { unit: Unit }) {
+export function TacticianLens({ unit }: { unit: Unit }) {
   const moveTactic    = useGameStore((s) => s.moveTactic)
   const equipTactic   = useGameStore((s) => s.equipTactic)
   const unequipTactic = useGameStore((s) => s.unequipTactic)
@@ -732,6 +732,11 @@ function TacticianLens({ unit }: { unit: Unit }) {
         {CHANNELS.map((ch) => {
           const slots = byChannel(ch.id)
           if (slots.length === 0) return null
+          // A floor placed above a trigger in the same channel can't actually run
+          // first (the engine demotes floors) — flag it so the order shown is
+          // honest about who acts first.
+          const firstFloor = slots.findIndex((t) => TACTIC_REGISTRY[t.id]?.kind === 'floor')
+          const floorAboveTrigger = firstFloor >= 0 && slots.slice(firstFloor + 1).some((t) => TACTIC_REGISTRY[t.id]?.kind !== 'floor')
           return (
             <div key={ch.id}>
               <div className="text-[11px] text-game-muted mb-1">{ch.label}</div>
@@ -755,6 +760,11 @@ function TacticianLens({ unit }: { unit: Unit }) {
                   )
                 })}
               </div>
+              {floorAboveTrigger && (
+                <p className="mt-1 text-[10px] text-amber-300/90 leading-snug">
+                  ⚠ Always-on tactics run after this channel's conditional triggers — the trigger(s) below still act first.
+                </p>
+              )}
             </div>
           )
         })}
@@ -993,7 +1003,7 @@ function CompanionLens({ unit }: { unit: Unit }) {
 // casts in battle. Learning new skills / spending points is "research" and lives
 // in the top stage overlay (Skill tree ▸), so you can tweak the bar while the
 // fight plays — the shell's "decisions in the lens, details/research on top" split.
-function SkillsLens({ unit }: { unit: Unit }) {
+export function SkillsLens({ unit }: { unit: Unit }) {
   const setActionSlot   = useGameStore((s) => s.setActionSlot)
   const addConsumableRule = useGameStore((s) => s.addConsumableRule)
   const removeConsumableRule = useGameStore((s) => s.removeConsumableRule)
