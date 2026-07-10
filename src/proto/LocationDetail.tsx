@@ -608,10 +608,10 @@ export function LocationHeroesPanel({ location }: { location: Location }) {
   return (
     <div className="space-y-4">
       <div>
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Hunting here {hunting.length > 0 && `· ${hunting.length}`}</div>
-        {hunting.length === 0
-          ? <div className="text-[11px] text-game-muted italic">Nobody is hunting here.</div>
-          : <div className="flex flex-wrap gap-1.5">{hunting.map((u) => chip(u, 'green'))}</div>}
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Deploy selected</div>
+        {available.length === 0
+          ? <div className="text-[11px] text-game-muted italic">Everyone is already committed somewhere.</div>
+          : <div className="flex flex-wrap gap-1.5">{available.map((u) => chip(u, 'dim'))}</div>}
       </div>
       {traveling.length > 0 && (
         <div>
@@ -620,10 +620,10 @@ export function LocationHeroesPanel({ location }: { location: Location }) {
         </div>
       )}
       <div>
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Available to deploy</div>
-        {available.length === 0
-          ? <div className="text-[11px] text-game-muted italic">Everyone is already committed somewhere.</div>
-          : <div className="flex flex-wrap gap-1.5">{available.map((u) => chip(u, 'dim'))}</div>}
+        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Heroes on site {hunting.length > 0 && `· ${hunting.length}`}</div>
+        {hunting.length === 0
+          ? <div className="text-[11px] text-game-muted italic">Nobody is hunting here.</div>
+          : <div className="flex flex-wrap gap-1.5">{hunting.map((u) => chip(u, 'green'))}</div>}
       </div>
       {/* The "Deploy heroes here" action lives in the pinned command bar above
           this folded section, so it's intentionally not repeated here. */}
@@ -688,10 +688,9 @@ export function LocationDetail({ location }: { location: Location }) {
   return (
     <div className="space-y-4">
       {/* Heroes — who's hunting/traveling here + deploy (folded in from the old
-          Heroes sub-tab). */}
-      <Section title="Heroes">
-        <LocationHeroesPanel location={location} />
-      </Section>
+          Heroes sub-tab). No section label: the pinned "Deploy heroes here"
+          command bar above already frames this as the heroes surface. */}
+      <LocationHeroesPanel location={location} />
 
       {/* Quests — class-change / bounty / hunt boards (folded in from the old
           Quests sub-tab). The header is skipped entirely on sites with none. */}
