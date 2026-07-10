@@ -4,7 +4,7 @@
 // deterministic; loot is rolled per projected kill.
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { useGameStore, getLocationCombatReport, projectOfflineSampled } from '@/stores/useGameStore'
-import { projectOfflineRewards, rollOfflineLoot, splitExpByLevel, offlineWindowCount, scaleKills } from '@/lib/offline'
+import { projectOfflineRewards, rollOfflineLoot, rollDrops, splitExpByLevel, offlineWindowCount, scaleKills } from '@/lib/offline'
 import type { Location, LocationCombatStats } from '@/types'
 import { freshHero } from '@/proto/expedition'
 import { makeUnit, resetStore, batchTick } from '../helpers'
@@ -75,6 +75,42 @@ describe('splitExpByLevel (pure) — anti-power-leveling', () => {
   it('empty pool or empty group yields nothing', () => {
     expect(splitExpByLevel(0, [{ id: 'a', level: 5 }])).toEqual({})
     expect(splitExpByLevel(10, [])).toEqual({})
+  })
+})
+
+// rollDrops is the shared per-kill roll primitive behind rewardKills (live),
+// runCombatSlice (cold prime), and rollOfflineLoot (below) — pinned directly so
+// its contract doesn't depend on any one caller's test coverage.
+describe('rollDrops (pure)', () => {
+  const PELT = { itemId: 'drop-pelt', dropRate: 0.5, quantityMin: 1, quantityMax: 3 }
+  const FANG = { itemId: 'drop-fang', dropRate: 0.5, quantityMin: 1, quantityMax: 1 }
+
+  it('gates each entry on dropRate and rolls quantity in [min, max]', () => {
+    expect(rollDrops([PELT], () => 0)).toEqual({ 'drop-pelt': 1 })          // rng < rate → drops, qty = min
+    expect(rollDrops([PELT], () => 0.999)).toEqual({})                     // rng ≥ rate → no drop
+  })
+
+  it('rolls qty as min + floor(rng * (max - min + 1))', () => {
+    // Second rng() call (0.9) picks the quantity: 1 + floor(0.9 * 3) = 3 (clamped to max).
+    let n = 0
+    const seq = [0, 0.9]
+    const rng = () => seq[n++]
+    expect(rollDrops([PELT], rng)).toEqual({ 'drop-pelt': 3 })
+  })
+
+  it('accumulates quantity when two entries share an itemId', () => {
+    const dup = [{ ...PELT, dropRate: 1, quantityMin: 2, quantityMax: 2 }, { ...PELT, dropRate: 1, quantityMin: 3, quantityMax: 3 }]
+    expect(rollDrops(dup, () => 0)).toEqual({ 'drop-pelt': 5 })   // 2 + 3, not overwritten
+  })
+
+  it('independent entries with different itemIds all land', () => {
+    expect(rollDrops([PELT, FANG], () => 0)).toEqual({ 'drop-pelt': 1, 'drop-fang': 1 })
+  })
+
+  it('defaults to Math.random when no rng is passed', () => {
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0)
+    expect(rollDrops([PELT])).toEqual({ 'drop-pelt': 1 })
+    spy.mockRestore()
   })
 })
 

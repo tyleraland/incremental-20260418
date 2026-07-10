@@ -8,6 +8,7 @@ import {
   classQuestStatus, classQuestProgress, classQuestKillCount, objectiveProgress,
   CLASS_CHANGE_QUESTS, MIN_CLASS_CHANGE_LEVEL, LOCATION_BOUNTIES, bountyVisible, buildQuestBoard,
   beginClassQuest, completeClassQuest, cancelClassQuest, completeBounty,
+  LOCATION_QUESTS, acceptQuest, advanceQuest, turnInQuest,
   type ClassQuestCommit, type KillObjective, type QuestBoardArgs, type QuestBoardEntry,
 } from '@/proto/protoStore'
 import type { Location } from '@/types'
@@ -143,6 +144,42 @@ describe('class-change quest lifecycle', () => {
     expect(CLASS_CHANGE_QUESTS.every((q) => q.objective.count === 3)).toBe(true)
     expect(ROGUE.objective.kind).toBe('collect')
     expect(RANGER.objective.kind).toBe('handin')
+  })
+})
+
+// The older per-location template board (LOCATION_QUESTS) — superseded by
+// class-change paths + bounties as the primary quest systems (BACKLOG), but
+// still live: LocationDetail renders it at any location with monsters and no
+// registered bounty. `advanceQuest`'s progress is a manual bump, not read off
+// real kills/inventory (unlike class-change/bounty objectives).
+describe('location board quests (LOCATION_QUESTS)', () => {
+  const QUEST = LOCATION_QUESTS[0]  // 'q-cull', target 20, no prereqs
+
+  beforeEach(() => resetStore({ units: [], activeQuest: {}, questProgress: {}, completedQuests: {} }))
+
+  it('accepts one commitment per location and starts progress at 0', () => {
+    acceptQuest('boar-meadow', QUEST.id)
+    expect(useGameStore.getState().activeQuest['boar-meadow']).toBe(QUEST.id)
+    expect(useGameStore.getState().questProgress['boar-meadow'][QUEST.id]).toBe(0)
+
+    // A second accept while one is active is a no-op (one commitment at a time).
+    const other = LOCATION_QUESTS[1]
+    acceptQuest('boar-meadow', other.id)
+    expect(useGameStore.getState().activeQuest['boar-meadow']).toBe(QUEST.id)
+  })
+
+  it('advanceQuest clamps progress to the objective target', () => {
+    acceptQuest('boar-meadow', QUEST.id)
+    advanceQuest('boar-meadow', QUEST.id, QUEST.target + 50)
+    expect(useGameStore.getState().questProgress['boar-meadow'][QUEST.id]).toBe(QUEST.target)
+  })
+
+  it('turnInQuest clears the active commitment and archives the quest id', () => {
+    acceptQuest('boar-meadow', QUEST.id)
+    advanceQuest('boar-meadow', QUEST.id, QUEST.target)
+    turnInQuest('boar-meadow', QUEST.id)
+    expect(useGameStore.getState().activeQuest['boar-meadow']).toBeNull()
+    expect(useGameStore.getState().completedQuests['boar-meadow']).toEqual([QUEST.id])
   })
 })
 
