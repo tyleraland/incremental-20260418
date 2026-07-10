@@ -576,9 +576,10 @@ function Section({ title, defaultOpen = true, children }: { title: string; defau
 // who's on the road here, and who could be sent. Chips select the hero (hero
 // scope); the deploy button opens the location-first picker.
 export function LocationHeroesPanel({ location }: { location: Location }) {
-  const units       = useGameStore((s) => s.units)
-  const locations   = useGameStore((s) => s.locations)
-  const equipment   = useGameStore((s) => s.equipment)
+  const units          = useGameStore((s) => s.units)
+  const locations      = useGameStore((s) => s.locations)
+  const equipment      = useGameStore((s) => s.equipment)
+  const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)
   const cityIds = new Set(locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
 
   const hunting   = units.filter((u) => u.locationId === location.id && !(u.travelPath && u.travelPath.length))
@@ -590,14 +591,20 @@ export function LocationHeroesPanel({ location }: { location: Location }) {
     useGameStore.setState({ selectedUnitIds: [u.id] })
     useProtoStore.getState().setScopeFocus('hero')
   }
+  // Mirrors RosterChip's selection ring so a chip here visibly matches the
+  // roster rail's blue-ringed selection instead of looking unrelated to it.
   const chip = (u: Unit, tone: 'green' | 'amber' | 'dim') => {
     const maxHp = getDerivedStats(u, equipment).maxHp
+    const isSelected = selectedUnitIds.includes(u.id)
     const cls = tone === 'green' ? 'border-game-green/40 bg-game-green/10'
       : tone === 'amber' ? 'border-amber-500/40 bg-amber-500/10'
       : 'border-game-border bg-game-bg'
     return (
       <button key={u.id} onClick={() => pickHero(u)} title={`${u.name} — tap to select`}
-        className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border text-game-text hover:border-game-primary/60 transition-colors ${cls}`}>
+        className={[
+          'flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border text-game-text hover:border-game-primary/60 transition-colors',
+          isSelected ? 'border-game-primary ring-1 ring-game-primary/30' : cls,
+        ].join(' ')}>
         <span className="truncate">{u.name.split(' ')[0]}</span>
         <span className="text-game-text-dim">Lv {u.level}</span>
         <span className="text-game-muted tabular-nums">{Math.floor((u.health / Math.max(1, maxHp)) * 100)}%</span>
