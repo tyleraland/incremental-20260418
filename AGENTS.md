@@ -1,7 +1,7 @@
 # Collaborator Guide (CLAUDE.md ⇄ AGENTS.md — same file; CLAUDE.md is a symlink)
 
-Mobile-first incremental auto-battler. Vite + React 18 + TS + Tailwind + Zustand +
-@dnd-kit. Deploys to GitHub Pages on push to `main`. This file is a map/reference —
+Mobile-first incremental auto-battler. Vite + React 18 + TS + Tailwind + Zustand.
+Deploys to GitHub Pages on push to `main`. This file is a map/reference —
 keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 
 ## Response style
@@ -26,7 +26,7 @@ keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
 - **Derived stats computed at render** (`getDerivedStats`, `src/lib/stats.ts`), never stored. Same for `getUnitTraits` (`src/data/traits.ts`) / `getAvailableSkills` (`src/data/skills.ts`).
 - **Registries are plain exported objects**: `TRAIT/MONSTER/SKILL/RECIPE/TACTIC_REGISTRY`. Add entries there.
 - **Portal modals** (`createPortal`) for popups escaping an overflow container.
-- **Drag-and-drop**: PointerSensor only (no TouchSensor); set `touchAction: 'none'` on the draggable's style always (not just while dragging).
+- **Drag-and-drop**: native Pointer Events (`onPointerDown`/`onPointerMove`/`onPointerUp`), not a library — see `BattleView.tsx`'s grab-and-place / `PerfSandbox.tsx`'s drag-to-reposition. Set `touchAction: 'none'` on the draggable's style always (not just while dragging).
 
 ## Save & state tiers
 - Saves are sliced `v1:<base64>` envelopes (`src/lib/save.ts`; details in `src/save/CLAUDE.md`). Add persistent concerns as codecs in `src/save/*Codec.ts` and `ALL_CODECS`; runtime state is rebuilt; ephemeral UI owns separate localStorage keys.
@@ -91,6 +91,7 @@ Deterministic, round-based **spatial** sim on a per-battle grid. See `src/engine
 - Browser: use **Playwright, not the chrome-devtools MCP** (flaky here). `npm run e2e:install` once, then `npm run e2e` (mobile CPU-throttled 4×; logged fps is the signal; screenshot at `e2e/__shots__/<project>.png`). `?perf=1` drops into the heavy open-world scene (`src/dev/perfSeed.ts`) — **deterministic** (seeded `Math.random`, `?seed=`, + fixed-cadence ticks), so one fps run is a trustworthy verdict. In DEV the store is on `window.__game`.
 - **Terrain/load timing**: to repro a cold terrain load in Playwright, use a fresh `browser.newContext()` and stall `data:image/svg` image decode. For pan assertions, target the pan div by `will-change:transform`.
 - `npm run bsnap -- <gist-url|raw-url|file|token|->` replays a `BSNAP` headlessly from TS source (`-n` rounds, `-w` watch ids, `-e` events). Caches to `.bsnap/last.txt`. **Debugging a stuck / misbehaving unit**: `-i`/`--inspect` dumps each watched unit's decision state per round (lock, team plan `hunt`/`focus`/`waypoint`, `moveOrder`/`wanderTarget`); `--reach <id>` adds a pathing diagnostic toward a combatant (dist / line-of-sight / `canReach` / `steerAround` first-corner — catches "walled off" and "route oscillating"). The canonical first stop for an open-world "why won't it move/fight?" report — extend `inspectLine`/`reachLine` in `scripts/bsnap.mjs` for new fields rather than hand-rolling a throwaway script.
+- **Dead-code drift**: a big deletion (like the classic-UI removal) tends to leave orphaned exports/deps behind it that `tsc`/vitest can't see (an exported-but-uncalled component still type-checks fine). `npm run knip` (config: `knip.json`) flags unused files/exports/dependencies; a GitHub Actions workflow (`orphans.yml`) posts it as an advisory PR comment on every push — not a merge gate, since curated public-API barrels (`src/engine/index.ts`, `src/save/index.ts`) intentionally list more than today's internal callers use. Triage the comment, don't blindly delete everything it names.
 
 ## Branching & merging
 - Develop on a feature branch; **merge to `main` when a feature is complete** (`git merge --ff-only <branch> && git push origin main`) — `main` is what gets browser-tested. Don't wait to be asked.
