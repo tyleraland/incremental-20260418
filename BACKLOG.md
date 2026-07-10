@@ -701,14 +701,24 @@ behavior-sensitive, a refactor, or a product decision.
   single-record codecs (codex/combatStats/unitStats/unitHistory/sockets) could share
   a `makeRecordCodec` that also fixes the `?? {}` guard drift in one place. (None are
   `version`-migrated; first required-field shape change needs a migration story.)
-- **Duplicated UI tables.** `CLASS_ICON` (BattleView ↔ RosterCarousel), `ELEMENT_COLORS`
-  (Map ↔ LocationCodex, while a canonical copy sits unused in `lib/elements.ts`),
-  `fmt` number formatters (SamplingDebug ↔ TallyBreakdown), `Window`/`WINDOWS`
-  (UnitReportSheet ↔ Reports). Hoist to shared modules (verify the class strings are
-  byte-identical before collapsing, to avoid a visual regression).
-- **App-root re-render.** `App.tsx` subscribes `units` only to pass to
-  `RosterCarousel`; per-tick HP sync then re-renders the whole tree. Let
-  RosterCarousel subscribe internally (mobile perf).
+- **Duplicated UI tables — worse after the classic-UI deletion, not better.**
+  `CLASS_ICON` now has **four independent copies** (`render/appearance.ts` —
+  the canonical one BattleView reads; `proto/ArmyMatrix.tsx`;
+  `proto/ProtoApp.tsx`; `dev/MonsterLab.tsx`), all the same 5-entry class→glyph
+  map, byte-identical today but one edit away from silently drifting.
+  `ELEMENT_COLORS` (LocationCodex, while a canonical copy sits unused in
+  `lib/elements.ts`), `fmt` number formatters (SamplingDebug ↔ TallyBreakdown),
+  `Window`/`WINDOWS` (UnitReportSheet ↔ Reports) are the same shape of debt.
+  Hoist to shared modules (verify the class strings are byte-identical before
+  collapsing, to avoid a visual regression).
+- **`src/proto/` buttons mostly lack `aria-label`s (~15% coverage, 174
+  buttons).** Fine for a11y today (icon+text usually gives context visually),
+  but it's a real testability tax: writing a shell-side RTL test for an
+  icon-only control (▲/▼/✕ in `TacticianLens`, etc.) means matching on the
+  glyph's exact text content instead of a stable label — brittle if the glyph
+  or wrapping ever changes. Worth a light `aria-label` pass on the
+  interactive icon-only controls next time one of them needs a test anyway,
+  rather than retrofitting the whole shell at once.
 - **Vision cache global-state dependency.** The per-turn `visibleEnemiesOf` memo
   (`spatial.ts`) is process-global and correct only because one battle is stepped at
   a time. If concurrent/interleaved battle stepping is ever added, key it on battle
