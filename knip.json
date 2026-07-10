@@ -3,7 +3,9 @@
   "entry": [
     "scripts/check-node.mjs",
     "scripts/bsnap.mjs",
-    "scripts/import-svg.mjs"
+    "scripts/import-svg.mjs",
+    "scripts/gen-icons.cjs",
+    ".shot-locks2.mjs"
   ],
   "ignore": [
     "tools/codemap/**",

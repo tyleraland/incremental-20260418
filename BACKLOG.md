@@ -721,15 +721,6 @@ behavior-sensitive, a refactor, or a product decision.
   "Spark Knife" `element:'wind'`). Decide and either wire up or delete.
 - **React index keys.** eventLog / battle-trace / status rows keyed by array index;
   fine while append-only, but a prepend/trim would reuse wrong rows.
-- **Orphan-check flagged unused files (`orphans.yml`, knip).** First real run
-  (PR #116) found 5 files with zero importers, distinct from the
-  already-tracked "Content orphans" registry entries above: `.shot-locks2.mjs`,
-  `scripts/gen-icons.cjs`, `src/components/CombatReport.tsx`,
-  `src/components/LocationCodex.tsx`, `src/proto/lore.ts`. Confirm each is
-  truly dead (not a dev-only entry point knip can't see) before deleting; the
-  rest of that PR's knip output (44 unused exports, 11 unused types) is mostly
-  expected barrel/API-surface noise (`engine/index.ts`, `save/index.ts`,
-  `mapgen/index.ts`) and not worth chasing individually.
 
 ## Performance (large-battle render & engine)
 
