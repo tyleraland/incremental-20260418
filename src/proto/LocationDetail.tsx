@@ -577,15 +577,11 @@ function Section({ title, defaultOpen = true, children }: { title: string; defau
 // scope); the deploy button opens the location-first picker.
 export function LocationHeroesPanel({ location }: { location: Location }) {
   const units          = useGameStore((s) => s.units)
-  const locations      = useGameStore((s) => s.locations)
   const equipment      = useGameStore((s) => s.equipment)
   const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)
-  const cityIds = new Set(locations.filter((l) => l.traits.includes('city')).map((l) => l.id))
 
   const hunting   = units.filter((u) => u.locationId === location.id && !(u.travelPath && u.travelPath.length))
   const traveling = units.filter((u) => u.travelPath && u.travelPath.length && u.travelPath[u.travelPath.length - 1] === location.id)
-  const available = units.filter((u) => u.recoveryTicksLeft <= 0 && !(u.travelPath && u.travelPath.length)
-    && u.locationId !== location.id && (!u.locationId || cityIds.has(u.locationId)))
 
   const pickHero = (u: Unit) => {
     useGameStore.setState({ selectedUnitIds: [u.id] })
@@ -614,12 +610,6 @@ export function LocationHeroesPanel({ location }: { location: Location }) {
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Deploy selected</div>
-        {available.length === 0
-          ? <div className="text-[11px] text-game-muted italic">Everyone is already committed somewhere.</div>
-          : <div className="flex flex-wrap gap-1.5">{available.map((u) => chip(u, 'dim'))}</div>}
-      </div>
       {traveling.length > 0 && (
         <div>
           <div className="text-[10px] uppercase tracking-widest text-game-text-dim mb-1.5">Traveling here · {traveling.length}</div>
