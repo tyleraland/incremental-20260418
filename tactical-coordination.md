@@ -105,6 +105,7 @@ export type Assignment =
   | { role: 'guard'; allyId: string }             // peel/bodyguard the protectee
   | { role: 'escort'; allyId: string }            // screen a transiting unit
   | { role: 'work'; point: Vec2 }                 // do a job there (forage/mine/pickup); party screens
+  | { role: 'rove'; targetId: string | null }     // jungler: farm own camps apart from the party (§3.8)
   | { role: 'hold' }                              // reserve: stay put, don't chase
 
 export interface TeamPlan {
@@ -158,8 +159,9 @@ Design rules:
   cluster can act together. A straggler far from the plan's centroid
   (beyond the Charger/Flanker-leash scale) gets no special assignment and
   falls back to individual behavior until it rejoins — the party plans as a
-  group because it *is* one. (Refinement, not v0: v0's "same battle ⇒ same
-  plan" is already approximately this, since stragglers fail the range
+  group because it *is* one. A rover (§3.8) is detached *by plan*, so the
+  straggler rule never demotes it. (Refinement, not v0: v0's "same battle ⇒
+  same plan" is already approximately this, since stragglers fail the range
   checks their assignments imply.)
 
 ### 3.2 The planner pipeline
@@ -419,6 +421,59 @@ tanks anchor, carries fire from stance range, guards peel divers, pullers
 bait. A `?scenario` showcase + tests make it a first-class fixture rather
 than a hope.
 
+### 3.7 Imperfect information — the intel mask
+
+Today every scorer reads true stats: the party is omniscient, knowing a
+monster's elemental weakness and dodge rhythm before ever landing a hit.
+The anticipated feature — details learned over time — slots in without
+touching the planner at all, because estimates already flow through one
+choke point:
+
+- **Knowledge is progression, so the store owns it.** A persisted
+  per-species intel slice (codex-adjacent: a new `*Codec`): which fields
+  are revealed — armor element, `dodgePeriod`, skill kit… The engine never
+  learns; it *emits* what happened (damage events already carry `eff` and
+  `element`), and the store observes realized multipliers and dodges and
+  marks fields revealed. Same authority split as loot RNG.
+- **The adapter masks.** `EngineUnitInput.intel?` on each *enemy* input —
+  what the opposing team currently knows about it. Serialized on the
+  combatant like any stat, so a snapshot replays 1:1 *with the knowledge
+  the party had at serialization time*.
+- **One choke point.** `estimateDamageVs`/`threatProfile` read the target
+  through a `knownView(target)` wrapper: unrevealed fields fall back to
+  priors (neutral element, no dodge, generic kit). Every consumer — kill
+  order, TTK race, kite anchors, exposure, camp pricing — becomes honestly
+  uncertain with zero changes of its own. Damage *resolution* keeps true
+  stats: reality doesn't care what you know.
+- The consequences are diegetic and free: the first fight against a new
+  species genuinely misjudges (may over-pull — drama, not a bug); plans
+  visibly sharpen as the codex fills; a deliberate probe behavior (vary
+  attack elements to learn faster) is a future acumen-gated refinement,
+  not core.
+
+### 3.8 Roving — the jungler
+
+`{ role: 'rove' }`: a deliberately detached member farms its own camps in
+the same battle while the party works theirs — the backlog's "scattered
+hunt," given a body.
+
+- **Eligibility** follows §3.2's two questions: declared intent (an
+  equippable **Jungler** tactic volunteers, and forces it regardless of
+  acumen) or capability — the candidate passes the solo mutual-TTK race
+  against a camp. "Extra survivability" is not a stat check; it's the same
+  §3.3 ratio run for a party of one.
+- **The rover's target rides in its assignment** (its own micro-engagement)
+  — the party's single `engagement` stays the party's. No multi-engagement
+  machinery; the plan stays one blob plus detachments.
+- **Still a teammate.** Rejoin predicates return it to normal assignment:
+  the party engages above a danger threshold, the rover's own race flips,
+  no solo-affordable camps remain, or a share cadence fires (swing by the
+  anchor every N rounds so party-wide buffs/heals land — "comes around").
+  All plan-level, deterministic, hysteresis via the assignment persisting
+  like the engagement does.
+- Acumen-gated when planner-chosen (a coordinated split is smart-party
+  behavior); the straggler rule never demotes a rover (§3.1).
+
 ## 4. The motivating behaviors, solved in this framework
 
 | behavior | mechanism |
@@ -435,6 +490,8 @@ than a hope.
 | Kill the dangerous first | default kill-order policy: plan `threat` ÷ TTK proxy over the committed pull set; `threat` is the one pluggable definition of danger |
 | Smart members, smart party | additive effective-INT → team acumen; planner features gate on a thresholds table; enemy acumen drops when the shaman dies |
 | Forage without wandering off | `work` assignment pins the anchor — the party waits and screens; release predicates recall the worker when the job's done or the TTK race flips |
+| Unknown monster stats | intel mask: store learns from damage events, adapter masks, `knownView` in the one scorer choke point — plans honestly uncertain, resolution stays true |
+| Jungler | `rove` assignment: solo TTK race gates eligibility, target rides the assignment, rejoin predicates keep it a teammate |
 | Chaperone a traveler | `escort` objective set by the store's travel loop |
 | Team-vs-team arena | symmetric planners + directives; showcase scenario pins it |
 | Same-way routing | plan `corridor` replaces the `HERD_BIAS` left tax |
@@ -515,7 +572,58 @@ order of one `steerAround` call, on the rare round it runs at all.
   52`); every engagement change pushes a trace line on why (abandon
   predicate or new camp). Extend `inspectLine`, don't hand-roll dumps.
 
-## 7. Milestones (each independently shippable)
+## 7. Work map — where every proposal lives
+
+The delegation guide: each feature named in this doc, classified by
+*mechanism* so slices of work are unambiguous. Mechanisms: **blackboard
+type** (types.ts + snapshot.ts), **planner stage** (the new `teamplan.ts`
+leaf beside plan.ts), **scorer** (plan.ts / damage.ts), **execution hook**
+(behavior.ts / engine.ts read-side), **tactic** (a TACTIC_REGISTRY entry),
+**directive** (the new registry + party slot), **engine API** (exported
+host-facing fn), **store module** (useGameStore / lib / codecs), **UI**
+(proto shell).
+
+| Feature | Mechanism | Touches | Slice |
+|---|---|---|---|
+| TeamPlan v2 fields + `objectives` | blackboard type | types, snapshot, Plan panel, `bsnap -i` | M0 |
+| Acumen score + `ACUMEN` table | planner stage + tuning data | teamplan.ts, tuning.ts | M0 (gates ship with their features) |
+| Capability precompute (incl. fragility outlier) | derived combatant fields | makeCombatant / adapter | M0 |
+| Focus convergence | execution hook | selectTarget | M1 |
+| Kill order (dangerous-first) | planner stage (decide) | teamplan.ts | M1 |
+| Avoid list (no over-aggro) | planner stage + execution hook | teamplan.ts, selectTarget | M1 |
+| Camps + `pullSetOf` + TTK race | planner stage (appraise) | teamplan.ts + predicate extraction from rallyPack | M2 |
+| Puller | tactic + assignment execution | TACTIC_REGISTRY, executeMovement | M2 |
+| Jungler / `rove` | planner stage (assign) + optional tactic | teamplan.ts, executeMovement, TACTIC_REGISTRY | M2.5 |
+| Anchor, stance, formation slots | planner stage (decide) + execution + scorer term | teamplan.ts, executeMovement, scoreCandidate, tuning columns | M3 |
+| `corridor` (HERD_BIAS retirement) | planner stage + pathing read | teamplan.ts, steerAround call sites | M3 |
+| Fragility standing guard + rear slots | planner stage (assign) | teamplan.ts (Guardian tactic unchanged) | M3 |
+| Directives registry + slot + picker | directive + store module + UI | new registry, worldCodec-adjacent slot, adapter injection, TacticianLens | M4 |
+| Ambush / assassinate timing | directive + planner stage | teamplan.ts | M4 |
+| Objectives API (escort / hold / work) | engine API + planner branches | setTeamObjective, snapshot, teamplan.ts | M5 |
+| Chaperone wiring | store module | travel loop in useGameStore | M5 |
+| Work release predicates (nodes later) | planner stage (+ future store nodes) | teamplan.ts | M5 (dormant) |
+| **Intel mask (imperfect info)** | store module + adapter + scorer | knowledge codec + event learning, adapter `intel`, `knownView` in damage.ts | independent — any time after M0 |
+| Rollout compare | planner experiment | teamplan.ts | M6 |
+
+**Parallelization.** M0 lands first and alone (its gate is byte-identical
+replays). After it, four tracks can run concurrently:
+
+1. **Planner ladder** — M1 → M2 → M2.5 → M3, sequential (each consumes the
+   previous stage's outputs); the critical path.
+2. **Intel module** — store codec + event learning + adapter mask +
+   `knownView`; touches no planner code, merges any time.
+3. **Directive scaffolding** — registry, persisted party slot, adapter
+   injection, lens picker; buildable against M0 types, its planner
+   *consumption* (M4) waits on M3.
+4. **Objectives API + chaperone store wiring** — engine API + travel-loop
+   detection against M0 types; the escort/hold planner branches wait on
+   M3's anchor execution.
+
+Every slice carries its own tests; snapshot-fixture regeneration is a
+deliberate, reviewed event per behavior-changing slice, never a side
+effect.
+
+## 8. Milestones (each independently shippable)
 
 **M0 — TeamPlan v2 plumbing (byte-identical).** Add the optional fields +
 `objectives`, serialization, `postureOf` columns (`cohesionW`, `pullMargin`
@@ -541,6 +649,12 @@ predicates, `pull` assignment + tag-and-drag execution, and the equippable
 dense pack camp — party pulls singles it can't afford whole. Tests: pull-set
 matches realized aggro exactly; over-budget camp → puller cycle; budget
 collapse → disengage; brawn party over-pulls where scholar party doesn't.
+
+**M2.5 — rove (the jungler).** `rove` assignment: solo-TTK eligibility,
+micro-engagement in the assignment, rejoin predicates + share cadence, the
+equippable Jungler tactic, acumen gate. Tests: rover clears a side camp the
+party never visits; rejoins on a big party engagement; never picked when no
+camp is solo-affordable; straggler rule leaves it alone.
 
 **M3 — anchor, stance, formation.** `decide` picks stance + anchor
 (v0 anchor: current ground or the nearest barrier gap toward the camp);
@@ -570,7 +684,14 @@ party holds position while a member works, recalls it when the race flips.
 few rounds (RNG-free ⇒ one rollout is a verdict), behind the same planner
 signature. Explicitly not foundation.
 
-## 8. Deliberately not building
+**Independent — the intel mask (§3.7).** Off the ladder (any time after
+M0): knowledge codec + event learning in the store, adapter `intel`,
+`knownView` in the scorer. Tests: first contact with an unknown species
+misjudges then sharpens after the reveal; a replayed snapshot carries the
+knowledge held at serialization; fully-revealed codex ⇒ byte-identical to
+omniscient scoring.
+
+## 9. Deliberately not building
 
 Per-unit negotiation/auction protocols; a blackboard *write* API for tactics
 (tactics stay read-only consumers — one writer, the planner); asymmetric
