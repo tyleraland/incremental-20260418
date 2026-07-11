@@ -700,13 +700,24 @@ function TacticDetailModal({ tacticId, onClose }: { tacticId: string; onClose: (
   )
 }
 
+// §posture: the behavior dial — one tap picks how this hero trades damage for
+// safety everywhere the plan layer decides (kite spots, travel corridors,
+// blink timing). Three coarse stances, not sliders (engine/tuning.ts POSTURES).
+const POSTURE_CHOICES: { id: 'bold' | 'steady' | 'wary'; label: string; blurb: string }[] = [
+  { id: 'bold',   label: '⚔ Bold',   blurb: 'Damage first — shrugs off fire, forces costly routes, saves Blink for last resorts.' },
+  { id: 'steady', label: '● Steady', blurb: 'Balanced — fights from range, clears routes that would cost real blood.' },
+  { id: 'wary',   label: '🛡 Wary',  blurb: 'Safety first — stands off from extra threats, clears risky routes, blinks out early.' },
+]
+
 export function TacticianLens({ unit }: { unit: Unit }) {
   const moveTactic    = useGameStore((s) => s.moveTactic)
   const equipTactic   = useGameStore((s) => s.equipTactic)
   const unequipTactic = useGameStore((s) => s.unequipTactic)
   const toggleInherited = useGameStore((s) => s.toggleInheritedTactic)
+  const setPosture    = useGameStore((s) => s.setUnitPosture)
   const [adding, setAdding] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
+  const posture = unit.posture ?? 'steady'
 
   const equippedIds = new Set(unit.tactics.map((t) => t.id))
   const byChannel = (ch: string) => unit.tactics.filter((t) => TACTIC_REGISTRY[t.id]?.channel === ch)
@@ -723,6 +734,26 @@ export function TacticianLens({ unit }: { unit: Unit }) {
 
   return (
     <div className="space-y-4">
+      <div>
+        <div className="text-[11px] uppercase tracking-widest text-game-text-dim mb-1">Posture</div>
+        <div className="flex rounded-md border border-game-border overflow-hidden">
+          {POSTURE_CHOICES.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setPosture(unit.id, p.id)}
+              className={`flex-1 px-2 py-1.5 text-[12px] font-medium transition-colors ${
+                posture === p.id ? 'bg-game-accent/20 text-game-text' : 'bg-game-bg text-game-text-dim hover:text-game-text'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] text-game-muted leading-snug">
+          {POSTURE_CHOICES.find((p) => p.id === posture)!.blurb}
+        </p>
+      </div>
+
       <div className="flex items-center justify-between">
         <span className="text-[11px] uppercase tracking-widest text-game-text-dim">Priority by channel</span>
         <span className="text-[11px] text-game-text-dim">{unit.tactics.length}/{MAX_UNIT_TACTICS}</span>

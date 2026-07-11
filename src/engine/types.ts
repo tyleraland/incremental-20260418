@@ -155,6 +155,13 @@ export interface MoveAbility {
   needsLoS: boolean
 }
 
+// §posture (the player's behavior dial, movement-action-coupling.md §levers):
+// which row of the POSTURES policy table (engine/tuning.ts) this unit's
+// plan-layer decisions read — exposure aversion, travel HP budget, blink
+// eagerness. The dial is the id; the weights live in the table, so re-tuning
+// a row re-tunes every unit standing on it.
+export type Posture = 'bold' | 'steady' | 'wary'
+
 // §blink (M4): movement capabilities as the PATHER sees them — passed into
 // steerAround/canReach to add teleport edges to the route search ("this unit
 // can cross the moat"). Reachability-only shape: cooldowns are the mover's
@@ -249,6 +256,8 @@ export interface EngineUnitInput {
   // §blink (M4): movement capabilities granted by the unit's kit (the adapter
   // maps an equipped Blink here). Default none.
   moveAbilities?: MoveAbility[]
+  // §posture: the player's behavior dial (default 'steady' = pre-posture behavior).
+  posture?: Posture
   tactics?: TacticRef[]   // unit-level tactics, priority order (first = highest)
   // §open-world: max distance at which this unit can *acquire* a new target.
   // Default Infinity (unlimited — what encounters use). Open-world sets finite
@@ -324,6 +333,10 @@ export interface Combatant {
   // legacy tokens default empty.
   moveAbilities: MoveAbility[]
   moveAbilityCds: Record<string, number>
+  // §posture: the policy row this unit's plan-layer decisions read (see
+  // engine/tuning.ts). Optional + JSON-plain → rides the snapshot; absent
+  // (legacy tokens, unset units) reads as 'steady' via postureOf.
+  posture?: Posture
 
   // §aggression: is this unit currently hostile? Heroes and aggressive-on-sight
   // monsters start true. A "skittish" (non-aggressive) monster starts false and

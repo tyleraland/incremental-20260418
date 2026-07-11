@@ -17,6 +17,7 @@ import { isCaster, castRange, visibleEnemiesOf, nearestEnemyTo } from './spatial
 import { isChanneledAoe, skillCastTarget, canFinishChannel } from './skills'
 import { findCombatant } from './behavior'
 import { sightlineClear } from './barriers'
+import { KITE_DEAD_BAND, GAP_W, CORRIDOR_MAX_SAMPLES, postureOf } from './tuning'
 import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
 
 // The offensive option `self` would prefer against `target`, ignoring current
@@ -131,16 +132,14 @@ export interface MoveCandidate {
 //   − drift off the preferred ring (`want`), dead-banded so the flat top
 //     doesn't cause micro-step jitter — this pulls toward castability even
 //     when nothing fires from ANY candidate yet;
-//   − a small exposure tiebreak: between two spots that fight equally well,
-//     stand where fewer enemies can answer. Deliberately small — a kiter's
-//     job is to fight from inside its own range, not to hide.
-const GAP_BAND = 0.4    // matches the kite dead-band
-const GAP_W = 1
-const EXPOSURE_W = 0.05
+//   − an exposure penalty weighted by the unit's POSTURE (the player's dial,
+//     engine/tuning.ts): 'steady' keeps it a small tiebreak — a kiter's job
+//     is to fight from inside its own range, not to hide — 'bold' ignores
+//     it, 'wary' genuinely trades damage for safety.
 export function scoreCandidate(state: BattleState, self: Combatant, cand: MoveCandidate, aim: Combatant | null, want: number): number {
   const f = forecastAction(state, self, cand.pos)
-  const gap = aim ? Math.max(0, Math.abs(distance(cand.pos, aim.pos) - want) - GAP_BAND) : 0
-  return f.score - GAP_W * gap - EXPOSURE_W * exposureAt(state, self, cand.pos)
+  const gap = aim ? Math.max(0, Math.abs(distance(cand.pos, aim.pos) - want) - KITE_DEAD_BAND) : 0
+  return f.score - GAP_W * gap - postureOf(self).exposureW * exposureAt(state, self, cand.pos)
 }
 
 // ── Exposure (movement-action-coupling.md §3.3, milestone M3) ────────────────
@@ -179,9 +178,9 @@ export function exposureAt(state: BattleState, self: Combatant, p: Vec2): number
 // at `stepLen` per round — per-round exposure sampled once per travel step and
 // summed. This prices the PLOW line (the worst-case corridor): tangential
 // avoidance already handles affordable detours, so the price only has to gate
-// the plow-vs-clear-first decision. Samples are capped and scaled back to
-// rounds so a cross-map march can't run away with the turn budget.
-const CORRIDOR_MAX_SAMPLES = 40
+// the plow-vs-clear-first decision. Samples are capped (CORRIDOR_MAX_SAMPLES,
+// tuning.ts) and scaled back to rounds so a cross-map march can't run away
+// with the turn budget.
 export function corridorExposure(state: BattleState, self: Combatant, dest: Vec2, stepLen: number): number {
   const d = distance(self.pos, dest)
   if (d <= EPS) return 0

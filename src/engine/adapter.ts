@@ -159,6 +159,7 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
     skills,                               // action-bar skills → casts (each injects its usage tactic)
     moveAbilities: moveAbilitiesOf(unit), // §blink: equipped movement capabilities
+    posture: unit.posture,                // §posture: the player's behavior dial
     pack: packCounts(unit),               // §consumables: carried items by id
     consumableSpecs: consumableSpecsOf(unit),  // §consumables: player-allowed use rules
     tactics: withInheritedTactics(unit.tactics ?? [], skills, unit.suppressedTactics),  // explicit + skill-inherited (§5)

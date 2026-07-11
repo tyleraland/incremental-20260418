@@ -302,6 +302,8 @@ export interface GameState {
   setRuleThreshold: (unitId: string, itemId: string, threshold: number) => void
   // Decouple/recouple a tactic a unit inherits from one of its skills (debug/tuning).
   toggleInheritedTactic: (unitId: string, tacticId: string) => void
+  // §posture: set the unit's behavior dial (bold/steady/wary — engine/tuning.ts POSTURES).
+  setUnitPosture: (unitId: string, posture: 'bold' | 'steady' | 'wary') => void
   // §minions: edit a hero's beast companion's tactic loadout (same per-channel
   // priority rules as a unit's; capped at MAX_UNIT_TACTICS).
   equipCompanionTactic: (unitId: string, tacticId: string) => void
@@ -2773,6 +2775,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       const next = cur.includes(tacticId) ? cur.filter((id) => id !== tacticId) : [...cur, tacticId]
       return { ...u, suppressedTactics: next }
     }),
+  })),
+  // §posture: the behavior dial (engine/tuning.ts POSTURES). Live combatants
+  // pick it up on the next loadout sync (relinkCombatant), same as tactic edits.
+  setUnitPosture: (unitId, posture) => set((s) => ({
+    units: s.units.map((u) => (u.id === unitId ? { ...u, posture } : u)),
   })),
 
   // §minions: companion tactic editing — mirrors the unit tactic actions but

@@ -224,6 +224,49 @@ Firewall: the skill tactic owns placement). That keeps "one action per turn"
 accounting honest: blinking competes with casting, which is exactly the
 interesting decision.
 
+## 4.5 Levers (§levers): tuning knobs, the posture dial, and future priorities
+
+The plan layer's numbers are now split into three deliberate tiers
+(`src/engine/tuning.ts` is the single home for the first two):
+
+**Tier 1 — dev knobs to review against real gameplay** (marked ⏱ in
+tuning.ts): `GAP_W` (ring pull), `KITE_DEAD_BAND` (hold band — one constant
+shared by the scorer and kiteToward so they can't drift), `TRAVEL_CLEAR_EXIT`
+(clear-first hysteresis width), `BLINK_WALK_MIN` (cornered threshold), and
+the posture rows themselves. Chosen analytically, not by play — the watch
+list for a browser-tuning pass, alongside the pre-existing kite/threat knobs
+(`kiteDistanceFor`'s +0.5 safety pad, `THREAT_WEIGHT`/`PULL_FRACTION`,
+charger/flanker leashes).
+
+**Tier 2 — the posture dial (player-facing, shipped).** `Unit.posture:
+'bold' | 'steady' | 'wary'` (default steady ≡ pre-posture behavior; absent on
+legacy saves/snapshots). One tap in the Tactician lens; live combatants pick
+it up through `relinkCombatant`. A posture is a named ROW of policy weights
+every plan-layer scorer reads via `postureOf`:
+
+| column         | bold | steady | wary | read by                      |
+|----------------|------|--------|------|------------------------------|
+| `exposureW`    | 0    | 0.05   | 0.2  | `scoreCandidate` (kite/hold) |
+| `travelBudget` | 0.5  | 0.35   | 0.2  | `corridorAffordable` (M3)    |
+| `blinkGain`    | 3    | 2      | 1.5  | `tryBlinkEscape` (M4)        |
+
+Three coarse stances a player can reason about, not sliders — and the dial
+is the *id*, not the weights, so re-tuning a row re-tunes every unit (and
+every live save) standing on it.
+
+**Tier 3 — where multiple high-level priorities plug in later.** A future
+consideration (objective pressure while escorting, loot greed, formation
+cohesion, mana thrift) is a new COLUMN with a value per posture — not a new
+mechanism. Two extension paths, in preference order: (1) more columns read by
+existing scorers (cheap, composable — the pattern shipped here); (2) when a
+priority needs *its own* channel of behavior rather than a weight, it's a
+tactic (the existing player lever) whose movement/action fn reads the
+blackboard, like Kiter/Charger today. Party-scope posture (a shared stance
+the party tactics inject, unit dial overriding) is the natural next lever
+once party-level priorities exist. What we deliberately do NOT build: free
+numeric sliders per unit (untunable content, unreadable saves) or per-tactic
+weight editing.
+
 ## 5. Constraints (non-negotiable, from the engine's invariants)
 
 - **Determinism.** No RNG; fixed candidate enumeration order; id/index

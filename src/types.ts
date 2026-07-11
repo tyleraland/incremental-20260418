@@ -127,6 +127,7 @@ export interface Unit {
   actionSlots: (ActionSlotEntry | null)[] // length ACTION_SLOT_COUNT; tap/drag-to-fill
   tactics: TacticSlot[]                    // combat tactics in priority order (first = highest)
   suppressedTactics?: string[]             // skill-inherited tactic ids the player has decoupled (debug/tuning)
+  posture?: 'bold' | 'steady' | 'wary'     // §posture: behavior dial — exposure aversion / travel HP budget / blink eagerness (engine/tuning.ts POSTURES); absent = 'steady'
   companion?: CompanionInstance            // §minions: beast pet (granted by the Beast Companion passive)
   pack?: PackItem[]                        // §consumables: carried consumables (separate from the guild stash)
   consumableRules?: ConsumableRule[]       // §consumables: player-allowed in-combat item use (use-when-HP-low)

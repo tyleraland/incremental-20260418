@@ -30,6 +30,8 @@ export {
 export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget, SKILL_TACTICS, inheritedTacticIds, isChanneledAoe, isOffensiveAoe, skillActiveCap } from './skills'
 export { preferredAttackVs, preferredRangeVs, exposureAt, corridorExposure, forecastAction, scoreCandidate } from './plan'
 export type { ActionForecast, MoveCandidate, PreferredAttack } from './plan'
+export { POSTURES, postureOf } from './tuning'
+export type { PostureRow } from './tuning'
 export { STATUS_REGISTRY, buildStatus } from './status'
 export { serializeBattle, deserializeBattle } from './snapshot'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'

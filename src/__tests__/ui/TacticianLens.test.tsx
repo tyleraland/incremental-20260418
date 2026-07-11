@@ -61,4 +61,14 @@ describe('TacticianLens (shell)', () => {
     render(<Harness />)
     expect(screen.queryByText(/Always-on tactics run after/)).not.toBeInTheDocument()
   })
+
+  // §posture: the behavior dial — tapping a stance calls setUnitPosture and the
+  // control + blurb reflect it (defaults to Steady when unset).
+  it('sets the posture from the dial', () => {
+    render(<Harness />)
+    expect(screen.getByText(/Balanced — fights from range/)).toBeInTheDocument()   // default = steady
+    fireEvent.click(screen.getByText('🛡 Wary'))
+    expect(useGameStore.getState().units[0].posture).toBe('wary')
+    expect(screen.getByText(/Safety first/)).toBeInTheDocument()
+  })
 })

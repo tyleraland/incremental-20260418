@@ -28,6 +28,7 @@ import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
 import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, type MoveCandidate } from './plan'
+import { postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND } from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -202,6 +203,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     consumableSpecs: specs,
     moveAbilities: (input.moveAbilities ?? []).map((a) => ({ ...a })),   // §blink: clone — engine never mutates input
     moveAbilityCds: {},
+    posture: input.posture,   // §posture: the behavior dial (absent = 'steady')
     // §aggression: skittish monsters start non-hostile (won't acquire targets
     // until hit/called); everyone else is hostile from the start.
     provoked: !tactics.some((t) => t.def.id === 'skittish'),
@@ -263,6 +265,11 @@ export function relinkCombatant(c: Combatant, input: EngineUnitInput, partyTacti
   // combat state (decremented as items are used), like hp/cooldowns. The store
   // mirrors c.pack back to Unit.pack; a fresh deploy reseeds via makeCombatant.
   c.consumableSpecs = fresh.consumableSpecs
+  // §posture / §blink: the behavior dial and equipped movement capabilities are
+  // loadout, so edits reach a live battle here; moveAbilityCds is runtime combat
+  // state (a mid-fight ability swap doesn't reset a burnt cooldown), like c.pack.
+  c.posture = fresh.posture
+  c.moveAbilities = fresh.moveAbilities
   if (c.channel && !c.skills.some((s) => s.id === c.channel!.skillId)) c.channel = null
 }
 
@@ -458,11 +465,11 @@ function destInsideAZone(state: BattleState, self: Combatant, dest: Vec2): boole
 // serialized field, legacy tokens → undefined) holds the committed decision
 // with a hysteresis exit so one kill doesn't flip it back and forth: the march
 // resumes only once the corridor price falls below budget × TRAVEL_CLEAR_EXIT.
-const TRAVEL_HP_BUDGET = 0.35     // fraction of current HP we'll spend forcing a corridor
-const TRAVEL_CLEAR_EXIT = 0.6     // resume marching once cost < budget × this (hysteresis)
+// The HP budget is a POSTURE column (the player's dial, engine/tuning.ts):
+// bold forces corridors a steady unit clears; wary clears ones it would force.
 function corridorAffordable(state: BattleState, self: Combatant, dest: Vec2, exit: boolean): boolean {
   const cost = corridorExposure(state, self, dest, moveSpeedOf(self) * WANDER_SPEED_MULT)
-  const budget = self.hp * TRAVEL_HP_BUDGET
+  const budget = self.hp * postureOf(self).travelBudget
   return cost <= (exit ? budget * TRAVEL_CLEAR_EXIT : budget)
 }
 // The march point for an 'avoid' traveler this turn — or null for clear-first
@@ -1543,13 +1550,12 @@ function takePlanNote(): string | null {
 // from provoked enemies with a cohesion nudge; must beat the current gap by
 // BLINK_GAIN or the cooldown is held. Deterministic: fixed sample order,
 // strict-improvement commit.
-const BLINK_SAMPLES = 16
 // "Cornered" = the best walking retreat fails to OPEN the threat gap by at
-// least this fraction of a step. Distance walked is the wrong signal — a unit
-// in a pocket can slide laterally forever without ever gaining an inch of
-// range; what matters is whether walking actually buys distance.
-const BLINK_WALK_MIN = 0.4
-const BLINK_GAIN = 2         // landing must open the nearest-threat gap by this many cells
+// least BLINK_WALK_MIN of a step (tuning.ts). Distance walked is the wrong
+// signal — a unit in a pocket can slide laterally forever without ever gaining
+// an inch of range; what matters is whether walking actually buys distance.
+// The required landing gain is a POSTURE column: wary blinks out early, bold
+// holds the cooldown for genuinely hopeless corners.
 function tryBlinkEscape(state: BattleState, self: Combatant): boolean {
   const ability = self.moveAbilities.find((a) => a.kind === 'teleport')
   if (!ability || (self.moveAbilityCds[ability.kind] ?? 0) > 0) return false
@@ -1572,7 +1578,7 @@ function tryBlinkEscape(state: BattleState, self: Combatant): boolean {
     const score = gapAt(p) + COHESION_WEIGHT * (dx * coh.x + dy * coh.y)
     if (score > bestScore + EPS) { bestScore = score; best = p }
   }
-  if (!best || gapAt(best) < gapAt(self.pos) + BLINK_GAIN) return false
+  if (!best || gapAt(best) < gapAt(self.pos) + postureOf(self).blinkGain) return false
   self.pos = { x: best.x, y: best.y }
   self.moveAbilityCds[ability.kind] = ability.cooldown
   self.escapeDir = null   // fresh heading after the jump — the old commitment is moot
@@ -1594,7 +1600,7 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const threat = nearestEnemyTo(self, state)
   if (!threat) return
   const d = distance(self.pos, threat.pos)
-  const band = 0.4
+  const band = KITE_DEAD_BAND
 
   // Only retreat from a threat that can actually close on us *directly*. If a
   // movement barrier (wall or cliff) — or one of our own firewalls the threat

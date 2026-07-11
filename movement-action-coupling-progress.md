@@ -295,3 +295,24 @@ consistent with the pre-existing avoid*/escapeDir precedent.
 - **Blink landing scorer reads current enemy positions only** (no pursuit
   prediction) and the kiter's per-round hold-vs-close scoring is not yet
   decision-round-gated / memoized (see tech debt).
+
+### Levers (post-review slice): tuning.ts + the posture dial
+- `src/engine/tuning.ts` — the ONE file a tuning pass greps: global plan
+  knobs (⏱-marked where the number needs gameplay review) + the POSTURES
+  policy table. Pays down the "scorer weights are magic numbers in two
+  places" debt item.
+- **Posture** — the first player-facing behavior dial: `Unit.posture`
+  ('bold'/'steady'/'wary', default steady ≡ pre-posture behavior), one row of
+  weights read by scoreCandidate (exposureW), corridorAffordable
+  (travelBudget), and tryBlinkEscape (blinkGain). Segmented control at the
+  top of the Tactician lens; live combatants pick edits up via
+  relinkCombatant (which now also refreshes moveAbilities — an M4 gap).
+  Serialized as the id, not the weights, so re-tuning a row re-tunes live
+  saves.
+- The doc's new §4.5 records the three lever tiers and the extension rule
+  for future high-level priorities: new consideration = new POSTURE COLUMN
+  (or a tactic when it needs its own behavior channel), never a per-unit
+  slider.
+- Tests: `posture.test.ts` (table ordering, steady default, exposure
+  scoring gradient, the self-calibrating toll-ring bold-plows/wary-clears
+  A/B, snapshot + relink plumbing) and the Tactician-lens dial smoke test.
