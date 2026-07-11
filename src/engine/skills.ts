@@ -258,7 +258,8 @@ function channeledAoeWorthIt(self: Combatant, state: BattleState, sk: EngineSkil
 // its flame and cast. Used to stop a kiter from feeding interrupted channels
 // (the "ran but couldn't cast before it caught me" death): if no cast is safe it
 // falls through to a faster option (e.g. raising a firewall) or keeps running.
-function canFinishChannel(self: Combatant, state: BattleState, sk: EngineSkill, at: Vec2 = self.pos): boolean {
+// Exported for the plan layer's forecast (movement-action-coupling.md M2).
+export function canFinishChannel(self: Combatant, state: BattleState, sk: EngineSkill, at: Vec2 = self.pos): boolean {
   const turns = sk.channelTime + 1   // cast-start round + each channel round the threat can keep closing
   return !livingEnemies(state, self).some((e) => {
     if (firewallBlocks(state.firewalls ?? [], e.team, e.id, e.pos, at)) return false
@@ -403,39 +404,47 @@ export function makeSkillTactic(sk: EngineSkill): TacticDef {
     }
   }
 
+  return {
+    ...base,
+    action: (self, state) => {
+      const targetId = skillCastTarget(self, state, sk)
+      return targetId ? { castSkill: sk, skillTarget: targetId } : null
+    },
+  }
+}
+
+// §forecast seam (movement-action-coupling.md M2): can `sk` fire right now from
+// `at`, and at whom? This is THE gate path — the live action tactic above runs
+// it at self.pos, and the plan layer's forecastAction runs it at hypothetical
+// positions. One code path, two callers, no drift. (Wall/summon skills keep
+// their own placement tactics above; they're utility casts the forecast's
+// offense scorer values at 0 anyway.)
+export function skillCastTarget(self: Combatant, state: BattleState, sk: EngineSkill, at: Vec2 = self.pos): string | null {
+  if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
+  // Soft cap: a ground-zone AoE that already has `maxActive` of this caster's
+  // hazards live reads as not off cooldown — its zones stack until then.
+  if (sk.zone?.maxActive != null && activeZoneCount(state, self.id, sk.id) >= sk.zone.maxActive) return null
+  // Capped buff (Agility = 1 up at a time): don't recast while the team's at
+  // the cap of active instances of its status.
+  const cap = skillActiveCap(state, self, sk)
+  if (cap && cap.active >= cap.max) return null
+  if (isStealthSkill(sk) && !canCloak(self, state)) return null
+  if (isShieldWall(sk) && !canShieldWall(self, state)) return null
+  if (isLastStand(sk) && !canLastStand(self, state)) return null
+  const targetId = selectSkillTarget(self, state, sk, at)
+  if (!targetId) return null
   // A long *damage* AoE channel is cluster-gated (only worth it on 2+ from safety).
   // A utility-zone channel (Molasses slow) isn't — it's a fast defensive cast you
   // want on even one approaching foe, so it fires on the nearest target in range.
   const gated = isChanneledAoe(sk) && !sk.zone?.statusApplied
-  const cloak = isStealthSkill(sk)
-  const shieldWall = isShieldWall(sk)
-  const lastStand = isLastStand(sk)
-  return {
-    ...base,
-    action: (self, state) => {
-      if ((self.skillCooldowns[sk.id] ?? 0) > 0) return null
-      // Soft cap: a ground-zone AoE that already has `maxActive` of this caster's
-      // hazards live reads as not off cooldown — its zones stack until then.
-      if (sk.zone?.maxActive != null && activeZoneCount(state, self.id, sk.id) >= sk.zone.maxActive) return null
-      // Capped buff (Agility = 1 up at a time): don't recast while the team's at
-      // the cap of active instances of its status.
-      const cap = skillActiveCap(state, self, sk)
-      if (cap && cap.active >= cap.max) return null
-      if (cloak && !canCloak(self, state)) return null
-      if (shieldWall && !canShieldWall(self, state)) return null
-      if (lastStand && !canLastStand(self, state)) return null
-      const targetId = selectSkillTarget(self, state, sk)
-      if (!targetId) return null
-      if (gated) {
-        const primary = findCombatant(state, targetId)
-        if (!primary || !channeledAoeWorthIt(self, state, sk, primary)) return null
-      } else if (sk.channelTime >= 1 && sk.damageFormula && !isOffensiveAoe(sk) && hasReadyFirewall(self, state) && !canFinishChannel(self, state, sk)) {
-        // A single-target channel a threat would interrupt isn't worth starting
-        // when we could raise a firewall instead — yield so the wall tactic fires
-        // and we hold behind it. (No firewall ready ⇒ cast anyway, as before.)
-        return null
-      }
-      return { castSkill: sk, skillTarget: targetId }
-    },
+  if (gated) {
+    const primary = findCombatant(state, targetId)
+    if (!primary || !channeledAoeWorthIt(self, state, sk, primary, at)) return null
+  } else if (sk.channelTime >= 1 && sk.damageFormula && !isOffensiveAoe(sk) && hasReadyFirewall(self, state) && !canFinishChannel(self, state, sk, at)) {
+    // A single-target channel a threat would interrupt isn't worth starting
+    // when we could raise a firewall instead — yield so the wall tactic fires
+    // and we hold behind it. (No firewall ready ⇒ cast anyway, as before.)
+    return null
   }
+  return targetId
 }

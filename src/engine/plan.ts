@@ -13,8 +13,9 @@
 import { attackReach, distance } from './grid'
 import { EPS } from './constants'
 import { estimateDamageVs } from './damage'
-import { isCaster, castRange, visibleEnemiesOf } from './spatial'
-import { isChanneledAoe } from './skills'
+import { isCaster, castRange, visibleEnemiesOf, nearestEnemyTo } from './spatial'
+import { isChanneledAoe, skillCastTarget, canFinishChannel } from './skills'
+import { findCombatant } from './behavior'
 import { sightlineClear } from './barriers'
 import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
 
@@ -66,6 +67,80 @@ export function preferredAttackVs(self: Combatant, target: Combatant): Preferred
 // default hold feed into kiteDistanceFor / moveToward.
 export function preferredRangeVs(self: Combatant, target: Combatant): number {
   return preferredAttackVs(self, target)?.range ?? castRange(self)
+}
+
+// ── The action forecast (movement-action-coupling.md §3.1, milestone M2) ─────
+
+// "If I stood at `at`, what would I do?" — the castable-NOW answer, run through
+// the exact same gates the live action channel uses (skillCastTarget is shared
+// with makeSkillTactic, so the two can't drift). `option` is the best-scoring
+// offensive option actually castable from `at` this turn (null when nothing
+// is); `range` is the positioning anchor (preferredRangeVs against the aim);
+// `losClear`/`finishable` qualify the spot. The aim — the foe this unit is
+// trying to fight — is its live lock, else the nearest visible enemy;
+// perception stays anchored on the unit's REAL position throughout.
+export interface ActionForecast {
+  option: { skill: EngineSkill | null; targetId: string } | null   // skill null = basic attack
+  score: number        // estimateDamageVs of the option (0 when none)
+  range: number        // the hold-range anchor vs the aim (castRange fallback)
+  losClear: boolean    // sightline from `at` to the aim
+  finishable: boolean  // a channeled option can complete from `at`
+}
+export function forecastAction(state: BattleState, self: Combatant, at: Vec2 = self.pos): ActionForecast {
+  const lock = findCombatant(state, self.lockedTargetId)
+  const aim = lock && lock.alive && lock.team !== self.team ? lock : nearestEnemyTo(self, state)
+  let option: ActionForecast['option'] = null
+  let score = 0
+  for (const sk of self.skills) {
+    if (sk.type !== 'attack') continue   // the offense scorer values non-attacks at 0
+    const targetId = skillCastTarget(self, state, sk, at)
+    if (!targetId) continue
+    const target = findCombatant(state, targetId)
+    if (!target) continue
+    const s = estimateDamageVs(self, target, sk)
+    if (s > score + EPS) { score = s; option = { skill: sk, targetId } }
+  }
+  // The basic attack competes for non-casters (casters never throw it).
+  if (!isCaster(self) && aim && distance(at, aim.pos) <= attackReach(self) + EPS
+      && (self.rangedRange <= 0 || sightlineClear(at, aim.pos, state.barriers))) {
+    const s = estimateDamageVs(self, aim, null)
+    if (s > score + EPS) { score = s; option = { skill: null, targetId: aim.id } }
+  }
+  return {
+    option,
+    score,
+    range: aim ? preferredRangeVs(self, aim) : castRange(self),
+    losClear: aim ? sightlineClear(at, aim.pos, state.barriers) : true,
+    finishable: option?.skill && option.skill.channelTime >= 1 ? canFinishChannel(self, state, option.skill, at) : true,
+  }
+}
+
+// ── Candidate-position scoring (§3.2, milestone M2) ──────────────────────────
+
+// A movement option under consideration: where, and why (provenance for
+// trace/debug). Proposers stay in the movement code (they know the geometry);
+// this shared scorer picks.
+export interface MoveCandidate {
+  pos: Vec2
+  kind: 'hold' | 'close' | 'corner' | 'kiteBack' | 'flank' | 'blink'
+}
+
+// Joint (position, action) value of standing at `cand.pos` to fight `aim`:
+//   + what I can actually cast from there this turn (the forecast), the
+//     dominant term — a spot that lands a shot beats an idle one;
+//   − drift off the preferred ring (`want`), dead-banded so the flat top
+//     doesn't cause micro-step jitter — this pulls toward castability even
+//     when nothing fires from ANY candidate yet;
+//   − a small exposure tiebreak: between two spots that fight equally well,
+//     stand where fewer enemies can answer. Deliberately small — a kiter's
+//     job is to fight from inside its own range, not to hide.
+const GAP_BAND = 0.4    // matches the kite dead-band
+const GAP_W = 1
+const EXPOSURE_W = 0.05
+export function scoreCandidate(state: BattleState, self: Combatant, cand: MoveCandidate, aim: Combatant | null, want: number): number {
+  const f = forecastAction(state, self, cand.pos)
+  const gap = aim ? Math.max(0, Math.abs(distance(cand.pos, aim.pos) - want) - GAP_BAND) : 0
+  return f.score - GAP_W * gap - EXPOSURE_W * exposureAt(state, self, cand.pos)
 }
 
 // ── Exposure (movement-action-coupling.md §3.3, milestone M3) ────────────────

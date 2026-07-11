@@ -260,11 +260,19 @@ amortization, healer fallback, kiter wiring); `los-kiting` / `moat-kiting` /
 `molasses` stayed green (uniform-range kits are unaffected by design).
 
 **M2 — candidate scoring for the kite/hold family.**
-Generalize `escapeHeading`'s scored loop into `scoreCandidate` +
-`exposure`; kiter/wary-caster/default-hold propose candidates through it.
-Fixes the cliffs/LoS/corner-stranding class in one place. `escapeHeading`
-itself becomes a candidate *proposer* (its 16 directions), keeping its
-committed-heading hysteresis as the stickiness term.
+✅ Shipped: `forecastAction(state, self, at)` — the castable-NOW answer,
+running the action channel's own gates via the shared `skillCastTarget`
+extraction (one code path, no drift) — plus `MoveCandidate` +
+`scoreCandidate` (forecast score − dead-banded ring drift − small exposure
+tiebreak). `kiteToward`'s sweet-spot / `aimOutOfRange` / straight-close /
+corner-route special cases collapsed into one scored hold-vs-close choice
+positioned against the AIM (lock, else nearest threat); the wall-blocked
+corner-route and the tooClose retreat (escapeHeading hysteresis + blink)
+remain dedicated branches. Kite suites stayed green untouched; the
+sweet-spot's old "LoS to the *nearest* enemy" requirement — which dragged a
+kiter into corner-routing toward a walled-off foe it wasn't even shooting —
+is fixed and pinned in `candidates.test.ts`. Default-hold candidates and
+`escapeHeading`-as-proposer deferred (see progress log).
 
 **M3 — priced routes (the gauntlet).**
 ✅ Shipped: `exposureAt` + `corridorExposure` in `plan.ts` (per-round threat

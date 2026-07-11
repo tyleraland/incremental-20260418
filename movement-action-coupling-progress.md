@@ -82,15 +82,36 @@ the three motivating examples mapped, constraints, milestones M0–M4.
   cliff moat vs walls vs `needsLoS`, snapshot round-trip, replay
   determinism); `travelGraph` gated-edge tests.
 
+### M2 — candidate scoring (this PR, landed after M3/M4)
+- `skills.ts`: the generic skill-tactic gate extracted as **`skillCastTarget`**
+  (cooldown, zone/active caps, cloak/shield-wall/last-stand gates,
+  target/range/LoS, cluster gate, firewall-yield) — the live action tactic and
+  the forecast now run literally the same function; `canFinishChannel`
+  exported.
+- `plan.ts`: **`forecastAction(state, self, at)`** — best castable-NOW
+  offensive option from `at` (attack skills via `skillCastTarget`, the basic
+  attack for non-casters, LoS-gated), plus `range`/`losClear`/`finishable`;
+  **`MoveCandidate`** + **`scoreCandidate`** = forecast score − dead-banded
+  ring-drift (`GAP_W`) − small exposure tiebreak (`EXPOSURE_W` 0.05 —
+  deliberately tiny: a kiter fights from inside its own range, it doesn't
+  hide).
+- `kiteToward` rewired: positions against the **aim** (lock, else nearest
+  threat); hold-vs-close is one scored choice (subsumes the `aimOutOfRange`
+  patch — a lock beyond range simply makes `close` the only candidate that
+  casts); wall-blocked corner-route and the tooClose retreat (escapeHeading
+  hysteresis + blink) stay dedicated branches. Fixes the stranding class where
+  the old sweet-spot demanded LoS to the *nearest* enemy and corner-routed
+  toward a walled-off foe the kiter wasn't even shooting.
+- Kite suites (`los-kiting`/`moat-kiting`/`molasses`/`healer-positioning`)
+  stayed green untouched. Tests: `candidates.test.ts`.
+
 ## Deferred / known gaps (by design, revisit in order)
 
-- **M2 — candidate-position scoring** (skipped ahead of M3/M4 by request):
-  generalize `escapeHeading`'s scored loop into `scoreCandidate` +
-  `exposureAt`; kiter/wary-caster/default-hold propose candidates; fixes the
-  cliffs/LoS/corner-stranding class in one place and fully subsumes
-  `kiteToward`'s `aimOutOfRange` patch. `exposureAt` (built in M3) is the
-  missing term it needed — M2 is now mostly wiring.
-- `forecastAction(state, self, at)` castable-NOW shape ships with M2.
+- **M2 leftovers**: the default caster hold (`executeMovement`) still uses
+  `moveToward`-with-reach rather than proposing candidates;
+  `escapeHeading` is not yet a candidate *proposer* (its scored loop stays
+  private to retreats); no committed-candidate stickiness field (hold-first
+  tie order is the only hysteresis in the new choice).
 - Corridor pricing uses the **straight** (plow) line, not the full
   `steerAround` polyline — avoidance already handles affordable detours; the
   price only gates the plow/clear decision. Revisit if routes need true

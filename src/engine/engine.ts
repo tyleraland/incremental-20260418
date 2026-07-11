@@ -27,7 +27,7 @@ import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
-import { preferredRangeVs, corridorExposure } from './plan'
+import { preferredRangeVs, corridorExposure, scoreCandidate, type MoveCandidate } from './plan'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -1572,7 +1572,6 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const threat = nearestEnemyTo(self, state)
   if (!threat) return
   const d = distance(self.pos, threat.pos)
-  const losClear = sightlineClear(self.pos, threat.pos, state.barriers)
   const band = 0.4
 
   // Only retreat from a threat that can actually close on us *directly*. If a
@@ -1593,26 +1592,17 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   const predictedD = d - threatStep
   const tooClose = canCloseDirectly && (d < want - band || predictedD < want - band)
 
-  // The foe we're actually trying to SHOOT (our lock) may not be the nearest one
-  // we kite around. If it's a different, FARther enemy that's beyond firing range,
-  // holding at the kite gap from the nearest leaves us locked on a target we can't
-  // hit — stalled forever. Detect that so we close on our prey instead of parking.
-  const aim = findCombatant(state, self.lockedTargetId)
-  // Firing range ON THE LOCK = the range of the attack we'd actually use on it
-  // (the plan seam) — consistent with the kite anchor, so "close on our prey"
-  // stops exactly where the preferred attack opens up.
-  const shootRange = aim && aim.alive ? preferredRangeVs(self, aim) : castRange(self)
-  // Beyond ACTUAL firing range of our lock (no band slack — a hair too far means we
-  // can't fire on it and would plink some nearer foe instead, never finishing the
-  // one we're committed to).
-  const aimOutOfRange = !!aim && aim.alive && aim.id !== threat.id
-    && distance(self.pos, aim.pos) > shootRange
-    && lineClear(self.pos, aim.pos, state.barriers)
-
-  // Sweet spot: right gap, clear shot, the threat can't close past the line next
-  // turn → stand and fire — UNLESS our locked target is out of firing range (then
-  // we still need to close on it).
-  if (losClear && !tooClose && d <= want + band && !aimOutOfRange) return
+  // §M2 candidate scoring (movement-action-coupling.md §3.2): the old
+  // sweet-spot / aim-out-of-range / straight-close / corner-route special cases
+  // are one scored choice now. The AIM — the foe we're actually trying to shoot
+  // (our lock, else the nearest threat) — is what we position against; the
+  // nearest threat still owns the safety math (tooClose/retreats). Candidates
+  // propose the geometry each old case knew; scoreCandidate picks by what a
+  // spot actually lets us CAST (the forecast — the same gates the action
+  // channel runs), drift off the preferred ring, and an exposure tiebreak.
+  // `hold` is listed first and ties go to first, so the dead-band can't jitter.
+  const lock = findCombatant(state, self.lockedTargetId)
+  const aim = lock && lock.alive ? lock : threat
 
   const before = { ...self.pos }
   const step = moveSpeedOf(self)
@@ -1631,42 +1621,45 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
     // teleport instead of sliding in the pocket until caught.
     const cornered = distance(walked, threat.pos) - d < step * BLINK_WALK_MIN
     if (!cornered || !tryBlinkEscape(state, self)) self.pos = walked
-  } else if (aimOutOfRange) {
-    // Not pressured by the nearest threat, but our locked target sits past firing
-    // range: close STRAIGHT toward it until it's just inside our shoot range, so we
-    // can actually open fire (the nearest foe stays our kite anchor for retreats).
-    const ad = distance(self.pos, aim!.pos) || 1
-    const ux = (aim!.pos.x - self.pos.x) / ad
-    const uy = (aim!.pos.y - self.pos.y) / ad
-    const cap = Math.min(step, Math.max(0, ad - (shootRange - 0.5)))
-    if (cap > EPS) {
-      self.pos = slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers)
-    }
-  } else if (losClear) {
-    // We have a clear shot but we're too far — close the gap *straight* toward
-    // the threat until in firing range. If a movement-only barrier (a cliff)
-    // sits between us, slideMove stops us at its edge; we keep LoS and shoot
-    // over it (the Moat). Don't path AROUND here: the far side may be
-    // unreachable on foot, yet perfectly shootable across the gap.
-    const ux = (threat.pos.x - self.pos.x) / (d || 1)
-    const uy = (threat.pos.y - self.pos.y) / (d || 1)
-    const cap = Math.min(step, Math.max(0, d - want))
-    if (cap > EPS) {
-      self.pos = slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers)
-    }
-  } else {
-    // In range but a WALL blocks the shot: route toward the threat via the
-    // visibility graph so we round the corner that re-opens line of sight.
-    const { point } = steerAround(self.pos, threat.pos, state.barriers)
+  } else if (!sightlineClear(self.pos, aim.pos, state.barriers)) {
+    // A WALL blocks the shot on our prey: no spot on the line can fire (the
+    // forecast is wall-blind too), so route the visibility graph toward the
+    // corner that re-opens line of sight — progress is the only useful move.
+    const { point } = steerAround(self.pos, aim.pos, state.barriers)
     const gd = distance(self.pos, point)
     if (gd > EPS) {
-      const ux = (point.x - self.pos.x) / gd
-      const uy = (point.y - self.pos.y) / gd
       const cap = Math.min(step, gd)
-      if (cap > EPS) {
-        self.pos = slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers)
-      }
+      self.pos = slideMove(
+        self.pos,
+        { x: self.pos.x + ((point.x - self.pos.x) / gd) * cap, y: self.pos.y + ((point.y - self.pos.y) / gd) * cap },
+        state.barriers,
+      )
     }
+  } else {
+    // Clear sight of the prey: hold, or close straight toward it — whichever
+    // (position, action) pair scores better. The close candidate stops at the
+    // `want` ring; slideMove lets a cliff edge stop it early — we keep LoS and
+    // shoot over the gap (the Moat rule; never path AROUND a cliff we can
+    // shoot across). This subsumes the old aimOutOfRange patch: a lock beyond
+    // firing range simply makes `close` the only candidate that can cast.
+    const cands: MoveCandidate[] = [{ pos: { ...self.pos }, kind: 'hold' }]
+    const ad = distance(self.pos, aim.pos)
+    const cap = Math.min(step, Math.max(0, ad - want))
+    if (cap > EPS) {
+      const ux = (aim.pos.x - self.pos.x) / (ad || 1)
+      const uy = (aim.pos.y - self.pos.y) / (ad || 1)
+      cands.push({
+        pos: slideMove(self.pos, { x: self.pos.x + ux * cap, y: self.pos.y + uy * cap }, state.barriers),
+        kind: 'close',
+      })
+    }
+    let best = cands[0]
+    let bestS = scoreCandidate(state, self, cands[0], aim, want)
+    for (let i = 1; i < cands.length; i++) {
+      const s = scoreCandidate(state, self, cands[i], aim, want)
+      if (s > bestS + EPS) { best = cands[i]; bestS = s }
+    }
+    if (best.kind !== 'hold') self.pos = { x: best.pos.x, y: best.pos.y }
   }
 
   enforceSeparation(self, state.combatants, state.barriers)
