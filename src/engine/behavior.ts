@@ -49,6 +49,15 @@ const THREAT_WEIGHT = 1
 const PROX_WEIGHT = 1
 const PULL_FRACTION = 0.25   // must beat the current target by 25% of its threat to pull
 const PULL_FLOOR = 1         // ...but always allow a small absolute swing (early game)
+// §coordination M1 (tactical-coordination.md §3.4): a flat bonus added to the
+// score of the enemy matching the team's `engagement.primaryId`, so idle/fresh
+// units (no accumulated threat yet) converge fire on the kill-order pick by
+// default instead of splitting across whatever's nearest. Deliberately small
+// relative to real combat threat (raw damage dealt, easily tens of points after
+// one hit) — it only breaks ties/near-ties among threat-less candidates and
+// nudges close calls; it must NOT be able to out-pull an already-engaged
+// target through the PULL_FRACTION hysteresis below (the tank keeps aggro).
+const FOCUS_WEIGHT = 3
 
 export function selectTarget(state: BattleState, self: Combatant): string | null {
   const enemies = visibleEnemiesOf(state, self)
@@ -58,10 +67,23 @@ export function selectTarget(state: BattleState, self: Combatant): string | null
     return prev
   }
 
-  const score = (e: Combatant) => (self.threat[e.id] ?? 0) * THREAT_WEIGHT - distance(self.pos, e.pos) * PROX_WEIGHT
-  let best = enemies[0]
+  // §coordination M1: read the team plan (absent ⇒ today's scoring exactly —
+  // no plan, no engagement, no avoid list). Avoid-listed foes are excluded from
+  // the CANDIDATE pool unless every visible foe is avoided (never leave a unit
+  // target-less when only avoided foes are in sight); hard taunt is handled
+  // entirely upstream in evalTargeting and never reaches this function.
+  const plan = state.plans?.[self.team]
+  const avoid = plan?.avoidTargetIds
+  const filtered = avoid && avoid.length ? enemies.filter((e) => !avoid.includes(e.id)) : enemies
+  const candidates = filtered.length ? filtered : enemies
+  const isAvoided = (id: string) => !!avoid && filtered.length > 0 && avoid.includes(id)
+
+  const primaryId = plan?.engagement?.primaryId ?? null
+  const score = (e: Combatant) =>
+    (self.threat[e.id] ?? 0) * THREAT_WEIGHT - distance(self.pos, e.pos) * PROX_WEIGHT + (e.id === primaryId ? FOCUS_WEIGHT : 0)
+  let best = candidates[0]
   let bestS = score(best)
-  for (const e of enemies) {
+  for (const e of candidates) {
     const s = score(e)
     if (s > bestS + EPS || (Math.abs(s - bestS) <= EPS && e.id < best.id)) {
       best = e
@@ -71,9 +93,11 @@ export function selectTarget(state: BattleState, self: Combatant): string | null
 
   // Hysteresis: keep a still-valid current lock unless `best` clears the pull
   // margin (scaled by how much threat the current target holds). A cloaked target
-  // is lost (can't be seen), so it falls through to a fresh pick.
+  // is lost (can't be seen), so it falls through to a fresh pick. An avoided
+  // current lock doesn't get this protection (when a real alternative exists) —
+  // it's still excluded the same as it would be from a fresh pick.
   const cur = findCombatant(state, self.lockedTargetId)
-  if (cur && cur.alive && !isStealthed(cur) && cur !== best) {
+  if (cur && cur.alive && !isStealthed(cur) && cur !== best && !isAvoided(cur.id)) {
     const slack = PULL_FRACTION * Math.max(PULL_FLOOR, self.threat[cur.id] ?? 0)
     if (bestS <= score(cur) + slack) best = cur
   }

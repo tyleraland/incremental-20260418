@@ -48,6 +48,14 @@ export const BLINK_SAMPLES = 16          // landing directions probed — determ
 //   loose → blink wasted on open-field retreats; too strict → dies shuffling
 //   in the pocket with the cooldown ready.
 export const BLINK_WALK_MIN = 0.4
+// PRIMARY_SWITCH_MARGIN ⏱ (tactical-coordination.md §3.1, M1): the team's
+// kill-order commitment hysteresis — a challenger must score ≥ (1+margin)× the
+// incumbent primary's own kill-order score before the party retargets. Same
+// role as behavior.ts's PULL_FRACTION (a unit's own aggro hysteresis) but at
+// the team level. Too small → primary flip-flops between two near-tied
+// dangerous foes each decision round; too big → the party keeps grinding a
+// target that's clearly no longer the best pick.
+export const PRIMARY_SWITCH_MARGIN = 0.25
 
 // ── Postures (the player's behavior dial) ────────────────────────────────────
 //

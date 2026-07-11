@@ -19,7 +19,10 @@ const tokenJson = (token: string): string => {
   return strFromU8(unzlibSync(bytes))
 }
 
-const NEW_KEYS = ['"engagement"', '"assignments"', '"avoidTargetIds"', '"corridor"', '"objectives"', '"capability"']
+// M1 (tactical-coordination.md §8) makes the planner publish engagement/
+// avoidTargetIds once a team has a visible enemy — these two are no longer in
+// this "stays absent" set. assignments/corridor remain unpublished (M2/M3).
+const STILL_ABSENT_KEYS = ['"assignments"', '"corridor"']
 
 describe('TeamPlan v2 plumbing (M0)', () => {
   it('v2 plan fields + objectives survive the round-trip when set', () => {
@@ -41,7 +44,12 @@ describe('TeamPlan v2 plumbing (M0)', () => {
     expect(clone.objectives).toEqual({ player: { kind: 'escort', unitId: 'a' } })
   })
 
-  it('nothing populates the new fields in a live battle; the token carries none of the new keys', () => {
+  // M1 update (deliberate — see the file header on M0 vs M1): the planner now
+  // publishes engagement + avoidTargetIds once a team has a visible enemy, so
+  // this scenario (one hero, one visible mob, five live rounds in open world)
+  // is exactly the case that SHOULD populate them. assignments/corridor are
+  // still M2/M3 and stay absent.
+  it('M1 populates engagement/avoidTargetIds once an enemy is visible; assignments/corridor stay absent', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'a', skills: [attackSkill()] })],
       enemyUnits: [eu({ id: 'e', team: 'enemy' })],
@@ -50,15 +58,16 @@ describe('TeamPlan v2 plumbing (M0)', () => {
     for (let i = 0; i < 5; i++) advanceRound(b)
     expect(b.objectives).toBeUndefined()
     const plan = b.plans.player!
-    expect('engagement' in plan).toBe(false)
+    expect(plan.engagement).toBeTruthy()
+    expect(plan.engagement!.primaryId).toBe('e')
+    expect(plan.avoidTargetIds).toEqual([])   // the only enemy in sight is the primary's own camp
     expect('assignments' in plan).toBe(false)
-    expect('avoidTargetIds' in plan).toBe(false)
     expect('corridor' in plan).toBe(false)
 
-    // Byte-identity proxy: the serialized JSON contains none of the new keys,
-    // so the token is exactly what the pre-M0 serializer produced.
+    // Byte-identity proxy for the fields that are STILL unpublished this
+    // milestone — the token carries neither of them.
     const json = tokenJson(serializeBattle(b))
-    for (const key of NEW_KEYS) expect(json, `token leaked ${key}`).not.toContain(key)
+    for (const key of STILL_ABSENT_KEYS) expect(json, `token leaked ${key}`).not.toContain(key)
     // …and a round-trip re-serializes to the same token (no new keys sneak in on load).
     const token = serializeBattle(b)
     expect(serializeBattle(deserializeBattle(token))).toBe(token)

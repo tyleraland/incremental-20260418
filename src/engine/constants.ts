@@ -124,6 +124,14 @@ export const CHARGER_LEASH_PER_RANK = 2
 export const FLANKER_LEASH = 12
 export const FLANKER_LEASH_PER_RANK = 2
 
+// §coordination M1 camp v0 (tactical-coordination.md §3.1/§3.3): how close a
+// visible enemy must stand to the kill-order primary to ride along in the
+// committed pull set (Engagement.targetIds). A coarse placeholder — M2's
+// pullSetOf replaces this with the real transitive aggro-chain camp — kept on
+// the same scale as CHARGER_DIVE_RADIUS so early parties don't commit to
+// enemies merely nearby but functionally unrelated.
+export const CAMP_RADIUS = 6
+
 // §Wary Caster — a caster's "wariness" (interruptedCount, the back-off it reads)
 // FADES when it's left alone: decay it by 1 every WARY_INTERRUPT_DECAY logical
 // rounds with no fresh interrupt. Otherwise a couple of early disruptions make a

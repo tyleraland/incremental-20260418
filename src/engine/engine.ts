@@ -28,7 +28,7 @@ import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
 import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, bumpPlanGen, clearPlanCache, type MoveCandidate } from './plan'
-import { computeCapability } from './teamplan'
+import { computeCapability, decideEngagement } from './teamplan'
 import { postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND } from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
@@ -1243,6 +1243,11 @@ function centroidOf(cs: Combatant[]): Vec2 {
 //     targeting tactics (Opportunist, Finish Them) via teamFocus so the party
 //     converges on one foe and the "who's hurt" scan lives only here.
 //   • threat — per-enemy danger score (advisory; exposed for debugging).
+//   • engagement/avoidTargetIds (M1, tactical-coordination.md §3.1/§3.3) — the
+//     kill-order commitment and do-not-aggro list; see teamplan.ts's
+//     decideEngagement for the pick/hysteresis/camp/avoid logic. Published
+//     only once the team has at least one visible enemy (else both stay
+//     absent, matching the pre-M1 legacy shape).
 export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
   const members = state.combatants.filter((c) => c.alive && c.team === team)
   const enemies = state.combatants.filter((c) => c.alive && c.team !== team)
@@ -1293,7 +1298,15 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
       }
     }
   }
-  return { waypoint, focusTargetId: focus?.id ?? null, threat, huntTargetId }
+
+  const { engagement, avoidTargetIds } = decideEngagement(
+    state, members, enemies, threat, state.plans[team]?.engagement ?? null,
+  )
+
+  return {
+    waypoint, focusTargetId: focus?.id ?? null, threat, huntTargetId,
+    ...(engagement ? { engagement, avoidTargetIds } : {}),
+  }
 }
 
 // §hunt target pick (open world). The nearest enemy to the party centroid that

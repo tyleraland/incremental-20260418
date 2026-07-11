@@ -37,6 +37,7 @@ Engine changes must keep snapshot replays byte-identical.
 ## Team blackboard (§coordination)
 - `BattleState.plans`: per-team `TeamPlan` from the pluggable planner (waypoint/focus/threat/hunt), serialized in snapshots.
 - TeamPlan v2 (`engagement`/`assignments`/`avoidTargetIds`/`corridor`), `BattleState.objectives`, and per-combatant `capability` (derived at makeCombatant/deserialize, never serialized) exist but are absent-by-default — nothing populates or reads them yet. Design source: `tactical-coordination.md`; `teamAcumen` lives in `teamplan.ts`, gates/columns (`ACUMEN`, `cohesionW`, `pullMargin`) in `tuning.ts`.
+- **M1 (targeting baseline) is live.** `decideEngagement` (`teamplan.ts`) publishes `engagement.primaryId` (dangerous-first, killability-weighted kill order off the plan's `threat` record, with commitment hysteresis via `PRIMARY_SWITCH_MARGIN`, `tuning.ts`) and `avoidTargetIds` (do-not-aggro bystanders) once a team has a visible enemy; `assignments`/`corridor` still unpublished (M2/M3). `selectTarget` (`behavior.ts`) reads both: a `FOCUS_WEIGHT` bonus toward the primary (beside `THREAT_WEIGHT`/`PROX_WEIGHT`, tuned below the `PULL_FRACTION` aggro-hysteresis so a tank keeps aggro) and an avoid-list filter (bypassed only when every visible foe is avoided).
 
 ## Tactics
 - `TACTIC_REGISTRY`; each tactic is on exactly one channel: movement/targeting/action/reaction/passive.
