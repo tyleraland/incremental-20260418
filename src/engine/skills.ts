@@ -16,7 +16,7 @@ import { livingEnemies, livingAllies, isStealthed, findCombatant, mostInjuredAll
 import { visibleEnemiesOf } from './spatial'
 import { sightlineClear } from './barriers'
 import { firewallBlocks } from './firewall'
-import type { BattleState, Combatant, EngineSkill, TacticDef, SkillTargeting } from './types'
+import type { BattleState, Combatant, EngineSkill, TacticDef, SkillTargeting, Vec2 } from './types'
 
 // level-scaled coefficient as a formula literal: base at lv1, +per each level.
 function coef(base: number, per: number, level: number): string {
@@ -160,18 +160,23 @@ export function inheritedTacticIds(skillIds: Iterable<string>): string[] {
 
 const isAllyTargeting = (t: SkillTargeting) => t === 'self' || t === 'single_ally' || t === 'aoe_ally'
 
-function inRange(self: Combatant, c: Combatant, range: number): boolean {
-  return distance(self.pos, c.pos) <= range + EPS
+function inRange(at: Vec2, c: Combatant, range: number): boolean {
+  return distance(at, c.pos) <= range + EPS
 }
-function nearest(self: Combatant, list: Combatant[]): Combatant {
+function nearest(at: Vec2, list: Combatant[]): Combatant {
   return list.reduce((a, b) => {
-    const da = distance(self.pos, a.pos), db = distance(self.pos, b.pos)
+    const da = distance(at, a.pos), db = distance(at, b.pos)
     return db < da - EPS || (Math.abs(db - da) <= EPS && b.id < a.id) ? b : a
   })
 }
 
 // Decide the primary target id for a skill, or null if it shouldn't fire now.
-export function selectSkillTarget(self: Combatant, state: BattleState, sk: EngineSkill): string | null {
+// `at` is the position the cast is evaluated FROM — defaults to where the unit
+// stands, so existing callers are unchanged; the movement-planning forecast
+// (movement-action-coupling.md §3.1) passes a hypothetical position instead.
+// Perception (visibleEnemiesOf) stays anchored on the unit's REAL position:
+// `at` moves the unit's reach, not its eyes.
+export function selectSkillTarget(self: Combatant, state: BattleState, sk: EngineSkill, at: Vec2 = self.pos): string | null {
   if (sk.targeting === 'self') {
     // don't re-cast a self-buff that's already active (Cloak, etc.)
     if (sk.statusApplied && self.statuses.some((s) => s.id === sk.statusApplied)) return null
@@ -182,18 +187,18 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
     if (sk.type === 'heal') {
       // AoE heal centers on self; fire only if a nearby ally is hurt.
       if (sk.targeting === 'aoe_ally') {
-        const hurt = livingAllies(state, self).some((a) => a.hp < a.maxHp && inRange({ ...self }, a, sk.aoeRadius))
+        const hurt = livingAllies(state, self).some((a) => a.hp < a.maxHp && inRange(at, a, sk.aoeRadius))
         return hurt ? self.id : null
       }
-      const ally = mostInjuredAllyInRange(state, self, sk.range || Infinity)
+      const ally = mostInjuredAllyInRange(state, self, sk.range || Infinity, at)
       return ally ? ally.id : null
     }
     // buff: an ally (preferring self) in range that lacks the status
     const cands = livingAllies(state, self).filter(
-      (a) => inRange(self, a, sk.range || Infinity) && (!sk.statusApplied || !a.statuses.some((s) => s.id === sk.statusApplied)),
+      (a) => inRange(at, a, sk.range || Infinity) && (!sk.statusApplied || !a.statuses.some((s) => s.id === sk.statusApplied)),
     )
     if (cands.length === 0) return null
-    return (cands.find((c) => c.id === self.id) ?? nearest(self, cands)).id
+    return (cands.find((c) => c.id === self.id) ?? nearest(at, cands)).id
   }
 
   // enemy targeting: respect stealth (except reveal skills) AND walls (no firing
@@ -203,7 +208,7 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
   // still re-cast for the damage.
   const canSeeStealth = sk.removesStatusId === 'stealthed'
   const visible = (e: Combatant) =>
-    (canSeeStealth || !isStealthed(e)) && sightlineClear(self.pos, e.pos, state.barriers)
+    (canSeeStealth || !isStealthed(e)) && sightlineClear(at, e.pos, state.barriers)
   const redundant = (e: Combatant) =>
     !!sk.statusApplied && !sk.damageFormula && e.statuses.some((s) => s.id === sk.statusApplied)
   // §threat: a taunt is a *peel*, not a nuke — prefer pulling a foe that's
@@ -212,16 +217,16 @@ export function selectSkillTarget(self: Combatant, state: BattleState, sk: Engin
   // foes are already on the tank (or untaunted-but-idle).
   if (sk.statusApplied === 'taunted') {
     const cands = (canSeeStealth ? livingEnemies(state, self) : visibleEnemiesOf(state, self))
-      .filter((e) => visible(e) && inRange(self, e, sk.range) && !redundant(e))
+      .filter((e) => visible(e) && inRange(at, e, sk.range) && !redundant(e))
     if (!cands.length) return null
     const offMe = cands.filter((e) => e.lockedTargetId && e.lockedTargetId !== self.id)
-    return nearest(self, offMe.length ? offMe : cands).id
+    return nearest(at, offMe.length ? offMe : cands).id
   }
   const locked = findCombatant(state, self.lockedTargetId)
-  if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(self, locked, sk.range) && !redundant(locked)) return locked.id
+  if (locked && locked.alive && locked.team !== self.team && visible(locked) && inRange(at, locked, sk.range) && !redundant(locked)) return locked.id
   const pool = (canSeeStealth ? livingEnemies(state, self) : visibleEnemiesOf(state, self))
-    .filter((e) => inRange(self, e, sk.range) && sightlineClear(self.pos, e.pos, state.barriers) && !redundant(e))
-  return pool.length ? nearest(self, pool).id : null
+    .filter((e) => inRange(at, e, sk.range) && sightlineClear(at, e.pos, state.barriers) && !redundant(e))
+  return pool.length ? nearest(at, pool).id : null
 }
 
 // Minimum enemies in the blast to justify committing a long AoE *channel* over
@@ -240,11 +245,11 @@ export const isChanneledAoe = (sk: EngineSkill): boolean => sk.channelTime >= 1 
 // own reasoning: (1) it must catch a cluster, not a lone target, and (2) we must
 // be able to finish the channel — no enemy close enough to reach us and break it
 // before it lands (a tank soaking out front is exactly what makes this safe).
-function channeledAoeWorthIt(self: Combatant, state: BattleState, sk: EngineSkill, primary: Combatant): boolean {
+function channeledAoeWorthIt(self: Combatant, state: BattleState, sk: EngineSkill, primary: Combatant, at: Vec2 = self.pos): boolean {
   const enemies = livingEnemies(state, self)
   const inBlast = enemies.filter((e) => distance(e.pos, primary.pos) <= sk.aoeRadius + EPS).length
   if (inBlast < MIN_AOE_CHANNEL_TARGETS) return false
-  return canFinishChannel(self, state, sk)
+  return canFinishChannel(self, state, sk, at)
 }
 
 // Can we finish this channel before an enemy reaches us and interrupts it? An
@@ -253,12 +258,12 @@ function channeledAoeWorthIt(self: Combatant, state: BattleState, sk: EngineSkil
 // its flame and cast. Used to stop a kiter from feeding interrupted channels
 // (the "ran but couldn't cast before it caught me" death): if no cast is safe it
 // falls through to a faster option (e.g. raising a firewall) or keeps running.
-function canFinishChannel(self: Combatant, state: BattleState, sk: EngineSkill): boolean {
+function canFinishChannel(self: Combatant, state: BattleState, sk: EngineSkill, at: Vec2 = self.pos): boolean {
   const turns = sk.channelTime + 1   // cast-start round + each channel round the threat can keep closing
   return !livingEnemies(state, self).some((e) => {
-    if (firewallBlocks(state.firewalls ?? [], e.team, e.id, e.pos, self.pos)) return false
+    if (firewallBlocks(state.firewalls ?? [], e.team, e.id, e.pos, at)) return false
     const reach = e.rangedRange > 0 ? e.rangedRange : e.meleeRange
-    return distance(self.pos, e.pos) - moveSpeedOf(e) * turns <= reach + EPS
+    return distance(at, e.pos) - moveSpeedOf(e) * turns <= reach + EPS
   })
 }
 

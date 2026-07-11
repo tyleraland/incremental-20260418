@@ -6,7 +6,7 @@
 import { distance, attackReach } from './grid'
 import { sightlineClear } from './barriers'
 import { isCaster, visibleEnemiesOf } from './spatial'
-import type { BattleState, Combatant, EngineSkill } from './types'
+import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
 import { EPS } from './constants'
 
 // ALL living foes, UNFILTERED by perception — for the physical questions only:
@@ -126,16 +126,19 @@ export function chooseAction(state: BattleState, self: Combatant): Action | null
   return { kind: 'basic', targetId: target.id }
 }
 
+// `at` = the position the heal's reach is measured from (defaults to where the
+// unit stands); the movement-planning forecast passes a hypothetical position.
 export function mostInjuredAllyInRange(
   state: BattleState,
   self: Combatant,
   range: number,
+  at: Vec2 = self.pos,
 ): Combatant | null {
   let best: Combatant | null = null
   let bestRatio = 1
   for (const a of livingAllies(state, self)) {
     if (a.hp >= a.maxHp) continue
-    if (distance(self.pos, a.pos) > range + EPS) continue
+    if (distance(at, a.pos) > range + EPS) continue
     const ratio = a.hp / a.maxHp
     if (best === null || ratio < bestRatio - EPS || (Math.abs(ratio - bestRatio) <= EPS && a.id < best.id)) {
       best = a
