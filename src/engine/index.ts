@@ -30,12 +30,15 @@ export {
 export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget, SKILL_TACTICS, inheritedTacticIds, isChanneledAoe, isOffensiveAoe, skillActiveCap } from './skills'
 export { preferredAttackVs, preferredRangeVs, exposureAt, corridorExposure, forecastAction, scoreCandidate } from './plan'
 export type { ActionForecast, MoveCandidate, PreferredAttack } from './plan'
-export { POSTURES, postureOf, ACUMEN, ENGAGE_EXIT } from './tuning'
+export {
+  POSTURES, postureOf, ACUMEN, ENGAGE_EXIT,
+  STANCE_KITE_REACH_EDGE, ANCHOR_BARRIER_RADIUS, ANCHOR_SLACK, CORRIDOR_ARRIVE, FRAGILITY_OUTLIER_FRACTION,
+} from './tuning'
 export type { PostureRow } from './tuning'
-export { teamAcumen, computeCapability, pullSetOf, decideEngagement } from './teamplan'
+export { teamAcumen, computeCapability, pullSetOf, decideEngagement, fragilityOutlier } from './teamplan'
 export type { EngagementDecision } from './teamplan'
 export { PULL_SET_CAP, CAMP_RADIUS } from './constants'
 export { STATUS_REGISTRY, buildStatus } from './status'
 export { serializeBattle, deserializeBattle } from './snapshot'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'
-export { arenaBarriers, pointBlocked, traceMove, slideMove, steerAround, canReach, sightlineClear } from './barriers'
+export { arenaBarriers, pointBlocked, traceMove, slideMove, steerAround, canReach, sightlineClear, barrierCorners } from './barriers'

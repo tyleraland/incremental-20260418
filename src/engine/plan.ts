@@ -18,7 +18,7 @@ import { isChanneledAoe, skillCastTarget, canFinishChannel } from './skills'
 import { findCombatant } from './behavior'
 import { sightlineClear } from './barriers'
 import { spatialHashFor } from './spatialhash'
-import { KITE_DEAD_BAND, GAP_W, CORRIDOR_MAX_SAMPLES, postureOf } from './tuning'
+import { KITE_DEAD_BAND, GAP_W, CORRIDOR_MAX_SAMPLES, ANCHOR_SLACK, postureOf } from './tuning'
 import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
 
 // The offensive option `self` would prefer against `target`, ignoring current
@@ -137,10 +137,17 @@ export interface MoveCandidate {
 //     engine/tuning.ts): 'steady' keeps it a small tiebreak — a kiter's job
 //     is to fight from inside its own range, not to hide — 'bold' ignores
 //     it, 'wary' genuinely trades damage for safety.
+//   − a cohesion penalty (tactical-coordination.md §3.4, M3): `cohesionW`
+//     (POSTURES) per cell of excess drift off the team's committed anchor,
+//     dead-banded by ANCHOR_SLACK so standing near the line costs nothing.
+//     No engagement/no anchor ⇒ the term is exactly 0 — byte-identical to
+//     pre-M3 scoring for every plan that never sets one.
 export function scoreCandidate(state: BattleState, self: Combatant, cand: MoveCandidate, aim: Combatant | null, want: number): number {
   const f = forecastAction(state, self, cand.pos)
   const gap = aim ? Math.max(0, Math.abs(distance(cand.pos, aim.pos) - want) - KITE_DEAD_BAND) : 0
-  return f.score - GAP_W * gap - postureOf(self).exposureW * exposureAt(state, self, cand.pos)
+  const anchor = state.plans?.[self.team]?.engagement?.anchor
+  const drift = anchor ? Math.max(0, distance(cand.pos, anchor) - ANCHOR_SLACK) : 0
+  return f.score - GAP_W * gap - postureOf(self).exposureW * exposureAt(state, self, cand.pos) - postureOf(self).cohesionW * drift
 }
 
 // ---- Per-turn threat memo (pure perf, byte-identical) -----------------------

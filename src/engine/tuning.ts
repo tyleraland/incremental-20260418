@@ -75,6 +75,54 @@ export const PRIMARY_SCORE_FLOOR = 1
 // should have disengaged rounds ago.
 export const ENGAGE_EXIT = 1.3
 
+// ── M3: stance / anchor / formation / corridor (tactical-coordination.md
+// §3.1/§3.4) ──────────────────────────────────────────────────────────────
+// STANCE_KITE_REACH_EDGE ⏱: how much the party's median offensive reach must
+// clear the camp's worst-case reach before `decide` calls the fight kiteable
+// (party median capability.reach ≥ camp max reach + this, AND median
+// moveSpeed ≥ camp max moveSpeed). Too small → a party barely longer-ranged
+// than the camp kites into pointless shuffling (a decisive melee win would've
+// been faster); too big → an obviously-outranging party still collapses into
+// melee.
+export const STANCE_KITE_REACH_EDGE = 1.5
+// ANCHOR_BARRIER_RADIUS ⏱: how close a barrier must sit to the party's commit
+// centroid before `decide` calls a chokepoint "worth standing on" (v0's hold
+// trigger). Too small → real nearby chokes get missed and the party collapses
+// in the open; too big → the party "holds" a chokepoint irrelevant to the
+// fight.
+export const ANCHOR_BARRIER_RADIUS = 8
+// ANCHOR_SLACK ⏱ (scoreCandidate's cohesionW term, plan.ts): dead-band, in
+// cells, before drifting off the anchor costs anything — so a unit standing
+// right on the line doesn't micro-jitter from the term alone. Too small →
+// jitter at the anchor; too big → the term never bites before a unit has
+// already wandered off the line.
+export const ANCHOR_SLACK = 3
+// CORRIDOR_ARRIVE ⏱ (engine.ts roamTowardWaypoint): how close a unit must get
+// to the plan's published `corridor` corner before it stops aiming at it and
+// reverts to its own fanned waypoint. Too small → units peel off the shared
+// line early and re-split around the obstacle; too big → the party clumps at
+// the corner long after everyone could safely fan back out.
+export const CORRIDOR_ARRIVE = 2
+// FRAGILITY_OUTLIER_FRACTION ⏱: a member whose toughness falls below this
+// fraction of the party's median toughness is the standing-guard's
+// protectee. Too high → a merely-average member reads as "the squishy" and
+// gets babysat for no reason; too low → a real outlier never trips it and
+// stands unprotected.
+export const FRAGILITY_OUTLIER_FRACTION = 0.5
+// Formation fan (engine.ts formationSlot, the 'hold' execution): a small
+// two-rank fan along the anchor→primary axis — toughest half forward
+// (camp-facing), the rest behind, the fragility outlier pinned rearmost and
+// centered. FORMATION_FRONT/BACK ⏱: how far forward/back of the anchor each
+// rank stands. FORMATION_SPACING ⏱: lateral gap between slots in a rank
+// (≈ SEPARATION(0.7) × 1.6 — Guardian's own stand-off gap, so a fresh line
+// doesn't spawn overlapping). FORMATION_REAR ⏱: how far behind the anchor the
+// outlier's own rearmost slot sits — deeper than the back rank's own offset,
+// so it reads as visibly the safest spot on the line.
+export const FORMATION_FRONT = 1.2
+export const FORMATION_BACK = -0.8
+export const FORMATION_SPACING = 1.12
+export const FORMATION_REAR = 1.6
+
 // ── Postures (the player's behavior dial) ────────────────────────────────────
 //
 //   bold   — damage first: ignores incidental exposure, forces expensive

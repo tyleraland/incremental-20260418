@@ -373,6 +373,22 @@ export function canReach(from: Vec2, target: Vec2, barriers: Barrier[], pad = UN
   return steerAround(from, target, barriers, pad, caps).reachable
 }
 
+// §coordination M3 anchor pick (tactical-coordination.md §3.1/§3.4): the SAME
+// per-battle-cached corner nodes steerAround already routes through, reused
+// as anchor candidates — so "stand at the gap" needs no new pathfinding, just
+// a nearest-usable-corner scan over geometry that's already baked (VIS_CACHE
+// above). Read-only: callers get copies (nodes are re-packed), never the
+// cached graph's own arrays.
+export function barrierCorners(barriers: Barrier[], pad = UNIT_PAD): Vec2[] {
+  if (barriers.length === 0) return []
+  const g = visGraphFor(barriers, pad)
+  const out: Vec2[] = []
+  for (let i = 0; i < g.nodes.length; i++) {
+    if (g.usable[i]) out.push({ x: g.nodes[i].x, y: g.nodes[i].y })
+  }
+  return out
+}
+
 // Default arena terrain: a central cross ('+') that the teams fight around. The
 // bars stop short of the deploy lines and leave wide perimeter corridors, so
 // there's always a way around. Centered on a COLS×ROWS grid.

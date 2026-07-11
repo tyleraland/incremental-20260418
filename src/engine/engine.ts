@@ -6,7 +6,7 @@
 // to completion for tests and bulk/idle resolution.
 
 import {
-  COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS,
+  COLS, ROWS, MAX_ROUNDS, EPS, STEALTH_ATTACK_BONUS, SEPARATION,
   WANDER_REPATH, HUNT_RETAIN_MULT, MONSTER_WANDER_MIN, MONSTER_WANDER_MAX, MONSTER_WANDER_NEAR, MONSTER_WANDER_FAR,
   WANDER_SPEED_MULT, WANDER_MARGIN, MONSTER_EDGE_MARGIN, WARY_INTERRUPT_DECAY,
   TOWN_WANDER_MIN, TOWN_WANDER_MAX, TOWN_WANDER_NEAR, TOWN_WANDER_FAR, TOWN_WANDER_SPEED_MULT,
@@ -26,10 +26,16 @@ import { makeSkillTactic, isChanneledAoe } from './skills'
 import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache, pullMovement } from './spatial'
+import {
+  nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache,
+  pullMovement, lockedTarget, kiteDistanceFor, guardPoint,
+} from './spatial'
 import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, bumpPlanGen, clearPlanCache, type MoveCandidate } from './plan'
-import { computeCapability, decideEngagement, callsPack, packRouses } from './teamplan'
-import { postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND } from './tuning'
+import { computeCapability, decideEngagement, callsPack, packRouses, fragilityOutlier } from './teamplan'
+import {
+  postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND,
+  CORRIDOR_ARRIVE, FORMATION_FRONT, FORMATION_BACK, FORMATION_SPACING, FORMATION_REAR,
+} from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -1151,6 +1157,55 @@ function evalMovement(state: BattleState, self: Combatant): MovementResult | nul
   return plan
 }
 
+// §coordination M3 formation slots (tactical-coordination.md §3.4): a small
+// two-rank fan along the anchor→primary axis (normalized) — the toughest
+// half of the team stands forward (camp-facing), the rest fall back, and the
+// fragility outlier (teamplan.ts's fragilityOutlier — the SAME pick the
+// planner uses for the standing guard, §3.2) is pinned rearmost and centered
+// regardless of where a plain toughness sort would have put it, so it reads
+// as visibly the safest spot on the line. Deterministic slot assignment by
+// sorted index (toughness desc, id tiebreak). Recomputed from the live
+// members list every call — O(members log members) per unit per turn, which
+// the hard-constraint budget explicitly accepts at the party sizes this game
+// ever fields (≤10); it is NOT planner-memoized (the plan only publishes
+// anchor + stance, §3.1) so there's nothing to invalidate on death/join.
+function formationSlot(state: BattleState, self: Combatant, anchor: Vec2, primaryPos: Vec2): Vec2 {
+  const members = state.combatants.filter((c) => c.alive && c.team === self.team)
+  const dx = primaryPos.x - anchor.x, dy = primaryPos.y - anchor.y
+  const dd = Math.hypot(dx, dy)
+  const ax = dd > EPS ? dx / dd : 0, ay = dd > EPS ? dy / dd : 1
+  const px = -ay, py = ax
+  const outlier = fragilityOutlier(members)
+  if (outlier && outlier.id === self.id) {
+    return { x: anchor.x - ax * FORMATION_REAR, y: anchor.y - ay * FORMATION_REAR }
+  }
+  const rest = outlier ? members.filter((m) => m.id !== outlier.id) : members
+  const sorted = [...rest].sort((a, b) => {
+    const ta = a.capability?.toughness ?? 0, tb = b.capability?.toughness ?? 0
+    if (Math.abs(ta - tb) > EPS) return tb - ta   // toughest first
+    return a.id < b.id ? -1 : 1
+  })
+  const idx = sorted.findIndex((m) => m.id === self.id)
+  if (idx < 0) return anchor   // self not found (shouldn't happen — self is always a living member)
+  const frontCount = Math.ceil(sorted.length / 2)
+  const front = idx < frontCount
+  const rowStart = front ? 0 : frontCount
+  const rowSize = front ? frontCount : sorted.length - frontCount
+  const col = idx - rowStart
+  const lateral = (col - (rowSize - 1) / 2) * FORMATION_SPACING
+  const forward = front ? FORMATION_FRONT : FORMATION_BACK
+  return { x: anchor.x + ax * forward + px * lateral, y: anchor.y + ay * forward + py * lateral }
+}
+
+// Same clamp/blocked-fallback pattern as offsetWaypoint: a formation slot
+// that lands inside a wall or off an unroutable pocket falls back to the raw
+// anchor rather than aiming a unit into terrain.
+function clampFormationSlot(self: Combatant, slot: Vec2, anchor: Vec2, barriers: Barrier[]): Vec2 {
+  const clamped = arenaClamp(slot)
+  if (pointBlocked(barriers, clamped) || !canReach(self.pos, clamped, barriers)) return anchor
+  return clamped
+}
+
 function executeMovement(state: BattleState, self: Combatant, plan: MovementResult | null): void {
   if (plan?.clearLock) self.lockedTargetId = null
   // Wedged inside terrain (a crowded separation push or corner case can leave a
@@ -1206,14 +1261,57 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   // tag-and-drag state machine — pullMovement (spatial.ts) is the ONE shared
   // implementation. Declared-intent pullers never reach here: the Puller
   // tactic already produced a `plan.toPoint` above.
-  const pullAssign = state.plans[self.team]?.assignments?.[self.id]
-  if (pullAssign?.role === 'pull') {
-    const pullTarget = findCombatant(state, pullAssign.targetId)
-    const pull = pullMovement(self, pullTarget, pullAssign.to)
+  const teamPlan = state.plans[self.team]
+  const myAssign = teamPlan?.assignments?.[self.id]
+  if (myAssign?.role === 'pull') {
+    const pullTarget = findCombatant(state, myAssign.targetId)
+    const pull = pullMovement(self, pullTarget, myAssign.to)
     if (pull?.toPoint) {
       if (moveTowardPoint(self, pull.toPoint, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)) {
         emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
       }
+      return
+    }
+  }
+  // §coordination M3 standing guard (tactical-coordination.md §3.2/§3.4): the
+  // planner assigned THIS unit to peel for the fragility outlier — literally
+  // the guardian tactic's own math (guardPoint), just aimed by the plan
+  // instead of "squishiest ally", so declared-intent and plan-picked guards
+  // move identically. A unit that EQUIPPED guardian never reaches here (its
+  // tactic already produced `plan.toPoint` above and returned).
+  if (myAssign?.role === 'guard') {
+    const protectee = findCombatant(state, myAssign.allyId)
+    const threat = protectee && protectee.alive ? nearestEnemyTo(protectee, state) : null
+    if (protectee && threat) {
+      const guardTo = guardPoint(protectee, threat, SEPARATION * 1.6)
+      if (moveTowardPoint(self, guardTo, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)) {
+        emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+      }
+      return
+    }
+  }
+  // §coordination M3 stance execution (tactical-coordination.md §3.4): the
+  // plan's default layer — only reached when nothing above (an equipped
+  // tactic, or a pull/guard assignment) already claimed this turn, so the
+  // player lever and the plan's own jobs always outrank it.
+  const eng = teamPlan?.engagement
+  if (eng?.stance === 'hold' && eng.anchor) {
+    const primary = findCombatant(state, eng.primaryId)
+    const primaryPos = primary?.pos ?? eng.anchor
+    const slot = clampFormationSlot(self, formationSlot(state, self, eng.anchor, primaryPos), eng.anchor, state.barriers)
+    if (moveTowardPoint(self, slot, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)) {
+      emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+    }
+    return
+  }
+  if (eng?.stance === 'kite' && (self.rangedRange > 0 || isCaster(self))) {
+    // The non-kiter default becomes kiter-style hold for THIS fight — exactly
+    // what the equipped Kiter tactic computes (kiteDistanceFor +
+    // preferredRangeVs against the aim); melee units fall through unchanged.
+    const threat = nearestEnemyTo(self, state)
+    if (threat) {
+      const aim = lockedTarget(self, state) ?? threat
+      kiteToward(state, self, kiteDistanceFor(self, threat, preferredRangeVs(self, aim)))
       return
     }
   }
@@ -1320,8 +1418,22 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
     state, team, members, enemies, threat, state.plans[team]?.engagement ?? null, state.plans[team]?.assignments,
   )
 
+  // §coordination M3 corridor (tactical-coordination.md §3.4): the SAFEST
+  // version of "same-way routing is a decision, not a pather tax" — publish
+  // the first steerAround corner from the party centroid toward the shared
+  // waypoint, ONLY when barriers exist and the route actually bends (a clear
+  // line needs no corridor). roamTowardWaypoint routes the whole party
+  // through this one point instead of each unit picking its own side.
+  let corridor: Vec2 | null = null
+  if (waypoint && members.length && state.barriers.length) {
+    const c = centroidOf(members)
+    const { point, direct, reachable } = steerAround(c, waypoint, state.barriers)
+    if (reachable && !direct) corridor = point
+  }
+
   return {
     waypoint, focusTargetId: focus?.id ?? null, threat, huntTargetId,
+    ...(corridor ? { corridor } : {}),
     // M2 (tactical-coordination.md §3.3): even with no affordable engagement,
     // decideEngagement may still have priced a real avoid list (every visible
     // foe not already fighting us) — publish it on its own rather than
@@ -1435,8 +1547,26 @@ function offsetWaypoint(self: Combatant, wp: Vec2 | null | undefined, barriers: 
 // movement *between* fights, so it's brisk.
 function roamTowardWaypoint(state: BattleState, self: Combatant): void {
   const speed = moveSpeedOf(self) * WANDER_SPEED_MULT
-  const point = offsetWaypoint(self, state.plans[self.team]?.waypoint, state.barriers)
+  const wp = state.plans[self.team]?.waypoint
+  let point = offsetWaypoint(self, wp, state.barriers)
   if (!point) return
+  // §coordination M3 corridor routing (tactical-coordination.md §3.4): when
+  // the plan published a shared route corner, aim at IT instead of the fanned
+  // waypoint while still short of it — the whole party takes the same side
+  // because the plan said so, not a per-unit pather tiebreak. Sanity-gated:
+  // only while still meaningfully far from the corridor (CORRIDOR_ARRIVE) AND
+  // the corridor actually lies ahead (a dot-product check against the
+  // straight line to the waypoint, so a corner already behind us — passed —
+  // never gets re-targeted). Close to arrival, units revert to their own
+  // fanned waypoint (and its own steerAround call), which by then is a short,
+  // already-converged hop.
+  const corridor = state.plans[self.team]?.corridor
+  if (corridor && wp) {
+    const toWp = { x: wp.x - self.pos.x, y: wp.y - self.pos.y }
+    const toCorridor = { x: corridor.x - self.pos.x, y: corridor.y - self.pos.y }
+    const ahead = toCorridor.x * toWp.x + toCorridor.y * toWp.y > EPS
+    if (ahead && distance(self.pos, corridor) > CORRIDOR_ARRIVE) point = corridor
+  }
   if (moveTowardPoint(self, point, speed, state.combatants, state.barriers)) {
     emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
   }

@@ -8,10 +8,14 @@ import { attackReach, distance, moveSpeedOf } from './grid'
 import { effectiveStat, skillDamageEstimate } from './damage'
 import { armoredFactor, hasTactic } from './tactics'
 import { isStealthed } from './behavior'
+import { barrierCorners, sightlineClear } from './barriers'
 import { EPS, CAMP_RADIUS, HUNT_RETAIN_MULT, PULL_SET_CAP } from './constants'
-import { PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR, ACUMEN, ENGAGE_EXIT, postureOf } from './tuning'
+import {
+  PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR, ACUMEN, ENGAGE_EXIT, postureOf,
+  STANCE_KITE_REACH_EDGE, ANCHOR_BARRIER_RADIUS, FRAGILITY_OUTLIER_FRACTION,
+} from './tuning'
 import type {
-  Assignment, BattleState, Combatant, Engagement, KitCapability, Team, Vec2,
+  Assignment, Barrier, BattleState, Combatant, Engagement, KitCapability, Stance, Team, Vec2,
 } from './types'
 
 // §acumen (tactical-coordination.md §3.2): smart members make a smart party.
@@ -196,6 +200,108 @@ function priceOf(camp: Combatant[]): { hp: number; sustained: number } {
   return { hp, sustained }
 }
 
+// §coordination M3 stance/anchor (tactical-coordination.md §3.1/§3.2): decided
+// once at COMMIT time (a fresh camp, or an existing commitment's camp actually
+// changing shape — the "re-anchor" cases in decideEngagement below) and held
+// for the life of the engagement; callers that are merely re-pricing an
+// unchanged commitment reuse `prevEngagement.stance`/`.anchor` instead of
+// calling this again. `camp`/`primary` are the commitment being formed.
+//   kite  — the party out-reaches AND outruns the whole camp: deterministic
+//     medians (capability.reach / moveSpeedOf) clear the camp's worst case
+//     by STANCE_KITE_REACH_EDGE — win the poke war.
+//   hold  — not kite-eligible, but a barrier sits within ANCHOR_BARRIER_RADIUS
+//     of the party's commit centroid (v0's crude "a chokepoint exists here"
+//     test): snap the anchor to the nearest vis-graph corner (barriers.ts —
+//     already cached per battle, so this is no new pathfinding) that keeps a
+//     clear line to the primary; no qualifying corner → the centroid itself.
+//   collapse — no barrier nearby, so there's nothing worth standing on
+//     (today's behavior; anchor stays null).
+function decideStanceAnchor(
+  state: BattleState, team: Team, members: Combatant[], camp: Combatant[], primary: Combatant,
+): { stance: Stance; anchor: Vec2 | null } {
+  if (teamAcumen(state, team) < ACUMEN.stance) return { stance: 'collapse', anchor: null }
+  const c = partyCentroid(members)
+  let campMaxReach = 0, campMaxSpeed = 0
+  for (const e of camp) {
+    campMaxReach = Math.max(campMaxReach, e.capability?.reach ?? 0)
+    campMaxSpeed = Math.max(campMaxSpeed, moveSpeedOf(e))
+  }
+  const medReach = median(members.map((m) => m.capability?.reach ?? 0))
+  const medSpeed = median(members.map((m) => moveSpeedOf(m)))
+  if (medReach >= campMaxReach + STANCE_KITE_REACH_EDGE - EPS && medSpeed >= campMaxSpeed - EPS) {
+    return { stance: 'kite', anchor: c }
+  }
+  const nearBarrier = state.barriers.some((b) => distToBarrier(c, b) <= ANCHOR_BARRIER_RADIUS)
+  if (!nearBarrier) return { stance: 'collapse', anchor: null }
+  let anchor = c
+  let bestD = Infinity
+  for (const corner of barrierCorners(state.barriers)) {
+    if (!sightlineClear(corner, primary.pos, state.barriers)) continue
+    const d = distance(c, corner)
+    if (d < bestD - EPS) { bestD = d; anchor = corner }
+  }
+  return { stance: 'hold', anchor }
+}
+
+function distToBarrier(p: Vec2, b: Barrier): number {
+  const nx = Math.max(b.x, Math.min(p.x, b.x + b.w))
+  const ny = Math.max(b.y, Math.min(p.y, b.y + b.h))
+  return distance(p, { x: nx, y: ny })
+}
+
+// §coordination standing guard (tactical-coordination.md §3.2/§4): the
+// party's fragility outlier — a *relative* query (top/median/outlier, never
+// an absolute stat bar) so "one member much squishier than the rest" is
+// detected on any comp. Parties of ≥3 only (below that, "the outlier" isn't a
+// meaningful notion). NO acumen gate — protecting the squishy is baseline
+// (§3.2's "assign issues a standing guard by default"). Exported so
+// engine.ts's formation-slot execution can seat the SAME outlier rearmost
+// without a second definition.
+export function fragilityOutlier(members: Combatant[]): Combatant | null {
+  if (members.length < 3) return null
+  const med = median(members.map((m) => m.capability?.toughness ?? 0))
+  const threshold = FRAGILITY_OUTLIER_FRACTION * med
+  let worst: Combatant | null = null
+  let worstT = Infinity
+  for (const m of members) {
+    const t = m.capability?.toughness ?? 0
+    if (t >= threshold - EPS) continue
+    if (t < worstT - EPS || (Math.abs(t - worstT) <= EPS && (!worst || m.id < worst.id))) { worst = m; worstT = t }
+  }
+  return worst
+}
+
+// Guard pick (§3.2): declared intent (equips Guardian) first, else the
+// highest-toughness member excluding the outlier itself (can't guard itself)
+// and the puller (already has a job) — id tiebreak.
+function pickGuard(members: Combatant[], outlierId: string, pullerId: string | null): Combatant | null {
+  const declared = members.filter((m) => m.id !== outlierId && hasTactic(m, 'guardian')).sort(byId)
+  if (declared.length) return declared[0]
+  let best: Combatant | null = null
+  let bestT = -Infinity
+  for (const m of members) {
+    if (m.id === outlierId || m.id === pullerId) continue
+    const t = m.capability?.toughness ?? 0
+    if (t > bestT + EPS || (Math.abs(t - bestT) <= EPS && (!best || m.id < best.id))) { best = m; bestT = t }
+  }
+  return best
+}
+
+// Layer a standing-guard assignment on top of whatever pull assignment
+// already exists (§3.3) — the one place both jobs combine before publish.
+function withGuardAssignment(
+  members: Combatant[], assignments: Record<string, Assignment> | undefined,
+): Record<string, Assignment> | undefined {
+  const outlier = fragilityOutlier(members)
+  if (!outlier) return assignments
+  const pullerId = assignments
+    ? Object.keys(assignments).find((id) => assignments[id].role === 'pull') ?? null
+    : null
+  const guard = pickGuard(members, outlier.id, pullerId)
+  if (!guard) return assignments
+  return { ...(assignments ?? {}), [guard.id]: { role: 'guard', allyId: outlier.id } }
+}
+
 export interface EngagementDecision {
   engagement: Engagement | null
   avoidTargetIds: string[]
@@ -248,12 +354,18 @@ export function decideEngagement(
     if (!incumbentRetainable) return { engagement: null, avoidTargetIds: [] }
     // Nothing at plain vision, but the incumbent is still within the grace
     // radius — hold the commitment with no challenger to weigh it against.
+    // Pure continuation (no re-anchor): carry the stance/anchor forward
+    // unchanged rather than recomputing (§3.1 — stance is decided at commit
+    // and held for the engagement's life).
+    const heldAssignments = withGuardAssignment(members, undefined)
     return {
       engagement: {
-        targetIds: [incumbent!.id], primaryId: incumbent!.id, anchor: null,
-        stance: 'collapse', sinceRound: prevEngagement!.sinceRound,
+        targetIds: [incumbent!.id], primaryId: incumbent!.id,
+        anchor: prevEngagement!.anchor ?? null, stance: prevEngagement!.stance ?? 'collapse',
+        sinceRound: prevEngagement!.sinceRound,
       },
       avoidTargetIds: [],
+      ...(heldAssignments ? { assignments: heldAssignments } : {}),
     }
   }
 
@@ -297,9 +409,16 @@ export function decideEngagement(
       .map((e) => e.id)
       .sort()
 
+    // Standing guard is NOT gated on acumen (§3.2 — "protecting the squishy
+    // is baseline"), so it applies even to a v0 (below ACUMEN.pull) party;
+    // stance/anchor stay 'collapse'/null here regardless — ACUMEN.stance(90)
+    // is strictly above ACUMEN.pull(50), so a party that hasn't cleared the
+    // lower gate can't have cleared the higher one either.
+    const v0Assignments = withGuardAssignment(members, undefined)
     return {
       engagement: { targetIds, primaryId: primary.id, anchor: null, stance: 'collapse', sinceRound },
       avoidTargetIds,
+      ...(v0Assignments ? { assignments: v0Assignments } : {}),
     }
   }
 
@@ -339,8 +458,8 @@ export function decideEngagement(
       let ids = prevEngagement.targetIds
       let camp = campNow
       if (uninvited) {
-        const anchor = campNow.find((e) => e.id === prevEngagement!.primaryId) ?? campNow[0]
-        camp = pullSetOf(state, anchor, anchor.pos)
+        const seedFrom = campNow.find((e) => e.id === prevEngagement!.primaryId) ?? campNow[0]
+        camp = pullSetOf(state, seedFrom, seedFrom.pos)
         ids = camp.map((e) => e.id).sort()
       }
 
@@ -366,9 +485,17 @@ export function decideEngagement(
         }
         const sinceRound = primaryId === prevEngagement.primaryId ? prevEngagement.sinceRound : state.round
         const avoidTargetIds = visible.filter((e) => !ids.includes(e.id) && !alreadyFighting(e)).map((e) => e.id).sort()
-        const assignments = pullAssignmentFor(members, ids, camp, visible, prevAssignments)
+        // §3.1 stance/anchor: an `uninvited` join actually changed the camp's
+        // shape — that's the "engagement itself re-anchors" case, so recompute.
+        // A pure re-price (same camp, same primary) carries the prior
+        // commitment's stance/anchor forward unchanged.
+        const primaryCombatant = camp.find((e) => e.id === primaryId)
+        const { stance, anchor } = uninvited && primaryCombatant
+          ? decideStanceAnchor(state, team, members, camp, primaryCombatant)
+          : { stance: prevEngagement.stance ?? 'collapse', anchor: prevEngagement.anchor ?? null }
+        const assignments = withGuardAssignment(members, pullAssignmentFor(members, ids, camp, visible, prevAssignments))
         return {
-          engagement: { targetIds: ids, primaryId, anchor: null, stance: 'collapse', sinceRound },
+          engagement: { targetIds: ids, primaryId, anchor, stance, sinceRound },
           avoidTargetIds,
           ...(assignments ? { assignments } : {}),
         }
@@ -406,10 +533,12 @@ export function decideEngagement(
   const targetIds = chosenCamp.map((e) => e.id).sort()
   const sinceRound = prevEngagement && chosenPrimary.id === prevEngagement.primaryId ? prevEngagement.sinceRound : state.round
   const avoidTargetIds = visible.filter((e) => !targetIds.includes(e.id) && !alreadyFighting(e)).map((e) => e.id).sort()
-  const assignments = pullAssignmentFor(members, targetIds, chosenCamp, visible, prevAssignments)
+  // Fresh commit: decide stance + anchor for real (tactical-coordination.md §3.1/§3.2).
+  const { stance, anchor } = decideStanceAnchor(state, team, members, chosenCamp, chosenPrimary)
+  const assignments = withGuardAssignment(members, pullAssignmentFor(members, targetIds, chosenCamp, visible, prevAssignments))
 
   return {
-    engagement: { targetIds, primaryId: chosenPrimary.id, anchor: null, stance: 'collapse', sinceRound },
+    engagement: { targetIds, primaryId: chosenPrimary.id, anchor, stance, sinceRound },
     avoidTargetIds,
     ...(assignments ? { assignments } : {}),
   }
