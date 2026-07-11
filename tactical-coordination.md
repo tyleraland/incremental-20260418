@@ -134,6 +134,33 @@ Design rules:
   past budget (the over-pull materialized — fall back / disengage). That is
   the backlog's "strategy commitment": pursue, notice failure, switch.
 
+**What the blackboard is — and isn't:**
+
+- **Derived, ephemeral state.** The plan is recomputed from battle state on
+  decision rounds and is never player-authored: viewable (Plan panel), not
+  configurable. Player-authored inputs stay exactly where they are today —
+  unit tactics + posture, `partyTactics`, plus the one directive slot
+  (§3.5). Those are the few party knobs; the blackboard is what the AI
+  *derived* from them.
+- **Serialized for replay fidelity only.** `engagement` is the one piece of
+  cross-round *memory* (the commitment), so a mid-fight BSNAP must carry it
+  to replay 1:1 — that's a determinism requirement, not persistence of
+  configuration. Everything else in the plan could be dropped and
+  recomputed.
+- **Scope = the battle = the location.** `plans` lives on one BattleState;
+  "the team" is exactly the units fighting on that map, which is what makes
+  shared planning physically plausible. The blackboard never spans maps —
+  cross-location coordination (the chaperone) is the *store's* job, spoken
+  through objectives (§3.6).
+- **Co-location honesty.** The plan is built from what members
+  *collectively* see (fog rules unchanged), and assignments assume the
+  cluster can act together. A straggler far from the plan's centroid
+  (beyond the Charger/Flanker-leash scale) gets no special assignment and
+  falls back to individual behavior until it rejoins — the party plans as a
+  group because it *is* one. (Refinement, not v0: v0's "same battle ⇒ same
+  plan" is already approximately this, since stragglers fail the range
+  checks their assignments imply.)
+
 ### 3.2 The planner pipeline
 
 `defaultPlanner` stays one exported `Planner` but becomes a composition of
@@ -145,21 +172,39 @@ appraise → cluster visible enemies into CAMPS (proximity/rally-linked
            groups); price each camp: pullSetOf + Σ threatProfile
 decide   → hold or refresh the Engagement (hysteresis + abandon predicates);
            choose stance (kite/hold/collapse) and anchor
-assign   → roles per member from kit + engagement (§roles below)
+assign   → jobs per member from declared intent + kit (§capabilities below)
 publish  → TeamPlan (waypoint/focus/avoid/corridor derived from the above)
 ```
 
-**Roles are inferred, not configured.** `roleOf(c)`: *tank* =
-`threatMult > 1` or top effective def·hp; *carry* = top sustained
-`estimateDamageVs` output; *support* = has heal/buff skills; *puller* =
-longest `preferredRangeVs` reach with speed ≥ party median; everyone else
-*line*. Pure functions of the combatant's kit, id-tiebroken — no new player
-config, no save impact. (A future Directive can pin roles; the default
-infers.)
+**No role taxonomy — capabilities and declared intent.** The planner never
+stores "tank/carry/support" anywhere; a role enum would just be memoized
+answers under a label, knowledge the blackboard doesn't need to encode.
+When `assign` needs a body for a job it asks two kinds of question, in
+order:
 
-**Budget.** Everything runs once per team per decision round:
-camps O(E²) on *visible* enemies with early exit, pull-set BFS capped
-(`PULL_SET_CAP ≈ 12`), assignments O(members). No per-unit planner work.
+1. **Declared intent — equipped tactics ARE the role config.** A unit
+   carrying Guardian has said "I peel" — it's the guard. Kiter/Wary Caster
+   marks a ranged-line unit; Charger/Flanker marks a diver; the future
+   Puller tactic pins the puller. The planner routes assignments *toward*
+   units whose tactics already volunteer and never assigns against an
+   equipped tactic (the player lever wins twice: it outranks plan defaults
+   at execution, and it steers who gets which job at assignment).
+2. **Kit capability — pure queries at the point of use**, when no tactic
+   volunteers: aggro-holder = best `threatMult`·def·hp; protectee ("the
+   carry") = top sustained `estimateDamageVs`; puller = longest
+   `preferredRangeVs` reach at ≥ party-median speed; healer = has a heal
+   skill. Id-tiebroken; inputs are the kit, fixed for the battle, so the
+   answers precompute per combatant (§5) — no new player config, no save
+   impact.
+
+Assignments (this plan's *jobs*) are the blackboard output; capabilities
+stay derivable. The one aggregate the planner does compute is the party's
+range/mobility profile for the stance decision — a per-decision-round fold
+over the same precomputed capabilities.
+
+**Budget.** Everything runs once per team per decision round; §5 has the
+cost model. Headline: while an engagement holds, `appraise` is skipped
+entirely — commitment is the fast path, not just the anti-thrash.
 
 ### 3.3 The pull model — `pullSetOf`
 
@@ -176,9 +221,12 @@ export function pullSetOf(state: BattleState, seed: Combatant, at: Vec2): Combat
 The no-drift rule from `forecastAction` applies: the membership test must be
 the *same code* `rallyPack` and target-acquisition actually run (extract the
 predicates, two callers) — a prediction that diverges from the real aggro
-rules is worse than none. Camp price = Σ `threatProfile(e, …).score` over the
-pull set; budget = party effective HP × a posture-blended fraction (a new
-POSTURES column, `pullBudget`). Then:
+rules is worse than none. Camp price = Σ over the pull set of the plan's
+existing `threat` record — the planner already computes that per enemy every
+decision round, so pricing is a few adds, not a new scoring pass
+(`threatProfile`-grade per-member matchup pricing is an upgrade only if the
+coarse price misjudges in play). Budget = party effective HP × a
+posture-blended fraction (a new POSTURES column, `pullBudget`). Then:
 
 - **Engage-or-not**: cheapest affordable camp wins the engagement; nothing
   affordable → the party keeps roaming (or clears the cheapest arc first —
@@ -297,12 +345,51 @@ than a hope.
 | Hold a chokepoint | `hold` objective / Hold-the-Line directive → anchor at a barrier gap; `anchor` assignments + conformance term |
 | Formation / cohesion | anchor slots (offset fan) + `cohesionW` column in `scoreCandidate` |
 | Kite-vs-hold from comp | `decide`'s stance: party preferred-range & speed profile vs camp reach → `kite`/`hold`/`collapse` |
-| Support & carry | inferred roles: standing `guard(carry)` under Protect; healer positions off the anchor, not the centroid |
+| Support & carry | capability query picks the protectee (top sustained `estimateDamageVs`); standing `guard` under Protect; healer positions off the anchor, not the centroid |
 | Chaperone a traveler | `escort` objective set by the store's travel loop |
 | Team-vs-team arena | symmetric planners + directives; showcase scenario pins it |
 | Same-way routing | plan `corridor` replaces the `HERD_BIAS` left tax |
 
-## 5. Constraints (non-negotiable, from the engine's invariants)
+## 5. Performance model — why this stays cheap
+
+Target: planner cost ≪ one unit's turn, nothing new inside per-unit turns
+beyond O(1) plan reads. (On-device profiling puts the whole engine at ~1% of
+wall clock at 15v34 — the constraint is discipline, not headroom; render owns
+the budget.) The tools are the ones the engine already uses:
+
+- **Commitment is the fast path.** Hysteresis isn't just anti-thrash: while
+  an engagement holds, `decide` runs only the abandon predicates (a handful
+  of distance/HP checks) and `appraise` — the only wide stage — is skipped
+  entirely. Full camp appraisal runs when the party is uncommitted (roaming)
+  or a commitment just broke: rare events, not per-round work.
+- **Per-battle precompute** (the `VIS_CACHE` pattern, keyed on the barriers
+  array identity): chokepoint/gap candidates for anchor picks — barriers are
+  static per battle, so this bakes once; the vis-graph corners it reads are
+  already cached.
+- **Per-combatant precompute**: the §3.2 capability answers read only
+  skills/base kit, fixed for the battle → computed at `makeCombatant` /
+  deserialize, derived-not-serialized (rebuilt on load, like `tactics`).
+- **Bounded per-decision-round work**: camps cluster only *visible* enemies
+  via the round-start `SpatialHash` (O(E·local) neighbor queries, no O(E²)
+  scan); `pullSetOf` BFS is capped (`PULL_SET_CAP`); camp pricing sums the
+  already-computed `threat` record; assignments are O(members) over
+  precomputed capabilities.
+- **Per-round memo discipline**: anything ever priced per (enemy, member)
+  reuses the `threatMemo` pattern (plan.ts) — generation-bumped, cleared per
+  round, active only under the ambient spatial hash, and
+  recomputation-transparent so replays stay byte-identical.
+- **O(1) read side**: plan lookups per turn; the avoid list is a few ids
+  (linear scan is fine); `scoreCandidate`'s conformance term is one distance.
+- **Existing throttles compose**: `decisionInterval` already gates planner
+  cadence on heavy fields; off-screen battles never run any of this
+  (`creditOffscreen`); encounters are 15×15 with tiny enemy counts.
+
+Worst-case sketch (open world, 6 heroes, ~12 visible of 40 monsters, on an
+*uncommitted* decision round): clustering ≈ 12 local-hash queries, pull BFS
+≤ ~144 distance checks, pricing 12 adds, assignment 6 capability reads —
+order of one `steerAround` call, on the rare round it runs at all.
+
+## 6. Constraints (non-negotiable, from the engine's invariants)
 
 - **Determinism.** No RNG anywhere in the planner; camps, pull sets,
   assignments, and anchors enumerate in fixed order with id tiebreaks;
@@ -315,9 +402,9 @@ than a hope.
 - **No-drift predictions.** `pullSetOf` shares the aggro predicates with
   `rallyPack`/acquisition; stance math reads `preferredAttackVs`/
   `threatProfile` — never parallel re-implementations.
-- **Budget.** Planner-only cost, once per team per decision round, capped
-  (`PULL_SET_CAP`, camp early-exit). Nothing new in per-unit turns except
-  O(1) plan reads and one extra `scoreCandidate` term.
+- **Budget.** Planner-only cost, once per team per decision round, with the
+  §5 memo/precompute/commitment-skip discipline. Nothing new in per-unit
+  turns except O(1) plan reads and one extra `scoreCandidate` term.
 - **Purity.** Planner stages live beside `plan.ts` (a `teamplan.ts` leaf):
   grid/types/damage/skills/spatial imports only — no store, no time.
 - **Player lever wins.** Equipped tactics outrank plan defaults; a directive
@@ -333,7 +420,7 @@ than a hope.
   52`); every engagement change pushes a trace line on why (abandon
   predicate or new camp). Extend `inspectLine`, don't hand-roll dumps.
 
-## 6. Milestones (each independently shippable)
+## 7. Milestones (each independently shippable)
 
 **M0 — TeamPlan v2 plumbing (byte-identical).** Add the optional fields +
 `objectives`, serialization, `postureOf` columns (`cohesionW`, `pullBudget`
@@ -377,11 +464,12 @@ clear on exit). Tests: traveler crossing a hunted map gets screened
 few rounds (RNG-free ⇒ one rollout is a verdict), behind the same planner
 signature. Explicitly not foundation.
 
-## 7. Deliberately not building
+## 8. Deliberately not building
 
 Per-unit negotiation/auction protocols; a blackboard *write* API for tactics
 (tactics stay read-only consumers — one writer, the planner); asymmetric
 enemy AI machinery (monsters use the same planner + directives); formation
-editors or per-unit role config UI (roles are inferred; directives are the
-coarse lever, same philosophy as postures-not-sliders); any lookahead beyond
+editors, role pickers, or any per-unit team-config UI (intent is read from
+equipped tactics, capabilities from the kit; directives are the one coarse
+party lever, same philosophy as postures-not-sliders); any lookahead beyond
 M6's bounded experiment.
