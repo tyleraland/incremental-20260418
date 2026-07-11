@@ -468,13 +468,11 @@ same way" by penalising left-side detours.
 - **Strategies = multi-channel tactic bundles.** A registry where one entry
   expands to TacticRefs across channels + an optional planner — e.g.
   Assassinate (focus-squishy + flank + cloak), Lock & Focus, Kite+LoS.
-- **Range selection — remaining slices.** The robust kite itself shipped
-  (`movement-action-coupling.md` M1/M2: anchors on the attack the unit will
-  actually use vs its target, terrain/LoS-aware via candidate scoring; QA
-  checklist under §Plan-layer tuning below). Still open: a per-role default
-  (blackboard picks kite-vs-hold from party comp — "close to range and hold"
-  is still the non-kiter default), and an anchor/formation plan field so
-  "hold" means a specific spot.
+- **Range selection — remaining slices.** A per-role default (blackboard
+  picks kite-vs-hold from party comp — "close to range and hold" is still
+  the non-kiter default), and an anchor/formation plan field so "hold"
+  means a specific spot. (Kite mechanics: `movement-action-coupling.md`;
+  human QA for its tuning knobs: §Plan-layer tuning below.)
 - **Threat model — extensions.** WoW-style threat table drives default
   targeting (`selectTarget`, §threat in AGENTS.md). Open: AoE/aura threat (a
   tank holding several mobs at once, not just what it's hitting),
@@ -482,15 +480,14 @@ same way" by penalising left-side detours.
   decay/leashing, and a browser-tuning pass on the showcase numbers
   (`THREAT_WEIGHT`, `PULL_FRACTION`).
 - **Offensive-option scoring — more scorers.** `estimateDamageVs` is the
-  hook (now consumed by `reorderAttacksForTarget` AND the plan layer's
-  `preferredAttackVs`/`forecastAction` — preferred-range positioning shipped
-  in `movement-action-coupling.md` M1/M2). Open: **AoE spread value** (score
+  hook (consumers: `reorderAttacksForTarget`, the plan layer's
+  `preferredAttackVs`/`forecastAction`). Open: **AoE spread value** (score
   by expected total damage across everyone hit — AoE skills are excluded
-  from the re-rank AND invisible to the plan seam, which is what keeps Storm
-  Caller un-unified and `exposureAt` scoring AoE monsters by basic attack —
-  one scorer fixes all three), sideboard/weapon-swap candidates (scorer
-  already takes `skill: null` so it's swap-ready), and folding
-  status-synergy/on-hit value into the score.
+  from the re-rank AND invisible to the plan seam, which keeps Storm Caller
+  un-unified and `exposureAt` scoring AoE monsters by basic attack — one
+  scorer fixes all three), sideboard/weapon-swap candidates (scorer already
+  takes `skill: null` so it's swap-ready), and folding status-synergy/on-hit
+  value into the score.
 - **Ambush combo** — primitives exist (cloak, back-stab, flanker, ambusher);
   needs an orchestrator holding Cloak until in Back Stab range.
 - **Sneak Attack skill** — a learnable skill scaling the flat
@@ -652,8 +649,7 @@ behavior-sensitive, a refactor, or a product decision.
   `ROUND_MS` (`BattleView`), the `300`ms double-tap window duplicated across
   `ProtoStage`/`ProtoApp`'s tap handlers, and engine tuning literals (taunt
   `+10%`, "arrived" radius `0.6`, summon fan-out offsets). Name them where it
-  reduces drift risk. (The kite dead-band is done — `KITE_DEAD_BAND` in
-  `engine/tuning.ts`, the home for plan-layer knobs.)
+  reduces drift risk (plan-layer knobs belong in `engine/tuning.ts`).
 - **Content orphans (keep-for-future vs remove).** `earth-bolt` skill (defined in both
   registries, equipped by nothing); `versatile`/`calm` traits (unreferenced); element
   id scheme inconsistency (a `lightning` *trait* exists but items use `wind`, e.g.

@@ -2,7 +2,9 @@
 
 Mobile-first incremental auto-battler. Vite + React 18 + TS + Tailwind + Zustand.
 Deploys to GitHub Pages on push to `main`. This file is a map/reference —
-keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt.
+keep it terse and *accurate*; `BACKLOG.md` holds deferred work and known debt —
+**open items only**: when work ships, delete or shrink its entry (never mark it
+done/shipped there — history lives in git and PRs, not the backlog).
 
 ## Response style
 - Be succinct. Lead with the result; skip preamble, restating the task, and "still watching" boilerplate.
