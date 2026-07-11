@@ -50,6 +50,8 @@ export function combatant(overrides: Partial<Combatant> = {}): Combatant {
     potionsLeft: 0,
     pack: {},
     consumableSpecs: [],
+    moveAbilities: [],
+    moveAbilityCds: {},
     provoked: true,
     tactics: [],
     tacticCooldowns: {},

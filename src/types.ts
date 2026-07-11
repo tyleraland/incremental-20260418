@@ -140,6 +140,12 @@ export interface Location {
   id: string; name: string; region: string; description: string
   traits: string[]; monsterIds: string[]; familiarityMax: number
   connections: string[]  // §2: locationIds reachable directly from here
+  // §blink (movement-action-coupling.md M4): edges that exist only for units
+  // with the named movement capability — e.g. a river crossing no road bridges,
+  // open to Blink owners ({ to: 'far-bank', requires: 'teleport' }). Same
+  // directed semantics as `connections`; list on both sides for a two-way edge.
+  // routeBetween includes them when the caller passes matching `abilities`.
+  gatedConnections?: { to: string; requires: string }[]
   dungeonEntryRegion?: string  // §10: if set, location's detail panel exposes "Enter <Region>" → switches map to that region
   testScenarioId?: string  // §scenario: pin a SCENARIO_REGISTRY entry — overrides wave + barriers in combat
   // §open-world: when true the location runs a single *persistent* battle —

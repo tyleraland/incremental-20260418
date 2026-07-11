@@ -12,11 +12,16 @@ import type { Location } from '@/types'
 // [from, …, to], or null if they're not connected. `from === to` returns [from].
 // `weight(id)` (optional) lets a caller bias the search away from a node by
 // raising its cost (switches BFS → uniform-cost search); default cost 1 each.
+// `abilities` (§blink, movement-action-coupling.md M4) unlocks a location's
+// `gatedConnections` whose `requires` is among them — routes that exist only
+// for owners of the capability (the un-bridged river crossing). Omitted ⇒
+// plain-road routing, exactly as before.
 export function routeBetween(
   from: string,
   to: string,
   locations: Location[],
   weight?: (id: string) => number,
+  abilities?: readonly string[],
 ): string[] | null {
   if (from === to) return [from]
   const byId = new Map(locations.map((l) => [l.id, l]))
@@ -38,7 +43,11 @@ export function routeBetween(
     if (cur === null) return null            // frontier exhausted, never reached `to`
     if (cur === to) break
     seen.add(cur)
-    for (const nb of byId.get(cur)!.connections) {
+    const loc = byId.get(cur)!
+    const gated = abilities?.length
+      ? (loc.gatedConnections ?? []).filter((g) => abilities.includes(g.requires)).map((g) => g.to)
+      : []
+    for (const nb of gated.length ? [...loc.connections, ...gated] : loc.connections) {
       if (!byId.has(nb) || seen.has(nb)) continue
       const cost = best + (weight ? weight(nb) : 1)
       if (cost < (dist.get(nb) ?? Infinity)) { dist.set(nb, cost); prev.set(nb, cur) }

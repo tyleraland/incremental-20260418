@@ -10,7 +10,7 @@
 
 import { COLS, ROWS, EPS, DEPLOY_FRONT } from './constants'
 import { arenaClamp, arenaCols, arenaRows } from './arena'
-import type { Vec2, Barrier } from './types'
+import type { Vec2, Barrier, MoveCaps } from './types'
 
 // Tie-break in the path search: corners on the left side of the arena cost
 // extra, so units staring down the same obstacle tend to route to the same
@@ -272,8 +272,16 @@ function visGraphFor(barriers: Barrier[], pad: number): VisGraph {
 // shortest total detour instead of just the locally-cheapest next corner. The
 // corner graph is cached per battle (see VisGraph above); the from/target edges
 // are per-call — when the line is clear, beeline.
-export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): { point: Vec2; direct: boolean; reachable: boolean } {
+// `caps` (§blink, M4) adds capability edges to the search: a teleport bridges
+// any node pair within its range (walls still block when it needs line of
+// sight; cliffs never do). Computed per call — the cached walk-graph stays
+// untouched — and with `caps` omitted the code path is byte-identical to
+// before (pinned by the steer-cache differential fuzz). With caps this answers
+// route-shape/reachability ("CAN this unit get there"); executing the actual
+// jump is the mover's business.
+export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD, caps?: MoveCaps): { point: Vec2; direct: boolean; reachable: boolean } {
   if (lineClear(from, target, barriers, pad)) return { point: target, direct: true, reachable: true }
+  const tp = caps?.teleport
   const g = visGraphFor(barriers, pad)
   const m = g.nodes.length
   // Node indexing mirrors the pre-cache implementation exactly:
@@ -318,7 +326,15 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
       } else {
         ok = u === 0 ? fromClear[v - 1] : g.clear[(u - 1) * m + (v - 1)]
       }
-      if (!ok) continue
+      if (!ok) {
+        // §blink capability edge: no walkable line, but a teleport can bridge
+        // the pair. Walls veto a LoS-gated jump; cliffs never block.
+        if (!tp) continue
+        const pu = u === 0 ? from : g.nodes[u - 1]
+        const pv = v === T ? target : g.nodes[v - 1]
+        if (dist(pu, pv) > tp.range) continue
+        if (tp.needsLoS && !sightlineClear(pu, pv, barriers, pad)) continue
+      }
       // Small left-side surcharge on intermediate corners → consistent herding
       // for near-tie detours (true shortcuts on the left still win).
       const bias = v !== T ? g.bias[v - 1] : 0
@@ -353,8 +369,8 @@ export function steerAround(from: Vec2, target: Vec2, barriers: Barrier[], pad =
 // Thin wrapper over steerAround's reachability — used to (a) make a unit give up
 // on an impossible target, and (b) pick only reachable roam waypoints. Dynamic:
 // pass a reduced barrier set (e.g. lava-immune party) and more becomes reachable.
-export function canReach(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD): boolean {
-  return steerAround(from, target, barriers, pad).reachable
+export function canReach(from: Vec2, target: Vec2, barriers: Barrier[], pad = UNIT_PAD, caps?: MoveCaps): boolean {
+  return steerAround(from, target, barriers, pad, caps).reachable
 }
 
 // Default arena terrain: a central cross ('+') that the teams fight around. The

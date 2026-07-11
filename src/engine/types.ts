@@ -144,6 +144,25 @@ export interface ConsumableSpec {
   healAmount?: number           // for effect 'heal': HP restored per use
 }
 
+// §blink (movement-action-coupling.md M4): a movement capability — Blink is the
+// first. `kind` doubles as the cooldown key. `needsLoS`: walls block the jump;
+// cliffs never do (same rule as shooting over the moat), which is what makes a
+// teleport a bridge across un-walkable gaps.
+export interface MoveAbility {
+  kind: 'teleport'
+  range: number                 // grid cells per jump
+  cooldown: number              // rounds between uses
+  needsLoS: boolean
+}
+
+// §blink (M4): movement capabilities as the PATHER sees them — passed into
+// steerAround/canReach to add teleport edges to the route search ("this unit
+// can cross the moat"). Reachability-only shape: cooldowns are the mover's
+// problem, not the map's.
+export interface MoveCaps {
+  teleport?: { range: number; needsLoS: boolean }
+}
+
 export interface ReactionResult {
   applyStatusToSelf?: StatusEffect
   counterAttack?: string        // combatant id to immediately basic-attack
@@ -227,6 +246,9 @@ export interface EngineUnitInput {
   // tactic per spec whose item is actually carried.
   pack?: Record<string, number>
   consumableSpecs?: ConsumableSpec[]
+  // §blink (M4): movement capabilities granted by the unit's kit (the adapter
+  // maps an equipped Blink here). Default none.
+  moveAbilities?: MoveAbility[]
   tactics?: TacticRef[]   // unit-level tactics, priority order (first = highest)
   // §open-world: max distance at which this unit can *acquire* a new target.
   // Default Infinity (unlimited — what encounters use). Open-world sets finite
@@ -295,6 +317,13 @@ export interface Combatant {
   // injected tactics on load. Both default empty on legacy tokens.
   pack: Record<string, number>
   consumableSpecs: ConsumableSpec[]
+  // §blink (movement-action-coupling.md M4): movement capabilities — things a
+  // unit can do with its FEET (well, without them), read by the escape logic and
+  // the capability-aware pather, never cast through the action channel. Cooldowns
+  // tick with skill/tactic cooldowns, keyed by ability kind. Both serialize;
+  // legacy tokens default empty.
+  moveAbilities: MoveAbility[]
+  moveAbilityCds: Record<string, number>
 
   // §aggression: is this unit currently hostile? Heroes and aggressive-on-sight
   // monsters start true. A "skittish" (non-aggressive) monster starts false and
@@ -355,6 +384,12 @@ export interface Combatant {
   avoidStuck?: number
   avoidPlowUntil?: number
   avoidSide?: number    // committed pass direction (±1) while steering around threats — held to avoid dithering
+  // §priced routes (movement-action-coupling.md M3): committed clear-first mode —
+  // the corridor to the travel destination costs more HP than the budget allows,
+  // so the unit has stopped marching and is fighting the threat wall down.
+  // Cleared (with hysteresis) once the corridor is affordable again. Optional and
+  // JSON-plain, so it rides the snapshot; legacy tokens read as unset.
+  travelClearing?: boolean
 
   // §threat: per-enemy threat each opponent has built up against this unit (by
   // id). Dealing damage to / healing against a unit raises the actor's threat on

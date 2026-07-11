@@ -214,7 +214,10 @@ export function deserializeBattle(token: string): BattleState {
     // tactics never fire) and empty specs, so the replay is identical to before.
     const pack = rest.pack ?? {}
     const consumableSpecs = rest.consumableSpecs ?? []
-    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, ownerId, leashRange, summonTtl, summonTag, pack, consumableSpecs, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    // §blink (M4): legacy tokens predate movement capabilities — none, no cooldowns.
+    const moveAbilities = rest.moveAbilities ?? []
+    const moveAbilityCds = rest.moveAbilityCds ?? {}
+    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, ownerId, leashRange, summonTtl, summonTag, pack, consumableSpecs, moveAbilities, moveAbilityCds, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
   })
 
   return {

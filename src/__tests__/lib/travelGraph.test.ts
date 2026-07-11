@@ -36,6 +36,31 @@ describe('routeBetween', () => {
     const avoidP = (id: string) => (id === 'p' ? 100 : 1)
     expect(routeBetween('s', 't', diamond, avoidP)).toEqual(['s', 'q', 't'])
   })
+
+  // §blink (movement-action-coupling.md M4): gated edges — a crossing that
+  // exists only for owners of the named capability.
+  it('gated connections open only for the matching ability', () => {
+    // near ↔ far across a river: no road; a teleport-gated crossing both ways.
+    // The long way round exists via three bridge nodes (so both variants route,
+    // but only the blink owner takes the shortcut).
+    const river: Location[] = [
+      { ...L('near', ['b1']), gatedConnections: [{ to: 'far', requires: 'teleport' }] },
+      L('b1', ['near', 'b2']), L('b2', ['b1', 'b3']), L('b3', ['b2', 'far']),
+      { ...L('far', ['b3']), gatedConnections: [{ to: 'near', requires: 'teleport' }] },
+    ]
+    expect(routeBetween('near', 'far', river)).toEqual(['near', 'b1', 'b2', 'b3', 'far'])   // on foot: the long way
+    expect(routeBetween('near', 'far', river, undefined, ['teleport'])).toEqual(['near', 'far'])   // blink: straight across
+    expect(routeBetween('near', 'far', river, undefined, ['flight'])).toEqual(['near', 'b1', 'b2', 'b3', 'far'])   // wrong ability
+  })
+
+  it('a gated edge can be the ONLY route (an island)', () => {
+    const island: Location[] = [
+      { ...L('shore', []), gatedConnections: [{ to: 'isle', requires: 'teleport' }] },
+      { ...L('isle', []), gatedConnections: [{ to: 'shore', requires: 'teleport' }] },
+    ]
+    expect(routeBetween('shore', 'isle', island)).toBeNull()
+    expect(routeBetween('shore', 'isle', island, undefined, ['teleport'])).toEqual(['shore', 'isle'])
+  })
 })
 
 describe('nearestCity', () => {

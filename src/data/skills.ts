@@ -71,6 +71,16 @@ export const SKILL_REGISTRY: Record<string, SkillDef> = {
     requires: [],
     getBonuses: () => ({}),
   },
+  // §blink (movement-action-coupling.md M4): a movement capability, not a cast —
+  // equipping it grants the engine `moveAbilities` teleport (adapter), read by
+  // the cornered-escape logic and the capability-aware pather. Walls block the
+  // jump; cliffs (rivers, chasms) don't.
+  'blink': {
+    id: 'blink', name: 'Blink', maxLevel: 1, type: 'active',
+    description: () => 'Teleport up to 8 spaces. Escape when cornered — or cross a gap no road bridges.',
+    requires: [],
+    getBonuses: () => ({}),
+  },
   'frost-bolt': {
     id: 'frost-bolt', name: 'Frost Bolt', maxLevel: 10, type: 'active',
     description: (lv) => `Water spell. ${lv}× M.ATK. Cast 1.5s fixed + 3.5s variable (DEX-reducible).`,

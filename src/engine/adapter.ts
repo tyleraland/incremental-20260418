@@ -3,7 +3,7 @@
 // owns no stat definitions; this is where the game's stats are projected in.
 
 import type { Unit, DerivedStats, MonsterDef } from '@/types'
-import type { EngineUnitInput, EngineSkill, Team, TacticRef, ConsumableSpec } from './types'
+import type { EngineUnitInput, EngineSkill, Team, TacticRef, ConsumableSpec, MoveAbility } from './types'
 import { buildEngineSkill, inheritedTacticIds } from './skills'
 import { consumableDef } from '@/data/consumables'
 
@@ -36,6 +36,19 @@ function withInheritedTactics(explicit: TacticRef[], skills: EngineSkill[], supp
     .filter((id) => !have.has(id) && !suppressed.includes(id))
     .map((id) => ({ id, rank: 1 }))
   return inherited.length ? [...explicit, ...inherited] : explicit
+}
+
+// §blink (movement-action-coupling.md M4): an equipped Blink is a MOVEMENT
+// capability, not a cast — it never enters COMBAT_SKILLS/the action channel.
+// The engine's escape logic and capability-aware pather read it directly.
+// Numbers: the design's 8-space jump; cooldown in engine rounds (~10s at
+// 2.5 rounds/s, matching the skill cd() convention); walls block it (LoS),
+// cliffs don't — that's what lets it cross the moat.
+const BLINK_RANGE = 8
+const BLINK_COOLDOWN_ROUNDS = 25
+function moveAbilitiesOf(unit: Unit): MoveAbility[] | undefined {
+  const hasBlink = (unit.actionSlots ?? []).some((s) => s?.kind === 'skill' && s.id === 'blink')
+  return hasBlink ? [{ kind: 'teleport', range: BLINK_RANGE, cooldown: BLINK_COOLDOWN_ROUNDS, needsLoS: true }] : undefined
 }
 
 // Active skills the unit has slotted on its action bar (kind === 'skill') and
@@ -145,6 +158,7 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
     attackElement: derived.attackElement,   // §3 weapon-imbued attack element
     armorElement: derived.armorElement,     // §3 armor-imbued defensive element
     skills,                               // action-bar skills → casts (each injects its usage tactic)
+    moveAbilities: moveAbilitiesOf(unit), // §blink: equipped movement capabilities
     pack: packCounts(unit),               // §consumables: carried items by id
     consumableSpecs: consumableSpecsOf(unit),  // §consumables: player-allowed use rules
     tactics: withInheritedTactics(unit.tactics ?? [], skills, unit.suppressedTactics),  // explicit + skill-inherited (§5)

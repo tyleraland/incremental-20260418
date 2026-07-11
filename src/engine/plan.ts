@@ -10,12 +10,13 @@
 // nothing below imports it (spatial's kiteDistanceFor takes the anchor as a
 // plain number so this module stays cycle-free).
 
-import { attackReach } from './grid'
+import { attackReach, distance } from './grid'
 import { EPS } from './constants'
 import { estimateDamageVs } from './damage'
-import { isCaster, castRange } from './spatial'
+import { isCaster, castRange, visibleEnemiesOf } from './spatial'
 import { isChanneledAoe } from './skills'
-import type { Combatant, EngineSkill } from './types'
+import { sightlineClear } from './barriers'
+import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
 
 // The offensive option `self` would prefer against `target`, ignoring current
 // distance and line of sight — it is choosing WHERE to stand, so reach is the
@@ -65,4 +66,51 @@ export function preferredAttackVs(self: Combatant, target: Combatant): Preferred
 // default hold feed into kiteDistanceFor / moveToward.
 export function preferredRangeVs(self: Combatant, target: Combatant): number {
   return preferredAttackVs(self, target)?.range ?? castRange(self)
+}
+
+// ── Exposure (movement-action-coupling.md §3.3, milestone M3) ────────────────
+
+// How much punishment per round does standing at `p` invite? Sum over the
+// enemies `self` can currently perceive (fog-honest — vision from its REAL
+// position) that are provoked (in the fight; a milling skittish monster
+// threatens nobody) and whose reach covers `p`: each contributes its own
+// preferred attack against us (same scorer, other direction). Ranged/caster
+// threats additionally need a wall-free sightline to `p` (cliffs don't stop
+// shots). Threats are priced where they STAND — a stationary ranged ring is a
+// crisp disc; pursuit is deliberately not priced (see the doc's horizon note).
+export function exposureAt(state: BattleState, self: Combatant, p: Vec2): number {
+  let total = 0
+  for (const e of visibleEnemiesOf(state, self)) {
+    if (!e.provoked) continue
+    const reach = Math.max(attackReach(e), castRange(e))
+    if (distance(p, e.pos) > reach + EPS) continue
+    const shoots = e.rangedRange > 0 || isCaster(e)
+    if (shoots && !sightlineClear(e.pos, p, state.barriers)) continue
+    // Floor at 1: a landed hit always deals ≥1 (defaultCalculateDamage), so an
+    // in-reach threat is never free even when mitigation eats its whole formula.
+    total += Math.max(1, preferredAttackVs(e, self)?.score ?? 0)
+  }
+  return total
+}
+
+// Expected HP cost of WALKING the straight corridor from `self.pos` to `dest`
+// at `stepLen` per round — per-round exposure sampled once per travel step and
+// summed. This prices the PLOW line (the worst-case corridor): tangential
+// avoidance already handles affordable detours, so the price only has to gate
+// the plow-vs-clear-first decision. Samples are capped and scaled back to
+// rounds so a cross-map march can't run away with the turn budget.
+const CORRIDOR_MAX_SAMPLES = 40
+export function corridorExposure(state: BattleState, self: Combatant, dest: Vec2, stepLen: number): number {
+  const d = distance(self.pos, dest)
+  if (d <= EPS) return 0
+  const rounds = d / Math.max(stepLen, EPS)
+  const samples = Math.min(CORRIDOR_MAX_SAMPLES, Math.max(1, Math.ceil(rounds)))
+  const roundsPerSample = rounds / samples
+  let sum = 0
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples
+    const p = { x: self.pos.x + (dest.x - self.pos.x) * t, y: self.pos.y + (dest.y - self.pos.y) * t }
+    sum += exposureAt(state, self, p) * roundsPerSample
+  }
+  return sum
 }

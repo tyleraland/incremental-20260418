@@ -267,15 +267,25 @@ itself becomes a candidate *proposer* (its 16 directions), keeping its
 committed-heading hysteresis as the stickiness term.
 
 **M3 — priced routes (the gauntlet).**
-`exposure` integrated along the march corridor; `avoidOrPlowPoint` escalation
-becomes avoid → plow (under budget) → clear-first (over budget) → report
-blocked. Store-visible only as order latency / a blocked-order signal.
+✅ Shipped: `exposureAt` + `corridorExposure` in `plan.ts` (per-round threat
+discs → expected HP cost of the plow line); `avoidOrPlowPoint` escalation is
+now avoid → plow (corridor ≤ `TRAVEL_HP_BUDGET`, 35% of current HP) →
+clear-first (over budget: the march yields movement to the combat AI until
+the wall is fought down; hysteresis via the serialized `travelClearing`
+flag). Store-visible only as order latency. "Report blocked" (reroute signal
+to logistics) still open — see the progress log. Tests:
+`route-pricing.test.ts`.
 
 **M4 — movement capabilities (Blink).**
-`moveAbilities` on the combatant + adapter wiring; blink candidates in
-escape/kite (M2 slots them in for free); capability-aware
-`steerAround`/`canReach`; overworld capability-gated edges in `travelGraph`.
-Each of the three integration points is its own PR.
+✅ Shipped (all three seams, one PR): `moveAbilities`/`moveAbilityCds` on the
+combatant (snapshot-borne, adapter maps an equipped `blink`); cornered-escape
+teleport in the kite/disengage retreats (`tryBlinkEscape` — fires only when
+walking fails to open the threat gap); capability-aware
+`steerAround`/`canReach` via the optional `caps` param (teleport edges in the
+vis-graph Dijkstra; caps omitted ⇒ byte-identical); `Location.gatedConnections`
++ `routeBetween(..., abilities)` for capability-only overworld routes. Blink
+as an action-channel cast (competing with spells for the turn) deliberately
+deferred — see the progress log. Tests: `blink.test.ts`, `travelGraph.test.ts`.
 
 Deliberately **not** building: per-turn A*/influence maps, minimax over enemy
 responses, a generic utility-AI framework. If deeper lookahead is ever wanted,

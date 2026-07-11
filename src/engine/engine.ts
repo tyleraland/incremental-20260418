@@ -27,7 +27,7 @@ import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
-import { preferredRangeVs } from './plan'
+import { preferredRangeVs, corridorExposure } from './plan'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -200,6 +200,8 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     potionsLeft: input.potions ?? 0,
     pack: { ...(input.pack ?? {}) },   // §consumables: shallow-copy so the engine never mutates the input
     consumableSpecs: specs,
+    moveAbilities: (input.moveAbilities ?? []).map((a) => ({ ...a })),   // §blink: clone — engine never mutates input
+    moveAbilityCds: {},
     // §aggression: skittish monsters start non-hostile (won't acquire targets
     // until hit/called); everyone else is hostile from the start.
     provoked: !tactics.some((t) => t.def.id === 'skittish'),
@@ -434,6 +436,7 @@ const AVOID_BREAK_DIST = 8
 const AVOID_NEAR_DEST = 12        // once this close to the goal, stop avoiding onto an in-range spot
 function resetAvoidWatchdog(c: Combatant): void {
   c.avoidBest = undefined; c.avoidStuck = undefined; c.avoidPlowUntil = undefined; c.avoidSide = undefined
+  c.travelClearing = undefined
 }
 // The destination itself sits inside a visible foe's attack range (e.g. an exit ringed
 // by nightshades) — avoidance can NEVER reach it without entering a zone, so we must
@@ -445,10 +448,41 @@ function destInsideAZone(state: BattleState, self: Combatant, dest: Vec2): boole
   }
   return false
 }
-function avoidOrPlowPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 {
+// §priced routes (movement-action-coupling.md M3): the plow is no longer
+// unconditional. Before committing to walking straight through a threat wall,
+// price the corridor (corridorExposure — expected HP lost crossing it) against
+// a budget: a fraction of CURRENT hp. Affordable → plow exactly as before.
+// Over budget → **clear-first**: avoidOrPlowPoint returns null, the caller
+// hands movement back to the normal combat AI, and the unit turns and fights
+// the wall down instead of feeding itself to it. `travelClearing` (a plain
+// serialized field, legacy tokens → undefined) holds the committed decision
+// with a hysteresis exit so one kill doesn't flip it back and forth: the march
+// resumes only once the corridor price falls below budget × TRAVEL_CLEAR_EXIT.
+const TRAVEL_HP_BUDGET = 0.35     // fraction of current HP we'll spend forcing a corridor
+const TRAVEL_CLEAR_EXIT = 0.6     // resume marching once cost < budget × this (hysteresis)
+function corridorAffordable(state: BattleState, self: Combatant, dest: Vec2, exit: boolean): boolean {
+  const cost = corridorExposure(state, self, dest, moveSpeedOf(self) * WANDER_SPEED_MULT)
+  const budget = self.hp * TRAVEL_HP_BUDGET
+  return cost <= (exit ? budget * TRAVEL_CLEAR_EXIT : budget)
+}
+// The march point for an 'avoid' traveler this turn — or null for clear-first
+// (stop marching; fight until the corridor is affordable).
+function avoidOrPlowPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 | null {
+  // Committed to clearing: keep fighting until the corridor price drops below
+  // the exit bar, then resume the march with a fresh watchdog.
+  if (self.travelClearing) {
+    if (!corridorAffordable(state, self, dest, true)) return null
+    self.travelClearing = undefined
+    resetAvoidWatchdog(self)
+  }
   const d = distance(self.pos, dest)
-  // Near a goal that's ringed by threat zones → head straight in (can't avoid onto it).
-  if (d < AVOID_NEAR_DEST && destInsideAZone(state, self, dest)) return dest
+  // Near a goal that's ringed by threat zones → can't avoid onto it; head
+  // straight in when the last stretch is affordable, else clear the ring first.
+  if (d < AVOID_NEAR_DEST && destInsideAZone(state, self, dest)) {
+    if (corridorAffordable(state, self, dest, false)) return dest
+    self.travelClearing = true
+    return null
+  }
   // Mid-plow: keep driving straight at the goal until we've broken through the wall.
   if (self.avoidPlowUntil != null) {
     if (d <= self.avoidPlowUntil) resetAvoidWatchdog(self)   // through it — resume avoiding
@@ -458,6 +492,12 @@ function avoidOrPlowPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2
   if (self.avoidBest == null || d < self.avoidBest - 0.2) { self.avoidBest = d; self.avoidStuck = 0 }
   else self.avoidStuck = (self.avoidStuck ?? 0) + 1
   if ((self.avoidStuck ?? 0) >= AVOID_STUCK_TURNS) {
+    if (!corridorAffordable(state, self, dest, false)) {
+      // Boxed in AND the wall is too expensive to walk through — fight it down.
+      self.travelClearing = true
+      self.avoidStuck = 0; self.avoidBest = undefined
+      return null
+    }
     self.avoidPlowUntil = d - AVOID_BREAK_DIST   // commit to plowing through
     self.avoidStuck = 0; self.avoidBest = undefined
     return dest
@@ -1117,7 +1157,12 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
     // fixed multi-cell hop. `plan.rows` is now just the disengage intent.
     const speed = moveSpeedOf(self) * RETREAT_SPEED_MULT
     const before = { ...self.pos }
-    self.pos = slideMove(self.pos, { x: self.pos.x + (dx / len) * speed, y: self.pos.y + (dy / len) * speed }, state.barriers)
+    const walked = slideMove(self.pos, { x: self.pos.x + (dx / len) * speed, y: self.pos.y + (dy / len) * speed }, state.barriers)
+    // §blink: a disengage that fails to open the gap (backed into terrain)
+    // spends a ready teleport instead — same cornered rule as the kite retreat.
+    const near = nearestEnemyTo(self, state)
+    const cornered = !!near && distance(walked, near.pos) - distance(self.pos, near.pos) < speed * BLINK_WALK_MIN
+    if (!cornered || !tryBlinkEscape(state, self)) self.pos = walked
     enforceSeparation(self, state.combatants, state.barriers)
     if (self.pos.x !== before.x || self.pos.y !== before.y) {
       emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
@@ -1467,6 +1512,52 @@ function escapeHeading(state: BattleState, self: Combatant, nearest: Combatant, 
   return best
 }
 
+// §blink (movement-action-coupling.md M4): the cornered escape. Called when a
+// retreat is wanted but walking it barely moves (every heading blocked short) —
+// then a ready teleport jumps to the best sampled landing instead of dying in
+// the pocket. Landings: BLINK_SAMPLES directions at full range, in-arena, not
+// inside terrain, wall-LoS-gated when the ability needs line of sight (cliffs
+// never block — that's what makes Blink cross the moat). Scored by clearance
+// from provoked enemies with a cohesion nudge; must beat the current gap by
+// BLINK_GAIN or the cooldown is held. Deterministic: fixed sample order,
+// strict-improvement commit.
+const BLINK_SAMPLES = 16
+// "Cornered" = the best walking retreat fails to OPEN the threat gap by at
+// least this fraction of a step. Distance walked is the wrong signal — a unit
+// in a pocket can slide laterally forever without ever gaining an inch of
+// range; what matters is whether walking actually buys distance.
+const BLINK_WALK_MIN = 0.4
+const BLINK_GAIN = 2         // landing must open the nearest-threat gap by this many cells
+function tryBlinkEscape(state: BattleState, self: Combatant): boolean {
+  const ability = self.moveAbilities.find((a) => a.kind === 'teleport')
+  if (!ability || (self.moveAbilityCds[ability.kind] ?? 0) > 0) return false
+  const foes = visibleEnemiesOf(state, self).filter((e) => e.provoked)
+  if (foes.length === 0) return false
+  const gapAt = (p: Vec2) => {
+    let g = Infinity
+    for (const e of foes) g = Math.min(g, distance(p, e.pos))
+    return g
+  }
+  const coh = cohesionVec(self, state)
+  let best: Vec2 | null = null
+  let bestScore = -Infinity
+  for (let i = 0; i < BLINK_SAMPLES; i++) {
+    const ang = (i / BLINK_SAMPLES) * Math.PI * 2
+    const dx = Math.cos(ang), dy = Math.sin(ang)
+    const p = arenaClamp({ x: self.pos.x + dx * ability.range, y: self.pos.y + dy * ability.range })
+    if (pointBlocked(state.barriers, p)) continue
+    if (ability.needsLoS && !sightlineClear(self.pos, p, state.barriers)) continue
+    const score = gapAt(p) + COHESION_WEIGHT * (dx * coh.x + dy * coh.y)
+    if (score > bestScore + EPS) { bestScore = score; best = p }
+  }
+  if (!best || gapAt(best) < gapAt(self.pos) + BLINK_GAIN) return false
+  self.pos = { x: best.x, y: best.y }
+  self.moveAbilityCds[ability.kind] = ability.cooldown
+  self.escapeDir = null   // fresh heading after the jump — the old commitment is moot
+  emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+  return true
+}
+
 // Hold `want` gap from the NEAREST enemy, AND maintain a clear shot. We only
 // flee a threat that can actually close on us *directly* — if a movement barrier
 // (wall/cliff) lies between us it can't reach without a long detour, so fleeing
@@ -1534,7 +1625,12 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
     // of straight into a wall or another enemy.
     retreating = true
     const { x: dx, y: dy } = escapeHeading(state, self, threat, step)
-    self.pos = slideMove(self.pos, { x: self.pos.x + dx * step, y: self.pos.y + dy * step }, state.barriers)
+    const walked = slideMove(self.pos, { x: self.pos.x + dx * step, y: self.pos.y + dy * step }, state.barriers)
+    // §blink: even the BEST walking escape fails to open the gap → cornered
+    // (pinned against terrain, or only lateral shuffles left). Spend a ready
+    // teleport instead of sliding in the pocket until caught.
+    const cornered = distance(walked, threat.pos) - d < step * BLINK_WALK_MIN
+    if (!cornered || !tryBlinkEscape(state, self)) self.pos = walked
   } else if (aimOutOfRange) {
     // Not pressured by the nearest threat, but our locked target sits past firing
     // range: close STRAIGHT toward it until it's just inside our shoot range, so we
@@ -1791,7 +1887,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
   const engageThreat = self.moveOrder != null && self.moveEngage != null && self.provoked
     && visibleEnemiesOf(state, self).some((e) => e.provoked)
   if (self.moveOrder && !engageThreat) {
-    if (self.avoidBest != null || self.avoidPlowUntil != null) resetAvoidWatchdog(self)   // no threat in sight → next cluster starts fresh
+    if (self.avoidBest != null || self.avoidPlowUntil != null || self.travelClearing) resetAvoidWatchdog(self)   // no threat in sight → next cluster starts fresh
     if (self.statuses.some((s) => s.flags.includes('rooted'))) { pushTrace(self, round, 'order: rooted — hold'); self.lastHitById = null; return }
     const dest = self.moveOrder
     const posBefore = { ...self.pos }
@@ -1841,9 +1937,13 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // Both keep heading to the travel point rather than approaching the foe, so the
   // hero never veers off course to chase. A plain fight uses the normal movement AI.
   const travelMove = self.moveOrder
+  // §priced routes (M3): an 'avoid' traveler's march point, or null when the
+  // corridor is over budget (clear-first) — then movement falls through to the
+  // normal combat AI below and the unit fights the wall down before resuming.
+  const avoidPoint = self.moveEngage === 'avoid' && travelMove ? avoidOrPlowPoint(state, self, travelMove) : null
   const movePlan: MovementResult | null =
     self.moveEngage === 'retaliate' && travelMove ? { toPoint: travelMove, speedMult: WANDER_SPEED_MULT }
-    : self.moveEngage === 'avoid' && travelMove ? { toPoint: avoidOrPlowPoint(state, self, travelMove), speedMult: WANDER_SPEED_MULT }
+    : avoidPoint ? { toPoint: avoidPoint, speedMult: WANDER_SPEED_MULT }
     : applyLeash(state, self, evalMovement(state, self))
   executeMovement(state, self, movePlan)
   // §spacing: a final separation pass each turn — whatever the movement path
@@ -1904,7 +2004,7 @@ function takeTurn(state: BattleState, self: Combatant): void {
     executeNaiveAction(state, self)
   }
 
-  pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}${exploitNote ? ` · ⚡${exploitNote}` : ''}`)
+  pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}${exploitNote ? ` · ⚡${exploitNote}` : ''}${self.travelClearing ? ' · ⚔ clearing route' : ''}`)
   // consume "hit since last turn" so Counterattacker only fires on fresh hits
   self.lastHitById = null
 }
@@ -2004,6 +2104,9 @@ export function advanceRound(state: BattleState): BattleState {
     }
     for (const id of Object.keys(c.tacticCooldowns)) {
       if (c.tacticCooldowns[id] > 0) c.tacticCooldowns[id] -= 1
+    }
+    for (const id of Object.keys(c.moveAbilityCds)) {
+      if (c.moveAbilityCds[id] > 0) c.moveAbilityCds[id] -= 1   // §blink: same cadence as skills
     }
     // §wary-caster: a caster's "wariness" fades when it's left alone — decay
     // interruptedCount on a cadence so a couple of old disruptions don't make a
