@@ -488,6 +488,50 @@ same way" by penalising left-side detours.
   scorer fixes all three), sideboard/weapon-swap candidates (scorer already
   takes `skill: null` so it's swap-ready), and folding status-synergy/on-hit
   value into the score.
+- **Planning seams — the plan layer's next rungs** (`movement-action-coupling.md`;
+  the seam today is greedy 1-ply utility over a small candidate set — these are
+  the deeper interfaces it opens, roughly in build-value order):
+  - **Lookahead / rollout.** `simulateCandidate(state, self, cand, plies)` that
+    CLONES the BattleState and `advanceRound`s a few rounds, scoring the
+    *resulting* state instead of the immediate forecast. Turns greedy into
+    shallow search behind the same `scoreCandidate` interface; cheap and
+    trustworthy because the engine is RNG-free (one rollout = a real verdict).
+    Highest-leverage next seam — directly tests whether 1-ply is the ceiling.
+  - **Team-plan (joint) scoring.** Units score candidates *conditioned on* a
+    party plan (who tanks / focuses / peels / bodyguards), not just solo. Builds
+    on Team blackboard + Smart-party baseline above; this is the seam where
+    "converging fire, hold the chokepoint, guard the carry" actually lives.
+  - **Strategy commitment.** The "multi-channel tactic bundles" item above, plus
+    the missing half: a first-class Strategy the unit *commits to and holds*
+    across turns with an explicit "abandon this plan?" predicate — the
+    difference between re-deriving the best move each round and pursuing an
+    approach, noticing it fail, and switching.
+  - **Enemy prediction (exposure horizon > 0).** `exposureAt` prices threats
+    where they *stand* today. The forecast is already symmetric (it runs
+    `preferredAttackVs` for enemies), so running it forward a few rounds for the
+    ENEMY predicts pursuit/target movement — pricing chasers into corridors and
+    into blink-landing choices. Extension, not invention.
+  - **Utility vector / objectives.** "Value" is `forecast − exposure` today. A
+    composable utility (protect the objective, grab loot, conserve cooldowns…)
+    generalises the posture *columns* into content-declared objectives feeding
+    the same `scoreCandidate`.
+- **Blink landing quality** (extends M4 `tryBlinkEscape`). The escape scorer
+  ranks landings by raw euclidean clearance from provoked foes + cohesion. It
+  does NOT (a) prefer a landing that puts a BARRIER between the unit and its
+  pursuers — a cliff/wall is greater real distance for the chaser to clear AND
+  known ground (blinking back across a canyon should often beat a sideways hop);
+  (b) price EXPOSURE at the landing, so it can blink *into* danger (worse with
+  limited vision). Wants barrier-aware pursuer-distance (reuse `canReach` for
+  post-blink reachability) + `exposureAt` at each candidate landing. Ties into
+  Enemy prediction above.
+- **Hybrid-caster interrupt trap.** A melee+spell unit (e.g. a Bash + Frost Bolt
+  battlemage) stuck in melee, once its melee skill is on cooldown, prefers a
+  channeled bolt over closing — and gets the channel interrupted every round by
+  the adjacent foe, casting nothing. Casters have no basic-attack fallback
+  (`chooseAction`), so it just stalls. `forecastAction` already exposes
+  `finishable`; the action layer could prefer a melee/instant option when the
+  channel provably won't land (or an eventual "ignore/resist interrupt" passive
+  could change the math). Low priority — surfaced by the `kite-anchor` showcase.
 - **Ambush combo** — primitives exist (cloak, back-stab, flanker, ambusher);
   needs an orchestrator holding Cloak until in Back Stab range.
 - **Sneak Attack skill** — a learnable skill scaling the flat

@@ -57,15 +57,22 @@ describe('showcase catalog', () => {
     expect(find(b, 'grunt-a').hp + find(b, 'grunt-b').hp).toBeLessThan(320)
   })
 
-  it('posture-routes: wary clears-first where bold plows', () => {
+  it('posture-routes: wary clears-first where bold plows, both reach the far side', () => {
     const b = showcaseById('posture-routes')!.build()
     let warySawClearing = false, boldSawClearing = false
-    for (let r = 0; r < 120; r++) {
+    let boldArrived = -1, waryArrived = -1
+    for (let r = 0; r < 200; r++) {
       advanceRound(b)
       if (find(b, 'wary').travelClearing) warySawClearing = true
       if (find(b, 'bold').travelClearing) boldSawClearing = true
+      if (boldArrived < 0 && find(b, 'bold').pos.y < 8) boldArrived = r
+      if (waryArrived < 0 && find(b, 'wary').pos.y < 8) waryArrived = r
     }
-    expect(warySawClearing).toBe(true)    // wary stopped to fight the ring
-    expect(boldSawClearing).toBe(false)   // bold plowed through
+    expect(warySawClearing).toBe(true)    // wary stopped to shoot the picket down
+    expect(boldSawClearing).toBe(false)   // bold plowed straight through
+    expect(boldArrived).toBeGreaterThan(0)          // both cross to the far side (routing past the enemies)
+    expect(waryArrived).toBeGreaterThan(0)
+    expect(boldArrived).toBeLessThan(waryArrived)   // bold gets there first; wary trades speed for safety
+    expect(find(b, 'wary').hp).toBeGreaterThan(find(b, 'bold').hp - 1)   // wary no worse off than bold (cleared from range)
   })
 })

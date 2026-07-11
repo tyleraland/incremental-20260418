@@ -114,39 +114,40 @@ function moatKite(): BattleState {
 
 // ── 4. Three stances, one gauntlet (M3 + posture): the toll ring ─────────────
 function postureRoutes(): BattleState {
-  // Three heroes — bold / steady / wary — each ordered ('avoid') to a point past
-  // an identical ring of stationary archers. Same corridor, same HP; the posture
-  // alone decides: bold plows through, wary stops to clear the ring first, steady
-  // between. Watch the ⚔ clearing state in each hero's Plan panel (Debug tab).
+  // Three ARCHER heroes — bold / steady / wary — each ordered ('avoid') to a
+  // point FAR on the other side of an identical picket of enemy archers blocking
+  // the lane. The heroes out-range the picket (r5 vs r4), so clearing is safe and
+  // favourable — which is the whole point: bold prices the crossing affordable
+  // and plows straight through (eats the picket's fire, arrives hurt, but keeps
+  // going); wary prices it too costly, halts to shoot the picket down from
+  // outside its range (takes little), THEN completes the route. steady is
+  // between. The destination sits well past the picket so the routing effect —
+  // the hero carrying on afterwards — is actually visible.
   const lanes: { id: string; posture: Posture; cx: number }[] = [
-    { id: 'bold',   posture: 'bold',   cx: 8 },
-    { id: 'steady', posture: 'steady', cx: 24 },
-    { id: 'wary',   posture: 'wary',   cx: 40 },
+    { id: 'bold',   posture: 'bold',   cx: 9 },
+    { id: 'steady', posture: 'steady', cx: 25 },
+    { id: 'wary',   posture: 'wary',   cx: 41 },
   ]
   const players: EngineUnitInput[] = lanes.map((l) => mk({
-    id: l.id, team: 'player', name: l.id.toUpperCase(), str: 26, def: 6, maxHp: 260, hp: 260,
-    moveSpeed: 0.95, meleeRange: 1.4, posture: l.posture, visionRange: 24,
+    id: l.id, team: 'player', name: l.id.toUpperCase(), str: 20, def: 6, rangedRange: 5, maxHp: 240, hp: 240,
+    // Vision below the 16-cell lane spacing so a hero only ever engages its OWN
+    // lane's picket (no wandering off to fight a neighbour's).
+    moveSpeed: 0.95, meleeRange: 1.4, posture: l.posture, visionRange: 11, tactics: [{ id: 'kiter', rank: 1 }],
   }))
-  // A 4-archer arc RINGING the destination on the hero's approach side (the
-  // hero comes from the south / high y, so the arc sits just south of the dest
-  // at sin(a) > 0). The destination is inside the ring → 'avoid' can't skirt it;
-  // the hero must plow or clear-first. Tuned so the straight-corridor price
-  // lands between wary's budget (20%) and bold's (50%): bold plows, wary clears.
-  const ringAngles = [45, 80, 100, 135]
+  // A 5-wide picket across each lane at mid-route — a wall the 'avoid' steer
+  // can't skirt within the lane, so the hero must plow or clear. Tuned so the
+  // straight-corridor price lands between wary's budget (20% hp) and bold's (50%).
+  const picket = [-6, -3, 0, 3, 6]
   const enemies: EngineUnitInput[] = []
-  for (const l of lanes) for (const _ of ringAngles) {
-    enemies.push(mk({ id: `${l.id}-e${enemies.length}`, team: 'enemy', name: 'Archer', str: 10, def: 3, rangedRange: 4, maxHp: 44, hp: 44, moveSpeed: 0 }))
+  for (const l of lanes) for (const _ of picket) {
+    enemies.push(mk({ id: `${l.id}-e${enemies.length}`, team: 'enemy', name: 'Archer', str: 8, def: 3, rangedRange: 4, maxHp: 60, hp: 60, moveSpeed: 0 }))
   }
-  const b = createBattle({ playerUnits: players, enemyUnits: enemies, mode: 'open', cols: 50, rows: 44 })
+  const b = createBattle({ playerUnits: players, enemyUnits: enemies, mode: 'open', cols: 52, rows: 52 })
   let ei = 0
   for (const l of lanes) {
-    at(b, l.id, l.cx, 40)
-    const dest = { x: l.cx, y: 14 }
-    for (const deg of ringAngles) {
-      const a = (deg * Math.PI) / 180
-      at(b, `${l.id}-e${ei++}`, dest.x + 5 * Math.cos(a), dest.y + 5 * Math.sin(a))
-    }
-    issueMoveOrder(b, l.id, dest, 'avoid')
+    at(b, l.id, l.cx, 46)               // start near the bottom edge
+    for (const dx of picket) at(b, `${l.id}-e${ei++}`, l.cx + dx, 26)   // picket across the lane, mid-route
+    issueMoveOrder(b, l.id, { x: l.cx, y: 6 }, 'avoid')   // destination FAR past the picket
   }
   return b
 }
@@ -176,8 +177,8 @@ export const SHOWCASES: Showcase[] = [
   {
     id: 'posture-routes',
     title: 'Three stances, one gauntlet',
-    blurb: 'Bold / steady / wary heroes ordered through identical archer rings — posture alone decides plow vs clear-first.',
-    watch: 'BOLD plows straight through; WARY stops to kill the ring first; STEADY is between. (Debug tab → Plan → route price / ⚔ clearing.)',
+    blurb: 'Bold / steady / wary archers ordered past an identical picket — the posture dial alone decides how each crosses.',
+    watch: 'BOLD drives straight through and reaches the far side first (takes some fire); WARY halts to shoot the picket down from outside its range, then follows — unhurt but last. Both routes continue well past the enemies. (Debug tab → Plan → route price / ⚔ clearing.)',
     build: postureRoutes,
   },
 ]
