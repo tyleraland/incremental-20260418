@@ -290,3 +290,68 @@ describe('M1 — smart-party targeting baseline', () => {
     expect(reloaded.plans.enemy).toEqual(b.plans.enemy)
   })
 })
+
+// Review findings #1/#11: the switch margin is floored (PRIMARY_SCORE_FLOOR)
+// so a zero-score incumbent isn't "beaten" by anything nonnegative every
+// round, and sinceRound survives every path that lands on the same primary.
+describe('M1 — kill-order hysteresis at zero score', () => {
+  const setup = () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p1', str: 1 }), eu({ id: 'p2', str: 1 })],
+      enemyUnits: [
+        eu({ id: 'z1', team: 'enemy', str: 0, maxHp: 300, hp: 300 }),
+        eu({ id: 'z2', team: 'enemy', str: 0, maxHp: 300, hp: 300 }),
+      ],
+      mode: 'open', cols: 100, rows: 100,
+    })
+    for (const id of ['p1', 'p2']) find(b, id).visionRange = 12
+    find(b, 'p1').pos = { x: 20, y: 20 }
+    find(b, 'p2').pos = { x: 21, y: 20 }
+    find(b, 'z1').pos = { x: 25, y: 20 }
+    return b
+  }
+
+  it('harmless incumbent holds against another harmless enemy; sinceRound never resets', () => {
+    const b = setup()
+    find(b, 'z2').pos = { x: 26, y: 20 }
+    const primaries = new Set<string>()
+    let since: number | null = null
+    for (let i = 0; i < 10; i++) {
+      advanceRound(b)
+      const e = b.plans.player?.engagement
+      if (!e?.primaryId) continue
+      primaries.add(e.primaryId)
+      if (since === null) since = e.sinceRound
+      else expect(e.sinceRound).toBe(since)
+    }
+    expect(primaries.size).toBe(1)
+  })
+
+  it('harmless incumbent is displaced only when a challenger clears the floored margin', () => {
+    const b = setup()
+    // Trash (str 3, fat hp) parked out of sight; dangerous foe likewise.
+    const trash = eu({ id: 'zt', team: 'enemy', str: 3, maxHp: 300, hp: 300 })
+    const danger = eu({ id: 'zd', team: 'enemy', str: 40, maxHp: 20, hp: 20 })
+    const b2 = createBattle({
+      playerUnits: [eu({ id: 'p1', str: 1 }), eu({ id: 'p2', str: 1 })],
+      enemyUnits: [eu({ id: 'z1', team: 'enemy', str: 0, maxHp: 300, hp: 300 }), trash, danger],
+      mode: 'open', cols: 100, rows: 100,
+    })
+    for (const id of ['p1', 'p2']) find(b2, id).visionRange = 12
+    find(b2, 'p1').pos = { x: 20, y: 20 }
+    find(b2, 'p2').pos = { x: 21, y: 20 }
+    find(b2, 'z1').pos = { x: 25, y: 20 }
+    find(b2, 'zt').pos = { x: 90, y: 90 }
+    find(b2, 'zd').pos = { x: 90, y: 10 }
+    advanceRound(b2)
+    expect(b2.plans.player?.engagement?.primaryId).toBe('z1')
+    // Trash enters vision: score ≈ threat·partySustained/hp = 3·2/300 ≪ 1.25 → z1 holds.
+    find(b2, 'zt').pos = { x: 27, y: 20 }
+    advanceRound(b2)
+    expect(b2.plans.player?.engagement?.primaryId).toBe('z1')
+    // Real danger enters: 40·2/20 = 4 ≥ 1.25×max(1, 0) → the party retargets.
+    find(b2, 'zd').pos = { x: 27, y: 21 }
+    advanceRound(b2)
+    expect(b2.plans.player?.engagement?.primaryId).toBe('zd')
+  })
+})

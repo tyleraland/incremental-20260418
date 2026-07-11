@@ -12,7 +12,7 @@ import { effectiveStat, skillDamageEstimate } from './damage'
 import { armoredFactor } from './tactics'
 import { isStealthed } from './behavior'
 import { EPS, CAMP_RADIUS, HUNT_RETAIN_MULT } from './constants'
-import { PRIMARY_SWITCH_MARGIN } from './tuning'
+import { PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR } from './tuning'
 import type { BattleState, Combatant, Engagement, KitCapability, Team } from './types'
 
 // §acumen (tactical-coordination.md §3.2): smart members make a smart party.
@@ -108,7 +108,32 @@ export function decideEngagement(
   const sees = (e: Combatant, mult: number) =>
     members.some((m) => distance(m.pos, e.pos) <= m.visionRange * mult)
   const visible = enemies.filter((e) => !isStealthed(e) && sees(e, 1))
-  if (visible.length === 0) return { engagement: null, avoidTargetIds: [] }
+
+  // The incumbent gets the SAME retention grace pickHuntTarget gives (out to
+  // HUNT_RETAIN_MULT× vision) checked independently of the plain-vision `visible`
+  // set — otherwise a primary that has drifted just past 1× vision with nothing
+  // else around (visible.length === 0) would hit the "nothing visible" bail below
+  // before this check ever ran, dropping the commitment the grace period exists
+  // to preserve.
+  const incumbent = prevEngagement?.primaryId
+    ? enemies.find((e) => e.id === prevEngagement!.primaryId)
+    : undefined
+  const incumbentRetainable = !!(
+    incumbent && incumbent.alive && !isStealthed(incumbent) && sees(incumbent, HUNT_RETAIN_MULT)
+  )
+
+  if (visible.length === 0) {
+    if (!incumbentRetainable) return { engagement: null, avoidTargetIds: [] }
+    // Nothing at plain vision, but the incumbent is still within the grace
+    // radius — hold the commitment with no challenger to weigh it against.
+    return {
+      engagement: {
+        targetIds: [incumbent!.id], primaryId: incumbent!.id, anchor: null,
+        stance: 'collapse', sinceRound: prevEngagement!.sinceRound,
+      },
+      avoidTargetIds: [],
+    }
+  }
 
   const partySustained = members.reduce((sum, m) => sum + (m.capability?.sustainedDamage ?? 0), 0)
   const killScore = (e: Combatant): number => {
@@ -127,18 +152,21 @@ export function decideEngagement(
   }
 
   let primary = challenger
-  let sinceRound = state.round
-  const incumbent = prevEngagement?.primaryId
-    ? enemies.find((e) => e.id === prevEngagement!.primaryId)
-    : undefined
-  if (incumbent && incumbent.alive && !isStealthed(incumbent) && sees(incumbent, HUNT_RETAIN_MULT)) {
-    const incumbentScore = killScore(incumbent)
-    const beaten = challengerScore >= (1 + PRIMARY_SWITCH_MARGIN) * incumbentScore - EPS
-    if (!beaten) {
-      primary = incumbent
-      sinceRound = prevEngagement!.sinceRound
-    }
+  if (incumbentRetainable) {
+    const incumbentScore = killScore(incumbent!)
+    // Floored like selectTarget's pull slack (PULL_FRACTION × max(PULL_FLOOR, …)):
+    // a multiplicative margin alone is no protection at score 0 — a harmless
+    // incumbent (egg-sac) would be "beaten" by any challenger every round,
+    // including another harmless one (primary thrash). The floor means only a
+    // genuinely dangerous newcomer clears the bar over a zero-score incumbent.
+    const beaten = challengerScore >= (1 + PRIMARY_SWITCH_MARGIN) * Math.max(PRIMARY_SCORE_FLOOR, incumbentScore) - EPS
+    if (!beaten) primary = incumbent!
   }
+  // sinceRound survives any path that lands on the same primary (including
+  // challenger === incumbent), not just the not-beaten branch.
+  const sinceRound = prevEngagement && primary.id === prevEngagement.primaryId
+    ? prevEngagement.sinceRound
+    : state.round
 
   // Camp: visible enemies near the primary. Guard-add the primary itself in
   // case commitment hysteresis retained it just outside tight vision this

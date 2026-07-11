@@ -56,6 +56,15 @@ export const BLINK_WALK_MIN = 0.4
 // dangerous foes each decision round; too big → the party keeps grinding a
 // target that's clearly no longer the best pick.
 export const PRIMARY_SWITCH_MARGIN = 0.25
+// PRIMARY_SCORE_FLOOR ⏱: additive floor under the incumbent's score inside the
+// switch-margin comparison (the PULL_FLOOR pattern one level up) — without it a
+// zero-score incumbent (harmless egg-sac) is "beaten" by ANY challenger every
+// decision round, including another harmless one (primary thrash at zero). On
+// the killScore scale (threat × partySustained ÷ hp): 1 ≈ a foe with threat 5,
+// 60 hp vs a 15-sustained party — real danger clears it, trash doesn't. Too
+// high → the party stays locked on a harmless target while a modest but real
+// threat closes in.
+export const PRIMARY_SCORE_FLOOR = 1
 
 // ── Postures (the player's behavior dial) ────────────────────────────────────
 //
