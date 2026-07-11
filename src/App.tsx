@@ -106,9 +106,16 @@ function App() {
   const perfMode = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('perf')
 
   // The Battle Sandbox (`?sandbox=1`) seeds + drives its OWN synthetic scene (a
-  // composed density scene or a pasted BSNAP replay) and must never load or
-  // overwrite the real save — same no-persist gate as ?perf.
-  const sandboxMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('sandbox')
+  // composed density scene, a named showcase, or a pasted BSNAP replay) and must
+  // never load or overwrite the real save — same no-persist gate as ?perf.
+  // A shared battle DEEP-LINK (`?showcase=<id>` / `?bsnap=<token>`) always opens
+  // the sandbox replay — even for a curated-marked returning visitor — since it's
+  // an explicit request to view one battle and (like all sandbox scenes) touches
+  // no save.
+  const battleLink = typeof window !== 'undefined'
+    && (new URLSearchParams(window.location.search).has('showcase') || new URLSearchParams(window.location.search).has('bsnap'))
+  const sandboxMode = typeof window !== 'undefined'
+    && (battleLink || (devToolsEnabled() && new URLSearchParams(window.location.search).has('sandbox')))
   // The Monster Lab (?monsterlab=1) hosts a Battle Simulator that seeds a
   // synthetic scene into the store (same seeder as the Battle Sandbox). Gate it
   // no-persist so those shallow-copied heroes + tuned monsters can NEVER be
@@ -176,12 +183,13 @@ function App() {
     return () => clearInterval(id)
   }, [noPersist])
 
+  // A shared battle deep-link opens the sandbox regardless of progression mode.
+  if (sandboxMode) return <DevPage><PerfSandbox /></DevPage>
   if (typeof window !== 'undefined' && devToolsEnabled()) {
     const params = new URLSearchParams(window.location.search)
     if (params.has('gallery'))  return <DevPage><SkinGallery /></DevPage>
     if (params.has('workshop')) return <DevPage><AssetWorkshop /></DevPage>
     if (params.has('mapgen'))   return <DevPage><MapgenLab /></DevPage>
-    if (params.has('sandbox'))  return <DevPage><PerfSandbox /></DevPage>
     if (params.has('monsterlab')) return <DevPage><MonsterLab /></DevPage>
     if (params.has('bodyshot')) return <DevPage><BodySheet /></DevPage>
   }

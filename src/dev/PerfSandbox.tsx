@@ -18,11 +18,12 @@ import { INITIAL_UNITS } from '@/data/units'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { isDraftMonster, setDraftMonster } from '@/data/monsterOverrides'
 import { BattleView } from '@/components/BattleView'
-import { advanceRound, type Combatant, type Vec2 } from '@/engine'
+import { advanceRound, serializeBattle, type Combatant, type Vec2 } from '@/engine'
 import { TICKS_PER_SECOND } from '@/lib/time'
 import { seedSimBattle, loadBsnapScene, scatterPos } from './simBattle'
+import { SHOWCASES, showcaseById } from './showcaseBattles'
 
-type SandboxSource = 'compose' | 'bsnap'
+type SandboxSource = 'compose' | 'showcase' | 'bsnap'
 
 const SANDBOX_LOC = 'perf-sandbox'
 
@@ -37,7 +38,13 @@ export default function PerfSandbox() {
   const [picker, setPicker] = useState(() => initialMonsterId())
   const [mapId, setMapId] = useState('custom')     // 'custom' | a real open-world location id
   const [customSize, setCustomSize] = useState(60)
-  const [panelOpen, setPanelOpen] = useState(true)
+  // A shared battle deep-link arrives with the panel collapsed so the field +
+  // caption fill the view (the viewer taps "Show ▼" to tweak); a normal sandbox
+  // visit opens with the controls up.
+  const [panelOpen, setPanelOpen] = useState(() => {
+    const p = new URLSearchParams(window.location.search)
+    return !(p.has('showcase') || p.has('bsnap'))
+  })
   const [monsterRev, setMonsterRev] = useState(0)
   // Grab-and-place mode: drag a token on the field to a spot (sandbox only).
   const [repositionMode, setRepositionMode] = useState(false)
@@ -48,10 +55,26 @@ export default function PerfSandbox() {
     [monsterRev],
   )
 
-  // Scene source: composed density scene vs a pasted BSNAP replay.
-  const [source, setSource] = useState<SandboxSource>('compose')
+  // Scene source: composed density scene · a named showcase · a pasted BSNAP.
+  // Initialised from the deep-link so the compose-rebuild effect doesn't seed an
+  // empty scene over the linked battle on mount (source !== 'compose' → it skips).
+  const [source, setSource] = useState<SandboxSource>(() => {
+    const p = new URLSearchParams(window.location.search)
+    const sc = p.get('showcase')
+    if (sc && showcaseById(sc)) return 'showcase'
+    if (p.has('bsnap')) return 'bsnap'
+    return 'compose'
+  })
   const [bsnapText, setBsnapText] = useState('')
   const [bsnapStatus, setBsnapStatus] = useState<string | null>(null)
+  const [showcaseId, setShowcaseId] = useState(() => {
+    const sc = new URLSearchParams(window.location.search).get('showcase')
+    return sc && showcaseById(sc) ? sc : SHOWCASES[0].id
+  })
+  // Caption banner (a showcase's blurb, or a shared link's ?title) + a
+  // copy-link confirmation.
+  const [caption, setCaption] = useState<{ title: string; watch: string } | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
   // Perf-test lever: freeze "normal play" (the full store tick — world clock,
   // spawns/trickle, per-unit regen/KO/pack reconcile) and advance ONLY the battle
   // under test. Tokens keep moving (the render load a perf test measures) while the
@@ -63,8 +86,9 @@ export default function PerfSandbox() {
   const sourceRef = useRef(source)
   sourceRef.current = source
   const engineOnlyRef = useRef(false)
-  // BSNAP replay is engine-only by construction; Compose honours the freeze toggle.
-  engineOnlyRef.current = source === 'bsnap' || pauseNormalPlay
+  // A replay (Showcase / BSNAP) is engine-only by construction; Compose honours
+  // the freeze toggle.
+  engineOnlyRef.current = source !== 'compose' || pauseNormalPlay
 
   // The sandbox is primarily a visual/perf surface for the live battle renderer:
   // show authored paper assets by default even if an older localStorage toggle
@@ -132,6 +156,7 @@ export default function PerfSandbox() {
     try {
       const b = loadBsnapScene(SANDBOX_LOC, bsnapText)
       setSource('bsnap')
+      setCaption(null)
       useGameStore.setState({ paused: true })
       setBsnapStatus(`Loaded — round ${b.round} · ${b.combatants.length} combatants · ${b.mode} · ${b.cols}×${b.rows}`)
     } catch (e) {
@@ -139,14 +164,71 @@ export default function PerfSandbox() {
     }
   }, [bsnapText])
 
-  // Start paused so the scene stands at rest; own the tick loop (App.tsx's is
-  // disabled under ?sandbox). One step per interval, honouring pause. Engine-only
-  // (BSNAP replay, or Compose with "pause normal play") advances just the watched
-  // battle's rounds directly, bypassing the store's world clock + open-world spawn/
-  // reconcile machinery; a full Compose tick drives spawns + trickle + per-unit
-  // systems (the "normal play" a perf test may want frozen).
+  // Load a named showcase (build → serialize → replay, so what you watch is a
+  // faithful BSNAP replay identical to a shared link). Sets the caption banner.
+  const loadShowcase = useCallback((id: string, play = false) => {
+    const sc = showcaseById(id)
+    if (!sc) return
+    loadBsnapScene(SANDBOX_LOC, serializeBattle(sc.build()))
+    setSource('showcase')
+    setShowcaseId(id)
+    setCaption({ title: sc.title, watch: sc.watch })
+    useGameStore.setState({ paused: !play })
+  }, [])
+
+  // Build a shareable deep-link to the CURRENT battle and copy it. Prefers the
+  // short ?showcase=id form when a named scene is loaded; otherwise embeds the
+  // live battle as a ?bsnap token. Always ?sandbox=1 + ?play=1 so it opens ready.
+  const copyShareLink = useCallback(() => {
+    const url = new URL(window.location.href)
+    url.search = ''
+    url.searchParams.set('sandbox', '1')
+    url.searchParams.set('play', '1')
+    if (source === 'showcase') {
+      url.searchParams.set('showcase', showcaseId)
+    } else {
+      const battle = useGameStore.getState().battles[SANDBOX_LOC]
+      if (!battle) return
+      url.searchParams.set('bsnap', serializeBattle(battle))
+    }
+    navigator.clipboard?.writeText(url.toString())
+    setLinkCopied(true)
+    window.setTimeout(() => setLinkCopied(false), 1800)
+  }, [source, showcaseId])
+
+  // Deep-link: `?showcase=<id>` or `?bsnap=<token>` auto-loads on mount;
+  // `?play=1` starts it running, `?title=` overrides the caption. Runs once.
+  const deepLinked = useRef(false)
   useEffect(() => {
-    useGameStore.setState({ paused: true })
+    if (deepLinked.current) return
+    deepLinked.current = true
+    const params = new URLSearchParams(window.location.search)
+    const play = params.has('play')
+    const sc = params.get('showcase')
+    const token = params.get('bsnap')
+    if (sc && showcaseById(sc)) { loadShowcase(sc, play); return }
+    if (token) {
+      try {
+        const b = loadBsnapScene(SANDBOX_LOC, token)
+        setSource('bsnap')
+        setBsnapText(token)
+        const title = params.get('title')
+        setCaption(title ? { title, watch: '' } : null)
+        setBsnapStatus(`Loaded — round ${b.round} · ${b.combatants.length} combatants · ${b.mode} · ${b.cols}×${b.rows}`)
+        useGameStore.setState({ paused: !play })
+      } catch { /* bad token → fall through to the empty compose scene */ }
+    }
+  }, [loadShowcase])
+
+  // Start paused so the scene stands at rest — UNLESS a `?play=1` deep-link asked
+  // to auto-run (the deep-link effect above already set paused false; don't clobber
+  // it). Own the tick loop (App.tsx's is disabled under ?sandbox). One step per
+  // interval, honouring pause. Engine-only (Showcase/BSNAP replay, or Compose with
+  // "pause normal play") advances just the watched battle's rounds directly,
+  // bypassing the store's world clock + open-world spawn/reconcile machinery; a
+  // full Compose tick drives spawns + trickle + per-unit systems.
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('play')) useGameStore.setState({ paused: true })
     const id = setInterval(() => {
       const s = useGameStore.getState()
       if (s.paused) return
@@ -251,6 +333,14 @@ export default function PerfSandbox() {
         <BattleView locationId={SANDBOX_LOC} repositionEnabled={repositionMode} onReposition={handleReposition} />
       </div>
 
+      {/* Caption banner — a showcase's title/what-to-watch (or a shared link's ?title) */}
+      {caption && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[95] max-w-[min(90vw,32rem)] rounded-xl border border-game-border bg-game-surface/95 backdrop-blur px-4 py-2 shadow-2xl text-center">
+          <div className="text-sm font-semibold text-game-text">{caption.title}</div>
+          {caption.watch && <div className="mt-0.5 text-[11px] text-game-accent leading-snug">Watch: {caption.watch}</div>}
+        </div>
+      )}
+
       {/* control panel — a floating card so it overlays the field */}
       <div className="absolute top-2 right-2 z-[90] w-72 max-w-[85vw] max-h-[88vh] flex flex-col rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl">
         <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border">
@@ -260,14 +350,14 @@ export default function PerfSandbox() {
 
         {panelOpen && (
           <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4 text-sm">
-            {/* Source: composed density scene vs a pasted BSNAP replay */}
-            <div className="grid grid-cols-2 gap-1.5">
-              {(['compose', 'bsnap'] as SandboxSource[]).map((src) => (
+            {/* Source: composed density scene · a named showcase · a BSNAP replay */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['compose', 'showcase', 'bsnap'] as SandboxSource[]).map((src) => (
                 <button
                   key={src}
                   onClick={() => setSource(src)}
                   className={['h-8 rounded-lg border text-xs font-medium capitalize', source === src ? 'border-game-primary bg-game-primary/15 text-game-primary' : 'border-game-border text-game-text-dim hover:text-game-text'].join(' ')}
-                >{src === 'bsnap' ? 'BSNAP replay' : 'Compose'}</button>
+                >{src === 'bsnap' ? 'BSNAP' : src}</button>
               ))}
             </div>
 
@@ -278,11 +368,16 @@ export default function PerfSandbox() {
                 className={['flex-1 h-9 rounded-lg border text-sm font-medium', paused ? 'border-game-green/60 bg-game-green/15 text-game-green' : 'border-game-gold/60 bg-game-gold/15 text-game-gold'].join(' ')}
               >{paused ? '▶ Play' : '⏸ Pause'}</button>
               <button
-                onClick={source === 'bsnap' ? loadBsnap : rebuild}
+                onClick={source === 'bsnap' ? loadBsnap : source === 'showcase' ? () => loadShowcase(showcaseId) : rebuild}
                 disabled={source === 'bsnap' && !bsnapText.trim()}
                 className="h-9 px-3 rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-xs disabled:opacity-40 disabled:hover:text-game-text-dim"
-                title={source === 'bsnap' ? 'Reload the snapshot from its first round' : 'Re-seed the scene'}
-              >{source === 'bsnap' ? '↻ Reset' : '↻ Rebuild'}</button>
+                title={source === 'compose' ? 'Re-seed the scene' : 'Reload from the first round'}
+              >{source === 'compose' ? '↻ Rebuild' : '↻ Reset'}</button>
+              <button
+                onClick={copyShareLink}
+                className="h-9 px-3 rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-xs"
+                title="Copy a shareable link to this exact battle"
+              >{linkCopied ? '✓ Copied' : '🔗 Link'}</button>
             </div>
             <div className="text-[11px] text-game-text-dim tabular-nums">
               live: <span className="text-blue-300">{live.heroes} heroes</span> · <span className="text-red-300">{live.foes} foes</span> · round {live.round}
@@ -337,6 +432,32 @@ export default function PerfSandbox() {
                 {bsnapStatus && <div className="text-[11px] text-game-accent leading-snug">{bsnapStatus}</div>}
                 <p className="text-[10px] text-game-text-dim leading-snug">
                   Advances one engine round per tick — a faithful, byte-identical replay of <span className="font-mono">npm run bsnap</span>. Play/pause, follow a token, inspect. Does not touch your save.
+                </p>
+              </div>
+            )}
+
+            {/* Showcase source — a curated scene per plan-layer behaviour */}
+            {source === 'showcase' && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] uppercase tracking-widest text-game-muted">Scenario</span>
+                <select
+                  value={showcaseId}
+                  onChange={(e) => loadShowcase(e.target.value)}
+                  className="w-full h-8 rounded-md border border-game-border bg-game-bg px-2 text-xs"
+                >
+                  {SHOWCASES.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+                </select>
+                {(() => {
+                  const sc = showcaseById(showcaseId)
+                  return sc ? (
+                    <div className="space-y-1">
+                      <p className="text-[11px] text-game-text leading-snug">{sc.blurb}</p>
+                      <p className="text-[10px] text-game-accent leading-snug">Watch: {sc.watch}</p>
+                    </div>
+                  ) : null
+                })()}
+                <p className="text-[10px] text-game-text-dim leading-snug">
+                  ▶ Play to run it. Tap a unit → Debug tab for its live Plan panel. 🔗 Link copies a short shareable URL.
                 </p>
               </div>
             )}

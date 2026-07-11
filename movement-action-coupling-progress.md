@@ -347,3 +347,25 @@ consistent with the pre-existing avoid*/escapeDir precedent.
   posture budget (+ the ⚔ clearing flag) while marching 'avoid', blink
   range/cooldown, and the posture row. The copy-to-share debug dump gains
   the same line, so bug reports carry it. Tests: `PlanPanel.test.tsx`.
+
+### Showcase battles + deep-linkable sandbox (this slice)
+- `src/dev/showcaseBattles.ts` — four curated, deterministic scenes, each
+  isolating one behaviour: `kite-anchor` (right range per target: melee the
+  magic-immune golem, range the sorcerer), `blink-escape` (teleport out of a
+  cliff pocket), `moat-kite` (hold + fire across a cliff, don't path around),
+  `posture-routes` (bold/steady/wary through identical archer rings — plow vs
+  clear-first). Pure builders over the public engine API.
+- Battle Sandbox (`?sandbox=1`) gains a **Showcase** source (dropdown +
+  blurb/what-to-watch) alongside Compose and BSNAP, and **deep-links**:
+  `?showcase=<id>` (short) or `?bsnap=<token>` (any battle) auto-load on
+  mount; `?play=1` auto-runs; `?title=` captions. A 🔗 Link button copies a
+  shareable URL to the current battle (short showcase form when applicable,
+  else an embedded BSNAP). Shared links open the sandbox regardless of
+  progression mode (App.tsx), never touch the save (noPersist), and arrive
+  with the control panel collapsed + a caption banner for a clean view.
+- Tests: `showcase.test.ts` (each scene builds, round-trips through a BSNAP,
+  and exhibits its advertised behaviour); live-probed in a browser (caption,
+  load, auto-play, zero console errors).
+- Combined with the Plan panel (Debug tab), a viewer can watch a strategy AND
+  read the exact numbers driving it — the seam is now demonstrable, not just
+  described.
