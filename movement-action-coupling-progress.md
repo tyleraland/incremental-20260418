@@ -2,6 +2,8 @@
 
 Running status of the milestones in `movement-action-coupling.md`.
 Review companion: what shipped, where, what was deliberately deferred.
+Also: §Capability scenarios (complexity stress-tests to build next) and
+§Tech debt (what to pay down for dev velocity).
 
 ## Shipped
 
@@ -130,3 +132,124 @@ the three motivating examples mapped, constraints, milestones M0–M4.
   reachability, move-order marches over gaps); overworld gated edges have the
   seam but no live content uses them.
 - Monster `moveAbilities` (a blinking monster) — adapter maps heroes only.
+
+## Capability scenarios — stress-testing the new infrastructure
+
+Concrete setups that exercise several seams AT ONCE, in rough build order.
+Each names the seams under test, the pass condition, and the harness
+(`SCENARIO_REGISTRY` entry, engine test, or a `?mapgen=1`-style lab). These
+are the "does it handle complexity" probes, distinct from the unit tests —
+each is designed so a plausible-but-wrong implementation fails it visibly.
+
+1. **The toll ring** (M3 pricing sharpness). One gauntlet map, three
+   travelers: 60 HP glass courier, 250 HP bruiser, 600 HP tank, identical
+   'avoid' orders through the same 5-shooter ring. Pass: tank plows, bruiser
+   clears 1–2 shooters then walks, courier clears the whole arc — the SAME
+   code choosing three different behaviors purely from the budget. Fails if
+   pricing is binary (everyone clears or everyone plows). Engine test.
+
+2. **The moving wall** (M3 vs mobile threats — a known gap, horizon 0).
+   The ring, but the shooters slowly patrol. Today's pricing treats threats
+   where they stand; this scenario MEASURES how wrong that is (expected vs
+   actual HP loss crossing). It's the calibration harness for adding a
+   pursuit horizon to `exposureAt` when we decide to. Engine test with an
+   HP-loss tolerance band.
+
+3. **Bolt-hole duel** (M2 forecast + M4 blink + kite safety interacting).
+   A cliff-pocket arena: blink mage vs faster melee chaser, repeated
+   pocket-corner-blink cycles. Pass: mage sustains DPS while never dying to
+   a corner (blink saves it), AND the blink cooldown forces at least one
+   walked escape per cycle (i.e. blink is spent, not hoarded, but walking
+   still happens — exercises the cornered rule's both sides). Watch for
+   blink-into-the-OTHER-corner failures: the landing scorer only reads
+   current enemy positions, not the chaser's pursuit.
+
+4. **The archipelago** (M4 pathing + hunt + logistics stacked). A mapgen
+   map of 3 islands over cliff water: hero A has Blink, hero B doesn't;
+   monsters on island 2, loot hauling to a city on island 1. Pass: A hunts
+   across gaps (needs the deferred teleport-aware `pickHuntTarget`), B never
+   strands at the bank; the expedition loop routes A's returns across the
+   gated overworld edge and B the long way. This is the scenario that
+   FORCES the two deferred M4 wirings (hunt reachability, store-side caps
+   plumbing) — build it to drive them.
+
+5. **Skill-x-vs-y positional duel** (M2's reason to exist). A hero with
+   Bash (1.2) + Frost Bolt (6) vs alternating waves of magic-immune golems
+   and fire-armored slimes on one field. Pass: it fights golems at melee and
+   slimes at 5.5, re-anchoring per target with no dithering at the
+   switchover (the hysteresis question M2 deliberately left to hold-first
+   ties — this scenario tells us if that's enough or if we need the
+   committed-candidate field).
+
+6. **The bodyguard corridor** (composition: priced routes + party AI). An
+   escort order: squishy courier with 'avoid' + a Guardian-tactic tank,
+   through the toll ring. Pass: the pair's emergent behavior beats either
+   alone (tank soaks the arc the courier can't afford; courier's corridor
+   re-prices cheaper because the shooters lock the tank — exposure reads
+   provoked/locked state indirectly through kills). Fails if the courier
+   prices the corridor ignoring its escort entirely — which is today's
+   truth, and this scenario decides whether that matters.
+
+7. **Replay soak** (all seams × determinism). One long open-world battle on
+   a mapgen map with kiters, a blink hero, travelers mid-clear-first, and a
+   BSNAP taken every 50 rounds; each snapshot replayed to round 300 and
+   diffed. Pass: byte-identical, always. This is cheap to build (the
+   snapshot test pattern exists) and is the regression net the whole plan
+   layer sits on. Belongs in CI.
+
+## Tech debt — what to pay down for dev velocity
+
+Introduced by this work (pay soon, cheap while fresh):
+
+- **Trace/debug gap on plan decisions (top priority).** The doc's §5
+  promised the chosen candidate kind + forecast note in `lastResolution`/
+  trace and a `bsnap -i` plan line; none shipped. Every future kite/route
+  tuning session pays for this in ad-hoc console.log archaeology — the
+  codebase's own lesson (bsnap -i exists because of it) says build the
+  inspection FIRST. ~Half-day: thread `MoveCandidate.kind` + forecast
+  summary into pushTrace, extend `inspectLine` in scripts/bsnap.mjs.
+- **kiteToward is now three planners in one function.** The tooClose
+  retreat (escapeHeading + blink), the wall corner-route, and the scored
+  hold/close each have their own geometry + logging conventions inside one
+  ~90-line function. Next behavior (e.g. arc candidates, default-hold
+  candidates) makes it worse. Extract each branch as a candidate *proposer*
+  returning `MoveCandidate[]` and let one loop score/commit/trace — that's
+  also exactly the M2 leftover.
+- **Scorer weights are magic numbers in two places.** GAP_W/EXPOSURE_W/
+  GAP_BAND (plan.ts) and TRAVEL_HP_BUDGET/TRAVEL_CLEAR_EXIT/BLINK_* 
+  (engine.ts) are per-file consts. Fine today; the moment browser-tuning
+  starts (it will — see BACKLOG's threat-tuning item), they should sit in
+  one `plan-tuning` block like the engine's other named knobs, or every
+  tuning pass greps.
+- **`exposureAt` double-counts intent.** It prices enemies by
+  `preferredAttackVs(e, self)` per query point — O(enemies × their skills)
+  per sample, recomputed per candidate per turn. A per-(enemy, self) memo
+  per round would cut the corridor-pricing cost ~10× and is required
+  before scenario 7's soak runs at 50 combatants. Cheap: the vision-cache
+  generation counter pattern already exists.
+
+Pre-existing, newly load-bearing (this work leans on them; fixing pays
+compound interest):
+
+- **No fixture-based replay regression net.** "Engine changes must keep
+  snapshot replays byte-identical" is enforced only by round-trip tests on
+  synthetic battles, not stored fixtures — behavior changes (M1/M2 here)
+  can't be told apart from replay breakage by CI. Scenario 7 fixes this;
+  it should have existed before this project started.
+- **`Combatant` is a 40+-field grab-bag.** Every milestone added fields
+  (travelClearing, moveAbilities, moveAbilityCds) beside 15 other loose AI
+  memories (avoid*, escapeDir, wander*, lastCast*). Serialization works by
+  spread-luck: nothing but convention stops a non-serializable or
+  Infinity-carrying field from silently corrupting BSNAPs (visionRange
+  already needs a special case). Group the AI memory into a serialized
+  `mind` sub-object with an explicit codec, or at minimum a type-level
+  test that every Combatant field survives JSON round-trip.
+- **`eu()`/`combatant()` test builders drift.** Adding a required Combatant
+  field means editing helpers.ts by hand (bit us this project). Derive the
+  test builder from `makeCombatant` (build a real one, override) so new
+  fields are picked up automatically.
+- **The tactics-casting/kite suites assert OUTCOMES, not intents.** They're
+  excellent black-box nets (they caught nothing this time because behavior
+  held), but when a scored decision changes for a good reason, the failure
+  message is "hp was 400" — a day of archaeology. The trace/debug item
+  above is the fix; mentioning here because it's the same investment.
