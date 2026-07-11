@@ -43,6 +43,29 @@ describe('Plan panel (Debug tab)', () => {
     expect(screen.getByText('ready')).toBeInTheDocument()
   })
 
+  // §coordination (M0): the Blackboard renders the TeamPlan v2 fields when a
+  // plan carries them, plus the always-on acumen line; absent fields render
+  // nothing (first test above covers the absent case implicitly).
+  it('renders TeamPlan v2 fields + objective + acumen when present', () => {
+    const b = mageBattle()
+    b.plans.player = {
+      waypoint: null, focusTargetId: null, threat: {},
+      engagement: { targetIds: ['slime'], primaryId: 'slime', anchor: { x: 12, y: 8 }, stance: 'hold', sinceRound: 3 },
+      assignments: { mage: { role: 'pull', targetId: 'slime', to: { x: 12, y: 8 } } },
+      avoidTargetIds: ['slime'],
+      corridor: { x: 9, y: 9 },
+    }
+    b.objectives = { player: { kind: 'hold', point: { x: 12, y: 8 } } }
+    render(<DebugTab c={find(b, 'mage')} battle={b} />)
+    expect(screen.getByText(/stance hold · anchor \(12,8\) · pull 1 · since R3/)).toBeInTheDocument()
+    expect(screen.getByText(/pull Slime → \(12\.0,8\.0\)/)).toBeInTheDocument()  // this unit's assignment
+    expect(screen.getByText(/avoid/)).toBeInTheDocument()
+    expect(screen.getByText(/corridor/)).toBeInTheDocument()
+    expect(screen.getByText(/hold \(12,8\)/)).toBeInTheDocument()               // objective
+    expect(screen.getByText(/acumen/)).toBeInTheDocument()
+    expect(screen.getByText(/pull ✗ · stance ✗/)).toBeInTheDocument()           // solo int-25 mage (acumen 25) clears no gate
+  })
+
   it('shows route price vs budget (and the clearing flag) while marching avoid', () => {
     const b = mageBattle()
     issueMoveOrder(b, 'mage', { x: 25, y: 8 }, 'avoid')

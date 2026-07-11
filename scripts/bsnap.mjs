@@ -27,8 +27,10 @@
 //   -e, --events         also print events touching a watched unit each round
 //       --all-events     print every event each round (implies -e)
 //   -i, --inspect        per round, dump each watched unit's DECISION state: its
-//                          lock, its team plan (hunt / focus / waypoint), and its
-//                          movement intent (moveOrder / wanderTarget). The "why is
+//                          lock, its team plan (hunt / focus / waypoint — plus,
+//                          when the plan carries them, the v2 engagement /
+//                          assignment / avoid list / corridor), and its movement
+//                          intent (moveOrder / wanderTarget). The "why is
 //                          this unit doing nothing / stuck?" view.
 //       --reach <id>     per round, for each watched unit print canReach + the
 //                          steerAround first-corner toward combatant <id> — the
@@ -193,9 +195,36 @@ function inspectLine(b, c) {
   const v = (pt) => (pt ? `(${fx(pt.x)},${fx(pt.y)})` : '—')
   const res = (c.lastResolution ?? []).map((r) => `${r.channel[0]}:${r.id}=${r.outcome}`).join(' ')
   return `lock=${c.lockedTargetId ?? '—'}  plan{hunt=${p?.huntTargetId ?? '—'} focus=${p?.focusTargetId ?? '—'} wp=${v(p?.waypoint)}}`
+    + teamPlanV2(p, c, v)
     + `  move{order=${v(c.moveOrder)} wander=${v(c.wanderTarget)} dwell=${c.wanderDwell ?? 0}}`
     + `  vis=${c.visionRange === Infinity ? '∞' : c.visionRange}`
     + (res ? `  tactics[${res}]` : '')
+}
+
+// §coordination (tactical-coordination.md §3.1): TeamPlan v2 fields — engagement,
+// this unit's assignment, avoid list, corridor. All optional and absent on legacy
+// tokens ⇒ this appends NOTHING (legacy -i output stays byte-identical).
+function teamPlanV2(p, c, v) {
+  let out = ''
+  const e = p?.engagement
+  if (e) out += `  eng{prim=${e.primaryId ?? '—'} stance=${e.stance} anchor=${v(e.anchor)} pull=${e.targetIds.length} since=R${e.sinceRound}}`
+  const a = p?.assignments?.[c.id]
+  if (a) out += `  assign=${fmtAssign(a, v)}`
+  if (p?.avoidTargetIds?.length) out += `  avoid=${p.avoidTargetIds.length}[${p.avoidTargetIds.join(',')}]`
+  if (p?.corridor) out += `  corridor=${v(p.corridor)}`
+  return out
+}
+
+// One Assignment, compact: `pull(wolf-3)→(12.0,8.0)`, `guard(u2)`, `engage`.
+function fmtAssign(a, v) {
+  switch (a.role) {
+    case 'pull':   return `pull(${a.targetId})→${v(a.to)}`
+    case 'guard':  return `guard(${a.allyId})`
+    case 'escort': return `escort(${a.allyId})`
+    case 'work':   return `work${v(a.point)}`
+    case 'rove':   return `rove(${a.targetId ?? '—'})`
+    default:       return a.role
+  }
 }
 
 // The plan layer's view from where the unit stands (movement-action-coupling.md

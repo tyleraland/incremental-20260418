@@ -4,7 +4,8 @@ import { useGameStore } from '@/stores/useGameStore'
 import {
   COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap,
   forecastAction, preferredAttackVs, exposureAt, corridorExposure, postureOf, moveSpeedOf,
-  type BattleState, type Combatant, type StatusEffect,
+  teamAcumen, ACUMEN,
+  type BattleState, type Combatant, type StatusEffect, type Assignment, type TeamObjective,
 } from '@/engine'
 
 // The selected-unit bottom sheet + its tabs (Stats / Debug), split out of
@@ -42,6 +43,28 @@ function targetSight(battle: BattleState, c: Combatant, id: string | null | unde
   const d = Math.hypot(c.pos.x - t.pos.x, c.pos.y - t.pos.y)
   const beyond = d > c.visionRange
   return { text: `${t.name} @${d.toFixed(0)}${beyond ? ' ⚠out-of-sight' : ''}`, beyond }
+}
+
+// §coordination (tactical-coordination.md §3.1): compact one-line renders for
+// the TeamPlan v2 fields. Absent fields render nothing — the Blackboard panel
+// is unchanged until a milestone publishes them. Pure reads (the bugwatch rule).
+function fmtAssignment(battle: BattleState, a: Assignment): string {
+  switch (a.role) {
+    case 'pull':   return `pull ${nameInBattle(battle, a.targetId)} → (${a.to.x.toFixed(1)},${a.to.y.toFixed(1)})`
+    case 'guard':  return `guard ${nameInBattle(battle, a.allyId)}`
+    case 'escort': return `escort ${nameInBattle(battle, a.allyId)}`
+    case 'work':   return `work (${a.point.x.toFixed(1)},${a.point.y.toFixed(1)})`
+    case 'rove':   return `rove ${a.targetId ? nameInBattle(battle, a.targetId) : '(roam)'}`
+    default:       return a.role
+  }
+}
+
+function fmtObjective(battle: BattleState, o: TeamObjective): string {
+  switch (o.kind) {
+    case 'escort': return `escort ${nameInBattle(battle, o.unitId)}`
+    case 'hold':   return `hold (${o.point.x.toFixed(0)},${o.point.y.toFixed(0)})`
+    default:       return o.kind
+  }
 }
 
 // A plain-text dump of a unit's current decision state + last 15 turns, for
@@ -304,6 +327,15 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
   const focusName = nameInBattle(battle, plan?.focusTargetId)
   const huntName = nameInBattle(battle, plan?.huntTargetId)
   const divergent = c.lockedTargetId && plan?.focusTargetId && c.lockedTargetId !== plan.focusTargetId
+  // §coordination (M0): TeamPlan v2 fields — absent until a milestone publishes
+  // them; render nothing when absent. Acumen is always computable (a pure read,
+  // teamAcumen; the bugwatch rule — display never mutates engine state).
+  const eng = plan?.engagement
+  const assignment = plan?.assignments?.[c.id]
+  const avoidIds = plan?.avoidTargetIds
+  const objective = battle.objectives?.[c.team]
+  const acumen = teamAcumen(battle, c.team)
+  const gates = Object.entries(ACUMEN).map(([k, t]) => `${k} ${acumen >= t ? '✓' : '✗'}`).join(' · ')
 
   // Per-turn resolution (what fired vs why the rest were dormant), keyed by id.
   const resById = new Map(c.lastResolution.map((r) => [r.id, r.outcome]))
@@ -331,6 +363,19 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
           <div>team-focus <span className={plan?.focusTargetId ? 'text-game-text' : 'text-game-muted'}>{focusName}</span></div>
           <div>hunt <span className={plan?.huntTargetId ? 'text-game-text' : 'text-game-muted'}>{huntName}</span></div>
           <div>waypoint <span className="text-game-text tabular-nums">{wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}</span></div>
+          {plan?.corridor && <div>corridor <span className="text-game-text tabular-nums">({plan.corridor.x.toFixed(0)},{plan.corridor.y.toFixed(0)})</span></div>}
+          {objective && <div>objective <span className="text-game-text">{fmtObjective(battle, objective)}</span></div>}
+          {eng && (
+            <div className="col-span-2">
+              engage <span className="text-game-text">{nameInBattle(battle, eng.primaryId)}</span>
+              <span className="text-game-muted"> · stance {eng.stance} · anchor {eng.anchor ? `(${eng.anchor.x.toFixed(0)},${eng.anchor.y.toFixed(0)})` : '—'} · pull {eng.targetIds.length} · since R{eng.sinceRound}</span>
+            </div>
+          )}
+          {assignment && <div className="col-span-2">assignment <span className="text-game-text">{fmtAssignment(battle, assignment)}</span></div>}
+          {(avoidIds?.length ?? 0) > 0 && (
+            <div className="col-span-2">avoid <span className="text-game-text tabular-nums">{avoidIds!.length}</span> <span className="text-game-muted">({avoidIds!.map((id) => nameInBattle(battle, id)).join(', ')})</span></div>
+          )}
+          <div className="col-span-2">acumen <span className="text-game-text tabular-nums">{Math.round(acumen)}</span> <span className="text-game-muted">({gates})</span></div>
         </div>
         {lock.beyond && <div className="mt-1 text-amber-300">⚠ locked target is out of sight (it can't be reached/hit — a stale far lock keeps this unit "engaged")</div>}
         {divergent && <div className="mt-1 text-amber-300">⚠ this unit's lock ≠ team focus</div>}
