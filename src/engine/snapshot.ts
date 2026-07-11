@@ -16,6 +16,7 @@ import { makeSkillTactic } from './skills'
 import { makeConsumableTactic, CONSUMABLE_TACTIC_PREFIX } from './consumables'
 import { defaultCalculateDamage } from './damage'
 import { defaultPlanner } from './engine'
+import { computeCapability } from './teamplan'
 import { MAX_ROUNDS } from './constants'
 import { zlibSync, unzlibSync, strToU8, strFromU8 } from 'fflate'
 import type { BattleState, Combatant, ResolvedTactic, TacticRef } from './types'
@@ -51,11 +52,13 @@ function bodyTag(body: string): number {
 }
 
 // A combatant minus its resolved-tactic objects (functions); tactics travel as
-// {id, rank} refs and are re-resolved on load.
-type CombatantSnap = Omit<Combatant, 'tactics' | 'trace' | 'lastResolution'> & { tacticRefs: TacticRef[] }
+// {id, rank} refs and are re-resolved on load. `capability` is derived from the
+// kit (recomputed on load, like tactics) so it's stripped too — keeps tokens
+// byte-identical to pre-capability ones.
+type CombatantSnap = Omit<Combatant, 'tactics' | 'trace' | 'lastResolution' | 'capability'> & { tacticRefs: TacticRef[] }
 
 function combatantToSnap(c: Combatant): CombatantSnap {
-  const { tactics, trace: _trace, lastResolution: _res, ...rest } = c
+  const { tactics, trace: _trace, lastResolution: _res, capability: _cap, ...rest } = c
   return { ...rest, tacticRefs: tactics.map((t) => ({ id: t.def.id, rank: t.rank })) }
 }
 
@@ -97,6 +100,7 @@ interface BattleSnapshot {
   multiAttackMax?: number
   mode: BattleState['mode']
   plans: BattleState['plans']
+  objectives?: BattleState['objectives']
   round: number
   outcome: BattleState['outcome']
   stats: BattleState['stats']
@@ -131,6 +135,10 @@ export function serializeBattle(state: BattleState): string {
     // re-applies it from the location each tick; a restored battle defaults false.
     mode: state.mode,
     plans: state.plans,
+    // §coordination: host-set team objectives (tactical-coordination.md §3.6).
+    // Serialized ONLY when set, so every objective-less battle — i.e. all of
+    // them until M5 — keeps its token byte-identical (absent → undefined on load).
+    ...(state.objectives ? { objectives: state.objectives } : {}),
     round: state.round,
     outcome: state.outcome,
     stats: state.stats,
@@ -217,7 +225,11 @@ export function deserializeBattle(token: string): BattleState {
     // §blink (M4): legacy tokens predate movement capabilities — none, no cooldowns.
     const moveAbilities = rest.moveAbilities ?? []
     const moveAbilityCds = rest.moveAbilityCds ?? {}
-    return { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, ownerId, leashRange, summonTtl, summonTag, pack, consumableSpecs, moveAbilities, moveAbilityCds, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    const c: Combatant = { ...rest, visionRange, provoked, magicDef, threat, threatMult, armorReduction, dodgePeriod, escapeDir, ownerId, leashRange, summonTtl, summonTag, pack, consumableSpecs, moveAbilities, moveAbilityCds, tactics: rebuildTactics(cs), trace: [], lastResolution: [] }
+    // §coordination: kit capability is derived — rebuilt here like tactics, so
+    // it matches what makeCombatant produced (never serialized).
+    c.capability = computeCapability(c)
+    return c
   })
 
   return {
@@ -233,6 +245,7 @@ export function deserializeBattle(token: string): BattleState {
     mode: snap.mode,
     peaceful: false,   // not serialized; the host re-applies it from the location (see serializeBattle)
     plans: snap.plans,
+    ...(snap.objectives ? { objectives: snap.objectives } : {}),   // absent (all pre-M5 tokens) ⇒ undefined
     planner: defaultPlanner,
     round: snap.round,
     outcome: snap.outcome,

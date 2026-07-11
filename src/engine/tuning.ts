@@ -70,15 +70,45 @@ export const BLINK_WALK_MIN = 0.4
 //   blinkGain    ⏱ cells the best landing must open the nearest-threat gap by
 //                  before a cornered unit spends its teleport. Lower = blinks
 //                  earlier/more freely.
+//   cohesionW    ⏱ scoreCandidate penalty per cell of excess drift off the team
+//                  anchor (tactical-coordination.md §3.4; read by nothing until
+//                  M3). Bold drifts most, wary sticks to the line.
+//   pullMargin   ⏱ engage a camp when RTK < RTD × pullMargin — the mutual-TTK
+//                  race (tactical-coordination.md §3.3; read by nothing until
+//                  M2). Bold takes a near coin-flip; wary demands a comfortable
+//                  win.
 export interface PostureRow {
   exposureW: number
   travelBudget: number
   blinkGain: number
+  cohesionW: number
+  pullMargin: number
 }
 export const POSTURES: Record<Posture, PostureRow> = {
-  bold:   { exposureW: 0,    travelBudget: 0.5,  blinkGain: 3 },
-  steady: { exposureW: 0.05, travelBudget: 0.35, blinkGain: 2 },
-  wary:   { exposureW: 0.2,  travelBudget: 0.2,  blinkGain: 1.5 },
+  bold:   { exposureW: 0,    travelBudget: 0.5,  blinkGain: 3,   cohesionW: 0.02, pullMargin: 1.0 },
+  steady: { exposureW: 0.05, travelBudget: 0.35, blinkGain: 2,   cohesionW: 0.08, pullMargin: 0.8 },
+  wary:   { exposureW: 0.2,  travelBudget: 0.2,  blinkGain: 1.5, cohesionW: 0.2,  pullMargin: 0.6 },
+}
+
+// ── Acumen gates (tactical-coordination.md §3.2) ─────────────────────────────
+//
+// Team acumen = Σ effective INT over LIVING members (engine/teamplan.ts
+// teamAcumen) — additive, so every scholar counts and a dead shaman is felt
+// immediately. Each planner feature checks its own gate independently; below a
+// gate the party plays like today's engine, never worse. Read by nothing yet
+// (M0); gates go live with their features (pull M2, stance M3, ambush M4,
+// rollout M6). The planner's one deliberate ABSOLUTE — smarts is diegetic, not
+// relative to the opponent; if level inflation opens every gate, tune the
+// thresholds, don't convert to a ratio.
+//
+// Scale ⏱: engine int = the store's derived magicAttack ≈ floor(INT×2 + DEX/2)
+// + gear. The fresh 6-hero roster sums ≈75; an all-brawn six ≈35; one scholar
+// adds ≈20.
+export const ACUMEN = {
+  pull: 50,      // ⏱ pull prediction + avoid list — one scholar in a brawn party clears it
+  stance: 90,    // ⏱ stance choice / kite line — a leveled or scholar-heavy party
+  ambush: 150,   // ⏱ ambush anchors, cloak timing — mid-game party
+  rollout: 250,  // ⏱ rollout compare — late-game headroom
 }
 
 // A combatant's policy row. Legacy snapshots and units that never set a

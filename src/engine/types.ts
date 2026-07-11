@@ -429,6 +429,13 @@ export interface Combatant {
   summonTtl: number | null
   summonTag: string | null
 
+  // §coordination (tactical-coordination.md §3.2/§5): precomputed kit capability
+  // — the planner's "who tanks / who carries / who pulls" answers. Derived from
+  // the kit (skills + base stats, fixed for the battle) at makeCombatant AND on
+  // snapshot deserialize; NEVER serialized (rebuilt on load, like `tactics`).
+  // Read by nothing in the sim yet (M0).
+  capability?: KitCapability
+
   // §debug: a small ring buffer of one-line summaries of what this unit did each
   // turn (targeting / movement / action). Purely observational — the BattleView
   // debug tab and tests read it; nothing in the sim depends on it.
@@ -446,6 +453,16 @@ export interface TraceEntry {
   text: string
 }
 
+// §coordination: the target-independent v0 capability answers (relative queries
+// — top/median/outlier — happen at the point of use, tactical-coordination.md
+// §3.2). All formulas v0 ⏱; computed by engine/teamplan.ts.
+export interface KitCapability {
+  sustainedDamage: number   // best raw damage/round over the kit, cooldown-amortized (basic + attack skills)
+  toughness: number         // maxHp × armored mitigation factor
+  reach: number             // max offensive range (basic + damage skills)
+  hasHeal: boolean          // carries a heal skill
+}
+
 // ── Team blackboard (§coordination) ──────────────────────────────────────────--
 //
 // A per-team scratchpad recomputed once per round by a pluggable `Planner` and
@@ -453,6 +470,38 @@ export interface TraceEntry {
 // recomputing — so "the party roams to one waypoint / focus-fires one target"
 // falls out of shared state rather than coincidence. Easy to inspect for
 // debugging (BattleView debug tab) and to assert on in tests.
+//
+// v2 (tactical-coordination.md §3.1): engagement / assignments / avoid list /
+// corridor. All optional — absent ⇒ pre-coordination behavior, so legacy
+// snapshots and the shipped planner stay byte-identical until each milestone
+// deliberately turns a field on. Nothing populates or reads them yet (M0).
+
+// §coordination: how the line fights, chosen from party comp (M3).
+export type Stance = 'hold' | 'kite' | 'collapse'
+
+// §coordination: the team's cross-round commitment — the one piece of plan
+// MEMORY (persists across decision rounds like huntTargetId; dropped only by
+// explicit abandon predicates). Serialized with the plan for replay fidelity.
+export interface Engagement {
+  targetIds: string[]       // the committed pull-set — what we EXPECT to fight
+  primaryId: string | null  // current kill target (ordered focus)
+  anchor: Vec2 | null       // where the line stands (choke / ambush / ring spot)
+  stance: Stance            // how the line fights (from party comp)
+  sinceRound: number        // commitment age — abandon predicates read this
+}
+
+// §coordination: a member's job this plan (assigned per decision round from
+// declared intent — equipped tactics — else kit capability; never a stored role).
+export type Assignment =
+  | { role: 'engage' }                            // default: fight the engagement
+  | { role: 'anchor' }                            // stand the line on the anchor
+  | { role: 'pull'; targetId: string; to: Vec2 }  // tag one foe, drag it to `to`
+  | { role: 'guard'; allyId: string }             // peel/bodyguard the protectee
+  | { role: 'escort'; allyId: string }            // screen a transiting unit
+  | { role: 'work'; point: Vec2 }                 // do a job there (forage/mine/pickup); party screens
+  | { role: 'rove'; targetId: string | null }     // jungler: farm own camps apart from the party
+  | { role: 'hold' }                              // reserve: stay put, don't chase
+
 export interface TeamPlan {
   waypoint: Vec2 | null            // shared roam target (heroes wander toward it)
   focusTargetId: string | null     // enemy the team should concentrate on (advisory)
@@ -462,7 +511,21 @@ export interface TeamPlan {
   // position so the squad marches there together; held while it stays seen +
   // reachable, else re-picked, else null (nothing in sight → roam to explore).
   huntTargetId?: string | null
+  // v2 ↓ (absent-by-default; see the §3.1 note above)
+  engagement?: Engagement | null
+  assignments?: Record<string, Assignment>   // combatantId → role this plan
+  avoidTargetIds?: string[]  // do-NOT-aggro list (over-pull prevention)
+  corridor?: Vec2 | null     // shared route corner — the HERD_BIAS replacement
 }
+
+// §coordination (tactical-coordination.md §3.6): why the team is here — the
+// host/store's seam. Set post-creation (M5's setTeamObjective); absent = 'hunt'
+// (today's behavior). Serialized like plans.
+export type TeamObjective =
+  | { kind: 'hunt' }                       // default — today's behavior
+  | { kind: 'escort'; unitId: string }     // screen this combatant's transit
+  | { kind: 'hold'; point: Vec2 }          // own this ground
+  | { kind: 'clear' }                      // kill everything affordable, in order
 
 export type Planner = (state: BattleState, team: Team) => TeamPlan
 
@@ -622,6 +685,9 @@ export interface BattleState {
   multiAttackMax: number                    // §multi-attack PROTOTYPE: max agility-driven basic swings per logical round (default 1 = disabled)
   plans: Partial<Record<Team, TeamPlan>>   // §coordination: per-team blackboard, recomputed each round
   planner: Planner                          // produces the plans (pluggable)
+  // §coordination: host-set purpose per team (tactical-coordination.md §3.6).
+  // Absent = 'hunt' (today's behavior); set post-creation (M5), serialized.
+  objectives?: Partial<Record<Team, TeamObjective>>
   round: number
   outcome: Outcome
   events: BattleEvent[]

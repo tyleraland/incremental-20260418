@@ -34,6 +34,10 @@ Engine changes must keep snapshot replays byte-identical.
 - Zones (`BattleZone`) are persistent ground areas. Damage uses the element matrix vs effective armor; DoT runs once per logical round.
 - Defensive passives (Toughness/Evasion/Defensive Stance) set `Combatant.armorReduction`/`dodgePeriod`/`threatMult` in `adapter.ts`; monsters carry the same fields.
 
+## Team blackboard (§coordination)
+- `BattleState.plans`: per-team `TeamPlan` from the pluggable planner (waypoint/focus/threat/hunt), serialized in snapshots.
+- TeamPlan v2 (`engagement`/`assignments`/`avoidTargetIds`/`corridor`), `BattleState.objectives`, and per-combatant `capability` (derived at makeCombatant/deserialize, never serialized) exist but are absent-by-default — nothing populates or reads them yet. Design source: `tactical-coordination.md`; `teamAcumen` lives in `teamplan.ts`, gates/columns (`ACUMEN`, `cohesionW`, `pullMargin`) in `tuning.ts`.
+
 ## Tactics
 - `TACTIC_REGISTRY`; each tactic is on exactly one channel: movement/targeting/action/reaction/passive.
 - `kind: 'floor'` fires on a basic precondition and is sorted below triggers in its channel by `demoteFloors`; default is trigger.

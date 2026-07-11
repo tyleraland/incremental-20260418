@@ -28,6 +28,7 @@ import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
 import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, bumpPlanGen, clearPlanCache, type MoveCandidate } from './plan'
+import { computeCapability } from './teamplan'
 import { postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND } from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
@@ -171,7 +172,7 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
   // hero who never touched the feature is byte-identical to before.
   const specs = input.consumableSpecs ?? []
   const consumableTactics: ResolvedTactic[] = specs.map((spec) => ({ def: makeConsumableTactic(spec), rank: 1 }))
-  return {
+  const c: Combatant = {
     id: input.id,
     name: input.name,
     team: input.team,
@@ -237,6 +238,10 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
     trace: [],
     lastResolution: [],
   }
+  // §coordination: precompute kit capability (tactical-coordination.md §5) —
+  // derived from the assembled kit, never serialized; read by nothing yet (M0).
+  c.capability = computeCapability(c)
+  return c
 }
 
 // Re-apply a unit's CURRENT loadout (stats, skills, tactics, vision) to a live
@@ -270,6 +275,7 @@ export function relinkCombatant(c: Combatant, input: EngineUnitInput, partyTacti
   // state (a mid-fight ability swap doesn't reset a burnt cooldown), like c.pack.
   c.posture = fresh.posture
   c.moveAbilities = fresh.moveAbilities
+  c.capability = fresh.capability   // §coordination: kit changed ⇒ capability re-derives with it
   if (c.channel && !c.skills.some((s) => s.id === c.channel!.skillId)) c.channel = null
 }
 
