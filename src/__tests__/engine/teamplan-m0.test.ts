@@ -21,8 +21,11 @@ const tokenJson = (token: string): string => {
 
 // M1 (tactical-coordination.md §8) makes the planner publish engagement/
 // avoidTargetIds once a team has a visible enemy — these two are no longer in
-// this "stays absent" set. assignments/corridor remain unpublished (M2/M3).
-const STILL_ABSENT_KEYS = ['"assignments"', '"corridor"']
+// this "stays absent" set. M2 makes `assignments` publish too, but ONLY when
+// a `pull` job actually fires (see m2-pull.test.ts) — a single hero vs a
+// single mob (this scenario) never has a fringe target to pull, so it's still
+// legitimately absent here; `corridor` remains wholly unpublished until M3.
+const STILL_ABSENT_KEYS = ['"corridor"']
 
 describe('TeamPlan v2 plumbing (M0)', () => {
   it('v2 plan fields + objectives survive the round-trip when set', () => {
@@ -47,9 +50,11 @@ describe('TeamPlan v2 plumbing (M0)', () => {
   // M1 update (deliberate — see the file header on M0 vs M1): the planner now
   // publishes engagement + avoidTargetIds once a team has a visible enemy, so
   // this scenario (one hero, one visible mob, five live rounds in open world)
-  // is exactly the case that SHOULD populate them. assignments/corridor are
-  // still M2/M3 and stay absent.
-  it('M1 populates engagement/avoidTargetIds once an enemy is visible; assignments/corridor stay absent', () => {
+  // is exactly the case that SHOULD populate them. `assignments` (M2) stays
+  // absent here specifically because there's nothing to pull (one mob, no
+  // fringe/cluster split) — see m2-pull.test.ts for the populated case.
+  // `corridor` is still wholly M3 and stays absent everywhere.
+  it('M1 populates engagement/avoidTargetIds once an enemy is visible; assignments (no pull here)/corridor stay absent', () => {
     const b = createBattle({
       playerUnits: [eu({ id: 'a', skills: [attackSkill()] })],
       enemyUnits: [eu({ id: 'e', team: 'enemy' })],

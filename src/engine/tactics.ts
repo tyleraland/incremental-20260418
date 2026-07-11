@@ -16,10 +16,11 @@ import { SEPARATION, EPS, CHARGER_DIVE_RADIUS, CHARGER_LEASH, CHARGER_LEASH_PER_
 import { effectiveStat, skillDamageEstimate } from './damage'
 import {
   lockedTarget, nearestEnemyTo, isCaster, visibleEnemiesOf, alliesOf, centroid,
-  squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
+  squishiestAlly, flankPoint, guardPoint, kiteDistanceFor, pullMovement,
 } from './spatial'
 import { selectSkillTarget, skillActiveCap } from './skills'
 import { preferredRangeVs } from './plan'
+import { findCombatant } from './behavior'
 import type {
   BattleState, Combatant, ResolvedTactic, StatusEffect, TacticDef, TacticRef,
 } from './types'
@@ -288,6 +289,21 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       const threat = nearestEnemyTo(ally, state)
       if (!threat) return null
       return { toPoint: guardPoint(ally, threat, SEPARATION * 1.6) }
+    },
+  },
+  'puller': {
+    id: 'puller', name: 'Puller', scope: 'unit', channel: 'movement', kind: 'floor',
+    description: "Declared intent: reserve yourself as the party's designated puller. When the plan assigns you a pull, tag the target and drag it back to the line instead of joining the main push.",
+    // Reads the plan's own assignment (tactical-coordination.md §3.2/§3.3/§3.4)
+    // — equipping this tactic is what makes the planner route pull jobs to
+    // THIS unit first (declared intent beats the capability pick). The actual
+    // tag-and-drag state machine is pullMovement (spatial.ts), shared with
+    // executeMovement's fallback for a capability-picked puller who never
+    // equipped this tactic — one implementation, no drift.
+    movement: (self, state) => {
+      const a = state.plans[self.team]?.assignments?.[self.id]
+      if (!a || a.role !== 'pull') return null
+      return pullMovement(self, findCombatant(state, a.targetId), a.to)
     },
   },
   'ambusher': {

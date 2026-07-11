@@ -132,6 +132,12 @@ export const FLANKER_LEASH_PER_RANK = 2
 // enemies merely nearby but functionally unrelated.
 export const CAMP_RADIUS = 6
 
+// §coordination M2 pull model (tactical-coordination.md §3.3): the BFS cap for
+// pullSetOf — who joins if we hit `seed`. Bounds the worst-case appraisal cost
+// (§5's "order of one steerAround call" budget) no matter how densely packed a
+// camp is; a real pull-set rarely gets anywhere near this in play.
+export const PULL_SET_CAP = 12
+
 // §Wary Caster — a caster's "wariness" (interruptedCount, the back-off it reads)
 // FADES when it's left alone: decay it by 1 every WARY_INTERRUPT_DECAY logical
 // rounds with no fresh interrupt. Otherwise a couple of early disruptions make a

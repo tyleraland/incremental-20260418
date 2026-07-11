@@ -1,19 +1,18 @@
 // Combat Tactic Engine — the team coordination planner (tactical-coordination.md).
-// Future home of the sense → appraise → decide → assign → publish pipeline that
-// fills TeamPlan v2 (engagement / assignments / avoid list / corridor). M0 ships
-// only the substrate: the team acumen score and the per-combatant kit-capability
-// precompute — read by nothing in the sim yet.
-//
-// Pure and deterministic like every engine leaf (same discipline as plan.ts):
-// no RNG, no store/time imports, inputs never mutated.
+// sense → appraise → decide → assign → publish, filling TeamPlan v2
+// (engagement / assignments / avoid list). Pure and deterministic like every
+// engine leaf (same discipline as plan.ts): no RNG, no store/time imports,
+// inputs never mutated.
 
-import { attackReach, distance } from './grid'
+import { attackReach, distance, moveSpeedOf } from './grid'
 import { effectiveStat, skillDamageEstimate } from './damage'
-import { armoredFactor } from './tactics'
+import { armoredFactor, hasTactic } from './tactics'
 import { isStealthed } from './behavior'
-import { EPS, CAMP_RADIUS, HUNT_RETAIN_MULT } from './constants'
-import { PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR } from './tuning'
-import type { BattleState, Combatant, Engagement, KitCapability, Team } from './types'
+import { EPS, CAMP_RADIUS, HUNT_RETAIN_MULT, PULL_SET_CAP } from './constants'
+import { PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR, ACUMEN, ENGAGE_EXIT, postureOf } from './tuning'
+import type {
+  Assignment, BattleState, Combatant, Engagement, KitCapability, Team, Vec2,
+} from './types'
 
 // §acumen (tactical-coordination.md §3.2): smart members make a smart party.
 // Additive over LIVING members' effective INT — every scholar contributes,
@@ -58,52 +57,175 @@ export function computeCapability(c: Combatant): KitCapability {
   }
 }
 
-// §coordination M1 (tactical-coordination.md §3.1/§3.3): the planner's `decide`
-// stage for the engagement — kill-order pick, commitment hysteresis, the v0
-// camp, and the avoid list. `members` are this team's living combatants;
-// `enemies` is ALL living opposing combatants, unfiltered by vision — this
-// function applies the SAME stealth/vision rule the focus pick in
-// defaultPlanner uses (not shared code yet; M2's pullSetOf is what unifies the
-// membership tests with rallyPack). `threat` is the plan's per-enemy danger
-// score, already computed by the caller ("however danger is identified" per
-// the doc — one field, upgradeable in place).
+// §coordination M2 no-drift rule (tactical-coordination.md §3.3/§6): pullSetOf
+// must predict membership with the EXACT SAME code the real aggro rules run —
+// extracted here into small predicates so rallyPack (engine.ts) and pullSetOf
+// (below) call the identical logic instead of two hand-rolled copies that can
+// drift apart. Two aggro channels:
 //
-// Kill order: maximize threat[e] / max(EPS, ttk(e)), where
-// ttk(e) = e.hp / partySustained and partySustained = Σ living members'
-// capability.sustainedDamage — dangerous AND killable beats merely dangerous
-// (a monstrous-HP threat) or merely squishy (harmless trash). Implemented as
-// the literal ratio, not algebraically reduced to threat/hp, so M2's pull
-// pricing can reuse the exact shape.
-//
-// Commitment hysteresis: the previous primary is kept while it's alive,
-// retained in sight out to HUNT_RETAIN_MULT× vision (the same grace
-// pickHuntTarget gives the open-world hunt commitment), and NOT beaten by a
-// challenger scoring ≥ (1+PRIMARY_SWITCH_MARGIN)× its own score — the team's
-// analogue of selectTarget's PULL_FRACTION aggro hysteresis, one level up.
-// `sinceRound` is the round the current primary was committed; it only resets
-// when the primary actually changes.
-//
-// Camp (v0 — superseded by M2's pullSetOf): visible enemies within
-// CAMP_RADIUS of the primary. Simple and deliberately not a real aggro-chain
-// prediction; documented here rather than derived.
-//
-// Avoid list: visible enemies outside the camp that have NOT engaged us on
-// their own initiative — no live lock on one of our members, and zero threat
-// built against any member (Combatant.threat is keyed by attacker id, so a
-// nonzero entry means that enemy has already hit/healed against us). Derived
-// fresh from live state every call, so a bystander that attacks drops off the
-// list automatically the next decision round — no separate "provoked" bookkeeping.
+//  1. Pack-tactics rousing (was inline in rallyPack): a caller with Pack
+//     Tactics, once fighting, screams for same-named kin within ITS OWN
+//     vision. `callsPack` is the caller-side gate (owns the tactic at all —
+//     rallyPack's real code additionally requires `self.provoked`, which
+//     pullSetOf's BFS treats as implied: every unit already IN the growing
+//     pull set is, by construction, about to be fighting). `packRouses` is
+//     the exact per-ally test rallyPack's loop runs.
+//  2. Passive acquisition (was implicit in evalTargeting → selectTarget →
+//     visibleEnemiesOf): a hostile (provoked), unstealthed, living enemy whose
+//     OWN vision reaches a point will, on its own turn, acquire whatever's
+//     there — no call needed. `passiveAcquires` is that test, applied to the
+//     anticipated fight point `at` rather than an actual live position, since
+//     it's a prediction of what WOULD happen, not a replay of what did.
+export function callsPack(caller: Combatant): boolean {
+  return hasTactic(caller, 'pack-tactics')
+}
+export function packRouses(caller: Combatant, ally: Combatant): boolean {
+  return ally.id !== caller.id && ally.alive && !ally.provoked
+    && ally.team === caller.team && ally.name === caller.name
+    && distance(caller.pos, ally.pos) <= caller.visionRange
+}
+export function passiveAcquires(candidate: Combatant, at: Vec2): boolean {
+  return candidate.alive && candidate.provoked && !isStealthed(candidate)
+    && distance(candidate.pos, at) <= candidate.visionRange
+}
+
+const byId = (a: Combatant, b: Combatant): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+// §coordination M2 (tactical-coordination.md §3.3): who joins if we hit `seed`
+// fighting near `at`? Transitive closure over the enemy team's OWN aggro rules
+// (the no-drift predicates above), id-ordered BFS, capped at PULL_SET_CAP. Seed
+// always included. Passive acquisition is a flat test against the fixed point
+// `at` (not itself a chain — a unit only ever acts on what IT can see from
+// where it stands, mirroring evalTargeting) so it's applied once up front over
+// every living teammate; pack-rousing genuinely chains (a caller's position —
+// and so its own reach — differs unit to unit), so that part runs as real BFS
+// layers, id-ordered each layer for determinism.
+export function pullSetOf(state: BattleState, seed: Combatant, at: Vec2): Combatant[] {
+  const team = seed.team
+  const pool = state.combatants.filter((c) => c.team === team && c.alive)
+  const included = new Map<string, Combatant>([[seed.id, seed]])
+
+  for (const cand of pool) {
+    if (included.size >= PULL_SET_CAP) break
+    if (included.has(cand.id)) continue
+    if (passiveAcquires(cand, at)) included.set(cand.id, cand)
+  }
+
+  let frontier = [...included.values()].sort(byId)
+  while (frontier.length && included.size < PULL_SET_CAP) {
+    const next: Combatant[] = []
+    for (const caller of frontier) {
+      if (!callsPack(caller)) continue
+      for (const cand of pool) {
+        if (included.size >= PULL_SET_CAP) break
+        if (included.has(cand.id)) continue
+        if (packRouses(caller, cand)) { included.set(cand.id, cand); next.push(cand) }
+      }
+      if (included.size >= PULL_SET_CAP) break
+    }
+    frontier = next.sort(byId)
+  }
+  return [...included.values()].sort(byId)
+}
+
+// §coordination M2 assign (tactical-coordination.md §3.2/§3.3): centroid/median
+// helpers + the puller pick — declared intent (equips the Puller tactic) first,
+// else the capability query (longest reach at ≥ party-median move speed, id
+// tiebreak). Both relative-to-the-party queries, never an absolute stat bar.
+function partyCentroid(members: Combatant[]): Vec2 {
+  let x = 0, y = 0
+  for (const m of members) { x += m.pos.x; y += m.pos.y }
+  return { x: x / members.length, y: y / members.length }
+}
+function median(nums: number[]): number {
+  const s = [...nums].sort((a, b) => a - b)
+  const n = s.length
+  return n === 0 ? 0 : n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2
+}
+function pickPuller(members: Combatant[]): Combatant | null {
+  if (!members.length) return null
+  const declared = members.filter((m) => hasTactic(m, 'puller')).sort(byId)
+  if (declared.length) return declared[0]
+  const medSpeed = median(members.map((m) => moveSpeedOf(m)))
+  let best: Combatant | null = null
+  let bestReach = -Infinity
+  for (const m of members) {
+    if (moveSpeedOf(m) < medSpeed - EPS) continue
+    const reach = m.capability?.reach ?? 0
+    if (!best || reach > bestReach + EPS || (Math.abs(reach - bestReach) <= EPS && m.id < best.id)) {
+      best = m; bestReach = reach
+    }
+  }
+  return best ?? members[0]
+}
+
+// §coordination M2 pull assignment (tactical-coordination.md §3.3): when the
+// committed engagement is a single fringe target (its own pull set is just
+// itself) standing near a bigger nearby cluster (a visible enemy within
+// CAMP_RADIUS that ISN'T part of the committed set — i.e. approaching normally
+// risks widening the fight into that cluster), route the party's best puller
+// to tag it and drag it back to the anchor instead of the whole line closing
+// in. `to` is computed once and reused every round the SAME puller/target pair
+// holds (read from the previous plan) rather than re-centroiding on a moving
+// party each round — anchor stability is the point (M3 gives it a real anchor;
+// v0 is the party centroid at assignment time).
+function pullAssignmentFor(
+  members: Combatant[], targetIds: string[], camp: Combatant[], visible: Combatant[],
+  prevAssignments: Record<string, Assignment> | undefined,
+): Record<string, Assignment> | undefined {
+  if (targetIds.length !== 1) return undefined
+  const solo = camp[0]
+  if (!solo) return undefined
+  const nearBig = visible.some((e) => e.id !== solo.id && distance(e.pos, solo.pos) <= CAMP_RADIUS)
+  if (!nearBig) return undefined
+  const puller = pickPuller(members)
+  if (!puller) return undefined
+  const prev = prevAssignments?.[puller.id]
+  const to = prev && prev.role === 'pull' && prev.targetId === solo.id ? prev.to : partyCentroid(members)
+  return { [puller.id]: { role: 'pull', targetId: solo.id, to } }
+}
+
+// §coordination pricing (tactical-coordination.md §3.3): the mutual-TTK race.
+// RTK (rounds-to-kill the camp) = campHp / partySustained; RTD (rounds-to-die)
+// = partyHp / campSustained. Both sides are plain sums over precomputed
+// KitCapability.sustainedDamage — no per-matchup scoring, matching the M1
+// killScore shape so M2's pricing is "a few adds," not a new scoring pass.
+function priceOf(camp: Combatant[]): { hp: number; sustained: number } {
+  let hp = 0, sustained = 0
+  for (const e of camp) { hp += e.hp; sustained += e.capability?.sustainedDamage ?? 0 }
+  return { hp, sustained }
+}
+
 export interface EngagementDecision {
   engagement: Engagement | null
   avoidTargetIds: string[]
+  assignments?: Record<string, Assignment>
 }
 
+// §coordination M1/M2 (tactical-coordination.md §3.1/§3.2/§3.3): the planner's
+// `decide` stage for the engagement. `members` are this team's living
+// combatants; `enemies` is ALL living opposing combatants, unfiltered by
+// vision (this function applies its own stealth/vision rule via `sees`, the
+// same one the focus pick in defaultPlanner uses). `threat` is the plan's
+// per-enemy danger score. `prevAssignments` is last round's published
+// assignments (read-only; only `pull` entries are consulted, for `to` reuse).
+//
+// Below ACUMEN.pull: exactly the M1 v0 behavior — CAMP_RADIUS proximity camp,
+// no affordability test, no assignments (an unintelligent party over-pulls,
+// diegetically). At/above the gate: pullSetOf-priced camps and the mutual-TTK
+// race decide engage-or-not, and §5's fast path — while committed, only cheap
+// abandon checks run; the wide appraise (ranking candidates, running
+// pullSetOf per candidate) is skipped entirely. The gate is read fresh every
+// call (teamAcumen has no memory), so a mid-fight death can drop a party (or a
+// monster pack) back under the gate immediately.
 export function decideEngagement(
   state: BattleState,
+  team: Team,
   members: Combatant[],
   enemies: Combatant[],
   threat: Record<string, number>,
   prevEngagement: Engagement | null,
+  prevAssignments?: Record<string, Assignment>,
 ): EngagementDecision {
   const sees = (e: Combatant, mult: number) =>
     members.some((m) => distance(m.pos, e.pos) <= m.visionRange * mult)
@@ -140,54 +262,147 @@ export function decideEngagement(
     const ttk = e.hp / Math.max(EPS, partySustained)
     return (threat[e.id] ?? 0) / Math.max(EPS, ttk)
   }
-
-  let challenger = visible[0]
-  let challengerScore = killScore(challenger)
-  for (const e of visible) {
-    const s = killScore(e)
-    if (s > challengerScore + EPS || (Math.abs(s - challengerScore) <= EPS && e.id < challenger.id)) {
-      challenger = e
-      challengerScore = s
-    }
-  }
-
-  let primary = challenger
-  if (incumbentRetainable) {
-    const incumbentScore = killScore(incumbent!)
-    // Floored like selectTarget's pull slack (PULL_FRACTION × max(PULL_FLOOR, …)):
-    // a multiplicative margin alone is no protection at score 0 — a harmless
-    // incumbent (egg-sac) would be "beaten" by any challenger every round,
-    // including another harmless one (primary thrash). The floor means only a
-    // genuinely dangerous newcomer clears the bar over a zero-score incumbent.
-    const beaten = challengerScore >= (1 + PRIMARY_SWITCH_MARGIN) * Math.max(PRIMARY_SCORE_FLOOR, incumbentScore) - EPS
-    if (!beaten) primary = incumbent!
-  }
-  // sinceRound survives any path that lands on the same primary (including
-  // challenger === incumbent), not just the not-beaten branch.
-  const sinceRound = prevEngagement && primary.id === prevEngagement.primaryId
-    ? prevEngagement.sinceRound
-    : state.round
-
-  // Camp: visible enemies near the primary. Guard-add the primary itself in
-  // case commitment hysteresis retained it just outside tight vision this
-  // round (still absent from `visible`) — the pull set always includes its
-  // own kill target.
-  const campSet = new Set(visible.filter((e) => distance(e.pos, primary.pos) <= CAMP_RADIUS).map((e) => e.id))
-  campSet.add(primary.id)
-  const targetIds = [...campSet].sort()
-
   const memberIds = new Set(members.map((m) => m.id))
   const alreadyFighting = (e: Combatant): boolean => {
     if (e.provoked && e.lockedTargetId && memberIds.has(e.lockedTargetId)) return true
     return members.some((m) => (m.threat[e.id] ?? 0) > EPS)
   }
-  const avoidTargetIds = visible
-    .filter((e) => !campSet.has(e.id) && !alreadyFighting(e))
-    .map((e) => e.id)
-    .sort()
+
+  if (teamAcumen(state, team) < ACUMEN.pull) {
+    // ── v0 (M1, unchanged): kill-order pick with hysteresis, CAMP_RADIUS camp.
+    let challenger = visible[0]
+    let challengerScore = killScore(challenger)
+    for (const e of visible) {
+      const s = killScore(e)
+      if (s > challengerScore + EPS || (Math.abs(s - challengerScore) <= EPS && e.id < challenger.id)) {
+        challenger = e
+        challengerScore = s
+      }
+    }
+    let primary = challenger
+    if (incumbentRetainable) {
+      const incumbentScore = killScore(incumbent!)
+      const beaten = challengerScore >= (1 + PRIMARY_SWITCH_MARGIN) * Math.max(PRIMARY_SCORE_FLOOR, incumbentScore) - EPS
+      if (!beaten) primary = incumbent!
+    }
+    const sinceRound = prevEngagement && primary.id === prevEngagement.primaryId
+      ? prevEngagement.sinceRound
+      : state.round
+
+    const campSet = new Set(visible.filter((e) => distance(e.pos, primary.pos) <= CAMP_RADIUS).map((e) => e.id))
+    campSet.add(primary.id)
+    const targetIds = [...campSet].sort()
+    const avoidTargetIds = visible
+      .filter((e) => !campSet.has(e.id) && !alreadyFighting(e))
+      .map((e) => e.id)
+      .sort()
+
+    return {
+      engagement: { targetIds, primaryId: primary.id, anchor: null, stance: 'collapse', sinceRound },
+      avoidTargetIds,
+    }
+  }
+
+  // ── M2 (gated on ACUMEN.pull): pullSetOf camps + the mutual-TTK race.
+  const partyHp = members.reduce((sum, m) => sum + m.hp, 0)
+  const pullMargin = members.reduce((sum, m) => sum + postureOf(m).pullMargin, 0) / Math.max(1, members.length)
+  const affordable = (camp: Combatant[]): boolean => {
+    const { hp, sustained } = priceOf(camp)
+    const rtk = hp / Math.max(EPS, partySustained)
+    const rtd = partyHp / Math.max(EPS, sustained)
+    return rtk + EPS < rtd * pullMargin
+  }
+
+  // §5 commitment fast path: while an engagement is held, run ONLY the cheap
+  // abandon checks (a stored-id sum + a linear over-pull scan) — the wide
+  // appraise (ranking every visible candidate, running pullSetOf per one) is
+  // skipped entirely unless a break condition actually fires.
+  if (prevEngagement) {
+    const campNow = prevEngagement.targetIds
+      .map((id) => enemies.find((e) => e.id === id))
+      .filter((e): e is Combatant => !!e)
+    const primaryAlive = !!prevEngagement.primaryId && enemies.some((e) => e.id === prevEngagement!.primaryId)
+
+    // (a) primary dead AND the whole committed set is dead: nothing left to
+    // hold — drop and fall straight into the full appraise below (same round).
+    if (!(campNow.length === 0)) {
+      // (c) over-pull materialized: a visible foe outside targetIds already has
+      // threat/a lock on a member (it joined uninvited) — re-anchor once from
+      // the primary (or any surviving camp member) and re-price the fresh set.
+      const targetSet = new Set(prevEngagement.targetIds)
+      const uninvited = visible.find((e) => !targetSet.has(e.id) && alreadyFighting(e))
+      let ids = prevEngagement.targetIds
+      let camp = campNow
+      if (uninvited) {
+        const anchor = campNow.find((e) => e.id === prevEngagement!.primaryId) ?? campNow[0]
+        camp = pullSetOf(state, anchor, anchor.pos)
+        ids = camp.map((e) => e.id).sort()
+      }
+
+      // (b) live re-price loses by more than the exit hysteresis → abandon.
+      const { hp, sustained } = priceOf(camp)
+      const rtk = hp / Math.max(EPS, partySustained)
+      const rtd = partyHp / Math.max(EPS, sustained)
+      const losing = rtk > rtd * pullMargin * ENGAGE_EXIT + EPS
+
+      if (!losing) {
+        let primaryId = primaryAlive ? prevEngagement.primaryId! : null
+        if (!primaryId) {
+          let best: Combatant | null = null
+          let bestS = -Infinity
+          for (const e of camp) {
+            const s = killScore(e)
+            if (!best || s > bestS + EPS || (Math.abs(s - bestS) <= EPS && e.id < best.id)) { best = e; bestS = s }
+          }
+          primaryId = best ? best.id : ids[0]
+        }
+        const sinceRound = primaryId === prevEngagement.primaryId ? prevEngagement.sinceRound : state.round
+        const avoidTargetIds = visible.filter((e) => !ids.includes(e.id) && !alreadyFighting(e)).map((e) => e.id).sort()
+        const assignments = pullAssignmentFor(members, ids, camp, visible, prevAssignments)
+        return {
+          engagement: { targetIds: ids, primaryId, anchor: null, stance: 'collapse', sinceRound },
+          avoidTargetIds,
+          ...(assignments ? { assignments } : {}),
+        }
+      }
+      // losing the race → commitment broken, fall through to the full appraise.
+    }
+  }
+
+  // Full appraise: rank visible candidates by kill-order score (best/most
+  // killable first, id tiebreak), take the first whose pullSetOf camp is
+  // affordable. Because `ranked` already enumerates every visible enemy —
+  // including any fringe straggler whose own pull set is just itself — this
+  // ONE pass also covers the "cheapest affordable solo target" case with no
+  // second loop: a straggler's camp is `[straggler]`, so it's tried (and, if
+  // affordable, wins) like any other candidate, just at its own kill-order
+  // rank. Nothing affordable at all → no engagement, but avoid every visible
+  // foe not already fighting us.
+  const ranked = [...visible].sort((a, b) => {
+    const d = killScore(b) - killScore(a)
+    return Math.abs(d) > EPS ? d : (a.id < b.id ? -1 : 1)
+  })
+
+  let chosenCamp: Combatant[] | null = null
+  let chosenPrimary: Combatant | null = null
+  for (const cand of ranked) {
+    const camp = pullSetOf(state, cand, cand.pos)
+    if (affordable(camp)) { chosenCamp = camp; chosenPrimary = cand; break }
+  }
+
+  if (!chosenCamp || !chosenPrimary) {
+    const avoidTargetIds = visible.filter((e) => !alreadyFighting(e)).map((e) => e.id).sort()
+    return { engagement: null, avoidTargetIds }
+  }
+
+  const targetIds = chosenCamp.map((e) => e.id).sort()
+  const sinceRound = prevEngagement && chosenPrimary.id === prevEngagement.primaryId ? prevEngagement.sinceRound : state.round
+  const avoidTargetIds = visible.filter((e) => !targetIds.includes(e.id) && !alreadyFighting(e)).map((e) => e.id).sort()
+  const assignments = pullAssignmentFor(members, targetIds, chosenCamp, visible, prevAssignments)
 
   return {
-    engagement: { targetIds, primaryId: primary.id, anchor: null, stance: 'collapse', sinceRound },
+    engagement: { targetIds, primaryId: chosenPrimary.id, anchor: null, stance: 'collapse', sinceRound },
     avoidTargetIds,
+    ...(assignments ? { assignments } : {}),
   }
 }

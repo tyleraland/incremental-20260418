@@ -78,7 +78,14 @@ export function selectTarget(state: BattleState, self: Combatant): string | null
   const candidates = filtered.length ? filtered : enemies
   const isAvoided = (id: string) => !!avoid && filtered.length > 0 && avoid.includes(id)
 
-  const primaryId = plan?.engagement?.primaryId ?? null
+  // §coordination M2 (tactical-coordination.md §3.3/§3.7): a unit carrying a
+  // `pull` assignment fights its OWN tagged target, not the team's shared
+  // primary — the FOCUS bonus below applies to the assignment target instead
+  // of `engagement.primaryId` for exactly this unit. Minimal by design: same
+  // bonus, same hysteresis, just a different id when a pull assignment exists.
+  const assignment = plan?.assignments?.[self.id]
+  const pullTargetId = assignment?.role === 'pull' ? assignment.targetId : null
+  const primaryId = pullTargetId ?? plan?.engagement?.primaryId ?? null
   const score = (e: Combatant) =>
     (self.threat[e.id] ?? 0) * THREAT_WEIGHT - distance(self.pos, e.pos) * PROX_WEIGHT + (e.id === primaryId ? FOCUS_WEIGHT : 0)
   let best = candidates[0]

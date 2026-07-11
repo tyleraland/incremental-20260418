@@ -26,9 +26,9 @@ import { makeSkillTactic, isChanneledAoe } from './skills'
 import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
-import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
+import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache, pullMovement } from './spatial'
 import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, bumpPlanGen, clearPlanCache, type MoveCandidate } from './plan'
-import { computeCapability, decideEngagement } from './teamplan'
+import { computeCapability, decideEngagement, callsPack, packRouses } from './teamplan'
 import { postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND } from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
@@ -1200,6 +1200,23 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
     }
     return
   }
+  // §coordination M2 pull assignment (tactical-coordination.md §3.4): a unit
+  // the planner picked as puller by CAPABILITY (no Puller tactic equipped, so
+  // no movement tactic above already handled this) still runs the same
+  // tag-and-drag state machine — pullMovement (spatial.ts) is the ONE shared
+  // implementation. Declared-intent pullers never reach here: the Puller
+  // tactic already produced a `plan.toPoint` above.
+  const pullAssign = state.plans[self.team]?.assignments?.[self.id]
+  if (pullAssign?.role === 'pull') {
+    const pullTarget = findCombatant(state, pullAssign.targetId)
+    const pull = pullMovement(self, pullTarget, pullAssign.to)
+    if (pull?.toPoint) {
+      if (moveTowardPoint(self, pull.toPoint, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers)) {
+        emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
+      }
+      return
+    }
+  }
   const target = findCombatant(state, self.lockedTargetId)
   if (target && target.alive) {
     // Default positioning: close to attack range and HOLD — stand and fire, letting
@@ -1299,13 +1316,20 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
     }
   }
 
-  const { engagement, avoidTargetIds } = decideEngagement(
-    state, members, enemies, threat, state.plans[team]?.engagement ?? null,
+  const { engagement, avoidTargetIds, assignments } = decideEngagement(
+    state, team, members, enemies, threat, state.plans[team]?.engagement ?? null, state.plans[team]?.assignments,
   )
 
   return {
     waypoint, focusTargetId: focus?.id ?? null, threat, huntTargetId,
-    ...(engagement ? { engagement, avoidTargetIds } : {}),
+    // M2 (tactical-coordination.md §3.3): even with no affordable engagement,
+    // decideEngagement may still have priced a real avoid list (every visible
+    // foe not already fighting us) — publish it on its own rather than
+    // dropping it with the (absent) engagement. When engagement IS present,
+    // always publish both (matches M1 byte-identical shape, incl. the `[]`
+    // case). Both stay absent only when nothing was visible at all.
+    ...(engagement ? { engagement, avoidTargetIds } : avoidTargetIds.length ? { avoidTargetIds } : {}),
+    ...(assignments && Object.keys(assignments).length ? { assignments } : {}),
   }
 }
 
@@ -1878,12 +1902,13 @@ function updateFacing(state: BattleState, self: Combatant, from: Vec2, moved: bo
 // call" knobs are just this, gated or scaled). Threat-based retargeting onto
 // other heroes is a later extension — for now newcomers adopt the caller's foe.
 function rallyPack(state: BattleState, self: Combatant): void {
-  if (!self.provoked || !hasTactic(self, 'pack-tactics')) return
+  // §no-drift (tactical-coordination.md §3.3/§6): callsPack/packRouses
+  // (teamplan.ts) are the SAME predicates pullSetOf's BFS runs, so a
+  // prediction can never drift from what this actually does.
+  if (!self.provoked || !callsPack(self)) return
   let called = 0
   for (const ally of state.combatants) {
-    if (ally === self || !ally.alive || ally.provoked) continue
-    if (ally.team !== self.team || ally.name !== self.name) continue
-    if (distance(self.pos, ally.pos) > self.visionRange) continue
+    if (!packRouses(self, ally)) continue
     ally.provoked = true
     if (self.lockedTargetId) ally.lockedTargetId = self.lockedTargetId
     emit(state, { round: state.round, type: 'aggro', sourceId: ally.id, position: { ...ally.pos } })

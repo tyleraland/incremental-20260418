@@ -7,10 +7,10 @@
 // Kept dependency-light (grid + types only, no behaviour/tactics) to avoid an
 // import cycle: tactics.ts → spatial.ts.
 
-import { distance, moveSpeedOf } from './grid'
+import { distance, moveSpeedOf, attackReach } from './grid'
 import { spatialHashFor, SPATIAL_MARGIN } from './spatialhash'
 import { EPS } from './constants'
-import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
+import type { BattleState, Combatant, EngineSkill, MovementResult, Vec2 } from './types'
 
 const isHidden = (c: Combatant) => c.statuses.some((s) => s.flags.includes('stealthed'))
 
@@ -162,6 +162,30 @@ export function guardPoint(ally: Combatant, threat: Combatant, gap: number): Vec
   const dx = threat.pos.x - ally.pos.x, dy = threat.pos.y - ally.pos.y
   const d = Math.hypot(dx, dy) || 1
   return { x: ally.pos.x + (dx / d) * gap, y: ally.pos.y + (dy / d) * gap }
+}
+
+// §pull (tactical-coordination.md §3.3/§3.4, M2): the tag-and-drag two-phase
+// movement shared by the Puller tactic (TACTIC_REGISTRY, evalMovement's
+// tactic loop) AND executeMovement's default-path fallback (a capability-
+// picked puller that never equipped the tactic) — ONE implementation so
+// declared-intent and capability-picked pullers behave identically.
+//   Phase 1 (not yet tagged): close on `target`, stopping just inside this
+//     unit's own attack reach (mirrors Charger's dive-point geometry) so the
+//     action channel can land the tagging hit on its own turn.
+//   Phase 2 (tagged): walk `to` — everyone else's engage behavior handles the
+//     dragged target arriving as it gives chase.
+// The tag test reads live `threat`: `Combatant.threat` is threat OTHERS built
+// AGAINST this unit, so `target.threat[self.id] > 0` means self has actually
+// hit target — no new serialized state, derived fresh each call.
+export function pullMovement(self: Combatant, target: Combatant | null, to: Vec2): MovementResult | null {
+  if (!target || !target.alive) return null
+  const tagged = (target.threat[self.id] ?? 0) > EPS
+  if (tagged) return { toPoint: { x: to.x, y: to.y } }
+  const dx = target.pos.x - self.pos.x, dy = target.pos.y - self.pos.y
+  const d = Math.hypot(dx, dy)
+  if (d <= EPS) return { toPoint: { x: target.pos.x, y: target.pos.y } }
+  const stopD = Math.max(0, d - attackReach(self) * 0.9)
+  return { toPoint: { x: self.pos.x + (dx / d) * stopD, y: self.pos.y + (dy / d) * stopD } }
 }
 
 // Unit vector from `self` toward the centroid of its living allies — used as

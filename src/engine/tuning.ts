@@ -65,6 +65,15 @@ export const PRIMARY_SWITCH_MARGIN = 0.25
 // high → the party stays locked on a harmless target while a modest but real
 // threat closes in.
 export const PRIMARY_SCORE_FLOOR = 1
+// ENGAGE_EXIT ⏱ (tactical-coordination.md §3.3/§5, M2): the pull-model
+// commitment's abandon hysteresis — engage a camp at RTK < RTD × pullMargin,
+// but only ABANDON a held engagement once the live re-price crosses RTK > RTD
+// × pullMargin × ENGAGE_EXIT. Asymmetric on purpose (the exit bar is looser
+// than the entry bar) so a camp priced right at the entry edge doesn't
+// commit/drop/re-commit every decision round as HP ticks change the ratio by a
+// hair. Too close to 1 → flapping; too big → the party grinds a fight it
+// should have disengaged rounds ago.
+export const ENGAGE_EXIT = 1.3
 
 // ── Postures (the player's behavior dial) ────────────────────────────────────
 //
