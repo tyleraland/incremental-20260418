@@ -5,7 +5,10 @@
 //
 //  1. Global knobs — engine-wide feel constants the plan layer reads. Marked
 //     ⏱ when they should be re-reviewed against real gameplay (the numbers
-//     were chosen analytically, not by play).
+//     were chosen analytically, not by play). Each ⏱ notes the on-screen
+//     symptom of a wrong value; the scenario checklist for a human QA pass
+//     is BACKLOG.md §Plan-layer tuning (watch the Debug tab's Plan panel —
+//     it shows the exact numbers the AI is acting on).
 //  2. The POSTURE table — the player-facing behavior dial. A posture is a
 //     named ROW of policy weights; every plan-layer scorer reads its
 //     coefficients through `postureOf`. This is the seam future high-level
@@ -23,15 +26,28 @@ import type { Combatant, Posture } from './types'
 
 // ── Global knobs ─────────────────────────────────────────────────────────────
 
-// Kite/hold candidate scoring (plan.ts scoreCandidate).
-export const KITE_DEAD_BAND = 0.4  //   flat top of the ring-distance penalty AND kiteToward's hold band — one number so they can't drift apart
-export const GAP_W = 1             // ⏱ pull toward the preferred ring, per cell off it
-// Corridor pricing (M3).
-export const CORRIDOR_MAX_SAMPLES = 40
-export const TRAVEL_CLEAR_EXIT = 0.6   // ⏱ resume marching once the corridor costs < budget × this (hysteresis width)
-// Blink escape (M4).
-export const BLINK_SAMPLES = 16
-export const BLINK_WALK_MIN = 0.4      // ⏱ retreat must open at least this fraction of a step, else "cornered"
+// Kite/hold candidate scoring (plan.ts scoreCandidate + engine.ts kiteToward).
+// KITE_DEAD_BAND: flat top of the ring-distance penalty AND the kite hold band —
+//   one number so they can't drift apart. Too small → kiters shuffle 1 cell per
+//   round at their ring; too big → they stand sloppily off-range.
+export const KITE_DEAD_BAND = 0.4
+// GAP_W ⏱: pull toward the preferred ring, per cell off it. Too weak → units
+//   dawdle out of range of their lock; too strong → it overrides the exposure
+//   tiebreak and everyone stands on the exact ring regardless of danger.
+export const GAP_W = 1
+// Corridor pricing (M3, plan.ts corridorExposure + engine.ts corridorAffordable).
+export const CORRIDOR_MAX_SAMPLES = 40   // price-sample cap per corridor — perf bound, not feel
+// TRAVEL_CLEAR_EXIT ⏱: resume marching once the corridor costs < budget × this.
+//   Hysteresis width — too near 1 → march↔fight flapping as ring monsters die;
+//   too small → over-clears long after the route got cheap.
+export const TRAVEL_CLEAR_EXIT = 0.6
+// Blink escape (M4, engine.ts tryBlinkEscape).
+export const BLINK_SAMPLES = 16          // landing directions probed — determinism-fixed order
+// BLINK_WALK_MIN ⏱: a retreat step must OPEN the threat gap by at least this
+//   fraction of a step, else the unit reads as cornered (and may blink). Too
+//   loose → blink wasted on open-field retreats; too strict → dies shuffling
+//   in the pocket with the cooldown ready.
+export const BLINK_WALK_MIN = 0.4
 
 // ── Postures (the player's behavior dial) ────────────────────────────────────
 //
@@ -41,14 +57,19 @@ export const BLINK_WALK_MIN = 0.4      // ⏱ retreat must open at least this fr
 //   wary   — safety first: stands off from extra threats, refuses corridors a
 //            steady unit would force, blinks out early.
 //
-// Columns (all read via postureOf):
-//   exposureW    — candidate-scoring penalty per point of per-round exposure
-//                  (⏱ small by design: a kiter's job is to fight from inside
-//                  its own range, not to hide)
-//   travelBudget — fraction of CURRENT hp spendable forcing a corridor before
-//                  clear-first kicks in (⏱ the M3 headline number)
-//   blinkGain    — cells the best landing must open the nearest-threat gap by
-//                  before a cornered unit spends its teleport (⏱)
+// Columns (all read via postureOf; each ⏱ — QA per BACKLOG §Plan-layer tuning,
+// and the three rows must stay VISIBLY distinct in play or the dial is noise):
+//   exposureW    ⏱ candidate-scoring penalty per point of per-round exposure.
+//                  Small by design at steady — a kiter's job is to fight from
+//                  inside its own range, not to hide; too high → refuses to
+//                  stand anywhere it can shoot from.
+//   travelBudget ⏱ fraction of CURRENT hp spendable forcing a corridor before
+//                  clear-first kicks in. Too high → travelers plow rings and
+//                  arrive near-dead; too low → they stop to clear cheap
+//                  crossings and orders crawl.
+//   blinkGain    ⏱ cells the best landing must open the nearest-threat gap by
+//                  before a cornered unit spends its teleport. Lower = blinks
+//                  earlier/more freely.
 export interface PostureRow {
   exposureW: number
   travelBudget: number

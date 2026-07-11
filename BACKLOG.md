@@ -468,25 +468,29 @@ same way" by penalising left-side detours.
 - **Strategies = multi-channel tactic bundles.** A registry where one entry
   expands to TacticRefs across channels + an optional planner — e.g.
   Assassinate (focus-squishy + flank + cloak), Lock & Focus, Kite+LoS.
-- **Robust range selection (kite vs. hold-and-let-approach).** Kiting is
-  opt-in; the default ("close to range and hold") is a deliberate
-  placeholder. Needs: a per-role default (blackboard picks from party comp),
-  a genuinely robust kite (right skill range, terrain/LoS-aware), and an
-  anchor/formation plan field so "hold" means a specific spot. Design +
-  milestones: `movement-action-coupling.md` (M1/M2).
+- **Range selection — remaining slices.** The robust kite itself shipped
+  (`movement-action-coupling.md` M1/M2: anchors on the attack the unit will
+  actually use vs its target, terrain/LoS-aware via candidate scoring; QA
+  checklist under §Plan-layer tuning below). Still open: a per-role default
+  (blackboard picks kite-vs-hold from party comp — "close to range and hold"
+  is still the non-kiter default), and an anchor/formation plan field so
+  "hold" means a specific spot.
 - **Threat model — extensions.** WoW-style threat table drives default
   targeting (`selectTarget`, §threat in AGENTS.md). Open: AoE/aura threat (a
   tank holding several mobs at once, not just what it's hitting),
   reachability-aware threat (don't lock a foe you can't path to), threat
   decay/leashing, and a browser-tuning pass on the showcase numbers
   (`THREAT_WEIGHT`, `PULL_FRACTION`).
-- **Offensive-option scoring — more scorers.** `reorderAttacksForTarget` →
-  `estimateDamageVs` is the hook. Open: AoE spread value (score by expected
-  total damage across everyone hit — AoE skills are currently excluded from
-  the re-rank entirely), positioning for a unit's preferred-range attack
-  rather than its longest (design: `movement-action-coupling.md`),
-  sideboard/weapon-swap candidates (scorer already takes `skill: null` so
-  it's swap-ready), and folding status-synergy/on-hit value into the score.
+- **Offensive-option scoring — more scorers.** `estimateDamageVs` is the
+  hook (now consumed by `reorderAttacksForTarget` AND the plan layer's
+  `preferredAttackVs`/`forecastAction` — preferred-range positioning shipped
+  in `movement-action-coupling.md` M1/M2). Open: **AoE spread value** (score
+  by expected total damage across everyone hit — AoE skills are excluded
+  from the re-rank AND invisible to the plan seam, which is what keeps Storm
+  Caller un-unified and `exposureAt` scoring AoE monsters by basic attack —
+  one scorer fixes all three), sideboard/weapon-swap candidates (scorer
+  already takes `skill: null` so it's swap-ready), and folding
+  status-synergy/on-hit value into the score.
 - **Ambush combo** — primitives exist (cloak, back-stab, flanker, ambusher);
   needs an orchestrator holding Cloak until in Back Stab range.
 - **Sneak Attack skill** — a learnable skill scaling the flat
@@ -647,8 +651,9 @@ behavior-sensitive, a refactor, or a product decision.
 - **Magic-number literals worth centralizing.** `380ms` token/cam transitions vs
   `ROUND_MS` (`BattleView`), the `300`ms double-tap window duplicated across
   `ProtoStage`/`ProtoApp`'s tap handlers, and engine tuning literals (taunt
-  `+10%`, kite dead-band `0.4`, "arrived" radius `0.6`, summon fan-out
-  offsets). Name them where it reduces drift risk.
+  `+10%`, "arrived" radius `0.6`, summon fan-out offsets). Name them where it
+  reduces drift risk. (The kite dead-band is done — `KITE_DEAD_BAND` in
+  `engine/tuning.ts`, the home for plan-layer knobs.)
 - **Content orphans (keep-for-future vs remove).** `earth-bolt` skill (defined in both
   registries, equipped by nothing); `versatile`/`calm` traits (unreferenced); element
   id scheme inconsistency (a `lightning` *trait* exists but items use `wind`, e.g.
@@ -925,6 +930,34 @@ Dungeon Floor 2 fight and one open-field fight):
   stun is consumed.
 - Stealthed units can't be targeted by enemies; basic attacks reveal
   the attacker after the strike.
+
+**Plan-layer tuning** (the ⏱ knobs + POSTURES rows in `src/engine/tuning.ts`
+were chosen analytically, not by play — each needs a human-QA pass; watch the
+Debug tab's Plan panel while judging, it shows the exact numbers the AI is
+acting on):
+
+- **Posture spread reads on screen** — same hero, same fight, three
+  postures: bold should *visibly* stand its ground under fire where wary
+  visibly stands off / disengages, with steady between. If you can't tell
+  them apart in 30 seconds of watching, widen `exposureW`/`blinkGain` gaps.
+- **`travelBudget` (the toll-ring judgment)** — order a hero through a ring
+  of ranged monsters ('avoid'). Look for: plowing that reads reckless (HP
+  bar visibly chunks past ~⅓) → budget too high; clearing-first when the
+  crossing would obviously have been cheap → too low; per-posture: bold
+  plows what steady clears.
+- **`TRAVEL_CLEAR_EXIT` (hysteresis)** — during a clear-first fight, the
+  hero must NOT flip march↔fight repeatedly as ring monsters die (watch the
+  ⚔ clearing flag in the Plan panel); one flip back to marching, total.
+- **`exposureW` at steady** — a kiter with two equally-good firing spots
+  should drift to the less-covered one, but must NEVER refuse to fight
+  (hiding out of its own range = weight too high).
+- **`blinkGain`/`BLINK_WALK_MIN` (cornered feel)** — chase a blink mage into
+  a dead-end: it should shuffle briefly (not instantly panic-blink on first
+  contact) and jump BEFORE taking more than a couple of hits. Blink wasted
+  on an open-field retreat = cornered test too loose.
+- **`GAP_W`/`KITE_DEAD_BAND` (hold feel)** — a kiter at its ring must stand
+  visually STILL (no 1-cell shuffling each round), yet re-close promptly
+  when its target backs away.
 
 **Catalog / data** (after `INITIAL_UNITS`, equipment, or skill catalog
 edits):
