@@ -456,6 +456,14 @@ The biggest open chunk. Today every unit picks targets and paths
 independently; `HERD_BIAS = 4` is a one-line hack that approximates "go the
 same way" by penalising left-side detours.
 
+**Design: `tactical-coordination.md`** — TeamPlan v2 (engagement /
+assignments / anchor / avoid list), the planner pipeline + pull model,
+directives (player lever), and host objectives (escort / hold), sliced into
+milestones M0–M6. The blackboard / smart-party / strategies / joint-scoring /
+kite-vs-hold items below, plus Puller / Hold the Line / Bodyguard and the
+ambush orchestrator, fold into those milestones; delete each entry here as
+its milestone ships.
+
 - **Team blackboard.** Per-team scratchpad (`BattleState.plans`), planner-driven;
   wander/focus-fire/finish-them/opportunist already read it. Open: a
   `disableTargetId` avoid-channel, and using it to replace the `HERD_BIAS`
