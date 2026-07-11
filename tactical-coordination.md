@@ -131,10 +131,12 @@ Design rules:
 - **Commitment lives in the plan, not the units.** `Engagement` persists
   across decision rounds (the previous plan seeds the next, exactly like
   `huntTargetId` today) and is dropped only by explicit abandon predicates:
-  primary dead and pull-set empty, party HP collapse below a posture-scaled
-  floor, target unseen past `HUNT_RETAIN_MULT`, or the pull-set having grown
-  into a losing TTK race (the over-pull materialized — fall back / disengage). That is
-  the backlog's "strategy commitment": pursue, notice failure, switch.
+  primary dead and pull-set empty, target unseen past `HUNT_RETAIN_MULT`,
+  or losing the mutual-TTK race past the exit bar — which is also how party
+  HP collapse and over-pull growth are felt (RTD shrinks as party HP falls;
+  a re-anchored or cap-truncated pull set raises RTK), so no separate HP
+  floor exists. That is the backlog's "strategy commitment": pursue, notice
+  failure, switch.
 
 **What the blackboard is — and isn't:**
 

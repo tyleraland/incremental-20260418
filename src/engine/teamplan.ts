@@ -307,6 +307,11 @@ export function decideEngagement(
   const partyHp = members.reduce((sum, m) => sum + m.hp, 0)
   const pullMargin = members.reduce((sum, m) => sum + postureOf(m).pullMargin, 0) / Math.max(1, members.length)
   const affordable = (camp: Combatant[]): boolean => {
+    // A camp that filled the prediction cap is a TRUNCATED prediction — the
+    // real pull (reality doesn't cap) is at least this big and probably
+    // bigger, so the price is an undercount. Refuse rather than trust it
+    // (review finding: the undercounted-over-pull hole).
+    if (camp.length >= PULL_SET_CAP) return false
     const { hp, sustained } = priceOf(camp)
     const rtk = hp / Math.max(EPS, partySustained)
     const rtd = partyHp / Math.max(EPS, sustained)
@@ -339,11 +344,14 @@ export function decideEngagement(
         ids = camp.map((e) => e.id).sort()
       }
 
-      // (b) live re-price loses by more than the exit hysteresis → abandon.
+      // (b) live re-price loses by more than the exit hysteresis → abandon. A
+      // re-anchored set that filled the cap is a truncated undercount (see
+      // `affordable`) — the real fight is at least that big, so it counts as
+      // losing too.
       const { hp, sustained } = priceOf(camp)
       const rtk = hp / Math.max(EPS, partySustained)
       const rtd = partyHp / Math.max(EPS, sustained)
-      const losing = rtk > rtd * pullMargin * ENGAGE_EXIT + EPS
+      const losing = camp.length >= PULL_SET_CAP || rtk > rtd * pullMargin * ENGAGE_EXIT + EPS
 
       if (!losing) {
         let primaryId = primaryAlive ? prevEngagement.primaryId! : null

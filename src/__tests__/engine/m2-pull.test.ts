@@ -405,3 +405,35 @@ describe('M2 — serialize→replay 1:1 with a live pull assignment + committed 
     expect(reloaded.plans.enemy).toEqual(b.plans.enemy)
   })
 })
+
+// Review finding: a pull set that FILLS the prediction cap is a truncated
+// undercount (reality doesn't cap) — it must read as unaffordable, never as a
+// cheap 12-monster camp that's secretly a 13+ chain.
+describe('M2 — cap-hit pull sets are unaffordable', () => {
+  it('a horde past PULL_SET_CAP is refused even when the truncated price looks cheap', () => {
+    const horde = Array.from({ length: 14 }, (_, i) =>
+      eu({
+        id: `w${String(i).padStart(2, '0')}`, name: 'Wolf', team: 'enemy',
+        str: 1, maxHp: 10, hp: 10, visionRange: 10,
+        tactics: [{ id: 'pack-tactics', rank: 1 }],
+      }))
+    const b = createBattle({
+      // int 30 ×2 clears ACUMEN.pull (50) so the M2 race — not the v0 path — decides.
+      playerUnits: [eu({ id: 'p1', str: 25, int: 30 }), eu({ id: 'p2', str: 25, int: 30 })],
+      enemyUnits: horde,
+      mode: 'open', cols: 100, rows: 100,
+    })
+    const find = (id: string) => b.combatants.find((c) => c.id === id)!
+    for (const id of ['p1', 'p2']) find(id).visionRange = 12
+    find('p1').pos = { x: 20, y: 20 }
+    find('p2').pos = { x: 21, y: 20 }
+    horde.forEach((w, i) => { find(w.id).pos = { x: 28 + (i % 5), y: 18 + Math.floor(i / 5) * 2 } })
+
+    advanceRound(b)
+    const plan = b.plans.player!
+    // Truncated prediction ⇒ no engagement; the visible horde lands on the
+    // avoid list instead of being engaged on a false price.
+    expect(plan.engagement ?? null).toBeNull()
+    expect(plan.avoidTargetIds?.length ?? 0).toBeGreaterThan(0)
+  })
+})
