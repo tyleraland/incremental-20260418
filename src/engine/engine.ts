@@ -27,7 +27,7 @@ import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
-import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, type MoveCandidate } from './plan'
+import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, bumpPlanGen, clearPlanCache, type MoveCandidate } from './plan'
 import { postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND } from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
@@ -1877,6 +1877,7 @@ function rallyPack(state: BattleState, self: Combatant): void {
 function takeTurn(state: BattleState, self: Combatant): void {
   const round = state.round
   bumpVisionGen()   // start a fresh per-turn vision-cache generation (only `self` moves this turn)
+  bumpPlanGen()     // …and the plan layer's per-turn threat memo (plan.ts)
   self.moving = false   // set true only if this turn produces a position change
   self.lastResolution = []   // §debug: rebuilt by the eval loops below (see rec)
   // (0) hard control — lose the turn. Stun is consumed on the skipped turn;
@@ -2072,6 +2073,7 @@ export function advanceRound(state: BattleState): BattleState {
   // between-round work (spawns) and other call paths fall back to a brute scan.
   setSpatialHash(new SpatialHash(state.combatants))
   clearVisionCache()   // drop last round's per-turn vision memos (bounds memory across battles)
+  clearPlanCache()     // same for the plan layer's threat memo
   // Open battles run forever — trim the event log so it can't grow unbounded
   // (only the current round's events are ever read for rendering).
   if (state.mode === 'open' && state.collectEvents && state.events.length > EVENT_CAP) {

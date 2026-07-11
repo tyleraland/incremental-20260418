@@ -17,6 +17,7 @@ import { isCaster, castRange, visibleEnemiesOf, nearestEnemyTo } from './spatial
 import { isChanneledAoe, skillCastTarget, canFinishChannel } from './skills'
 import { findCombatant } from './behavior'
 import { sightlineClear } from './barriers'
+import { spatialHashFor } from './spatialhash'
 import { KITE_DEAD_BAND, GAP_W, CORRIDOR_MAX_SAMPLES, postureOf } from './tuning'
 import type { BattleState, Combatant, EngineSkill, Vec2 } from './types'
 
@@ -142,6 +143,47 @@ export function scoreCandidate(state: BattleState, self: Combatant, cand: MoveCa
   return f.score - GAP_W * gap - postureOf(self).exposureW * exposureAt(state, self, cand.pos)
 }
 
+// ---- Per-turn threat memo (pure perf, byte-identical) -----------------------
+// exposureAt is the plan layer's hottest read: corridor pricing samples ~40
+// points × every visible enemy, and each asks preferredAttackVs(e, self) —
+// whose inputs (the enemy's stats/statuses/cooldowns and OUR defenses) are
+// position-independent and stable for the whole of one unit's turn. Memoize
+// the per-(enemy, self) score+reach behind the SAME discipline as the vision
+// cache (spatial.ts): active only while the spatial-hash ambient is live for
+// this combatants array (i.e. inside a stepping round — UI/debug reads outside
+// a round bypass it and recompute fresh), generation-bumped every takeTurn,
+// cleared every round. Memoized values are recomputations of pure functions on
+// inputs that cannot change within the window, so replays stay byte-identical.
+let planGen = 0
+const threatMemo = new Map<string, { gen: number; reach: number; score: number }>()
+export function bumpPlanGen(): void { planGen++ }
+export function clearPlanCache(): void { threatMemo.clear() }
+
+// The enemy's offensive reach + amortized best-attack score against `self` —
+// the position-independent half of exposureAt's per-enemy work.
+function threatProfile(state: BattleState, e: Combatant, self: Combatant): { reach: number; score: number } {
+  const hash = spatialHashFor(state.combatants)
+  const key = `${e.id}|${self.id}`
+  if (hash) {
+    const hit = threatMemo.get(key)
+    if (hit && hit.gen === planGen) return hit
+  }
+  // Threat radius = the enemy's OFFENSIVE reach only (basic attack + damage
+  // skills). Not castRange: its utility-standoff fallback counts heal/buff
+  // ranges, which made a pure healer price as a threat disc it can't hurt
+  // anyone from (review finding).
+  let reach = attackReach(e)
+  for (const s of e.skills) {
+    if (s.damageFormula && s.range > reach) reach = s.range
+  }
+  // Floor at 1: a landed hit always deals ≥1 (defaultCalculateDamage), so an
+  // in-reach threat is never free even when mitigation eats its whole formula.
+  const score = Math.max(1, preferredAttackVs(e, self)?.score ?? 0)
+  const out = { gen: planGen, reach, score }
+  if (hash) threatMemo.set(key, out)
+  return out
+}
+
 // ── Exposure (movement-action-coupling.md §3.3, milestone M3) ────────────────
 
 // How much punishment per round does standing at `p` invite? Sum over the
@@ -156,20 +198,11 @@ export function exposureAt(state: BattleState, self: Combatant, p: Vec2): number
   let total = 0
   for (const e of visibleEnemiesOf(state, self)) {
     if (!e.provoked) continue
-    // Threat radius = the enemy's OFFENSIVE reach only (basic attack + damage
-    // skills). Not castRange: its utility-standoff fallback counts heal/buff
-    // ranges, which made a pure healer price as a threat disc it can't hurt
-    // anyone from (review finding).
-    let reach = attackReach(e)
-    for (const s of e.skills) {
-      if (s.damageFormula && s.range > reach) reach = s.range
-    }
-    if (distance(p, e.pos) > reach + EPS) continue
+    const t = threatProfile(state, e, self)   // reach + score are position-independent (memoized per turn)
+    if (distance(p, e.pos) > t.reach + EPS) continue
     const shoots = e.rangedRange > 0 || isCaster(e)
     if (shoots && !sightlineClear(e.pos, p, state.barriers)) continue
-    // Floor at 1: a landed hit always deals ≥1 (defaultCalculateDamage), so an
-    // in-reach threat is never free even when mitigation eats its whole formula.
-    total += Math.max(1, preferredAttackVs(e, self)?.score ?? 0)
+    total += t.score
   }
   return total
 }

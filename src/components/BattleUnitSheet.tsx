@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore } from '@/stores/useGameStore'
-import { COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap, type BattleState, type Combatant, type StatusEffect } from '@/engine'
+import {
+  COMBAT_SKILLS, serializeBattle, STATUS_REGISTRY, skillActiveCap,
+  forecastAction, preferredAttackVs, exposureAt, corridorExposure, postureOf, moveSpeedOf,
+  type BattleState, type Combatant, type StatusEffect,
+} from '@/engine'
 
 // The selected-unit bottom sheet + its tabs (Stats / Debug), split out of
 // BattleView so the battlefield renderer stays about *drawing the field*. These
@@ -50,6 +54,15 @@ function buildDebugText(c: Combatant, battle: BattleState): string {
   L.push(`hp ${Math.ceil(c.hp)}/${c.maxHp}  pos (${c.pos.x.toFixed(1)},${c.pos.y.toFixed(1)})  vision ${c.visionRange === Infinity ? '∞' : c.visionRange}`)
   L.push(`lock: ${targetSight(battle, c, c.lockedTargetId).text}  team-focus: ${nameInBattle(battle, plan?.focusTargetId)}  hunt: ${nameInBattle(battle, plan?.huntTargetId)}  waypoint: ${wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}`)
   L.push(`tactics: ${c.tactics.map((t) => `${t.def.channel}:${t.def.name}`).join(', ') || '(none)'}`)
+  {
+    // §plan debug: the same live readout the Plan panel shows, for bug reports.
+    const { f, aim, pref, exposure, posture, corridor, blink } = planReadout(battle, c)
+    L.push(`plan: posture=${posture}  cast=${f.option ? `${f.option.skill?.id ?? 'basic'}→${nameInBattle(battle, f.option.targetId)}(${f.score.toFixed(1)})` : 'idle'}`
+      + `  anchor=${pref ? `${pref.skill?.id ?? 'basic'}@r${pref.range.toFixed(1)}` : aim ? 'none' : 'no-lock'}`
+      + `  los=${f.losClear} fin=${f.finishable} exp=${exposure.toFixed(1)}`
+      + `${corridor ? `  route=${corridor.cost.toFixed(0)}/${corridor.budget.toFixed(0)}${c.travelClearing ? ' CLEARING' : ''}` : ''}`
+      + `${blink ? `  blink=${(c.moveAbilityCds['teleport'] ?? 0) > 0 ? `cd${c.moveAbilityCds['teleport']}` : 'ready'}` : ''}`)
+  }
   if (c.lastResolution.length) {
     L.push('-- tactic resolution (most recent turn) --')
     for (const r of c.lastResolution) L.push(`  ${r.channel}:${r.name} → ${r.outcome}`)
@@ -195,7 +208,78 @@ export function StatsTab({ c, battle, battleOnly = false }: { c: Combatant; batt
   )
 }
 
-// Debug tab: the team blackboard, this unit's tactic resolution (flagging
+// §plan debug (movement-action-coupling.md §5): the plan layer's live view from
+// where the unit stands — recomputed on render through the SAME pure functions
+// the AI decides with (forecastAction/preferredAttackVs/exposureAt/
+// corridorExposure), so what you read here is definitionally what the unit
+// sees. Pure reads only; outside a stepping round the engine's caches are
+// inactive, so rendering can never perturb a replay (the bugwatch rule).
+function planReadout(battle: BattleState, c: Combatant) {
+  const f = forecastAction(battle, c, c.pos)
+  const lock = c.lockedTargetId ? battle.combatants.find((x) => x.id === c.lockedTargetId) : null
+  const aim = lock && lock.alive && lock.team !== c.team ? lock : null
+  const pref = aim ? preferredAttackVs(c, aim) : null
+  const exposure = exposureAt(battle, c, c.pos)
+  const posture = c.posture ?? 'steady'
+  const row = postureOf(c)
+  // Travel pricing — only meaningful while marching under an 'avoid' order.
+  const corridor = c.moveOrder && c.moveEngage === 'avoid'
+    ? { cost: corridorExposure(battle, c, c.moveOrder, moveSpeedOf(c)), budget: c.hp * row.travelBudget }
+    : null
+  const blink = c.moveAbilities.find((a) => a.kind === 'teleport')
+  return { f, aim, pref, exposure, posture, row, corridor, blink }
+}
+
+function PlanPanel({ c, battle }: { c: Combatant; battle: BattleState }) {
+  const { f, aim, pref, exposure, posture, row, corridor, blink } = planReadout(battle, c)
+  const castText = f.option
+    ? `${f.option.skill?.name ?? 'basic attack'} → ${nameInBattle(battle, f.option.targetId)} (${f.score.toFixed(1)}/rd)`
+    : 'idle — nothing castable from here'
+  const anchorText = pref
+    ? `${pref.skill?.name ?? 'basic attack'} @ r${pref.range.toFixed(1)} (${pref.score.toFixed(1)}/rd)`
+    : aim ? 'no offensive option vs lock' : 'no lock'
+  return (
+    <div className="rounded border border-game-border bg-game-bg/60 p-1.5">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-game-text-dim uppercase tracking-wide">Plan</span>
+        <span className="text-game-muted">
+          posture <span className="text-game-text">{posture}</span>
+          <span className="text-game-muted"> (exp×{row.exposureW} · route {Math.round(row.travelBudget * 100)}% · blink+{row.blinkGain})</span>
+        </span>
+      </div>
+      <div className="space-y-0.5 text-game-text-dim">
+        <div>cast now <span className={f.option ? 'text-game-green' : 'text-game-muted'}>{castText}</span></div>
+        {aim && (
+          <div>
+            anchor vs {aim.name} <span className="text-game-text">{anchorText}</span>
+            <span className="text-game-muted"> · at {Math.hypot(c.pos.x - aim.pos.x, c.pos.y - aim.pos.y).toFixed(1)}</span>
+          </div>
+        )}
+        <div>
+          spot <span className={f.losClear ? 'text-game-text' : 'text-amber-300'}>{f.losClear ? 'clear shot' : 'LoS blocked'}</span>
+          {' · '}<span className={f.finishable ? 'text-game-text' : 'text-amber-300'}>{f.finishable ? 'cast safe' : 'channel interruptible'}</span>
+          {' · '}exposure <span className={exposure > 0 ? 'text-amber-300' : 'text-game-text'}>{exposure.toFixed(1)}/rd</span>
+        </div>
+        {corridor && (
+          <div>
+            route price <span className={corridor.cost > corridor.budget ? 'text-amber-300' : 'text-game-text'}>
+              {corridor.cost.toFixed(0)} HP vs budget {corridor.budget.toFixed(0)}
+            </span>
+            {c.travelClearing && <span className="text-amber-300"> · ⚔ clearing first</span>}
+          </div>
+        )}
+        {blink && (
+          <div>blink r{blink.range} <span className={(c.moveAbilityCds['teleport'] ?? 0) > 0 ? 'text-game-muted' : 'text-game-green'}>
+            {(c.moveAbilityCds['teleport'] ?? 0) > 0 ? `cooling ${c.moveAbilityCds['teleport']}` : 'ready'}
+          </span></div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Debug tab: the team blackboard, the plan layer's live view (why THIS spot,
+// what fires from here), this unit's tactic resolution (flagging
 // channels with competing priorities), and the last-15-turns trace. Built so a
 // developer — or you, pasting the copied block into chat — can see exactly what
 // the unit was deciding and why.
@@ -251,6 +335,9 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
         {lock.beyond && <div className="mt-1 text-amber-300">⚠ locked target is out of sight (it can't be reached/hit — a stale far lock keeps this unit "engaged")</div>}
         {divergent && <div className="mt-1 text-amber-300">⚠ this unit's lock ≠ team focus</div>}
       </div>
+
+      {/* Plan — the live plan-layer view from where the unit stands */}
+      <PlanPanel c={c} battle={battle} />
 
       {/* Tactic resolution — what's active now, and why the rest are dormant */}
       <div className="rounded border border-game-border bg-game-bg/60 p-1.5">

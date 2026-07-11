@@ -316,3 +316,34 @@ consistent with the pre-existing avoid*/escapeDir precedent.
 - Tests: `posture.test.ts` (table ordering, steady default, exposure
   scoring gradient, the self-calibrating toll-ring bold-plows/wary-clears
   A/B, snapshot + relink plumbing) and the Tactician-lens dial smoke test.
+
+### Debt paydown + the Plan debug panel (post-levers slice)
+- **exposureAt per-turn threat memo** (was the "required before the
+  50-combatant soak" item): the position-independent half of each enemy's
+  threat (offensive reach + best-attack score vs us) is memoized per
+  (enemy, self) per turn behind the same discipline as the vision cache —
+  active only inside a stepping round, generation-bumped every takeTurn,
+  cleared every round. Corridor pricing drops from O(samples × enemies ×
+  their skills) to O(samples × enemies) after the first sample. Pure
+  memoization of pure functions on turn-stable inputs ⇒ byte-identical.
+- **Combatant serialization contract** (was "serialization works by
+  spread-luck"): `snapshot-fields.test.ts` round-trips a fully-populated
+  combatant and fails loudly if any field is dropped, diverges, or carries
+  a function/NaN/Infinity (visionRange excepted). New fields must be added
+  to its `populate` — the test file says so at the top. The deeper `mind`
+  sub-object refactor stays deferred: the contract test buys the safety at
+  ~5% of the churn.
+- **Scorer knobs** — already centralized in `tuning.ts` (levers slice).
+- **Test builders** — left as-is deliberately: tsc already fails loudly
+  when a required Combatant field is missing from the literal builders
+  (that's how both additions this project were caught); deriving them from
+  makeCombatant would change what `combatant({skills})` means (skill-tactic
+  injection) and ripple through existing tests for little safety gain.
+- **Plan debug panel** (BattleUnitSheet Debug tab): a live plan-layer
+  readout recomputed on render through the SAME pure functions the AI
+  decides with — cast-now forecast (option → target, per-round score),
+  preferred-attack anchor vs the lock (+ current distance), LoS /
+  channel-safety / per-round exposure at the current spot, route price vs
+  posture budget (+ the ⚔ clearing flag) while marching 'avoid', blink
+  range/cooldown, and the posture row. The copy-to-share debug dump gains
+  the same line, so bug reports carry it. Tests: `PlanPanel.test.tsx`.
