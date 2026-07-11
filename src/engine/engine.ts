@@ -27,6 +27,7 @@ import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
+import { preferredRangeVs } from './plan'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -1135,13 +1136,14 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   const target = findCombatant(state, self.lockedTargetId)
   if (target && target.alive) {
     // Default positioning: close to attack range and HOLD — stand and fire, letting
-    // the enemy approach (trust the front line to peel). A caster stops at its *cast*
-    // range (castRange) rather than its basic-attack reach, so a mage with a melee
-    // weapon but ranged spells doesn't march into melee mid-channel — but it does
-    // NOT back off. Active **kiting** (keeping a gap by retreating) is deliberately
-    // opt-in via the Kiter / Wary Caster tactics (the `desiredRange` path above), not
-    // a caster default, while we tune what the right default is.
-    const reach = isCaster(self) ? castRange(self) : undefined
+    // the enemy approach (trust the front line to peel). A caster stops at the range
+    // of the attack it will actually use on THIS target (preferredRangeVs, the plan
+    // seam) rather than its basic-attack reach, so a mage with a melee weapon but
+    // ranged spells doesn't march into melee mid-channel — but it does NOT back off.
+    // Active **kiting** (keeping a gap by retreating) is deliberately opt-in via the
+    // Kiter / Wary Caster tactics (the `desiredRange` path above), not a caster
+    // default, while we tune what the right default is.
+    const reach = isCaster(self) ? preferredRangeVs(self, target) : undefined
     const moved = moveToward(self, target, moveSpeedOf(self) * (plan?.speedMult ?? 1), state.combatants, state.barriers, reach)
     if (moved) emit(state, { round: state.round, type: 'move', sourceId: self.id, position: { ...self.pos } })
     return
@@ -1505,7 +1507,10 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
   // holding at the kite gap from the nearest leaves us locked on a target we can't
   // hit — stalled forever. Detect that so we close on our prey instead of parking.
   const aim = findCombatant(state, self.lockedTargetId)
-  const shootRange = castRange(self)
+  // Firing range ON THE LOCK = the range of the attack we'd actually use on it
+  // (the plan seam) — consistent with the kite anchor, so "close on our prey"
+  // stops exactly where the preferred attack opens up.
+  const shootRange = aim && aim.alive ? preferredRangeVs(self, aim) : castRange(self)
   // Beyond ACTUAL firing range of our lock (no band slack — a hair too far means we
   // can't fire on it and would plink some nearer foe instead, never finishing the
   // one we're committed to).

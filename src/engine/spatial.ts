@@ -232,13 +232,15 @@ export function castRange(self: Combatant): number {
   return hasAttack ? shootRange : maxSkillRange(self)
 }
 
-export function kiteDistanceFor(self: Combatant, threat: Combatant): number {
+// `maxRange` is the range the kite anchors on — the distance the unit wants to
+// fight from. Defaults to castRange (longest single-target shot) so direct
+// callers/tests keep the old anchor; the kiter/Wary Caster pass the plan
+// layer's target-aware preferredRangeVs instead (movement-action-coupling.md
+// M1) so the hold sits at the range of the attack they'll actually use.
+export function kiteDistanceFor(self: Combatant, threat: Combatant, maxRange = castRange(self)): number {
   // Match maxSkillRange's filter: casters consider all skills (positioning for
   // next cast); non-casters only need cast room for skills currently ready.
   const includeAll = isCaster(self)
-  // Anchor the kite on the range we can actually *shoot a single target* from (see
-  // castRange) — NOT a longer situational AoE.
-  const maxRange = castRange(self)
   const maxChannel = self.skills.reduce(
     (m, s) => (!includeAll && (self.skillCooldowns[s.id] ?? 0) > 0 ? m : Math.max(m, s.channelTime)),
     0,

@@ -19,6 +19,7 @@ import {
   squishiestAlly, flankPoint, guardPoint, kiteDistanceFor,
 } from './spatial'
 import { selectSkillTarget, skillActiveCap } from './skills'
+import { preferredRangeVs } from './plan'
 import type {
   BattleState, Combatant, ResolvedTactic, StatusEffect, TacticDef, TacticRef,
 } from './types'
@@ -248,10 +249,13 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
     id: 'kiter', name: 'Kiter', scope: 'unit', channel: 'movement', kind: 'floor',
     description: 'Ranged: hold at spell/attack range from the nearest foe; back off further if a fast chaser or a long-channel spell would catch you mid-cast.',
     movement: (self, state) => {
-      if (self.rangedRange <= 0 || !lockedTarget(self, state)) return null
+      const aim = lockedTarget(self, state)
+      if (self.rangedRange <= 0 || !aim) return null
       const threat = nearestEnemyTo(self, state)
       if (!threat) return null
-      return { desiredRange: kiteDistanceFor(self, threat) }
+      // Anchor on the range of the attack we'll actually use on our lock (plan
+      // layer), not our longest — the nearest foe still sets the safety math.
+      return { desiredRange: kiteDistanceFor(self, threat, preferredRangeVs(self, aim)) }
     },
   },
   'swoop': {
@@ -305,9 +309,11 @@ export const TACTIC_REGISTRY: Record<string, TacticDef> = {
       const threat = nearestEnemyTo(self, state)
       if (!threat) return null
       // Widen the kite gap the more we've been denied (capped) so a chaser can't
-      // keep clipping the cast; rank steepens the back-off.
+      // keep clipping the cast; rank steepens the back-off. Anchored on the
+      // attack we'll actually use (plan layer), like the kiter.
       const extra = Math.min(self.interruptedCount, 4) * (0.8 + 0.4 * (rank - 1))
-      return { desiredRange: kiteDistanceFor(self, threat) + extra }
+      const aim = lockedTarget(self, state) ?? threat
+      return { desiredRange: kiteDistanceFor(self, threat, preferredRangeVs(self, aim)) + extra }
     },
   },
   // Regroup retired: cohesion is now a light default bias inside back-off

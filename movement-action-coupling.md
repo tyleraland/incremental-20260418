@@ -244,15 +244,20 @@ Add `at: Vec2 = self.pos` to `selectSkillTarget`, `canFinishChannel`,
 hypothetical position yet. Pure refactor; snapshot fixtures and the full suite
 must pass unchanged.
 
-**M1 — `forecastAction` + anchor the kite/hold on it.**
-Introduce `plan.ts`; `kiteDistanceFor` and the caster default hold anchor on
-`forecastAction(state, self, self.pos).range` instead of `castRange`. This is
-the smallest behavior change that kills the "parked at the wrong range" class
-(and subsumes `kiteToward`'s `aimOutOfRange` patch — the forecast already
-targets the lock). Tests: new forecast unit tests (element flip picks the
-other bolt's range; cooldown flips the anchor; Bash-vs-bolt kit vs
-magic-immune foe anchors melee); `los-kiting` / `moat-kiting` / `molasses`
-suites stay green or change for stated reasons.
+**M1 — the plan anchor: kite/hold at the range of the attack you'll use.**
+✅ Shipped as `plan.ts` → `preferredAttackVs`/`preferredRangeVs` — the
+forecast's `.range` leg (target-aware, `estimateDamageVs`-scored,
+cooldown/caster-filtered like `castRange`, ties prefer longer reach; nothing
+scores → `castRange` fallback so support units keep their utility standoff).
+Anchors: the kiter and Wary Caster (`desiredRange`), the caster default hold,
+and `kiteToward`'s shoot-on-the-lock range. `forecastAction(state, self, at)`
+— the castable-NOW shape — lands with its first consumer in M2 rather than as
+a dead export. Kills the "parked at the wrong range" class; `kiteToward`'s
+`aimOutOfRange` patch stays but now closes to the preferred range, fully
+subsumed when M2's candidate scoring lands. Tests: `plan.test.ts` (element
+flip, cooldown flip, Bash-vs-bolt anchors melee vs a magic-immune foe,
+amortization, healer fallback, kiter wiring); `los-kiting` / `moat-kiting` /
+`molasses` stayed green (uniform-range kits are unaffected by design).
 
 **M2 — candidate scoring for the kite/hold family.**
 Generalize `escapeHeading`'s scored loop into `scoreCandidate` +

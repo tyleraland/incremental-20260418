@@ -28,6 +28,7 @@ export {
   armoredFactor, nimblePeriod,
 } from './tactics'
 export { COMBAT_SKILLS, buildEngineSkill, makeSkillTactic, selectSkillTarget, SKILL_TACTICS, inheritedTacticIds, isChanneledAoe, isOffensiveAoe, skillActiveCap } from './skills'
+export { preferredAttackVs, preferredRangeVs } from './plan'
 export { STATUS_REGISTRY, buildStatus } from './status'
 export { serializeBattle, deserializeBattle } from './snapshot'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'
