@@ -452,35 +452,41 @@ per-hero attribution is round-robin, not true kill credit.
 
 ## AI & coordination
 
-The biggest open chunk. Today every unit picks targets and paths
-independently; `HERD_BIAS = 4` is a one-line hack that approximates "go the
-same way" by penalising left-side detours.
+**Design: `tactical-coordination.md`** — TeamPlan v2, planner pipeline +
+pull model, directives (player lever), host objectives (escort / hold /
+work), sliced into milestones. **M0–M3 shipped** (engagement/kill-order/
+avoid list; pullSetOf + mutual-TTK race + Puller; stance/anchor/formation/
+standing guard/corridor; acumen gates) — see the doc's milestone ledger and
+`src/engine/CLAUDE.md` §coordination. Still open: **M2.5 rove/jungler**,
+**M4 directives** (subsumes the old "Strategies = multi-channel tactic
+bundles" idea — Assassinate / Lock & Focus / Hold the Line as one registry
+entry each), **M5 objectives + chaperone**, **M6 rollout experiment**, and
+the **intel mask** independent track (imperfect information).
 
-**Design: `tactical-coordination.md`** — TeamPlan v2 (engagement /
-assignments / anchor / avoid list), the planner pipeline + pull model,
-directives (player lever), and host objectives (escort / hold), sliced into
-milestones M0–M6. The blackboard / smart-party / strategies / joint-scoring /
-kite-vs-hold items below, plus Puller / Hold the Line / Bodyguard and the
-ambush orchestrator, fold into those milestones; delete each entry here as
-its milestone ships.
+**M1–M3 follow-ups (from the phase bug-hunt reviews; all small):**
 
-- **Team blackboard.** Per-team scratchpad (`BattleState.plans`), planner-driven;
-  wander/focus-fire/finish-them/opportunist already read it. Open: a
-  `disableTargetId` avoid-channel, and using it to replace the `HERD_BIAS`
-  path-detour hack.
-- **Smart-party baseline (beyond opt-in tactics).** Focus-fire/finish-them are
-  opt-in today; a competent party would default to converging fire, not
-  over-pulling nearby mobs, holding a chokepoint, and staying grouped instead
-  of scattering after separate targets. Blackboard-driven, building on the
-  Charger/Flanker leashes (first cohesion-over-chase step).
-- **Strategies = multi-channel tactic bundles.** A registry where one entry
-  expands to TacticRefs across channels + an optional planner — e.g.
-  Assassinate (focus-squishy + flank + cloak), Lock & Focus, Kite+LoS.
-- **Range selection — remaining slices.** A per-role default (blackboard
-  picks kite-vs-hold from party comp — "close to range and hold" is still
-  the non-kiter default), and an anchor/formation plan field so "hold"
-  means a specific spot. (Kite mechanics: `movement-action-coupling.md`;
-  human QA for its tuning knobs: §Plan-layer tuning below.)
+- *Corridor hysteresis* — `corridor` re-derives from the live centroid each
+  decision round with no stickiness; a centroid straddling a barrier midline
+  could alternate corners round-to-round (party zigzag). Add a committed-
+  corner hold like `escapeDir`/`avoidSide`.
+- *Unify the two guard pickers* — the Guardian tactic targets
+  `squishiestAlly` (lowest raw def) while the planner's standing guard picks
+  `fragilityOutlier` (toughness vs party median); a Guardian-equipped unit
+  can protect someone other than the plan's `allyId` (advisory-only today —
+  comment at `executeMovement`'s guard branch).
+- *Stance/anchor refresh on primary handoff* — stance+anchor recompute on
+  fresh commit or uninvited re-anchor only; a plain primary handoff inside a
+  held engagement carries a possibly-stale hold anchor (LoS was checked vs
+  the OLD primary). Deliberate commit-time design; revisit if it reads wrong.
+- *`FOCUS_WEIGHT` feel* — convergence steers pre-contact and idle units;
+  accrued threat deliberately outbids it once damage flows. If focus reads
+  cosmetic in real fights, raise it or make it scale with acumen.
+- *`ACUMEN.stance` dormancy* — 90 vs a fresh roster's ≈75 means stance/
+  formation is late-game content by default; tune with the curated ramp.
+- *Moving-fight pull prediction* — `pullSetOf` prices membership at the
+  commit point; the no-drift test is stationary. A dragged fight re-anchors
+  via the uninvited-joiner path (covered by test), but a regression pinning
+  prediction quality for a genuinely mobile pull would strengthen it.
 - **Threat model — extensions.** WoW-style threat table drives default
   targeting (`selectTarget`, §threat in AGENTS.md). Open: AoE/aura threat (a
   tank holding several mobs at once, not just what it's hitting),
@@ -505,15 +511,14 @@ its milestone ships.
     shallow search behind the same `scoreCandidate` interface; cheap and
     trustworthy because the engine is RNG-free (one rollout = a real verdict).
     Highest-leverage next seam — directly tests whether 1-ply is the ceiling.
-  - **Team-plan (joint) scoring.** Units score candidates *conditioned on* a
-    party plan (who tanks / focuses / peels / bodyguards), not just solo. Builds
-    on Team blackboard + Smart-party baseline above; this is the seam where
-    "converging fire, hold the chokepoint, guard the carry" actually lives.
-  - **Strategy commitment.** The "multi-channel tactic bundles" item above, plus
-    the missing half: a first-class Strategy the unit *commits to and holds*
-    across turns with an explicit "abandon this plan?" predicate — the
-    difference between re-deriving the best move each round and pursuing an
-    approach, noticing it fail, and switching.
+  - **Team-plan (joint) scoring — deepen.** v1 shipped in M3 (`cohesionW`
+    anchor-drift term conditions `scoreCandidate` on the plan). Open: more
+    plan-conditioned terms (slot conformance for candidates, guard coverage
+    value) rather than only anchor distance.
+  - **Strategy commitment — the tactic-bundle half.** Engagement-level
+    commit-and-abandon shipped (M1/M2 hysteresis + abandon predicates); the
+    remaining half is M4 directives — a player-chosen Strategy expanding to
+    tactics + planner hints, held until its own abandon predicate fires.
   - **Enemy prediction (exposure horizon > 0).** `exposureAt` prices threats
     where they *stand* today. The forecast is already symmetric (it runs
     `preferredAttackVs` for enemies), so running it forward a few rounds for the
@@ -621,14 +626,13 @@ guard** — these are the *equippable-tactic* expression of those.
   ally nearest death (`EngineSkill.dispelCategory` exists). *Counters* a
   debuff-stacking Hexer.
 
-**Party positioning (overlaps Smart-party baseline — promote to equippable):**
+**Party positioning:**
 
-- **Puller** (movement + targeting · trigger). One hero tags a distant mob and
-  retreats toward the party waypoint, dragging it back. *Counters* dense
-  packs (avoids over-pull wipes).
-- **Hold the Line / Chokepoint** (movement · party). Form up on a barrier gap
-  so melee funnels in one or two at a time. *Counters* a high-`openWorldCap`
-  Swarm.
+- **Hold the Line / Chokepoint** (party). The planner already anchors hold-
+  stance formations at barrier corners (M3); the remaining half is the
+  player lever — a Hold-the-Line *directive* (tactical-coordination.md M4)
+  that forces the anchor policy. (Puller shipped in M2 as an equippable
+  tactic + the planner's pull assignment.)
 
 Other archetype counters worth a tactic when the enemy lands: **anti-stealth /
 Detector** (reveal + strike cloaked foes via `removesStatusId`, vs an **Assassin
@@ -916,8 +920,11 @@ harnesses, which separate engine vs render cost):
 
 ## Heuristic shortcuts
 
-- `HERD_BIAS = 4` — numeric fudge for path side-picking. The team blackboard
-  is the real fix.
+- `HERD_BIAS = 4` — residual left-tax for path side-picking. The plan
+  `corridor` (M3) now herds waypoint travel; the residual only matters for
+  combat-approach `moveToward` in encounters (no waypoint). Retirement was
+  probed in M3 with no clear win — kill it only with a corridor-style hint
+  threaded into the approach path too.
 - **Magic focus `range` stat** — rod / wand / staff carry `range` to make
   casters ranged in the engine. Class (Mage / Cleric) should set this, not
   weapons.

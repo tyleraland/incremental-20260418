@@ -275,7 +275,7 @@ export function fragilityOutlier(members: Combatant[]): Combatant | null {
 // highest-toughness member excluding the outlier itself (can't guard itself)
 // and the puller (already has a job) — id tiebreak.
 function pickGuard(members: Combatant[], outlierId: string, pullerId: string | null): Combatant | null {
-  const declared = members.filter((m) => m.id !== outlierId && hasTactic(m, 'guardian')).sort(byId)
+  const declared = members.filter((m) => m.id !== outlierId && m.id !== pullerId && hasTactic(m, 'guardian')).sort(byId)
   if (declared.length) return declared[0]
   let best: Combatant | null = null
   let bestT = -Infinity

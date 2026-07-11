@@ -1275,10 +1275,12 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   }
   // §coordination M3 standing guard (tactical-coordination.md §3.2/§3.4): the
   // planner assigned THIS unit to peel for the fragility outlier — literally
-  // the guardian tactic's own math (guardPoint), just aimed by the plan
-  // instead of "squishiest ally", so declared-intent and plan-picked guards
-  // move identically. A unit that EQUIPPED guardian never reaches here (its
-  // tactic already produced `plan.toPoint` above and returned).
+  // the guardian tactic's own math (guardPoint), aimed at the plan's pick. A
+  // unit that EQUIPPED guardian never reaches here (its tactic already
+  // produced `plan.toPoint` above and returned) — and note its own picker is
+  // squishiestAlly (lowest def), which can DIVERGE from fragilityOutlier's
+  // toughness-median pick; the plan's `allyId` on such a unit is advisory
+  // (BACKLOG: unify the two pickers).
   if (myAssign?.role === 'guard') {
     const protectee = findCombatant(state, myAssign.allyId)
     const threat = protectee && protectee.alive ? nearestEnemyTo(protectee, state) : null

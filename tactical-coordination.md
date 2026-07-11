@@ -627,30 +627,29 @@ effect.
 
 ## 8. Milestones (each independently shippable)
 
-**M0 — TeamPlan v2 plumbing (byte-identical).** Add the optional fields +
-`objectives`, serialization, `postureOf` columns (`cohesionW`, `pullMargin`
-— read by nothing yet), the acumen computation + `ACUMEN` thresholds table
-(gating nothing yet), per-combatant capability precompute, Plan-panel/
-`bsnap -i` display. Planner publishes nothing new. Full suite + snapshot
-fixtures unchanged.
+**M0 — TeamPlan v2 plumbing (byte-identical).** ✅ Shipped. Types +
+`objectives` serialization, posture columns, `ACUMEN` table (calibrated:
+fresh 6-hero roster ≈75 summed effective INT), `teamAcumen`/
+`computeCapability`, Plan-panel + `bsnap -i` surfaces. Token byte-identity
+pinned (`teamplan-m0.test.ts`); legacy `-i` output diffed identical.
 
-**M1 — smart-party targeting baseline.** Planner publishes
-`engagement.primaryId` — the kill-order policy (default dangerous-first
-off the `threat` record ÷ TTK proxy) with commitment hysteresis — and
-`avoidTargetIds` (v0: enemies beyond the hunt target's camp). `selectTarget`
-gains the focus bonus + avoid filter. Kills "focus fire is opt-in".
-Tests: convergence beats baseline time-to-kill on a mixed camp; the
-dangerous foe dies before the trash; tank keeps aggro under focus;
-avoid-listed bystander never acquired; replay 1:1.
+**M1 — smart-party targeting baseline.** ✅ Shipped. Kill order =
+`threat/TTK` with `PRIMARY_SWITCH_MARGIN` hysteresis over a
+`PRIMARY_SCORE_FLOOR` (the PULL_FLOOR pattern — review-found zero-score
+thrash fix); `FOCUS_WEIGHT` in `selectTarget` converges idle units but
+never outbids accrued threat (tank keeps aggro, pinned symmetric).
+Convergence is strongest pre-contact by design — real threat wins once
+damage flows (⏱ feel-tune `FOCUS_WEIGHT` if it reads cosmetic in play).
+Tests: `m1-targeting.test.ts`.
 
-**M2 — pull model + engagement commitment.** Camps, `pullSetOf` (shared
-predicates with `rallyPack`), pull pricing/budget, engage-or-not, abandon
-predicates, `pull` assignment + tag-and-drag execution, and the equippable
-**Puller** tactic as its player-forced form. First `ACUMEN` gate goes live
-(low-acumen teams skip prediction — they over-pull, diegetically). Showcase:
-dense pack camp — party pulls singles it can't afford whole. Tests: pull-set
-matches realized aggro exactly; over-budget camp → puller cycle; budget
-collapse → disengage; brawn party over-pulls where scholar party doesn't.
+**M2 — pull model + engagement commitment.** ✅ Shipped. `pullSetOf` rides
+predicates extracted from `rallyPack` (`callsPack`/`packRouses`/
+`passiveAcquires` — no-drift pinned by a predict-then-fight test); mutual-
+TTK race vs posture-mean `pullMargin`, `ENGAGE_EXIT` asymmetric abandon,
+over-pull re-anchor, committed fast path (§5 — appraise skipped while
+held). Cap-filled pull sets read as **unaffordable** (truncated predictions
+undercount — review fix). `ACUMEN.pull` re-read every decision round. Pull
+assignment + Puller tactic share one tag-and-drag. Tests: `m2-pull.test.ts`.
 
 **M2.5 — rove (the jungler).** `rove` assignment: solo-TTK eligibility,
 micro-engagement in the assignment, rejoin predicates + share cadence, the
@@ -658,15 +657,18 @@ equippable Jungler tactic, acumen gate. Tests: rover clears a side camp the
 party never visits; rejoins on a big party engagement; never picked when no
 camp is solo-affordable; straggler rule leaves it alone.
 
-**M3 — anchor, stance, formation.** `decide` picks stance + anchor
-(v0 anchor: current ground or the nearest barrier gap toward the camp);
-`anchor`/`hold` execution with fragility-ordered slot fan (outlier rear) +
-the default standing guard on a fragility outlier; `cohesionW` term in
-`scoreCandidate`; kite-stance default back-off; plan `corridor` + HERD_BIAS
-retirement. Tests: line forms and holds a mapgen choke vs a swarm;
-comp-driven stance flips (ranged party kites, melee party collapses); the
-squishy outlier ends fights with visibly fewer hits taken; Geffen-2
-file-around stays clean without HERD_BIAS.
+**M3 — anchor, stance, formation.** ✅ Shipped. Stance decided at commit
+(`ACUMEN.stance`-gated; kite = outrange+outrun by capability medians, hold
+= vis-graph-corner anchor near the commit centroid, else collapse) and held
+for the engagement's life; fragility-ordered two-rank slots (outlier rear);
+standing guard ungated in every branch (guardPoint shared with Guardian);
+`cohesionW` anchor-drift term in `scoreCandidate`; planner `corridor`
+routes waypoint travel the same way — **HERD_BIAS survives as the residual
+encounter tiebreak** (combat-approach `moveToward` never consults the
+corridor; retirement probed, no clear win). Known follow-ups in BACKLOG:
+corridor hysteresis, Guardian-vs-plan protectee unification, stance refresh
+on primary handoff, `ACUMEN.stance` dormancy at fresh-roster INT. Tests:
+`m3-formation.test.ts` (incl. the M2-review deferred regressions).
 
 **M4 — directives.** Registry + party slot + adapter injection + the launch
 five; ambush/assassinate timing (cloak-hold orchestration). Persisted like
