@@ -39,6 +39,18 @@ describe('exposureAt', () => {
     const st = stateOf([self(), chipper])
     expect(exposureAt(st, st.combatants[0], { x: 10, y: 12 })).toBeGreaterThanOrEqual(1)
   })
+
+  it("a pure healer threatens only its melee poke, not its heal range", () => {
+    // Reach must come from OFFENSIVE options — castRange's utility fallback
+    // priced a healer as a threat disc the size of its heal range.
+    const healer = combatant({
+      id: 'h', team: 'enemy', str: 5, int: 20, rangedRange: 0, pos: { x: 10, y: 10 },
+      skills: [{ id: 'mend', name: 'Mend', type: 'heal', targeting: 'single_ally', range: 5, aoeRadius: 0, cooldown: 2, channelTime: 0, damageFormula: '', healFormula: 'int * 2', slot: 'primary' }],
+    })
+    const st = stateOf([self(), healer])
+    expect(exposureAt(st, st.combatants[0], { x: 10, y: 13 })).toBe(0)                    // inside heal range, outside melee
+    expect(exposureAt(st, st.combatants[0], { x: 10, y: 11 })).toBeGreaterThanOrEqual(1)  // melee poke is real
+  })
 })
 
 describe('corridorExposure', () => {
@@ -59,7 +71,7 @@ describe("travel-defend 'avoid' — the priced plow (clear-first)", () => {
   // A ring of stationary ranged shooters around the destination. Cheap ring →
   // the old plow. Deadly ring → the unit stops marching, fights the ring down,
   // and only then walks in.
-  const gauntlet = (foeStr: number, foeHp: number, heroHp: number) => {
+  const gauntlet = (foeStr: number, foeHp: number, heroHp: number, decisionInterval = 1) => {
     const dest = { x: 22, y: 20 }
     const ringAngles = [110, 140, 170, 200, 230]
     const foes = ringAngles.map((deg) => {
@@ -71,6 +83,7 @@ describe("travel-defend 'avoid' — the priced plow (clear-first)", () => {
       enemyUnits: foes.map((_, i) => eu({ id: `e${i}`, team: 'enemy', moveSpeed: 0, str: foeStr, rangedRange: 4, maxHp: foeHp, hp: foeHp })),
       mode: 'open', cols: 40, rows: 40,
     })
+    b.decisionInterval = decisionInterval
     find(b, 'a').pos = { x: 4, y: 20 }
     foes.forEach((p, i) => { find(b, `e${i}`).pos = p })
     issueMoveOrder(b, 'a', dest, 'avoid')
@@ -96,6 +109,17 @@ describe("travel-defend 'avoid' — the priced plow (clear-first)", () => {
     expect(r.ringDead).toBeGreaterThan(0)    // it actually cleared shooters
     expect(r.hero.alive).toBe(true)          // instead of feeding itself to the ring
     expect(r.arrived).toBe(true)             // and still completed the order
+  })
+
+  it('pricing is decision-round-gated: the load-shed interval still clears and arrives', () => {
+    // Under decisionInterval=5 (the heavy-field throttle) the corridor is only
+    // re-priced on decision rounds; the committed mode carries between them.
+    // (More HP than the interval-1 variant: slower re-targeting means slower
+    // kills against the same ring — inherent to the throttle, not the pricing.)
+    const r = gauntlet(12, 30, 400, 5)
+    expect(r.sawClearing).toBe(true)
+    expect(r.hero.alive).toBe(true)
+    expect(r.arrived).toBe(true)
   })
 })
 

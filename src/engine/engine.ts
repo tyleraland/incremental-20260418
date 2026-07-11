@@ -27,7 +27,7 @@ import { makeConsumableTactic } from './consumables'
 import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import { nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache } from './spatial'
-import { preferredRangeVs, corridorExposure, scoreCandidate, type MoveCandidate } from './plan'
+import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, type MoveCandidate } from './plan'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
@@ -467,11 +467,19 @@ function corridorAffordable(state: BattleState, self: Combatant, dest: Vec2, exi
 }
 // The march point for an 'avoid' traveler this turn — or null for clear-first
 // (stop marching; fight until the corridor is affordable).
+// Corridor (re-)pricing is a DECISION: it runs on decision rounds only (plus
+// the rare watchdog stall-trigger), so raising `decisionInterval` — the
+// existing load-shedding lever for heavy open-world fields — bounds this cost
+// too. Between decisions the unit keeps its committed mode (marching stays
+// marching, clearing stays clearing); with the default decisionInterval of 1
+// every round is a decision round and nothing changes.
 function avoidOrPlowPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2 | null {
+  const decideNow = isDecisionRound(state)
   // Committed to clearing: keep fighting until the corridor price drops below
-  // the exit bar, then resume the march with a fresh watchdog.
+  // the exit bar (re-checked on decision rounds), then resume the march with a
+  // fresh watchdog.
   if (self.travelClearing) {
-    if (!corridorAffordable(state, self, dest, true)) return null
+    if (!decideNow || !corridorAffordable(state, self, dest, true)) return null
     self.travelClearing = undefined
     resetAvoidWatchdog(self)
   }
@@ -479,7 +487,7 @@ function avoidOrPlowPoint(state: BattleState, self: Combatant, dest: Vec2): Vec2
   // Near a goal that's ringed by threat zones → can't avoid onto it; head
   // straight in when the last stretch is affordable, else clear the ring first.
   if (d < AVOID_NEAR_DEST && destInsideAZone(state, self, dest)) {
-    if (corridorAffordable(state, self, dest, false)) return dest
+    if (!decideNow || corridorAffordable(state, self, dest, false)) return dest
     self.travelClearing = true
     return null
   }
@@ -1162,7 +1170,8 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
     // spends a ready teleport instead — same cornered rule as the kite retreat.
     const near = nearestEnemyTo(self, state)
     const cornered = !!near && distance(walked, near.pos) - distance(self.pos, near.pos) < speed * BLINK_WALK_MIN
-    if (!cornered || !tryBlinkEscape(state, self)) self.pos = walked
+    if (cornered && tryBlinkEscape(state, self)) planNote = 'disengage: cornered → blink'
+    else self.pos = walked
     enforceSeparation(self, state.combatants, state.barriers)
     if (self.pos.x !== before.x || self.pos.y !== before.y) {
       emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
@@ -1512,6 +1521,19 @@ function escapeHeading(state: BattleState, self: Combatant, nearest: Combatant, 
   return best
 }
 
+// §debug (movement-action-coupling.md §5): the movement planner's last
+// decision for the unit currently taking its turn — the chosen candidate kind
+// and what the forecast said it could cast from there. Set by kiteToward /
+// tryBlinkEscape, read-and-cleared by takeTurn when composing the trace line
+// (like exploitNote). Ambient module state is safe for the same reason
+// setDirectMove is: exactly one battle steps one combatant at a time.
+let planNote: string | null = null
+function takePlanNote(): string | null {
+  const n = planNote
+  planNote = null
+  return n
+}
+
 // §blink (movement-action-coupling.md M4): the cornered escape. Called when a
 // retreat is wanted but walking it barely moves (every heading blocked short) —
 // then a ready teleport jumps to the best sampled landing instead of dying in
@@ -1620,7 +1642,12 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
     // (pinned against terrain, or only lateral shuffles left). Spend a ready
     // teleport instead of sliding in the pocket until caught.
     const cornered = distance(walked, threat.pos) - d < step * BLINK_WALK_MIN
-    if (!cornered || !tryBlinkEscape(state, self)) self.pos = walked
+    if (cornered && tryBlinkEscape(state, self)) {
+      planNote = 'kite: cornered → blink'
+    } else {
+      self.pos = walked
+      planNote = 'kite: retreat'
+    }
   } else if (!sightlineClear(self.pos, aim.pos, state.barriers)) {
     // A WALL blocks the shot on our prey: no spot on the line can fire (the
     // forecast is wall-blind too), so route the visibility graph toward the
@@ -1635,6 +1662,7 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
         state.barriers,
       )
     }
+    planNote = 'kite: corner-route (wall)'
   } else {
     // Clear sight of the prey: hold, or close straight toward it — whichever
     // (position, action) pair scores better. The close candidate stops at the
@@ -1660,6 +1688,9 @@ function kiteToward(state: BattleState, self: Combatant, want: number): void {
       if (s > bestS + EPS) { best = cands[i]; bestS = s }
     }
     if (best.kind !== 'hold') self.pos = { x: best.pos.x, y: best.pos.y }
+    // §debug: record the committed candidate and what it can cast from there.
+    const f = forecastAction(state, self, best.pos)
+    planNote = `kite: ${best.kind}${f.option ? ` ✓${f.option.skill?.id ?? 'attack'}(${Math.round(f.score)})` : ' ·idle'}`
   }
 
   enforceSeparation(self, state.combatants, state.barriers)
@@ -1997,7 +2028,8 @@ function takeTurn(state: BattleState, self: Combatant): void {
     executeNaiveAction(state, self)
   }
 
-  pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}${exploitNote ? ` · ⚡${exploitNote}` : ''}${self.travelClearing ? ' · ⚔ clearing route' : ''}`)
+  const planText = takePlanNote()
+  pushTrace(self, round, `${tgtText} · ${moveText} · ${actionText}${planText ? ` · ${planText}` : ''}${exploitNote ? ` · ⚡${exploitNote}` : ''}${self.travelClearing ? ' · ⚔ clearing route' : ''}`)
   // consume "hit since last turn" so Counterattacker only fires on fresh hits
   self.lastHitById = null
 }

@@ -253,3 +253,45 @@ compound interest):
   held), but when a scored decision changes for a good reason, the failure
   message is "hp was 400" — a day of archaeology. The trace/debug item
   above is the fix; mentioning here because it's the same investment.
+
+## External review (two independent Sonnet passes, post-M2)
+
+One agent audited doc-vs-code fidelity, one hunted bugs (determinism,
+snapshot fidelity, vision-cache poisoning, caps-Dijkstra, exposure
+semantics). Invariants held: no RNG, no replay divergence, no cache
+poisoning (hypothetical-position evaluation is purely geometric and never
+routes through the position-keyed vision cache), snapshot spread pattern
+consistent with the pre-existing avoid*/escapeDir precedent.
+
+**Fixed in response:**
+- Doc §5 debuggability promises delivered: the committed kite candidate +
+  forecast note now rides the turn trace (`kite: hold ✓fire-bolt(18)` /
+  `kite: cornered → blink` / `kite: corner-route (wall)`), and `bsnap -i`
+  grew the `plan{cast=… r=… los=… fin=… exp=… blinkCd=… CLEARING}` line.
+- Corridor (re-)pricing gated to decision rounds — the heavy-field
+  `decisionInterval` throttle now bounds M3's cost; committed march/clear
+  modes carry between decisions (test: deadly gauntlet at interval 5).
+- `exposureAt` threat radius now uses OFFENSIVE reach only (basic attack +
+  damage skills) — a pure healer no longer prices as a heal-range threat
+  disc (it still threatens its melee poke).
+
+**Accepted / deferred with eyes open:**
+- **AoE blindness** (the biggest honest cut): `preferredAttackVs`/
+  `forecastAction` see only single-target attacks, so Storm Caller — one of
+  the doc's own four "partial re-implementations" — is NOT yet unified, and
+  `exposureAt` scores AoE-armed enemies (elite-ranger/rogue) by their basic
+  attack (their AoE range does widen the reach disc after the fix above).
+  The BACKLOG "AoE spread value" scorer is the single fix for all three.
+- **Forecast can't see the action channel's priority stack** (consumables,
+  Burst, Chain) nor `exploitMargin`'s 15% near-tie hysteresis; Chain runs
+  its own partial cast gate instead of `skillCastTarget` (pre-existing
+  drift — folding it in changes Chain behavior, do it deliberately).
+- **Kite safety floor now anchors on the lock's preferred range**: a
+  battlemage closing to bash a magic-immune lock tolerates a nearer ranged
+  threat (~30% closer in the review's A/B) than the old castRange-anchored
+  hold did. Partly the point of M1 (the old margin was an accident of the
+  wrong anchor); the principled fix is an exposure term in the safety floor,
+  which is the same work as pricing pursuit (scenario 2).
+- **Blink landing scorer reads current enemy positions only** (no pursuit
+  prediction) and the kiter's per-round hold-vs-close scoring is not yet
+  decision-round-gated / memoized (see tech debt).

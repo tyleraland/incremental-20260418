@@ -157,7 +157,14 @@ export function exposureAt(state: BattleState, self: Combatant, p: Vec2): number
   let total = 0
   for (const e of visibleEnemiesOf(state, self)) {
     if (!e.provoked) continue
-    const reach = Math.max(attackReach(e), castRange(e))
+    // Threat radius = the enemy's OFFENSIVE reach only (basic attack + damage
+    // skills). Not castRange: its utility-standoff fallback counts heal/buff
+    // ranges, which made a pure healer price as a threat disc it can't hurt
+    // anyone from (review finding).
+    let reach = attackReach(e)
+    for (const s of e.skills) {
+      if (s.damageFormula && s.range > reach) reach = s.range
+    }
     if (distance(p, e.pos) > reach + EPS) continue
     const shoots = e.rangedRange > 0 || isCaster(e)
     if (shoots && !sightlineClear(e.pos, p, state.barriers)) continue

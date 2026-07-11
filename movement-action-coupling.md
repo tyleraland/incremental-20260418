@@ -103,6 +103,17 @@ functions get an optional `at: Vec2 = self.pos` parameter
 `inRange`-style checks), and the live action channel becomes literally
 `forecastAction(state, self, self.pos)`. One code path, two callers.
 
+Known limits of the shipped forecast (deliberate scope, tracked in the
+progress log): it sees only single-target **attack** options + the basic
+attack — every `type: 'aoe'` skill is invisible (so Storm Caller keeps its
+bespoke cluster scan and `exposureAt` scores AoE-armed enemies by their basic
+attack; the BACKLOG "AoE spread value" scorer is the fix for both). It also
+doesn't model the action channel's *priority stack* above skills — consumable
+tactics, Burst/Chain — nor `reorderAttacksForTarget`'s 15% switch hysteresis,
+so in the near-tie band the live channel and the forecast can pick different
+skills of ~equal value. Chain additionally runs its own partial cast gate
+instead of `skillCastTarget` — a pre-existing drift instance to fold in.
+
 Notes:
 
 - Forecasting at a hypothetical `at` must not consult per-position caches
@@ -223,11 +234,13 @@ interesting decision.
 - **Snapshot fidelity.** A reloaded BSNAP advanced N rounds must match the
   live battle. Behavior *changes* are allowed per milestone (tests updated
   deliberately); what must never break is serialize→replay 1:1.
-- **Budget.** Forecast/candidate work runs on decision rounds only
-  (`isDecisionRound` already exists for exactly this), candidate sets stay
-  ≤ ~8, per-turn forecast results are memoized per (self, target) within the
-  turn like the vision cache. Off-screen battles already skip full sim
-  (`creditOffscreen`), so cost lands only on the watched battle + tests.
+- **Budget.** Candidate sets stay ≤ ~8; corridor (re-)pricing is gated to
+  decision rounds (`isDecisionRound`) so the heavy-field `decisionInterval`
+  throttle bounds it; off-screen battles already skip full sim
+  (`creditOffscreen`). Still open (progress log §tech debt): the kiter's
+  per-round hold-vs-close scoring is NOT decision-round-gated, and no
+  per-turn forecast memoization exists yet — acceptable at current battle
+  sizes, required before the 50-combatant replay soak.
 - **Purity.** `plan.ts` is a leaf like `spatial.ts` — grid/types/damage/skills
   imports only, no store, no time, never mutates inputs.
 - **Debuggability first.** Every commit records why: the chosen candidate

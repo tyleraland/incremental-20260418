@@ -117,11 +117,12 @@ async function main() {
   }
 
   const server = await createServer({ logLevel: 'error', server: { middlewareMode: true }, appType: 'custom' })
-  let snapshot, engine, barriers
+  let snapshot, engine, barriers, plan
   try {
     snapshot = await server.ssrLoadModule('/src/engine/snapshot.ts')
     engine = await server.ssrLoadModule('/src/engine/engine.ts')
     barriers = await server.ssrLoadModule('/src/engine/barriers.ts')   // for --reach (canReach/steerAround)
+    plan = await server.ssrLoadModule('/src/engine/plan.ts')           // for -i (forecastAction plan line)
   } finally {
     // keep the server up until after we've loaded; close at the very end
   }
@@ -139,7 +140,7 @@ async function main() {
   if (unknown.length) log(`⚠ watch id(s) not in battle: ${unknown.join(', ')}`)
 
   printRoster(battle)
-  if (opts.step) stepBattle(engine, barriers, battle, watch)
+  if (opts.step) stepBattle(engine, barriers, plan, battle, watch)
 
   await server.close()
 }
@@ -154,7 +155,7 @@ function printRoster(b) {
   if (b.zones.length) log(`  zones: ${JSON.stringify(b.zones.map((z) => ({ id: z.id, dot: z.dotDamage, el: z.element, follow: z.follow, left: z.roundsLeft })))}`)
 }
 
-function stepBattle(engine, barriers, b, watch) {
+function stepBattle(engine, barriers, plan, b, watch) {
   log(`\nstepping ${opts.rounds} round(s), watching: ${watch.join(', ')}\n`)
   const prev = Object.fromEntries(watch.map((id) => [id, hpOf(b, id)]))
   for (let i = 0; i < opts.rounds; i++) {
@@ -172,7 +173,7 @@ function stepBattle(engine, barriers, b, watch) {
       for (const id of watch) {
         const c = b.combatants.find((x) => x.id === id)
         if (!c) continue
-        if (opts.inspect) log(`        ↳ ${id}  ${inspectLine(b, c)}`)
+        if (opts.inspect) log(`        ↳ ${id}  ${inspectLine(b, c)}${planLine(plan, b, c)}`)
         if (opts.reach) log(`        ↳ ${id}  ${reachLine(barriers, b, c, opts.reach)}`)
       }
     }
@@ -195,6 +196,23 @@ function inspectLine(b, c) {
     + `  move{order=${v(c.moveOrder)} wander=${v(c.wanderTarget)} dwell=${c.wanderDwell ?? 0}}`
     + `  vis=${c.visionRange === Infinity ? '∞' : c.visionRange}`
     + (res ? `  tactics[${res}]` : '')
+}
+
+// The plan layer's view from where the unit stands (movement-action-coupling.md
+// §5): what the forecast says it can cast RIGHT NOW, the preferred-range anchor,
+// LoS/finishable, per-round exposure, and any teleport cooldown — the "why is it
+// holding / why won't it fire?" line. Pure reads; never advances state.
+function planLine(plan, b, c) {
+  try {
+    const f = plan.forecastAction(b, c, c.pos)
+    const opt = f.option ? `${f.option.skill?.id ?? 'basic'}→${f.option.targetId}(${f.score.toFixed(1)})` : 'idle'
+    const exp = plan.exposureAt(b, c, c.pos)
+    const tp = c.moveAbilityCds?.teleport
+    return `\n           plan{cast=${opt} r=${fx(f.range)} los=${f.losClear} fin=${f.finishable} exp=${exp.toFixed(1)}`
+      + `${tp != null ? ` blinkCd=${tp}` : ''}${c.travelClearing ? ' CLEARING' : ''}}`
+  } catch (e) {
+    return `\n           plan{∅ ${e.message}}`
+  }
 }
 
 // Pathing diagnostic toward combatant <toId>: distance, line-of-sight, reachability,

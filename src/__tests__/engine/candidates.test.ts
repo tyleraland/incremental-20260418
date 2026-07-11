@@ -98,5 +98,7 @@ describe('kiter candidate wiring — the stranding class', () => {
     for (let r = 0; r < 12; r++) advanceRound(b)   // short of killing the prey (then re-targeting 'walled' correctly moves it)
     expect(find(b, 'prey').hp).toBeLessThan(300)                          // it fought its lock
     expect(distance(find(b, 'mage').pos, start)).toBeLessThan(1)          // and held — no wall-hugging detour toward 'walled'
+    // §debug: the committed plan decision is on the trace (doc §5).
+    expect(find(b, 'mage').trace.some((t) => t.text.includes('kite: hold'))).toBe(true)
   })
 })
