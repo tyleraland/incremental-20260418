@@ -171,7 +171,7 @@ sense    → members, visible enemy set, engaged set          (exists today)
 appraise → cluster visible enemies into CAMPS (proximity/rally-linked
            groups); price each camp: pullSetOf + Σ threatProfile
 decide   → hold or refresh the Engagement (hysteresis + abandon predicates);
-           choose stance (kite/hold/collapse) and anchor
+           choose stance (kite/hold/collapse), anchor, and kill order
 assign   → jobs per member from declared intent + kit (§capabilities below)
 publish  → TeamPlan (waypoint/focus/avoid/corridor derived from the above)
 ```
@@ -193,14 +193,48 @@ order:
    volunteers: aggro-holder = best `threatMult`·def·hp; protectee ("the
    carry") = top sustained `estimateDamageVs`; puller = longest
    `preferredRangeVs` reach at ≥ party-median speed; healer = has a heal
-   skill. Id-tiebroken; inputs are the kit, fixed for the battle, so the
-   answers precompute per combatant (§5) — no new player config, no save
-   impact.
+   skill; **fragility outlier** = a member whose effective toughness
+   (maxHp × mitigation) falls well below the party median — *relative*,
+   so "one member much squishier than the rest" is detected on any comp.
+   Id-tiebroken; inputs are the kit, fixed for the battle, so the answers
+   precompute per combatant (§5) — no new player config, no save impact.
 
 Assignments (this plan's *jobs*) are the blackboard output; capabilities
 stay derivable. The one aggregate the planner does compute is the party's
 range/mobility profile for the stance decision — a per-decision-round fold
-over the same precomputed capabilities.
+over the same precomputed capabilities. When a fragility outlier exists,
+`assign` issues a **standing guard by default** (staffed by a Guardian
+volunteer, else an idle line unit — never by stripping an equipped intent),
+and the outlier's own anchor slot goes to the formation rear (§3.4); the
+Protect directive forces and aims the same machinery, it doesn't introduce
+it.
+
+**Acumen — smart members make a smart party.** `sense` computes a team
+acumen score, **additive** over living members' effective INT — every
+scholar contributes, buffs/debuffs move it, and deaths are felt
+immediately. Planner features gate on it through a plain thresholds table
+(`tuning.ts`, the POSTURES philosophy — a new gate is a table row, not a
+mechanism), **modular** in that each feature checks its own gate
+independently:
+
+| planner feature | gate |
+|---|---|
+| focus convergence, kill order (M1) | always on — the baseline never degrades |
+| pull prediction + avoid list (M2) | `ACUMEN.pull` |
+| stance choice / kite line (M3) | `ACUMEN.stance` |
+| ambush anchors, cloak timing (M4) | `ACUMEN.ambush` |
+| rollout compare (M6) | `ACUMEN.rollout` |
+
+Gates only ever *add* intelligence above the shipped baseline — a
+low-acumen party plays like today's engine, never worse. The payoffs are
+diegetic and free: an all-brawn party genuinely over-pulls where a party
+carrying one scholar pulls singles; killing the enemy shaman drops the
+pack's acumen mid-round and its coordination visibly collapses — the
+backlog's "kill the leader and the pack scatters," implemented as
+arithmetic; curated progression can literally level a party into tactics.
+Deterministic (recomputed from live state each decision round, no memory),
+and it composes with directives cleanly: a directive *requests* a behavior,
+acumen bounds how well the planner executes it.
 
 **Budget.** Everything runs once per team per decision round; §5 has the
 cost model. Headline: while an engagement holds, `appraise` is skipped
@@ -235,6 +269,16 @@ posture-blended fraction (a new POSTURES column, `pullBudget`). Then:
   set are published as do-not-aggro. `selectTarget` and opportunistic reads
   filter them (hard taunt still wins; a foe that provokes *itself* onto the
   party leaves the list automatically because it enters the fight).
+- **Kill order**: `primaryId` walks the committed pull set by a target
+  policy. Default **dangerous-first, killable-weighted**: highest plan
+  `threat` divided by a cheap time-to-kill proxy (hp ÷ party sustained
+  damage), so the party burns down the scariest thing it can actually kill
+  fast, then mops up. The `threat` record is the *single* definition of
+  "dangerous" — today `str+int`, upgradeable in place (healer/summoner tags
+  for the Decapitate idea, realized-damage feedback) without touching any
+  consumer; "however that's identified" is exactly this one field.
+  Directives flip the policy: `wounded-first` (Finish Them synergy),
+  `squishy-first` (Assassinate).
 - **Pull assignment**: when the affordable slice of a camp is smaller than
   the whole (a fringe monster whose own pull set is just itself), the
   puller tags it and retreats to the anchor: `{ role: 'pull', targetId,
@@ -256,7 +300,9 @@ Three small, uniform hooks; no new channels, no new engine framework:
 - **Movement.** One plan-execution step in `executeMovement`'s default path
   (after equipped tactics, before close-and-hold): `anchor`/`hold` →
   `toPoint` at the anchor slot (fanned per unit like `offsetWaypoint`, so a
-  line forms, not a pile); `pull` → the tag-and-drag two-phase above;
+  line forms, not a pile — and slots are ordered by fragility, tough in
+  front, the outlier at the rear, so formation itself protects the squishy);
+  `pull` → the tag-and-drag two-phase above;
   `guard`/`escort` → `guardPoint(protectee, threat)` (Guardian's math,
   aimed by the plan instead of "squishiest"). Stance reads: `kite` sets the
   non-kiter default to `desiredRange = preferredRangeVs` *with* back-off
@@ -284,7 +330,8 @@ export interface DirectiveDef {
   stanceBias?: Stance          // fight this way when viable
   anchorPolicy?: 'choke' | 'ambush' | 'ground' | 'none'
   pullDiscipline?: 'strict' | 'loose'   // scale pullBudget
-  protect?: 'carry' | 'weakest'         // standing guard assignment
+  targetPolicy?: 'dangerous' | 'wounded' | 'squishy'   // kill-order bias
+  protect?: 'carry' | 'weakest'         // standing guard assignment (capability query, §3.2)
   tactics?: TacticRef[]        // party-scope tactic injections (existing seam)
 }
 export const DIRECTIVE_REGISTRY: Record<string, DirectiveDef>
@@ -346,6 +393,9 @@ than a hope.
 | Formation / cohesion | anchor slots (offset fan) + `cohesionW` column in `scoreCandidate` |
 | Kite-vs-hold from comp | `decide`'s stance: party preferred-range & speed profile vs camp reach → `kite`/`hold`/`collapse` |
 | Support & carry | capability query picks the protectee (top sustained `estimateDamageVs`); standing `guard` under Protect; healer positions off the anchor, not the centroid |
+| Protect the squishy outlier | relative fragility query flags it → default standing `guard` + rear formation slot; Protect directive pins the same machinery |
+| Kill the dangerous first | default kill-order policy: plan `threat` ÷ TTK proxy over the committed pull set; `threat` is the one pluggable definition of danger |
+| Smart members, smart party | additive effective-INT → team acumen; planner features gate on a thresholds table; enemy acumen drops when the shaman dies |
 | Chaperone a traveler | `escort` objective set by the store's travel loop |
 | Team-vs-team arena | symmetric planners + directives; showcase scenario pins it |
 | Same-way routing | plan `corridor` replaces the `HERD_BIAS` left tax |
@@ -424,30 +474,38 @@ order of one `steerAround` call, on the rare round it runs at all.
 
 **M0 — TeamPlan v2 plumbing (byte-identical).** Add the optional fields +
 `objectives`, serialization, `postureOf` columns (`cohesionW`, `pullBudget`
-— read by nothing yet), Plan-panel/`bsnap -i` display. Planner publishes
-nothing new. Full suite + snapshot fixtures unchanged.
+— read by nothing yet), the acumen computation + `ACUMEN` thresholds table
+(gating nothing yet), per-combatant capability precompute, Plan-panel/
+`bsnap -i` display. Planner publishes nothing new. Full suite + snapshot
+fixtures unchanged.
 
 **M1 — smart-party targeting baseline.** Planner publishes
-`engagement.primaryId` (today's focus pick + commitment hysteresis) and
+`engagement.primaryId` — the kill-order policy (default dangerous-first
+off the `threat` record ÷ TTK proxy) with commitment hysteresis — and
 `avoidTargetIds` (v0: enemies beyond the hunt target's camp). `selectTarget`
 gains the focus bonus + avoid filter. Kills "focus fire is opt-in".
-Tests: convergence beats baseline time-to-kill on a mixed camp; tank keeps
-aggro under focus; avoid-listed bystander never acquired; replay 1:1.
+Tests: convergence beats baseline time-to-kill on a mixed camp; the
+dangerous foe dies before the trash; tank keeps aggro under focus;
+avoid-listed bystander never acquired; replay 1:1.
 
 **M2 — pull model + engagement commitment.** Camps, `pullSetOf` (shared
 predicates with `rallyPack`), pull pricing/budget, engage-or-not, abandon
 predicates, `pull` assignment + tag-and-drag execution, and the equippable
-**Puller** tactic as its player-forced form. Showcase: dense pack camp —
-party pulls singles it can't afford whole. Tests: pull-set matches realized
-aggro exactly; over-budget camp → puller cycle; budget collapse → disengage.
+**Puller** tactic as its player-forced form. First `ACUMEN` gate goes live
+(low-acumen teams skip prediction — they over-pull, diegetically). Showcase:
+dense pack camp — party pulls singles it can't afford whole. Tests: pull-set
+matches realized aggro exactly; over-budget camp → puller cycle; budget
+collapse → disengage; brawn party over-pulls where scholar party doesn't.
 
 **M3 — anchor, stance, formation.** `decide` picks stance + anchor
 (v0 anchor: current ground or the nearest barrier gap toward the camp);
-`anchor`/`hold` execution with slot fan; `cohesionW` term in
+`anchor`/`hold` execution with fragility-ordered slot fan (outlier rear) +
+the default standing guard on a fragility outlier; `cohesionW` term in
 `scoreCandidate`; kite-stance default back-off; plan `corridor` + HERD_BIAS
 retirement. Tests: line forms and holds a mapgen choke vs a swarm;
-comp-driven stance flips (ranged party kites, melee party collapses);
-Geffen-2 file-around stays clean without HERD_BIAS.
+comp-driven stance flips (ranged party kites, melee party collapses); the
+squishy outlier ends fights with visibly fewer hits taken; Geffen-2
+file-around stays clean without HERD_BIAS.
 
 **M4 — directives.** Registry + party slot + adapter injection + the launch
 five; ambush/assassinate timing (cloak-hold orchestration). Persisted like
