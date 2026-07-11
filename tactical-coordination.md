@@ -104,6 +104,7 @@ export type Assignment =
   | { role: 'pull'; targetId: string; to: Vec2 }  // tag one foe, drag it to `to`
   | { role: 'guard'; allyId: string }             // peel/bodyguard the protectee
   | { role: 'escort'; allyId: string }            // screen a transiting unit
+  | { role: 'work'; point: Vec2 }                 // do a job there (forage/mine/pickup); party screens
   | { role: 'hold' }                              // reserve: stay put, don't chase
 
 export interface TeamPlan {
@@ -131,7 +132,7 @@ Design rules:
   `huntTargetId` today) and is dropped only by explicit abandon predicates:
   primary dead and pull-set empty, party HP collapse below a posture-scaled
   floor, target unseen past `HUNT_RETAIN_MULT`, or the pull-set having grown
-  past budget (the over-pull materialized — fall back / disengage). That is
+  into a losing TTK race (the over-pull materialized — fall back / disengage). That is
   the backlog's "strategy commitment": pursue, notice failure, switch.
 
 **What the blackboard is — and isn't:**
@@ -196,8 +197,11 @@ order:
    skill; **fragility outlier** = a member whose effective toughness
    (maxHp × mitigation) falls well below the party median — *relative*,
    so "one member much squishier than the rest" is detected on any comp.
-   Id-tiebroken; inputs are the kit, fixed for the battle, so the answers
-   precompute per combatant (§5) — no new player config, no save impact.
+   Every party-internal query is relative (top / median / outlier), never
+   an absolute stat bar: the comp's tank is whoever tanks best *here*, at
+   level 2 or level 90. Id-tiebroken; inputs are the kit, fixed for the
+   battle, so the answers precompute per combatant (§5) — no new player
+   config, no save impact.
 
 Assignments (this plan's *jobs*) are the blackboard output; capabilities
 stay derivable. The one aggregate the planner does compute is the party's
@@ -234,7 +238,11 @@ backlog's "kill the leader and the pack scatters," implemented as
 arithmetic; curated progression can literally level a party into tactics.
 Deterministic (recomputed from live state each decision round, no memory),
 and it composes with directives cleanly: a directive *requests* a behavior,
-acumen bounds how well the planner executes it.
+acumen bounds how well the planner executes it. Acumen is the planner's one
+deliberate *absolute* (smarts is diegetic, not relative to the opponent —
+see the ratios rule, §6); if stat inflation across the level curve opens
+every gate for everyone, the fix is threshold tuning or diminishing returns
+on the sum, not converting it to a ratio.
 
 **Budget.** Everything runs once per team per decision round; §5 has the
 cost model. Headline: while an engagement holds, `appraise` is skipped
@@ -259,8 +267,24 @@ rules is worse than none. Camp price = Σ over the pull set of the plan's
 existing `threat` record — the planner already computes that per enemy every
 decision round, so pricing is a few adds, not a new scoring pass
 (`threatProfile`-grade per-member matchup pricing is an upgrade only if the
-coarse price misjudges in play). Budget = party effective HP × a
-posture-blended fraction (a new POSTURES column, `pullBudget`). Then:
+coarse price misjudges in play).
+
+**The engage test is a ratio, not a threshold — the mutual-TTK race.**
+Rounds-to-kill = camp effective HP ÷ the party's sustained output, scored
+in the party→camp direction so enemy DEF, elements, and magic-vs-physical
+mitigation all count (`estimateDamageVs` is matchup-relative by
+construction). Rounds-to-die = party effective HP ÷ the camp's output the
+other direction. Engage when `RTK < RTD × pullMargin` (a POSTURES column —
+wary demands a comfortable win, bold takes a near coin-flip). Both sides
+are O(pull set) adds over precomputed capabilities. Dimensionally honest
+(rounds vs rounds) and **scale-invariant**: the same planner judges a
+level-2 field and a level-90 dungeon because power is always measured
+against *this* opponent in realized stats, never absolute numbers. Level
+itself never appears — the engine deliberately doesn't see it (the store
+resolves level into stats), and a matchup-scored stat comparison is
+strictly more informative than any level proxy; DEF isn't a proxy either,
+it's directly inside the scorer. (Level stays a fine store/UI signal —
+danger badges, spawn bands — just not a planner input.) Then:
 
 - **Engage-or-not**: cheapest affordable camp wins the engagement; nothing
   affordable → the party keeps roaming (or clears the cheapest arc first —
@@ -329,7 +353,7 @@ export interface DirectiveDef {
   id: string; name: string; description: string
   stanceBias?: Stance          // fight this way when viable
   anchorPolicy?: 'choke' | 'ambush' | 'ground' | 'none'
-  pullDiscipline?: 'strict' | 'loose'   // scale pullBudget
+  pullDiscipline?: 'strict' | 'loose'   // scale pullMargin
   targetPolicy?: 'dangerous' | 'wounded' | 'squishy'   // kill-order bias
   protect?: 'carry' | 'weakest'         // standing guard assignment (capability query, §3.2)
   tactics?: TacticRef[]        // party-scope tactic injections (existing seam)
@@ -375,6 +399,20 @@ zero new engine modes. Gather-and-guard later rides the same seam (a
 (the *traveler's* own budget question) and stays with the travel/corridor
 logic — not this seam.
 
+**Secondary objectives — foraging and friends.** Node work (forage / mine /
+ground-loot pickup) is a `work` assignment plus anchor discipline: while a
+work assignment is live, the anchor pins near the work site and the
+roam/hunt re-pick is **suppressed** — the party waits and screens instead of
+drifting to the next camp. Release predicates end the wait: job done, or the
+local situation loses the TTK race (recall the worker, fight or withdraw,
+resume after). The authority split is the usual one: the *store* owns nodes,
+yields, and progress ticks (like loot/spawn RNG — never the engine); an
+objective (`{ kind: 'work', point }`) or a directive flag says the party
+cares; acumen and stance decide how carefully they screen. The backlog's
+Gather-and-guard and ground-drop loot pickup both ride this one assignment
+shape, and en-route foraging during travel is the store's travel loop
+inserting a work objective at a waypoint — the same seam as the chaperone.
+
 Team-vs-team arena fights need nothing extra: both teams already run the
 planner symmetrically, so 5v5 with two directives *is* the LoL-style fight —
 tanks anchor, carries fire from stance range, guards peel divers, pullers
@@ -386,7 +424,7 @@ than a hope.
 | behavior | mechanism |
 |---|---|
 | Converging fire by default | `FOCUS_WEIGHT` on `engagement.primaryId` in `selectTarget` (hysteresis kept) |
-| Don't over-pull | `pullSetOf` price vs `pullBudget`; `avoidTargetIds` filter |
+| Don't over-pull | `pullSetOf` + the mutual-TTK race vs `pullMargin`; `avoidTargetIds` filter |
 | Intelligent pulling | `pull` assignment: tag → drag to anchor; line holds |
 | Lure & ambush | ambush `anchorPolicy`: anchor behind a LoS break (`exposureAt` prices it); Assassinate directive times the cloak/dive |
 | Hold a chokepoint | `hold` objective / Hold-the-Line directive → anchor at a barrier gap; `anchor` assignments + conformance term |
@@ -396,6 +434,7 @@ than a hope.
 | Protect the squishy outlier | relative fragility query flags it → default standing `guard` + rear formation slot; Protect directive pins the same machinery |
 | Kill the dangerous first | default kill-order policy: plan `threat` ÷ TTK proxy over the committed pull set; `threat` is the one pluggable definition of danger |
 | Smart members, smart party | additive effective-INT → team acumen; planner features gate on a thresholds table; enemy acumen drops when the shaman dies |
+| Forage without wandering off | `work` assignment pins the anchor — the party waits and screens; release predicates recall the worker when the job's done or the TTK race flips |
 | Chaperone a traveler | `escort` objective set by the store's travel loop |
 | Team-vs-team arena | symmetric planners + directives; showcase scenario pins it |
 | Same-way routing | plan `corridor` replaces the `HERD_BIAS` left tax |
@@ -455,6 +494,12 @@ order of one `steerAround` call, on the rare round it runs at all.
 - **Budget.** Planner-only cost, once per team per decision round, with the
   §5 memo/precompute/commitment-skip discipline. Nothing new in per-unit
   turns except O(1) plan reads and one extra `scoreCandidate` term.
+- **Ratios, not absolutes.** No planner comparison hardcodes an absolute
+  stat scale: party-internal picks are relative (top / median / outlier),
+  enemy appraisal is the mutual-TTK race (§3.3), and level is never an
+  input (realized stats already encode it, matchup-aware). One tuning stays
+  valid across the whole level curve. Acumen thresholds are the single
+  flagged exception (§3.2) — absolute on purpose.
 - **Purity.** Planner stages live beside `plan.ts` (a `teamplan.ts` leaf):
   grid/types/damage/skills/spatial imports only — no store, no time.
 - **Player lever wins.** Equipped tactics outrank plan defaults; a directive
@@ -473,7 +518,7 @@ order of one `steerAround` call, on the rare round it runs at all.
 ## 7. Milestones (each independently shippable)
 
 **M0 — TeamPlan v2 plumbing (byte-identical).** Add the optional fields +
-`objectives`, serialization, `postureOf` columns (`cohesionW`, `pullBudget`
+`objectives`, serialization, `postureOf` columns (`cohesionW`, `pullMargin`
 — read by nothing yet), the acumen computation + `ACUMEN` thresholds table
 (gating nothing yet), per-combatant capability precompute, Plan-panel/
 `bsnap -i` display. Planner publishes nothing new. Full suite + snapshot
@@ -514,8 +559,11 @@ Tests: per-directive scenario assertions; 5v5 arena showcase both-sided.
 
 **M5 — objectives + chaperone.** `setTeamObjective`, escort/hold planner
 branches, store wiring in the travel loop (set on transit-through-hunt,
-clear on exit). Tests: traveler crossing a hunted map gets screened
-(guards interpose on threats near the route); hold objective refuses drift.
+clear on exit). The `work` objective/assignment shape lands here too —
+anchor-pinning + release predicates tested with a stub job, dormant until
+resource nodes exist. Tests: traveler crossing a hunted map gets screened
+(guards interpose on threats near the route); hold objective refuses drift;
+party holds position while a member works, recalls it when the race flips.
 
 **M6 — (experiment) joint rollout.** Only if M1–M5 leave visible dumb:
 `decide` compares its top-2 engagements by cloning + `advanceRound`-ing a
