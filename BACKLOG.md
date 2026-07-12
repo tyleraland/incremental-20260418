@@ -463,8 +463,38 @@ bundles" idea — Assassinate / Lock & Focus / Hold the Line as one registry
 entry each), **M5 objectives + chaperone**, **M6 rollout experiment**, and
 the **intel mask** independent track (imperfect information).
 
-**M1–M3 follow-ups (from the phase bug-hunt reviews; all small):**
+**Sequencing (agreed).** Next headline slice: **M4 directives** — the player's
+party-scope lever, and the payoff the whole system was built to enable; most
+of its substrate (Assignment roles, stance/anchor, the planner pipeline)
+already exists, so it's mostly the registry + a persisted party slot + adapter
+injection + curated gating + the ambush/cloak-timing orchestration. Run the
+**intel mask** as a parallel independent track (touches no planner code —
+mergeable anytime). Slot a **browser tuning pass** on the ⏱ knobs alongside,
+using the 14 sandbox showcases as the QA rig — `ACUMEN.stance = 90` (vs a fresh
+roster's ≈75, hides all of M3 from early curated play) is the highest-risk knob
+to confirm first. M2.5 rove, M5 objectives/chaperone, M6 rollout follow in the
+doc's build-value order.
 
+**M1–M3 follow-ups (from the phase bug-hunt reviews + live showcase QA):**
+
+- ***Abandon has no execution — it's bookkeeping.*** When the mutual-TTK
+  re-price crosses `ENGAGE_EXIT` the plan drops the `engagement`, but nothing
+  in `executeMovement` acts on it: units keep their sticky lock + threat and
+  fight on (the `fold-when-losing` showcase decides to fold, then dies anyway).
+  Wire abandon → a real disengage: on the round an engagement is dropped for
+  "losing the race" (not "everything's dead"), have members break off toward
+  the party edge / a safe rally, reusing the Retreater / kite back-off
+  movement. Higher value than the rest here — it turns an already-shipped
+  *decision* into visible *behavior*, and pairs naturally with M4 (a Skirmish
+  directive's whole point is knowing when to fold).
+- *Roam-into-avoided-camp gets stuck* — when the party correctly declines an
+  unaffordable camp and roams away, `pickRoamPoint` / the fanned waypoint can
+  route it THROUGH the sleeping pack's physical cluster, where `enforceSeparation`
+  against the tight body of monsters jams it (the `dont-over-pull` party ends
+  up wedged in the middle of the pack). The avoid decision is right; the
+  *pathing* isn't avoid-aware. Make the roam/hunt waypoint (and/or its
+  fan-out) steer clear of avoid-listed clusters, or treat a dense avoided
+  camp as a soft obstacle for the roam route.
 - *Corridor hysteresis* — `corridor` re-derives from the live centroid each
   decision round with no stickiness; a centroid straddling a barrier midline
   could alternate corners round-to-round (party zigzag). Add a committed-
