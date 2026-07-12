@@ -505,6 +505,28 @@ for the prototype, but revisit stacking/dedupe if the inventory grows noisy.
 - **Combat log UI** — event stream is rich (every hit, heal, status,
   interrupt); only floating numbers render. No history of "Aldric hit Slime
   for 24."
+- **Death stakes (real consequences for a KO).** Today a KO is nearly free —
+  a downed hero recovers/rests and is back (health rules in `src/lib/CLAUDE.md`;
+  the offline loop doesn't even model KO downtime, §Offline return-to-town).
+  Give death teeth so risk decisions matter: on death a hero (1) **drops its
+  loot pack** (the carried `Unit.pack`, separate from stash — spills as
+  ground-drop loot, ties into *Ground-drop loot pickup* under Loot realism, so
+  a wipe is a real material loss someone must recover); (2) **loses ~1% exp**
+  (a small, non-punishing setback — enough to sting, not to grind-gate; uses
+  the same `splitExpByLevel` pool math in reverse); (3) **sits dead on the
+  field for X rounds**, then **returns to town** rather than recovering in
+  place (a downtime + repositioning cost, not just an HP dip). Authority split
+  is the usual one: the *store* owns the pack drop, exp debit, dead-timer, and
+  the town-return transition (like all loot/RNG/economy); the engine only
+  emits the death event. Why it's here and not just a number tweak: **stakes
+  are what make the flee behaviors worth building.** A disengage/rout only
+  reads as *intelligent* if staying costs something real — with a free KO,
+  fighting to the last hero is nearly optimal, so the party looks dumb for
+  fleeing; once a wipe means lost packs + exp + a long walk back, breaking off
+  a losing fight to save three heroes is obviously the right call, and the
+  **Forced-fight disengage gap** (§AI & coordination) becomes a payoff feature
+  instead of a nicety. Sequence the two together: the stakes justify the AI,
+  the AI answers the stakes.
 
 ## Items, cards & sockets
 
@@ -808,6 +830,34 @@ live play ever surfaces the loop).
   resource nodes as a new open-world entity, a move-order-based "work the
   node" behavior, and a blackboard-read guard assignment gated on
   vision/threat so the party only commits when safe.
+- **Vision as a strategic dimension (scouting, sight-range as a lever).**
+  `visionRange` already exists and gates targeting, and the planner already
+  builds the plan from what members *collectively* see — so the substrate is
+  there, but sight is currently a flat per-unit constant nobody manipulates.
+  Make it a first-class lever: (1) **asymmetric baseline** — heroes see farther
+  than most monsters, so a party can spot a camp before it's spotted (the whole
+  reason pulling and avoiding are possible is information asymmetry; today it's
+  incidental, not designed); (2) **sight-affecting kit** — a Ranger skill/buff
+  that widens ally vision (and a scout archetype built around it), a Rogue skill
+  that **blinds** enemies (shrinks their vision so they can't acquire or rally),
+  and statuses (sleep = zero vision, blind = reduced) feeding the same field;
+  (3) **shared intel** — the party already pools sight for planning, so surface
+  that as a legible thing (one member seeing a boss reveals it to the group,
+  ties directly into the **intel mask** codex — a scout that gets eyes on a new
+  species early fills its intel before the fight). Why it matters to the AI, not
+  just the numbers: vision is the input to every coordination decision already
+  built — a wider-seeing party pulls cleaner (sees the whole pull-set before
+  committing), avoids better (spots the unaffordable camp sooner), and can run a
+  genuine **scout role** (one fast wide-vision unit ranging ahead to reveal a
+  boss/camp while the party holds), which is the read-side payoff of the intel
+  mask. Blinding an enemy caster/leader becomes a real tactic (drops its
+  vision → it can't rally its pack → the acumen/coordination collapse the
+  `kill-the-shaman` showcase demos, but non-lethally). Depends on: per-unit
+  vision already flowing through the adapter (it does); a vision-modifier status
+  channel (statuses already carry stat modifiers — add a `visionMult`/`visionAdd`
+  the same way); and the plan reading enemy vision for the pull/rally prediction
+  (`pullSetOf` already keys `passiveAcquires` off `visionRange`, so blinding
+  shrinks the predicted pull-set for free).
 
 ### Monster aggression & packs (extensions)
 
