@@ -156,6 +156,32 @@ describe('mapgen validate', () => {
     expect(ruleOf(pocketed, 'graph-truthful').ok).toBe(true)
   })
 
+  it('intensity: out-of-range or non-finite node intensities fail; in-range and absent pass', () => {
+    // violation: one node out of range, one NaN
+    const bad = makeSpec()
+    bad.semantic.nav.nodes = [
+      { id: 'r-a', at: { x: 5, y: 5 }, intensity: 1.5 },
+      { id: 'r-b', at: { x: 30, y: 30 }, intensity: Number.NaN },
+    ]
+    const violated = ruleOf(bad, 'intensity')
+    expect(violated.ok).toBe(false)
+    expect(violated.detail).toContain('r-a')
+    expect(violated.detail).toContain('r-b')
+    // fix: same nodes, values back inside [0,1]
+    const fixed = makeSpec()
+    fixed.semantic.nav.nodes = [
+      { id: 'r-a', at: { x: 5, y: 5 }, intensity: 0 },
+      { id: 'r-b', at: { x: 30, y: 30 }, intensity: 1 },
+    ]
+    expect(ruleOf(fixed, 'intensity').ok).toBe(true)
+    // nodes without intensity are fine (city skips by decision)
+    const none = makeSpec()
+    none.semantic.nav.nodes = [{ id: 'r-a', at: { x: 5, y: 5 } }]
+    const skipped = ruleOf(none, 'intensity')
+    expect(skipped.ok).toBe(true)
+    expect(skipped.detail).toBe('no intensities published')
+  })
+
   it('water-coherence: deep cells need covering rects; water rects need water under them', () => {
     const deep = SURFACE_MATERIALS.indexOf('deep-water')
     const uncovered = makeSpec()

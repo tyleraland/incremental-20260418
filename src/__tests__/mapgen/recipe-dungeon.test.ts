@@ -81,6 +81,24 @@ describe('dungeon recipe fuzz gate', () => {
     expect(choked).toBeGreaterThan(SEEDS.length * 0.9)
   })
 
+  it('track D intensity: entry reads 0, the deep end runs hot, all values sane', () => {
+    for (const r of results) {
+      const nodes = r.spec.semantic.nav.nodes
+      for (const n of nodes) {
+        expect(n.intensity, `seed ${r.spec.seed}/${n.id} has no intensity`).toBeDefined()
+        expect(Number.isFinite(n.intensity!)).toBe(true)
+        expect(n.intensity!).toBeGreaterThanOrEqual(0)
+        expect(n.intensity!).toBeLessThanOrEqual(1)
+      }
+      // the entry room's anchor IS the spawn cell → exactly 0; the max-depth
+      // room (the lair site) is genuinely remote
+      const entry = nodes.find((n) => (n.depth ?? 0) === 0)!
+      expect(entry.intensity).toBe(0)
+      const deepest = [...nodes].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0))[0]
+      if ((deepest.depth ?? 0) > 0) expect(deepest.intensity!).toBeGreaterThan(0)
+    }
+  })
+
   it('stamps: each starter vault places somewhere across the sweep; barred vault is optional-tagged', () => {
     const allNotes = results.flatMap((r) => r.notes).join('\n')
     for (const id of ['pillar-vault@', 'shrine@', 'barred-cell@']) {
@@ -160,5 +178,18 @@ describe('shortcut lock — the cycle rewrite step', () => {
     expect(openLock.open).toBe(true)
     // the closed variant spends exactly one more collision rect — the plug
     expect(closed.spec.collision.length).toBe(open.spec.collision.length + 1)
+  })
+
+  it('track D intensity is kit-invariant: the open variant publishes the same values', () => {
+    // flow runs on plan.walk (the as-if-open floor mask — the shortcut plug is
+    // collision-only), so the kit variants must agree byte-for-byte.
+    const { seed, res: closed } = found!
+    const lock = closed.spec.semantic.locks.find((l) => l.id.startsWith('lock-shortcut-'))!
+    const open = generateMap(DUNGEON_RECIPE, {
+      recipe: 'dungeon', seed, size: 48, themes: ['dungeon'], proficiencies: [lock.tag!],
+    })
+    const digest = (r: ReturnType<typeof generateMap>) =>
+      r.spec.semantic.nav.nodes.map((n) => `${n.id}=${n.intensity}`)
+    expect(digest(open)).toEqual(digest(closed))
   })
 })

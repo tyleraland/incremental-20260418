@@ -168,11 +168,17 @@ deferred content phases.
 
 ### Open feature tracks (each a distinct future build)
 
-- **Track D — flow/tension derived plane.** Distance-to-goal BFS in
-  `draft.scratch`, digested to a per-node `intensity` scalar on the semantic
-  plane; store consumes it for spawn/reward pacing (mapgen makes the stage,
-  store populates — settle the split in that PR). Gives `field` the depth
-  notion it lacks. Attaches at the L6 scratch seam.
+- **Track D pacing — deepen the store consumption.** The mapgen half shipped:
+  a cell-BFS `flow` plane in `draft.scratch` digested to `NavNode.intensity`
+  (normalized remoteness from spawn, kit-invariant), published by `field` and
+  `dungeon`, `intensityAt(spec,x,y)` adapter seam, `intensity` validator rule.
+  The store consumes it in ONE place — the open-world trickle weights spawn
+  *position* toward remote ground (`intensityScatterPos`, mild `1 + 2×`
+  weight). Still open: **reward pacing** (familiarity/xp/loot off intensity),
+  intensity-scaled monster *level* bands (needs per-location level bands
+  first — spawn identity/level are untouched today), and a per-location knob
+  to opt the weighting up/down. City publishes no intensity by decision
+  (peaceful junctions) — revisit if cities ever host combat.
 - **Track F — tactical legibility as a generation target.** Sightline-ribbon
   pass (reserve 1–2 straight lanes pre-obstacles; pure AABB) turning
   `longLanes` from annotation into guarantee; `tacticalTargets` in GenParams

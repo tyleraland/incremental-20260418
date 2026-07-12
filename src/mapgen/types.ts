@@ -134,6 +134,13 @@ export interface NavNode {
   poiId?: string
   area?: Rect        // the node's floor footprint (a dungeon room, a city block, a region bbox)
   depth?: number     // graph distance from the entry node (§G depth gradient)
+  // Track D flow/tension digest: normalized remoteness from the spawn, in
+  // [0,1] — the node's anchor-cell BFS distance on the AS-IF-OPEN walk mask
+  // (pre-gate-plugs, so it's kit-invariant) ÷ the map's max cell distance
+  // (digestIntensity in graph.ts documents the exact formula). The store reads
+  // it to pace spawns/rewards (decision 4: mapgen makes the stage, the store
+  // populates); the cell-resolution plane stays in draft.scratch, never baked.
+  intensity?: number
 }
 export interface NavEdge {
   a: string

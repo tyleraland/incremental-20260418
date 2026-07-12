@@ -14,6 +14,32 @@ export function specBarriers(spec: MapSpec): Barrier[] {
   return spec.collision.map(({ x, y, w, h, kind }) => ({ x, y, w, h, kind }))
 }
 
+// Track D consumption seam: "how remote is this cell?" — the store paces its
+// open-world trickle off this and never walks the semantic plane itself.
+// Resolution: a node whose `area` contains the point wins (nearest anchor
+// among containing nodes when region bboxes overlap); otherwise the nearest
+// anchor overall. 0 when the map publishes no intensity (city by decision,
+// stub graphs) — the neutral weight. Intensity is kit-invariant, so any kit
+// variant of the spec answers identically.
+export function intensityAt(spec: MapSpec, x: number, y: number): number {
+  let best = 0
+  let bestD = Infinity
+  let bestContained = false
+  for (const n of spec.semantic.nav.nodes) {
+    if (typeof n.intensity !== 'number') continue
+    const a = n.area
+    const contains = !!a && x >= a.x && x < a.x + a.w && y >= a.y && y < a.y + a.h
+    if (bestContained && !contains) continue
+    const d = (n.at.x - x) ** 2 + (n.at.y - y) ** 2
+    if ((contains && !bestContained) || d < bestD) {
+      best = n.intensity
+      bestD = d
+      bestContained = bestContained || contains
+    }
+  }
+  return best
+}
+
 // The Location fields the generator reads — kept structural so mapgen never
 // imports game types (leaf module; same discipline as the engine).
 export interface MapGenSource {

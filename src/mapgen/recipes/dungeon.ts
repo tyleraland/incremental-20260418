@@ -28,7 +28,7 @@ import type { Pt, Rect } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
 import { hashString } from '../rng'
-import { bfsDepth, nodeDegrees } from '../graph'
+import { bfsDepth, digestIntensity, flowField, nodeDegrees } from '../graph'
 import { GATE_TAGS, placeProficiencyLock, placeShortcutLock } from '../gates'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
@@ -356,6 +356,33 @@ const layoutPass = {
     }))
     draft.semantic.nav.edges = edges.map((e) => ({ a: e.a, b: e.b, kind: 'corridor' as const, doorAt: e.doorAt }))
     draft.scratch.set('plan', { walk, rooms, edges, corridorCells, entryId, goalId } satisfies Plan)
+  },
+}
+
+// ── flow: the L6 flow plane + intensity digest (track D, recipe-agnostic) ────
+// Same digest the field recipe publishes (graph.ts digestIntensity — the
+// consumer never cares which recipe produced it): cell-BFS remoteness from
+// the spawn on plan.walk, normalized per-map. plan.walk is the as-if-open
+// floor mask (the shortcut pass adds its plug as a COLLISION rect later and
+// never touches the plan), so intensity is KIT-INVARIANT by construction.
+// Complements `depth` (graph hops): depth orders rooms, intensity measures
+// actual travel remoteness. Draws no RNG.
+// L6 scratch: 'flow' — Int32Array, BFS steps from the spawn cell, -1 =
+// blocked/unreachable. Never baked; the spec carries only NavNode.intensity.
+const flowPass = {
+  id: 'flow',
+  run({ draft, note }: PassCtx) {
+    const plan = getPlan(draft)
+    const nodes = draft.semantic.nav.nodes
+    if (!plan || !nodes.length) { note('no layout plan — no intensity'); return }
+    const spawn = draft.semantic.pois.find((p) => p.kind === 'spawn')
+    if (!spawn) { note('no spawn POI — no intensity'); return }
+    const flow = flowField(plan.walk, draft.cols, draft.rows, spawn.at)
+    if (flow.max < 0) { note('spawn cell blocked — no intensity'); return }
+    draft.scratch.set('flow', flow.dist)
+    const { unreachable } = digestIntensity(nodes, flow, draft.cols, draft.rows)
+    note(`intensity: ${nodes.length} node(s), max cell distance ${flow.max}` +
+      (unreachable ? `, ${unreachable} disconnected anchor(s) pinned to 1` : ''))
   },
 }
 
@@ -708,7 +735,7 @@ export const DUNGEON_RECIPE: RecipeDef = {
   // dead-end / a cycle edge and its door), stamps are dressing (they skip
   // rooms that already have POIs). gates before shortcut: the dead-end vault
   // keeps budget priority; the rewrite step only fires if budget remains.
-  passes: [layoutPass, carvePass, floorPass, gatesPass, shortcutPass, stampsPass, scatterPass, semanticPass, premisePass],
+  passes: [layoutPass, flowPass, carvePass, floorPass, gatesPass, shortcutPass, stampsPass, scatterPass, semanticPass, premisePass],
   // Free-form floors cost more rects (~30–60) than the old lattice. The P5
   // moderate-envelope re-bench (2026-07, map-perf-envelope.test.ts) adopted 72
   // as the live pathing bound, so a dungeon bake is perf-viable on a live

@@ -397,6 +397,46 @@ describe('field recipe fuzz gate', () => {
     }
   })
 
+  // ── track D: the flow/intensity digest ─────────────────────────────────────
+
+  it('intensity digest: every node publishes a sane remoteness; deeper regions run hotter', () => {
+    for (const r of sweep(160, ['plains', 'water'])) {
+      expect(r.report.ok, `seed ${r.spec.seed}: ${JSON.stringify(r.report.rules.filter((x) => !x.ok))}`).toBe(true)
+      const nodes = r.spec.semantic.nav.nodes
+      expect(r.notes.some((n) => n.startsWith('flow: intensity:')), `seed ${r.spec.seed}: flow pass left no note`).toBe(true)
+      for (const n of nodes) {
+        expect(n.intensity, `seed ${r.spec.seed}/${n.id} has no intensity`).toBeDefined()
+        expect(Number.isFinite(n.intensity!)).toBe(true)
+        expect(n.intensity!).toBeGreaterThanOrEqual(0)
+        expect(n.intensity!).toBeLessThanOrEqual(1)
+      }
+      if (nodes.length < 2) continue
+      // the spawn's own region is the calmest; some node genuinely remote
+      const spawnNode = nodes.find((n) => n.poiId === 'spawn')!
+      expect(spawnNode.intensity).toBe(Math.min(...nodes.map((n) => n.intensity!)))
+      expect(Math.max(...nodes.map((n) => n.intensity!))).toBeGreaterThan(0)
+      // cell remoteness agrees with the graph gradient: every cross-river
+      // (depth ≥ 1) region reads hotter than the spawn region
+      for (const n of nodes) {
+        if ((n.depth ?? 0) >= 1) expect(n.intensity!, `seed ${r.spec.seed}/${n.id}`).toBeGreaterThan(spawnNode.intensity!)
+      }
+    }
+  })
+
+  it('intensity is kit-invariant: open vs closed kit publishes byte-identical values', () => {
+    // The flow pass runs on the scratch walk mask rasterized BEFORE gates adds
+    // plugs (as-if-open), so a locked-off bank still reads the same remoteness
+    // under every kit — the M1-review class of bug, pinned here.
+    for (const seed of [9, 19, 3]) {
+      const params = { recipe: 'field', seed, size: 160, themes: ['plains', 'water'] as ThemeTag[] }
+      const closed = generateMap(FIELD_RECIPE, params)
+      const open = generateMap(FIELD_RECIPE, { ...params, proficiencies: ['might', 'mobility', 'perception', 'arcane'] })
+      const digest = (r: ReturnType<typeof generateMap>) =>
+        r.spec.semantic.nav.nodes.map((n) => `${n.id}=${n.intensity}`)
+      expect(digest(open)).toEqual(digest(closed))
+    }
+  })
+
   // ── the 72-envelope retune (track C tail): spend band pinned ───────────────
 
   it('72-envelope retune: live-cap bakes spend the moderate envelope; rerolls stay calm', () => {

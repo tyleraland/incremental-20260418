@@ -101,6 +101,10 @@ const roadsPass = {
 
     // Spawn FIRST (isPlaceable's apron pivots to it), then publish the plan on
     // the nav skeleton: plaza → junction → gate per road, cross-street loops.
+    // Track D decision: the city publishes NO NavNode.intensity — its nodes
+    // are road junctions in a peaceful town (no monster trickle to pace, and
+    // "remoteness from the plaza" is 1–2 blocks everywhere). Revisit if cities
+    // ever host combat; the field/dungeon flow pass is drop-in when they do.
     addPoi(draft, { id: 'spawn', kind: 'spawn', at: c, tags: ['plaza'] })
     draft.semantic.nav.nodes = [
       { id: 'plaza', at: c, poiId: 'spawn', depth: 0 },

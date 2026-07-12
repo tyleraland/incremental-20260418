@@ -14,7 +14,7 @@ import type { ProficiencyTag, ScatterIntent, ScatterKind, SurfaceMaterial } from
 import type { PassCtx, RecipeDef } from '../pipeline'
 import type { Rng } from '../rng'
 import { addBarrier, addPoi, isPlaceable, matAt, paint } from '../draft'
-import { bfsDepth, deriveRegions, nodeDegrees } from '../graph'
+import { bfsDepth, deriveRegions, digestIntensity, flowField, nodeDegrees } from '../graph'
 import { placeProficiencyLock, placeShortcutLock, type GateLook } from '../gates'
 import { occupancyGrid } from '../validate'
 import { tacticalProfile } from '../profile'
@@ -500,6 +500,35 @@ const regionsPass = {
     draft.semantic.nav.nodes = nodes
     draft.semantic.nav.edges = edges
     note(`${nodes.length} region(s), ${edges.length} crossing(s)`)
+  },
+}
+
+// ── flow: the L6 flow/tension derived plane + intensity digest (track D) ─────
+// A cell-resolution distance-to-spawn BFS over the scratch 'walk' mask,
+// digested to NavNode.intensity — the depth notion `field` lacked (dungeon
+// depth counts graph hops; a field's remoteness is cell distance). Runs right
+// after `regions` (walk mask + nodes exist) and BEFORE `gates`, on the mask
+// AS RASTERIZED THERE — no gate plug exists yet, so the plane is as-if-open
+// and the digest is KIT-INVARIANT by construction (same seed × any kit =
+// byte-identical intensities; pinned in recipe-field.test.ts). Draws no RNG.
+// L6 scratch: 'flow' — Int32Array, BFS steps from the spawn cell on the
+// as-if-open walk mask, -1 = blocked/unreachable. Never baked; the spec
+// carries only the digested per-node scalar (digestIntensity documents it).
+const flowPass = {
+  id: 'flow',
+  run({ draft, note }: PassCtx) {
+    const walk = draft.scratch.get('walk') as Uint8Array | undefined
+    const nodes = draft.semantic.nav.nodes
+    if (!walk || !nodes.length) { note('no derived graph (regions skipped?) — no intensity'); return }
+    // Same root the regions pass used for depth: caller spawn, else the centre.
+    const spawnAt = draft.params.pois.find((p) => p.kind === 'spawn')?.at
+      ?? { x: draft.cols / 2, y: draft.rows / 2 }
+    const flow = flowField(walk, draft.cols, draft.rows, spawnAt)
+    if (flow.max < 0) { note('spawn cell blocked — no intensity'); return }
+    draft.scratch.set('flow', flow.dist)
+    const { unreachable } = digestIntensity(nodes, flow, draft.cols, draft.rows)
+    note(`intensity: ${nodes.length} node(s), max cell distance ${flow.max}` +
+      (unreachable ? `, ${unreachable} disconnected anchor(s) pinned to 1` : ''))
   },
 }
 
@@ -1308,12 +1337,12 @@ const semanticPass = {
 export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
-  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + river/crossings + outcrops → derived region graph → proficiency gates on derived edges → POIs + tactical profile → desire paths → scatter.',
+  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + river/crossings + outcrops → derived region graph → flow/intensity digest → proficiency gates on derived edges → POIs + tactical profile → desire paths → scatter.',
   // gates right after regions: locks are structure (they claim a derived edge
   // and its pinch), scatter is dressing (isPlaceable already avoids the plug).
   // semantic sits BEFORE scatter (it reads collision/fields/scratch, never
   // scatter — byte-identical output either side) so the landmark exists for
   // desire-paths, which runs before scatter so props keep off the trail
   // (scatterBlocked).
-  passes: [surfacePass, hydrologyPass, riverPass, outcropsPass, regionsPass, gatesPass, semanticPass, desirePathsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, premisePass],
+  passes: [surfacePass, hydrologyPass, riverPass, outcropsPass, regionsPass, flowPass, gatesPass, semanticPass, desirePathsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, premisePass],
 }

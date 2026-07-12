@@ -27,7 +27,7 @@ import {
 import type { ClassQuestCommit } from '@/proto/protoStore'
 import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, DIRECTIVE_REGISTRY, DEFAULT_DIRECTIVE_ID, setTeamDirective, withDirectiveTactics, setCombatantIntel, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type IntelMask, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
-import { generateForLocationCached, specBarriers } from '@/mapgen'
+import { generateForLocationCached, intensityAt, specBarriers, type MapSpec } from '@/mapgen'
 import { partyProficiencyTags } from '@/lib/proficiencies'
 import { INITIAL_EQUIPMENT, INITIAL_MISC } from '@/data/equipment'
 import { INITIAL_LOCATIONS } from '@/data/locations'
@@ -474,6 +474,17 @@ const BATTLE_RESPAWN_TICKS = 15  // ticks between a finished wave and the next
 // pool so the party has to adapt to whatever wanders in. Deliberately simple —
 // per-location monster distributions and smarter spawn timing come later.
 const OPEN_WORLD_SPAWN_TICKS = 30  // ~6s between trickle spawns while below cap
+// §track D (mapgen makes the stage, the store populates it): on a mapGen
+// location the trickle rolls a few candidate positions and picks among them
+// weighted by the map's published remoteness (NavNode.intensity, read through
+// the adapter's intensityAt — the store never walks the semantic plane).
+// Remote ground fills in denser; the calm bank near the spawn stays calmer.
+// Deliberately a MILD weighting knob, not a leveling system: monster identity
+// and level are untouched, and spawn RNG stays Math.random (the contract —
+// engine untouched, snapshot replays byte-identical).
+const INTENSITY_SPAWN_CANDIDATES = 3
+const INTENSITY_SPAWN_BIAS = 2     // candidate weight = 1 + bias × intensity →
+                                   // a fully remote spot draws 3× a spawn-adjacent one
 const OPEN_WORLD_DEFAULT_CAP = 8   // fallback field size when a location sets none
 // Open-world maps are large — the camera can't show the whole field at once, so
 // the party hunts across it with limited vision. Every map should really set its
@@ -694,13 +705,35 @@ export function deployUnitAt(battle: BattleState, unit: Unit, equipment: Equipme
   return addCombatant(battle, withVision(unitToEngineInput(unit, getDerivedStats(unit, equipment), 'player'), HERO_VISION), 'player', partyTactics, at)
 }
 
+// §track D: intensity-weighted position pick for mapGen fields. Rolls
+// INTENSITY_SPAWN_CANDIDATES scatter candidates, then ONE weighted draw among
+// them (weight 1 + bias × intensity at the candidate). Exported for tests
+// (pinned Math.random steers both the candidates and the draw).
+export function intensityScatterPos(spec: MapSpec, size: number, barriers: Barrier[]): { x: number; y: number } {
+  const cands = Array.from({ length: INTENSITY_SPAWN_CANDIDATES }, () => scatterPos(size, barriers))
+  const weights = cands.map((p) => 1 + INTENSITY_SPAWN_BIAS * intensityAt(spec, p.x, p.y))
+  let roll = Math.random() * weights.reduce((s, w) => s + w, 0)
+  for (let i = 0; i < cands.length; i++) {
+    roll -= weights[i]
+    if (roll < 0) return cands[i]
+  }
+  return cands[cands.length - 1]
+}
+
 // Timed/random respawn: a special case of spawnMonsterAt — pick a random monster
 // from the location pool and scatter it across the field (off the edges, never
 // inside a wall). Returns the monster id (for sighting bookkeeping) or null.
+// mapGen locations pace the scatter by remoteness (§track D above). Intensity
+// is kit-invariant (pinned in recipe-field.test.ts), so the cached bare-kit
+// spec answers correctly even though the live battle resolved its gates with
+// the deploying party's kit; blocked-cell avoidance still uses the battle's
+// REAL barriers (the resolved variant), via scatterPos.
 function spawnMonsterInto(battle: BattleState, loc: Location, size: number): string | null {
   const mid = pickMonsterId(loc)
   if (!mid) return null
-  return spawnMonsterAt(battle, mid, scatterPos(size, battle.barriers)) ? mid : null
+  const spec = loc.mapGen ? generateForLocationCached(loc).spec : null
+  const at = spec ? intensityScatterPos(spec, size, battle.barriers) : scatterPos(size, battle.barriers)
+  return spawnMonsterAt(battle, mid, at) ? mid : null
 }
 
 // Engine timeScale for a battle on this location: the finer (smoother) default, but

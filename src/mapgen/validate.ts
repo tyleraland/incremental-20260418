@@ -280,6 +280,22 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
         : problems.join('; '))
   }
 
+  // intensity — track D digest sanity: every published NavNode.intensity is a
+  // finite number in [0,1] (the store paces the open-world trickle off it —
+  // a NaN or out-of-range value would silently skew spawn weighting). Nodes
+  // without intensity are fine: city skips it by decision, and the field's
+  // POI-stub fallback nodes never carry one.
+  const withIntensity = spec.semantic.nav.nodes.filter((n) => n.intensity !== undefined)
+  const badIntensity = withIntensity.filter(
+    (n) => typeof n.intensity !== 'number' || !Number.isFinite(n.intensity) || n.intensity! < 0 || n.intensity! > 1,
+  )
+  rule('intensity', badIntensity.length === 0,
+    badIntensity.length
+      ? `${badIntensity.map((n) => `${n.id}=${n.intensity}`).join(',')} outside [0,1]`
+      : withIntensity.length
+        ? `${withIntensity.length} node intensity value(s) in [0,1]`
+        : 'no intensities published')
+
   // water-coherence — the surface plane and collision plane tell one story:
   // every deep-water CELL is covered by a deep-water RECT (visual water you
   // could walk on = a lie), and deep-water rects sit on water (≥60% of their

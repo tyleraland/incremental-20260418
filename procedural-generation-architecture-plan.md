@@ -32,7 +32,7 @@ collision plane.**
 | L3 | **Production** — THE DIVERGENCE LAYER, one per recipe family: overworld = geography-first (surface bands, hydrology, ridges, outcrops); dungeon = graph-first (rooms → cycles → carve); city = road-first (skeleton → pave → buildings). All philosophy differences are quarantined here. | `recipes/*` | shipped (upgrades tracked below) |
 | L4 | **Nav/region graph** — THE CONVERGENCE LAYER: one shared model (`NavNode`/`NavEdge`), two producers — *authored* (dungeon, city: plan publishes it, geometry realizes it) and *derived* (overworld: segment passable space into regions; pinches become edges). Shared ops in `graph.ts`. | `graph.ts` + producers | authored ✅ · derived ✅ (P1: `deriveRegions`; field publishes real graphs) |
 | L5 | **Gating** — recipe-agnostic lock-and-key over graph edges (`gates.ts`): a `Lock` names what opens it, resolves against the party kit (and later, carried keys / world manifest). Dungeon doors and overworld fords are the same mechanism wearing different materials. | `gates.ts` | shipped (dungeon + overworld — P3: a mobility ford and a might bridge are the same placeShortcutLock call; live locations opt in via `mapGen.gates`) |
-| L6 | **Derived planes** — the computed-fields tier: named intermediate products one pass produces and later passes consume (`draft.scratch`): walk masks, road-distance transforms today; flow/distance-to-goal, tension budget, sightline masks tomorrow. Never baked; the spec only carries digested summaries (e.g. `NavNode.depth`). | `draft.ts` scratch | shipped (masks); flow/tension = track D |
+| L6 | **Derived planes** — the computed-fields tier: named intermediate products one pass produces and later passes consume (`draft.scratch`): walk masks, road-distance transforms, the `'flow'` distance-to-spawn plane (track D — digested to `NavNode.intensity`); tension budget, sightline masks tomorrow. Never baked; the spec only carries digested summaries (`NavNode.depth`/`intensity`). | `draft.ts` scratch | shipped (masks + flow/intensity); sightlines = track F |
 | L7 | **Dressing** — stamps/vaults, scatter, paths/desire-paths, decor. Reads L2–L6, adds no connectivity. | `stamps.ts`, recipe passes | shipped |
 | L8 | **Semantic annotation** — POIs, tactical profile, naming/premise. Describes, never steers. | `profile.ts`, `naming.ts` | shipped |
 | L9 | **Bake → validate → reroll** — coherence harness; reachability is *conditional* through locks and reads the graph. | `draft.ts`, `validate.ts`, `pipeline.ts` | shipped |
@@ -98,12 +98,14 @@ every vocabulary a seam exposes.
 | **Vocabularies** | `types.ts` const arrays | small + fixed (locked decision 6): barrier/surface materials, scatter/POI kinds, proficiency/theme tags; a material also maps its collision kind in `validate.ts` `MATERIAL_KIND` and gets a lab debug color | add a content KIND — grow one entry at a time, never per-feature |
 
 Two seams carry most of the future weight. **L4 nav graph** is the convergence
-point: three of the remaining tracks (D flow/tension, F tactical targets, G
-world director) read it and none rewrite it — that is the whole payoff of the
-reorg. **L6 scratch** is the derived-planes floor: flow/tension (track D) and
-sightline masks (track F) are both "one pass computes it, a later pass consumes
-it," so they attach here with no bespoke plumbing — the generalization of the
-single `FieldBundle` substrate into a computed-fields tier.
+point: the remaining tracks (F tactical targets, G world director) read it and
+none rewrite it — that is the whole payoff of the reorg, and track D already
+cashed it in (`flowField`/`digestIntensity` digest onto the shared nodes;
+field and dungeon publish `intensity` through one helper). **L6 scratch** is
+the derived-planes floor: flow (track D, shipped) and sightline masks (track
+F) are both "one pass computes it, a later pass consumes it," so they attach
+here with no bespoke plumbing — the generalization of the single `FieldBundle`
+substrate into a computed-fields tier.
 
 ## Decisions (weighed, settled — revisit deliberately)
 
@@ -137,11 +139,14 @@ single `FieldBundle` substrate into a computed-fields tier.
    budget. Moderate ≠ unbounded: hundreds of rects is corner-stitching
    territory (decision 2) and off the table.
 4. **Mapgen ↔ store boundary for flow/tension: mapgen makes the stage, the
-   store populates it.** Mapgen computes flow/tension as L6 derived planes
-   and bakes only digested per-node summaries on the semantic plane
-   (`NavNode.depth` today; a node `intensity` scalar with track D). The store
-   reads those to pace spawns/rewards; mapgen never places monsters (locked
-   scope). Cell-resolution planes stay in scratch — the spec stays small.
+   store populates it — SETTLED IN CODE (track D).** Mapgen computes flow as
+   an L6 derived plane and bakes only the digested per-node summaries
+   (`NavNode.depth`, `NavNode.intensity`). The store reads intensity through
+   the adapter's `intensityAt` — its ONE consumption today is the open-world
+   trickle's spawn-position weighting (`intensityScatterPos` in
+   `useGameStore.ts`); mapgen never places monsters (locked scope) and the
+   store never walks the semantic plane. Cell-resolution planes stay in
+   scratch — the spec stays small.
 5. **Cross-map is a seam, not a build.** `GenParams.manifest` carries opaque
    planted tokens (typed now, consumed by nothing); `Lock.kind: 'key'` is the
    reserved shape it will bind to. The Phase-0 world director that computes
@@ -149,9 +154,9 @@ single `FieldBundle` substrate into a computed-fields tier.
    track G — after single-map key logistics exist (phase-6 interactables).
    Mirrors how `proficiencies` already flows in, so the plumbing is proven.
 6. **Technique verdicts** (research packet §4):
-   - **Flow-field / distance-to-goal** — adopt as an L6 derived plane
-     (track D). Cheap (one BFS), gives the field recipe the depth notion it
-     lacks and the store a pacing dial.
+   - **Flow-field / distance-to-goal** — ✅ adopted as an L6 derived plane
+     (track D, shipped): one BFS, the field's depth notion, the store's
+     pacing dial. Facts in `src/mapgen/CLAUDE.md`.
    - **Sightline-ribbon carving** — adopt as an optional L3 pass (track F):
      reserve 1–2 straight lanes before obstacle placement; passes then treat
      lane cells as keep-clear. Pure AABB math, targets our exact
@@ -200,9 +205,13 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
 - **C. Rivers + crossings + desire paths** ✅ *(shipped: P2/P3/P5 + the
   2026-07 tail — desire-path pass and the dial retune that spends the 72
   envelope; facts in `src/mapgen/CLAUDE.md`)*.
-- **D. Flow/tension derived plane**: distance-to-goal BFS in scratch, node
-  `intensity` on the semantic plane, store-side pacing consumption (settle
-  the §4 ownership split in that PR, per decision 4).
+- **D. Flow/tension derived plane** ✅ *(shipped 2026-07)*: `flowField` +
+  `digestIntensity` (graph.ts), `flow` passes in field + dungeon, the
+  `intensity` validator rule, `intensityAt` adapter seam, and the store's
+  intensity-weighted trickle position pick — the §4 ownership split settled
+  as decision 4. Facts in `src/mapgen/CLAUDE.md`. Tension *budget* (pacing
+  the spend of threat across a map, not just measuring remoteness) remains
+  future L6 work when a consumer wants it.
 - **E. Real cyclic dungeon generation** ✅ *(core shipped as P4)*:
   cycle-as-primitive skeleton + the shortcut-lock rewrite step replacing
   MST+2-spares; a pure L3/L4-producer swap — L5–L9 untouched by
@@ -243,7 +252,7 @@ never half-landed.
 | **P3** ✅ | **Overworld gates + secret pockets**: a gated *secondary* crossing (mobility ford / perception hidden trail) and a locked vault region, via the shared `gates.ts` on derived edges | proves the convergence thesis end-to-end — dungeon door and overworld ford are literally one call; lands phase-4's "field-recipe gates" | same seed × different kit bakes open/closed field variants; `locks` rule green both ways |
 | **P4** ✅ | **Cyclic dungeon core** (track E): cycle-as-primitive skeleton (entry→goal via two arcs) + tree-attached leaves replacing MST+2-spares; first rewrite step: the **shortcut lock** (a proficiency plug on the short arc — closed forces the long way, nothing stranded) | the dungeon-side structural piece — cycles by construction, not by accident; the rewrite-step shape is what lock/key/shortcut grammar (Unexplored) grows on. Independent of P1–P3, parallelizable | dungeon fuzz gates green; ≥1 cycle by construction; gates/stamps/carve untouched |
 | **P5** ✅ | **Moderate-envelope bench**: re-bench `map-perf-envelope.test.ts` on realistic river-map geometry; raise the live cap toward ~56–72 | converts decision 3 into a number; unlocks LIVE adoption of P2 maps AND the lab dungeon | new envelope measured + gated; adapter cap updated |
-| **P6+** | **Color-in (BACKLOG until the shape holds)**: flow/`intensity` plane (track D), sightline ribbons + `tacticalTargets` (track F), NPC placement off the semantic plane, world director (track G). Desire paths + the envelope-spend retune shipped 2026-07 (track C tail) | none move the structure; all read the graph/planes laid above | (backlog) |
+| **P6+** | **Color-in (BACKLOG until the shape holds)**: sightline ribbons + `tacticalTargets` (track F), NPC placement off the semantic plane, world director (track G). Desire paths + the envelope-spend retune shipped 2026-07 (track C tail); flow/`intensity` (track D) shipped 2026-07 | none move the structure; all read the graph/planes laid above | (backlog) |
 
 P1 → P2 → P3 is a strict dependency chain; P4 runs parallel to any of them;
 P5 anytime after P2 exists to measure. Ship after each packet — a partial

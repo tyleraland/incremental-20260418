@@ -7,7 +7,7 @@
 // the graph through these recipe-agnostic ops and never cares which
 // philosophy produced it.
 //
-import type { NavEdge, NavNode } from './types'
+import type { NavEdge, NavNode, Pt } from './types'
 
 export interface GraphEdgeLike { a: string; b: string }
 
@@ -221,6 +221,68 @@ export function deriveRegions(
   }
 
   return { nodes, edges, claims }
+}
+
+// ── flowField + digestIntensity — the L6 flow plane and its digest (track D) ─
+// Cell-resolution BFS distance from a root cell over a walk mask (4-neighbour
+// FIFO — exact grid distance; pure, RNG-free, O(cells)). Recipes root it at
+// the SPAWN, so distance = remoteness, park the raw plane in draft.scratch
+// ('flow' — never baked, decision 4), and digest it onto the published nav
+// nodes as `intensity`. KIT-INVARIANCE contract: callers hand this the
+// AS-IF-OPEN walk mask (rasterized before any gate plug exists — the field's
+// scratch 'walk', the dungeon's plan.walk), so the same seed publishes
+// byte-identical intensities under every proficiency kit; sealed-off regions
+// still get well-defined values.
+// dist: -1 = blocked or unreachable; max: largest distance seen, or -1 when
+// the root cell itself is blocked (callers should note + skip the digest).
+export interface FlowField { dist: Int32Array; max: number }
+
+export function flowField(walk: Uint8Array, cols: number, rows: number, root: Pt): FlowField {
+  const dist = new Int32Array(cols * rows).fill(-1)
+  const rx = Math.min(cols - 1, Math.max(0, Math.floor(root.x)))
+  const ry = Math.min(rows - 1, Math.max(0, Math.floor(root.y)))
+  const start = ry * cols + rx
+  if (!walk[start]) return { dist, max: -1 }
+  dist[start] = 0
+  let max = 0
+  const q = [start]
+  for (let head = 0; head < q.length; head++) {
+    const i = q[head]
+    const x = i % cols, y = (i / cols) | 0
+    const d = dist[i] + 1
+    for (const j of [
+      x + 1 < cols ? i + 1 : -1, x > 0 ? i - 1 : -1,
+      y + 1 < rows ? i + cols : -1, y > 0 ? i - cols : -1,
+    ]) {
+      if (j >= 0 && walk[j] && dist[j] === -1) {
+        dist[j] = d
+        if (d > max) max = d
+        q.push(j)
+      }
+    }
+  }
+  return { dist, max }
+}
+
+// THE DIGEST (the only part that reaches the baked spec):
+//   intensity = round₃( anchor-cell BFS distance ÷ map max cell distance )
+// — normalized per-map to [0,1], rounded to 3 decimals (byte-stable specs).
+// An anchor unreachable on the as-if-open mask (a fully disconnected pocket)
+// pins to 1 — maximally remote; a degenerate field (max 0) publishes all-0.
+// Iterates the nodes array in order (no Map/Set order dependence). Returns
+// the unreachable-anchor count for the caller's note().
+export function digestIntensity(
+  nodes: NavNode[], flow: FlowField, cols: number, rows: number,
+): { unreachable: number } {
+  let unreachable = 0
+  for (const nd of nodes) {
+    const xi = Math.min(cols - 1, Math.max(0, Math.floor(nd.at.x)))
+    const yi = Math.min(rows - 1, Math.max(0, Math.floor(nd.at.y)))
+    const d = flow.dist[yi * cols + xi]
+    if (d < 0) { nd.intensity = 1; unreachable++ }
+    else nd.intensity = flow.max > 0 ? Math.round((d / flow.max) * 1000) / 1000 : 0
+  }
+  return { unreachable }
 }
 
 // Edge count per node id. Degree 1 = a dead end (gate/vault candidate);
