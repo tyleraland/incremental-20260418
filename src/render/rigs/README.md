@@ -6,6 +6,25 @@ parameterized bind points, pose deltas, and animation clips. A player draft is
 only parameters plus per-pose joint offsets, so it is small enough to save,
 copy, paste, or send through the mobile share sheet.
 
+The lab now treats idle poses as the authored foundation: `walkA` layers over
+`idleA`, `walkB` over `idleB`, and attack/hit layer over `idleA`. Refining an
+idle joint therefore updates derived actions automatically; editing an action
+adds only a corrective overlay. The pose buttons expose this chain in their
+tooltips and in the active-pose readout.
+
+Edits can be propagated two ways. **Live mirror** applies a drag/numeric delta
+to the paired near/far limb with lateral Y reflected. **Repeat last edit** keeps
+the operation as a reusable Δ and can apply it later to the paired joint,
+diagonal joint, or any selected target, optionally rotated or Y-flipped. This
+keeps symmetry convenient without forcing a perfectly symmetric animal.
+
+The selected joint is also shown as a focused chain in top (x/y), side (x/z),
+and front (y/z) projections. Its absolute rig coordinates and parent-relative
+coordinates are both editable; the panel also reports whole-rig center and
+extent. Silhouette parts expose round/tapered/angular/spiky geometry, width,
+sharpness, and exploratory base/lit/outline color pickers. Custom colors remain
+draft data until a production compiler maps them to palette roles.
+
 ## Contract for a future skeleton producer
 
 - Author top-down in a normalized box, facing `+x`, independent of final token
@@ -18,6 +37,8 @@ copy, paste, or send through the mobile share sheet.
   layer; poses never contain SVG paths.
 - Provide bind, two idle keys, two diagonal gait keys, attack, and hit. Feet are
   independent targets so planted/raised legs can be distinguished.
+- Declare pose inheritance explicitly. Action poses should be sparse overlays
+  on an idle key rather than copied full-skeleton poses.
 - Emit flat closed geometry or primitive attachments. No gradients, filters,
   masks, embedded colors, CSS, or runtime randomness; final paints resolve
   through `palette.ts`.

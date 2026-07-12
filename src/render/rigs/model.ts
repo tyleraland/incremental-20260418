@@ -10,13 +10,31 @@ export function createRigDraft(template: RigTemplate): RigDraft {
     name: 'Untitled quadruped',
     params: { ...template.defaultParams },
     poseOffsets: {},
+    partStyles: {},
+    partColors: {},
   }
 }
+
+export function poseLayers(template: RigTemplate, pose: RigPoseId): RigPoseId[] {
+  const layers: RigPoseId[] = []
+  const seen = new Set<RigPoseId>()
+  let current: RigPoseId | undefined = pose
+  while (current && current !== 'bind') {
+    if (seen.has(current)) throw new Error(`Rig pose inheritance cycle at ${current}`)
+    seen.add(current)
+    layers.unshift(current)
+    current = template.poseBase?.[current as Exclude<RigPoseId, 'bind'>]
+  }
+  return layers
+}
+
 function localOffset(template: RigTemplate, draft: RigDraft, pose: RigPoseId, id: string): RigPoint {
   const bind = draft.poseOffsets.bind?.[id]
-  const authored = pose === 'bind' ? undefined : template.poses[pose]?.[id]
-  const edited = pose === 'bind' ? undefined : draft.poseOffsets[pose]?.[id]
-  return addPoint(addPoint(addPoint(zeroPoint(), bind), authored), edited)
+  return poseLayers(template, pose).reduce((point, layer) => {
+    const authored = template.poses[layer as Exclude<RigPoseId, 'bind'>]?.[id]
+    const edited = draft.poseOffsets[layer]?.[id]
+    return addPoint(addPoint(point, authored), edited)
+  }, addPoint(zeroPoint(), bind))
 }
 
 export function resolveRigPose(template: RigTemplate, draft: RigDraft, pose: RigPoseId): ResolvedRig {
@@ -81,6 +99,10 @@ export function validateRigTemplate(template: RigTemplate): string[] {
       if (!ids.has(id)) errors.push(`missing joint ${id} in pose ${pose}`)
       if (point && ![point.x, point.y, point.z].every(Number.isFinite)) errors.push(`non-finite point ${id} in pose ${pose}`)
     })
+  })
+  Object.entries(template.poseBase ?? {}).forEach(([pose, base]) => {
+    if (base === pose) errors.push(`pose ${pose} cannot inherit itself`)
+    try { poseLayers(template, pose as RigPoseId) } catch (error) { errors.push(String(error)) }
   })
   return errors
 }

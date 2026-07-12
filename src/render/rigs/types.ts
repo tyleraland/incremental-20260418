@@ -3,6 +3,7 @@ import type { PaperRole } from '@/render/palette'
 export type RigJointId = string
 export type RigPoseId = 'bind' | 'idleA' | 'idleB' | 'walkA' | 'walkB' | 'attack' | 'hit'
 export type RigAnimationId = 'idle' | 'walk' | 'attack' | 'hit'
+export type RigSilhouetteShape = 'round' | 'tapered' | 'angular' | 'spiky'
 
 export interface RigPoint {
   x: number
@@ -48,7 +49,22 @@ export interface RigTemplate {
   buildJoints: (params: RigParams) => RigJoint[]
   parts: RigPart[]
   poses: Record<Exclude<RigPoseId, 'bind'>, Partial<Record<RigJointId, RigPoint>>>
+  // Action poses are sparse overlays on a reusable authored posture. Editing
+  // idleA therefore flows into attack/hit without copying every joint.
+  poseBase?: Partial<Record<Exclude<RigPoseId, 'bind'>, RigPoseId>>
   animations: Record<RigAnimationId, RigAnimation>
+}
+
+export interface RigPartStyle {
+  shape: RigSilhouetteShape
+  widthScale: number
+  sharpness: number
+}
+
+export interface RigPartColors {
+  fill: string
+  lit: string
+  outline: string
 }
 
 export interface RigDraft {
@@ -59,6 +75,10 @@ export interface RigDraft {
   // Pose values are deltas from the parameterized template. Keeping edits as
   // deltas means a longer body can retain a hand-tuned gait.
   poseOffsets: Partial<Record<RigPoseId, Record<RigJointId, RigPoint>>>
+  partStyles: Record<string, RigPartStyle>
+  // Lab-only exploratory colors. A production compiler must snap/promote them
+  // to named palette roles before a model enters the battle renderer.
+  partColors: Record<string, RigPartColors>
 }
 
 export const zeroPoint = (): RigPoint => ({ x: 0, y: 0, z: 0 })

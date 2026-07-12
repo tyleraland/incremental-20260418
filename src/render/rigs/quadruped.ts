@@ -88,6 +88,12 @@ export const quadrupedRig: RigTemplate = {
     },
     hit: { pelvis: { x: -4, y: 0, z: 0 }, chest: { x: -5, y: 0, z: -0.2 }, neck: { x: -7, y: 1, z: -0.3 }, head: { x: -9, y: 2, z: -0.5 }, muzzle: { x: -10, y: 2, z: -0.5 } },
   },
+  poseBase: {
+    walkA: 'idleA',
+    walkB: 'idleB',
+    attack: 'idleA',
+    hit: 'idleA',
+  },
   animations: {
     idle: { frames: ['idleA', 'idleB'], durationMs: 2200, loop: true },
     walk: { frames: ['walkA', 'walkB'], durationMs: 700, loop: true },

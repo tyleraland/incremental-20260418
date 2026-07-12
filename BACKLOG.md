@@ -1047,8 +1047,10 @@ shipped, `thiefBug` first. Still open:
 ### Monster asset pipeline at scale
 
 The `?riglab=1` quadruped prototype establishes a parameterized joint tree,
-z-aware layered preview, pose clips, direct touch editing, local persistence,
-and share/import JSON. Open production work, in leverage order:
+z-aware layered + orthographic preview, idle-inherited action clips, direct
+touch/numeric editing, replayable mirror/diagonal transforms, silhouette/color
+tuning, local persistence, and share/import JSON. Open production work, in
+leverage order:
 
 1. *Prove a second family* — adapt the humanoid reference (or a segmented body)
    to expose assumptions accidentally baked into `quadruped-v0`; only then
