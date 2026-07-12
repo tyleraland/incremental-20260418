@@ -621,6 +621,68 @@ live play ever surfaces the loop).
 
 **M1–M3 follow-ups (from the phase bug-hunt reviews + live showcase QA):**
 
+- *Forced-fight disengage gap (self-provoked foe, no prior commitment ⇒ no
+  flee)* — reported as "party keeps fighting a losing fight instead of fleeing
+  once a hero dies" (repro: an earlier draft of the `intel-first-contact-*`
+  showcase pair, since redesigned — see the pair's current comment). Mechanism,
+  confirmed by round-by-round trace: `rout` only arms from `abandonedForLosing`,
+  set exclusively when a COMMITTED engagement's live re-price crosses
+  `ENGAGE_EXIT` (teamplan.ts's `if (prevEngagement) {...}` branch). A party that
+  correctly AVOIDS (never commits — `engagement` stays null) but whose target
+  self-provokes onto it drops that foe off `avoidTargetIds` permanently
+  (`alreadyFighting`: `e.provoked && e.lockedTargetId` pointing at a member, OR
+  accrued `threat` — and `Combatant.threat` never decays) and the party fights
+  it via naive per-unit `selectTarget` with no team-level affordability check
+  and no rout, because `abandonedForLosing` never fires (there was nothing to
+  abandon). Confirmed two ways: (1) any ordinary hostile (non-`skittish`)
+  monster sets `lockedTargetId` the instant it has vision — no proximity or hit
+  required (`evalTargeting` → `selectTarget`, gated only on `self.provoked`,
+  which defaults `true` unless the monster carries the `skittish` tactic) — so
+  `alreadyFighting` can go true (and the foe fall off `avoidTargetIds`) well
+  before the two sides are even in range; (2) a from-scratch scene with INT
+  spread across all three heroes (so acumen stays ≥ `ACUMEN.pull` even after a
+  death, isolating this from a separate acumen-collapse-to-M1 confound also
+  observed) reproduced the identical fold-with-no-flee shape at acumen 60.
+  Reads as a real bug (user's instinct was right): a party ground down in a
+  forced fight it never chose and is LOSING should flee, the same as an
+  abandoned commitment.
+  **Fix attempted and reverted as unsafe.** The obvious low-risk shape — in
+  `decideEngagement`'s "nothing affordable" tail, treat any visible
+  `alreadyFighting` foe as rout-worthy too (its own `pullSetOf` camp already
+  failed `affordable()` this round as part of the `ranked` scan, by
+  construction, so no new pricing pass is needed) — demonstrably breaks the
+  shipped `wake-one-not-the-herd` showcase/test: a self-provoked lone wolf
+  reads as "unaffordable" by the coarse RTK/RTD estimate for several rounds
+  (its raw `hp` hasn't been chipped down yet) while the party is actually
+  winning comfortably, because `priceOf`'s RTK/RTD is raw `hp` /
+  `sustainedDamage` with **no armor mitigation modeled at all** — a
+  high-`def` party's real survival is far better than the naive estimate says.
+  Fleeing that fight on the naive signal would be a regression dressed as a
+  fix, not a fix. A correct version needs a real "are we actually losing"
+  signal — e.g. a rolling party-HP/deaths trend, or re-checking affordability
+  against LIVE incoming damage rather than only the a-priori RTK/RTD estimate —
+  which is new engine state/invariants, not a "few adds" reuse of what
+  already exists. Deferred pending a design pass on what "losing a forced
+  fight we never committed to" should mean; err toward a follow-up review
+  before touching `decideEngagement`'s tail again, since this area was just
+  heavily reworked.
+- *Skittish still swings once unprovoked (found while redesigning the intel
+  showcase pair above)* — a `skittish` monster is documented and (mostly)
+  behaves as "ignores foes entirely... no lock... wanders" until hit or called
+  (`evalTargeting`'s `if (!self.provoked) { lockedTargetId = null; return
+  false }` gate). But observed directly in a repro: a `skittish`,
+  `provoked: false` monster with an off-cooldown attack skill fired that skill
+  (`skill_use` event, real damage) against an adjacent hero the SAME round its
+  `provoked` flag still read `false` going in — `provoked` only flipped `true`
+  the round AFTER, once it had already landed the hit. So "ignores foes
+  entirely" isn't quite true: proximity alone can trigger an attack that
+  SHOULD require having been provoked first. Low severity today (every
+  existing skittish showcase keeps its sleepers stationary and out of reach
+  until intentionally woken, so this never surfaces), but it's the reason the
+  `intel-first-contact-known` showcase can't just place the party a few cells
+  from a sleeping brute and call it safe — it has to keep them out of melee
+  range for the whole run. Worth a focused look at `takeTurn`'s action phase
+  to find whatever lets a not-yet-provoked unit's `chooseAction` fire.
 - *Roam-into-avoided-camp gets stuck* — when the party correctly declines an
   unaffordable camp and roams away, `pickRoamPoint` / the fanned waypoint can
   route it THROUGH the sleeping pack's physical cluster, where `enforceSeparation`
