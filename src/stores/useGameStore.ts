@@ -1637,6 +1637,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         if (timer === 0) {
           const mid = spawnMonsterInto(battle, loc, openWorldSize(loc))
           if (mid) {
+            syncBattleIntel(battle)   // §intel: mask the fresh spawn this tick, not next
             battles[locationId] = { ...battle }
             markSeen(loc, [mid])
           }

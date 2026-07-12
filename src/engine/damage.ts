@@ -29,10 +29,14 @@ export function knownView(c: Combatant): Combatant {
   if (intel.armor && intel.dodge && intel.kit) return c    // fully revealed ⇒ the real thing
   const hit = KNOWN_VIEW_CACHE.get(c)
   if (hit && hit.intel === intel) return hit.view
+  // Priors are enumerable so the masked view behaves like a normal object under
+  // enumeration/spread — matching teamplan.ts's Object.create shadow and avoiding
+  // a JSON.stringify/{...view} footgun if a future debug dump is handed the view.
   const priors: PropertyDescriptorMap = {}
-  if (!intel.armor) priors.armorElement = { value: 'neutral' }
-  if (!intel.dodge) priors.dodgePeriod = { value: null }
-  if (!intel.kit) priors.skills = { value: [] }
+  const shadow = { enumerable: true, writable: true, configurable: true }
+  if (!intel.armor) priors.armorElement = { value: 'neutral', ...shadow }
+  if (!intel.dodge) priors.dodgePeriod = { value: null, ...shadow }
+  if (!intel.kit) priors.skills = { value: [], ...shadow }
   const view = Object.create(c, priors) as Combatant
   KNOWN_VIEW_CACHE.set(c, { intel, view })
   return view
