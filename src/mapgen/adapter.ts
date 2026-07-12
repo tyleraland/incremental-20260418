@@ -21,7 +21,7 @@ export interface MapGenSource {
   traits: string[]
   openWorldSize?: number
   portals?: { at: [number, number] }[]
-  mapGen?: { recipe: string; themes?: ThemeTag[]; seed?: number | string }
+  mapGen?: { recipe: string; themes?: ThemeTag[]; seed?: number | string; gates?: boolean }
 }
 
 // Location → GenParams → GenResult. Deterministic per location: seed defaults
@@ -56,6 +56,11 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),
     proficiencies: opts.proficiencies,
+    // Phase-4 policy: gates need human feel iteration BEFORE a live location
+    // adopts them (src/mapgen/CLAUDE.md). Live maps therefore default OFF; a
+    // location opts in deliberately with mapGen.gates: true. The lib/lab
+    // default stays ON so fuzz gates and ?mapgen=1 keep exercising them.
+    gates: cfg.gates ?? false,
   }
   return generateMap(recipe, params)
 }
@@ -66,7 +71,7 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
 const LOCATION_CACHE = new Map<string, GenResult>()
 export function generateForLocationCached(loc: MapGenSource, opts: MapGenOpts = {}): GenResult {
   const kit = [...new Set(opts.proficiencies ?? [])].sort().join(',')
-  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}|${kit}`
+  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}|${kit}|g${loc.mapGen?.gates ? 1 : 0}`
   const hit = LOCATION_CACHE.get(key)
   if (hit) return hit
   const res = generateForLocation(loc, opts)

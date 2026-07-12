@@ -526,7 +526,11 @@ export const GATE_DIALS = {
 // decision below — coin, candidate order, budget, flood — treats ALL locks
 // as-if-closed: budget counts draft.collision.length + open-lock count, and
 // the flood blocks EVERY placed plug regardless of open state. An open kit
-// only ever REMOVES seal geometry ("open = the same map minus plugs").
+// only ever REMOVES seal geometry — "open = the same map minus plugs" holds
+// for the COLLISION and semantic planes; scatter runs after gates and reads
+// collision through isPlaceable, so decorative scatter MAY drift between
+// variants near an opened pinch (same property as the dungeon; the plane
+// that matters to the engine is exact).
 //
 // Critical-path rule (graph contract rule 2): a route candidate must leave an
 // ungated route when closed — graph check first (removing the edge keeps its
@@ -538,6 +542,10 @@ export const GATE_DIALS = {
 const gatesPass = {
   id: 'gates',
   run({ draft, params, rng, note }: PassCtx) {
+    // Phase-4 policy switch: the adapter bakes LIVE locations with gates OFF
+    // unless the location opts in (mapGen.gates) — feel needs human play
+    // before live adoption. Lib/lab/test callers default ON.
+    if (!params.gates) { note('gates disabled (live phase-4 opt-in — mapGen.gates)'); return }
     const walk = draft.scratch.get('walk') as Uint8Array | undefined
     const claims = draft.scratch.get('regions') as Int32Array | undefined
     const nodes = draft.semantic.nav.nodes
@@ -600,9 +608,11 @@ const gatesPass = {
     }
     // shared site pre-filter: the plug must not intrude the spawn apron or a
     // keep-clear box (addBarrier would happily place it; the validator would
-    // reroll — cheaper to never pick such a pinch)
+    // reroll — cheaper to never pick such a pinch). half·√2 because the
+    // validator measures to the RECT's nearest point — a diagonal corner
+    // reaches farther than the half-extent (review finding).
     const plugSiteOk = (at: Pt2): boolean =>
-      Math.hypot(at.x - spawnAt.x, at.y - spawnAt.y) >= params.spawnApron + half + 0.5 &&
+      Math.hypot(at.x - spawnAt.x, at.y - spawnAt.y) >= params.spawnApron + half * Math.SQRT2 + 0.5 &&
       !params.keepClear.some((k) =>
         at.x > k.x - half - 1 && at.x < k.x + k.w + half + 1 && at.y > k.y - half - 1 && at.y < k.y + k.h + half + 1)
 
@@ -646,6 +656,22 @@ const gatesPass = {
           const { id, open } = placeShortcutLock(draft, { tag, at, look, sealHalf: half })
           edges[choice.i].lockId = id
           plugs.push(at)
+          // A sealed FORD repaints its plug footprint to deep-water SURFACE:
+          // terrain deliberately draws no deep-water cliff rects (the water
+          // wash is their visual), so without this the closed variant renders
+          // as a walkable-looking shallow ford with an invisible wall (review
+          // finding). Painting the covered cells keeps water-coherence true
+          // (they sit under the plug rect) and makes the fiction read: the
+          // water HERE runs too deep.
+          if (!open && crossing === 'ford') {
+            for (let y = Math.floor(at.y - half); y <= Math.ceil(at.y + half); y++) {
+              for (let x = Math.floor(at.x - half); x <= Math.ceil(at.x + half); x++) {
+                if (x + 0.5 > at.x - half && x + 0.5 < at.x + half && y + 0.5 > at.y - half && y + 0.5 < at.y + half) {
+                  paint(draft, x, y, 'deep-water')
+                }
+              }
+            }
+          }
           note(`route ${tag} gate ${open ? 'OPEN (party kit)' : 'sealed'} on ${choice.e.a}→${choice.e.b} (${crossing}) at ${at.x},${at.y}`)
         }
       }

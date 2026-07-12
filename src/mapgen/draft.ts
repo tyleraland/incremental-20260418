@@ -24,6 +24,7 @@ export interface NormParams {
   pois: { kind: PoiKind; at: Pt; id?: string; tags?: string[] }[]
   proficiencies: ProficiencyTag[]
   manifest: ManifestToken[]
+  gates: boolean
   skipPasses: string[]
   onFail: 'reroll' | 'accept' | 'throw'
 }
@@ -44,6 +45,7 @@ export function normalizeParams(p: GenParams): NormParams {
     // determinism tests, and reroll chains all read this)
     proficiencies: [...new Set(p.proficiencies ?? [])].sort(),
     manifest: p.manifest ?? [],
+    gates: p.gates ?? true,
     skipPasses: p.skipPasses ?? [],
     onFail: p.onFail ?? 'reroll',
   }

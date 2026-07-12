@@ -255,6 +255,11 @@ export interface GenParams {
   // through normalization so the director (track G) slots in like
   // `proficiencies` did, but no pass consumes it yet.
   manifest?: ManifestToken[]
+  // Composition-gate master switch (phase-4 policy): lib/lab default is ON
+  // (fuzz gates and the ?mapgen=1 party toggles exercise gates freely), but
+  // the ADAPTER defaults live locations to OFF — a location adopts gates
+  // deliberately via `mapGen.gates: true`, after the phase-4 feel pass.
+  gates?: boolean
   // Layer-inspector hook: pass ids to skip. Stream-isolated RNG guarantees the
   // remaining passes produce byte-identical output — the ?mapgen=1 lab's
   // layer-by-layer buildup rides this.

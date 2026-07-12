@@ -173,11 +173,11 @@ settled decisions live in `procedural-generation-architecture-plan.md`; its open
   rule 2 eventually needs portal-on-ungated-subgraph enforcement); surface
   the `regions` claims plane in the `?mapgen=1` lab (region tinting in the
   layer inspector).
-- **Track C — remaining** (rivers + ford/bridge crossings SHIPPED as P2;
-  still open): the **desire-path pass** (paint dirt/road surface along
-  spawn→portal graph routes through the pinches, zero rect cost); the first
-  **overworld proficiency gate** (P3 — mobility ford / perception hidden
-  trail via the shared `gates.ts`); the **moderate-envelope bench**
+- **Track C — remaining** (rivers + crossings SHIPPED as P2; overworld
+  gates SHIPPED as P3, live-opt-in via `mapGen.gates` pending the phase-4
+  feel pass — no live location has opted in yet): the **desire-path pass**
+  (paint dirt/road surface along spawn→portal graph routes through the
+  pinches, zero rect cost); the **moderate-envelope bench**
   (procedural-generation-architecture-plan.md decision 3): re-bench
   `map-perf-envelope.test.ts` on river-map geometry and raise the live cap
   toward ~56–72 (the same bench retires the dungeon's 72-rect live debt).
@@ -188,6 +188,16 @@ settled decisions live in `procedural-generation-architecture-plan.md`; its open
   can be a thin rim sliver — review `laneMargin` in the `?mapgen=1` lab;
   outcrops' L/T second rect bypasses isPlaceable and can seal one ford
   (tolerated at fordCount 2, validation backstops — watch if it drops to 1).
+  P3 gate follow-ups: **vault pockets need manufactured geography** (an
+  outcrop-horseshoe / river-oxbow dressing pass would create degree-1 pocket
+  candidates — the vault path then fires as-is and its synthetic test can
+  become a real-bake assertion; natural rate measured 0/~600 bakes);
+  **bridge seal render** (a wood plug currently draws as a building
+  straddling the river — wants a collapsed-planks look); scatter may drift
+  between kit variants near an opened pinch (collision/semantic planes are
+  exact; decorative-only, same property as the dungeon — pin the contract in
+  tests if it ever matters); dry-gap gate mapping (might/rock) never fires
+  until ridge/pass geography derives dry pinches.
 - **Track D — flow/tension derived plane.** Distance-to-goal BFS in
   `draft.scratch`, digested to a per-node `intensity` scalar on the semantic
   plane; store consumes it for spawn/reward pacing (mapgen makes the stage,

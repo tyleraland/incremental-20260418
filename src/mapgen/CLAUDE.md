@@ -66,14 +66,14 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `gates.ts` | recipe-agnostic lock-and-key: `placeProficiencyLock` (prize + gate POIs + tag-themed seal plug, resolved against the party kit) and `placeShortcutLock` (`gates: []` — locks a ROUTE, not a prize), `GATE_LOOKS`/`GATE_TAGS` |
 | `pipeline.ts` | `generateMap(recipe, params)`: pass runner, per-pass streams, skipPasses, bake→validate→reroll |
 | `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / graph-truthful (every unlocked/open nav edge connects its endpoints' flood components — anchors in substantial components speak for themselves exactly; only buried/tiny-pocket anchors get a ±4 envelope; `doorAt` open; closed-locked edges exempt) / water-coherence. Exports `occupancyGrid` (the shared PAD-inflated rasterizer recipes reuse) |
-| `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → **river** (P2: descending edge-to-edge channel in a lane beside the spawn apron, 2-wide punched fords — the pinches that become `crossing` edges — 35% dress one as a `road` bridge; explicit `RIVER_DIALS` allotment with `outcropReserve` headroom) → outcrops → **regions** (no-RNG: rasterizes collision → scratch `walk`/`regions` planes → `deriveRegions` publishes real nav nodes+edges, depth rooted at the spawn region) → scatter → semantic (links POIs onto region nodes; falls back to POI stubs when regions is skipped) |
+| `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → **river** (P2: descending edge-to-edge channel in a lane beside the spawn apron, 2-wide punched fords — the pinches that become `crossing` edges — 35% dress one as a `road` bridge; explicit `RIVER_DIALS` allotment with `outcropReserve` headroom) → outcrops → **regions** (no-RNG: rasterizes collision → scratch `walk`/`regions` planes → `deriveRegions` publishes real nav nodes+edges, depth rooted at the spawn region) → **gates** (P3: kit-invariant route lock on a redundant crossing + vault lock on natural pockets, `GATE_DIALS`; skipped when `params.gates` is false — the adapter's live default) → scatter → semantic (links POIs onto region nodes; falls back to POI stubs when regions is skipped) |
 | `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → **cycle-as-primitive skeleton** (entry→goal via two axis-split arcs — a real cycle by construction at ≥3 rooms — leaves tree-attached, optional chord for a second loop) → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects) → rewrite steps (the `shortcut` pass: a proficiency plug on a mid-arc cycle edge — closed forces the long way around; every rewrite decision is KIT-INVARIANT: budgets count as-if-all-locks-closed so an open kit only ever removes seal geometry): lab/encounter only until the pather perf pass |
 | `recipes/city.ts` | the road-first town: plaza + jittered gate roads + cross-street loops (nav skeleton FIRST) → paving (ground → road/stone) → street-fronting building rects (road-distance transform: every house ≥2 cells off pavement, ≤4 from a street) → yard/market scatter → plaza landmark. Generates the STAGE for a city (NPCs/spawns stay store-owned); **live on `prontera-city`** (`data/locations.ts`) — under a tighter budget it just starves to fewer houses |
 | `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
 | `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
 | `recipes/index.ts` | `RECIPE_REGISTRY` — field / dungeon / city. Recipes own the DIVERGENCE layer (noise-first vs graph-first vs road-first, quarantined to production passes); the nav graph is where they converge (`procedural-generation-architecture-plan.md`) |
-| `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store) |
+| `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store; pins live maxBarriers 40 and defaults `gates: false` — a live location opts into composition gates via `mapGen.gates: true`) |
 
 Consumers today (phase 2): `createOpenBattleFor` (store) honors
 `Location.mapGen` via `generateForLocationCached` (pure generation + static
@@ -206,8 +206,14 @@ different party = a different playable map.
 4. **Party-change semantics** — gates resolve ONCE at stand-up; heroes joining
    later don't re-resolve (documented in `adapter.ts`). Revisit when a live
    location has gates: re-resolve on reconcile? announce missed gates?
-5. **Field-recipe gates** — a ford revealed by mobility, a cliff shortcut:
-   same machinery, different recipe; nothing placed yet.
+5. **Field-recipe gates — LANDED (P3).** The field `gates` pass route-locks a
+   redundant derived crossing via the same `placeShortcutLock` the dungeon
+   uses (ford → mobility/deep-water with the plug's surface repainted deep so
+   the seal renders; bridge → might/wood; dry gap → might/rock, reserved) and
+   vault-locks natural degree-1 pocket regions (perception — none derive on
+   today's geography; synthetic-tested). **Live locations bake with gates OFF
+   until they opt in via `mapGen.gates: true`** (adapter default — this
+   phase-4 feel iteration is exactly why). `GATE_DIALS` in field.ts.
 6. **'key' and 'switch' lock kinds** — reserved shapes; need item plumbing /
    phase-6 interactables.
 

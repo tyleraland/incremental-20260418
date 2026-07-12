@@ -219,6 +219,37 @@ describe('field route gates (overworld variant-at-deploy — P3)', () => {
     expect(a.spec).toEqual(b.spec)
   })
 
+  it('a BRIDGE gate (might/wood — collapsed planks) fires and opens like a ford gate', () => {
+    // The ford (mobility) branch dominates the hunted seeds above; pin the
+    // bridge branch too (review finding: it was live but untested). ~30% of
+    // gated maps choose a bridge, so one must appear within 60 seeds.
+    let found: { seed: number; closed: ReturnType<typeof generateMap>; lock: Lock } | null = null
+    for (let seed = 1; seed <= 60 && !found; seed++) {
+      const r = generateMap(FIELD_RECIPE, fieldParams(seed))
+      const l = r.spec.semantic.locks.find((x) => x.id === 'lock-shortcut-might' && !x.open)
+      if (r.report.ok && r.attempts === 1 && r.spec.semantic.locks.length === 1 && l) {
+        found = { seed, closed: r, lock: l }
+      }
+    }
+    expect(found, 'no first-roll bridge (might) route gate in 60 seeds — the bridge branch went dead').not.toBeNull()
+    // the closed seal is a WOOD wall (visible, unlike water: a collapsed plank pile)
+    const plug = found!.closed.spec.collision.find((c) => c.material === 'wood')
+    expect(plug).toBeDefined()
+    expect(plug!.kind).toBe('wall')
+    const open = generateMap(FIELD_RECIPE, fieldParams(found!.seed, ['might']))
+    expect(open.report.ok, JSON.stringify(open.report.rules.filter((r) => !r.ok))).toBe(true)
+    expect(open.spec.collision.length).toBe(found!.closed.spec.collision.length - 1)
+    expect(open.spec.collision.some((c) => c.material === 'wood')).toBe(false)
+  })
+
+  it('the adapter defaults LIVE locations to gates OFF (phase-4 opt-in via mapGen.gates)', () => {
+    const g = gated[0]
+    const off = generateMap(FIELD_RECIPE, { ...fieldParams(g.seed), gates: false })
+    expect(off.report.ok).toBe(true)
+    expect(off.spec.semantic.locks).toEqual([])
+    expect(off.notes.some((n) => n.includes('gates disabled'))).toBe(true)
+  })
+
   it('frequency floor: route gates fire on a healthy share of a water sweep', () => {
     // Measured 18/25 at sizes 120/160/200 (coin 0.6 × candidate availability);
     // floor at 10/25 — far under observed, but a regression to "overworld
