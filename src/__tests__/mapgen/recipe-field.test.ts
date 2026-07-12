@@ -148,20 +148,12 @@ describe('field recipe fuzz gate', () => {
     }
   })
 
-  it('water sweep: any derived crossing edge has a walkable doorAt', () => {
-    // Mirror the validator's occupancy test (cell centre in pad-inflated rect).
-    const PAD = 0.45
-    for (const r of sweep(120, ['plains', 'water'])) {
-      for (const e of r.spec.semantic.nav.edges) {
-        expect(e.kind).toBe('crossing')
-        expect(e.doorAt, `seed ${r.spec.seed}: edge ${e.a}→${e.b} has no doorAt`).toBeDefined()
-        const cx = Math.floor(e.doorAt!.x) + 0.5, cy = Math.floor(e.doorAt!.y) + 0.5
-        const blockedDoor = r.spec.collision.some((c) =>
-          cx > c.x - PAD && cx < c.x + c.w + PAD && cy > c.y - PAD && cy < c.y + c.h + PAD)
-        expect(blockedDoor, `seed ${r.spec.seed}: doorAt ${e.doorAt!.x},${e.doorAt!.y} sits in collision`).toBe(false)
-      }
-    }
-  })
+  // NB: no "edges from real bakes" sweep exists on purpose — today's geography
+  // (a lone lake you can walk around, ~3-wide fords that survive erosion at
+  // pinchWidth 3) NEVER bisects a map, so any such sweep would iterate empty
+  // arrays forever (review finding). The full seam on real collision rects is
+  // pinned by graph.test.ts's integration test; production edges arrive with
+  // P2 rivers, which must then add the sweep here.
 
   it('skipPasses regions → semantic falls back to POI-stub nodes (layer inspector stays alive)', () => {
     const r = generateMap(FIELD_RECIPE, {

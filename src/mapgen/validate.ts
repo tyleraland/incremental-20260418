@@ -218,22 +218,34 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
   // as reachableAt). Edges with a CLOSED lock are exempt — the `locks` rule
   // owns sealed geometry (both directions).
   // Anchor precision: a node's anchor may legitimately sit inside stamped
-  // interior geometry (the barred-cell's §J pocket swallows a room's centre),
-  // so — like the locks rule's approachable() — each endpoint contributes the
-  // component set of open cells within ±4 of its anchor, and the edge is
-  // truthful when the two sets intersect. A bisecting wall still fails: the
-  // tolerance never crosses more than a 4-cell neighbourhood.
+  // interior geometry (the barred-cell's §J pocket swallows a room's centre).
+  // An anchor whose own cell is open AND in a substantial component speaks
+  // for itself — EXACTLY that component, no tolerance (this is what closes
+  // the blind zone: a ±4 box freely sees across walls, so two nearby anchors
+  // with any shared open cell in the overlap would auto-pass a severed
+  // corridor). Only a buried anchor, or one inside a tiny pocket (the
+  // barred-cell vault interior is ~4 cells; POCKET_MAX gives headroom while
+  // staying far below any real room/region component), falls back to the
+  // component set of open cells within ±4 — the locks rule's approachable()
+  // envelope.
   const navEdges = spec.semantic.nav.edges
   if (navEdges.length === 0) {
     rule('graph-truthful', true, 'no nav edges')
   } else {
+    const POCKET_MAX = 32
     const comp = components(blocked, spec.cols, spec.rows)
+    const compSize = new Map<number, number>()
+    for (let i = 0; i < comp.length; i++) {
+      if (comp[i] !== -1) compSize.set(comp[i], (compSize.get(comp[i]) ?? 0) + 1)
+    }
     const compAt = (p: { x: number; y: number }) => {
       const xi = Math.min(spec.cols - 1, Math.max(0, Math.floor(p.x)))
       const yi = Math.min(spec.rows - 1, Math.max(0, Math.floor(p.y)))
       return comp[yi * spec.cols + xi]
     }
     const compsNear = (p: { x: number; y: number }) => {
+      const own = compAt(p)
+      if (own !== -1 && (compSize.get(own) ?? 0) > POCKET_MAX) return new Set([own])
       const set = new Set<number>()
       for (let dy = -4; dy <= 4; dy++) {
         for (let dx = -4; dx <= 4; dx++) {

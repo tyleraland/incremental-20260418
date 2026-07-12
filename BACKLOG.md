@@ -164,8 +164,15 @@ settled decisions live in `procedural-generation-architecture-plan.md`; its open
 - **Track B follow-ups** (core shipped — `deriveRegions`, field-recipe
   `regions` pass, `graph-truthful` rule): pinch-width cell quantization
   (width-3 and width-4 corridors are indistinguishable — a chamfer/Euclidean
-  transform would sharpen ford tuning for P2); surface the `regions` claims
-  plane in the `?mapgen=1` lab (region tinting in the layer inspector).
+  transform would sharpen ford tuning for P2); **P2 must settle the
+  ford-as-edge decision** — hydrology's ~3-wide ford survives erosion at the
+  default pinchWidth 3, so the recipe's own ford can never become a crossing
+  edge (raise the regions pass to pinchWidth ≥ 5, or narrow river fords);
+  portal→node linking (one poiId per node, spawn-first — on a 1-region map
+  every portal POI is unlinked today, note()d but unconsumed; contract
+  rule 2 eventually needs portal-on-ungated-subgraph enforcement); surface
+  the `regions` claims plane in the `?mapgen=1` lab (region tinting in the
+  layer inspector).
 - **Track C — rivers + crossings + desire paths** (consumes B). Hydrology
   v2: descending river band on the elevation field; ford (shallow strip) /
   bridge (road surface over the gap) crossings as graph edges; a desire-path

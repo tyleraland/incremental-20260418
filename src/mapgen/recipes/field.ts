@@ -164,10 +164,10 @@ const outcropsPass = {
 // scatter adds no collision). Rasterizes the collision plane into the exact
 // walk mask the validator's flood-fill sees (occupancyGrid — cell-centre in
 // pad-inflated rect), segments it with deriveRegions, and publishes REAL
-// nodes/edges on the nav skeleton. Depth is rooted at the region holding the
-// MAP CENTRE: the field spawn POI is placed later (semantic pass) AT the
-// centre, so the centre region is the spawn region by construction — if the
-// spawn site ever moves, move this root with it.
+// nodes/edges on the nav skeleton. Depth is rooted at the SPAWN region: a
+// caller-provided spawn POI (params.pois) wins; otherwise the map centre,
+// where the semantic pass will place the field's default spawn — the two
+// passes must stay agreed on the spawn site.
 // Deterministic, draws no RNG; the pass id still rides skipPasses (the lab's
 // layer inspector) and the per-pass stream discipline.
 const regionsPass = {
@@ -183,10 +183,14 @@ const regionsPass = {
     const { nodes, edges, claims } = deriveRegions(walk, draft.cols, draft.rows)
     draft.scratch.set('regions', claims)
     if (!nodes.length) { note('no regions derived — nav left empty'); return }
-    const centre = Math.floor(draft.rows / 2) * draft.cols + Math.floor(draft.cols / 2)
-    // The spawn apron keeps the centre open, so it is claimed on any sane
+    const spawnAt = draft.params.pois.find((p) => p.kind === 'spawn')?.at
+      ?? { x: draft.cols / 2, y: draft.rows / 2 }
+    const rootCell = Math.floor(spawnAt.y) * draft.cols + Math.floor(spawnAt.x)
+    // The spawn apron keeps the spawn site open, so it is claimed on any sane
     // bake; fall back to the first region rather than crash on a doomed one.
-    const rootId = claims[centre] >= 0 ? `region-${claims[centre]}` : nodes[0].id
+    let rootId = nodes[0].id
+    if (claims[rootCell] >= 0) rootId = `region-${claims[rootCell]}`
+    else note(`spawn cell unclaimed — depth rooted at ${rootId}`)
     const depth = bfsDepth(edges, rootId)
     for (const nd of nodes) {
       const d = depth.get(nd.id)
@@ -498,7 +502,7 @@ function nearWater(draft: PassCtx['draft'], x: number, y: number): boolean {
 // ── semantic: POIs, nav stubs, tactical self-description (§A layers 5+7, §L) ─
 const semanticPass = {
   id: 'semantic',
-  run({ draft, params, fields, rng }: PassCtx) {
+  run({ draft, params, fields, rng, note }: PassCtx) {
     const { size } = params
     // Spawn at the centre (the store's form-up knot), unless the caller placed one.
     if (!params.pois.some((p) => p.kind === 'spawn')) {
@@ -530,13 +534,19 @@ const semanticPass = {
       const byId = new Map(regionNodes.map((nd) => [nd.id, nd]))
       const pois = [...draft.semantic.pois]
         .sort((a, b) => (a.kind === 'spawn' ? 0 : 1) - (b.kind === 'spawn' ? 0 : 1))
+      const unlinked: string[] = []
       for (const p of pois) {
         const xi = Math.min(draft.cols - 1, Math.max(0, Math.floor(p.at.x)))
         const yi = Math.min(draft.rows - 1, Math.max(0, Math.floor(p.at.y)))
         const region = claims[yi * draft.cols + xi]
         const nd = region >= 0 ? byId.get(`region-${region}`) : undefined
         if (nd && nd.poiId === undefined) nd.poiId = p.id
+        else unlinked.push(p.id)
       }
+      // no silent truncation: one poiId per node means same-region POIs
+      // (portals sharing the spawn region on a 1-region map) go unlinked —
+      // consumers needing portal→node arrive with track C (contract rule 2)
+      if (unlinked.length) note(`${unlinked.length} POI(s) not linked to a node: ${unlinked.join(',')}`)
     } else {
       draft.semantic.nav.nodes = draft.semantic.pois.map((p) => ({ id: `nav-${p.id}`, at: p.at, poiId: p.id }))
     }

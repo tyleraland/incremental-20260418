@@ -4,7 +4,8 @@
 // pinch, small components are absorbed, and the whole thing is deterministic.
 
 import { describe, it, expect } from 'vitest'
-import { bfsDepth, deriveRegions } from '@/mapgen'
+import { bfsDepth, deriveRegions, normalizeParams, validate, type CollisionRect, type MapSpec } from '@/mapgen'
+import { occupancyGrid } from '@/mapgen/validate'
 
 // '.' = walkable, '#' = blocked. Row 0 is grid row 0.
 function mask(art: string[]): { walk: Uint8Array; cols: number; rows: number } {
@@ -100,6 +101,49 @@ describe('deriveRegions', () => {
     expect(a.edges).toEqual(b.edges)
     expect(Array.from(a.claims)).toEqual(Array.from(b.claims))
     expect(Array.from(walk)).toEqual(Array.from(before))
+  })
+
+  // The FULL production seam on real collision rects — the path no recipe
+  // exercises yet (today's lone-lake geography never bisects a map; rivers
+  // arrive with P2): collision → occupancyGrid → deriveRegions → a spec →
+  // validate, with graph-truthful flood-verifying the derived edge for real.
+  it('integration: rects → occupancyGrid → deriveRegions → spec → validate verifies a real crossing', () => {
+    const SIZE = 40
+    // a wall band across the full width, pierced by one 2-wide gap at x 19–20
+    const collision: CollisionRect[] = [
+      { x: 0, y: 19, w: 19, h: 3, kind: 'wall', material: 'rock' },
+      { x: 21, y: 19, w: 19, h: 3, kind: 'wall', material: 'rock' },
+    ]
+    const blocked = occupancyGrid(collision, SIZE, SIZE)
+    const walk = new Uint8Array(SIZE * SIZE)
+    for (let i = 0; i < walk.length; i++) walk[i] = blocked[i] ? 0 : 1
+    const { nodes, edges } = deriveRegions(walk, SIZE, SIZE, { pinchWidth: 3, minRegionCells: 12 })
+
+    expect(nodes).toHaveLength(2)
+    expect(edges).toHaveLength(1)
+    expect(edges[0].kind).toBe('crossing')
+    const door = edges[0].doorAt!
+    expect(door.x).toBeGreaterThanOrEqual(19)
+    expect(door.x).toBeLessThanOrEqual(21)
+
+    const spec: MapSpec = {
+      specVersion: 1, recipe: 'test', seed: 1, cols: SIZE, rows: SIZE,
+      collision,
+      surface: { cols: SIZE, rows: SIZE, cellsPerUnit: 1, grid: new Uint8Array(SIZE * SIZE) },
+      scatter: [],
+      semantic: {
+        pois: [{ id: 'spawn', kind: 'spawn', at: { x: SIZE / 2, y: 10 }, tags: [] }],
+        nav: { nodes, edges },
+        locks: [], regionTags: [], name: null, premise: null,
+        tactical: { openness: 1, barrierCount: collision.length, chokepoints: 0, longLanes: 0, coverClusters: 0 },
+      },
+    }
+    const params = normalizeParams({ recipe: 'test', seed: 1, size: SIZE, themes: [], spawnApron: 4 })
+    const report = validate(spec, params)
+    const truthful = report.rules.find((r) => r.rule === 'graph-truthful')!
+    expect(truthful.ok).toBe(true)
+    expect(truthful.detail).toBe('1/1 open edge(s) flood-verified')
+    expect(report.ok, JSON.stringify(report.rules.filter((r) => !r.ok))).toBe(true)
   })
 
   it('a region under minRegionCells is dropped and its cells absorbed by the survivor', () => {

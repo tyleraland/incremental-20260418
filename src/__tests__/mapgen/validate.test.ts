@@ -131,6 +131,31 @@ describe('mapgen validate', () => {
     expect(empty.detail).toBe('no nav edges')
   })
 
+  it('graph-truthful: NO blind zone for close anchors — a lie between endpoints within Chebyshev 8 still fails', () => {
+    // Anchors 6 apart across a 2-thick bisecting wall: a naive ±4-box anchor
+    // envelope sees open cells on BOTH sides of the wall and would auto-pass.
+    // Anchors in substantial components must speak for themselves exactly;
+    // only buried/tiny-pocket anchors get the envelope.
+    const nodes = [
+      { id: 'r-a', at: { x: 17, y: 20 } },
+      { id: 'r-b', at: { x: 23, y: 20 } },
+    ]
+    const bisector: CollisionRect = { x: 19, y: 0, w: 2, h: SIZE, kind: 'wall', material: 'rock' }
+    const lie = makeSpec([bisector])
+    lie.semantic.nav = { nodes, edges: [{ a: 'r-a', b: 'r-b', kind: 'crossing' as const, doorAt: { x: 17, y: 20 } }] }
+    expect(ruleOf(lie, 'graph-truthful').ok).toBe(false)
+    expect(ruleOf(lie, 'graph-truthful').detail).toContain('different flood components')
+    // the pocket fallback survives: an anchor sealed inside a tiny box (the
+    // §J barred-cell shape) still verifies through the ±4 envelope
+    const pocket = [wall(14, 17, 6, 1.2), wall(14, 22, 6, 1.2), wall(14, 18, 1.2, 4), wall(19, 18, 1.2, 4)]
+    const pocketed = makeSpec(pocket)
+    pocketed.semantic.nav = {
+      nodes: [{ id: 'r-a', at: { x: 17, y: 20 } }, { id: 'r-b', at: { x: 30, y: 20 } }],
+      edges: [{ a: 'r-a', b: 'r-b', kind: 'crossing' as const }],
+    }
+    expect(ruleOf(pocketed, 'graph-truthful').ok).toBe(true)
+  })
+
   it('water-coherence: deep cells need covering rects; water rects need water under them', () => {
     const deep = SURFACE_MATERIALS.indexOf('deep-water')
     const uncovered = makeSpec()
