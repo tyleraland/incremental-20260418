@@ -10,11 +10,12 @@
 // Dungeon (graph-first) and city (road-first) are sibling recipes over this
 // same pipeline; they share the bake/validate tail unchanged.
 
-import type { ScatterIntent, ScatterKind, SurfaceMaterial } from '../types'
+import type { ProficiencyTag, ScatterIntent, ScatterKind, SurfaceMaterial } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import type { Rng } from '../rng'
 import { addBarrier, addPoi, isPlaceable, matAt, paint } from '../draft'
-import { bfsDepth, deriveRegions } from '../graph'
+import { bfsDepth, deriveRegions, nodeDegrees } from '../graph'
+import { placeProficiencyLock, placeShortcutLock, type GateLook } from '../gates'
 import { occupancyGrid } from '../validate'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
@@ -392,8 +393,11 @@ const outcropsPass = {
   id: 'outcrops',
   run({ draft, params, fields, rng, note }: PassCtx) {
     const { size } = params
+    // gateReserve: leave as-if-closed headroom for the gates pass (P3) — same
+    // allotment discipline as RIVER_DIALS.outcropReserve. Unconditional, so
+    // budgets never depend on whether a gate later fires (kit-invariance).
     const budget = params.maxBarriers - draft.collision.length
-    const target = Math.min(budget, Math.max(3, Math.round(size / 12)))
+    const target = Math.min(budget - GATE_DIALS.gateReserve, Math.max(3, Math.round(size / 12)))
     if (target <= 0) { note('no barrier budget left after hydrology'); return }
     const forest = params.themes.includes('forest')
     const r = rng('sites')
@@ -476,6 +480,227 @@ const regionsPass = {
     draft.semantic.nav.nodes = nodes
     draft.semantic.nav.edges = edges
     note(`${nodes.length} region(s), ${edges.length} crossing(s)`)
+  },
+}
+
+// ── GATE_DIALS — the P3 overworld-gate review knobs ──────────────────────────
+// Same discipline as RIVER_DIALS/SCATTER_DIALS: every gate tunable in one
+// commented block. Overworld gates are phase 4's "field-recipe gates" — the
+// feature this recipe exists to prove — so the route coin is deliberately
+// generous; the vault has NO coin (natural pockets are ~nonexistent on
+// today's river geography — 0 across ~600 sweep bakes; see the pass header).
+export const GATE_DIALS = {
+  routeChance: 0.6,     // coin for the route lock (a gated secondary crossing)
+  sealHalf: 2.25,       // plug half-extent (gates.ts default; swallows a ≤3-wide pinch —
+                        //   derived pinches are <3 wide by the ford-as-edge decision).
+                        //   Water-coherence holds at this size: the plug sits on the wet
+                        //   ford channel (measured 0 dry-rect failures across sweeps)
+  vaultMaxAreaFrac: 0.08, // a vault pocket may claim at most this fraction of the
+                        //   walkable cells — sealing it must keep the validator's
+                        //   ≥85% open-cell connectivity comfortably intact
+  gateReserve: 2,       // rects the OUTCROPS pass leaves unspent for gate plugs (one
+                        //   route + one vault, 1 rect each as-if-closed) — without it
+                        //   outcrops fill the cap and every gate skips on budget
+}
+
+// ── gates: overworld lock-and-key on DERIVED edges (P3; track C / phase 4) ───
+// The convergence thesis, cashed in: a dungeon door and an overworld ford are
+// the SAME L5 call (gates.ts) — this pass only picks candidates off the
+// derived graph and proves them safe. Two archetypes, ≤1 of each per map,
+// never on the same edge:
+//   · ROUTE lock (the flagship) — placeShortcutLock on ONE redundant derived
+//     'crossing' edge. Function-first, theme-late: one mapping per crossing
+//     type, keyed off the surface at the pinch —
+//       ford   (shallow-water) → mobility, cliff/'deep-water' (the water runs
+//              too deep here — see the far bank, can't wade);
+//       bridge (road)          → might, wall/'wood' (collapsed planks —
+//              clear the fallen timber);
+//       dry gap (anything else)→ might, wall/'rock' (a rockfall chokes the gap).
+//   · VAULT lock — placeProficiencyLock on a NATURAL secret pocket: a small,
+//     POI-free, degree-1 region behind its single pinch, sealed as a
+//     perception-hidden trail (wall/'rock' — GATE_LOOKS' own mapping). Pockets
+//     are not manufactured here (no extra geometry) — if geography didn't grow
+//     one, the vault skips.
+//
+// KIT-INVARIANT by design (the dungeon shortcut pass's discipline): every
+// decision below — coin, candidate order, budget, flood — treats ALL locks
+// as-if-closed: budget counts draft.collision.length + open-lock count, and
+// the flood blocks EVERY placed plug regardless of open state. An open kit
+// only ever REMOVES seal geometry ("open = the same map minus plugs").
+//
+// Critical-path rule (graph contract rule 2): a route candidate must leave an
+// ungated route when closed — graph check first (removing the edge keeps its
+// banks connected), then the exact flood on the scratch walk mask at the
+// VALIDATOR-padded plug radius (occupancy pads rects by 0.45; an unpadded
+// flood would pass routes the bake then fails and burn reroll attempts):
+// every region anchor and every known POI (portals!) must stay reached,
+// except those inside deliberately lock-sealed pockets.
+const gatesPass = {
+  id: 'gates',
+  run({ draft, params, rng, note }: PassCtx) {
+    const walk = draft.scratch.get('walk') as Uint8Array | undefined
+    const claims = draft.scratch.get('regions') as Int32Array | undefined
+    const nodes = draft.semantic.nav.nodes
+    const edges = draft.semantic.nav.edges
+    if (!walk || !claims || !nodes.length) { note('no derived graph — no gates'); return }
+    if (!edges.length) { note('single-region map, no crossings — no gates'); return }
+
+    const { size } = params
+    const cols = draft.cols
+    const half = GATE_DIALS.sealHalf
+    // POIs known at this point in the pipeline (the semantic pass runs later):
+    // the caller's pre-placed anchors (portals) + the spawn site the semantic
+    // pass will use. All must stay reached in every closed variant.
+    const spawnAt = params.pois.find((p) => p.kind === 'spawn')?.at ?? { x: size / 2, y: size / 2 }
+    const keepReached: Pt2[] = [spawnAt, ...params.pois.filter((p) => p.kind !== 'spawn').map((p) => p.at)]
+    const cellOf = (p: Pt2) =>
+      Math.min(draft.rows - 1, Math.max(0, Math.floor(p.y))) * cols + Math.min(cols - 1, Math.max(0, Math.floor(p.x)))
+
+    // every placed plug, open or closed — the as-if-closed flood set
+    const plugs: Pt2[] = draft.semantic.locks.filter((l) => l.at).map((l) => l.at!)
+    const openLocks = () => draft.semantic.locks.filter((l) => l.open).length
+    // regions a lock deliberately seals — their anchors stop counting for the
+    // stay-reached requirement (mirrors the validator's locked-POI exemption)
+    const sealedRegions = new Set<number>()
+    const regionOf = (id: string) => Number(id.slice('region-'.length))
+
+    // flood the walk mask from the spawn with every plug (incl. the probe)
+    // blocked at the padded footprint; null = the spawn itself got buried
+    const floodSeen = (probe: Pt2): Uint8Array | null => {
+      const all = [...plugs, probe]
+      const fh = half + 0.45
+      const passable = (x: number, y: number) =>
+        walk[y * cols + x] === 1 && !all.some((p) => Math.abs(x + 0.5 - p.x) < fh && Math.abs(y + 0.5 - p.y) < fh)
+      const start = cellOf(spawnAt)
+      if (!passable(start % cols, (start / cols) | 0)) return null
+      const seen = new Uint8Array(walk.length)
+      const stack = [start]
+      seen[start] = 1
+      while (stack.length) {
+        const i = stack.pop()!
+        const x = i % cols, y = (i / cols) | 0
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= draft.rows) continue
+          const j = ny * cols + nx
+          if (!seen[j] && passable(nx, ny)) { seen[j] = 1; stack.push(j) }
+        }
+      }
+      return seen
+    }
+    const holdsFor = (seen: Uint8Array | null, alsoSealed = -1): boolean => {
+      if (!seen) return false
+      for (const p of keepReached) if (!seen[cellOf(p)]) return false
+      for (const nd of nodes) {
+        const region = regionOf(nd.id)
+        if (region === alsoSealed || sealedRegions.has(region)) continue
+        if (!seen[cellOf(nd.at)]) return false
+      }
+      return true
+    }
+    // shared site pre-filter: the plug must not intrude the spawn apron or a
+    // keep-clear box (addBarrier would happily place it; the validator would
+    // reroll — cheaper to never pick such a pinch)
+    const plugSiteOk = (at: Pt2): boolean =>
+      Math.hypot(at.x - spawnAt.x, at.y - spawnAt.y) >= params.spawnApron + half + 0.5 &&
+      !params.keepClear.some((k) =>
+        at.x > k.x - half - 1 && at.x < k.x + k.w + half + 1 && at.y > k.y - half - 1 && at.y < k.y + k.h + half + 1)
+
+    // ── 1. route lock: gate ONE redundant crossing (the flagship) ────────────
+    const r = rng('route')
+    if (!r.chance(GATE_DIALS.routeChance)) {
+      note('route gate skipped (coin)')
+    } else if (draft.collision.length + openLocks() + 1 > params.maxBarriers) {
+      note('route gate skipped (no as-if-closed barrier budget)')
+    } else {
+      // never gate the only crossing between two banks: removing the edge
+      // (with every locked edge already treated as removed) must keep its
+      // endpoints connected — the closed variant keeps an ungated route
+      const viable = edges
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.doorAt && !e.lockId && plugSiteOk(e.doorAt))
+        .filter(({ e, i }) => {
+          const rest = edges.filter((o, j) => j !== i && !o.lockId)
+          return bfsDepth(rest, e.a).has(e.b)
+        })
+      if (!viable.length) {
+        note(`route gate skipped (no candidate: ${edges.length} crossing(s), none redundant)`)
+      } else {
+        const start = r.int(viable.length)
+        let choice: (typeof viable)[number] | null = null
+        for (let k = 0; k < viable.length; k++) {
+          const probe = viable[(start + k) % viable.length]
+          if (holdsFor(floodSeen(probe.e.doorAt!))) { choice = probe; break }
+        }
+        if (!choice) {
+          note(`route gate skipped (flood rejected all ${viable.length} candidate(s))`)
+        } else {
+          const at = choice.e.doorAt!
+          const mat = matAt(draft, at.x, at.y)
+          const crossing = mat === 'shallow-water' ? 'ford' : mat === 'road' ? 'bridge' : 'dry gap'
+          // one mapping per crossing type — see the pass header
+          const [tag, look]: [ProficiencyTag, GateLook] =
+            crossing === 'ford' ? ['mobility', { kind: 'cliff', material: 'deep-water' }]
+            : crossing === 'bridge' ? ['might', { kind: 'wall', material: 'wood' }]
+            : ['might', { kind: 'wall', material: 'rock' }]
+          const { id, open } = placeShortcutLock(draft, { tag, at, look, sealHalf: half })
+          edges[choice.i].lockId = id
+          plugs.push(at)
+          note(`route ${tag} gate ${open ? 'OPEN (party kit)' : 'sealed'} on ${choice.e.a}→${choice.e.b} (${crossing}) at ${at.x},${at.y}`)
+        }
+      }
+    }
+
+    // ── 2. vault lock: a secret pocket, whenever geography grew one ──────────
+    const v = rng('vault')
+    const degree = nodeDegrees(edges)
+    let walkable = 0
+    for (let i = 0; i < walk.length; i++) if (walk[i]) walkable++
+    const regionCells = new Map<number, number>()
+    for (let i = 0; i < claims.length; i++) {
+      if (claims[i] >= 0) regionCells.set(claims[i], (regionCells.get(claims[i]) ?? 0) + 1)
+    }
+    const poiRegions = new Set(keepReached.map((p) => claims[cellOf(p)]))
+    const pockets = nodes
+      .map((n) => ({
+        n,
+        region: regionOf(n.id),
+        edge: edges.find((e) => (e.a === n.id || e.b === n.id) && e.doorAt && !e.lockId),
+      }))
+      .filter((c) =>
+        degree.get(c.n.id) === 1 && !!c.edge &&
+        !poiRegions.has(c.region) &&
+        (regionCells.get(c.region) ?? Infinity) <= walkable * GATE_DIALS.vaultMaxAreaFrac &&
+        plugSiteOk(c.edge!.doorAt!))
+    if (!pockets.length) {
+      note('vault skipped (no natural pocket: needs a small POI-free degree-1 region)')
+    } else if (draft.collision.length + openLocks() + 1 > params.maxBarriers) {
+      note('vault skipped (no as-if-closed barrier budget)')
+    } else {
+      const start = v.int(pockets.length)
+      let pick: (typeof pockets)[number] | null = null
+      for (let k = 0; k < pockets.length; k++) {
+        const probe = pockets[(start + k) % pockets.length]
+        const seen = floodSeen(probe.edge!.doorAt!)
+        // the plug must SEAL the pocket (prize anchor unreached — the graph's
+        // degree-1 promise re-proven on cells) without collateral damage
+        if (seen && !seen[cellOf(probe.n.at)] && holdsFor(seen, probe.region)) { pick = probe; break }
+      }
+      if (!pick) {
+        note(`vault skipped (flood rejected all ${pockets.length} pocket(s): plug leaks or strands a neighbour)`)
+      } else {
+        const at = pick.edge!.doorAt!
+        // perception: a hidden trail through the rocks (GATE_LOOKS' default look)
+        const { id, open } = placeProficiencyLock(draft, { tag: 'perception', at, prizeAt: pick.n.at, sealHalf: half })
+        pick.edge!.lockId = id
+        plugs.push(at)
+        sealedRegions.add(pick.region)
+        // kit-invariant landmark guard: semantic keeps the landmark out of the
+        // pocket in BOTH variants (an open kit must not relocate the landmark)
+        draft.scratch.set('vault-region', pick.region)
+        note(`vault perception gate ${open ? 'OPEN (party kit)' : 'sealed'} on ${pick.n.id} (${regionCells.get(pick.region)} cell(s)) at ${at.x},${at.y}`)
+      }
+    }
   },
 }
 
@@ -793,10 +1018,17 @@ const semanticPass = {
 
     // One landmark at the highest placeable ground — the §H orientation
     // silhouette site (render decides WHAT stands there; we only say where).
+    // A vault-sealed pocket (gates pass) is off-limits in EVERY variant —
+    // kit-invariant on purpose: an open kit must not relocate the landmark,
+    // and a closed bake must not strand it (the reachable rule would reroll).
+    const claims = draft.scratch.get('regions') as Int32Array | undefined
+    const vaultRegion = draft.scratch.get('vault-region') as number | undefined
     const r = rng('landmark')
     let best: { x: number; y: number } | null = null, bestE = -1
     for (let i = 0; i < 40; i++) {
       const x = r.range(3, size - 3), y = r.range(3, size - 3)
+      if (vaultRegion !== undefined && claims &&
+        claims[Math.floor(y) * draft.cols + Math.floor(x)] === vaultRegion) continue
       if (!isPlaceable(draft, { x, y }, 2)) continue
       const e = fields.elevation(x, y)
       if (e > bestE) { bestE = e; best = { x, y } }
@@ -810,11 +1042,14 @@ const semanticPass = {
     // nothing, fall back to the old POI-stub nodes so the lab's layer
     // inspector still shows a nav plane instead of crashing.
     const regionNodes = draft.semantic.nav.nodes
-    const claims = draft.scratch.get('regions') as Int32Array | undefined
     if (regionNodes.length && claims) {
       const byId = new Map(regionNodes.map((nd) => [nd.id, nd]))
-      const pois = [...draft.semantic.pois]
-        .sort((a, b) => (a.kind === 'spawn' ? 0 : 1) - (b.kind === 'spawn' ? 0 : 1))
+      // link precedence spawn > portal > rest: portals are contract-rule-2
+      // citizens (depth across the river reads off their nodes) and must not
+      // lose their node to a gate/vault POI the gates pass inserted earlier
+      const rank = (p: (typeof draft.semantic.pois)[number]) =>
+        p.kind === 'spawn' ? 0 : p.kind === 'portal' ? 1 : 2
+      const pois = [...draft.semantic.pois].sort((a, b) => rank(a) - rank(b))
       const unlinked: string[] = []
       for (const p of pois) {
         const xi = Math.min(draft.cols - 1, Math.max(0, Math.floor(p.at.x)))
@@ -839,6 +1074,8 @@ const semanticPass = {
 export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
-  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + river/crossings + outcrops → derived region graph → scatter → POIs + tactical profile.',
-  passes: [surfacePass, hydrologyPass, riverPass, outcropsPass, regionsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
+  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + river/crossings + outcrops → derived region graph → proficiency gates on derived edges → scatter → POIs + tactical profile.',
+  // gates right after regions: locks are structure (they claim a derived edge
+  // and its pinch), scatter is dressing (isPlaceable already avoids the plug).
+  passes: [surfacePass, hydrologyPass, riverPass, outcropsPass, regionsPass, gatesPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
 }

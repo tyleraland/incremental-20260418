@@ -166,11 +166,16 @@ describe('field recipe fuzz gate', () => {
       if (nodes.length >= 2 && edges.length >= 1) multiRegion++
       edgesSeen += edges.length
       // every published edge is a 'crossing' whose doorAt is a WALKABLE cell —
-      // the validator-mirror occupancy check (same rasterizer flood-fill sees)
+      // the validator-mirror occupancy check (same rasterizer flood-fill sees).
+      // Exception (P3): a CLOSED gate lock legitimately plugs its edge's
+      // doorAt — the edge stays published with its lockId (the graph survives
+      // the variant), and graph-truthful exempts it; mirror that here.
       const blocked = occupancyGrid(r.spec.collision, r.spec.cols, r.spec.rows)
+      const lockById = new Map(r.spec.semantic.locks.map((l) => [l.id, l]))
       for (const e of edges) {
         expect(e.kind).toBe('crossing')
         expect(e.doorAt, `seed ${r.spec.seed}: edge ${e.a}→${e.b} has no doorAt`).toBeDefined()
+        if (e.lockId && lockById.get(e.lockId)?.open === false) continue
         const i = Math.floor(e.doorAt!.y) * r.spec.cols + Math.floor(e.doorAt!.x)
         expect(blocked[i], `seed ${r.spec.seed}: doorAt ${e.doorAt!.x},${e.doorAt!.y} blocked`).toBe(0)
       }

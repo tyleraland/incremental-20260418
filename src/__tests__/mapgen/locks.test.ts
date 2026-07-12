@@ -4,8 +4,14 @@
 // kit = a different playable map, byte-deterministic per kit.
 
 import { describe, it, expect } from 'vitest'
-import { generateMap, normalizeParams, validate, type CollisionRect, type Lock, type MapSpec, type Poi } from '@/mapgen'
+import {
+  generateMap, normalizeParams, validate,
+  type CollisionRect, type Lock, type MapSpec, type Poi, type ProficiencyTag, type ThemeTag,
+} from '@/mapgen'
+import type { PassCtx, RecipeDef } from '@/mapgen/pipeline'
+import { addBarrier } from '@/mapgen/draft'
 import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
+import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 
 const SIZE = 40
 const wall = (x: number, y: number, w: number, h: number): CollisionRect => ({ x, y, w, h, kind: 'wall', material: 'rock' })
@@ -131,5 +137,160 @@ describe('dungeon composition gates (variant-at-deploy)', () => {
     const g = gated[1]
     const kit = { recipe: 'dungeon', seed: g.seed, size: 48, themes: ['dungeon'] as ['dungeon'], proficiencies: [g.tag as 'might'] }
     expect(generateMap(DUNGEON_RECIPE, kit).spec).toEqual(generateMap(DUNGEON_RECIPE, kit).spec)
+  })
+})
+
+// ── P3: overworld gates through the SAME gates.ts calls the dungeon makes ────
+// The convergence thesis end-to-end: the field recipe's gates pass route-locks
+// a redundant derived 'crossing' (a ford too deep / a collapsed bridge) with
+// placeShortcutLock — same seed × different kit = a different playable
+// OVERWORLD map. Portals are pinned like real locations (data/locations.ts) so
+// the critical-path rule is exercised for real: every portal must stay
+// reachable in the closed variant.
+
+describe('field route gates (overworld variant-at-deploy — P3)', () => {
+  const S = 140
+  const portalAt: [number, number][] = [[3, S / 2], [S - 3, S / 2], [S / 2, 3], [S / 2, S - 3]]
+  const fieldParams = (seed: number, proficiencies?: ProficiencyTag[]) => ({
+    recipe: 'field', seed, size: S, themes: ['plains', 'water'] as ThemeTag[],
+    keepClear: portalAt.map(([x, y]) => ({ x: x - 1.5, y: y - 1.5, w: 3, h: 3 })),
+    pois: portalAt.map(([x, y], i) => ({ kind: 'portal' as const, at: { x, y }, id: `portal-${i}` })),
+    proficiencies,
+  })
+  // Deterministically find first-roll water fields whose ONLY lock is a closed
+  // route gate. attempts === 1 for the same reason as the dungeon suite above
+  // (reroll chains diverge between kits); exactly-one-lock so the rect-delta
+  // and wrong-kit assertions are about THIS lock. Measured: 34/60 seeds
+  // qualify (coin 0.6 × redundant-crossing availability) — 4 is comfortable.
+  const gated = [] as { seed: number; closed: ReturnType<typeof generateMap>; lock: Lock }[]
+  for (let seed = 1; seed <= 60 && gated.length < 4; seed++) {
+    const r = generateMap(FIELD_RECIPE, fieldParams(seed))
+    const locks = r.spec.semantic.locks
+    const l = locks[0]
+    if (r.report.ok && r.attempts === 1 && locks.length === 1 && l && !l.open && l.id.startsWith('lock-shortcut-')) {
+      gated.push({ seed, closed: r, lock: l })
+    }
+  }
+
+  it('route gates bake CLOSED for the kitless default; the critical path holds', () => {
+    expect(gated.length, 'fewer than 4 first-roll route-gated water fields in 60 seeds — gate frequency regressed').toBe(4)
+    for (const g of gated) {
+      // a ROUTE lock, not a prize lock, on a terrain-fitting tag
+      expect(g.lock.kind).toBe('proficiency')
+      expect(g.lock.gates).toEqual([])
+      expect(['mobility', 'might']).toContain(g.lock.tag)
+      // the locked edge stays PUBLISHED (P2's derived graph survives closed
+      // gates) and carries the lock at its pinch
+      const edge = g.closed.spec.semantic.nav.edges.find((e) => e.lockId === g.lock.id)
+      expect(edge, `seed ${g.seed}: no nav edge carries ${g.lock.id}`).toBeDefined()
+      expect(edge!.kind).toBe('crossing')
+      expect(edge!.doorAt).toEqual(g.lock.at)
+      // the gate POI marks the site
+      expect(g.closed.spec.semantic.pois.some((p) => p.id === `${g.lock.id}-gate` && p.kind === 'gate')).toBe(true)
+      // report.ok already covers it — but assert the two load-bearing rules
+      // explicitly: every portal POI stayed reachable (never gate the critical
+      // path) and the deep-water plug kept the water story coherent
+      const reach = g.closed.report.rules.find((x) => x.rule === 'reachable')
+      expect(reach?.ok, `seed ${g.seed}: ${reach?.detail}`).toBe(true)
+      expect(reach?.detail).toContain('POIs reachable')
+      expect(g.closed.report.rules.find((x) => x.rule === 'water-coherence')?.ok).toBe(true)
+    }
+  })
+
+  it('matching kit re-bakes the SAME seed open: validates, minus exactly the plug', () => {
+    const g = gated[0]
+    const open = generateMap(FIELD_RECIPE, fieldParams(g.seed, [g.lock.tag!]))
+    expect(open.report.ok, JSON.stringify(open.report.rules.filter((r) => !r.ok))).toBe(true)
+    const l = open.spec.semantic.locks.find((x) => x.id === g.lock.id)
+    expect(l?.open).toBe(true)
+    // the seal geometry was omitted — one fewer collision rect
+    expect(open.spec.collision.length).toBe(g.closed.spec.collision.length - 1)
+    // graph-truthful now VERIFIES the edge (open locks are no longer exempt)
+    expect(open.report.rules.find((x) => x.rule === 'graph-truthful')?.ok).toBe(true)
+    // a NON-matching kit changes nothing, byte for byte
+    const wrong: ProficiencyTag = g.lock.tag === 'mobility' ? 'arcane' : 'holy'
+    expect(generateMap(FIELD_RECIPE, fieldParams(g.seed, [wrong])).spec).toEqual(g.closed.spec)
+  })
+
+  it('variants are deterministic per (seed, kit)', () => {
+    const g = gated[1]
+    const a = generateMap(FIELD_RECIPE, fieldParams(g.seed, [g.lock.tag!]))
+    const b = generateMap(FIELD_RECIPE, fieldParams(g.seed, [g.lock.tag!]))
+    expect(a.spec).toEqual(b.spec)
+  })
+
+  it('frequency floor: route gates fire on a healthy share of a water sweep', () => {
+    // Measured 18/25 at sizes 120/160/200 (coin 0.6 × candidate availability);
+    // floor at 10/25 — far under observed, but a regression to "overworld
+    // gates never fire" (budget starvation, candidate drought) trips it.
+    let fired = 0
+    for (let seed = 1; seed <= 25; seed++) {
+      const r = generateMap(FIELD_RECIPE, { recipe: 'field', seed, size: 160, themes: ['plains', 'water'] })
+      if (r.spec.semantic.locks.some((l) => l.id.startsWith('lock-shortcut-'))) fired++
+    }
+    expect(fired).toBeGreaterThanOrEqual(10)
+  })
+})
+
+// ── P3: the secret vault pocket (prize lock) ─────────────────────────────────
+// NATURAL degree-1 pockets are ~nonexistent on current geography — measured
+// 0 vaults across ~600 bakes (25–100 seeds × sizes 60–200 × theme mixes
+// plains/forest/mountain/water): river maps derive 2 regions joined by 2
+// fords, both banks degree-2, and outcrops never enclose a region of their
+// own. So there is NO real-bake vault assertion here (it would be vacuous or
+// flaky); manufacturing pockets with extra geometry is follow-up dressing
+// work, not this packet. Instead the vault path is exercised end-to-end
+// through the pipeline with a synthetic enclosure pass (the P1 synthetic-mask
+// precedent): a walled NE pocket with one 2-wide gap → a genuine degree-1
+// region → the field's own gates/regions/semantic passes do the rest.
+
+describe('field vault pocket (synthetic degree-1 region)', () => {
+  const passOf = (id: string) => FIELD_RECIPE.passes.find((p) => p.id === id)!
+  // three walls enclose x∈(52,64) × y∈(0,14) save a 2-wide gap at y=6..7 —
+  // clearance 1, so deriveRegions erodes it into a 'crossing' pinch
+  const enclosurePass = {
+    id: 'enclosure',
+    run({ draft }: PassCtx) {
+      addBarrier(draft, { x: 50, y: 14, w: 14, h: 2, kind: 'wall', material: 'rock' })
+      addBarrier(draft, { x: 50, y: 0, w: 2, h: 6, kind: 'wall', material: 'rock' })
+      addBarrier(draft, { x: 50, y: 8, w: 2, h: 6, kind: 'wall', material: 'rock' })
+    },
+  }
+  const POCKET_RECIPE: RecipeDef = {
+    id: 'field', name: 'pocket lab', description: 'synthetic degree-1 pocket for the vault path',
+    passes: [enclosurePass, passOf('regions'), passOf('gates'), passOf('semantic')],
+  }
+  const bake = (proficiencies?: ProficiencyTag[]) =>
+    generateMap(POCKET_RECIPE, { recipe: 'field', seed: 1, size: 64, themes: [], proficiencies })
+
+  it('closed: the pocket seals behind a perception-hidden trail; nothing else strands', () => {
+    const closed = bake()
+    expect(closed.report.ok, JSON.stringify(closed.report.rules.filter((r) => !r.ok))).toBe(true)
+    expect(closed.attempts).toBe(1)
+    const lock = closed.spec.semantic.locks.find((l) => !l.id.startsWith('lock-shortcut-'))
+    expect(lock, `no vault lock: ${closed.notes.filter((n) => n.startsWith('gates:')).join('; ')}`).toBeDefined()
+    expect(lock!.tag).toBe('perception')
+    expect(lock!.open).toBe(false)
+    expect(lock!.gates).toEqual([`${lock!.id}-prize`])
+    // prize POI inside the pocket, tagged for the reachability exemption
+    const prize = closed.spec.semantic.pois.find((p) => p.id === `${lock!.id}-prize`)
+    expect(prize?.kind).toBe('vault')
+    expect(prize?.tags).toContain(`locked:${lock!.id}`)
+    // the pocket's single edge carries the lock; the locks rule proved the
+    // seal (closed ⇒ prize genuinely unreachable) and the landmark stayed out
+    expect(closed.spec.semantic.nav.edges.some((e) => e.lockId === lock!.id)).toBe(true)
+    expect(closed.report.rules.find((x) => x.rule === 'locks')?.ok).toBe(true)
+  })
+
+  it('perception kit re-bakes it open: prize delivered, minus exactly the plug', () => {
+    const closed = bake()
+    const open = bake(['perception'])
+    expect(open.report.ok, JSON.stringify(open.report.rules.filter((r) => !r.ok))).toBe(true)
+    const lock = open.spec.semantic.locks.find((l) => !l.id.startsWith('lock-shortcut-'))!
+    expect(lock.open).toBe(true)
+    expect(open.spec.collision.length).toBe(closed.spec.collision.length - 1)
+    // a NON-matching kit changes nothing
+    expect(generateMap(POCKET_RECIPE, { recipe: 'field', seed: 1, size: 64, themes: [], proficiencies: ['holy'] }).spec)
+      .toEqual(closed.spec)
   })
 })
