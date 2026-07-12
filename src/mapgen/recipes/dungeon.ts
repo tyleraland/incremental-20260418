@@ -454,7 +454,11 @@ const stampsPass = {
       if (draft.semantic.pois.some((p) => p.at.x > a.x && p.at.x < a.x + a.w && p.at.y > a.y && p.at.y < a.y + a.h)) return false
       // stamps carry their own interior margins; +1 keeps them off the room wall
       if (a.w < stamp.w + 1 || a.h < stamp.h + 1) return false
-      if (draft.collision.length + stampBarrierCost(stamp) > params.maxBarriers) return false
+      // budget as-if-all-locks-closed (each open lock omitted one plug rect):
+      // kit-invariance — an open vault must not free budget for a stamp the
+      // closed variant rejected ("open = the same map minus plugs" holds)
+      const openLocks = draft.semantic.locks.filter((l) => l.open).length
+      if (draft.collision.length + openLocks + stampBarrierCost(stamp) > params.maxBarriers) return false
       const at = {
         x: a.x + 0.5 + r.next() * (a.w - stamp.w - 1),
         y: a.y + 0.5 + r.next() * (a.h - stamp.h - 1),
@@ -575,8 +579,15 @@ const gatesPass = {
 // touching entry or goal) with a proficiency seal. Closed = the party takes
 // the long way around the cycle; open = the shortcut works. It gates a ROUTE,
 // not a prize (Lock.gates = []) — nothing is ever stranded: the long way is
-// proven on the walk mask before committing (with every already-closed lock's
-// plug also blocked), and the validator's `reachable` rule proves the bake.
+// proven on the walk mask before committing, and the validator's `reachable`
+// rule proves the bake.
+//
+// KIT-INVARIANT by design: every decision below (budget, candidates, flood,
+// tag) treats ALL placed locks as if closed, so the same seed picks the same
+// shortcut for every party kit and an open kit only ever REMOVES seal
+// geometry ("open = the same map minus plugs"). Without this, opening the
+// vault could make a shortcut fit that a closed-vault bake rejected — gaining
+// a proficiency would ADD a sealed barrier elsewhere, which reads backwards.
 const shortcutPass = {
   id: 'shortcut',
   run({ draft, params, rng, note }: PassCtx) {
@@ -584,7 +595,9 @@ const shortcutPass = {
     if (!plan) { note('no layout plan — skipped'); return }
     const r = rng('place')
     if (!r.chance(0.5)) { note('rewrite skipped (coin)'); return }
-    if (draft.collision.length >= params.maxBarriers) { note('no barrier budget left — shortcut skipped'); return }
+    // as-if-all-closed rect count: each OPEN lock omitted exactly one plug
+    const openLocks = draft.semantic.locks.filter((l) => l.open).length
+    if (draft.collision.length + openLocks >= params.maxBarriers) { note('no barrier budget left — shortcut skipped'); return }
     const navEdges = draft.semantic.nav.edges
     // mid-arc cycle edges only — the cycle's first/last legs are the entry and
     // goal rooms' critical fan-out, never gated
@@ -595,23 +608,28 @@ const shortcutPass = {
     if (!cands.length) { note('no mid-arc cycle edge — shortcut skipped'); return }
 
     // The long way must hold for EVERYTHING: flood the walk mask from the
-    // spawn with this plug AND every already-closed lock's plug blocked, and
-    // require every room centre outside sealed dead-ends to stay reached.
+    // spawn with this plug AND every placed lock's plug blocked (as-if-closed
+    // — kit-invariance, see the pass comment), and require every room centre
+    // outside lock-sealed dead-ends to stay reached.
     const { size } = params
     const half = 2.25
-    const closedPlugs = draft.semantic.locks.filter((l) => !l.open && l.at).map((l) => l.at!)
+    // Flood radius matches the VALIDATOR's effective footprint (occupancy pads
+    // rects by 0.45): a route that squeezes inside the pad ring would pass an
+    // unpadded flood here, then fail the bake's `reachable` rule and burn
+    // reroll attempts. Conservative: worst case we skip a viable candidate.
+    const floodHalf = half + 0.45
+    const allPlugs = draft.semantic.locks.filter((l) => l.at).map((l) => l.at!)
     const degree = nodeDegrees(navEdges)
     const sealedRooms = new Set<string>()
     for (const e of navEdges) {
       if (!e.lockId) continue
-      const lock = draft.semantic.locks.find((l) => l.id === e.lockId)
-      if (lock && !lock.open) sealedRooms.add(degree.get(e.a) === 1 ? e.a : e.b)
+      sealedRooms.add(degree.get(e.a) === 1 ? e.a : e.b)
     }
     const spawnPoi = draft.semantic.pois.find((p) => p.kind === 'spawn')!
     const longWayHolds = (at: Pt): boolean => {
-      const plugs = [...closedPlugs, at]
+      const plugs = [...allPlugs, at]
       const passable = (x: number, y: number) =>
-        plan.walk[y * size + x] === 1 && !plugs.some((p) => Math.abs(x + 0.5 - p.x) < half && Math.abs(y + 0.5 - p.y) < half)
+        plan.walk[y * size + x] === 1 && !plugs.some((p) => Math.abs(x + 0.5 - p.x) < floodHalf && Math.abs(y + 0.5 - p.y) < floodHalf)
       const start = Math.floor(spawnPoi.at.y) * size + Math.floor(spawnPoi.at.x)
       if (!passable(start % size, Math.floor(start / size))) return false
       const seen = new Uint8Array(size * size)

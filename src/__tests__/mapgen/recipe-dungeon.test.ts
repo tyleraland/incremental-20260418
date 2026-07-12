@@ -86,11 +86,14 @@ describe('dungeon recipe fuzz gate', () => {
     for (const id of ['pillar-vault@', 'shrine@', 'barred-cell@']) {
       expect(allNotes, `stamp ${id} never placed in 25 seeds`).toContain(id)
     }
-    const barred = results.find((r) => r.notes.some((n) => n.includes('barred-cell@')))!
-    const vault = barred.spec.semantic.pois.find((p) => p.id.startsWith('barred-cell-vault'))
+    // Select by the FINAL spec, not notes — notes accumulate across reroll
+    // attempts, so a note can name a stamp that a later attempt rolled away.
+    const barred = results.find((r) => r.spec.semantic.pois.some((p) => p.id.startsWith('barred-cell-vault')))
+    expect(barred, 'no seed retained the barred-cell in its final spec').toBeDefined()
+    const vault = barred!.spec.semantic.pois.find((p) => p.id.startsWith('barred-cell-vault'))
     expect(vault?.tags).toContain('optional')
     // …and the map still validated even though the vault sits behind bars
-    expect(barred.report.ok).toBe(true)
+    expect(barred!.report.ok).toBe(true)
   })
 
   it('recipe defaults are load-bearing: the dungeon spawn apron must be room-sized', () => {

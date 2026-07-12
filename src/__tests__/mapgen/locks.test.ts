@@ -82,18 +82,23 @@ describe('dungeon composition gates (variant-at-deploy)', () => {
   // gate (no shortcut lock on the same floor — the rect-delta and wrong-kit
   // assertions below assume the vault lock is the floor's only lock; floors
   // where both fire are covered by the shortcut suite in recipe-dungeon.test).
+  // attempts === 1 is load-bearing: a closed bake that only validated after a
+  // reroll can re-bake OPEN at attempt 1 into a completely different map (the
+  // open variant may pass validation where the closed one rerolled), so the
+  // minus-one-rect / wrong-kit-identical invariants below only hold for
+  // first-roll floors.
   const gated = [] as { seed: number; closed: ReturnType<typeof generateMap>; tag: string }[]
-  for (let seed = 1; seed <= 60 && gated.length < 5; seed++) {
+  for (let seed = 1; seed <= 80 && gated.length < 5; seed++) {
     const r = generateMap(DUNGEON_RECIPE, { recipe: 'dungeon', seed, size: 48, themes: ['dungeon'] })
     const locks = r.spec.semantic.locks
     const l = locks[0]
-    if (r.report.ok && locks.length === 1 && l && !l.open && !l.id.startsWith('lock-shortcut-')) {
+    if (r.report.ok && r.attempts === 1 && locks.length === 1 && l && !l.open && !l.id.startsWith('lock-shortcut-')) {
       gated.push({ seed, closed: r, tag: l.tag! })
     }
   }
 
   it('gates occur at a healthy rate and validate closed by default', () => {
-    expect(gated.length, 'fewer than 5 vault-gated floors in 60 seeds — gate frequency regressed').toBe(5)
+    expect(gated.length, 'fewer than 5 first-roll vault-gated floors in 80 seeds — gate frequency regressed').toBe(5)
     for (const g of gated) {
       const l = g.closed.spec.semantic.locks[0]
       expect(l.open).toBe(false)
