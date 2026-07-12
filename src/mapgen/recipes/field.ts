@@ -1,6 +1,6 @@
 // The FIELD recipe — overworld, field-first: macro fields → surface partition
 // → hard geography (lake + ford, river + crossings, outcrops) → derived region
-// graph → scatter → semantic. The point of this recipe is that the layers
+// graph → gates → semantic → desire-paths → scatter. The point of this recipe is that the layers
 // COMPOSE — each pass reads the shared substrate and the planes agree by
 // construction (sand rings the water, trees follow moisture, outcrops sit on
 // rough ground, fords are walkable because the deep-water rects were built
@@ -764,10 +764,14 @@ const gatesPass = {
 // impassable, and contract rule 2 keeps the critical path ungated; skipping
 // even OPEN-locked edges means both kit variants of a seed route identically),
 // and the cell path runs on the scratch 'walk' mask, which was rasterized
-// BEFORE the gates pass added any plug. Water/'road' cells are traversed but
-// never repainted — the ford/bridge IS the trail there, and repainting wet
-// cells would flip a covered deep cell dry (the water-coherence rule's exact
-// lie). So painted cells are identical across variants.
+// BEFORE the gates pass added any plug — with every lock's as-if-closed plug
+// footprint blocked out (locks record `at` in BOTH variants; the gates pass
+// flood already proved spawn/portals/anchors stay reached with all plugs
+// blocked, so legs stay routable), so a trail can never wander under a
+// closed variant's plug rect. Water/'road' cells are traversed but never
+// repainted — the ford/bridge IS the trail there, and repainting wet cells
+// would flip a covered deep cell dry (the water-coherence rule's exact lie).
+// So painted cells are identical across variants and never under a rect.
 //
 // Width: 1 cell, widened to 2 where the shared roughness field says the ground
 // is broken — substrate-coherent wonk, no RNG (the pass draws none; decision 7).
@@ -795,6 +799,26 @@ const desirePathsPass = {
     const cellOf = (p: Pt2) =>
       Math.min(rows - 1, Math.max(0, Math.floor(p.y))) * cols + Math.min(cols - 1, Math.max(0, Math.floor(p.x)))
 
+    // routing mask: the pre-gates walk mask MINUS every lock plug's padded
+    // as-if-closed footprint (same fh as the gates flood). Locks record `at`
+    // in both kit variants, so this stays kit-invariant — and without it a
+    // trail could be painted under the CLOSED variant's plug rect (review
+    // finding: seed 19 @160², trail into the wood bridge plug).
+    const locks = draft.semantic.locks.filter((l) => l.at)
+    let route = walk
+    if (locks.length) {
+      route = walk.slice()
+      const fh = GATE_DIALS.sealHalf + 0.45
+      for (const l of locks) {
+        const { x: lx, y: ly } = l.at!
+        for (let y = Math.max(0, Math.floor(ly - fh)); y < Math.min(rows, Math.ceil(ly + fh)); y++) {
+          for (let x = Math.max(0, Math.floor(lx - fh)); x < Math.min(cols, Math.ceil(lx + fh)); x++) {
+            if (Math.abs(x + 0.5 - lx) < fh && Math.abs(y + 0.5 - ly) < fh) route[y * cols + x] = 0
+          }
+        }
+      }
+    }
+
     // graph-level route: parent-edge BFS from the spawn's region over the
     // ungated subgraph (see header) — each reached node remembers the pinch
     // it was entered through.
@@ -814,10 +838,10 @@ const desirePathsPass = {
       }
     }
 
-    // shortest 4-neighbour cell path on the walk mask (BFS, deterministic
+    // shortest 4-neighbour cell path on the routing mask (BFS, deterministic
     // expansion order), inclusive of both ends; null = unreachable.
     const gridPath = (from: number, to: number): number[] | null => {
-      if (!walk[from] || !walk[to]) return null
+      if (!route[from] || !route[to]) return null
       if (from === to) return [from]
       const prev = new Int32Array(cols * rows).fill(-1)
       prev[from] = from
@@ -830,7 +854,7 @@ const desirePathsPass = {
           x + 1 < cols ? i + 1 : -1, x > 0 ? i - 1 : -1,
           y + 1 < rows ? i + cols : -1, y > 0 ? i - cols : -1,
         ]) {
-          if (j >= 0 && walk[j] && prev[j] === -1) { prev[j] = i; q.push(j) }
+          if (j >= 0 && route[j] && prev[j] === -1) { prev[j] = i; q.push(j) }
         }
       }
       if (prev[to] === -1) return null
@@ -862,7 +886,7 @@ const desirePathsPass = {
         const nxt = path[k + 1] ?? i
         const horiz = Math.abs(nxt - i) === 1
         const w = horiz ? (y + 1 < rows ? i + cols : -1) : (x + 1 < cols ? i + 1 : -1)
-        if (w >= 0 && walk[w] && fields.roughness(x + 0.5, y + 0.5) > 0.55) paintCell(w)
+        if (w >= 0 && route[w] && fields.roughness(x + 0.5, y + 0.5) > 0.55) paintCell(w)
       }
     }
 

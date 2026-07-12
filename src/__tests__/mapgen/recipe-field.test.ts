@@ -367,6 +367,26 @@ describe('field recipe fuzz gate', () => {
     }
   })
 
+  it('desire paths never run under a gate plug: closed-kit trail cells stay rect-free', () => {
+    // Regression (review finding): the cell path used to run on the raw
+    // pre-gates walk mask, so a trail could be painted under the CLOSED
+    // variant's bridge/rockfall plug (seed 19 @160² plains+water put dirt
+    // inside the wood plug sealing region-0→region-1). The routing mask now
+    // blocks every lock's as-if-closed footprint, kit-invariantly.
+    for (const seed of [19, ...SEEDS.slice(0, 6)]) {
+      const params = { recipe: 'field', seed, size: 160, themes: ['plains', 'water'] as ThemeTag[] }
+      const r = generateMap(FIELD_RECIPE, params) // closed kit: no proficiencies
+      const bare = generateMap(FIELD_RECIPE, { ...params, skipPasses: ['desire-paths'] })
+      const cols = r.spec.cols
+      for (let i = 0; i < r.spec.surface.grid.length; i++) {
+        if (r.spec.surface.grid[i] === bare.spec.surface.grid[i]) continue
+        const cx = (i % cols) + 0.5, cy = ((i / cols) | 0) + 0.5
+        const buried = r.spec.collision.find((b) => cx > b.x && cx < b.x + b.w && cy > b.y && cy < b.y + b.h)
+        expect(buried, `seed ${seed}: trail cell (${cx},${cy}) painted under a ${buried?.material} rect`).toBeUndefined()
+      }
+    }
+  })
+
   it('trivial graphs skip gracefully: 1 region + no portals paints nothing', () => {
     // plains-only small maps derive a single region; the pass must note the
     // skip rather than draw a spawn→landmark scribble on an unpinched field
