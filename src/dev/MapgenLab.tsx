@@ -71,7 +71,16 @@ const THUMB_TOGGLES: Toggles = {
   graph: false, regions: false, flow: false, paths: false, walk: false,
 }
 
-function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: number, t: Toggles) {
+// Cumulative+highlight dim factor: overlays named in `dim` render this faint so
+// THIS stage's owned structure (full alpha) reads on top of the earlier layers.
+const DIM = 0.35
+
+// drawSpec renders the MapSpec + derived overlays. `dim` (optional) is the
+// cumulative+highlight lever the staged-tab lab uses: any OverlayKey in it draws
+// at DIM×its normal alpha (the accreted base), everything else at full (this
+// stage's owned structure). Passing no `dim` = every overlay full brightness
+// (the Final tab, the contact-sheet thumbs) — byte-identical to the old lab.
+function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: number, t: Toggles, dim?: Set<OverlayKey>) {
   if (!canvas) return
   const spec = result.spec
   const scratch = result.scratch
@@ -80,6 +89,7 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
   canvas.height = rows * px
   const g = canvas.getContext('2d')!
   const Y = (y: number) => (rows - y) * px   // world y-up → canvas y-down
+  const af = (k: OverlayKey) => (dim?.has(k) ? DIM : 1)   // per-overlay alpha factor
   const fillCell = (x: number, y: number, style: string) => {
     g.fillStyle = style
     g.fillRect(x * px, Y(y + 1), px + 0.5, px + 0.5)
@@ -90,25 +100,27 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
 
   // ── fills (bottom of the stack) ──────────────────────────────────────────
   if (t.surface) {
+    g.globalAlpha = af('surface')
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         fillCell(x, y, SURFACE_COLOR[SURFACE_MATERIALS[spec.surface.grid[y * cols + x]]] ?? '#f0f')
       }
     }
+    g.globalAlpha = 1
   }
   // walk mask: translucent wash over reachable ground (the validator's occupancy
   // model). Reading an absent key (regions skipped / recipe didn't produce it)
   // just draws nothing.
   const walk = asU8(scratch?.get('walk'))
   if (t.walk && walk) {
-    g.globalAlpha = 0.22
+    g.globalAlpha = 0.22 * af('walk')
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (walk[y * cols + x]) fillCell(x, y, '#4ade80')
     g.globalAlpha = 1
   }
   // region claims: stable per-region tint; -1 = unclaimed/blocked = transparent.
   const claims = asI32(scratch?.get('regions'))
   if (t.regions && claims) {
-    g.globalAlpha = 0.5
+    g.globalAlpha = 0.5 * af('regions')
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const r = claims[y * cols + x]
@@ -124,7 +136,7 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
   if (t.flow && flow) {
     let fmax = 0
     for (let i = 0; i < flow.length; i++) if (flow[i] > fmax) fmax = flow[i]
-    g.globalAlpha = 0.55
+    g.globalAlpha = 0.55 * af('flow')
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const d = flow[y * cols + x]
@@ -135,35 +147,40 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
   }
 
   if (t.scatter) {
+    g.globalAlpha = af('scatter')
     for (const s of spec.scatter) {
       g.fillStyle = SCATTER_COLOR[s.kind] ?? '#f0f'
       g.beginPath()
       g.arc(s.x * px, Y(s.y), Math.max(1.2, s.size * px * 0.35), 0, Math.PI * 2)
       g.fill()
     }
+    g.globalAlpha = 1
   }
   if (t.collision) {
+    const ca = af('collision')
     for (const r of spec.collision) {
       g.fillStyle = BARRIER_COLOR[r.material] ?? '#f0f'
-      g.globalAlpha = r.kind === 'cliff' ? 0.6 : 1
+      g.globalAlpha = (r.kind === 'cliff' ? 0.6 : 1) * ca
       g.fillRect(r.x * px, Y(r.y + r.h), r.w * px, r.h * px)
-      g.globalAlpha = 1
+      g.globalAlpha = ca
       g.strokeStyle = r.kind === 'cliff' ? '#e7e5e4' : '#292524'
       g.setLineDash(r.kind === 'cliff' ? [3, 3] : [])
       g.strokeRect(r.x * px, Y(r.y + r.h), r.w * px, r.h * px)
       g.setLineDash([])
     }
+    g.globalAlpha = 1
   }
   // desire-path mask: the trodden trail cells, over fills but under the graph.
   const paths = asU8(scratch?.get('desire-paths'))
   if (t.paths && paths) {
-    g.globalAlpha = 0.85
+    g.globalAlpha = 0.85 * af('paths')
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (paths[y * cols + x]) fillCell(x, y, '#e08a2c')
     g.globalAlpha = 1
   }
 
   // ── nav graph (on the baked spec — no scratch needed) ────────────────────
   if (t.graph) {
+    g.globalAlpha = af('graph')
     const nav = spec.semantic.nav
     const nodeAt = new Map(nav.nodes.map((n) => [n.id, n.at]))
     const deg = new Map<string, number>()
@@ -213,10 +230,12 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
         g.fillText(lbl, nx + rad + 2, ny + 3)
       }
     }
+    g.globalAlpha = 1
   }
 
   // ── semantic POIs (top) ──────────────────────────────────────────────────
   if (t.semantic) {
+    g.globalAlpha = af('semantic')
     for (const p of spec.semantic.pois) {
       g.strokeStyle = g.fillStyle = POI_COLOR[p.kind] ?? '#fff'
       g.lineWidth = 2
@@ -227,6 +246,7 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
       g.fillText(p.kind, p.at.x * px + px * 1.6, Y(p.at.y) + 3)
       g.lineWidth = 1
     }
+    g.globalAlpha = 1
   }
 }
 
@@ -284,6 +304,91 @@ function presetToggles(overlays: OverlayKey[]): Toggles {
   return base
 }
 
+// ── staged layer tabs ────────────────────────────────────────────────────────
+// The lab is one tab per meaningful STAGE (not per pass): tab 0 is the Final Map
+// (every pass, all planes full brightness — the deliverable); each later tab
+// bakes the recipe THROUGH `throughPass` (auto-skipping every pass strictly
+// after it, so the spec+scratch is exactly the cumulative content up to that
+// stage — stream isolation makes the omission byte-clean), then renders the
+// earlier layers DIMMED (`dim`) with this stage's `owned` structure at full
+// alpha on top. You watch the map accrete stage by stage. `controls` are the
+// pass-skip checkboxes surfaced on that tab — toggling one composes (union) with
+// the auto-skip, so a player can drop `river` on Geography and every downstream
+// tab rebakes without it. `throughPass: null` marks the Final tab.
+interface Stage {
+  label: string
+  throughPass: string | null
+  owned: OverlayKey[]     // this stage's structure — full brightness on top
+  dim: OverlayKey[]       // the accreted earlier layers — drawn faint
+  controls: string[]      // pass ids whose skip checkbox shows on this tab
+  kit?: boolean           // surface the party-kit reminder (gate-bearing stages)
+  blurb: string
+}
+
+// Stage tables are DERIVED from each recipe's real pass ids (see the recipe
+// files). `assertStages` warns loudly in dev if a throughPass/control id drifts
+// out of a recipe's passes, rather than silently mis-staging.
+const STAGES: Record<string, Stage[]> = {
+  // passes: surface → hydrology → river → outcrops → regions → flow → gates →
+  //         semantic → desire-paths → scatter-fill/clumps/edges → premise
+  field: [
+    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
+    { label: 'Surface', throughPass: 'surface', owned: ['surface'], dim: [], controls: ['surface'], blurb: 'material bands from themes + the moisture field' },
+    { label: 'Geography', throughPass: 'outcrops', owned: ['collision'], dim: ['surface'], controls: ['hydrology', 'river', 'outcrops'], blurb: 'lake/ford + river/crossings + outcrops (the barrier rects) over the dim surface' },
+    { label: 'Nav Graph + Flow', throughPass: 'flow', owned: ['graph', 'regions', 'flow'], dim: ['surface', 'collision'], controls: ['regions', 'flow'], blurb: 'derived regions + nav graph + flow/intensity heat over the dim geography' },
+    { label: 'Gates + Secrets', throughPass: 'gates', owned: ['graph', 'semantic'], dim: ['surface', 'collision', 'regions'], controls: ['gates'], kit: true, blurb: 'route/vault locks on derived edges (dashed) — toggle party kit above to open/close them' },
+    { label: 'Dressing', throughPass: 'premise', owned: ['paths', 'scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['semantic', 'desire-paths', 'scatter-fill', 'scatter-clumps', 'scatter-edges'], blurb: 'desire-path trails + scatter + POIs + the name/premise line' },
+  ],
+  // passes: layout → flow → carve → floor → gates → shortcut → stamps →
+  //         scatter → semantic → premise
+  dungeon: [
+    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
+    { label: 'Layout', throughPass: 'flow', owned: ['graph', 'flow'], dim: [], controls: ['layout', 'flow'], blurb: 'scattered polymorph rooms + the cycle-first skeleton (nav graph) + intensity' },
+    { label: 'Carve', throughPass: 'floor', owned: ['collision', 'surface'], dim: ['graph'], controls: ['carve', 'floor'], blurb: 'maximal-rect wall cover + stone floor, over the dim room skeleton' },
+    { label: 'Gates + Secrets', throughPass: 'shortcut', owned: ['graph', 'semantic'], dim: ['surface', 'collision'], controls: ['gates', 'shortcut'], kit: true, blurb: 'dead-end vault lock + mid-arc shortcut lock — toggle party kit above to open/close them' },
+    { label: 'Dressing', throughPass: 'premise', owned: ['scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['stamps', 'scatter', 'semantic'], blurb: 'authored stamps + depth-graded debris + lair + the name/premise line' },
+  ],
+  // passes: roads → pave → blocks → scatter → semantic → premise
+  city: [
+    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
+    { label: 'Roads', throughPass: 'roads', owned: ['graph'], dim: [], controls: ['roads'], blurb: 'plaza + gate roads + cross-street loops — the nav skeleton, laid FIRST' },
+    { label: 'Buildings', throughPass: 'blocks', owned: ['collision', 'surface'], dim: ['graph'], controls: ['pave', 'blocks'], blurb: 'paving + street-fronting building rects over the dim road skeleton' },
+    { label: 'Dressing', throughPass: 'premise', owned: ['scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['scatter', 'semantic'], blurb: 'yard/market scatter + plaza landmark + the name/premise line' },
+  ],
+}
+
+// Fall back to a lone Final stage for any recipe without a table.
+const stagesFor = (recipeId: string): Stage[] =>
+  STAGES[recipeId] ?? [{ label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass' }]
+
+// Dev guard: every throughPass/control must name a real pass in the recipe.
+function assertStages(recipe: { id: string; passes: { id: string }[] }): void {
+  const ids = new Set(recipe.passes.map((p) => p.id))
+  for (const s of stagesFor(recipe.id)) {
+    if (s.throughPass && !ids.has(s.throughPass)) {
+      // eslint-disable-next-line no-console
+      console.warn(`MapgenLab: stage "${s.label}" throughPass "${s.throughPass}" is not a pass of recipe "${recipe.id}" — tab will mis-stage`)
+    }
+    for (const c of s.controls) {
+      if (!ids.has(c)) {
+        // eslint-disable-next-line no-console
+        console.warn(`MapgenLab: stage "${s.label}" control "${c}" is not a pass of recipe "${recipe.id}"`)
+      }
+    }
+  }
+}
+
+// All-off toggles with the given keys switched on — a layer tab enables exactly
+// its owned+dim overlays (owned full, dim faint), nothing else.
+function togglesFor(keys: OverlayKey[]): Toggles {
+  const t: Toggles = {
+    surface: false, collision: false, scatter: false, semantic: false,
+    graph: false, regions: false, flow: false, paths: false, walk: false,
+  }
+  for (const k of keys) t[k] = true
+  return t
+}
+
 function Thumb({ result, px, onClick, active }: { result: GenResult; px: number; onClick(): void; active: boolean }) {
   return (
     <button onClick={onClick} className="relative block" style={{ outline: active ? '3px solid #f59e0b' : '1px solid #44403c' }}>
@@ -301,7 +406,10 @@ export default function MapgenLab() {
   const [themes, setThemes] = useState<ThemeTag[]>(['plains', 'water'])
   const [baseSeed, setBaseSeed] = useState(1)
   const [focus, setFocus] = useState(1)
-  const [skips, setSkips] = useState<string[]>([])
+  // MANUAL pass skips — the modular-influence lever. These compose (union) with
+  // each layer tab's AUTO-skip (every pass after that stage), so unchecking
+  // `river` on Geography drops it from that tab AND every downstream tab.
+  const [manualSkips, setManualSkips] = useState<string[]>([])
   // §F composition gates: the simulated deploying party's kit. Toggle a tag and
   // watch the SAME seed re-bake with its gate open — the review loop for lock
   // tuning (contact sheet + focused map both re-resolve).
@@ -309,13 +417,33 @@ export default function MapgenLab() {
   // gates master switch + externally-owned portals (driven by showcase presets).
   const [gates, setGates] = useState(true)
   const [pois, setPois] = useState<GenParams['pois']>([])
-  const [toggles, setToggles] = useState<Toggles>({
+  // The active layer tab (index into this recipe's stage table); 0 = Final Map.
+  const [tab, setTab] = useState(0)
+  // Final-tab plane toggles (editable there only — layer tabs derive their
+  // overlays from the stage). Presets seed this to open on illustrative layers.
+  const [finalToggles, setFinalToggles] = useState<Toggles>({
     surface: true, collision: true, scatter: true, semantic: true,
     graph: true, regions: false, flow: false, paths: false, walk: false,
   })
 
   const recipe = RECIPE_REGISTRY[recipeId]
+  const stages = stagesFor(recipeId)
+  const stage = stages[Math.min(tab, stages.length - 1)]
+  const isFinal = stage.throughPass === null
   const params = { recipe: recipeId, size, themes, proficiencies: profs, gates, pois, onFail: 'accept' as const }
+
+  // Dev guard: warn once per recipe if a stage names a pass the recipe lacks.
+  useMemo(() => { assertStages(recipe); return null }, [recipe])
+
+  // Bake THROUGH this stage: auto-skip every pass strictly after `throughPass`,
+  // unioned with the user's manual skips. The passes at/before the stage are the
+  // ids whose notes are worth showing (later ones only produced `skip:` lines).
+  const passIds = recipe.passes.map((p) => p.id)
+  const throughIdx = isFinal ? passIds.length - 1 : passIds.indexOf(stage.throughPass!)
+  const autoSkip = throughIdx < 0 || isFinal ? [] : passIds.slice(throughIdx + 1)
+  const allowedIds = new Set(throughIdx < 0 ? passIds : passIds.slice(0, throughIdx + 1))
+  const effectiveSkips = Array.from(new Set([...autoSkip, ...manualSkips]))
+  const skipsKey = effectiveSkips.slice().sort().join(',')
 
   const sheet = useMemo(
     () => Array.from({ length: 9 }, (_, i) => generateMap(recipe, { ...params, seed: baseSeed + i })),
@@ -327,10 +455,10 @@ export default function MapgenLab() {
     // debug: true attaches the accepted attempt's scratch (walk/regions/flow/
     // desire-paths masks) so the derived overlays can read them. Determinism-
     // neutral: the flag touches no pass — same seed bakes an identical spec.
-    const r = generateMap(recipe, { ...params, seed: focus, skipPasses: skips, debug: true })
+    const r = generateMap(recipe, { ...params, seed: focus, skipPasses: effectiveSkips, debug: true })
     return { r, ms: performance.now() - t0 }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipeId, size, themes, focus, skips, profs, gates, pois])
+  }, [recipeId, size, themes, focus, skipsKey, profs, gates, pois])
 
   const applyPreset = (p: Preset) => {
     setRecipeId(p.recipe)
@@ -341,9 +469,24 @@ export default function MapgenLab() {
     setProfs(p.profs ?? [])
     setGates(p.gates ?? true)
     setPois(p.pois ?? [])
-    setSkips([])
-    setToggles(presetToggles(p.overlays))
+    setManualSkips([])
+    setFinalToggles(presetToggles(p.overlays))
+    setTab(0)   // presets jump to the Final Map, opened on their illustrative overlays
   }
+
+  const switchRecipe = (id: string) => {
+    setRecipeId(id)
+    const ds = RECIPE_REGISTRY[id].defaults?.size
+    if (ds) setSize(ds)
+    setPois([])
+    setManualSkips([])
+    setTab(0)
+  }
+
+  // Render toggles + dim set for the focused canvas: Final = user's plane
+  // toggles, no dimming; a layer tab = owned+dim overlays on, dim faint.
+  const drawToggles = isFinal ? finalToggles : togglesFor([...stage.owned, ...stage.dim])
+  const dimSet = isFinal ? undefined : new Set(stage.dim)
 
   const thumbPx = Math.max(1, Math.floor(150 / size))
   const bigPx = Math.max(2, Math.floor(560 / size))
@@ -361,10 +504,18 @@ export default function MapgenLab() {
   const noEdge = themesMissingEdge(mapThemes)
   const noThemed = themesWithoutThemedProps(mapThemes)
 
+  // On a layer tab, drop the pass notes for later, auto-skipped passes (their
+  // only line is `skip:<id>`); keep notes at/before the stage + any manual skip.
+  const visibleNotes = isFinal ? focused.r.notes : focused.r.notes.filter((n) => {
+    const skipId = n.startsWith('skip:') ? n.slice(5) : null
+    const passId = skipId ?? n.split(':')[0]
+    return allowedIds.has(passId) || manualSkips.includes(passId)
+  })
+
   return (
     <div className="min-h-full bg-stone-900 text-stone-200 p-4 font-mono text-sm overflow-auto">
       <h1 className="text-lg mb-1">mapgen lab</h1>
-      <p className="text-stone-400 text-xs mb-2">contact sheet → click a seed to focus · toggle planes / skip passes on the focused map · derived overlays (graph/regions/flow/paths/walk) ride the dev debug scratch · report + pass notes below</p>
+      <p className="text-stone-400 text-xs mb-2">staged layer tabs: tab 1 is the final map · each later tab bakes THROUGH that stage and draws earlier layers dim with this stage's structure bright · per-tab pass-skip checkboxes influence every downstream tab · report + pass notes at right</p>
 
       <div className="flex flex-wrap gap-2 items-center mb-3">
         <span className="text-stone-500">showcase:</span>
@@ -376,8 +527,9 @@ export default function MapgenLab() {
         ))}
       </div>
 
+      {/* ── persistent TOP BAR: the cross-cutting params, visible on every tab ── */}
       <div className="flex flex-wrap gap-3 items-center mb-3">
-        <label>recipe <select className="bg-stone-800 px-1" value={recipeId} onChange={(e) => { const id = e.target.value; setRecipeId(id); const ds = RECIPE_REGISTRY[id].defaults?.size; if (ds) setSize(ds); setPois([]) }}>
+        <label>recipe <select className="bg-stone-800 px-1" value={recipeId} onChange={(e) => switchRecipe(e.target.value)}>
           {Object.keys(RECIPE_REGISTRY).map((id) => <option key={id}>{id}</option>)}
         </select></label>
         <label>size <input className="bg-stone-800 w-16 px-1" type="number" value={size} onChange={(e) => setSize(Math.max(12, +e.target.value || 12))} /></label>
@@ -407,29 +559,67 @@ export default function MapgenLab() {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-6 items-start">
-        <div className="grid grid-cols-3 gap-1">
-          {sheet.map((r) => (
-            <Thumb key={r.spec.seed} result={r} px={thumbPx} active={r.spec.seed === focus} onClick={() => setFocus(r.spec.seed)} />
-          ))}
-        </div>
+      {/* ── layer tab bar ── */}
+      <div className="flex flex-wrap gap-1 mb-2 border-b border-stone-700">
+        {stages.map((s, i) => (
+          <button key={s.label} onClick={() => setTab(i)}
+            className="px-3 py-1 text-xs rounded-t"
+            style={{
+              background: i === tab ? '#292524' : 'transparent',
+              color: i === tab ? '#f59e0b' : '#a8a29e',
+              borderBottom: i === tab ? '2px solid #f59e0b' : '2px solid transparent',
+            }}>
+            {i + 1}. {s.label}
+          </button>
+        ))}
+      </div>
 
-        <div>
-          <div className="flex flex-wrap gap-3 mb-1 text-xs">
-            {(Object.keys(toggles) as (keyof Toggles)[]).map((k) => (
-              <label key={k} className={toggles[k] ? 'text-amber-400' : 'text-stone-500'}>
-                <input type="checkbox" checked={toggles[k]} onChange={(e) => setToggles({ ...toggles, [k]: e.target.checked })} /> {k}
-              </label>
-            ))}
-            <span className="text-stone-500">| skip:</span>
-            {recipe.passes.map((p) => (
-              <label key={p.id} className={skips.includes(p.id) ? 'text-red-400' : 'text-stone-500'}>
-                <input type="checkbox" checked={skips.includes(p.id)} onChange={(e) =>
-                  setSkips(e.target.checked ? [...skips, p.id] : skips.filter((s) => s !== p.id))} /> {p.id}
-              </label>
+      <div className="flex flex-wrap gap-6 items-start">
+        {/* Contact sheet lives on the Final tab (seed-hunting); layer tabs hide it. */}
+        {isFinal && (
+          <div className="grid grid-cols-3 gap-1">
+            {sheet.map((r) => (
+              <Thumb key={r.spec.seed} result={r} px={thumbPx} active={r.spec.seed === focus} onClick={() => setFocus(r.spec.seed)} />
             ))}
           </div>
-          <canvas ref={(c) => drawSpec(c, focused.r, bigPx, toggles)} style={{ display: 'block', width: focused.r.spec.cols * bigPx, height: focused.r.spec.rows * bigPx }} />
+        )}
+
+        <div>
+          {/* per-tab CONTROLS */}
+          <div className="text-xs text-stone-400 mb-1">{stage.blurb}</div>
+          <div className="flex flex-wrap gap-3 mb-1 text-xs items-center">
+            {isFinal ? (
+              // Final tab keeps the editable plane toggles.
+              <>
+                <span className="text-stone-500">planes:</span>
+                {(Object.keys(finalToggles) as (keyof Toggles)[]).map((k) => (
+                  <label key={k} className={finalToggles[k] ? 'text-amber-400' : 'text-stone-500'}>
+                    <input type="checkbox" checked={finalToggles[k]} onChange={(e) => setFinalToggles({ ...finalToggles, [k]: e.target.checked })} /> {k}
+                  </label>
+                ))}
+              </>
+            ) : (
+              // Layer tab: skip checkboxes for THIS stage's passes (compose with auto-skip).
+              <>
+                <span className="text-stone-500">skip:</span>
+                {stage.controls.map((id) => (
+                  <label key={id} className={manualSkips.includes(id) ? 'text-red-400' : 'text-stone-500'}>
+                    <input type="checkbox" checked={manualSkips.includes(id)} onChange={(e) =>
+                      setManualSkips(e.target.checked ? [...manualSkips, id] : manualSkips.filter((s) => s !== id))} /> {id}
+                  </label>
+                ))}
+                {autoSkip.length > 0 && <span className="text-stone-600">| later (auto-skipped): {autoSkip.join(' ')}</span>}
+              </>
+            )}
+          </div>
+          {!isFinal && (
+            <div className="text-[11px] text-stone-500 mb-1">
+              <span className="text-amber-400/90">bright</span> = this stage ({stage.owned.join(', ') || '—'}) ·
+              {' '}<span className="text-stone-400">dim</span> = accreted ({stage.dim.join(', ') || '—'})
+              {stage.kit && ' · toggle party kit above to open/close the locks'}
+            </div>
+          )}
+          <canvas ref={(c) => drawSpec(c, focused.r, bigPx, drawToggles, dimSet)} style={{ display: 'block', width: focused.r.spec.cols * bigPx, height: focused.r.spec.rows * bigPx }} />
           <div className="text-xs text-stone-400 mt-1">
             seed {focused.r.spec.seed} · attempt {focused.r.attempts} · {focused.ms.toFixed(0)}ms ·
             openness {tac.openness} · barriers {tac.barrierCount} · chokepoints {tac.chokepoints} · lanes {tac.longLanes} · cover {tac.coverClusters}
@@ -471,9 +661,9 @@ export default function MapgenLab() {
               </li>
             ))}
           </ul>
-          <h2 className="text-amber-400 mb-1">pass notes</h2>
+          <h2 className="text-amber-400 mb-1">pass notes{isFinal ? '' : ' (through this stage)'}</h2>
           <ul className="text-xs text-stone-400">
-            {focused.r.notes.map((n, i) => <li key={i}>{n}</li>)}
+            {visibleNotes.map((n, i) => <li key={i}>{n}</li>)}
           </ul>
         </div>
       </div>

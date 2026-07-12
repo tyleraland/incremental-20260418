@@ -94,27 +94,48 @@ spend ~52 of it at 200² — still under the bench's 64-rect plateau region).
 
 ## Harnesses (the human-validation bottleneck is the design center)
 
-- **`?mapgen=1` lab** (`src/dev/MapgenLab.tsx`, dev-only): 3×3 seed contact
-  sheet (nine maps per glance), focused view with **plane toggles** and
-  **per-pass skips** (the layer inspector — stream isolation means skipping a
-  pass changes only that layer), validation report + pass notes beside the
-  picture. Review recipe changes here first; screenshot for PRs.
+- **`?mapgen=1` lab** (`src/dev/MapgenLab.tsx`, dev-only): a **staged layer
+  inspector** — one tab per meaningful STAGE (a group of passes), not per pass.
+  Tab 1 is the **Final Map** (every pass, all planes full brightness — the
+  deliverable, with the 3×3 seed contact sheet beside it and editable plane
+  toggles). Each later tab bakes the recipe **THROUGH** its stage
+  (`generateMap` with `skipPasses` = every pass strictly after the stage's
+  `throughPass`, so the spec+scratch is exactly the cumulative content up to
+  that stage — stream isolation makes the omission byte-clean) and renders
+  **cumulative + highlight**: the accreted earlier layers drawn DIM (0.35× via
+  `drawSpec`'s `dim` set) with THIS stage's OWNED structure at full brightness
+  on top. You watch the map accrete stage by stage. Stage tables (`STAGES` in
+  the lab) are derived from each recipe's real pass ids (`assertStages` warns in
+  dev on drift): FIELD → Final · Surface · Geography · Nav Graph + Flow · Gates +
+  Secrets · Dressing; DUNGEON → Final · Layout · Carve · Gates + Secrets ·
+  Dressing; CITY → Final · Roads · Buildings · Dressing.
+  - **Modular influence**: a persistent TOP BAR carries the cross-cutting params
+    (recipe / size / seed / themes / gates / party-kit); each layer tab surfaces
+    the **pass-skip checkboxes for its own stage**. A manual skip composes
+    (union) with the auto-skip-later-passes, so unchecking `river` on Geography
+    drops it there AND on every downstream tab — that IS the "influence at each
+    modular level" lever. Auto-skipped later passes are listed muted per tab.
   - Surfaces the DERIVED structure, not just the four baked planes:
     a **graph** overlay draws `spec.semantic.nav` (nodes heat-colored by
     `intensity`, labeled `d<depth> i<intensity>`; edges through their `doorAt`
     pinch; locked edges dashed + tagged from `spec.semantic.locks`), plus the
     cell-resolution scratch planes — **regions** (claims tint), **flow** (the
     BFS distance-to-spawn heatmap = full-res `intensity`), **paths** (the
-    desire-path mask), **walk** (the occupancy mask). Overlays compose.
+    desire-path mask), **walk** (the occupancy mask). Each tab's owned/dim sets
+    pick from these; the Final tab lets you toggle them freely.
   - The scratch planes ride `GenResult.scratch`, attached ONLY when the lab
     passes `debug: true` (GenParams). Never baked/serialized — determinism-
     neutral (pinned in `pipeline.test.ts`: `debug` bakes an equal spec).
     Skipping a producing pass (`regions`/`flow`/`desire-paths`) just empties
     the matching overlay — reading an absent scratch key draws nothing.
+  - The **validation report** shows always (it runs on the through-stage spec);
+    **pass notes** filter to the passes at/before the stage on a layer tab.
   - A **showcase preset row** jumps to curated verified seeds (river+fords,
     gated crossing, intensity gradient, desire paths, secret vault, cyclic
-    dungeon, living city), each enabling its most illustrative overlays.
-    A **gates** toggle + preset-driven portals extend the influence levers.
+    dungeon, living city); a preset sets the params and lands on the **Final
+    tab**, opened on its illustrative overlays. A **gates** toggle + party-kit
+    (both persistent) + preset-driven portals extend the influence levers; the
+    Gates + Secrets tab is where you toggle the kit and watch locks open/close.
 - **Fuzz gate** (`src/__tests__/mapgen/recipe-field.test.ts`): every sweep seed
   must bake valid; themed sweeps assert features actually fire (lakes form).
   Widen the sweep before widening a recipe's ambition.
