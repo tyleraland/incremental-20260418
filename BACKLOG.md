@@ -172,9 +172,12 @@ settled decisions live in `ARCHITECTURE.md`; its open build-out tracks:
   bridge (road surface over the gap) crossings as graph edges; a desire-path
   pass painting surface along spawn→portal routes (zero rect cost); first
   overworld proficiency gate (mobility ford / perception hidden trail) via
-  the shared `gates.ts`. **Bench the rect spend first** — budget rule of
-  thumb is ~2 macro geography features per 40-rect map (ARCHITECTURE.md
-  decision 3); extend `map-perf-envelope.test.ts` with a river map.
+  the shared `gates.ts`. **Starts with the moderate-envelope bench**
+  (ARCHITECTURE.md decision 3): re-bench `map-perf-envelope.test.ts` on
+  realistic river-map geometry and raise the live cap to what holds (~56–72
+  target — the posture is a moderate budget, with 40 as the currently-benched
+  number, not a design ceiling). The same bench retires the dungeon's
+  72-rect live debt (cross-cutting, below).
 - **Track D — flow/tension derived plane.** Distance-to-goal BFS in
   `draft.scratch`, digested to a per-node `intensity` scalar on the semantic
   plane; store consumes it for spawn/reward pacing (mapgen makes the stage,

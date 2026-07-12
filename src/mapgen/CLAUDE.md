@@ -5,8 +5,10 @@ root — §refs below point there); **target layer architecture + build-out
 tracks: `ARCHITECTURE.md`** (this dir) — the reorg plan of record: the L0–L9
 layer stack, the nav graph as the shared convergence layer with two producers
 (authored for dungeon/city, derived for overworld — track B), and the settled
-decisions (flat rects stay; ~2 macro geography features per overworld map;
-mapgen emits pacing, store consumes; cross-map manifest is a seam). This doc
+decisions (flat rects stay; a MODERATE barrier envelope is the target — 40 is
+the currently-benched number, not a design ceiling, re-bench toward ~56–72
+before track C spends it; mapgen emits pacing, store consumes; cross-map
+manifest is a seam). This doc
 is the working contract for what EXISTS: locked decisions, the hooks left
 open, and where each future phase plugs in. Keep it terse and accurate.
 

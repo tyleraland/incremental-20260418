@@ -84,14 +84,22 @@ machinery starts working on the overworld with zero changes to it.
    locked decisions (rects-forever as the engine seam; the adapter drops to
    bare rects). Revisit trigger: budget ≥ ~200 rects, or validation/derivation
    shows up in a profile.
-3. **Barrier budget is the real overworld ceiling — design around ~2 macro
-   geography features per map.** Napkin: lake ≈ 4–8 rects (today's band
+3. **Barrier budget: aim for a MODERATE envelope; 40 is the currently-benched
+   number, not a design ceiling.** Napkin: lake ≈ 4–8 rects (today's band
    cover), river ≈ 8–14 (band cover per reach), ridge line ≈ 4–8, outcrops
-   want ≥ 12. Two macro features ≈ 24 rects, leaving ~16 of the 40 envelope
-   for outcrops + gate plugs. Geography passes take explicit per-pass
+   want ≥ 12, gate plugs 1–2 each. At 40 that means ~2 macro geography
+   features per map; a moderate envelope (~56–72, the lab dungeon's
+   territory) fits 2–3 plus healthy outcrops — which is the ambition level
+   we actually want for rivers + ridges + gates. The pather cost is rect
+   *count* and the envelope has already moved once (16 → 40 with the
+   steerAround visibility-graph cache), so the path is: re-bench in
+   `map-perf-envelope.test.ts` with realistic river-map geometry and raise
+   the live cap to whatever moderate number holds — one bench serves both
+   track C and the live-dungeon debt (the dungeon's 72 is waiting on the
+   same pass). Until it lands, geography passes take explicit per-pass
    allotments (dials, `note()` the spend) instead of racing for the shared
-   budget; bench a river map in `map-perf-envelope.test.ts` before a live
-   location adopts one.
+   budget. Moderate ≠ unbounded: hundreds of rects is corner-stitching
+   territory (decision 2) and off the table.
 4. **Mapgen ↔ store boundary for flow/tension: mapgen makes the stage, the
    store populates it.** Mapgen computes flow/tension as L6 derived planes
    and bakes only digested per-node summaries on the semantic plane
@@ -156,8 +164,10 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
   validator rule; field recipe publishes real edges. Unblocks everything
   overworld.
 - **C. Rivers + crossings + desire paths**: hydrology v2, ford/bridge edges,
-  the paths pass, first overworld proficiency gate. Bench the rect spend
-  (decision 3) before a live location adopts it.
+  the paths pass, first overworld proficiency gate. Starts with the
+  moderate-envelope bench (decision 3): re-bench `map-perf-envelope` on
+  river-map geometry, raise the live cap to what holds (~56–72 target),
+  then spend it.
 - **D. Flow/tension derived plane**: distance-to-goal BFS in scratch, node
   `intensity` on the semantic plane, store-side pacing consumption (settle
   the §4 ownership split in that PR, per decision 4).
