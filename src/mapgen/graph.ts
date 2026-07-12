@@ -267,10 +267,17 @@ export function flowField(walk: Uint8Array, cols: number, rows: number, root: Pt
 // THE DIGEST (the only part that reaches the baked spec):
 //   intensity = round₃( anchor-cell BFS distance ÷ map max cell distance )
 // — normalized per-map to [0,1], rounded to 3 decimals (byte-stable specs).
-// An anchor unreachable on the as-if-open mask (a fully disconnected pocket)
-// pins to 1 — maximally remote; a degenerate field (max 0) publishes all-0.
-// Iterates the nodes array in order (no Map/Set order dependence). Returns
-// the unreachable-anchor count for the caller's note().
+// An anchor unreachable from the root on the as-if-open mask (a fully
+// disconnected pocket) pins to 0 — NEUTRAL, not maximal. intensity is a
+// spawn/reward PACING dial (decision 4), and its store consumer weights spawn
+// density UP with the value; a walled-off pocket is off-map, not deep, so
+// treating it as maximally remote would concentrate spawns onto ground the
+// party can never reach (review finding — latent, 0 observed today because
+// the reachable/graph-truthful rules incidentally reject such pockets, but
+// pin defensively so nothing structurally depends on that). A degenerate
+// field (max 0) publishes all-0. Iterates the nodes array in order (no
+// Map/Set order dependence). Returns the unreachable-anchor count for the
+// caller's note().
 export function digestIntensity(
   nodes: NavNode[], flow: FlowField, cols: number, rows: number,
 ): { unreachable: number } {
@@ -279,7 +286,7 @@ export function digestIntensity(
     const xi = Math.min(cols - 1, Math.max(0, Math.floor(nd.at.x)))
     const yi = Math.min(rows - 1, Math.max(0, Math.floor(nd.at.y)))
     const d = flow.dist[yi * cols + xi]
-    if (d < 0) { nd.intensity = 1; unreachable++ }
+    if (d < 0) { nd.intensity = 0; unreachable++ }
     else nd.intensity = flow.max > 0 ? Math.round((d / flow.max) * 1000) / 1000 : 0
   }
   return { unreachable }

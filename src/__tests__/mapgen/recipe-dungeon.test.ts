@@ -83,6 +83,10 @@ describe('dungeon recipe fuzz gate', () => {
 
   it('track D intensity: entry reads 0, the deep end runs hot, all values sane', () => {
     for (const r of results) {
+      // the flow pass actually ran (a silently-skipped pass would leave every
+      // node without intensity — the note is the proof it digested)
+      expect(r.notes.some((n) => n.startsWith('flow: intensity:')),
+        `seed ${r.spec.seed}: flow pass produced no intensity note`).toBe(true)
       const nodes = r.spec.semantic.nav.nodes
       for (const n of nodes) {
         expect(n.intensity, `seed ${r.spec.seed}/${n.id} has no intensity`).toBeDefined()

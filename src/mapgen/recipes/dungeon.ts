@@ -382,7 +382,7 @@ const flowPass = {
     draft.scratch.set('flow', flow.dist)
     const { unreachable } = digestIntensity(nodes, flow, draft.cols, draft.rows)
     note(`intensity: ${nodes.length} node(s), max cell distance ${flow.max}` +
-      (unreachable ? `, ${unreachable} disconnected anchor(s) pinned to 1` : ''))
+      (unreachable ? `, ${unreachable} disconnected anchor(s) pinned to 0 (neutral)` : ''))
   },
 }
 
