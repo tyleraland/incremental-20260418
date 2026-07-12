@@ -75,10 +75,10 @@ Deterministic, round-based **spatial** sim on a per-battle grid. See `src/engine
 - **Overworld = open-world locations only.** Every `region: 'world'` location is `openWorld` (cities included). The fixed-round **discrete-wave encounters** (proving/pathing arenas, Elemental Circle/Frontier, Elite Four, the early discrete fields) live in the **`'fixed-encounters'`** dungeon, entered from Prontera — but **sandbox-only** (`isRegionUnlocked`/`SANDBOX_ONLY_REGIONS` in `unlocks.ts`; the entry is hidden in curated). Curated class-change quests therefore must target monsters on the overworld (guarded by `world-map.test.ts`).
 - Tap a location → select + detail panel (units present, monsters, Familiarity = `locationFamiliarity[id]/familiarityMax`, deploy).
 
-## Procedural map generation (`src/mapgen/`; guide: `src/mapgen/CLAUDE.md`, layer architecture: `src/mapgen/ARCHITECTURE.md`, ideas: `procedural-generation-ideas.md`)
+## Procedural map generation (`src/mapgen/`; guide: `src/mapgen/CLAUDE.md`, layer architecture: `procedural-generation-architecture-plan.md`, ideas: `procedural-generation-ideas.md`)
 - Pure deterministic leaf library baking a **MapSpec** with collision / surface / scatter / semantic planes. Save seed + params, never the baked spec.
 - Recipes (`field`, `dungeon`, `city`) run as pass pipelines with per-pass RNG streams, then validation (`validate.ts`) handles reachability, apron, barrier budget, water coherence, and reroll policy. Human review runs through `?mapgen=1`.
-- Layering: generation philosophy (noise-first overworld vs graph-first dungeon) is quarantined to each recipe's production passes; the **nav graph** (`graph.ts`) is the shared convergence layer that lock-and-key (`gates.ts`), depth, secrets, and validation read — see `ARCHITECTURE.md` for the stack and build-out tracks.
+- Layering: generation philosophy (noise-first overworld vs graph-first dungeon) is quarantined to each recipe's production passes; the **nav graph** (`graph.ts`) is the shared convergence layer that lock-and-key (`gates.ts`), depth, secrets, and validation read — see `procedural-generation-architecture-plan.md` for the stack and build-out tracks.
 - Game seam: `Location.mapGen = { recipe, seed? }` → `generateForLocationCached` → `createOpenBattleFor` consumes spec barriers/size. `terrain.tsx` consumes the same spec for surface, scatter, and material-aware visuals. Feature status and roadmap live in `BACKLOG.md`.
 
 ## Equipment & crafting

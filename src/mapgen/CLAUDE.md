@@ -2,7 +2,7 @@
 
 The generator scaffold. Idea inventory: `procedural-generation-ideas.md` (repo
 root — §refs below point there); **target layer architecture + build-out
-tracks: `ARCHITECTURE.md`** (this dir) — the reorg plan of record: the L0–L9
+tracks: `procedural-generation-architecture-plan.md`** (repo root) — the reorg plan of record: the L0–L9
 layer stack, the nav graph as the shared convergence layer with two producers
 (authored for dungeon/city, derived for overworld — track B), and the settled
 decisions (flat rects stay; a MODERATE barrier envelope is the target — 40 is
@@ -57,7 +57,7 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 
 | file | what lives there |
 |---|---|
-| `ARCHITECTURE.md` | the target layer stack (L0–L9), settled reorg decisions, build-out tracks A–G |
+| `../../procedural-generation-architecture-plan.md` (repo root) | the target layer stack + delegation-packet build order (L0–L9), settled reorg decisions, build-out tracks A–G |
 | `types.ts` | the universe: MapSpec planes, all vocabularies, GenParams (incl. the reserved `manifest` cross-map seam), report shapes |
 | `rng.ts` | `hashString`/`hash01`, `makeRng`, `streamRng` (the stream splitter) |
 | `fields.ts` | value-noise fBm; `makeFields` → the shared FieldBundle |
@@ -72,7 +72,7 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
 | `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
-| `recipes/index.ts` | `RECIPE_REGISTRY` — field / dungeon / city. Recipes own the DIVERGENCE layer (noise-first vs graph-first vs road-first, quarantined to production passes); the nav graph is where they converge (`ARCHITECTURE.md`) |
+| `recipes/index.ts` | `RECIPE_REGISTRY` — field / dungeon / city. Recipes own the DIVERGENCE layer (noise-first vs graph-first vs road-first, quarantined to production passes); the nav graph is where they converge (`procedural-generation-architecture-plan.md`) |
 | `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store) |
 
 Consumers today (phase 2): `createOpenBattleFor` (store) honors

@@ -1,11 +1,12 @@
-# Mapgen layer architecture (the reorg plan of record)
+# Procedural generation — architecture plan (the reorg plan of record)
 
-How the generator is layered so **overworld and dungeon can diverge in
-generation philosophy** (noise-first vs. graph-first) while **sharing
-lock-and-key, coherence, and validation** — and so cross-map "planted seeds"
-can land later without a rewrite. `CLAUDE.md` stays the working contract for
-what EXISTS; this doc is the target structure and the reasoning behind it.
-When a track below ships, move its facts into `CLAUDE.md` and shrink it here.
+How the generator (`src/mapgen/`) is layered so **overworld and dungeon can
+diverge in generation philosophy** (noise-first vs. graph-first) while
+**sharing lock-and-key, coherence, and validation** — and so cross-map
+"planted seeds" can land later without a rewrite. Companion docs: the idea
+inventory is `procedural-generation-ideas.md` (sibling file); the working
+contract for what EXISTS is `src/mapgen/CLAUDE.md`. When a piece below
+ships, move its facts into that contract and shrink it here.
 
 ## The pivot (one sentence)
 
@@ -182,6 +183,36 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
   logistics (phase-6 interactables) first.
 
 Tracks B/C/E are pure-mapgen; D and F each have a small store/AI counterpart;
-G is store+mapgen. Existing phase numbering in `CLAUDE.md` (phases 4–6) maps
-onto these: phase-4 feel iteration rides B/C (overworld gates), phase 5's
-inter-map coherence rides D/G, phase 6 (interactables) gates G.
+G is store+mapgen. Existing phase numbering in `src/mapgen/CLAUDE.md`
+(phases 4–6) maps onto these: phase-4 feel iteration rides B/C (overworld
+gates), phase 5's inter-map coherence rides D/G, phase 6 (interactables)
+gates G.
+
+## Foundation plan — delegation packets (the build order)
+
+Principle: lay the hard, non-obvious STRUCTURAL pieces first — the ones that
+decide the shape of everything after — and ship each as a working, validated
+slice. Coloring-in (visual polish, pacing dials, more content variety) is
+deliberately deferred to BACKLOG until the shape is proven.
+
+Working protocol per packet: **one sub-agent implements** against the brief;
+**a second sub-agent adversarially reviews** the diff before it lands —
+hunting determinism hazards (iteration-order, hidden `Math.random`/Date,
+stream-RNG discipline), budget/`note()` discipline, validation coverage
+(every new rule gets a crafted violation+fix pair), test quality (asserting
+behavior, not tautologies), and doc accuracy. Every packet ends `npm run ci`
+green and shippable on its own; anything cut mid-packet goes to BACKLOG,
+never half-landed.
+
+| # | packet | why it's first-order structural | shippable when |
+|---|---|---|---|
+| **P1** | **Derived region graph** (track B): `deriveRegions` in `graph.ts` (walk mask → distance transform → erode by pinch width → components = region nodes → pinches = `crossing` edges with `doorAt`); field recipe rasterizes its collision into a scratch walk mask and publishes real nodes/edges (depth from the spawn region); `graph-truthful` validation rule | the convergence layer's second producer — decides whether locks/secrets/paths can EVER be shared with the overworld; every overworld packet hangs on it; no analog exists in the codebase | field bakes publish truthful graphs (synthetic-mask unit tests + fuzz gates + crafted validator pair green) |
+| **P2** | **River + crossings** (track C core): hydrology v2 — a descending river band traced on the elevation field, ford (shallow strip) / bridge (surface `road` over the gap) crossings punched at pinches the graph confirms | the region DIVIDER that makes derived graphs non-trivial; the hardest budget/coherence interaction (river rects vs. envelope, water-coherence rule) — better to hit it early | water-themed field seeds bake a river with ≥1 crossing, valid, rect spend `note()`d |
+| **P3** | **Overworld gates + secret pockets**: a gated *secondary* crossing (mobility ford / perception hidden trail) and a locked vault region, via the shared `gates.ts` on derived edges | proves the convergence thesis end-to-end — dungeon door and overworld ford are literally one call; lands phase-4's "field-recipe gates" | same seed × different kit bakes open/closed field variants; `locks` rule green both ways |
+| **P4** | **Cyclic dungeon core** (track E): cycle-as-primitive skeleton (entry→goal via two arcs) + tree-attached leaves replacing MST+2-spares; first rewrite step: the **shortcut lock** (a proficiency plug on the short arc — closed forces the long way, nothing stranded) | the dungeon-side structural piece — cycles by construction, not by accident; the rewrite-step shape is what lock/key/shortcut grammar (Unexplored) grows on. Independent of P1–P3, parallelizable | dungeon fuzz gates green; ≥1 cycle by construction; gates/stamps/carve untouched |
+| **P5** | **Moderate-envelope bench**: re-bench `map-perf-envelope.test.ts` on realistic river-map geometry; raise the live cap toward ~56–72 | converts decision 3 into a number; unlocks LIVE adoption of P2 maps AND the lab dungeon | new envelope measured + gated; adapter cap updated |
+| **P6+** | **Color-in (BACKLOG until the shape holds)**: desire paths, flow/`intensity` plane (track D), sightline ribbons + `tacticalTargets` (track F), NPC placement off the semantic plane, world director (track G) | none move the structure; all read the graph/planes laid above | (backlog) |
+
+P1 → P2 → P3 is a strict dependency chain; P4 runs parallel to any of them;
+P5 anytime after P2 exists to measure. Ship after each packet — a partial
+sequence is still strictly better scaffolding than none.

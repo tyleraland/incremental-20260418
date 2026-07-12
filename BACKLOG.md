@@ -153,13 +153,13 @@ wiring display-only / mock seams to real, persisted state:
     and/or rate-limit / smooth the per-round auto-fit target so it doesn't
     step every round.
 
-## Procedural map generation (guide: `src/mapgen/CLAUDE.md`, architecture: `src/mapgen/ARCHITECTURE.md`, ideas: `procedural-generation-ideas.md`)
+## Procedural map generation (guide: `src/mapgen/CLAUDE.md`, architecture: `procedural-generation-architecture-plan.md`, ideas: `procedural-generation-ideas.md`)
 
 Pure deterministic leaf library baking a MapSpec (collision/surface/scatter/
 semantic planes) through recipe pass pipelines + validation; shipped
 mechanics and roadmap rationale live in the guide. The **layer architecture**
 (shipped: shared graph/gates modules, scratch tier, manifest seam) and its
-settled decisions live in `ARCHITECTURE.md`; its open build-out tracks:
+settled decisions live in `procedural-generation-architecture-plan.md`; its open build-out tracks:
 
 - **Track B — derived graph producer (the overworld's convergence layer;
   unblocks everything overworld).** `deriveRegions(walkMask, minPinchWidth)`
@@ -173,7 +173,7 @@ settled decisions live in `ARCHITECTURE.md`; its open build-out tracks:
   pass painting surface along spawn→portal routes (zero rect cost); first
   overworld proficiency gate (mobility ford / perception hidden trail) via
   the shared `gates.ts`. **Starts with the moderate-envelope bench**
-  (ARCHITECTURE.md decision 3): re-bench `map-perf-envelope.test.ts` on
+  (procedural-generation-architecture-plan.md decision 3): re-bench `map-perf-envelope.test.ts` on
   realistic river-map geometry and raise the live cap to what holds (~56–72
   target — the posture is a moderate budget, with 40 as the currently-benched
   number, not a design ceiling). The same bench retires the dungeon's

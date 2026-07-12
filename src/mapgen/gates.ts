@@ -1,4 +1,4 @@
-// Recipe-agnostic lock-and-key placement (ARCHITECTURE.md L5).
+// Recipe-agnostic lock-and-key placement (procedural-generation-architecture-plan.md L5).
 //
 // A lock is GRAPH machinery, not dungeon machinery: given a pinch site (a
 // dungeon door, an overworld ford or ridge gap) and a prize site, this places

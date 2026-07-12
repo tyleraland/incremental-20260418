@@ -57,7 +57,7 @@ export interface MapDraft {
   surface: SurfacePlane
   scatter: MapSpec['scatter']
   semantic: MapSpec['semantic']
-  // The DERIVED-PLANES tier (ARCHITECTURE.md L6): named intermediate products
+  // The DERIVED-PLANES tier (procedural-generation-architecture-plan.md L6): named intermediate products
   // one pass produces and later passes consume — a dungeon's walk mask, a
   // city's road-distance transform, tomorrow's flow/tension/sightline fields.
   // NEVER baked: the spec carries only digested summaries (NavNode.depth

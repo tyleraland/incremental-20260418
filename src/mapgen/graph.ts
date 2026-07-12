@@ -1,4 +1,4 @@
-// The shared nav-graph layer (ARCHITECTURE.md L4 — the convergence point).
+// The shared nav-graph layer (procedural-generation-architecture-plan.md L4 — the convergence point).
 //
 // Two producers, one model: dungeon/city AUTHOR the graph (their plan
 // publishes nodes/edges, geometry realizes them); the overworld DERIVES it

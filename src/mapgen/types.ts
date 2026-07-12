@@ -121,7 +121,7 @@ export interface Poi {
   tags: string[]     // free-form annotations ('vista', 'boss', a lock id…)
 }
 
-// Navigation skeleton (§A layer 5) — THE CONVERGENCE LAYER (ARCHITECTURE.md
+// Navigation skeleton (§A layer 5) — THE CONVERGENCE LAYER (procedural-generation-architecture-plan.md
 // L4): the connectivity graph every downstream shared system (locks, depth,
 // secrets, paths, validation) reads. Two producers, one model: dungeon/city
 // AUTHOR the graph (the plan publishes it, geometry realizes it); the
@@ -139,7 +139,7 @@ export interface NavEdge {
   a: string
   b: string
   // 'crossing' is the natural-pinch kind (ford / bridge / mountain pass /
-  // cliff gap) — the overworld's derived edges (ARCHITECTURE.md track B/C).
+  // cliff gap) — the overworld's derived edges (procedural-generation-architecture-plan.md track B/C).
   kind: 'road' | 'corridor' | 'desire-path' | 'crossing'
   doorAt?: Pt        // the edge's physical pinch (a dungeon door, a ford) — choke-tactic anchor
   lockId?: string    // edge gated by a Lock (conditional reachability)
@@ -173,7 +173,7 @@ export interface Lock {
   gates: string[]          // POI ids behind this lock (each also tagged `locked:<id>`)
 }
 
-// L0 world-directives seam (ARCHITECTURE.md, decision 5): opaque tokens a
+// L0 world-directives seam (procedural-generation-architecture-plan.md, decision 5): opaque tokens a
 // future world DIRECTOR plants into a bake — "this map must contain the key
 // for lock X on map Y" — the early cross-map constraint. Typed now so the
 // plumbing exists and GenParams doesn't reshape later; consumed by NOTHING

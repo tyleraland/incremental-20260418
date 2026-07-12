@@ -29,7 +29,7 @@ interface CityPlan {
   dist: Int16Array         // BFS cell-steps to the nearest paved cell (≤ DIST_CAP)
   plazaR: number
 }
-// An L6 derived plane (ARCHITECTURE.md): produced by `roads`, consumed by
+// An L6 derived plane (procedural-generation-architecture-plan.md): produced by `roads`, consumed by
 // the paving/blocks/scatter passes via draft.scratch['plan'].
 const getPlan = (draft: PassCtx['draft']) => draft.scratch.get('plan') as CityPlan | undefined
 

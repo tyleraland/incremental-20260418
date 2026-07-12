@@ -46,7 +46,7 @@ interface Room {
   primary: Rect              // largest rect — stamp/POI anchor + node area
   rects: Rect[]              // full composite (primary + polymorph lobes)
 }
-// The layout plan — an L6 derived plane (ARCHITECTURE.md): produced by
+// The layout plan — an L6 derived plane (procedural-generation-architecture-plan.md): produced by
 // `layout`, consumed by `carve` and `gates` via draft.scratch['plan'].
 interface Plan {
   walk: Uint8Array
