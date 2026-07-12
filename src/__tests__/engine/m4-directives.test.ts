@@ -44,12 +44,17 @@ describe('M4 — registry & injection seam', () => {
   })
 
   it('withDirectiveTactics appends injections and dedupes against explicit equips', () => {
-    expect(withDirectiveTactics([], 'assassinate')).toEqual([{ id: 'focus-fire', rank: 1 }])
+    expect(withDirectiveTactics([], 'hold-the-line')).toEqual([{ id: 'focus-fire', rank: 1 }])
     // An explicitly-equipped copy keeps its slot and rank.
-    expect(withDirectiveTactics([{ id: 'focus-fire', rank: 2 }], 'assassinate')).toEqual([{ id: 'focus-fire', rank: 2 }])
+    expect(withDirectiveTactics([{ id: 'focus-fire', rank: 2 }], 'hold-the-line')).toEqual([{ id: 'focus-fire', rank: 2 }])
     const base = [{ id: 'finish-them', rank: 1 }]
-    expect(withDirectiveTactics(base, 'hold-the-line')).toBe(base)   // no injections → same array
+    expect(withDirectiveTactics(base, 'assassinate')).toBe(base)   // no injections → same array
     expect(withDirectiveTactics(base, undefined)).toBe(base)
+    // Assassinate deliberately injects nothing (review fix): a targeting-channel
+    // injection would read as a fired player lever to the cloak-stalk's own
+    // guard, disengaging the directive's orchestration — and Focus Fire aims at
+    // the lowest-HP focus, not the assassination primary.
+    expect(DIRECTIVE_REGISTRY['assassinate'].tactics).toBeUndefined()
   })
 
   it('setTeamDirective sets, clears, and treats the default id as absent', () => {
@@ -129,9 +134,9 @@ describe('M4 — pull-to-camp: ambush anchor + mandatory pull', () => {
   // its corners blind to the mark (wall A blocks the line) — the ambush spot.
   const wallA = { x: 16, y: 10, w: 8, h: 1, kind: 'wall' as const }
   const wallB = { x: 18, y: 18, w: 4, h: 1, kind: 'wall' as const }
-  const setup = (directive?: string) => {
+  const setup = (directive?: string, int = 160) => {
     const playerUnits = [
-      eu({ id: 'p0', str: 10, int: 160, hp: 50, maxHp: 50 }),
+      eu({ id: 'p0', str: 10, int, hp: 50, maxHp: 50 }),
       eu({ id: 'p1', str: 10, hp: 50, maxHp: 50 }),
       eu({ id: 'p2', str: 10, hp: 50, maxHp: 50 }),
     ]
@@ -161,6 +166,30 @@ describe('M4 — pull-to-camp: ambush anchor + mandatory pull', () => {
 
   it('the same scene under skirmish holds a SEEING chokepoint and issues no pull', () => {
     const b = setup()
+    const { engagement, assignments } = decide(b)
+    expect(engagement).toBeTruthy()
+    expect(engagement!.stance).toBe('hold')
+    expect(sightlineClear(engagement!.anchor!, find(b, 'mark').pos, b.barriers)).toBe(true)
+    const pulls = Object.values(assignments ?? {}).filter((a) => a.role === 'pull')
+    expect(pulls).toHaveLength(0)
+  })
+
+  // Review fix: the mandatory pull only fires when the ambush was ACHIEVED.
+  // Below the gates the directive must degrade to shipped behavior — never a
+  // pull dragging the primary to the party's own centroid (below ACUMEN.stance)
+  // or to a SEEING chokepoint (below ACUMEN.ambush).
+  it('mid-acumen (below ACUMEN.stance): engagement is normal, no mandatory pull', () => {
+    const b = setup('pull-to-camp', 60)   // ≥ ACUMEN.pull, < ACUMEN.stance
+    const { engagement, assignments } = decide(b)
+    expect(engagement).toBeTruthy()
+    expect(engagement!.stance).toBe('collapse')
+    expect(engagement!.anchor).toBeNull()
+    const pulls = Object.values(assignments ?? {}).filter((a) => a.role === 'pull')
+    expect(pulls).toHaveLength(0)
+  })
+
+  it('stance-but-not-ambush acumen: falls back to a seeing choke hold, still no pull', () => {
+    const b = setup('pull-to-camp', 100)   // ≥ ACUMEN.stance, < ACUMEN.ambush
     const { engagement, assignments } = decide(b)
     expect(engagement).toBeTruthy()
     expect(engagement!.stance).toBe('hold')
@@ -274,6 +303,50 @@ describe('M4 — assassinate: the cloak-hold ambush orchestration', () => {
       expect(offense[0].skillId).not.toBe('back-stab')
       expect(offense[0].type).toBe('ranged_attack')
     }
+  })
+
+  // Review fix (§6 player lever wins): the stalk may only claim the DEFAULT
+  // lock layer. A unit-level targeting tactic that fires — Tank Buster here —
+  // keeps its own pick even while the unit is cloaked under Assassinate, and
+  // the action hold disengages with it (the striker fights the tactic's
+  // target instead of stalking the plan primary).
+  it('an equipped targeting tactic keeps its pick while cloaked — the stalk never overrides it', () => {
+    const cloak = buildEngineSkill('cloak', 1)!
+    const backStab = buildEngineSkill('back-stab', 3)!
+    const playerUnits = [
+      eu({
+        id: 'assassin', str: 12, hp: 60, maxHp: 60, rangedRange: 6, skills: [cloak, backStab],
+        tactics: [{ id: 'tank-buster', rank: 1 }, { id: 'ambusher', rank: 1 }],
+      }),
+      eu({ id: 'sage', str: 10, int: 160, hp: 60, maxHp: 60, moveSpeed: 0 }),
+    ]
+    const enemyUnits = [
+      // The plan primary under assassinate (lowest toughness + healer)…
+      eu({ id: 'squishy', team: 'enemy', str: 2, def: 0, hp: 60, maxHp: 60, moveSpeed: 0, visionRange: 20, skills: [healSkill()] }),
+      // …vs Tank Buster's own pick (highest defense).
+      eu({ id: 'bulwark', team: 'enemy', str: 5, def: 30, hp: 120, maxHp: 120, moveSpeed: 0, visionRange: 20 }),
+    ]
+    const b = createBattle({ playerUnits, enemyUnits, mode: 'encounter', cols: 40, rows: 40, playerDirective: 'assassinate' })
+    find(b, 'assassin').pos = { x: 10, y: 15 }
+    find(b, 'sage').pos = { x: 30, y: 35 }
+    find(b, 'bulwark').pos = { x: 10, y: 5 }
+    find(b, 'squishy').pos = { x: 14, y: 5 }
+
+    // Sanity: the plan's kill order does point at the squishy — the lever has
+    // something real to override.
+    advanceRound(b)
+    expect(b.plans.player!.engagement!.primaryId).toBe('squishy')
+    // While cloaked and stalking-eligible, the lock stays Tank Buster's pick.
+    for (let r = 0; r < 6; r++) {
+      advanceRound(b)
+      expect(find(b, 'assassin').lockedTargetId).toBe('bulwark')
+    }
+    // …and the first offensive act lands on the tactic's target, not the plan
+    // primary (no starving action-hold pinned it in place).
+    for (let r = 0; r < 30; r++) advanceRound(b)
+    const offense = offensiveEvents(b)
+    expect(offense.length).toBeGreaterThan(0)
+    expect(offense[0].targetId).toBe('bulwark')
   })
 })
 

@@ -680,12 +680,18 @@ relink). Planner consumption: `pullDiscipline` scales `pullMargin`
 hp-fraction weighting; squishy = healer-first ÷ toughness — ungated like the
 M1 baseline), `protect` forces+aims the standing guard (`protecteeOf`),
 `stanceBias`/`anchorPolicy` request in `decideStanceAnchor` (ambush = the
-nearest LoS-BLOCKED vis-graph corner, `ACUMEN.ambush`-gated) and an ambush
-anchor makes the pull mandatory (`directivePullAssignment` drags the primary
-to the anchor). Ambush timing: `cloakStalk` + a takeTurn action-hold — a
-cloaked striker keeps Cloak until its stealth opener reaches the plan's
-primary (`ACUMEN.ambush`; closes the backlog's orchestrator gap; approach
-still rides Cloak's inherited Ambusher). Party slot `partyDirective`
+nearest LoS-BLOCKED vis-graph corner, `ACUMEN.ambush`-gated) and an ACHIEVED
+ambush (hold stance on a LoS-blocked anchor — re-derived from serialized
+fields, review fix) makes the pull mandatory (`directivePullAssignment` drags
+the primary to the anchor; below the gates the directive degrades to shipped
+behavior). Ambush timing: `cloakStalk` + a takeTurn action-hold — a cloaked
+striker keeps Cloak until its stealth opener reaches the plan's primary
+(`ACUMEN.ambush`; closes the backlog's orchestrator gap; approach still rides
+Cloak's inherited Ambusher). Player lever wins twice (review fix): a hard
+taunt or a fired targeting tactic disengages the stalk entirely
+(`evalTargeting` reports the lever, the stalk claims only the default lock
+layer), which is also why the Focus Fire injection lives on Hold the Line,
+not Assassinate. Party slot `partyDirective`
 (worldCodec, default skirmish), curated gating by best-hero level
 (`DIRECTIVE_UNLOCK_LEVEL`, `unlocks.ts`), picker in PartyDoctrine; monster
 seam = `MonsterDef.directive` (Elite Rogue carries Assassinate; first carrier

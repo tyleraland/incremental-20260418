@@ -48,8 +48,11 @@ export const DIRECTIVE_REGISTRY: Record<string, DirectiveDef> = {
   },
   'hold-the-line': {
     id: 'hold-the-line', name: 'Hold the Line',
-    description: 'Anchor on the best gap or chokepoint and stand the line there. Strict pull discipline — only take fights the party comfortably wins.',
+    description: 'Anchor on the best gap or chokepoint and stand the line there, concentrating fire. Strict pull discipline — only take fights the party comfortably wins.',
     stanceBias: 'hold', anchorPolicy: 'choke', pullDiscipline: 'strict',
+    // Injection seam in action: the line concentrates fire (the party-scope
+    // Focus Fire floor rides the partyTactics seam into every member).
+    tactics: [{ id: 'focus-fire', rank: 1 }],
   },
   'pull-to-camp': {
     id: 'pull-to-camp', name: 'Pull to Camp',
@@ -64,8 +67,13 @@ export const DIRECTIVE_REGISTRY: Record<string, DirectiveDef> = {
   'assassinate': {
     id: 'assassinate', name: 'Assassinate',
     description: 'Kill order flips to the squishiest target — their healer first. The party converges on it, and a cloaked striker holds its cloak until Back Stab range.',
+    // No Focus Fire injection here (review fix): it is a targeting-channel
+    // tactic aimed at the team's lowest-HP focus, so it would (a) mis-aim the
+    // party off the assassination primary and (b) read as a fired targeting
+    // tactic to the player-lever guard, disengaging this directive's own
+    // cloak-stalk. Convergence on the primary already comes from M1's
+    // FOCUS_WEIGHT default, which the squishy targetPolicy re-aims.
     targetPolicy: 'squishy', stanceBias: 'collapse', ambushTiming: true,
-    tactics: [{ id: 'focus-fire', rank: 1 }],
   },
 }
 

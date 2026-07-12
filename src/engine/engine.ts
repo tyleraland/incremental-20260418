@@ -1122,11 +1122,15 @@ function setLock(state: BattleState, self: Combatant, id: string): void {
   emit(state, { round: state.round, type: 'target_switch', sourceId: self.id, targetId: id, extra: { from } })
 }
 
-function evalTargeting(state: BattleState, self: Combatant): void {
+// Returns true when a PLAYER-LEVER lock owned the round — a hard taunt or a
+// fired targeting-channel tactic — and false when the lock came from the
+// default threat/proximity fallback (or there is none). The M4 cloak-stalk
+// reads this: it may only claim the default layer, never a lever's pick (§6).
+function evalTargeting(state: BattleState, self: Combatant): boolean {
   // §aggression: a non-provoked unit (a skittish monster that hasn't been hit or
   // called) ignores foes entirely — no lock, so it wanders/holds instead of
   // hunting. It flips provoked on a hit (applyDamageRaw) or a packmate's call.
-  if (!self.provoked) { self.lockedTargetId = null; return }
+  if (!self.provoked) { self.lockedTargetId = null; return false }
   // §threat hard taunt: a forced taunt overrides everything — even the unit's own
   // targeting tactics — and hard-locks the taunter for the status's duration,
   // provided it's still a living enemy. This is the player's "peel" button (and a
@@ -1136,7 +1140,7 @@ function evalTargeting(state: BattleState, self: Combatant): void {
     const taunter = findCombatant(state, taunt.source)
     if (taunter && taunter.alive && taunter.team !== self.team) {
       setLock(state, self, taunter.id)
-      return
+      return true
     }
   }
   let won = false
@@ -1148,12 +1152,13 @@ function evalTargeting(state: BattleState, self: Combatant): void {
     if (id) { setLock(state, self, id); markFired(self, t); rec(self, t, 'fired'); won = true; continue }
     rec(self, t, 'idle')
   }
-  if (won) return
+  if (won) return true
   // default: keep lock if alive, else threat+proximity fallback (selectTarget)
   const prev = selectTarget(state, self)
   if (prev !== null && self.lockedTargetId) {
     emit(state, { round: state.round, type: 'target_switch', sourceId: self.id, targetId: self.lockedTargetId, extra: { from: prev } })
   }
+  return false
 }
 
 function evalMovement(state: BattleState, self: Combatant): MovementResult | null {
@@ -2157,8 +2162,9 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // valid (the unit holds/wanders until the next decision round re-aims).
   const decideNow = isDecisionRound(state)
   const lockBefore = self.lockedTargetId
+  let lockWon = false   // did a hard taunt or a targeting-channel tactic own this round's lock?
   if (decideNow) {
-    evalTargeting(state, self)
+    lockWon = evalTargeting(state, self)
   } else if (self.lockedTargetId) {
     const lt = findCombatant(state, self.lockedTargetId)
     if (!lt || !lt.alive) self.lockedTargetId = null
@@ -2169,7 +2175,14 @@ function takeTurn(state: BattleState, self: Combatant): void {
   // engagement's primary and, while its stealth-opener is out of range, HOLDS
   // its whole action so nothing breaks the cloak early. Gated on ACUMEN.ambush
   // inside cloakStalk; null for every unit outside that exact situation.
-  const stalk = cloakStalk(state, self)
+  // Player lever wins (§6): the stalk only claims the DEFAULT lock layer — a
+  // hard taunt or a fired targeting tactic (lockWon) disengages it entirely
+  // (no forced lock, no action hold). On non-decision rounds the committed
+  // lock stands in for lockWon: the stalk stays engaged only if that lock
+  // already IS the plan's primary (i.e. the last decision round adopted it) —
+  // derived from serialized state, so replays are unaffected.
+  const stalkPlan = cloakStalk(state, self)
+  const stalk = stalkPlan && (decideNow ? !lockWon : self.lockedTargetId === stalkPlan.targetId) ? stalkPlan : null
   if (stalk) self.lockedTargetId = stalk.targetId
   const tgtText = self.lockedTargetId
     ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`

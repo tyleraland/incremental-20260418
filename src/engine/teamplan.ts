@@ -192,21 +192,34 @@ function pullAssignmentFor(
   return { [puller.id]: { role: 'pull', targetId: solo.id, to } }
 }
 
-// M4 Pull to Camp (tactical-coordination.md §3.5): puller mandatory — under
-// an ambush-anchor directive, EVERY held engagement staffs a pull: the party's
-// designated puller (declared Puller intent first, else the capability pick)
-// tags the current primary and drags it back to the line's anchor, not just
-// M2's fringe-solo case. `to` reuses the previous plan's point while the same
-// puller/target pair holds (anchor stability), like pullAssignmentFor above.
+// M4 Pull to Camp (tactical-coordination.md §3.5): puller mandatory — when
+// the ambush-anchor directive actually ACHIEVED its ambush, every held
+// engagement staffs a pull: the party's designated puller (declared Puller
+// intent first, else the capability pick) tags the current primary and drags
+// it back to the anchor, not just M2's fringe-solo case. `to` reuses the
+// previous plan's point while the same puller/target pair holds (anchor
+// stability), like pullAssignmentFor above.
+//
+// The achieved-ambush gate (review fix): a party below ACUMEN.ambush (or on
+// ground with no blind corner) never gets the ambush branch in
+// decideStanceAnchor — mandating the pull anyway would drag the primary to
+// the party's own centroid or to a SEEING chokepoint, purposeless disruption
+// below the gate ("gates only ever add intelligence"). "Achieved" is
+// re-derived from the engagement's serialized fields — a `hold` line on a
+// LoS-BLOCKED anchor, exactly the ambush branch's signature — so the
+// committed fast path (which carries stance/anchor forward without
+// recomputing) gets the identical answer with no new plan state.
 function directivePullAssignment(
-  directive: DirectiveDef | null, members: Combatant[], primary: Combatant | undefined,
-  anchor: Vec2 | null, prevAssignments: Record<string, Assignment> | undefined,
+  state: BattleState, directive: DirectiveDef | null, members: Combatant[],
+  primary: Combatant | undefined, stance: Stance, anchor: Vec2 | null,
+  prevAssignments: Record<string, Assignment> | undefined,
 ): Record<string, Assignment> | undefined {
   if (directive?.anchorPolicy !== 'ambush' || !primary || !members.length) return undefined
+  if (!anchor || stance !== 'hold' || sightlineClear(anchor, primary.pos, state.barriers)) return undefined
   const puller = pickPuller(members)
   if (!puller) return undefined
   const prev = prevAssignments?.[puller.id]
-  const to = prev && prev.role === 'pull' && prev.targetId === primary.id ? prev.to : anchor ?? centroid(members)!
+  const to = prev && prev.role === 'pull' && prev.targetId === primary.id ? prev.to : anchor
   return { [puller.id]: { role: 'pull', targetId: primary.id, to } }
 }
 
@@ -601,7 +614,7 @@ export function decideEngagement(
         const { stance, anchor } = uninvited && primaryCombatant
           ? decideStanceAnchor(state, team, members, camp, primaryCombatant)
           : { stance: prevEngagement.stance ?? 'collapse', anchor: prevEngagement.anchor ?? null }
-        const pull = directivePullAssignment(directive, members, primaryCombatant, anchor, prevAssignments)
+        const pull = directivePullAssignment(state, directive, members, primaryCombatant, stance, anchor, prevAssignments)
           ?? pullAssignmentFor(members, ids, camp, visible, prevAssignments)
         const assignments = withGuardAssignment(members, pull, directive)
         return {
@@ -645,7 +658,7 @@ export function decideEngagement(
   const avoidTargetIds = visible.filter((e) => !targetIds.includes(e.id) && !alreadyFighting(e)).map((e) => e.id).sort()
   // Fresh commit: decide stance + anchor for real (tactical-coordination.md §3.1/§3.2).
   const { stance, anchor } = decideStanceAnchor(state, team, members, chosenCamp, chosenPrimary)
-  const freshPull = directivePullAssignment(directive, members, chosenPrimary, anchor, prevAssignments)
+  const freshPull = directivePullAssignment(state, directive, members, chosenPrimary, stance, anchor, prevAssignments)
     ?? pullAssignmentFor(members, targetIds, chosenCamp, visible, prevAssignments)
   const assignments = withGuardAssignment(members, freshPull, directive)
 
