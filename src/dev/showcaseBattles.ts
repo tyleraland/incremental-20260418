@@ -31,6 +31,11 @@ const frostBolt = buildEngineSkill('frost-bolt', 3)!
 const bash = buildEngineSkill('bash', 3)!
 const cloak = buildEngineSkill('cloak', 1)!
 const backStab = buildEngineSkill('back-stab', 3)!
+// A melee-only heavy swing (§intel scenes below): short cooldown relative to
+// its multiplier so its PER-ROUND amortized damage clears the basic attack —
+// masking the skill (kit unrevealed) genuinely hides the real threat instead
+// of a masked-vs-true wash. No ranged reach at all (range 1.4 = melee).
+const crush = { ...bash, id: 'crush', name: 'Crush', range: 1.4, cooldown: 3, channelTime: 0, damageFormula: 'str * 6' }
 const BLINK = { kind: 'teleport' as const, range: 8, cooldown: 25, needsLoS: true }
 
 export interface Showcase {
@@ -610,16 +615,30 @@ function directiveProtect(): BattleState {
 }
 
 // ── 19. Intel — first contact misjudges an unknown species (§3.7) ───────────
-// A three-hero party facing ONE lone "wraith" — a ghost-armored caster whose
-// real kit is a heavy Frost Bolt nuke, but whose BASIC attack (all a masked kit
-// reads as) is negligible. `masked` is the whole scene: an unknown first
-// contact prices the hidden kit as a harmless basic attacker and COMMITS
-// (over-pulls into the buzzsaw); the same wraith fully scouted prices the real
-// nuke, finds the trade unaffordable, and AVOIDS it. The party clears
-// ACUMEN.pull (the lone Scholar) so the affordability race actually runs — the
-// ONLY thing that changes between the two scenes is what the party KNOWS.
-// Staged, not learned: a pure builder can't run the store's reveal loop, so the
-// two knowledge states ship as adjacent scenes to make the flip legible.
+// A three-hero party facing ONE lone "brute" — a very strong, very SLOW,
+// MELEE-ONLY beast (no ranged reach at all) whose real threat is a heavy Crush
+// swing, but whose BASIC attack (all a masked kit reads as) is unremarkable.
+// `masked` is the whole scene: an unknown first contact prices the hidden Crush
+// as a harmless basic attacker and COMMITS (over-pulls into a fight it can't
+// afford, and pays for it once the brute wakes and swings for real); the same
+// brute fully scouted prices the real Crush, finds the trade unaffordable, and
+// AVOIDS it. Because the brute is slow + melee-only (unlike an earlier draft
+// of this pair built around a ranged one-shot wraith — see BACKLOG §AI &
+// coordination for why that draft was scrapped), avoiding it isn't just a
+// plan-state flag: the party actually walks away and the brute never lands a
+// hit — a CLEAN escape, not a stalemate. It's tagged `skittish` (asleep until
+// hit) so a correctly-avoided brute never wakes on its own; the unknown scene's
+// party wakes it itself by walking up and swinging.
+//
+// The party clears ACUMEN.pull (the lone Scholar) so the affordability race
+// actually runs — the ONLY thing that changes between the two scenes is what
+// the party KNOWS. Staged, not learned: a pure builder can't run the store's
+// reveal loop, so the two knowledge states ship as adjacent scenes to make the
+// flip legible. Positions are placed far apart (~27 cells) in a big arena —
+// tuned (see PR notes) so the known scene's post-decline roam, which isn't
+// avoid-aware about physical proximity (BACKLOG §AI & coordination,
+// "Roam-into-avoided-camp gets stuck"), never coincidentally wanders the party
+// back into melee range of the sleeping brute.
 function intelContact(masked: boolean): BattleState {
   const b = createBattle({
     playerUnits: [
@@ -628,14 +647,15 @@ function intelContact(masked: boolean): BattleState {
       mk({ id: 'fighter-b', team: 'player', name: 'Fighter', str: 12, maxHp: 90, hp: 90, moveSpeed: 0.9, meleeRange: 1.4 }),
     ],
     enemyUnits: [mk({
-      id: 'wraith', team: 'enemy', name: 'Wraith', str: 2, int: 90, def: 2, maxHp: 300, hp: 300, moveSpeed: 0.5,
-      rangedRange: 6, visionRange: 20, armorElement: 'ghost', skills: [{ ...frostBolt }],
+      id: 'brute', team: 'enemy', name: 'Brute', str: 14, def: 6, maxHp: 400, hp: 400, moveSpeed: 0.1,
+      rangedRange: 0, meleeRange: 1.4, visionRange: 20, skills: [{ ...crush }],
+      tactics: [{ id: 'skittish', rank: 1 }],
       ...(masked ? { intel: {} } : {}),
     })],
-    mode: 'open', cols: 40, rows: 30,
+    mode: 'open', cols: 44, rows: 40,
   })
-  at(b, 'scholar', 9, 22); at(b, 'fighter-a', 10, 22); at(b, 'fighter-b', 11, 22)
-  at(b, 'wraith', 10, 12)
+  at(b, 'scholar', 11, 33); at(b, 'fighter-a', 12, 33); at(b, 'fighter-b', 13, 33)
+  at(b, 'brute', 12, 5)
   return b
 }
 function intelUnknown(): BattleState { return intelContact(true) }
@@ -801,15 +821,15 @@ export const SHOWCASES: Showcase[] = [
   {
     id: 'intel-first-contact-unknown',
     title: 'Intel: unknown species (misjudged)',
-    blurb: "A first contact: the wraith's kit is UNKNOWN, so the party prices its hidden Frost Bolt as a harmless basic attacker — and commits, over-pulling into a nuke it can't actually afford.",
-    watch: 'The party COMMITS: engagement locks onto the wraith (it reads the masked kit as a bare attacker). Flip to `intel-first-contact-known` — the SAME wraith, fully scouted — to see the opposite call. (Debug tab → Plan → engagement. Staged: a builder can\'t run the store\'s learning loop, so knowledge is pre-stamped.)',
+    blurb: "A first contact: the brute's kit is UNKNOWN, so the party prices its hidden Crush swing as a harmless basic attacker — and commits, marching right up to a very strong, very slow melee brute it can't actually afford.",
+    watch: 'The party COMMITS: engagement locks onto the brute immediately (it reads the masked kit as a bare attacker) and closes the distance. Once in range it wakes the (skittish) brute by hitting it — the real Crush swing then punishes the misjudge. Flip to `intel-first-contact-known` — the SAME brute, fully scouted — to see the opposite call. (Debug tab → Plan → engagement. Staged: a builder can\'t run the store\'s learning loop, so knowledge is pre-stamped.)',
     build: intelUnknown,
   },
   {
     id: 'intel-first-contact-known',
-    title: 'Intel: known species (avoided)',
-    blurb: 'The SAME wraith, now fully scouted: the party prices its real Frost Bolt nuke, finds the trade unaffordable, and puts it on the avoid list instead of diving in.',
-    watch: 'The party DECLINES: no engagement, the wraith sits on avoidTargetIds (its real nuke prices the fight as a loss). Flip to `intel-first-contact-unknown` for the misjudged first-contact call on the identical foe. (Debug tab → Plan → avoidTargetIds.)',
+    title: 'Intel: known species (clean escape)',
+    blurb: 'The SAME brute, now fully scouted: the party prices its real Crush swing, finds the trade unaffordable, and puts it on the avoid list — and because the brute is slow and melee-only, that decision is enough to walk away clean.',
+    watch: "The party DECLINES: no engagement, the brute sits on avoidTargetIds the whole time and (never hit) never wakes — watch the gap to the brute hold and then widen over the run, with no stalemate and no one-shot. Flip to `intel-first-contact-unknown` for the misjudged first-contact call on the identical foe. (Debug tab → Plan → avoidTargetIds.)",
     build: intelKnown,
   },
   {

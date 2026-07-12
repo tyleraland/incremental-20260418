@@ -470,16 +470,48 @@ describe('showcase catalog', () => {
     expect(Math.max(...tough) - Math.min(...tough)).toBeLessThan(1e-6)
   })
 
-  it('intel-first-contact: the unknown wraith is over-committed; the SAME wraith, scouted, is avoided', () => {
+  it('intel-first-contact: the unknown brute is over-committed and punishes the party; the SAME brute, scouted, is cleanly avoided', () => {
     const unknown = showcaseById('intel-first-contact-unknown')!.build()
     const known = showcaseById('intel-first-contact-known')!.build()
     expect(teamAcumen(unknown, 'player')).toBeGreaterThanOrEqual(50)   // the affordability race actually runs
-    for (let r = 0; r < 4; r++) { advanceRound(unknown); advanceRound(known) }
-    // Masked kit prices as a bare basic attacker ⇒ the party commits.
-    expect(unknown.plans.player!.engagement!.primaryId).toBe('wraith')
-    // Scouted kit prices the real nuke ⇒ unaffordable ⇒ declined + avoided.
+
+    // Masked kit prices as a bare basic attacker ⇒ the party commits immediately.
+    advanceRound(unknown)
+    expect(unknown.plans.player!.engagement!.primaryId).toBe('brute')
+
+    // Scouted kit prices the real Crush swing ⇒ unaffordable ⇒ declined + avoided,
+    // from the very first decision round.
+    advanceRound(known)
     expect(known.plans.player!.engagement).toBeFalsy()
-    expect(known.plans.player!.avoidTargetIds).toContain('wraith')
+    expect(known.plans.player!.avoidTargetIds).toContain('brute')
+
+    // Known scene: run the fight out. Because the brute is slow + melee-only
+    // and correctly avoided, it never wakes and the party is never caught —
+    // the gap may dip early (post-decline roam isn't avoid-aware about
+    // physical proximity) but never closes to striking range, and the party
+    // ends up well clear of it.
+    const brute = find(known, 'brute')
+    const heroesOf = (b: BattleState) => b.combatants.filter((c) => c.team === 'player')
+    const minDistTo = (b: BattleState) => Math.min(...heroesOf(b).map((h) => distance(h.pos, brute.pos)))
+    let minSeen = minDistTo(known)
+    for (let r = 0; r < 49; r++) {
+      advanceRound(known)
+      minSeen = Math.min(minSeen, minDistTo(known))
+      expect(known.plans.player!.engagement, `round ${known.round}`).toBeFalsy()
+      expect(known.plans.player!.avoidTargetIds, `round ${known.round}`).toContain('brute')
+    }
+    expect(brute.provoked).toBe(false)               // never woken — the party never touched it
+    expect(minSeen).toBeGreaterThan(8)                // never stuck adjacent / caught
+    expect(minDistTo(known)).toBeGreaterThan(18)      // and ends up clear of it
+
+    // Unknown scene: run the fight out. The party marches straight in on its
+    // own misjudged commitment, wakes the brute by hitting it, and the real
+    // Crush swing punishes the mistake.
+    for (let r = 0; r < 39; r++) advanceRound(unknown)
+    const bruteUnknown = find(unknown, 'brute')
+    expect(bruteUnknown.provoked).toBe(true)          // woken — the party engaged it for real
+    const hurtOrDead = heroesOf(unknown).some((h) => !h.alive || h.hp < h.maxHp)
+    expect(hurtOrDead).toBe(true)                     // the misjudge cost them
   })
 
   it('arena-5v5: the player line holds while the enemy raiders dive the backline healer', () => {
