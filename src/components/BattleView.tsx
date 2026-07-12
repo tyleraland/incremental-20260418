@@ -1047,6 +1047,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
   // The camera-follow lock lives in the store now (driven by the single top
   // roster — tap a hero there to lock onto them), so this view just reads it.
   const focusUnitId   = useGameStore((s) => s.battleFollowId)
+  const paused        = useGameStore((s) => s.paused)
   const combatLocationId = useGameStore((s) => s.combatLocationId)
   const setBattleFollow = useGameStore((s) => s.setBattleFollow)
   const selectedUnitIds = useGameStore((s) => s.selectedUnitIds)   // for "follow hero" mode target
@@ -1138,8 +1139,20 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
     lastSegRef.current = seg
     // While the player is dragging the camera, hold the glide at 0 so the board
     // tracks the finger instantly instead of easing a beat behind it.
-    el.style.setProperty('--seg-ms', panningRef.current || repositioningRef.current ? '0ms' : `${seg}ms`)
-  }, [battle.round])
+    el.style.setProperty('--seg-ms', panningRef.current || repositioningRef.current || paused ? '0ms' : `${seg}ms`)
+  }, [battle.round, paused])
+
+  // Pausing halts the sim, but tokens are still mid-glide toward the last round's
+  // targets — without this they'd visibly coast for ~one segment after the engine
+  // stops, reading as "pause didn't work". Snap the glide to 0 the instant we
+  // pause (same hold the pan/reposition drags use) so motion stops on the frame;
+  // restore the last computed duration on resume unless a drag owns it.
+  useEffect(() => {
+    const el = arenaWrapRef.current
+    if (!el) return
+    if (paused) el.style.setProperty('--seg-ms', '0ms')
+    else if (!panningRef.current && !repositioningRef.current) el.style.setProperty('--seg-ms', `${lastSegRef.current}ms`)
+  }, [paused])
 
   // Harvest this round's cast events into lingering labels. cast_start (channel
   // begins) and skill_use (instant cast / channel resolves) both count. Keyed by
