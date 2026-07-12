@@ -75,6 +75,36 @@ it — the entire L5 gate machinery is now available to the overworld with
 zero changes. (Today's lone-lake geography usually yields one region; P2's
 rivers are what make the graph non-trivial.)
 
+## Seams (the extension points — where new work attaches)
+
+The layer stack is *dependency order*; this is the *interface catalog*. Each
+row is a load-bearing seam that P1–P5 proved out: to add a feature, find the
+seam it attaches to and honor its contract — you should rarely need to touch
+more than one. "Grow one entry at a time" (locked decision 6) is the rule for
+every vocabulary a seam exposes.
+
+| seam | file · symbol | contract to honor | attach here to… |
+|---|---|---|---|
+| **MapSpec planes** | `types.ts` · `MapSpec` (collision/surface/scatter/semantic) | data-only, JSON-able (+1 `Uint8Array`); a consumer adapts, the generator never reaches into it | expose a NEW fact to engine/render/store (add a plane member, then every consumer can read it) |
+| **Pass** | `pipeline.ts` · `PassDef {id, run(ctx)}` | draw randomness ONLY from `ctx.rng(name)`; read substrate from `ctx.fields`; write via `draft.ts` helpers; `note()` everything capped/dropped; pure given `(draft, ctx)` | add a generation STEP to a recipe (stream isolation means inserting one diffs a single layer) |
+| **Nav graph (L4)** | `types.ts` · `NavNode`/`NavEdge`; `graph.ts` | by the time L5 runs, `nav` is a truthful connectivity model of collision (the `graph-truthful` rule enforces it); a `crossing` edge's `doorAt` is walkable | add a graph PRODUCER (a new recipe's authored graph, or a new derived segmenter) — everything downstream keeps working unchanged |
+| **Derived planes (L6)** | `draft.ts` · `draft.scratch: Map<string, unknown>` | the producing pass owns its key and documents the value's shape; NEVER baked — the spec carries only digested summaries (`NavNode.depth`) | pass a computed field DOWNSTREAM (walk mask, distance transform; flow/tension/sightline next) without widening the spec |
+| **Lock placement (L5)** | `gates.ts` · `placeProficiencyLock` (prize lock), `placeShortcutLock` (route lock), `GATE_LOOKS` | recipe-agnostic — the caller picks the pinch + proves safety; kit-invariant (an open kit only REMOVES seal geometry); function-first, theme-late (tag→material) | add a lock ARCHETYPE, a new tag→look mapping, or wire a new recipe's gates — the validator's `locks` rule guarantees both directions for free |
+| **Validation rule (L9)** | `validate.ts` · `rule(id, ok, detail)` | named + machine-checkable; ships with a crafted violation+fix pair in `validate.test.ts`; conditional-reachability rules read the graph/locks | add a coherence GUARANTEE (fuzz gates and the lab surface it by name) |
+| **Recipe** | `recipes/index.ts` · `RECIPE_REGISTRY` | compose passes; the bake/validate/reroll tail is free; recipe defaults fill only unset params | add a map FAMILY (a cavern recipe, an arena recipe) — a new L3 philosophy quarantined to its own passes |
+| **Game boundary** | `adapter.ts` · `MapGenSource`/`MapGenOpts`; `Location.mapGen` | the ONLY cross-boundary file; pins live `maxBarriers` (72) + live gate policy (`gates: false` default); mapgen imports no game types | connect a Location to a recipe, or thread a new deploy-time input (kit, gates flag) into generation |
+| **Cross-map (L0)** | `types.ts` · `GenParams.manifest` (`ManifestToken`), `Lock.kind: 'key'` | typed + normalized, consumed by NOTHING yet; mirrors how `proficiencies` flows in | plant a cross-map seed (track G's world director) without reshaping `GenParams` |
+| **Review dials** | `recipes/*` · `RIVER_DIALS`/`SCATTER_DIALS`/`GATE_DIALS` | ALL of a pass's human-tunable numbers in one commented block, first-guess values called out | retune feel (density, frequency, allotment) without hunting constants through the pass body |
+| **Vocabularies** | `types.ts` const arrays | small + fixed (locked decision 6): barrier/surface materials, scatter/POI kinds, proficiency/theme tags; a material also maps its collision kind in `validate.ts` `MATERIAL_KIND` and gets a lab debug color | add a content KIND — grow one entry at a time, never per-feature |
+
+Two seams carry most of the future weight. **L4 nav graph** is the convergence
+point: three of the remaining tracks (D flow/tension, F tactical targets, G
+world director) read it and none rewrite it — that is the whole payoff of the
+reorg. **L6 scratch** is the derived-planes floor: flow/tension (track D) and
+sightline masks (track F) are both "one pass computes it, a later pass consumes
+it," so they attach here with no bespoke plumbing — the generalization of the
+single `FieldBundle` substrate into a computed-fields tier.
+
 ## Decisions (weighed, settled — revisit deliberately)
 
 1. **Topology: one shared graph layer with two producers**, not two

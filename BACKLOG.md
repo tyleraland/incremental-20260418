@@ -158,72 +158,134 @@ wiring display-only / mock seams to real, persisted state:
 Pure deterministic leaf library baking a MapSpec (collision/surface/scatter/
 semantic planes) through recipe pass pipelines + validation; shipped
 mechanics and roadmap rationale live in the guide. The **layer architecture**
-(shipped: shared graph/gates modules, scratch tier, manifest seam) and its
-settled decisions live in `procedural-generation-architecture-plan.md`; its open build-out tracks:
+(shipped: shared graph/gates modules, scratch tier, manifest seam, derived
+region graph, rivers+crossings, overworld gates, cyclic dungeons, the 72-rect
+envelope) and its extension **seams** live in
+`procedural-generation-architecture-plan.md`. Open work below is grouped:
+future feature tracks, then discrete tech-debt/polish chunks, then the
+deferred content phases.
 
-- **Track B follow-ups** (core shipped — `deriveRegions`, field-recipe
-  `regions` pass, `graph-truthful` rule): pinch-width cell quantization
-  (width-3 and width-4 corridors are indistinguishable — a chamfer/Euclidean
-  transform would sharpen ford tuning for P2); **P2 must settle the
-  ford-as-edge decision** — hydrology's ~3-wide ford survives erosion at the
-  default pinchWidth 3, so the recipe's own ford can never become a crossing
-  edge (raise the regions pass to pinchWidth ≥ 5, or narrow river fords);
-  portal→node linking (one poiId per node, spawn-first — on a 1-region map
-  every portal POI is unlinked today, note()d but unconsumed; contract
-  rule 2 eventually needs portal-on-ungated-subgraph enforcement); surface
-  the `regions` claims plane in the `?mapgen=1` lab (region tinting in the
-  layer inspector).
-- **Track C — remaining** (rivers + crossings SHIPPED as P2; overworld
-  gates SHIPPED as P3, live-opt-in via `mapGen.gates` pending the phase-4
-  feel pass — no live location has opted in yet): the **desire-path pass**
-  (paint dirt/road surface along spawn→portal graph routes through the
-  pinches, zero rect cost); **retune the field allotment dials to SPEND the
-  72 envelope** (P5 landed the cap, but RIVER_DIALS/outcrop/gate allotments
-  plateau real spend at ~21 rects @96² / ~38 @200² — the new headroom buys
-  nothing until the dials are deliberately retuned and lab-reviewed).
-  River polish punts: river ignores the lake as a destination (edge-to-edge
-  guarantees bisection; feed-the-lake is coherence polish); the lane design
-  means a river never crosses the map centre (an apron-band detour would
-  allow it); the river often hugs its lane's outer margin, so the far bank
-  can be a thin rim sliver — review `laneMargin` in the `?mapgen=1` lab;
-  outcrops' L/T second rect bypasses isPlaceable and can seal one ford
-  (tolerated at fordCount 2, validation backstops — watch if it drops to 1).
-  P3 gate follow-ups: **vault pockets need manufactured geography** (an
-  outcrop-horseshoe / river-oxbow dressing pass would create degree-1 pocket
-  candidates — the vault path then fires as-is and its synthetic test can
-  become a real-bake assertion; natural rate measured 0/~600 bakes);
-  **bridge seal render** (a wood plug currently draws as a building
-  straddling the river — wants a collapsed-planks look); scatter may drift
-  between kit variants near an opened pinch (collision/semantic planes are
-  exact; decorative-only, same property as the dungeon — pin the contract in
-  tests if it ever matters); dry-gap gate mapping (might/rock) never fires
-  until ridge/pass geography derives dry pinches.
+### Open feature tracks (each a distinct future build)
+
+- **Desire-path pass (track C tail).** Paint dirt/road surface along the
+  spawn→portal→landmark graph route through the pinches (zero rect cost) —
+  makes the derived graph *visible* and routes readable. Pure L7 dressing.
+- **Spend the 72 envelope (track C tail).** P5 landed the cap but the field
+  recipe plateaus real spend at ~21 rects @96² / ~38 @200² — RIVER_DIALS /
+  outcrop target / GATE_DIALS allotments were tuned for the old 40. Retune
+  them deliberately (lab-reviewed) so the moderate envelope buys richer
+  geography; nothing spends the headroom today.
 - **Track D — flow/tension derived plane.** Distance-to-goal BFS in
   `draft.scratch`, digested to a per-node `intensity` scalar on the semantic
   plane; store consumes it for spawn/reward pacing (mapgen makes the stage,
   store populates — settle the split in that PR). Gives `field` the depth
-  notion it lacks.
-- **Track E follow-ups** (core shipped — cycle-as-primitive skeleton +
-  kit-invariant shortcut-lock rewrite): more rewrite steps (key-fetch chains
-  need phase-6 items); shortcut FEEL knobs are first guesses (0.5 fire
-  chance, mid-arc-only, closest-3 chord pick, 0.4×axis degenerate-arc
-  threshold) — phase-4 human iteration; nudge the shortcut plug's doorAt
-  outward into the corridor to raise the hit rate (the long-way flood
-  rejects candidates whose plug would swallow a small room's centre); the
-  both-arcs-empty promotion path has no exercising test or seed (traced
-  sound by review, untested — needs a crafted unit test before trusting the
-  ≥3-room cycle guarantee on degenerate layouts); a 2-room floor
-  legitimately bakes a tree and nothing flags it; the shortcut "never
-  touches goal" filter is code-enforced but untestable from the spec
-  (goalId lives only in scratch — publish a marker if a test should pin it).
+  notion it lacks. Attaches at the L6 scratch seam.
 - **Track F — tactical legibility as a generation target.** Sightline-ribbon
   pass (reserve 1–2 straight lanes pre-obstacles; pure AABB) turning
   `longLanes` from annotation into guarantee; `tacticalTargets` in GenParams
   scored by validator/reroll (the ASP idea without the solver). Ship paired
   with consuming AI tactics (see AI & coordination).
 - **Track G — world director (Phase-0).** Computes `GenParams.manifest`
-  plants across the location graph (cross-map lock/key solvability). The
+  plants across the location graph (cross-map lock/key solvability). The L0
   seam is typed and plumbed; gated behind single-map key logistics (phase 6).
+- **More dungeon rewrite steps (track E tail).** Key-fetch chains, extra
+  cycles, secret shortcuts — the cycle-as-primitive skeleton + shortcut-lock
+  rewrite shipped as the first step; key-fetch needs phase-6 item plumbing.
+
+### Tech debt & polish — discrete chunks (each independently pickable)
+
+*Graph / derivation (P1):*
+- **Pinch-width quantization.** `deriveRegions` clearance is integer, so
+  width-3 and width-4 corridors are indistinguishable (share clearance 2). A
+  chamfer/Euclidean distance transform would allow half-cell ford tuning.
+- **Portal→node linking.** One `poiId` per region node, spawn-first — on a
+  1-region map every portal POI goes unlinked (note()d, unconsumed). Graph
+  contract rule 2 (portal on the ungated subgraph) will eventually need real
+  portal→node enforcement, not just the note.
+- **Lab region tinting.** Surface the `regions` claims plane in `?mapgen=1`
+  (tint cells by region in the layer inspector) — the derived graph is
+  invisible in the lab today.
+
+*River (P2):*
+- **River→lake feed.** The river ignores the lake as a destination
+  (edge-to-edge guarantees bisection); feeding it into the lake is coherence
+  polish.
+- **Centre-crossing rivers.** The lane design keeps the river beside the
+  spawn apron, so it never crosses the map centre. An apron-band detour
+  (instead of a whole-course lane) would allow centre-crossing courses.
+- **Rim-sliver far bank.** The river often hugs its lane's outer margin, so
+  region 2 can be a thin rim strip rather than a playable bank — review
+  `RIVER_DIALS.laneMargin` in the lab.
+- **Outcrop L/T ford seal.** The outcrops pass's second (L/T) rect bypasses
+  `isPlaceable` and can land in a 2-cell ford gap; tolerated at `fordCount`
+  2 (validation backstops, 0 retries observed) — a hazard only if fordCount
+  ever drops to 1.
+
+*Gates (P3):*
+- **Manufactured vault pockets.** Natural degree-1 pocket regions are
+  ~0/600 bakes, so the perception vault only fires on a synthetic test. A
+  dressing pass (outcrop-horseshoe / river-oxbow) that creates degree-1
+  candidates would let the real vault path fire and the synthetic test
+  become a real-bake assertion.
+- **Bridge seal render.** A closed might/wood bridge gate draws as a 4.5×4.5
+  *building* straddling the river; wants a collapsed-planks look.
+- **Kit scatter drift.** Decorative scatter may differ between kit variants
+  near an opened pinch (scatter runs after gates, reads collision). The
+  collision + semantic planes are exact; this is cosmetic and shared with
+  the dungeon — pin the true contract (`collision` set-minus-plug) in tests
+  if it ever matters.
+- **Dry-gap gate mapping.** The might/rock "rockfall" mapping never fires —
+  no dry pinches derive on current geography; revisit when ridge/pass
+  geometry lands.
+
+*Dungeon (P4):*
+- **Both-arcs-empty promotion path.** The degenerate-layout guard that keeps
+  the ≥3-room cycle guarantee has no exercising seed or test (traced sound
+  by review). Add a crafted unit test before trusting the guarantee on
+  pathological layouts.
+- **2-room floor bakes a tree.** Legitimate, but nothing flags the missing
+  cycle — a validation note or rule would make the guarantee's boundary
+  explicit.
+- **Shortcut goal-filter untestable.** The "never touches goal" filter is
+  code-enforced but `goalId` lives only in `draft.scratch`, so no spec-level
+  test can pin it — publish a goal marker if a test should assert it.
+- **Shortcut doorAt hit rate.** The long-way flood rejects candidates whose
+  plug would swallow a small room's centre; nudging the plug's `doorAt`
+  outward into the corridor would raise the shortcut fire rate.
+
+*Cross-cutting infra:*
+- **`GenResult.notes` cross-attempt bleed.** Notes accumulate across reroll
+  attempts, so note-matching tests/tools can see notes from rejected
+  attempts. Scope notes per-attempt (or tag them with the attempt index).
+- **`Math.hypot` tie-break determinism.** Strict-inequality tie-breaks over
+  `Math.hypot` are same-process deterministic (the save contract holds), but
+  cross-engine seed replay could flip a near-tie. Swap to squared distances
+  if cross-engine replay ever becomes a requirement.
+- **Tactical-profile heuristics are v0.** `chokepoints`/`longLanes`/
+  `coverClusters` are unvalidated against play and consumed by nothing;
+  they need the consuming AI tactics (hold-chokepoint / use-cover — see AI &
+  coordination) and should ship as a pair (⭐10).
+- **Lab authoring loop.** `?mapgen=1` could grow an export-to-Location
+  snippet button (the curated-map authoring loop) and a bulk CLI sweep
+  (`npm run mapgen-sweep`) if the vitest fuzz gate ever gets slow.
+
+### Feel-iteration knobs (need human play, not code)
+
+- **Shortcut-lock knobs (dungeon).** 0.5 fire chance, mid-arc-only, closest-3
+  chord pick, 0.4×axis degenerate-arc threshold — all first guesses awaiting
+  the phase-4 feel pass; iterate via the lab's party toggles.
+- **Overworld gate knobs.** `GATE_DIALS.routeChance` 0.6, one route + one
+  vault per map, terrain→tag mappings — first guesses; no live location has
+  opted into gates yet (`mapGen.gates`), which is deliberately the gate.
+
+### Live adoption (content wiring, not perf)
+
+- **Live dungeon location.** The dungeon recipe is perf-viable (P5 benched
+  72); what remains is content — a Location adopting `recipe: 'dungeon'`,
+  spawn/lair wiring, and monster population.
+- **Live overworld gates.** `mirror-vale` etc. can set `mapGen.gates: true`
+  once the phase-4 gate feel (frequency, rewards, surfacing) is judged
+  good; the machinery and the opt-in are both in place.
 
 Deferred phases (each independently shippable):
 
