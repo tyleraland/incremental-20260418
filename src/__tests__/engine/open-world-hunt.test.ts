@@ -5,13 +5,13 @@
 // sight. Per-unit target acquisition still gates on vision — this only steers the
 // group toward known prey.
 import { describe, it, expect } from 'vitest'
-import { createBattle, advanceRound, defaultPlanner, type BattleState, type Barrier } from '@/engine'
+import { createBattle, advanceRound, defaultPlanner, type BattleState, type Barrier, type Engagement } from '@/engine'
 import { eu } from './helpers'
 
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
 const dist = (a: { x: number; y: number }, c: { x: number; y: number }) => Math.hypot(a.x - c.x, a.y - c.y)
-const seedPlan = (b: BattleState, huntTargetId: string | null = null) => {
-  b.plans.player = { waypoint: null, focusTargetId: null, threat: {}, huntTargetId }
+const seedPlan = (b: BattleState, huntTargetId: string | null = null, engagement: Engagement | null = null) => {
+  b.plans.player = { waypoint: null, focusTargetId: null, threat: {}, huntTargetId, ...(engagement ? { engagement, avoidTargetIds: [] } : {}) }
 }
 
 describe('open-world hunt routing', () => {
@@ -73,7 +73,18 @@ describe('open-world hunt routing', () => {
     find(b, 'e1').pos = { x: 32, y: 30 }   // nearer (dist 2)
     find(b, 'e2').pos = { x: 45, y: 30 }   // farther (dist 15) but already committed
 
-    seedPlan(b, 'e2')
+    // Avoid-aware hunt (tactical-coordination.md §3.3): pickHuntTarget now skips
+    // avoid-listed foes, so the hunt commitment has to agree with the team's OWN
+    // kill-order commitment — a hunt target the party's plan doesn't recognize as
+    // its engagement is exactly the "walks into what the plan says to leave
+    // alone" shape in reverse (routing at prey the party isn't actually
+    // committed to fighting). Seed a matching prior `engagement` (e2 already the
+    // committed primary/camp) so decideEngagement's fast path holds e2 and
+    // avoid-lists the OTHER foe (e1) instead — this isolates the same retention
+    // hysteresis the test always meant to check, just consistent with the new
+    // coupling instead of accidentally tripping it.
+    const committed: Engagement = { targetIds: ['e2'], primaryId: 'e2', anchor: null, stance: 'collapse', sinceRound: 0 }
+    seedPlan(b, 'e2', committed)
     expect(defaultPlanner(b, 'player').huntTargetId).toBe('e2')   // keeps the commitment
 
     seedPlan(b, null)

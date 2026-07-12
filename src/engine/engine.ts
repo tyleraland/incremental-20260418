@@ -1379,6 +1379,18 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
     if (!focus || e.hp < focus.hp || (e.hp === focus.hp && e.id < focus.id)) focus = e
   }
 
+  // §coordination M2/M1 (tactical-coordination.md §3.3): decide the kill-order
+  // commitment and avoid list BEFORE the hunt pick below — pickHuntTarget must
+  // never march the party's shared waypoint at a camp decideEngagement just
+  // priced as too costly and put on avoidTargetIds (the "kills the stray, then
+  // walks the survivors into the pack it was supposed to leave alone" bug).
+  // decideEngagement takes no dependency on waypoint/huntTargetId (state/team/
+  // members/enemies/threat/prevEngagement/prevAssignments only), so computing
+  // it first is safe and changes nothing about its own result.
+  const { engagement, avoidTargetIds, assignments } = decideEngagement(
+    state, team, members, enemies, threat, state.plans[team]?.engagement ?? null, state.plans[team]?.assignments,
+  )
+
   let waypoint = state.plans[team]?.waypoint ?? null
   let huntTargetId: string | null = state.plans[team]?.huntTargetId ?? null
   // "Engaged" = actually in a fight: the locked target is alive AND still in sight.
@@ -1399,8 +1411,12 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
     // can currently *see* (fog-of-war) and march there together; commit until it's
     // dead/out of sight, then re-pick. Nothing in sight → fall back to roaming a
     // far point to explore and find prey. (Per-unit target *acquisition* still
-    // gates on vision — this only steers the group toward known prey.)
-    const hunt = state.mode === 'open' ? pickHuntTarget(state, members, enemies, c, huntTargetId) : null
+    // gates on vision — this only steers the group toward known prey.) Avoid-listed
+    // foes (decideEngagement's do-not-aggro set, computed above) are never a hunt
+    // target — a party that just priced a camp as unaffordable must not turn
+    // around and march the shared waypoint straight at it.
+    const avoidSet = avoidTargetIds.length ? new Set(avoidTargetIds) : undefined
+    const hunt = state.mode === 'open' ? pickHuntTarget(state, members, enemies, c, huntTargetId, avoidSet) : null
     if (hunt) {
       huntTargetId = hunt.id
       waypoint = { x: hunt.pos.x, y: hunt.pos.y }
@@ -1409,16 +1425,15 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
       // Only re-pick once the party has actually arrived. A fresh waypoint is
       // chosen FAR from the party (pickRoamPoint) so they commit to a long
       // traverse instead of re-picking a nearby point each round — the latter
-      // caused the corner "tiny step" left-right-left jitter.
+      // caused the corner "tiny step" left-right-left jitter. Nothing huntable
+      // (everything visible is avoid-listed) lands here too, same as nothing
+      // visible at all — the party roams away rather than sitting still glaring
+      // at a camp it won't fight.
       if (!waypoint || distance(c, waypoint) <= WANDER_REPATH) {
         waypoint = pickRoamPoint(state, c, team === 'player' ? 1 : 7)
       }
     }
   }
-
-  const { engagement, avoidTargetIds, assignments } = decideEngagement(
-    state, team, members, enemies, threat, state.plans[team]?.engagement ?? null, state.plans[team]?.assignments,
-  )
 
   // §coordination M3 corridor (tactical-coordination.md §3.4): the SAFEST
   // version of "same-way routing is a decision, not a pather tax" — publish
@@ -1452,8 +1467,17 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
 // terrain. Sticks with the previous commitment while it stays seen + reachable
 // (no jitter from re-picking a marginally-closer foe each round); returns null
 // when nothing's in sight so the caller roams to explore instead.
+// `avoid` (§coordination M2, tactical-coordination.md §3.3): the team's
+// current do-not-aggro set — skipped in BOTH the retained-commitment check and
+// the fresh scan, so the party never marches its shared hunt waypoint at a camp
+// decideEngagement just priced as unaffordable. Defaults to an empty set so an
+// empty/absent avoid list (today's every other caller) is byte-identical to the
+// pre-avoid-aware behavior. When every visible enemy is avoid-listed this
+// returns null, same as "nothing in sight" — the caller falls back to roaming
+// away instead of standing still eyeing the camp.
 function pickHuntTarget(
   state: BattleState, members: Combatant[], enemies: Combatant[], center: Vec2, prevId: string | null,
+  avoid: Set<string> = new Set(),
 ): Combatant | null {
   const reachable = (p: Vec2) => state.barriers.length === 0 || canReach(center, p, state.barriers)
   const sees = (e: Combatant, mult: number) =>
@@ -1463,12 +1487,12 @@ function pickHuntTarget(
   // the hunter drops the target at the sight line and oscillates instead of
   // committing to the detour. Acquisition below still needs a fresh 1× sighting.
   const held = prevId
-    ? enemies.find((e) => e.id === prevId && e.alive && !isStealthed(e) && sees(e, HUNT_RETAIN_MULT))
+    ? enemies.find((e) => e.id === prevId && e.alive && !isStealthed(e) && !avoid.has(e.id) && sees(e, HUNT_RETAIN_MULT))
     : undefined
   if (held && reachable(held.pos)) return held
   let best: Combatant | null = null
   for (const e of enemies) {
-    if (isStealthed(e) || !sees(e, 1) || !reachable(e.pos)) continue
+    if (isStealthed(e) || avoid.has(e.id) || !sees(e, 1) || !reachable(e.pos)) continue
     if (!best || distance(center, e.pos) < distance(center, best.pos)
       || (distance(center, e.pos) === distance(center, best.pos) && e.id < best.id)) best = e
   }

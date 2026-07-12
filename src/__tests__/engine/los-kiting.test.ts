@@ -35,7 +35,13 @@ describe('kiter: LoS-aware positioning', () => {
         tactics: [{ id: 'kiter', rank: 1 }],
       })],
       enemyUnits: [eu({
-        id: 'monster', team: 'enemy', spd: 1, str: 1, def: 200, int: 200,
+        // magicDef (not int) is what actually mitigates the archer's fire-bolt
+        // (defaultCalculateDamage mitigates INT-scaling formulas with the
+        // defender's magicDef, never its own int) — int:200 here used to just
+        // inflate this monster's OWN teamAcumen past ACUMEN.pull(50) for no
+        // defensive benefit, which made decideEngagement (correctly!) refuse
+        // the trade for this str:1 monster and hold instead of chasing.
+        id: 'monster', team: 'enemy', spd: 1, str: 1, def: 200, magicDef: 200,
         maxHp: 500, hp: 500, meleeRange: 1.2, rangedRange: 0, moveSpeed: 0.58,
       })],
       barriers: HALL_BARRIERS,
@@ -73,7 +79,11 @@ describe('kiter: LoS-aware positioning', () => {
         tactics: [{ id: 'kiter', rank: 1 }],
       })],
       enemyUnits: [eu({
-        id: 'monster', team: 'enemy', spd: 1, str: 4, def: 200, int: 200,
+        // Same magicDef-not-int fix as above (see the other scene in this
+        // file) — a str:4 monster with int:200 cleared ACUMEN.pull on a stat
+        // that did nothing for its own defense, so its own decideEngagement
+        // priced the fight as a bad trade and it stopped chasing entirely.
+        id: 'monster', team: 'enemy', spd: 1, str: 4, def: 200, magicDef: 200,
         maxHp: 500, hp: 500, meleeRange: 1.2, rangedRange: 0, moveSpeed: 0.58,
       })],
       barriers: HALL_BARRIERS,

@@ -154,11 +154,14 @@ function postureRoutes(): BattleState {
 
 // ── 5. Focus fire (M1): dangerous-first, not nearest-first ──────────────────
 function focusFire(): BattleState {
-  // Four melee heroes clustered near a Sorcerer (high threat, low hp —
-  // killable fast) and three tanky Ogres (high hp, low threat). Each hero
-  // starts nearest a DIFFERENT ogre — naive nearest-target would split the
-  // party four ways — but the plan's dangerous-first, killability-weighted
-  // kill order converges everyone on the sorcerer instead.
+  // Four melee heroes, each standing ADJACENT to its own tanky Ogre (high hp,
+  // low threat, skittish — never even swings back), with the Sorcerer (high
+  // threat, low hp — killable fast) planted well FARTHER from the party than
+  // any ogre. Naive nearest-target would keep every hero on the ogre it's
+  // already touching; the plan's dangerous-first, killability-weighted kill
+  // order instead pulls everyone PAST their own ogre onto the distant
+  // sorcerer — proving the pull is about danger, not proximity (picking the
+  // sorcerer here is never the nearest-first answer).
   const hero = (id: string): EngineUnitInput => mk({ id, team: 'player', name: 'Hero', str: 15, maxHp: 200, hp: 200 })
   const b = createBattle({
     playerUnits: ['h1', 'h2', 'h3', 'h4'].map(hero),
@@ -172,12 +175,19 @@ function focusFire(): BattleState {
       mk({ id: 'ogre-b', team: 'enemy', name: 'Ogre', str: 10, int: 0, maxHp: 450, hp: 450, moveSpeed: 0, tactics: [{ id: 'skittish', rank: 1 }] }),
       mk({ id: 'ogre-c', team: 'enemy', name: 'Ogre', str: 10, int: 0, maxHp: 450, hp: 450, moveSpeed: 0, tactics: [{ id: 'skittish', rank: 1 }] }),
     ],
-    mode: 'open', cols: 44, rows: 30,
+    mode: 'open', cols: 44, rows: 34,
   })
-  at(b, 'sorcerer', 12, 12)
-  at(b, 'ogre-a', 9, 12); at(b, 'ogre-b', 15, 12); at(b, 'ogre-c', 12, 9)
-  // Each hero starts nearest its own ogre, not the sorcerer.
-  at(b, 'h1', 9, 13); at(b, 'h2', 15, 13); at(b, 'h3', 13, 9); at(b, 'h4', 12, 13)
+  // Heroes in a tight 2x2 cluster, each starting adjacent to its own ogre
+  // (dist ~1) — nearest-first would never leave these. The sorcerer sits well
+  // south, clearly farther from the party centroid (11,11) than any ogre —
+  // but still within CAMP_RADIUS of every ogre (constants.ts, =6) so the v0
+  // kill-order camp sweeps all three ogres in alongside it (this party has no
+  // INT, well under ACUMEN.pull) rather than landing any of them on the avoid
+  // list — the scene isolates dangerous-first CONVERGENCE, not the separate
+  // avoid-list mechanic (that's dont-over-pull's job).
+  at(b, 'h1', 10, 10); at(b, 'h2', 12, 10); at(b, 'h3', 10, 12); at(b, 'h4', 12, 12)
+  at(b, 'ogre-a', 9, 10); at(b, 'ogre-b', 13, 10); at(b, 'ogre-c', 9, 12)
+  at(b, 'sorcerer', 10.5, 15.2)
   return b
 }
 
@@ -224,10 +234,15 @@ function dontOverPull(): BattleState {
   // the stray alone — the pack lands on the avoid list and never wakes.
   const b = createBattle({
     playerUnits: [
-      // Carries enough INT alone to clear ACUMEN.pull (50).
-      mk({ id: 'p1', team: 'player', name: 'Scholar', str: 10, int: 55, maxHp: 50, hp: 50 }),
-      mk({ id: 'p2', team: 'player', name: 'Fighter', str: 10, maxHp: 50, hp: 50 }),
-      mk({ id: 'p3', team: 'player', name: 'Fighter', str: 10, maxHp: 50, hp: 50 }),
+      // Carries enough INT alone to clear ACUMEN.pull (50). hp raised from an
+      // original 50 — at 50 the stray (a genuinely "affordable" target, priced
+      // that way relative to the fat pack) could still whittle down whichever
+      // single hero it locked onto before the party finished it off; the scene
+      // is about the AVOID decision, not a coin-flip survival check against the
+      // stray itself.
+      mk({ id: 'p1', team: 'player', name: 'Scholar', str: 10, int: 55, maxHp: 100, hp: 100 }),
+      mk({ id: 'p2', team: 'player', name: 'Fighter', str: 10, maxHp: 100, hp: 100 }),
+      mk({ id: 'p3', team: 'player', name: 'Fighter', str: 10, maxHp: 100, hp: 100 }),
     ],
     enemyUnits: [
       mk({ id: 'stray', team: 'enemy', name: 'Stray', str: 5, maxHp: 140, hp: 140, moveSpeed: 0 }),
@@ -265,13 +280,19 @@ function holdTheLine(): BattleState {
       // formation's fragility outlier.
       mk({ id: 'caster', team: 'player', name: 'Caster', str: 2, def: 0, int: 95, maxHp: 50, hp: 50, rangedRange: 5 }),
     ],
-    enemyUnits: Array.from({ length: 6 }, (_, i) => mk({
-      id: `swarm-${i}`, team: 'enemy', name: 'Raider', str: 5, maxHp: 40, hp: 40, meleeRange: 1.4, visionRange: 30,
+    // 4 (was 6), slower (was the default 0.9), a little frailer (was 40 hp) —
+    // a 6-wide swarm crossing at full speed could still route around the
+    // two-tank line through the open field beyond the gap and reach the rear
+    // slot before the front line finished them off. This is a genuine funnel:
+    // few/slow enough that the line kills them before any gets far enough
+    // south to flank the caster's FORMATION_REAR-pinned position.
+    enemyUnits: Array.from({ length: 4 }, (_, i) => mk({
+      id: `swarm-${i}`, team: 'enemy', name: 'Raider', str: 5, maxHp: 25, hp: 25, meleeRange: 1.4, visionRange: 30, moveSpeed: 0.5,
     })),
     barriers, mode: 'open', cols: 44, rows: 40,
   })
   at(b, 'tank-a', 20, 24); at(b, 'tank-b', 21, 24); at(b, 'mid', 20, 25); at(b, 'caster', 21, 25)
-  const swarmX = [16, 18, 20, 22, 24, 26]
+  const swarmX = [18, 20, 22, 24]
   swarmX.forEach((x, i) => at(b, `swarm-${i}`, x, 10))
   return b
 }
@@ -385,8 +406,8 @@ export const SHOWCASES: Showcase[] = [
   {
     id: 'focus-fire',
     title: 'Dangerous first, not nearest first',
-    blurb: 'Four heroes each start nearest a different tanky ogre — the party ignores them and converges on the squishy sorcerer instead.',
-    watch: 'All four heroes lock the sorcerer within a round or two and drop it before any ogre takes a scratch. (Debug tab → Plan → engagement.primaryId.)',
+    blurb: 'Four heroes each start ADJACENT to their own tanky ogre, with the squishy sorcerer planted well FARTHER away — the party converges PAST the ogres onto the distant sorcerer instead.',
+    watch: 'Every hero breaks off the ogre it starts touching and marches to the distant sorcerer instead — locks it within a round or two and drops it before any ogre takes a scratch. (Debug tab → Plan → engagement.primaryId.)',
     build: focusFire,
   },
   {
@@ -399,15 +420,15 @@ export const SHOWCASES: Showcase[] = [
   {
     id: 'dont-over-pull',
     title: "Don't over-pull",
-    blurb: 'The party fights an affordable straggler and pointedly ignores the fat, unaffordable Dire Wolf pack sleeping beside it.',
-    watch: 'The party engages only the straggler; the wolf pack sits on the avoid list the whole time. (Debug tab → Plan → acumen ≥ 50, avoidTargetIds.)',
+    blurb: 'The party fights an affordable straggler and pointedly ignores the fat, unaffordable Dire Wolf pack sleeping beside it — then roams away instead of marching into it.',
+    watch: 'The party engages only the straggler, kills it, then roams off in another direction; the wolf pack sits on the avoid list and stays asleep the whole time. (Debug tab → Plan → acumen ≥ 50, avoidTargetIds.)',
     build: dontOverPull,
   },
   {
     id: 'hold-the-line',
     title: 'Hold the line',
-    blurb: 'A mixed party forms up on a wall gap — tanks in front, the fragile caster tucked in the rear.',
-    watch: 'The party commits `stance: hold` and settles into a two-rank fan on the gap, toughest members forward. (Debug tab → Plan → stance / anchor.)',
+    blurb: 'A mixed party forms up on a wall gap — tanks in front, the fragile caster tucked in the rear — and actually holds it while a swarm breaks on the line.',
+    watch: 'The party commits `stance: hold` and settles into a two-rank fan on the gap, toughest members forward; the caster stays rearmost and never gets touched as the swarm dies on the tanks. (Debug tab → Plan → stance / anchor.)',
     build: holdTheLine,
   },
   {

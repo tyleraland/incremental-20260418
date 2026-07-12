@@ -79,8 +79,27 @@ describe('showcase catalog', () => {
     expect(find(b, 'wary').hp).toBeGreaterThan(find(b, 'bold').hp - 1)   // wary no worse off than bold (cleared from range)
   })
 
-  it('focus-fire: converges on the sorcerer, drops it before any ogre', () => {
+  it('focus-fire: converges on the DISTANT sorcerer past ADJACENT ogres — danger, not distance', () => {
     const b = showcaseById('focus-fire')!.build()
+
+    // Prove this is actually a danger-over-distance pick, not a disguised
+    // nearest-first: the sorcerer must be FARTHER from the party than every
+    // ogre (every hero starts adjacent to its own ogre; the sorcerer sits well
+    // south of the whole cluster).
+    const heroes = ['h1', 'h2', 'h3', 'h4'].map((id) => find(b, id).pos)
+    const centroid = {
+      x: heroes.reduce((s, p) => s + p.x, 0) / heroes.length,
+      y: heroes.reduce((s, p) => s + p.y, 0) / heroes.length,
+    }
+    const sorcDist = distance(centroid, find(b, 'sorcerer').pos)
+    for (const id of ['ogre-a', 'ogre-b', 'ogre-c']) {
+      expect(sorcDist).toBeGreaterThan(distance(centroid, find(b, id).pos))
+    }
+    for (const id of ['h1', 'h2', 'h3', 'h4']) {
+      const ownOgreDist = Math.min(...['ogre-a', 'ogre-b', 'ogre-c'].map((o) => distance(find(b, id).pos, find(b, o).pos)))
+      expect(distance(find(b, id).pos, find(b, 'sorcerer').pos)).toBeGreaterThan(ownOgreDist)
+    }
+
     advanceRound(b)   // the sorcerer is squishy enough to die within a round or two — check the convergence early
     expect(b.plans.player!.engagement!.primaryId).toBe('sorcerer')
     const lockedOnSorcerer = ['h1', 'h2', 'h3', 'h4'].filter((id) => find(b, id).lockedTargetId === 'sorcerer').length
@@ -121,7 +140,7 @@ describe('showcase catalog', () => {
     expect(distance(find(b, 'puller').pos, anchor)).toBeLessThan(dAtTag + 0.01)   // heads home after the tag
   })
 
-  it("dont-over-pull: fights the stray, avoids the sleeping pack (early window)", () => {
+  it("dont-over-pull: fights ONLY the stray across the full window, kills it, roams away — the pack never wakes and every hero survives", () => {
     const b = showcaseById('dont-over-pull')!.build()
     expect(teamAcumen(b, 'player')).toBeGreaterThanOrEqual(50)   // clears ACUMEN.pull
     for (let r = 0; r < 10; r++) advanceRound(b)
@@ -133,19 +152,30 @@ describe('showcase catalog', () => {
       expect(plan.avoidTargetIds ?? []).toContain(`wolf-${i}`)
       expect(find(b, `wolf-${i}`).provoked).toBe(false)
     }
+
+    // Full window (§Fix 1 avoid-aware hunt): keep running well past the stray's
+    // death — the party must kill it, then roam AWAY rather than the old bug
+    // (kill the stray, then walk the survivors straight into the pack it was
+    // supposed to leave alone). Every Dire Wolf stays provoked===false and every
+    // hero survives for the entire 70-round run.
+    for (let r = 0; r < 60; r++) {
+      advanceRound(b)
+      for (let i = 0; i < 8; i++) expect(find(b, `wolf-${i}`).provoked).toBe(false)
+    }
+    expect(find(b, 'stray').alive).toBe(false)   // the affordable target actually dies
+    for (const id of ['p1', 'p2', 'p3']) expect(find(b, id).alive).toBe(true)
   })
 
-  it('hold-the-line: commits stance hold on the gap, toughest members forward', () => {
+  it('hold-the-line: commits stance hold on the gap, holds it, toughest members forward, and the caster actually survives', () => {
     const b = showcaseById('hold-the-line')!.build()
-    // Check the formation while the engagement is still fresh — the swarm
-    // eventually breaches the two-tank line (a 6-v-4 chokepoint isn't a full
-    // wall), which is a separate durability question from the formation
-    // shape this scene isolates.
+
+    // Check the formation shape while the engagement is still fresh (mirrors
+    // the pre-fix check) — the anchor/primary snapshot at this point is what
+    // proves "toughest forward, fragile rearmost."
     for (let r = 0; r < 10; r++) advanceRound(b)
     const eng = b.plans.player!.engagement!
     expect(eng.stance).toBe('hold')
     expect(eng.anchor).not.toBeNull()
-
     const anchor = eng.anchor!
     const primary = find(b, eng.primaryId!)
     const ax = primary.pos.x - anchor.x, ay = primary.pos.y - anchor.y
@@ -155,9 +185,46 @@ describe('showcase catalog', () => {
       const c = find(b, id)
       return (c.pos.x - anchor.x) * ux + (c.pos.y - anchor.y) * uy
     }
-    const front = Math.min(proj('tank-a'), proj('tank-b'))
-    const back = Math.max(proj('mid'), proj('caster'))
-    expect(front).toBeGreaterThan(back)
+    // The caster (fragility outlier) is the REARMOST member, full stop — a
+    // stronger, more direct statement of "toughest forward" than pairing
+    // specific ids into a front/back group. tank-a is ALSO this party's
+    // highest-toughness member, but it's the standing-guard pick for the
+    // caster (teamplan.ts's fragilityOutlier/pickGuard — no acumen gate) and
+    // so runs guardPoint (interposing on the nearest threat), not the plain
+    // formationSlot front-rank execution — its exact projection can vary with
+    // where that threat currently is, so it's not pinned to a fixed front
+    // rank. The invariant this scene actually promises is caster-rearmost.
+    expect(proj('caster')).toBeLessThan(proj('tank-a'))
+    expect(proj('caster')).toBeLessThan(proj('tank-b'))
+    expect(proj('caster')).toBeLessThan(proj('mid'))
+
+    // FIX-4(a): the swarm actually priced as AFFORDABLE (the old bug: the
+    // mutual-TTK race never let the party commit at all) — stance/anchor stay
+    // committed for as long as there's a real fight (once the swarm is fully
+    // wiped, `engagement` naturally goes absent like every other "nothing
+    // visible" case — that's not an abandon, just nothing left to fight).
+    let minCasterToSwarm = Infinity
+    for (let r = 0; r < 30; r++) {
+      advanceRound(b)
+      const liveEng = b.plans.player!.engagement
+      const swarmAliveNow = Array.from({ length: 4 }, (_, i) => find(b, `swarm-${i}`)).filter((s) => s.alive).length
+      if (swarmAliveNow > 0) {
+        expect(liveEng?.stance).toBe('hold')
+        expect(liveEng?.anchor).not.toBeNull()
+      }
+      const caster = find(b, 'caster')
+      if (caster.alive) {
+        for (let i = 0; i < 4; i++) {
+          const s = find(b, `swarm-${i}`)
+          if (s.alive) minCasterToSwarm = Math.min(minCasterToSwarm, distance(caster.pos, s.pos))
+        }
+      }
+    }
+
+    // FIX-4(b): the fragility outlier is genuinely protected — alive at the
+    // end of the 40-round run and never within melee range (1.4) of a swarm mob.
+    expect(find(b, 'caster').alive).toBe(true)
+    expect(minCasterToSwarm).toBeGreaterThan(1.4)
   })
 
   it('protect-the-carry: a guard assignment materially cuts hits landing on the carry', () => {

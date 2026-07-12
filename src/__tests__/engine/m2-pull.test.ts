@@ -437,3 +437,53 @@ describe('M2 — cap-hit pull sets are unaffordable', () => {
     expect(plan.avoidTargetIds?.length ?? 0).toBeGreaterThan(0)
   })
 })
+
+// Regression test for the "kills the stray, then walks into the pack it was
+// supposed to leave alone" bug (dont-over-pull showcase, tactical-coordination
+// review): defaultPlanner used to call pickHuntTarget BEFORE decideEngagement
+// computed avoidTargetIds, so once the affordable straggler died the shared
+// hunt/roam waypoint had nothing telling it to leave the unaffordable camp
+// alone. The fix reorders defaultPlanner (decideEngagement first) and makes
+// pickHuntTarget + selectTarget's "nothing else visible" fallback both skip
+// avoid-listed foes. Real moveSpeed (not 0) so the party actually marches —
+// mirrors dont-over-pull's shape but as a from-scratch engine test.
+describe('M2-deferred (d) — avoid-aware hunt: kill the affordable straggler, never approach the unaffordable camp', () => {
+  it('a party with real moveSpeed kills the stray then roams away, never provoking the fat pack over 40+ rounds', () => {
+    const stray = eu({ id: 'stray', name: 'Stray', team: 'enemy', str: 5, hp: 140, maxHp: 140, moveSpeed: 0 })
+    const pack = Array.from({ length: 8 }, (_, i) => eu({
+      id: `w${i}`, name: 'Wolf', team: 'enemy', str: 10, hp: 5000, maxHp: 5000,
+      moveSpeed: 0, visionRange: 3, tactics: [{ id: 'skittish', rank: 1 }, { id: 'pack-tactics', rank: 1 }],
+    }))
+    const playerUnits = [
+      // int alone clears ACUMEN.pull (50) — the M2 race, not v0's blind
+      // CAMP_RADIUS sweep, decides whether the pack is affordable.
+      eu({ id: 'p1', str: 10, int: 55, hp: 100, maxHp: 100, moveSpeed: 0.9, visionRange: 20 }),
+      eu({ id: 'p2', str: 10, hp: 100, maxHp: 100, moveSpeed: 0.9, visionRange: 20 }),
+      eu({ id: 'p3', str: 10, hp: 100, maxHp: 100, moveSpeed: 0.9, visionRange: 20 }),
+    ]
+    const b = createBattle({ playerUnits, enemyUnits: [stray, ...pack], mode: 'open', cols: 100, rows: 100 })
+    find(b, 'p1').pos = { x: 10, y: 14 }
+    find(b, 'p2').pos = { x: 11, y: 14 }
+    find(b, 'p3').pos = { x: 12, y: 14 }
+    find(b, 'stray').pos = { x: 10, y: 20 }
+    // The fat pack camped beside the stray (within CAMP_RADIUS proximity) but
+    // never in pullSetOf's real predicted set — the pack never rallies for it.
+    const offsets: [number, number][] = [[-1.2, -1.2], [-1.2, 0], [-1.2, 1.2], [0, -1.2], [0, 1.2], [1.2, -1.2], [1.2, 0], [1.2, 1.2]]
+    offsets.forEach((o, i) => { find(b, `w${i}`).pos = { x: 22 + o[0], y: 20 + o[1] } })
+
+    for (let r = 0; r < 30; r++) advanceRound(b)
+    expect(find(b, 'stray').alive).toBe(false)   // the affordable target actually dies
+
+    let everProvoked = false
+    let everWiped = false
+    for (let r = 0; r < 40; r++) {
+      advanceRound(b)
+      for (let i = 0; i < 8; i++) if (find(b, `w${i}`).provoked) everProvoked = true
+      if (['p1', 'p2', 'p3'].every((id) => !find(b, id).alive)) everWiped = true
+    }
+    expect(everProvoked).toBe(false)   // the pack never wakes
+    expect(everWiped).toBe(false)      // the party never marches into it and dies
+    for (let i = 0; i < 8; i++) expect(find(b, `w${i}`).hp).toBe(5000)   // never touched
+    for (const id of ['p1', 'p2', 'p3']) expect(find(b, id).alive).toBe(true)
+  })
+})

@@ -117,11 +117,26 @@ export const FRAGILITY_OUTLIER_FRACTION = 0.5
 // (≈ SEPARATION(0.7) × 1.6 — Guardian's own stand-off gap, so a fresh line
 // doesn't spawn overlapping). FORMATION_REAR ⏱: how far behind the anchor the
 // outlier's own rearmost slot sits — deeper than the back rank's own offset,
-// so it reads as visibly the safest spot on the line.
+// so it reads as visibly the safest spot on the line. Raised from an original
+// 1.6 (tactical-coordination showcase review): 1.6 wasn't deep enough to keep
+// a rear-pinned squishy out of reach once a swarm crossed the chokepoint and
+// fanned out laterally in the open field beyond it (nothing stops sideways
+// flanking once a mob is past the gap — the anchor→primary axis only pins
+// depth, not width) — the caster in `hold-the-line` (src/dev/showcaseBattles.ts)
+// took a hit and, at the original value, sometimes died outright. Picked the
+// SMALLEST value that keeps that scene's caster out of melee range (1.4) with
+// real margin without regressing `kill-the-shaman` (this constant also
+// governs how deep a MONSTER pack protects ITS OWN fragility outlier — the
+// same mechanism, just on the other team — and pushing it much past this
+// let the wolves shield their Shaman long enough that the party wiped before
+// ever reaching it; 3 keeps that fight's timing close to its pre-fix pace).
+// Too small → the outlier isn't meaningfully safer than the back rank; too
+// big → an enemy pack can stall a kill-the-shaman-style "dangerous-first"
+// fight indefinitely by over-sheltering its own squishy.
 export const FORMATION_FRONT = 1.2
 export const FORMATION_BACK = -0.8
 export const FORMATION_SPACING = 1.12
-export const FORMATION_REAR = 1.6
+export const FORMATION_REAR = 3
 
 // ── Postures (the player's behavior dial) ────────────────────────────────────
 //

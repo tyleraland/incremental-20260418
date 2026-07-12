@@ -57,7 +57,19 @@ const PULL_FLOOR = 1         // ...but always allow a small absolute swing (earl
 // one hit) — it only breaks ties/near-ties among threat-less candidates and
 // nudges close calls; it must NOT be able to out-pull an already-engaged
 // target through the PULL_FRACTION hysteresis below (the tank keeps aggro).
-const FOCUS_WEIGHT = 3
+// Raised from an original 3 (tactical-coordination showcase review): at 3 the
+// bonus couldn't out-score even a MODEST distance gap — a threat-less unit
+// standing adjacent (dist ~1) to trash never let go of it for a genuinely
+// dangerous primary just 5-8 cells farther, so "dangerous-first" convergence
+// only ever looked real when the primary happened to be the closest thing
+// anyway (see `focus-fire` showcase). 5 is the smallest value that reliably
+// pulls idle/fresh units off adjacent trash onto a primary that far away
+// (empirically ~4.2-4.4 cells farther in that scene) while staying far below
+// any real accrued `self.threat` a committed tank would be holding (PULL_FRACTION's
+// slack scales with that threat directly, not with this constant — see
+// behavior.test's "tank keeps aggro", which holds at this value with a huge
+// margin: a tank's accrued threat is easily 100+, and 5 can't touch that).
+const FOCUS_WEIGHT = 5
 
 export function selectTarget(state: BattleState, self: Combatant): string | null {
   const enemies = visibleEnemiesOf(state, self)
@@ -67,16 +79,32 @@ export function selectTarget(state: BattleState, self: Combatant): string | null
     return prev
   }
 
-  // §coordination M1: read the team plan (absent ⇒ today's scoring exactly —
+  // §coordination M1/M2: read the team plan (absent ⇒ today's scoring exactly —
   // no plan, no engagement, no avoid list). Avoid-listed foes are excluded from
-  // the CANDIDATE pool unless every visible foe is avoided (never leave a unit
-  // target-less when only avoided foes are in sight); hard taunt is handled
-  // entirely upstream in evalTargeting and never reaches this function.
+  // the CANDIDATE pool; hard taunt is handled entirely upstream in
+  // evalTargeting and never reaches this function.
   const plan = state.plans?.[self.team]
   const avoid = plan?.avoidTargetIds
   const filtered = avoid && avoid.length ? enemies.filter((e) => !avoid.includes(e.id)) : enemies
-  const candidates = filtered.length ? filtered : enemies
-  const isAvoided = (id: string) => !!avoid && filtered.length > 0 && avoid.includes(id)
+  // §coordination M2 (tactical-coordination.md §3.3): when EVERY visible foe is
+  // avoid-listed — the whole visible set priced unaffordable, so there's no
+  // engagement to fight at all — give up the lock rather than falling back to
+  // attacking one of them anyway. That fallback predates M2: under the old M1
+  // shape the avoid list only ever held bystanders OUTSIDE an existing camp, so
+  // a real (non-avoided) primary/camp target was always present too and
+  // `filtered` could never actually empty out this way. Under M2 an empty
+  // `filtered` means "the party correctly decided this fight isn't worth it" —
+  // picking a target here is exactly the over-pull the avoid list exists to
+  // prevent (the "kills the stray, then walks into the pack it was supposed to
+  // leave alone" bug). No plan/avoid list at all ⇒ `filtered === enemies`,
+  // never empty, so this never fires pre-M1 or with an absent plan.
+  if (avoid && avoid.length && filtered.length === 0) {
+    const prev = self.lockedTargetId
+    self.lockedTargetId = null
+    return prev
+  }
+  const candidates = filtered
+  const isAvoided = (id: string) => !!avoid && avoid.includes(id)
 
   // §coordination M2 (tactical-coordination.md §3.3/§3.7): a unit carrying a
   // `pull` assignment fights its OWN tagged target, not the team's shared
