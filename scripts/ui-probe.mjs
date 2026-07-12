@@ -20,7 +20,7 @@
 import { chromium } from '@playwright/test'
 
 const BASE_URL = process.env.UI_PROBE_URL ?? 'http://localhost:5173/incremental-20260418/'
-const CHROMIUM_PATH = '/opt/pw-browsers/chromium' // pre-installed; do not `playwright install`
+const CHROMIUM_PATH = process.env.UI_PROBE_CHROMIUM ?? '/opt/pw-browsers/chromium' // pre-installed; do not `playwright install`
 
 export async function withPage(fn, { viewport = { width: 420, height: 900 }, path = '' } = {}) {
   const browser = await chromium.launch({ executablePath: CHROMIUM_PATH })

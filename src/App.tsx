@@ -32,6 +32,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 //   ?mapgen=1   — seed contact sheet + layer inspector for the map generator.
 //   ?sandbox=1  — interactive density rig (heroes/monsters/map/play-pause).
 //   ?monsterlab=1 — live monster stat/skill tuning + change-request generator.
+//   ?riglab=1 — mobile rig shaping, pose preview and share/import workflow.
 //   ?bodyshot=<shape|all> — per-body animation contact sheet (frozen keyframes).
 const SkinGallery  = lazy(() => import('@/dev/SkinGallery'))
 const BodySheet    = lazy(() => import('@/dev/BodySheet'))
@@ -39,12 +40,13 @@ const AssetWorkshop = lazy(() => import('@/dev/AssetWorkshop'))
 const MapgenLab    = lazy(() => import('@/dev/MapgenLab'))
 const PerfSandbox  = lazy(() => import('@/dev/PerfSandbox'))
 const MonsterLab   = lazy(() => import('@/dev/MonsterLab'))
+const RigLab       = lazy(() => import('@/dev/RigLab'))
 
 // The dev tool pages and perf harness are gated to sandbox mode (or a real DEV
 // build). Sandbox is the dev/everything-open mode; curated is the new-player
 // build and stays free of debug surfaces. Read once at render (a full reload
 // mounts the page fresh, so the bootstrapped mode is current).
-const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox', 'monsterlab', 'bodyshot'] as const
+const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox', 'monsterlab', 'riglab', 'bodyshot'] as const
 function devToolsEnabled() {
   return import.meta.env.DEV || useGameStore.getState().progressionMode === 'sandbox'
 }
@@ -191,6 +193,7 @@ function App() {
     if (params.has('workshop')) return <DevPage><AssetWorkshop /></DevPage>
     if (params.has('mapgen'))   return <DevPage><MapgenLab /></DevPage>
     if (params.has('monsterlab')) return <DevPage><MonsterLab /></DevPage>
+    if (params.has('riglab')) return <DevPage><RigLab /></DevPage>
     if (params.has('bodyshot')) return <DevPage><BodySheet /></DevPage>
   }
 

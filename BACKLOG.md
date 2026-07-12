@@ -1046,22 +1046,24 @@ shipped, `thiefBug` first. Still open:
 
 ### Monster asset pipeline at scale
 
-Next, in leverage order:
+The `?riglab=1` quadruped prototype establishes a parameterized joint tree,
+z-aware layered preview, pose clips, direct touch editing, local persistence,
+and share/import JSON. Open production work, in leverage order:
 
-1. *`import-body`* — extend `scripts/import-svg.mjs` to read a LAYERED svg
-   (one named layer per part, name encodes tags: `head:jab:lean5`) and emit a
-   `BodyPart[]` snippet: layer order = stack order, fills snapped to tone
-   fields, fitted to the 100-box, winding normalized. Turns "type beziers
-   blind" into "draw" for human-authored bodies; agents mostly don't need it
-   (they iterate via `body-shot` stills).
-2. *Golden regression for the shared renderer* — one skins.tsx tweak restyles
+1. *Prove a second family* — adapt the humanoid reference (or a segmented body)
+   to expose assumptions accidentally baked into `quadruped-v0`; only then
+   freeze/version the producer schema and add template migration.
+2. *Choose the runtime seam with measurements* — either compile a rig draft to
+   the existing lean `BodyPart[]` + CSS tags, or add a LOD-gated rig skin and
+   compare it on `skin-ab`. The lab's continuously sampled SVG is an authoring
+   preview, not the battle delivery model.
+3. *Choose skin attachment data* — procedural primitives vs producer-owned flat
+   paths weighted to bones (likely a hybrid), while preserving palette roles,
+   merged far-LOD silhouettes, deterministic output, and bounded path counts.
+4. *Golden regression for the shared renderer* — one skins.tsx tweak restyles
    every creature; a vitest SNAPSHOT of each body's rendered svg markup (per
    shape, one pose) rides `npm run ci` and names exactly which creatures a
    change touched (pixel goldens don't fit ci — Playwright isn't in it).
-3. *Part-generator helpers* (`oval()`, `limb()` — winding-guaranteed) once
-   the next couple of bodies confirm the shapes repeat; animations-as-data
-   (a MOTION table generating the css) only if the keyframe vocabulary
-   outgrows the current 3 tags — both premature today.
 
 ### Sprite / detailed-background roadmap (2026-06 analysis, still governing)
 
