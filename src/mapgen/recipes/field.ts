@@ -13,6 +13,8 @@ import type { ScatterIntent, ScatterKind, SurfaceMaterial } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import type { Rng } from '../rng'
 import { addBarrier, addPoi, isPlaceable, matAt, paint } from '../draft'
+import { bfsDepth, deriveRegions } from '../graph'
+import { occupancyGrid } from '../validate'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
 
@@ -154,6 +156,45 @@ const outcropsPass = {
       placed = draft.collision.length - baseline
     }
     note(`${draft.collision.length}/${params.maxBarriers} barrier rects after outcrops (placed ${placed}, target ${target})`)
+  },
+}
+
+// ── regions: the DERIVED nav-graph producer (L4 track B) ─────────────────────
+// Runs once the hard geography is settled (after outcrops, before scatter —
+// scatter adds no collision). Rasterizes the collision plane into the exact
+// walk mask the validator's flood-fill sees (occupancyGrid — cell-centre in
+// pad-inflated rect), segments it with deriveRegions, and publishes REAL
+// nodes/edges on the nav skeleton. Depth is rooted at the region holding the
+// MAP CENTRE: the field spawn POI is placed later (semantic pass) AT the
+// centre, so the centre region is the spawn region by construction — if the
+// spawn site ever moves, move this root with it.
+// Deterministic, draws no RNG; the pass id still rides skipPasses (the lab's
+// layer inspector) and the per-pass stream discipline.
+const regionsPass = {
+  id: 'regions',
+  run({ draft, note }: PassCtx) {
+    const blocked = occupancyGrid(draft.collision, draft.cols, draft.rows)
+    const walk = new Uint8Array(blocked.length)
+    for (let i = 0; i < blocked.length; i++) walk[i] = blocked[i] ? 0 : 1
+    // L6 derived planes (draft.scratch, never baked):
+    //   'walk'    — Uint8Array, 1 = walkable (the validator's occupancy model)
+    //   'regions' — Int32Array, region index per cell, -1 = blocked/unclaimed
+    draft.scratch.set('walk', walk)
+    const { nodes, edges, claims } = deriveRegions(walk, draft.cols, draft.rows)
+    draft.scratch.set('regions', claims)
+    if (!nodes.length) { note('no regions derived — nav left empty'); return }
+    const centre = Math.floor(draft.rows / 2) * draft.cols + Math.floor(draft.cols / 2)
+    // The spawn apron keeps the centre open, so it is claimed on any sane
+    // bake; fall back to the first region rather than crash on a doomed one.
+    const rootId = claims[centre] >= 0 ? `region-${claims[centre]}` : nodes[0].id
+    const depth = bfsDepth(edges, rootId)
+    for (const nd of nodes) {
+      const d = depth.get(nd.id)
+      if (d !== undefined) nd.depth = d
+    }
+    draft.semantic.nav.nodes = nodes
+    draft.semantic.nav.edges = edges
+    note(`${nodes.length} region(s), ${edges.length} crossing(s)`)
   },
 }
 
@@ -477,8 +518,28 @@ const semanticPass = {
     }
     if (best) addPoi(draft, { id: 'landmark', kind: 'landmark', at: best, tags: ['vista'] })
 
-    // Nav skeleton: nodes only for a field (roads arrive with the city recipe).
-    draft.semantic.nav.nodes = draft.semantic.pois.map((p) => ({ id: `nav-${p.id}`, at: p.at, poiId: p.id }))
+    // Link POIs onto the derived region graph (the `regions` pass): each POI
+    // marks the node whose CLAIMED cells contain it (exact, via the 'regions'
+    // scratch plane) — a node keeps only its first POI, spawn takes
+    // precedence. If the regions pass was skipped (skipPasses) or derived
+    // nothing, fall back to the old POI-stub nodes so the lab's layer
+    // inspector still shows a nav plane instead of crashing.
+    const regionNodes = draft.semantic.nav.nodes
+    const claims = draft.scratch.get('regions') as Int32Array | undefined
+    if (regionNodes.length && claims) {
+      const byId = new Map(regionNodes.map((nd) => [nd.id, nd]))
+      const pois = [...draft.semantic.pois]
+        .sort((a, b) => (a.kind === 'spawn' ? 0 : 1) - (b.kind === 'spawn' ? 0 : 1))
+      for (const p of pois) {
+        const xi = Math.min(draft.cols - 1, Math.max(0, Math.floor(p.at.x)))
+        const yi = Math.min(draft.rows - 1, Math.max(0, Math.floor(p.at.y)))
+        const region = claims[yi * draft.cols + xi]
+        const nd = region >= 0 ? byId.get(`region-${region}`) : undefined
+        if (nd && nd.poiId === undefined) nd.poiId = p.id
+      }
+    } else {
+      draft.semantic.nav.nodes = draft.semantic.pois.map((p) => ({ id: `nav-${p.id}`, at: p.at, poiId: p.id }))
+    }
 
     draft.semantic.tactical = tacticalProfile(draft)
   },
@@ -487,6 +548,6 @@ const semanticPass = {
 export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
-  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + outcrops → scatter → POIs + tactical profile.',
-  passes: [surfacePass, hydrologyPass, outcropsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
+  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + outcrops → derived region graph → scatter → POIs + tactical profile.',
+  passes: [surfacePass, hydrologyPass, outcropsPass, regionsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
 }

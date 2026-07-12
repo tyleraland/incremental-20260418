@@ -126,8 +126,50 @@ describe('field recipe fuzz gate', () => {
       expect(t.openness).toBeGreaterThan(0.5)
       expect(t.openness).toBeLessThanOrEqual(1)
       expect(t.barrierCount).toBe(r.spec.collision.length)
-      expect(r.spec.semantic.nav.nodes.length).toBe(r.spec.semantic.pois.length)
+      // nav is the DERIVED region graph (track B), with the spawn linked to
+      // its containing region — which roots the depth gradient at 0
+      const nodes = r.spec.semantic.nav.nodes
+      expect(nodes.length).toBeGreaterThanOrEqual(1)
+      expect(nodes.every((n) => n.id.startsWith('region-'))).toBe(true)
+      const spawnNode = nodes.find((n) => n.poiId === 'spawn')
+      expect(spawnNode).toBeDefined()
+      expect(spawnNode!.depth).toBe(0)
     }
+  })
+
+  it('regions pass fires on every seed: ≥1 region node published, report stays ok', () => {
+    // Do NOT assert a fixed region/edge count: a lone lake you can simply walk
+    // around legitimately yields 1 region and 0 edges — edges only appear when
+    // geography genuinely pinches (rivers arrive with track C).
+    for (const r of [...sweep(60, ['plains']), ...sweep(120, ['plains', 'water'])]) {
+      expect(r.report.ok, `seed ${r.spec.seed}: ${JSON.stringify(r.report.rules.filter((x) => !x.ok))}`).toBe(true)
+      expect(r.spec.semantic.nav.nodes.length, `seed ${r.spec.seed} published no region nodes`).toBeGreaterThanOrEqual(1)
+      expect(r.notes.some((n) => n.startsWith('regions:')), `seed ${r.spec.seed} regions pass left no note`).toBe(true)
+    }
+  })
+
+  it('water sweep: any derived crossing edge has a walkable doorAt', () => {
+    // Mirror the validator's occupancy test (cell centre in pad-inflated rect).
+    const PAD = 0.45
+    for (const r of sweep(120, ['plains', 'water'])) {
+      for (const e of r.spec.semantic.nav.edges) {
+        expect(e.kind).toBe('crossing')
+        expect(e.doorAt, `seed ${r.spec.seed}: edge ${e.a}→${e.b} has no doorAt`).toBeDefined()
+        const cx = Math.floor(e.doorAt!.x) + 0.5, cy = Math.floor(e.doorAt!.y) + 0.5
+        const blockedDoor = r.spec.collision.some((c) =>
+          cx > c.x - PAD && cx < c.x + c.w + PAD && cy > c.y - PAD && cy < c.y + c.h + PAD)
+        expect(blockedDoor, `seed ${r.spec.seed}: doorAt ${e.doorAt!.x},${e.doorAt!.y} sits in collision`).toBe(false)
+      }
+    }
+  })
+
+  it('skipPasses regions → semantic falls back to POI-stub nodes (layer inspector stays alive)', () => {
+    const r = generateMap(FIELD_RECIPE, {
+      recipe: 'field', seed: 5, size: 80, themes: ['plains', 'water'], skipPasses: ['regions'],
+    })
+    expect(r.spec.semantic.nav.edges).toEqual([])
+    expect(r.spec.semantic.nav.nodes.length).toBe(r.spec.semantic.pois.length)
+    expect(r.spec.semantic.nav.nodes.every((n) => n.id.startsWith('nav-'))).toBe(true)
   })
 
   it('respects the barrier budget and the keep-clear boxes', () => {

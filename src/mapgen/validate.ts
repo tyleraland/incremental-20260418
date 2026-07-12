@@ -26,21 +26,56 @@ const MATERIAL_KIND: Record<string, 'wall' | 'cliff'> = {
   'hedge': 'cliff', 'deep-water': 'cliff', 'ravine': 'cliff', 'bars': 'cliff',
 }
 
-function occupancy(spec: MapSpec): Uint8Array {
-  const g = new Uint8Array(spec.cols * spec.rows)
-  for (const r of spec.collision) {
-    const x0 = Math.max(0, Math.floor(r.x - PAD)), x1 = Math.min(spec.cols - 1, Math.ceil(r.x + r.w + PAD))
-    const y0 = Math.max(0, Math.floor(r.y - PAD)), y1 = Math.min(spec.rows - 1, Math.ceil(r.y + r.h + PAD))
+// Exported so producers of DERIVED planes (the field recipe's 'walk' scratch
+// mask feeding deriveRegions) rasterize the exact same pathing reality the
+// validator floods — one occupancy model, never two.
+export function occupancyGrid(
+  collision: readonly { x: number; y: number; w: number; h: number }[],
+  cols: number, rows: number,
+): Uint8Array {
+  const g = new Uint8Array(cols * rows)
+  for (const r of collision) {
+    const x0 = Math.max(0, Math.floor(r.x - PAD)), x1 = Math.min(cols - 1, Math.ceil(r.x + r.w + PAD))
+    const y0 = Math.max(0, Math.floor(r.y - PAD)), y1 = Math.min(rows - 1, Math.ceil(r.y + r.h + PAD))
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const cx = x + 0.5, cy = y + 0.5
         if (cx > r.x - PAD && cx < r.x + r.w + PAD && cy > r.y - PAD && cy < r.y + r.h + PAD) {
-          g[y * spec.cols + x] = 1
+          g[y * cols + x] = 1
         }
       }
     }
   }
   return g
+}
+
+function occupancy(spec: MapSpec): Uint8Array {
+  return occupancyGrid(spec.collision, spec.cols, spec.rows)
+}
+
+// Label every open cell with its flood component id (scanline discovery,
+// 4-neighbour); -1 = blocked. The graph-truthful rule reads this so an edge
+// between two nodes is honest even when neither touches the spawn component.
+function components(blocked: Uint8Array, cols: number, rows: number): Int32Array {
+  const comp = new Int32Array(cols * rows).fill(-1)
+  let next = 0
+  for (let i0 = 0; i0 < comp.length; i0++) {
+    if (blocked[i0] || comp[i0] !== -1) continue
+    const id = next++
+    comp[i0] = id
+    const stack = [i0]
+    while (stack.length) {
+      const i = stack.pop()!
+      const x = i % cols, y = (i / cols) | 0
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx, ny = y + dy
+        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue
+        const j = ny * cols + nx
+        if (!blocked[j] && comp[j] === -1) { comp[j] = id; stack.push(j) }
+      }
+    }
+  }
+  return comp
 }
 
 // Flood-fill of open cells from `start`; returns the visited mask (0/1).
@@ -92,6 +127,8 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
   rule('barrier-budget', spec.collision.length <= params.maxBarriers,
     `${spec.collision.length}/${params.maxBarriers} barrier rects`)
 
+  const blocked = occupancy(spec)
+
   // spawn-present + apron-clear — the party must have a clean form-up knot.
   const spawn = spec.semantic.pois.find((p) => p.kind === 'spawn')
   rule('spawn-present', !!spawn, spawn ? `spawn at ${spawn.at.x},${spawn.at.y}` : 'no spawn POI')
@@ -120,7 +157,6 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
       // its plug; the locks rule below owns their semantics (approachability)
       p.kind === 'gate' ||
       p.tags.some((t) => t.startsWith('locked:') && lockById.get(t.slice(7))?.open === false)
-    const blocked = occupancy(spec)
     const seen = flood(spec, blocked, spawn.at)
     const reachableAt = (p: { x: number; y: number }) => {
       const xi = Math.min(spec.cols - 1, Math.max(0, Math.floor(p.x)))
@@ -173,6 +209,63 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
           ? spec.semantic.locks.map((l) => `${l.id} ${l.open ? 'open' : 'closed'}`).join(', ')
           : problems.join('; '))
     }
+  }
+
+  // graph-truthful — L4 contract rule 4: every published nav edge is
+  // physically real, flood-fill agreeing. For each edge whose lock is absent
+  // or OPEN: the two endpoint nodes must share a flood component, and the
+  // edge's doorAt (if set) must be an open cell (floor/clamp, same cell test
+  // as reachableAt). Edges with a CLOSED lock are exempt — the `locks` rule
+  // owns sealed geometry (both directions).
+  // Anchor precision: a node's anchor may legitimately sit inside stamped
+  // interior geometry (the barred-cell's §J pocket swallows a room's centre),
+  // so — like the locks rule's approachable() — each endpoint contributes the
+  // component set of open cells within ±4 of its anchor, and the edge is
+  // truthful when the two sets intersect. A bisecting wall still fails: the
+  // tolerance never crosses more than a 4-cell neighbourhood.
+  const navEdges = spec.semantic.nav.edges
+  if (navEdges.length === 0) {
+    rule('graph-truthful', true, 'no nav edges')
+  } else {
+    const comp = components(blocked, spec.cols, spec.rows)
+    const compAt = (p: { x: number; y: number }) => {
+      const xi = Math.min(spec.cols - 1, Math.max(0, Math.floor(p.x)))
+      const yi = Math.min(spec.rows - 1, Math.max(0, Math.floor(p.y)))
+      return comp[yi * spec.cols + xi]
+    }
+    const compsNear = (p: { x: number; y: number }) => {
+      const set = new Set<number>()
+      for (let dy = -4; dy <= 4; dy++) {
+        for (let dx = -4; dx <= 4; dx++) {
+          const c = compAt({ x: p.x + dx, y: p.y + dy })
+          if (c !== -1) set.add(c)
+        }
+      }
+      return set
+    }
+    const nodeById = new Map(spec.semantic.nav.nodes.map((q) => [q.id, q]))
+    const openLock = new Map(spec.semantic.locks.map((l) => [l.id, l.open]))
+    const problems: string[] = []
+    let checked = 0
+    for (const e of navEdges) {
+      if (e.lockId && openLock.get(e.lockId) === false) continue
+      checked++
+      const a = nodeById.get(e.a), b = nodeById.get(e.b)
+      if (!a || !b) { problems.push(`${e.a}→${e.b}: endpoint node missing`); continue }
+      const ca = compsNear(a.at), cb = compsNear(b.at)
+      if (ca.size === 0) problems.push(`${e.a}→${e.b}: anchor ${e.a} buried (no open cell nearby)`)
+      if (cb.size === 0) problems.push(`${e.a}→${e.b}: anchor ${e.b} buried (no open cell nearby)`)
+      if (ca.size && cb.size && ![...ca].some((c) => cb.has(c))) {
+        problems.push(`${e.a}→${e.b}: endpoints in different flood components`)
+      }
+      if (e.doorAt && compAt(e.doorAt) === -1) {
+        problems.push(`${e.a}→${e.b}: doorAt ${e.doorAt.x},${e.doorAt.y} is blocked`)
+      }
+    }
+    rule('graph-truthful', problems.length === 0,
+      problems.length === 0
+        ? `${checked}/${navEdges.length} open edge(s) flood-verified`
+        : problems.join('; '))
   }
 
   // water-coherence — the surface plane and collision plane tell one story:

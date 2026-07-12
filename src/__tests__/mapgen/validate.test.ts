@@ -96,6 +96,41 @@ describe('mapgen validate', () => {
     expect(ruleOf(required, 'reachable').ok).toBe(false)
   })
 
+  it('graph-truthful: an open edge across a bisecting wall is a lie; a real route or a closed lock passes', () => {
+    const nodes = [
+      { id: 'r-a', at: { x: 5, y: 20 } },
+      { id: 'r-b', at: { x: 35, y: 20 } },
+    ]
+    const edge = { a: 'r-a', b: 'r-b', kind: 'crossing' as const, doorAt: { x: 10, y: 20 } }
+    // violation: a full-height wall splits the endpoints into two flood components
+    const bisector: CollisionRect = { x: 19, y: 0, w: 2, h: SIZE, kind: 'wall', material: 'rock' }
+    const lie = makeSpec([bisector])
+    lie.semantic.nav = { nodes, edges: [edge] }
+    expect(ruleOf(lie, 'graph-truthful').ok).toBe(false)
+    // fix: same edge with the wall gone → one component, edge verified
+    const fixed = makeSpec()
+    fixed.semantic.nav = { nodes, edges: [edge] }
+    expect(ruleOf(fixed, 'graph-truthful').ok).toBe(true)
+    // a doorAt buried in rock is a lie even when the endpoints connect around it
+    const buried = makeSpec([wall(18, 18, 4, 4)])
+    buried.semantic.nav = { nodes, edges: [{ ...edge, doorAt: { x: 20, y: 20 } }] }
+    expect(ruleOf(buried, 'graph-truthful').ok).toBe(false)
+    // a CLOSED lock exempts its edge — the locks rule owns sealed geometry
+    const sealed = makeSpec([bisector])
+    sealed.semantic.nav = { nodes, edges: [{ ...edge, lockId: 'lock-x' }] }
+    sealed.semantic.locks = [{ id: 'lock-x', kind: 'proficiency', open: false, gates: [] }]
+    expect(ruleOf(sealed, 'graph-truthful').ok).toBe(true)
+    // …but the same lock OPEN stops exempting: the edge must deliver
+    const openLie = makeSpec([bisector])
+    openLie.semantic.nav = { nodes, edges: [{ ...edge, lockId: 'lock-x' }] }
+    openLie.semantic.locks = [{ id: 'lock-x', kind: 'proficiency', open: true, gates: [] }]
+    expect(ruleOf(openLie, 'graph-truthful').ok).toBe(false)
+    // no edges → the rule passes as a skip
+    const empty = ruleOf(makeSpec(), 'graph-truthful')
+    expect(empty.ok).toBe(true)
+    expect(empty.detail).toBe('no nav edges')
+  })
+
   it('water-coherence: deep cells need covering rects; water rects need water under them', () => {
     const deep = SURFACE_MATERIALS.indexOf('deep-water')
     const uncovered = makeSpec()

@@ -38,7 +38,9 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     globals: true,
     // e2e/ holds Playwright specs (also *.spec.ts) — keep them out of vitest.
-    exclude: [...defaultExclude, 'e2e/**'],
+    // .claude/ can hold agent worktrees (full repo checkouts): their test
+    // copies would run against THIS tree's src via the '@/' alias — exclude.
+    exclude: [...defaultExclude, 'e2e/**', '**/.claude/**'],
     alias: {
       '@/': '/src/',
     },
