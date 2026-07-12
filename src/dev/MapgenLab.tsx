@@ -20,7 +20,7 @@
 // Renders the MapSpec directly to <canvas> as a DEBUG view — this is not the
 // paper skin and never will be; terrain.tsx consuming MapSpec is its own phase.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   generateMap, RECIPE_REGISTRY, SURFACE_MATERIALS, THEME_TAGS, PROFICIENCY_TAGS,
   type GenParams, type GenResult, type ProficiencyTag, type ThemeTag,
@@ -433,7 +433,9 @@ export default function MapgenLab() {
   const params = { recipe: recipeId, size, themes, proficiencies: profs, gates, pois, onFail: 'accept' as const }
 
   // Dev guard: warn once per recipe if a stage names a pass the recipe lacks.
-  useMemo(() => { assertStages(recipe); return null }, [recipe])
+  // useEffect (not useMemo) so the console.warn side effect fires exactly once
+  // per recipe change, never during a discarded render.
+  useEffect(() => { assertStages(recipe) }, [recipe])
 
   // Bake THROUGH this stage: auto-skip every pass strictly after `throughPass`,
   // unioned with the user's manual skips. The passes at/before the stage are the
@@ -506,10 +508,17 @@ export default function MapgenLab() {
 
   // On a layer tab, drop the pass notes for later, auto-skipped passes (their
   // only line is `skip:<id>`); keep notes at/before the stage + any manual skip.
+  // Non-pass-prefixed lines (reroll notes like "attempt 2 failed: … — rerolling")
+  // aren't owned by a pass — keep them so the notes panel never hides a reroll.
+  const allPassIds = new Set(passIds)
   const visibleNotes = isFinal ? focused.r.notes : focused.r.notes.filter((n) => {
     const skipId = n.startsWith('skip:') ? n.slice(5) : null
     const passId = skipId ?? n.split(':')[0]
-    return allowedIds.has(passId) || manualSkips.includes(passId)
+    // A note is pass-owned only if its prefix is a real pass id (or a skip:
+    // line). Global lines — reroll notes like "attempt 2 failed: …" — aren't,
+    // so keep them on every tab; a hidden reroll would mislead the reviewer.
+    const isPassNote = skipId !== null || allPassIds.has(passId)
+    return !isPassNote || allowedIds.has(passId) || manualSkips.includes(passId)
   })
 
   return (
@@ -617,6 +626,7 @@ export default function MapgenLab() {
               <span className="text-amber-400/90">bright</span> = this stage ({stage.owned.join(', ') || '—'}) ·
               {' '}<span className="text-stone-400">dim</span> = accreted ({stage.dim.join(', ') || '—'})
               {stage.kit && ' · toggle party kit above to open/close the locks'}
+              {recipeId === 'field' && stage.owned.includes('semantic') && ' · field places the spawn/landmark POIs in the semantic pass, so they first appear here'}
             </div>
           )}
           <canvas ref={(c) => drawSpec(c, focused.r, bigPx, drawToggles, dimSet)} style={{ display: 'block', width: focused.r.spec.cols * bigPx, height: focused.r.spec.rows * bigPx }} />
