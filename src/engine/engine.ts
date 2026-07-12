@@ -36,6 +36,7 @@ import { withDirectiveTactics, DEFAULT_DIRECTIVE_ID } from './directives'
 import {
   postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND,
   CORRIDOR_ARRIVE, FORMATION_FRONT, FORMATION_BACK, FORMATION_SPACING, FORMATION_REAR,
+  ROUT_SAFE_RADIUS,
 } from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
 
@@ -1357,9 +1358,19 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   // coexist with a rout (no engagement ⇒ the planner publishes no assignments).
   if (teamPlan?.rout) {
     self.lockedTargetId = null
-    planNote = 'disengage: rout'
-    breakOff(state, self)
-    return
+    // ACTIVELY break off only while a threat is still within reach; once the gap
+    // is open, stop sprinting — the rout stays published (fled camp stays
+    // avoid-listed, so no re-lock / march-back) but the unit just holds/roams,
+    // rather than running to the map edge behind a foe that can't reach it.
+    const near = nearestEnemyTo(self, state)
+    if (near && distance(self.pos, near.pos) <= ROUT_SAFE_RADIUS) {
+      planNote = 'disengage: rout'
+      breakOff(state, self)
+      return
+    }
+    planNote = 'disengage: broke contact'
+    // fall through: lock cleared + no engagement ⇒ hold (encounter) / roam
+    // (open) below, without re-committing the fight we fled.
   }
   // §coordination M3 stance execution (tactical-coordination.md §3.4): the
   // plan's default layer — only reached when nothing above (an equipped

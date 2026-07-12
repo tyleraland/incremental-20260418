@@ -534,8 +534,20 @@ export interface Engagement {
 // fresh affordable engagement — the hysteresis that stops engage↔rout thrash.
 // Serialized with the plan (only when set ⇒ legacy tokens stay byte-identical).
 export interface Rout {
-  from: Vec2          // centroid of the camp we broke off from — the "fleeing from" marker
+  // centroid of the camp we broke off from — the "fleeing from" marker. Debug/
+  // legibility only (the flee direction is live-computed by breakOff); frozen at
+  // the FIRST abandon round for the rout's life (a continuing rout carries
+  // prevRout.from forward), so across a primary hand-off it names where the
+  // break-off began, not the latest camp centroid.
+  from: Vec2
   sinceRound: number  // decision round the break-off began (age; abandon predicates / debug)
+  // ids of the camp we fled. The rout HOLDS (stays published, keeps that camp
+  // avoid-listed) while any of these is still alive-and-visible — because
+  // Combatant.threat never decays, a fled camp reads as `alreadyFighting`
+  // forever, so distance alone can't tell "we broke contact" from "safe to walk
+  // back in". It clears only when the fled camp is dead / out of sight or the
+  // live re-price makes it affordable again (never a permanent blacklist).
+  campIds: string[]
 }
 
 // §coordination: a member's job this plan (assigned per decision round from

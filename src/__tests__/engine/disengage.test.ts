@@ -181,6 +181,66 @@ describe('disengage — snapshot fidelity', () => {
   })
 })
 
+describe('disengage — no blind re-contact after the rout clears', () => {
+  // Regression (review finding #1): Combatant.threat never decays, so a camp we
+  // fled stays alreadyFighting() forever. If the tail excluded already-fighting
+  // foes from the avoid list, the SAME still-unaffordable camp would fall off
+  // the avoid list the moment the rout cleared by distance, and selectTarget /
+  // close-and-hold would re-lock + march the party back in ("fold once, die on
+  // re-contact"). The tail now avoid-lists the whole visible unaffordable set.
+  it('the fled camp stays avoid-listed and the party does not re-lock or march back', () => {
+    const grunts = ['g0', 'g1', 'g2', 'g3', 'g4', 'g5']
+    const b = commitScenario()
+    reinforceToLosing(b)
+    advanceRound(b)   // abandon → rout
+    expect(b.plans.player!.rout).toBeTruthy()
+    expect(b.plans.player!.rout!.campIds.length).toBeGreaterThan(0)
+
+    // The rout HOLDS while the fled camp stays alive-and-visible (Combatant.threat
+    // never decays, so distance alone can't say "safe to walk back in"). Run well
+    // past ROUT_SAFE_RADIUS: the camp must stay avoid-listed, the party must never
+    // re-lock/re-commit it, and it must not creep back toward the losing fight.
+    const minGruntDist = () => Math.min(
+      ...grunts.map((g) => Math.min(...PARTY.map((p) => Math.hypot(find(b, p).pos.x - find(b, g).pos.x, find(b, p).pos.y - find(b, g).pos.y)))),
+    )
+    let maxDist = minGruntDist()
+    for (let r = 0; r < 20; r++) {
+      advanceRound(b)
+      expect(b.plans.player!.rout, `round idx ${r}`).toBeTruthy()   // never clears while camp visible
+      expect(b.plans.player!.engagement).toBeFalsy()                // never re-commits the losing camp
+      for (const g of grunts) expect(b.plans.player!.avoidTargetIds).toContain(g)
+      for (const p of PARTY) expect(grunts).not.toContain(find(b, p).lockedTargetId)
+      const d = minGruntDist()
+      // Monotone-ish: once the gap is opened it is never given back (no march-back).
+      expect(d).toBeGreaterThanOrEqual(maxDist - 1.0)
+      if (d > maxDist) maxDist = d
+    }
+    expect(maxDist).toBeGreaterThan(minGruntDist() - 0.001)   // sanity: a real gap opened
+    expect(maxDist).toBeGreaterThan(6)                        // ...and it is a wide one
+  })
+
+  it('a camp that BECOMES affordable after a rout can be re-engaged (no permanent blacklist)', () => {
+    const b = commitScenario()
+    reinforceToLosing(b)
+    advanceRound(b)   // abandon → rout
+    advanceRound(b)
+    expect(b.plans.player!.rout).toBeTruthy()
+
+    // The camp is whittled down (thinned / party recovered) — hp is priced live
+    // by priceOf, so dropping it re-crosses the entry bar. capability.sustained
+    // is frozen at spawn, so hp is the honest lever here.
+    for (const g of ['g0', 'g1', 'g2', 'g3', 'g4', 'g5']) find(b, g).hp = 1
+
+    let reengaged = false
+    for (let r = 0; r < 4 && !reengaged; r++) {
+      advanceRound(b)
+      if (b.plans.player!.engagement) reengaged = true
+    }
+    expect(reengaged).toBe(true)                 // re-engagement is allowed again
+    expect(b.plans.player!.rout).toBeFalsy()     // ...and the rout gave way to it
+  })
+})
+
 describe('disengage — the player lever still wins', () => {
   it('an equipped aggressive tactic closes on the camp while the default layer routs', () => {
     // p1 keeps an aggressive targeting lock (Tank Buster fires in evalTargeting,

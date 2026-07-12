@@ -340,9 +340,11 @@ Three small, uniform hooks; no new channels, no new engine framework:
   non-kiter default to `desiredRange = preferredRangeVs` *with* back-off
   (today's opt-in kiter behavior, chosen by the team), `hold` pins to the
   anchor, `collapse` is today's close-and-hold. A published `rout` (§3.1) reads
-  at the TOP of this default path: drop the lock and run the shared Retreater
-  `breakOff` toward the party edge — the abandon-for-losing execution, below any
-  equipped movement tactic (the player lever still closes).
+  at the TOP of this default path: drop the lock and, while a foe is within
+  `ROUT_SAFE_RADIUS`, run the shared Retreater `breakOff` toward the party edge
+  (past that the fled camp's avoid-list entry holds the disengage without a
+  sprint) — the abandon-for-losing execution, below any equipped movement tactic
+  (the player lever still closes).
 - **Candidate scoring.** `scoreCandidate` gains a conformance term:
   `− cohesionW · excessDistToAnchor(cand)` (dead-banded, like the ring
   term). `cohesionW` is a new POSTURES column — bold drifts, wary sticks.
@@ -658,10 +660,15 @@ held). Cap-filled pull sets read as **unaffordable** (truncated predictions
 undercount — review fix). `ACUMEN.pull` re-read every decision round. Pull
 assignment + Puller tactic share one tag-and-drag. **Abandon-for-losing now
 executes** (M1–M3 follow-up): the drop publishes `TeamPlan.rout`
-(`{from, sinceRound}`, serialized only when set) which `executeMovement`'s
-default layer runs as the shared Retreater `breakOff` (flee to own edge + drop
-lock, avoid-list every visible foe), persisting until safe (`ROUT_SAFE_RADIUS`)
-or a fresh affordable engagement — "won"/"unseen" drops never rout, and the
+(`{from, sinceRound, campIds}`, serialized only when set) which
+`executeMovement`'s default layer runs as the shared Retreater `breakOff` (flee
+to own edge + drop lock, avoid-list every visible foe), holding while any fled
+`campIds` member stays alive-and-visible — NOT by distance, since undecayed
+`Combatant.threat` makes a fled camp read `alreadyFighting` forever and distance
+alone re-baited the march-back (review fix); it clears on the camp dying / out
+of sight / re-pricing affordable. Active `breakOff` is `ROUT_SAFE_RADIUS`-gated
+(stop sprinting once the gap is open). "Won"/"unseen" drops never rout, the
+ordinary decline still fights a self-provoked unaffordable foe, and the
 entry-vs-exit asymmetry forbids engage↔rout thrash. Tests: `m2-pull.test.ts`,
 `disengage.test.ts`.
 

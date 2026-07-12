@@ -590,6 +590,7 @@ export function decideEngagement(
   // is the centroid of the camp we're breaking off from (the rout's marker).
   let abandonedForLosing = false
   let abandonedFrom: Vec2 | null = null
+  let abandonedCampIds: string[] = []
 
   // §5 commitment fast path: while an engagement is held, run ONLY the cheap
   // abandon checks (a stored-id sum + a linear over-pull scan) — the wide
@@ -662,6 +663,7 @@ export function decideEngagement(
       // the tail can publish a rout if no fresh affordable fight replaces it.
       abandonedForLosing = true
       abandonedFrom = centroid(camp)
+      abandonedCampIds = camp.map((e) => e.id).sort()
     }
   }
 
@@ -688,28 +690,32 @@ export function decideEngagement(
 
   if (!chosenCamp || !chosenPrimary) {
     // §coordination disengage (tactical-coordination.md §3.1/§3.4): nothing
-    // affordable. If we're breaking off — dropped a losing engagement THIS
-    // round, or already routing from a prior one (`prevRout`) — and a camp
-    // threat is still near, publish/continue a rout: executeMovement's default
-    // layer runs the Retreater back-off toward our own edge and drops locks,
-    // instead of standing and re-locking the fight we just fled. Every visible
-    // foe is avoid-listed while routing so selectTarget can't re-lock the camp.
-    // "Safe" (rout ends, normal behavior resumes) = the nearest visible foe is
-    // beyond ROUT_SAFE_RADIUS of the members' centroid — or nothing hostile is
-    // in sight at all (the visible.length===0 early bail above, which returns no
-    // rout). A fresh affordable engagement (chosenCamp above) also clears it.
-    // The engage-side entry bar is stricter than the exit bar we just failed, so
-    // the SAME camp can't re-commit next round — no engage↔rout thrash.
+    // affordable. If we're breaking off — dropped a losing engagement THIS round
+    // (`abandonedForLosing`), or continuing a prior break-off (`prevRout`) — and
+    // any member of the fled camp is still alive-and-visible, keep the rout
+    // published. While routing, avoid the WHOLE visible set (including foes still
+    // `alreadyFighting` us): a fled camp's members read as alreadyFighting
+    // forever (`Combatant.threat` never decays), so without this they'd fall off
+    // the avoid list the moment active flight stopped and `selectTarget` /
+    // `pickHuntTarget` (no affordability check) would march the party straight
+    // back into the losing fight ("fold once, die on re-contact"). The rout
+    // clears — dropping back to the ordinary decline below — only when the fled
+    // camp is dead / out of sight, or the live re-price makes it affordable
+    // (chosenCamp above ⇒ we never reach here): never a permanent blacklist.
     const routing = abandonedForLosing || !!prevRout
     if (routing) {
-      const c = centroid(members)!
-      const stillThreatened = visible.some((e) => distance(e.pos, c) <= ROUT_SAFE_RADIUS)
-      if (stillThreatened) {
-        const from = abandonedFrom ?? prevRout?.from ?? c
+      const campIds = abandonedForLosing ? abandonedCampIds : (prevRout?.campIds ?? [])
+      const visibleIds = new Set(visible.map((e) => e.id))
+      const held = campIds.filter((id) => visibleIds.has(id))   // still-present fled members (visible ⇒ alive)
+      if (held.length) {
+        const from = abandonedForLosing ? (abandonedFrom ?? centroid(members)!) : (prevRout?.from ?? centroid(members)!)
         const sinceRound = prevRout ? prevRout.sinceRound : state.round
-        return { engagement: null, avoidTargetIds: visible.map((e) => e.id).sort(), rout: { from, sinceRound } }
+        return { engagement: null, avoidTargetIds: visible.map((e) => e.id).sort(), rout: { from, sinceRound, campIds: held } }
       }
     }
+    // Ordinary decline (no rout): avoid every visible foe NOT already fighting
+    // us — a foe that provoked itself onto the party is fought back, not avoided
+    // (wake-one-not-the-herd / a tank soaking an unaffordable sponge cluster).
     const avoidTargetIds = visible.filter((e) => !alreadyFighting(e)).map((e) => e.id).sort()
     return { engagement: null, avoidTargetIds }
   }

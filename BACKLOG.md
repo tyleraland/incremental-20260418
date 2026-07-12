@@ -745,9 +745,14 @@ Deferred:
 - **Passive herd-wander.** Passive herds (skittish, no `pack-hunter`) lurk in
   place; give them a non-hunting "graze together" group roam (vs.
   `pack-hunter`, which converges on heroes via the team waypoint).
-- **Flee polish.** `flee` runs toward the unit's own edge (+ cohesion); make
-  it flee *directly away from* the nearest threat, seek terrain/cover, and
-  regroup with the pack rather than corner itself.
+- **Flee polish.** `flee`/`breakOff` runs toward the unit's own edge (+
+  cohesion); make it flee *directly away from* the nearest threat, seek
+  terrain/cover, and regroup with the pack rather than corner itself. **Priority
+  raised:** the disengage rout (§AI & coordination) now makes `breakOff`
+  MANDATORY whole-party behavior in arbitrary open-world geometry (was opt-in,
+  single-hero Retreater) — an own-edge-ward flee can run the party INTO a second
+  camp; pair with an avoid-aware flee heading (and the roam-into-avoided-camp
+  pathing item above).
 - **Aggression decay / leashing.** `provoked` is permanent; let monsters calm
   down and de-aggro when heroes break contact, or leash to a home area.
 - **Tiered dispositions.** Beyond skittish/aggressive: *territorial* (aggro

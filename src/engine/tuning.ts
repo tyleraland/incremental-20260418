@@ -81,19 +81,19 @@ export const ENGAGE_EXIT = 1.3
 // the same scale as CHARGER_DIVE_RADIUS so early parties don't commit to
 // enemies merely nearby but functionally unrelated.
 export const CAMP_RADIUS = 6
-// ROUT_SAFE_RADIUS ⏱ (tactical-coordination.md §3.1/§3.4, disengage): how far
-// the party must break contact before a rout (abandon-for-losing) clears — the
-// commitment's EXIT-side hysteresis, the mirror of ENGAGE_EXIT. While any
-// visible enemy sits within this radius of the members' centroid the break-off
-// persists (members keep running); once the nearest camp threat falls outside
-// it (or drops out of sight entirely), the rout ends and the party may
-// re-appraise. Chosen a clear band beyond CAMP_RADIUS(6)/ANCHOR_BARRIER_RADIUS(8)
-// so "we've disengaged" means the camp genuinely can't re-pull us. Too small →
-// clears while foes are still adjacent, so the party re-locks and thrashes
-// engage↔rout; too big → the party sprints across the whole map before it feels
-// safe. (Re-committing to the SAME camp additionally needs the stricter ENTRY
-// bar, so the entry/exit asymmetry — not this radius alone — is what forbids
-// flapping; this only decides when normal behavior resumes.)
+// ROUT_SAFE_RADIUS ⏱ (tactical-coordination.md §3.1/§3.4, disengage): the
+// ACTIVE-flee gate for a rout (abandon-for-losing). A member runs the Retreater
+// `breakOff` only while its nearest foe is within this radius; once the gap is
+// open it stops sprinting (the fled camp stays avoid-listed, so it won't re-lock
+// / march back — that persistence is keyed on the camp staying alive-and-visible,
+// NOT on distance, because undecayed Combatant.threat makes a fled camp read
+// `alreadyFighting` forever). A clear band beyond CAMP_RADIUS(6)/
+// ANCHOR_BARRIER_RADIUS(8) so "we've broken contact" means the camp genuinely
+// can't re-pull us. Too small → keeps sprinting into foes still on top of it;
+// too big → the party runs across the whole map behind a threat that can't reach
+// it. (The rout itself clears on the fled camp dying / leaving sight / re-pricing
+// affordable — this radius only decides when to STOP running, not when to
+// resume normal behavior.)
 export const ROUT_SAFE_RADIUS = 10
 // PULL_SET_CAP ⏱ (tactical-coordination.md §3.3, M2 pull model): the BFS cap
 // for pullSetOf — who joins if we hit `seed`. Bounds the worst-case appraisal

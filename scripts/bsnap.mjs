@@ -213,7 +213,7 @@ function teamPlanV2(b, p, c, v) {
   if (e) out += `  eng{prim=${e.primaryId ?? '—'} stance=${e.stance} anchor=${v(e.anchor)} pull=${e.targetIds.length} since=R${e.sinceRound}}`
   const a = p?.assignments?.[c.id]
   if (a) out += `  assign=${fmtAssign(a, v)}`
-  if (p?.rout) out += `  rout{from=${v(p.rout.from)} since=R${p.rout.sinceRound}}`
+  if (p?.rout) out += `  rout{from=${v(p.rout.from)} since=R${p.rout.sinceRound} camp=${p.rout.campIds?.length ?? 0}}`
   if (p?.avoidTargetIds?.length) out += `  avoid=${p.avoidTargetIds.length}[${p.avoidTargetIds.join(',')}]`
   if (p?.corridor) out += `  corridor=${v(p.corridor)}`
   return out
