@@ -126,8 +126,8 @@ export interface Poi {
 // secrets, paths, validation) reads. Two producers, one model: dungeon/city
 // AUTHOR the graph (the plan publishes it, geometry realizes it); the
 // overworld DERIVES it from geography (regions segmented from the walk mask,
-// natural pinches — fords, passes, gaps — become edges; `deriveRegions`,
-// track B). The field recipe emits node stubs only until track B lands.
+// natural pinches — fords, passes, gaps — become edges; `deriveRegions` in
+// graph.ts, consumed by the field recipe's `regions` pass).
 export interface NavNode {
   id: string
   at: Pt

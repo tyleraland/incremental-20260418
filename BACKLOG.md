@@ -161,12 +161,11 @@ mechanics and roadmap rationale live in the guide. The **layer architecture**
 (shipped: shared graph/gates modules, scratch tier, manifest seam) and its
 settled decisions live in `procedural-generation-architecture-plan.md`; its open build-out tracks:
 
-- **Track B — derived graph producer (the overworld's convergence layer;
-  unblocks everything overworld).** `deriveRegions(walkMask, minPinchWidth)`
-  in `graph.ts`: distance-transform → erode → connected components = region
-  nodes, pinches = `crossing` edges; field recipe publishes real edges
-  (today: POI node stubs only); add the `graph-truthful` validation rule
-  (flood-fill agrees with every published edge).
+- **Track B follow-ups** (core shipped — `deriveRegions`, field-recipe
+  `regions` pass, `graph-truthful` rule): pinch-width cell quantization
+  (width-3 and width-4 corridors are indistinguishable — a chamfer/Euclidean
+  transform would sharpen ford tuning for P2); surface the `regions` claims
+  plane in the `?mapgen=1` lab (region tinting in the layer inspector).
 - **Track C — rivers + crossings + desire paths** (consumes B). Hydrology
   v2: descending river band on the elevation field; ford (shallow strip) /
   bridge (road surface over the gap) crossings as graph edges; a desire-path
@@ -183,10 +182,19 @@ settled decisions live in `procedural-generation-architecture-plan.md`; its open
   plane; store consumes it for spawn/reward pacing (mapgen makes the stage,
   store populates — settle the split in that PR). Gives `field` the depth
   notion it lacks.
-- **Track E — real cyclic dungeon generation.** Cycle-as-primitive templates
-  + lock/key/shortcut rewrite steps (Unexplored-style) replacing today's
-  MST+2-spares. A pure production-layer swap: gates/validation/stamps
-  untouched by construction.
+- **Track E follow-ups** (core shipped — cycle-as-primitive skeleton +
+  kit-invariant shortcut-lock rewrite): more rewrite steps (key-fetch chains
+  need phase-6 items); shortcut FEEL knobs are first guesses (0.5 fire
+  chance, mid-arc-only, closest-3 chord pick, 0.4×axis degenerate-arc
+  threshold) — phase-4 human iteration; nudge the shortcut plug's doorAt
+  outward into the corridor to raise the hit rate (the long-way flood
+  rejects candidates whose plug would swallow a small room's centre); the
+  both-arcs-empty promotion path has no exercising test or seed (traced
+  sound by review, untested — needs a crafted unit test before trusting the
+  ≥3-room cycle guarantee on degenerate layouts); a 2-room floor
+  legitimately bakes a tree and nothing flags it; the shortcut "never
+  touches goal" filter is code-enforced but untestable from the spec
+  (goalId lives only in scratch — publish a marker if a test should pin it).
 - **Track F — tactical legibility as a generation target.** Sightline-ribbon
   pass (reserve 1–2 straight lanes pre-obstacles; pure AABB) turning
   `longLanes` from annotation into guarantee; `tacticalTargets` in GenParams
@@ -219,7 +227,13 @@ Deferred phases (each independently shippable):
   (BSNAP byte-identical replay must survive it); gated behind everything
   above.
 - **Cross-cutting.** The dungeon's 72-rect budget still wants either a
-  further pather-perf pass or a trimmed live variant. Tactical-profile
+  further pather-perf pass or a trimmed live variant (or the track-C
+  moderate-envelope bench). `GenResult.notes` accumulate across reroll
+  attempts — note-matching tests/tools can see notes from rejected attempts;
+  consider per-attempt note scoping. `Math.hypot` feeds strict-inequality
+  tie-breaks in mapgen sorts — same-process determinism (the save contract)
+  is safe, but cross-engine seed replay could in principle flip a near-tie;
+  swap to squared distances if that ever matters. Tactical-profile
   heuristics (chokepoint/lane counts) are v0, unvalidated against play; map
   features need consuming AI (hold-chokepoint / use-cover tactics — see AI &
   coordination) and should ship as pairs. `?mapgen=1` lab could grow an

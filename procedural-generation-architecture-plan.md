@@ -30,21 +30,21 @@ collision plane.**
 | L1 | **Params + seed** — `GenParams` → `NormParams`; save = seed + params, never the spec. | `draft.ts` | shipped |
 | L2 | **Substrate** — `FieldBundle` noise fields (elevation/moisture/roughness); the source of intra-map coherence. | `fields.ts` | shipped |
 | L3 | **Production** — THE DIVERGENCE LAYER, one per recipe family: overworld = geography-first (surface bands, hydrology, ridges, outcrops); dungeon = graph-first (rooms → cycles → carve); city = road-first (skeleton → pave → buildings). All philosophy differences are quarantined here. | `recipes/*` | shipped (upgrades tracked below) |
-| L4 | **Nav/region graph** — THE CONVERGENCE LAYER: one shared model (`NavNode`/`NavEdge`), two producers — *authored* (dungeon, city: plan publishes it, geometry realizes it) and *derived* (overworld: segment passable space into regions; pinches become edges). Shared ops in `graph.ts`. | `graph.ts` + producers | authored ✅ · derived ❌ (track B — the biggest new build) |
+| L4 | **Nav/region graph** — THE CONVERGENCE LAYER: one shared model (`NavNode`/`NavEdge`), two producers — *authored* (dungeon, city: plan publishes it, geometry realizes it) and *derived* (overworld: segment passable space into regions; pinches become edges). Shared ops in `graph.ts`. | `graph.ts` + producers | authored ✅ · derived ✅ (P1: `deriveRegions`; field publishes real graphs) |
 | L5 | **Gating** — recipe-agnostic lock-and-key over graph edges (`gates.ts`): a `Lock` names what opens it, resolves against the party kit (and later, carried keys / world manifest). Dungeon doors and overworld fords are the same mechanism wearing different materials. | `gates.ts` | shipped (dungeon); overworld gates arrive with track C |
 | L6 | **Derived planes** — the computed-fields tier: named intermediate products one pass produces and later passes consume (`draft.scratch`): walk masks, road-distance transforms today; flow/distance-to-goal, tension budget, sightline masks tomorrow. Never baked; the spec only carries digested summaries (e.g. `NavNode.depth`). | `draft.ts` scratch | shipped (masks); flow/tension = track D |
 | L7 | **Dressing** — stamps/vaults, scatter, paths/desire-paths, decor. Reads L2–L6, adds no connectivity. | `stamps.ts`, recipe passes | shipped |
 | L8 | **Semantic annotation** — POIs, tactical profile, naming/premise. Describes, never steers. | `profile.ts`, `naming.ts` | shipped |
 | L9 | **Bake → validate → reroll** — coherence harness; reachability is *conditional* through locks and reads the graph. | `draft.ts`, `validate.ts`, `pipeline.ts` | shipped |
 
-What this quarantines: swapping the dungeon's MST+spares for real cyclic
-generation (track E), or teaching the overworld to derive regions (track B),
-each touches exactly one layer — L5–L9 don't move.
+What this quarantines: P4 swapped the dungeon's MST+spares for real cyclic
+generation and P1 taught the overworld to derive regions — each touched
+exactly one layer; L5–L9 didn't move. That was the bet, and it held.
 
 ## The graph contract (L4)
 
-The shared model both producers must satisfy (validation grows a
-`graph-truthful` rule with track B):
+The shared model both producers must satisfy (enforced by the validator's
+`graph-truthful` rule):
 
 - `NavNode` = a **region anchor**: a dungeon room, a city block/junction, an
   overworld region (the land between rivers/ridges). `area` is its
@@ -59,17 +59,20 @@ The shared model both producers must satisfy (validation grows a
      critical path (Brogue's rule, already enforced for POIs by `locks`);
   3. a closed lock's edge is genuinely impassable, an open one genuinely
      passable (shipped: the `locks` rule, both directions);
-  4. (track B) every published edge is physically real — flood-fill agrees.
+  4. every published edge is physically real — flood-fill agrees (shipped:
+     the `graph-truthful` rule, ±4 anchor envelope).
 
-### The derived producer (track B — the one genuinely new build)
+### The derived producer (shipped as P1)
 
-`deriveRegions(walkMask, minPinchWidth)` in `graph.ts`:
-distance-transform the walkable mask → erode by the pinch threshold →
-connected components of the eroded mask = regions → boundary corridors
-between two regions = edges, each's narrowest cell = the pinch (`doorAt`).
-Pure, deterministic, O(cells). The field recipe then publishes real
-nodes+edges instead of today's POI-only node stubs — and the entire L5 gate
-machinery starts working on the overworld with zero changes to it.
+`deriveRegions(walk, cols, rows, {pinchWidth, minRegionCells})` in `graph.ts`:
+border-aware clearance BFS → erode by the pinch threshold → scanline
+component labeling = regions → multi-source claim of the remainder → one
+`crossing` edge per contiguous boundary cluster, its min-clearance cell the
+pinch (`doorAt`); also returns the per-cell `claims` plane. Pure,
+deterministic, O(cells). The field recipe publishes real nodes+edges through
+it — the entire L5 gate machinery is now available to the overworld with
+zero changes. (Today's lone-lake geography usually yields one region; P2's
+rivers are what make the graph non-trivial.)
 
 ## Decisions (weighed, settled — revisit deliberately)
 
@@ -161,9 +164,8 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
   `gates.ts` (recipe-agnostic lock placement), `draft.scratch` (L6 floor —
   the WeakMap side channels made first-class), `crossing` edge kind,
   `GenParams.manifest` seam, this doc.
-- **B. Derived graph producer**: `deriveRegions` + the `graph-truthful`
-  validator rule; field recipe publishes real edges. Unblocks everything
-  overworld.
+- **B. Derived graph producer** ✅ *(shipped as P1)*: `deriveRegions` + the
+  `graph-truthful` validator rule; field recipe publishes real edges.
 - **C. Rivers + crossings + desire paths**: hydrology v2, ford/bridge edges,
   the paths pass, first overworld proficiency gate. Starts with the
   moderate-envelope bench (decision 3): re-bench `map-perf-envelope` on
@@ -172,9 +174,10 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
 - **D. Flow/tension derived plane**: distance-to-goal BFS in scratch, node
   `intensity` on the semantic plane, store-side pacing consumption (settle
   the §4 ownership split in that PR, per decision 4).
-- **E. Real cyclic dungeon generation**: cycle-as-primitive templates +
-  lock/key/shortcut rewrite steps (Unexplored-style) replacing MST+2-spares.
-  A pure L3/L4-producer swap — L5–L9 untouched by construction.
+- **E. Real cyclic dungeon generation** ✅ *(core shipped as P4)*:
+  cycle-as-primitive skeleton + the shortcut-lock rewrite step replacing
+  MST+2-spares; a pure L3/L4-producer swap — L5–L9 untouched by
+  construction. Key-fetch rewrite steps await phase-6 item plumbing.
 - **F. Tactical legibility as a target**: sightline-ribbon pass +
   `tacticalTargets` scoring/validation. Pairs with the consuming AI tactics
   (BACKLOG → AI & coordination) — ship feature and consumer together (⭐10).
@@ -206,10 +209,10 @@ never half-landed.
 
 | # | packet | why it's first-order structural | shippable when |
 |---|---|---|---|
-| **P1** | **Derived region graph** (track B): `deriveRegions` in `graph.ts` (walk mask → distance transform → erode by pinch width → components = region nodes → pinches = `crossing` edges with `doorAt`); field recipe rasterizes its collision into a scratch walk mask and publishes real nodes/edges (depth from the spawn region); `graph-truthful` validation rule | the convergence layer's second producer — decides whether locks/secrets/paths can EVER be shared with the overworld; every overworld packet hangs on it; no analog exists in the codebase | field bakes publish truthful graphs (synthetic-mask unit tests + fuzz gates + crafted validator pair green) |
+| **P1** ✅ | **Derived region graph** (track B): `deriveRegions` in `graph.ts` (walk mask → distance transform → erode by pinch width → components = region nodes → pinches = `crossing` edges with `doorAt`); field recipe rasterizes its collision into a scratch walk mask and publishes real nodes/edges (depth from the spawn region); `graph-truthful` validation rule | the convergence layer's second producer — decides whether locks/secrets/paths can EVER be shared with the overworld; every overworld packet hangs on it; no analog exists in the codebase | field bakes publish truthful graphs (synthetic-mask unit tests + fuzz gates + crafted validator pair green) |
 | **P2** | **River + crossings** (track C core): hydrology v2 — a descending river band traced on the elevation field, ford (shallow strip) / bridge (surface `road` over the gap) crossings punched at pinches the graph confirms | the region DIVIDER that makes derived graphs non-trivial; the hardest budget/coherence interaction (river rects vs. envelope, water-coherence rule) — better to hit it early | water-themed field seeds bake a river with ≥1 crossing, valid, rect spend `note()`d |
 | **P3** | **Overworld gates + secret pockets**: a gated *secondary* crossing (mobility ford / perception hidden trail) and a locked vault region, via the shared `gates.ts` on derived edges | proves the convergence thesis end-to-end — dungeon door and overworld ford are literally one call; lands phase-4's "field-recipe gates" | same seed × different kit bakes open/closed field variants; `locks` rule green both ways |
-| **P4** | **Cyclic dungeon core** (track E): cycle-as-primitive skeleton (entry→goal via two arcs) + tree-attached leaves replacing MST+2-spares; first rewrite step: the **shortcut lock** (a proficiency plug on the short arc — closed forces the long way, nothing stranded) | the dungeon-side structural piece — cycles by construction, not by accident; the rewrite-step shape is what lock/key/shortcut grammar (Unexplored) grows on. Independent of P1–P3, parallelizable | dungeon fuzz gates green; ≥1 cycle by construction; gates/stamps/carve untouched |
+| **P4** ✅ | **Cyclic dungeon core** (track E): cycle-as-primitive skeleton (entry→goal via two arcs) + tree-attached leaves replacing MST+2-spares; first rewrite step: the **shortcut lock** (a proficiency plug on the short arc — closed forces the long way, nothing stranded) | the dungeon-side structural piece — cycles by construction, not by accident; the rewrite-step shape is what lock/key/shortcut grammar (Unexplored) grows on. Independent of P1–P3, parallelizable | dungeon fuzz gates green; ≥1 cycle by construction; gates/stamps/carve untouched |
 | **P5** | **Moderate-envelope bench**: re-bench `map-perf-envelope.test.ts` on realistic river-map geometry; raise the live cap toward ~56–72 | converts decision 3 into a number; unlocks LIVE adoption of P2 maps AND the lab dungeon | new envelope measured + gated; adapter cap updated |
 | **P6+** | **Color-in (BACKLOG until the shape holds)**: desire paths, flow/`intensity` plane (track D), sightline ribbons + `tacticalTargets` (track F), NPC placement off the semantic plane, world director (track G) | none move the structure; all read the graph/planes laid above | (backlog) |
 

@@ -62,12 +62,12 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `rng.ts` | `hashString`/`hash01`, `makeRng`, `streamRng` (the stream splitter) |
 | `fields.ts` | value-noise fBm; `makeFields` → the shared FieldBundle |
 | `draft.ts` | MapDraft + plane helpers (`paint`/`addBarrier`/`addPoi`/`isPlaceable`), `bake`; `draft.scratch` = the derived-planes tier (walk masks, distance transforms — produced by one pass, consumed by later ones, never baked) |
-| `graph.ts` | the shared nav-graph layer ops (`bfsDepth`, `nodeDegrees`); track B's `deriveRegions` (overworld graph from geography) lands here |
-| `gates.ts` | recipe-agnostic lock-and-key: `placeProficiencyLock` (prize + gate POIs + tag-themed seal plug, resolved against the party kit), `GATE_LOOKS`/`GATE_TAGS` |
+| `graph.ts` | the shared nav-graph layer: ops (`bfsDepth`, `nodeDegrees`) + `deriveRegions` — the DERIVED producer (walk mask → border-aware clearance BFS → erode by pinch width → region components → one `crossing` edge per contiguous pinch, `doorAt` at min clearance; also returns the per-cell `claims` plane) |
+| `gates.ts` | recipe-agnostic lock-and-key: `placeProficiencyLock` (prize + gate POIs + tag-themed seal plug, resolved against the party kit) and `placeShortcutLock` (`gates: []` — locks a ROUTE, not a prize), `GATE_LOOKS`/`GATE_TAGS` |
 | `pipeline.ts` | `generateMap(recipe, params)`: pass runner, per-pass streams, skipPasses, bake→validate→reroll |
-| `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / water-coherence |
-| `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → outcrops → scatter → semantic |
-| `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → cyclic corridor graph → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects): lab/encounter only until the pather perf pass |
+| `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / graph-truthful (every unlocked/open nav edge connects its endpoints' flood components, ±4 anchor envelope; `doorAt` open; closed-locked edges exempt) / water-coherence. Exports `occupancyGrid` (the shared PAD-inflated rasterizer recipes reuse) |
+| `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → outcrops → **regions** (no-RNG: rasterizes collision → scratch `walk`/`regions` planes → `deriveRegions` publishes real nav nodes+edges, depth rooted at the spawn region) → scatter → semantic (links POIs onto region nodes; falls back to POI stubs when regions is skipped) |
+| `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → **cycle-as-primitive skeleton** (entry→goal via two axis-split arcs — a real cycle by construction at ≥3 rooms — leaves tree-attached, optional chord for a second loop) → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects) → rewrite steps (the `shortcut` pass: a proficiency plug on a mid-arc cycle edge — closed forces the long way around; every rewrite decision is KIT-INVARIANT: budgets count as-if-all-locks-closed so an open kit only ever removes seal geometry): lab/encounter only until the pather perf pass |
 | `recipes/city.ts` | the road-first town: plaza + jittered gate roads + cross-street loops (nav skeleton FIRST) → paving (ground → road/stone) → street-fronting building rects (road-distance transform: every house ≥2 cells off pavement, ≤4 from a street) → yard/market scatter → plaza landmark. Generates the STAGE for a city (NPCs/spawns stay store-owned); **live on `prontera-city`** (`data/locations.ts`) — under a tighter budget it just starves to fewer houses |
 | `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
@@ -111,14 +111,17 @@ cache, gated in `map-perf-envelope.test.ts`).
    `mirror-vale` live; barrier budget pinned to the perf envelope. Left for
    later polish: landmark POI → big silhouette prop, richer water treatment
    (ripple props, ford highlight), spec-aware minimap.
-3. ✅ **Dungeon recipe (graph-first, donjon-flavored)** — cyclic room graph
-   (function-first: `layout` publishes nav nodes/edges + exact `doorAt`
-   pinches, `carve` covers the solid mask with maximal rects), scattered
-   polymorph rooms, errant corridors, dead-end stubs, stamp registry, lair +
-   depth gradient, optional-POI reachability exemption. Left for later:
-   1-wide labyrinth corridors (needs sub-cell pathing care), symmetric
-   layouts, a cavern recipe (erosion-first), remove-deadends knob, live
-   dungeon location (needs the pather pass).
+3. ✅ **Dungeon recipe (graph-first, donjon-flavored)** — cycle-as-primitive
+   room graph (function-first: `layout` builds entry→goal arcs — a real cycle
+   by construction — publishes nav nodes/edges + exact `doorAt` pinches,
+   `carve` covers the solid mask with maximal rects), scattered polymorph
+   rooms, errant corridors, dead-end stubs, the `shortcut` rewrite step
+   (route-locking a mid-arc cycle edge, kit-invariant), stamp registry, lair
+   + depth gradient, optional-POI reachability exemption. Left for later:
+   more rewrite steps (key-fetch chains need phase-6 items), 1-wide labyrinth
+   corridors (needs sub-cell pathing care), symmetric layouts, a cavern
+   recipe (erosion-first), remove-deadends knob, live dungeon location
+   (needs the pather pass).
 4. 🟡 **Lock-and-key + proficiency gates — FOUNDATION SHIPPED, FEEL OPEN.**
    Mechanics are built and machine-gated (see the phase-4 section below);
    frequency, rewards, and surfacing need human play + iteration before any
