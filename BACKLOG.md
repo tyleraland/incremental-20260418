@@ -646,6 +646,25 @@ live play ever surfaces the loop).
   Reads as a real bug (user's instinct was right): a party ground down in a
   forced fight it never chose and is LOSING should flee, the same as an
   abandoned commitment.
+  **What the feature is, in one line:** extend the disengage/rout so it also
+  covers fights the party was *dragged into* — not just fights it *chose and
+  then abandoned*. Today "know when to fold" only applies to a committed
+  engagement; this makes it apply to any losing fight, however it started.
+  **Motivating scenario (what good looks like):** a 4-hero party crosses a
+  field and gives a wide berth to a sleeping ogre it has correctly priced as
+  unaffordable (ogre sits on `avoidTargetIds`; the party is walking around it,
+  not toward it). The ogre wakes on its own (vision/patrol), lumbers in, and
+  one-shots a hero before the line can react. The party is now 3 wounded heroes
+  against a foe they already knew they couldn't beat and have barely scratched.
+  Intelligent behavior: *recognize the forced fight is lost — a teammate just
+  died and the ogre is near-full — and break off toward the map edge / a safe
+  rally, saving the other three*, exactly the way `fold-when-losing` retreats
+  from a committed engagement that turns bad. The dumb behavior we have today:
+  the survivors stay locked on out of target-lock inertia and get fed to the
+  ogre one at a time until the party is wiped, because nothing was formally
+  "committed" so no abandon predicate ever runs. The judgment we want the AI to
+  make is "we didn't pick this fight, it's going badly, cut our losses now"
+  rather than "fight whatever is hitting me to the last hero."
   **Fix attempted and reverted as unsafe.** The obvious low-risk shape — in
   `decideEngagement`'s "nothing affordable" tail, treat any visible
   `alreadyFighting` foe as rout-worthy too (its own `pullSetOf` camp already
