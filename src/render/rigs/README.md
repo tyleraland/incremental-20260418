@@ -21,9 +21,14 @@ keeps symmetry convenient without forcing a perfectly symmetric animal.
 The selected joint is also shown as a focused chain in top (x/y), side (x/z),
 and front (y/z) projections. Its absolute rig coordinates and parent-relative
 coordinates are both editable; the panel also reports whole-rig center and
-extent. Silhouette parts expose round/tapered/angular/spiky geometry, width,
-sharpness, and exploratory base/lit/outline color pickers. Custom colors remain
-draft data until a production compiler maps them to palette roles.
+extent. The projection panel defaults to axis-normalized domains: X uses the
+same fitted domain in top/side, Y in top/front, and Z in side/front, so subtle
+depth changes remain visible without making the three views disagree. A true-
+scale toggle instead gives every model unit the same screen size. Numbered
+joints map to the coordinate table below the plots. Silhouette parts expose
+round/tapered/angular/spiky geometry, width, sharpness, and exploratory
+base/lit/outline color pickers. Custom colors remain draft data until a
+production compiler maps them to palette roles.
 
 ## Contract for a future skeleton producer
 
