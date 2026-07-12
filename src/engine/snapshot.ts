@@ -101,6 +101,7 @@ interface BattleSnapshot {
   mode: BattleState['mode']
   plans: BattleState['plans']
   objectives?: BattleState['objectives']
+  directives?: BattleState['directives']
   round: number
   outcome: BattleState['outcome']
   stats: BattleState['stats']
@@ -139,6 +140,11 @@ export function serializeBattle(state: BattleState): string {
     // Serialized ONLY when set, so every objective-less battle — i.e. all of
     // them until M5 — keeps its token byte-identical (absent → undefined on load).
     ...(state.objectives ? { objectives: state.objectives } : {}),
+    // §coordination M4: team directive ids (tactical-coordination.md §3.5) —
+    // same only-when-set rule, so every directive-less battle (including any
+    // running the default Skirmish, which is never stored) keeps its token
+    // byte-identical to a legacy one.
+    ...(state.directives ? { directives: state.directives } : {}),
     round: state.round,
     outcome: state.outcome,
     stats: state.stats,
@@ -246,6 +252,7 @@ export function deserializeBattle(token: string): BattleState {
     peaceful: false,   // not serialized; the host re-applies it from the location (see serializeBattle)
     plans: snap.plans,
     ...(snap.objectives ? { objectives: snap.objectives } : {}),   // absent (all pre-M5 tokens) ⇒ undefined
+    ...(snap.directives ? { directives: snap.directives } : {}),   // absent (legacy / directive-less tokens) ⇒ undefined
     planner: defaultPlanner,
     round: snap.round,
     outcome: snap.outcome,

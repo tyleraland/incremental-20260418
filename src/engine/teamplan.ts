@@ -15,7 +15,10 @@ import {
   PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR, ACUMEN, ENGAGE_EXIT, postureOf,
   STANCE_KITE_REACH_EDGE, ANCHOR_BARRIER_RADIUS, FRAGILITY_OUTLIER_FRACTION,
   CAMP_RADIUS, PULL_SET_CAP,
+  DIRECTIVE_PULL_STRICT, DIRECTIVE_PULL_LOOSE, DIRECTIVE_WOUNDED_WEIGHT,
+  DIRECTIVE_SQUISHY_SCALE, DIRECTIVE_HEALER_MULT,
 } from './tuning'
+import { directiveOf, type DirectiveDef } from './directives'
 import type {
   Assignment, Barrier, BattleState, Combatant, Engagement, KitCapability, Stance, Team, Vec2,
 } from './types'
@@ -189,6 +192,24 @@ function pullAssignmentFor(
   return { [puller.id]: { role: 'pull', targetId: solo.id, to } }
 }
 
+// M4 Pull to Camp (tactical-coordination.md §3.5): puller mandatory — under
+// an ambush-anchor directive, EVERY held engagement staffs a pull: the party's
+// designated puller (declared Puller intent first, else the capability pick)
+// tags the current primary and drags it back to the line's anchor, not just
+// M2's fringe-solo case. `to` reuses the previous plan's point while the same
+// puller/target pair holds (anchor stability), like pullAssignmentFor above.
+function directivePullAssignment(
+  directive: DirectiveDef | null, members: Combatant[], primary: Combatant | undefined,
+  anchor: Vec2 | null, prevAssignments: Record<string, Assignment> | undefined,
+): Record<string, Assignment> | undefined {
+  if (directive?.anchorPolicy !== 'ambush' || !primary || !members.length) return undefined
+  const puller = pickPuller(members)
+  if (!puller) return undefined
+  const prev = prevAssignments?.[puller.id]
+  const to = prev && prev.role === 'pull' && prev.targetId === primary.id ? prev.to : anchor ?? centroid(members)!
+  return { [puller.id]: { role: 'pull', targetId: primary.id, to } }
+}
+
 // §coordination pricing (tactical-coordination.md §3.3): the mutual-TTK race.
 // RTK (rounds-to-kill the camp) = campHp / partySustained; RTD (rounds-to-die)
 // = partyHp / campSustained. Both sides are plain sums over precomputed
@@ -216,10 +237,27 @@ function priceOf(camp: Combatant[]): { hp: number; sustained: number } {
 //     clear line to the primary; no qualifying corner → the centroid itself.
 //   collapse — no barrier nearby, so there's nothing worth standing on
 //     (today's behavior; anchor stays null).
+//
+// M4 (tactical-coordination.md §3.5): the team's directive REQUESTS a stance/
+// anchor emphasis ahead of the default preference order; acumen still bounds
+// execution (below ACUMEN.stance nothing here runs at all; the ambush anchor
+// additionally gates on ACUMEN.ambush). No directive ⇒ the shipped M3 order
+// exactly (kite → hold-at-choke → collapse).
+//   anchorPolicy 'choke'  + stanceBias 'hold' — prefer standing the line on a
+//     nearby chokepoint even when the comp could kite (Hold the Line).
+//   anchorPolicy 'ambush' — anchor behind a LoS break: the nearest vis-graph
+//     corner whose sightline to the primary is BLOCKED, so the line waits out
+//     of sight and pulled targets are dragged around the corner (Pull to Camp).
+//     No qualifying blind corner ⇒ fall through to the default order.
+//   anchorPolicy 'ground' — stand where the fight was committed (the centroid).
+//   anchorPolicy 'none'   — never anchor: kite when viable, else collapse.
+//   stanceBias 'collapse' — always close (Assassinate's divers).
 function decideStanceAnchor(
   state: BattleState, team: Team, members: Combatant[], camp: Combatant[], primary: Combatant,
 ): { stance: Stance; anchor: Vec2 | null } {
-  if (teamAcumen(state, team) < ACUMEN.stance) return { stance: 'collapse', anchor: null }
+  const acumen = teamAcumen(state, team)
+  if (acumen < ACUMEN.stance) return { stance: 'collapse', anchor: null }
+  const directive = directiveOf(state, team)
   const c = centroid(members)!
   let campMaxReach = 0, campMaxSpeed = 0
   for (const e of camp) {
@@ -228,19 +266,42 @@ function decideStanceAnchor(
   }
   const medReach = median(members.map((m) => m.capability?.reach ?? 0))
   const medSpeed = median(members.map((m) => moveSpeedOf(m)))
-  if (medReach >= campMaxReach + STANCE_KITE_REACH_EDGE - EPS && medSpeed >= campMaxSpeed - EPS) {
-    return { stance: 'kite', anchor: c }
-  }
+  const kiteable = medReach >= campMaxReach + STANCE_KITE_REACH_EDGE - EPS && medSpeed >= campMaxSpeed - EPS
   const nearBarrier = state.barriers.some((b) => distToBarrier(c, b) <= ANCHOR_BARRIER_RADIUS)
-  if (!nearBarrier) return { stance: 'collapse', anchor: null }
-  let anchor = c
-  let bestD = Infinity
-  for (const corner of barrierCorners(state.barriers)) {
-    if (!sightlineClear(corner, primary.pos, state.barriers)) continue
-    const d = distance(c, corner)
-    if (d < bestD - EPS) { bestD = d; anchor = corner }
+
+  // Anchor candidates off the cached vis-graph corners: the nearest with a
+  // CLEAR line to the primary (a chokepoint to stand ON) and the nearest with
+  // the line BLOCKED (a sight break to hide BEHIND — the ambush spot).
+  let chokeAnchor: Vec2 | null = null
+  let ambushAnchor: Vec2 | null = null
+  if (nearBarrier) {
+    let bestChoke = Infinity, bestAmbush = Infinity
+    for (const corner of barrierCorners(state.barriers)) {
+      const d = distance(c, corner)
+      if (sightlineClear(corner, primary.pos, state.barriers)) {
+        if (d < bestChoke - EPS) { bestChoke = d; chokeAnchor = corner }
+      } else if (d < bestAmbush - EPS) {
+        bestAmbush = d; ambushAnchor = corner
+      }
+    }
   }
-  return { stance: 'hold', anchor }
+
+  // Directive requests, in their own precedence, each falling through to the
+  // default order when the ground can't honor them.
+  if (directive?.anchorPolicy === 'ambush' && acumen >= ACUMEN.ambush && ambushAnchor) {
+    return { stance: directive.stanceBias ?? 'hold', anchor: ambushAnchor }
+  }
+  if (directive?.anchorPolicy === 'ground') return { stance: directive.stanceBias ?? 'hold', anchor: c }
+  if (directive?.anchorPolicy === 'none') {
+    return kiteable ? { stance: 'kite', anchor: c } : { stance: 'collapse', anchor: null }
+  }
+  if (directive?.stanceBias === 'hold' && nearBarrier) return { stance: 'hold', anchor: chokeAnchor ?? c }
+  if (directive?.stanceBias === 'collapse') return { stance: 'collapse', anchor: null }
+
+  // Shipped default order (M3): kite → hold at the choke → collapse.
+  if (kiteable) return { stance: 'kite', anchor: c }
+  if (!nearBarrier) return { stance: 'collapse', anchor: null }
+  return { stance: 'hold', anchor: chokeAnchor ?? c }
 }
 
 function distToBarrier(p: Vec2, b: Barrier): number {
@@ -287,12 +348,34 @@ function pickGuard(members: Combatant[], outlierId: string, pullerId: string | n
   return best
 }
 
+// M4 Protect (tactical-coordination.md §3.5): the directive FORCES the
+// standing guard and aims it — 'carry' = the party's top sustained damage
+// (the §3.2 protectee capability query), 'weakest' = lowest effective
+// toughness, no outlier threshold required. Both relative queries, id
+// tiebreak. Without a protect directive the shipped fragility-outlier rule
+// decides (and may decide nothing).
+function protecteeOf(members: Combatant[], directive: DirectiveDef | null): Combatant | null {
+  if (!directive?.protect) return fragilityOutlier(members)
+  if (members.length < 2) return null   // nobody left to do the guarding
+  const wantMax = directive.protect === 'carry'
+  const score = (m: Combatant) => (wantMax ? m.capability?.sustainedDamage ?? 0 : m.capability?.toughness ?? 0)
+  let best: Combatant | null = null
+  let bestS = wantMax ? -Infinity : Infinity
+  for (const m of members) {
+    const s = score(m)
+    const better = wantMax ? s > bestS + EPS : s < bestS - EPS
+    if (!best || better || (Math.abs(s - bestS) <= EPS && m.id < best.id)) { best = m; bestS = s }
+  }
+  return best
+}
+
 // Layer a standing-guard assignment on top of whatever pull assignment
 // already exists (§3.3) — the one place both jobs combine before publish.
 function withGuardAssignment(
   members: Combatant[], assignments: Record<string, Assignment> | undefined,
+  directive: DirectiveDef | null = null,
 ): Record<string, Assignment> | undefined {
-  const outlier = fragilityOutlier(members)
+  const outlier = protecteeOf(members, directive)
   if (!outlier) return assignments
   const pullerId = assignments
     ? Object.keys(assignments).find((id) => assignments[id].role === 'pull') ?? null
@@ -336,6 +419,9 @@ export function decideEngagement(
   const sees = (e: Combatant, mult: number) =>
     members.some((m) => distance(m.pos, e.pos) <= m.visionRange * mult)
   const visible = enemies.filter((e) => !isStealthed(e) && sees(e, 1))
+  // M4 (tactical-coordination.md §3.5): the team's active directive — plain
+  // data biasing the decisions below. null (the usual case) ⇒ shipped behavior.
+  const directive = directiveOf(state, team)
 
   // The incumbent gets the SAME retention grace pickHuntTarget gives (out to
   // HUNT_RETAIN_MULT× vision) checked independently of the plain-vision `visible`
@@ -357,7 +443,7 @@ export function decideEngagement(
     // Pure continuation (no re-anchor): carry the stance/anchor forward
     // unchanged rather than recomputing (§3.1 — stance is decided at commit
     // and held for the engagement's life).
-    const heldAssignments = withGuardAssignment(members, undefined)
+    const heldAssignments = withGuardAssignment(members, undefined, directive)
     return {
       engagement: {
         targetIds: [incumbent!.id], primaryId: incumbent!.id,
@@ -370,9 +456,26 @@ export function decideEngagement(
   }
 
   const partySustained = members.reduce((sum, m) => sum + (m.capability?.sustainedDamage ?? 0), 0)
+  // Kill-order score. Default policy 'dangerous' = the shipped M1 shape
+  // (threat ÷ time-to-kill). M4 directives flip the policy (§3.3/§3.5) —
+  // ungated like the M1 baseline (same cost, and the hysteresis machinery
+  // below is policy-agnostic since it only ever compares scores):
+  //   'wounded' — the dangerous score bent toward whatever is bleeding
+  //     (× (1 + w·(1 − hpFrac)); identical ordering at full HP).
+  //   'squishy' — how fast can the party delete it: sustained ÷ effective
+  //     toughness, healers first (the existing Assassinate pick, §3.5), threat
+  //     deliberately ignored. Scaled onto the killScore range so the
+  //     PRIMARY_SCORE_FLOOR / SWITCH_MARGIN hysteresis behaves unchanged.
+  const policy = directive?.targetPolicy ?? 'dangerous'
   const killScore = (e: Combatant): number => {
+    if (policy === 'squishy') {
+      const toughness = Math.max(EPS, e.capability?.toughness ?? e.maxHp)
+      return (e.capability?.hasHeal ? DIRECTIVE_HEALER_MULT : 1) * DIRECTIVE_SQUISHY_SCALE * partySustained / toughness
+    }
     const ttk = e.hp / Math.max(EPS, partySustained)
-    return (threat[e.id] ?? 0) / Math.max(EPS, ttk)
+    const base = (threat[e.id] ?? 0) / Math.max(EPS, ttk)
+    if (policy === 'wounded') return base * (1 + DIRECTIVE_WOUNDED_WEIGHT * (1 - e.hp / Math.max(EPS, e.maxHp)))
+    return base
   }
   const memberIds = new Set(members.map((m) => m.id))
   const alreadyFighting = (e: Combatant): boolean => {
@@ -414,7 +517,7 @@ export function decideEngagement(
     // stance/anchor stay 'collapse'/null here regardless — ACUMEN.stance(90)
     // is strictly above ACUMEN.pull(50), so a party that hasn't cleared the
     // lower gate can't have cleared the higher one either.
-    const v0Assignments = withGuardAssignment(members, undefined)
+    const v0Assignments = withGuardAssignment(members, undefined, directive)
     return {
       engagement: { targetIds, primaryId: primary.id, anchor: null, stance: 'collapse', sinceRound },
       avoidTargetIds,
@@ -424,7 +527,12 @@ export function decideEngagement(
 
   // ── M2 (gated on ACUMEN.pull): pullSetOf camps + the mutual-TTK race.
   const partyHp = members.reduce((sum, m) => sum + m.hp, 0)
-  const pullMargin = members.reduce((sum, m) => sum + postureOf(m).pullMargin, 0) / Math.max(1, members.length)
+  // M4 (tactical-coordination.md §3.5): pullDiscipline scales the posture-
+  // blended margin — strict demands a more comfortable win, loose takes nearer
+  // coin-flips. No directive ⇒ ×1, the shipped margin exactly.
+  const discipline = directive?.pullDiscipline === 'strict' ? DIRECTIVE_PULL_STRICT
+    : directive?.pullDiscipline === 'loose' ? DIRECTIVE_PULL_LOOSE : 1
+  const pullMargin = discipline * members.reduce((sum, m) => sum + postureOf(m).pullMargin, 0) / Math.max(1, members.length)
   const affordable = (camp: Combatant[]): boolean => {
     // A camp that filled the prediction cap is a TRUNCATED prediction — the
     // real pull (reality doesn't cap) is at least this big and probably
@@ -493,7 +601,9 @@ export function decideEngagement(
         const { stance, anchor } = uninvited && primaryCombatant
           ? decideStanceAnchor(state, team, members, camp, primaryCombatant)
           : { stance: prevEngagement.stance ?? 'collapse', anchor: prevEngagement.anchor ?? null }
-        const assignments = withGuardAssignment(members, pullAssignmentFor(members, ids, camp, visible, prevAssignments))
+        const pull = directivePullAssignment(directive, members, primaryCombatant, anchor, prevAssignments)
+          ?? pullAssignmentFor(members, ids, camp, visible, prevAssignments)
+        const assignments = withGuardAssignment(members, pull, directive)
         return {
           engagement: { targetIds: ids, primaryId, anchor, stance, sinceRound },
           avoidTargetIds,
@@ -535,11 +645,45 @@ export function decideEngagement(
   const avoidTargetIds = visible.filter((e) => !targetIds.includes(e.id) && !alreadyFighting(e)).map((e) => e.id).sort()
   // Fresh commit: decide stance + anchor for real (tactical-coordination.md §3.1/§3.2).
   const { stance, anchor } = decideStanceAnchor(state, team, members, chosenCamp, chosenPrimary)
-  const assignments = withGuardAssignment(members, pullAssignmentFor(members, targetIds, chosenCamp, visible, prevAssignments))
+  const freshPull = directivePullAssignment(directive, members, chosenPrimary, anchor, prevAssignments)
+    ?? pullAssignmentFor(members, targetIds, chosenCamp, visible, prevAssignments)
+  const assignments = withGuardAssignment(members, freshPull, directive)
 
   return {
     engagement: { targetIds, primaryId: chosenPrimary.id, anchor, stance, sinceRound },
     avoidTargetIds,
     ...(assignments ? { assignments } : {}),
   }
+}
+
+// §coordination M4 — the ambush-combo orchestrator (tactical-coordination.md
+// §3.5): under a directive with `ambushTiming` (Assassinate), a CLOAKED unit
+// carrying a ready stealth-opener (an attack with a stealthBonus — Back Stab)
+// is timed by the PLAN: it stalks the engagement's primary and holds every
+// action (nothing may break the cloak — no basic shots, no other casts) until
+// the opener is in range, then the normal action channel fires the opener from
+// stealth. Closes the backlog's "Ambush combo needs an orchestrator" gap.
+//
+// Gated on ACUMEN.ambush (a directive requests; acumen bounds — a dim party
+// carrying Assassinate reveals early exactly like today). Read by engine.ts's
+// takeTurn each turn (cheap: bails on the first check for every non-cloaked /
+// non-directive unit). Deterministic pure read — the opener pick is the first
+// qualifying skill in kit order.
+export interface CloakStalk {
+  targetId: string     // the plan's primary — the stalker aims its lock here
+  holdFire: boolean    // true while the opener is still out of range
+}
+export function cloakStalk(state: BattleState, self: Combatant): CloakStalk | null {
+  const directive = directiveOf(state, self.team)
+  if (!directive?.ambushTiming) return null
+  if (!isStealthed(self)) return null
+  const opener = self.skills.find((s) =>
+    s.type === 'attack' && (s.stealthBonus ?? 1) > 1 && (self.skillCooldowns[s.id] ?? 0) <= 0)
+  if (!opener) return null
+  const primaryId = state.plans[self.team]?.engagement?.primaryId
+  if (!primaryId) return null
+  const primary = state.combatants.find((c) => c.id === primaryId && c.alive)
+  if (!primary) return null
+  if (teamAcumen(state, self.team) < ACUMEN.ambush) return null
+  return { targetId: primary.id, holdFire: distance(self.pos, primary.pos) > opener.range + EPS }
 }

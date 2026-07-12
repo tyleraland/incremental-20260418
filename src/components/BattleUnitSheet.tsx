@@ -365,6 +365,7 @@ export function DebugTab({ c, battle }: { c: Combatant; battle: BattleState }) {
           <div>waypoint <span className="text-game-text tabular-nums">{wp ? `(${wp.x.toFixed(0)},${wp.y.toFixed(0)})` : '—'}</span></div>
           {plan?.corridor && <div>corridor <span className="text-game-text tabular-nums">({plan.corridor.x.toFixed(0)},{plan.corridor.y.toFixed(0)})</span></div>}
           {objective && <div>objective <span className="text-game-text">{fmtObjective(battle, objective)}</span></div>}
+          {battle.directives?.[c.team] && <div>directive <span className="text-game-text">{battle.directives[c.team]}</span></div>}
           {eng && (
             <div className="col-span-2">
               engage <span className="text-game-text">{nameInBattle(battle, eng.primaryId)}</span>

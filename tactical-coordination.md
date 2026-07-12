@@ -670,10 +670,28 @@ corridor hysteresis, Guardian-vs-plan protectee unification, stance refresh
 on primary handoff, `ACUMEN.stance` dormancy at fresh-roster INT. Tests:
 `m3-formation.test.ts` (incl. the M2-review deferred regressions).
 
-**M4 — directives.** Registry + party slot + adapter injection + the launch
-five; ambush/assassinate timing (cloak-hold orchestration). Persisted like
-`partyTactics`; curated-mode gating via `unlocks.ts` like everything else.
-Tests: per-directive scenario assertions; 5v5 arena showcase both-sided.
+**M4 — directives.** ✅ Shipped. `DIRECTIVE_REGISTRY` (`engine/directives.ts`,
+the TACTIC_REGISTRY pattern) with the launch five; `BattleState.directives`
+(id per team, serialized like `objectives` — legacy/skirmish tokens stay
+byte-identical, pinned) + `setTeamDirective`; injected `tactics` ride the
+partyTactics seam (`withDirectiveTactics` at createBattle/addCombatant/
+relink). Planner consumption: `pullDiscipline` scales `pullMargin`
+(`DIRECTIVE_PULL_*`), `targetPolicy` swaps the kill-order score (wounded =
+hp-fraction weighting; squishy = healer-first ÷ toughness — ungated like the
+M1 baseline), `protect` forces+aims the standing guard (`protecteeOf`),
+`stanceBias`/`anchorPolicy` request in `decideStanceAnchor` (ambush = the
+nearest LoS-BLOCKED vis-graph corner, `ACUMEN.ambush`-gated) and an ambush
+anchor makes the pull mandatory (`directivePullAssignment` drags the primary
+to the anchor). Ambush timing: `cloakStalk` + a takeTurn action-hold — a
+cloaked striker keeps Cloak until its stealth opener reaches the plan's
+primary (`ACUMEN.ambush`; closes the backlog's orchestrator gap; approach
+still rides Cloak's inherited Ambusher). Party slot `partyDirective`
+(worldCodec, default skirmish), curated gating by best-hero level
+(`DIRECTIVE_UNLOCK_LEVEL`, `unlocks.ts`), picker in PartyDoctrine; monster
+seam = `MonsterDef.directive` (Elite Rogue carries Assassinate; first carrier
+wins). Debug: Plan-panel row + `bsnap -i` `directive=`. Tests:
+`m4-directives.test.ts` (incl. the both-sided 5v5 arena), `directives.test.ts`
+(store/save/unlocks).
 
 **M5 — objectives + chaperone.** `setTeamObjective`, escort/hold planner
 branches, store wiring in the travel loop (set on transit-through-hunt,

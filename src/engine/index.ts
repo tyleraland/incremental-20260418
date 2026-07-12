@@ -34,10 +34,13 @@ export {
   POSTURES, postureOf, ACUMEN, ENGAGE_EXIT,
   STANCE_KITE_REACH_EDGE, ANCHOR_BARRIER_RADIUS, ANCHOR_SLACK, CORRIDOR_ARRIVE, FRAGILITY_OUTLIER_FRACTION,
   PULL_SET_CAP, CAMP_RADIUS,
+  DIRECTIVE_PULL_STRICT, DIRECTIVE_PULL_LOOSE, DIRECTIVE_WOUNDED_WEIGHT, DIRECTIVE_SQUISHY_SCALE, DIRECTIVE_HEALER_MULT,
 } from './tuning'
 export type { PostureRow } from './tuning'
-export { teamAcumen, computeCapability, pullSetOf, decideEngagement, fragilityOutlier } from './teamplan'
-export type { EngagementDecision } from './teamplan'
+export { teamAcumen, computeCapability, pullSetOf, decideEngagement, fragilityOutlier, cloakStalk } from './teamplan'
+export type { EngagementDecision, CloakStalk } from './teamplan'
+export { DIRECTIVE_REGISTRY, DEFAULT_DIRECTIVE_ID, directiveOf, withDirectiveTactics, setTeamDirective } from './directives'
+export type { DirectiveDef } from './directives'
 export { STATUS_REGISTRY, buildStatus } from './status'
 export { serializeBattle, deserializeBattle } from './snapshot'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'

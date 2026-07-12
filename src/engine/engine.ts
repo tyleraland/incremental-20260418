@@ -31,7 +31,8 @@ import {
   pullMovement, lockedTarget, kiteDistanceFor, guardPoint, centroid,
 } from './spatial'
 import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, bumpPlanGen, clearPlanCache, type MoveCandidate } from './plan'
-import { computeCapability, decideEngagement, callsPack, packRouses, fragilityOutlier } from './teamplan'
+import { computeCapability, decideEngagement, callsPack, packRouses, fragilityOutlier, cloakStalk } from './teamplan'
+import { withDirectiveTactics, DEFAULT_DIRECTIVE_ID } from './directives'
 import {
   postureOf, TRAVEL_CLEAR_EXIT, BLINK_SAMPLES, BLINK_WALK_MIN, KITE_DEAD_BAND,
   CORRIDOR_ARRIVE, FORMATION_FRONT, FORMATION_BACK, FORMATION_SPACING, FORMATION_REAR,
@@ -296,15 +297,23 @@ export function createBattle(setup: CombatSetup): BattleState {
   setArenaBounds(cols, rows)   // so startingPosition/clamp use this battle's bounds
   setTimeScale(timeScale)      // so per-round helpers (move/cooldown/status) scale
   setMultiAttackMax(multiAttackMax)   // §multi-attack: agility-driven extra swings/round
+  // §coordination M4 (tactical-coordination.md §3.5): the active directive id
+  // per team. The default id counts as absent (skirmish IS the shipped planner)
+  // so `directives` stays off every default battle's snapshot. A def's injected
+  // party-scope tactics ride the existing partyTactics seam at placement.
+  const directives: BattleState['directives'] = {}
+  if (setup.playerDirective && setup.playerDirective !== DEFAULT_DIRECTIVE_ID) directives.player = setup.playerDirective
+  if (setup.enemyDirective && setup.enemyDirective !== DEFAULT_DIRECTIVE_ID) directives.enemy = setup.enemyDirective
   const combatants: Combatant[] = []
   let index = 0
   const place = (units: EngineUnitInput[], team: Team, party?: TacticRef[]) => {
+    const partyWithDirective = withDirectiveTactics(party ?? [], directives[team])
     const perRank: Record<string, number> = {}
     units.forEach((u) => {
       const withinRank = perRank[u.preferredRank] ?? 0
       perRank[u.preferredRank] = withinRank + 1
       const pos = startingPosition(team, u.preferredRank, withinRank)
-      const tactics = resolveTactics(u.tactics, party)
+      const tactics = resolveTactics(u.tactics, partyWithDirective)
       combatants.push(makeCombatant({ ...u, team }, index++, pos, tactics))
     })
   }
@@ -312,6 +321,7 @@ export function createBattle(setup: CombatSetup): BattleState {
   place(setup.enemyUnits, 'enemy', setup.enemyPartyTactics)
 
   return {
+    ...(Object.keys(directives).length ? { directives } : {}),
     combatants,
     zones: [],
     firewalls: [],
@@ -356,7 +366,9 @@ export function addCombatant(
     (c) => c.team === team && c.preferredRank === input.preferredRank,
   ).length
   const pos = at ? arenaClamp(at) : startingPosition(team, input.preferredRank, sameRank)
-  const tactics = resolveTactics(input.tactics ?? [], partyTactics)
+  // §coordination M4: the battle's live directive injects its party-scope
+  // tactics here too, so a late joiner matches what createBattle placed.
+  const tactics = resolveTactics(input.tactics ?? [], withDirectiveTactics(partyTactics ?? [], state.directives?.[team]))
   const c = makeCombatant({ ...input, team }, index, pos, tactics)
   enforceSeparation(c, state.combatants, state.barriers)
   state.combatants.push(c)
@@ -2152,6 +2164,13 @@ function takeTurn(state: BattleState, self: Combatant): void {
     if (!lt || !lt.alive) self.lockedTargetId = null
   }
   if (decideNow) rallyPack(state, self)   // §pack tactics: call kin (a decision)
+  // §coordination M4 (tactical-coordination.md §3.5): the plan times the dive —
+  // a cloaked striker under an ambushTiming directive (Assassinate) aims at the
+  // engagement's primary and, while its stealth-opener is out of range, HOLDS
+  // its whole action so nothing breaks the cloak early. Gated on ACUMEN.ambush
+  // inside cloakStalk; null for every unit outside that exact situation.
+  const stalk = cloakStalk(state, self)
+  if (stalk) self.lockedTargetId = stalk.targetId
   const tgtText = self.lockedTargetId
     ? `→ ${traceName(state, self.lockedTargetId)}${self.lockedTargetId !== lockBefore ? ' (new)' : ''}`
     : (state.mode === 'open' || !self.provoked ? 'no target · wander' : 'no target')
@@ -2197,9 +2216,14 @@ function takeTurn(state: BattleState, self: Combatant): void {
 
   // (4) action — an action tactic owns the turn if it fires: a skill cast (skills
   // are action tactics) or a Burst/Chain. Else fall back to a basic attack.
+  // While a cloak-stalk holds fire (M4 ambush timing), the whole channel is
+  // skipped — any action (a ranged basic, an off-plan cast) would break the
+  // cloak before the opener lands.
   let actionText: string
-  const act = evalActionTactics(state, self)
-  if (act) {
+  const act = stalk?.holdFire ? null : evalActionTactics(state, self)
+  if (stalk?.holdFire) {
+    actionText = 'stalk (cloak held for opener)'
+  } else if (act) {
     if (act.useItemId && (self.pack[act.useItemId] ?? 0) > 0) {
       // §consumables: drink/use a carried item. The turn is spent using it.
       // Decrement happens here so the count lives in the combatant (snapshot) and

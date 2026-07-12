@@ -607,6 +607,12 @@ export interface CombatSetup {
   // self-terminates; the host trickles reinforcements in via `addCombatant`
   // and owns teardown. See the open-world model in CLAUDE.md.
   mode?: BattleMode
+  // §coordination M4 (tactical-coordination.md §3.5): the active directive id
+  // per team (DIRECTIVE_REGISTRY, engine/directives.ts). Absent ⇒ shipped
+  // behavior. A def's injected `tactics` ride the partyTactics seam at
+  // placement; hosts flip a live battle via setTeamDirective instead.
+  playerDirective?: string
+  enemyDirective?: string
   // A peaceful town (a city open-world field): heroes mill about individually
   // with long pauses (§town wander) instead of roaming as a party. No effect on
   // monsters/encounters. Default false.
@@ -688,6 +694,12 @@ export interface BattleState {
   // §coordination: host-set purpose per team (tactical-coordination.md §3.6).
   // Absent = 'hunt' (today's behavior); set post-creation (M5), serialized.
   objectives?: Partial<Record<Team, TeamObjective>>
+  // §coordination M4 (tactical-coordination.md §3.5): active directive id per
+  // team — the player's party-scope lever (and the monster seam). Set at
+  // createBattle or via setTeamDirective; serialized like `objectives` (only
+  // when set — absent on every legacy token ⇒ shipped behavior). The def is
+  // resolved through DIRECTIVE_REGISTRY on read (directiveOf).
+  directives?: Partial<Record<Team, string>>
   round: number
   outcome: Outcome
   events: BattleEvent[]

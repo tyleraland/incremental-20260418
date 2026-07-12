@@ -589,26 +589,29 @@ per-hero attribution is round-robin, not true kill credit.
 
 **Design: `tactical-coordination.md`** — TeamPlan v2, planner pipeline +
 pull model, directives (player lever), host objectives (escort / hold /
-work), sliced into milestones. **M0–M3 shipped** (engagement/kill-order/
+work), sliced into milestones. **M0–M4 shipped** (engagement/kill-order/
 avoid list; pullSetOf + mutual-TTK race + Puller; stance/anchor/formation/
-standing guard/corridor; acumen gates) — see the doc's milestone ledger and
-`src/engine/CLAUDE.md` §coordination. Still open: **M2.5 rove/jungler**,
-**M4 directives** (subsumes the old "Strategies = multi-channel tactic
-bundles" idea — Assassinate / Lock & Focus / Hold the Line as one registry
-entry each), **M5 objectives + chaperone**, **M6 rollout experiment**, and
+standing guard/corridor; acumen gates; directives — registry, party slot,
+planner consumption, cloak-hold ambush timing) — see the doc's milestone
+ledger and `src/engine/CLAUDE.md` §coordination. Still open: **M2.5
+rove/jungler**, **M5 objectives + chaperone**, **M6 rollout experiment**, and
 the **intel mask** independent track (imperfect information).
 
-**Sequencing (agreed).** Next headline slice: **M4 directives** — the player's
-party-scope lever, and the payoff the whole system was built to enable; most
-of its substrate (Assignment roles, stance/anchor, the planner pipeline)
-already exists, so it's mostly the registry + a persisted party slot + adapter
-injection + curated gating + the ambush/cloak-timing orchestration. Run the
-**intel mask** as a parallel independent track (touches no planner code —
-mergeable anytime). Slot a **browser tuning pass** on the ⏱ knobs alongside,
-using the 14 sandbox showcases as the QA rig — `ACUMEN.stance = 90` (vs a fresh
-roster's ≈75, hides all of M3 from early curated play) is the highest-risk knob
-to confirm first. M2.5 rove, M5 objectives/chaperone, M6 rollout follow in the
-doc's build-value order.
+**Sequencing (agreed).** Run the **intel mask** as a parallel independent
+track (touches no planner code — mergeable anytime). Slot a **browser tuning
+pass** on the ⏱ knobs alongside, using the sandbox showcases as the QA rig —
+`ACUMEN.stance = 90` (vs a fresh roster's ≈75, hides all of M3 from early
+curated play) is the highest-risk knob to confirm first, and the new M4 knobs
+(`DIRECTIVE_PULL_*`, `DIRECTIVE_WOUNDED_WEIGHT`/`HEALER_MULT`, the
+`DIRECTIVE_UNLOCK_LEVEL` curated ramp) have never been play-felt. M2.5 rove,
+M5 objectives/chaperone, M6 rollout follow in the doc's build-value order.
+
+**M4 follow-ups:** a directive-aware formation seat (the `protect` guard aims
+at the carry, but the formation rear slot still pins the fragility outlier —
+unify with the Guardian-vs-plan protectee item below); a cloaked stalker
+without Ambusher (or any ranged-basic kit quirk) closes only to its default
+attack reach while holding fire, so the dive relies on Cloak's inherited
+Ambusher pairing; directive showcases for the sandbox QA rig.
 
 **M1–M3 follow-ups (from the phase bug-hunt reviews + live showcase QA):**
 

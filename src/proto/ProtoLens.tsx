@@ -6,6 +6,8 @@ import {
   MONSTER_REGISTRY,
   type Unit, type DerivedStats,
 } from '@/stores/useGameStore'
+import { DIRECTIVE_REGISTRY, DEFAULT_DIRECTIVE_ID } from '@/engine'
+import { isDirectiveUnlocked, DIRECTIVE_UNLOCK_LEVEL } from '@/lib/unlocks'
 import { SLOT_LABELS, SLOT_COMPATIBLE, CATEGORY_LABELS } from '@/data/equipment'
 import { getUnitTraits } from '@/data/traits'
 import { ELEMENT_LABELS, ELEMENT_COLORS, type Element } from '@/lib/elements'
@@ -872,14 +874,68 @@ export function PartyDoctrine() {
   const partyTactics      = useGameStore((s) => s.partyTactics)
   const equipPartyTactic  = useGameStore((s) => s.equipPartyTactic)
   const unequipPartyTactic = useGameStore((s) => s.unequipPartyTactic)
+  const partyDirective    = useGameStore((s) => s.partyDirective)
+  const setPartyDirective = useGameStore((s) => s.setPartyDirective)
+  const progressionMode   = useGameStore((s) => s.progressionMode)
+  const units             = useGameStore((s) => s.units)
   const [adding, setAdding] = useState(false)
+  const [picking, setPicking] = useState(false)
 
   const equippedIds = new Set(partyTactics.map((t) => t.id))
   const available = listTactics('party').filter((d) => !equippedIds.has(d.id))
   const atCap = partyTactics.length >= MAX_PARTY_TACTICS
+  const activeDirective = DIRECTIVE_REGISTRY[partyDirective ?? DEFAULT_DIRECTIVE_ID] ?? DIRECTIVE_REGISTRY[DEFAULT_DIRECTIVE_ID]
 
   return (
     <div>
+      {/* Directive — the ONE active party-scope planner emphasis
+          (tactical-coordination.md §3.5). Tap the active row to open the
+          picker; tap a directive to make it active. Curated mode shows locked
+          entries with their unlock level. */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Directive</span>
+          <span className="text-[9px] text-game-muted">one active · steers the whole party's plan</span>
+        </div>
+        <button
+          onClick={() => setPicking((v) => !v)}
+          className="w-full text-left rounded-md border border-game-primary/40 bg-game-primary/10 px-2 py-1.5 hover:bg-game-primary/15"
+        >
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-game-text">{activeDirective.name}</span>
+            <span className="text-[9px] px-1 rounded border border-game-primary/40 text-game-primary">active</span>
+            <span className="ml-auto text-[10px] text-game-muted">{picking ? '▴' : '▾'}</span>
+          </div>
+          <div className="text-[10px] text-game-text-dim leading-snug">{activeDirective.description}</div>
+        </button>
+        {picking && (
+          <div className="mt-1.5 space-y-1 max-h-56 overflow-y-auto">
+            {Object.values(DIRECTIVE_REGISTRY).filter((d) => d.id !== activeDirective.id).map((d) => {
+              const locked = !isDirectiveUnlocked(progressionMode, d.id, units)
+              return (
+                <button
+                  key={d.id}
+                  disabled={locked}
+                  onClick={() => { setPartyDirective(d.id); setPicking(false) }}
+                  className={['w-full text-left rounded-md border px-2 py-1.5',
+                    locked ? 'border-game-border bg-game-bg/40 opacity-60 cursor-not-allowed' : 'border-game-border bg-game-bg hover:border-game-primary/50'].join(' ')}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={['text-xs font-medium', locked ? 'text-game-muted' : 'text-game-text'].join(' ')}>{d.name}</span>
+                    {locked && (
+                      <span className="text-[9px] px-1 rounded border border-game-border text-game-muted">
+                        🔒 hero Lv {DIRECTIVE_UNLOCK_LEVEL[d.id] ?? '?'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-game-text-dim leading-snug">{d.description}</div>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[10px] uppercase tracking-widest text-game-text-dim">Party doctrine</span>
         <span className="text-[9px] text-game-muted">{partyTactics.length}/{MAX_PARTY_TACTICS} · all deployed</span>

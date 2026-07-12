@@ -25,7 +25,7 @@ import {
   type ReturnModeId, type SupplyModeId, type ShareFlag,
 } from '@/proto/expedition'
 import type { ClassQuestCommit } from '@/proto/protoStore'
-import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, DIRECTIVE_REGISTRY, DEFAULT_DIRECTIVE_ID, setTeamDirective, withDirectiveTactics, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { generateForLocationCached, specBarriers } from '@/mapgen'
 import { partyProficiencyTags } from '@/lib/proficiencies'
@@ -36,7 +36,7 @@ import { INITIAL_UNITS } from '@/data/units'
 import { SCENARIO_REGISTRY } from '@/data/scenarios'
 import { SAVE_KEY, saveKeyFor } from '@/lib/save'
 import { routeStepsFrom } from '@/lib/travelGraph'
-import { bootstrapProgressionMode, curatedStartUnits, CURATED_START, isSkillUnlocked, type ProgressionMode } from '@/lib/unlocks'
+import { bootstrapProgressionMode, curatedStartUnits, CURATED_START, isSkillUnlocked, isDirectiveUnlocked, type ProgressionMode } from '@/lib/unlocks'
 import { bootBattleSkin, type BattleSkin } from '@/render/skins'
 
 // ── Re-exports (keeps existing import paths working) ──────────────────────────
@@ -100,6 +100,10 @@ export interface GameState {
   // dealt/taken per unit, for the live "/s" readout. Runtime only (not persisted).
   dpsWindow:              Record<string, { dealt: number[]; taken: number[] }>
   partyTactics:           TacticSlot[]                 // team-wide tactics injected into every unit (§5.5)
+  // §coordination M4 (tactical-coordination.md §3.5): the party's one active
+  // directive (DIRECTIVE_REGISTRY id) — the slot beside partyTactics, persisted
+  // the same way (worldCodec). Default 'skirmish' = the shipped planner.
+  partyDirective:         string
   // Feature-unfolding stance (src/lib/unlocks.ts): 'sandbox' = everything open
   // (the dev default), 'curated' = content gated + unfolded through play. Persisted
   // via worldCodec.
@@ -311,6 +315,7 @@ export interface GameState {
   moveCompanionTactic: (unitId: string, tacticId: string, dir: -1 | 1) => void
   equipPartyTactic: (tacticId: string) => void
   unequipPartyTactic: (tacticId: string) => void
+  setPartyDirective: (directiveId: string) => void
   recruitUnit: () => void
   craft: (recipeId: string) => void
   // Switch the feature-unfolding stance. Flips the flag (persisted); call
@@ -566,7 +571,7 @@ function companionInputsFor(party: Unit[], vision?: number): EngineUnitInput[] {
   return out
 }
 
-function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): BattleState {
+function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], directive?: string): BattleState {
   const roster = party
   const playerUnits = [...roster.map((u) => unitToEngineInput(u, getDerivedStats(u, equipment), 'player')), ...companionInputsFor(roster)]
   const enemyUnits = []
@@ -575,7 +580,11 @@ function createBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[
     const def = MONSTER_REGISTRY[wave[i]]
     if (def) enemyUnits.push(monsterToEngineInput(def, `${wave[i]}#${i}`, 'enemy'))
   }
-  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, barriers: locationBarriers(loc), collectEvents: true, timeScale: ROUND_TIME_SCALE, multiAttackMax: MULTI_ATTACK_MAX })
+  // §coordination M4: a monster in the wave may bring a team directive
+  // (MonsterDef.directive — e.g. the Elite Four's Assassinate). First carrier
+  // in wave order wins; one directive per team.
+  const enemyDirective = wave.map((mid) => MONSTER_REGISTRY[mid]?.directive).find(Boolean)
+  return createBattle({ playerUnits, enemyUnits, playerPartyTactics: partyTactics, playerDirective: directive, enemyDirective, barriers: locationBarriers(loc), collectEvents: true, timeScale: ROUND_TIME_SCALE, multiAttackMax: MULTI_ATTACK_MAX })
 }
 
 // ── Open-world battle helpers (§open-world) ─────────────────────────────────--
@@ -636,6 +645,10 @@ function partyAnchor(battle: BattleState, size: number): { x: number; y: number 
 export function spawnMonsterAt(battle: BattleState, monsterId: string, at: { x: number; y: number }): Combatant | null {
   const def = MONSTER_REGISTRY[monsterId]
   if (!def) return null
+  // §coordination M4: a directive-carrying monster (MonsterDef.directive) sets
+  // its team's directive when none is held yet — set BEFORE addCombatant so its
+  // own placement already sees any injected party-scope tactics.
+  if (def.directive && !battle.directives?.enemy) setTeamDirective(battle, 'enemy', def.directive)
   return addCombatant(battle, withVision(monsterToEngineInput(def, uniqueEnemyId(battle, monsterId), 'enemy'), MONSTER_VISION), 'enemy', undefined, at)
 }
 
@@ -669,7 +682,7 @@ function timeScaleFor(loc: Location): number {
 // Stand up a fresh persistent battle on the location's (large) open-world map:
 // the party knotted at the centre, `cap` monsters scattered across the field,
 // everyone with a limited sight radius. Marked `mode: 'open'` so it never ends.
-function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number, arrivals: GameState['portalArrivals'] = {}): BattleState {
+function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], cap: number, arrivals: GameState['portalArrivals'] = {}, directive?: string): BattleState {
   // §mapgen: a location opted in via `mapGen` draws its arena size + barriers
   // from the generated MapSpec (validated + rerolled inside the generator);
   // every other location keeps the scenario / seeded-scatter path unchanged.
@@ -682,7 +695,7 @@ function createOpenBattleFor(loc: Location, party: Unit[], equipment: EquipmentI
   // A city is a peaceful field: heroes mill about individually (§town wander) and
   // its NPCs stand around for them to cross paths with.
   const peaceful = loc.traits.includes('city')
-  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, barriers, collectEvents: true, mode: 'open', peaceful, cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? decisionIntervalFor(loc), multiAttackMax: MULTI_ATTACK_MAX })
+  const battle = createBattle({ playerUnits: [], enemyUnits: [], playerPartyTactics: partyTactics, playerDirective: directive, barriers, collectEvents: true, mode: 'open', peaceful, cols: size, rows: size, timeScale: timeScaleFor(loc), decisionInterval: DEV_DECIDE ?? decisionIntervalFor(loc), multiAttackMax: MULTI_ATTACK_MAX })
   // Town NPCs (merchants/questgivers): stationary, non-combatant, on the neutral
   // team — nobody fights them and they never fight. They stand where they spawn.
   for (const npc of npcsAt(loc.id)) {
@@ -766,12 +779,16 @@ function reconcileOpenPlayers(
 // changed. Cheap (party-sized), and players only — monsters have no editable kit.
 function syncPlayerLoadouts(battle: BattleState, units: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[]): void {
   const byId = new Map(units.map((u) => [u.id, u]))
+  // §coordination M4: compose the battle's live directive-injected party
+  // tactics here too, so a mid-fight directive switch reaches deployed heroes
+  // the same tick (matches what createBattle/addCombatant placed).
+  const composed = withDirectiveTactics(partyTactics, battle.directives?.player)
   for (const c of battle.combatants) {
     if (c.team !== 'player') continue
     const u = byId.get(c.id)
     if (!u) continue
     // Vision is left as-is by relink (it's a per-battle property), so no withVision.
-    relinkCombatant(c, unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), partyTactics)
+    relinkCombatant(c, unitToEngineInput(u, getDerivedStats(u, equipment), 'player'), composed)
   }
 }
 
@@ -811,12 +828,13 @@ interface PrimeResult {
 // Stand up (or reuse) the right battle for a location's offline simulation.
 function offlineBattleFor(
   loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[], existing: BattleState | undefined,
+  directive?: string,
 ): BattleState {
   const wantOpen = !!loc.openWorld
   if (existing && (wantOpen ? existing.mode === 'open' : existing.mode !== 'open')) return existing
   return wantOpen
-    ? createOpenBattleFor(loc, party, equipment, partyTactics, openWorldCap(loc))
-    : createBattleFor(loc, party, equipment, partyTactics)
+    ? createOpenBattleFor(loc, party, equipment, partyTactics, openWorldCap(loc), {}, directive)
+    : createBattleFor(loc, party, equipment, partyTactics, directive)
 }
 
 // One round of the live open-world spawn cadence, for the offline priming slice:
@@ -923,9 +941,9 @@ function runCombatSlice(
 
 function primeColdLocation(
   loc: Location, party: Unit[], equipment: EquipmentItem[], partyTactics: TacticSlot[],
-  existing: BattleState | undefined,
+  existing: BattleState | undefined, directive?: string,
 ): PrimeResult {
-  const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
+  const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing, directive)
   const { killsByMonster, loot, rounds, supplyUsed, tally } = runCombatSlice(battle, loc, SAMPLING.primeRoundCap, SAMPLING.primeMsBudget)
   const kills = Object.values(killsByMonster).reduce((a, b) => a + b, 0)
   return { battle, primedTicks: rounds * ROUND_EVERY_TICKS, exp: kills, gold: kills, killsByMonster, loot, supplyUsed, tally }
@@ -961,6 +979,7 @@ export interface SampledOptions {
   startTick: number
   roundCap?: number
   msBudget?: number
+  directive?: string   // §coordination M4: the party's active directive (shapes the measured rates like live play)
   prepareWindow?: (battle: BattleState, windowIndex: number, windowStartTick: number) => void
 }
 
@@ -969,7 +988,7 @@ export function projectOfflineSampled(
   existing: BattleState | undefined, offlineTicks: number, opts: SampledOptions, rng: () => number = Math.random,
 ): PrimeResult {
   const wantOpen = !!loc.openWorld
-  const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing)
+  const battle = offlineBattleFor(loc, party, equipment, partyTactics, existing, opts.directive)
   const K = Math.max(1, opts.samples)
   const windowTicks = offlineTicks / K
   const roundCap = opts.roundCap ?? SAMPLING.windowRoundCap
@@ -1360,7 +1379,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       const p = projectOfflineRewards(getLocationCombatReport(stats, newTicks), ticks)
       killsByMonster = p.killsByMonster; exp = p.exp; gold = p.gold
     } else {
-      const r = primeColdLocation(loc, eligible, s.equipment, s.partyTactics ?? [], battles[loc.id])
+      const r = primeColdLocation(loc, eligible, s.equipment, s.partyTactics ?? [], battles[loc.id], s.partyDirective)
       battles[loc.id] = r.battle
       const scale = ticks / Math.max(1, r.primedTicks)
       killsByMonster = scaleKills(r.killsByMonster, scale)
@@ -1480,11 +1499,14 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // fraction with mislocated portals). Neither can be swapped on a live battle
       // without desync, hence a fresh field.
       if (!battle || battle.mode !== 'open' || battle.timeScale !== timeScaleFor(loc) || battle.cols !== openWorldSize(loc)) {
-        battle = createOpenBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], cap, s.portalArrivals)
+        battle = createOpenBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], cap, s.portalArrivals, s.partyDirective)
         battles[locationId] = battle
         monsterSpawnTimers[locationId] = OPEN_WORLD_SPAWN_TICKS
         markSeen(loc, enemyMonsterIds(battle))
       }
+      // §coordination M4: keep the player team's directive current (covers a
+      // mid-battle switch AND battles deserialized from pre-directive saves).
+      setTeamDirective(battle, 'player', s.partyDirective ?? null)
       // §town wander: peaceful is a property of the location (a city), not the
       // snapshot — re-apply it here so a reloaded city battle (deserialized with
       // peaceful=false) still has its heroes mill about individually.
@@ -1556,12 +1578,15 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         battleCooldown[locationId] = cd - 1
         continue
       }
-      battle = createBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [])
+      battle = createBattleFor(loc, eligible, s.equipment, s.partyTactics ?? [], s.partyDirective)
       battles[locationId] = battle
       delete battleCooldown[locationId]
       markSeen(loc, enemyMonsterIds(battle))
     }
 
+    // §coordination M4: keep the player team's directive current (see the
+    // open-world branch above).
+    setTeamDirective(battle, 'player', s.partyDirective ?? null)
     // Live-edit: push any loadout changes onto the heroes already in the wave.
     syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
 
@@ -1663,6 +1688,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   viewedUnitLevels: (() => { try { return JSON.parse(localStorage.getItem('viewedUnitLevels') ?? '{}') } catch { return {} } })(),
   reportUnitId: null,
   partyTactics: [...DEFAULT_PARTY_TACTICS],
+  partyDirective: DEFAULT_DIRECTIVE_ID,
   lastTickAt: Date.now(),
   offlineSummary: null,
   lastCatchUp: null,
@@ -1941,7 +1967,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         // projection carries variance/clumps (and is where a scheduled boss would
         // be injected). Covers both warm and cold — it simulates either way.
         primed = true
-        const r = projectOfflineSampled(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id], n, { samples: windows, startTick: s.ticks })
+        const r = projectOfflineSampled(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id], n, { samples: windows, startTick: s.ticks, directive: s.partyDirective })
         battles[loc.id] = r.battle
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         simTicks = r.primedTicks; simSupplyUsed = r.supplyUsed
@@ -1956,14 +1982,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         // The cheap path runs no sim, so harvest a breakdown sample only when the
         // absence is worth it (≥ the summary gate); scale it over the full span.
         if (wantBreakdown && roster.length > 0) {
-          const h = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], undefined)
+          const h = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], undefined, s.partyDirective)
           locTally = scaleTallyMap(h.tally, n / Math.max(1, h.primedTicks))
         }
       } else if (roster.length > 0) {
         // Cold: prime a budgeted slice of real combat, then extrapolate the
         // remaining time on the freshly-measured rate.
         primed = true
-        const r = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id])
+        const r = primeColdLocation(loc, roster, s.equipment, s.partyTactics ?? [], s.battles[loc.id], s.partyDirective)
         battles[loc.id] = r.battle
         simRounds = Math.round(r.primedTicks / ROUND_EVERY_TICKS)
         simTicks = n; simSupplyUsed = r.supplyUsed * (n / Math.max(1, r.primedTicks))   // burn rate → full span
@@ -2823,6 +2849,15 @@ export const useGameStore = create<GameState>((set, get) => ({
   unequipPartyTactic: (tacticId) => set((s) => ({
     partyTactics: (s.partyTactics ?? []).filter((t) => t.id !== tacticId),
   })),
+  // §coordination M4 (tactical-coordination.md §3.5): pick the party's one
+  // active directive. Hard chokepoint for the curated gate (mirrors learnSkill
+  // — the gate holds regardless of which UI asked); sandbox is open. The tick
+  // loop pushes the change onto live battles via setTeamDirective.
+  setPartyDirective: (directiveId) => set((s) => {
+    if (!DIRECTIVE_REGISTRY[directiveId]) return s
+    if (!isDirectiveUnlocked(s.progressionMode, directiveId, s.units)) return s
+    return s.partyDirective === directiveId ? s : { partyDirective: directiveId }
+  }),
 
   setProgressionMode: (mode) => set((s) => (s.progressionMode === mode ? s : { progressionMode: mode })),
   setDeployMode: (mode) => set((s) => (s.deployMode === mode ? s : { deployMode: mode })),
@@ -2857,6 +2892,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       viewedUnitLevels: {},
       reportUnitId:    null,
       partyTactics:    [...DEFAULT_PARTY_TACTICS],
+      partyDirective:  DEFAULT_DIRECTIVE_ID,
       battles:           {},
       battleCooldown:    {},
       monsterSpawnTimers: {},

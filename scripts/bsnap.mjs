@@ -195,17 +195,20 @@ function inspectLine(b, c) {
   const v = (pt) => (pt ? `(${fx(pt.x)},${fx(pt.y)})` : '—')
   const res = (c.lastResolution ?? []).map((r) => `${r.channel[0]}:${r.id}=${r.outcome}`).join(' ')
   return `lock=${c.lockedTargetId ?? '—'}  plan{hunt=${p?.huntTargetId ?? '—'} focus=${p?.focusTargetId ?? '—'} wp=${v(p?.waypoint)}}`
-    + teamPlanV2(p, c, v)
+    + teamPlanV2(b, p, c, v)
     + `  move{order=${v(c.moveOrder)} wander=${v(c.wanderTarget)} dwell=${c.wanderDwell ?? 0}}`
     + `  vis=${c.visionRange === Infinity ? '∞' : c.visionRange}`
     + (res ? `  tactics[${res}]` : '')
 }
 
-// §coordination (tactical-coordination.md §3.1): TeamPlan v2 fields — engagement,
-// this unit's assignment, avoid list, corridor. All optional and absent on legacy
-// tokens ⇒ this appends NOTHING (legacy -i output stays byte-identical).
-function teamPlanV2(p, c, v) {
+// §coordination (tactical-coordination.md §3.1/§3.5): TeamPlan v2 fields —
+// the team directive (M4), engagement, this unit's assignment, avoid list,
+// corridor. All optional and absent on legacy tokens ⇒ this appends NOTHING
+// (legacy -i output stays byte-identical).
+function teamPlanV2(b, p, c, v) {
   let out = ''
+  const dir = b.directives?.[c.team]
+  if (dir) out += `  directive=${dir}`
   const e = p?.engagement
   if (e) out += `  eng{prim=${e.primaryId ?? '—'} stance=${e.stance} anchor=${v(e.anchor)} pull=${e.targetIds.length} since=R${e.sinceRound}}`
   const a = p?.assignments?.[c.id]

@@ -105,3 +105,30 @@ export const SANDBOX_ONLY_REGIONS = ['fixed-encounters']
 export function isRegionUnlocked(mode: ProgressionMode, region: string): boolean {
   return mode === 'sandbox' || !SANDBOX_ONLY_REGIONS.includes(region)
 }
+
+// ── Directive unfolding (party doctrine) ──────────────────────────────────────--
+//
+// Directives (DIRECTIVE_REGISTRY, src/engine/directives.ts) are the party-scope
+// planner lever — later-game content than unit tactics, so in curated they
+// unfold as the party's best hero levels up (a coarse "your captain has grown
+// into doctrine" ramp; thresholds ⏱ tune with the curated onramp). Skirmish is
+// the always-on default. Sandbox: everything open, as with every other gate.
+// An id missing from this table is treated as locked in curated (safe default
+// for future directives until a threshold is chosen).
+export const DIRECTIVE_UNLOCK_LEVEL: Record<string, number> = {
+  'skirmish': 0,
+  'protect': 5,
+  'hold-the-line': 5,
+  'pull-to-camp': 7,
+  'assassinate': 9,
+}
+
+export function isDirectiveUnlocked(
+  mode: ProgressionMode,
+  directiveId: string,
+  units: Pick<Unit, 'level'>[],
+): boolean {
+  if (mode === 'sandbox') return true
+  const need = DIRECTIVE_UNLOCK_LEVEL[directiveId] ?? Infinity
+  return need <= 0 || units.some((u) => u.level >= need)
+}

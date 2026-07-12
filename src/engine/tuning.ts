@@ -150,6 +150,28 @@ export const FORMATION_BACK = -0.8
 export const FORMATION_SPACING = 1.12
 export const FORMATION_REAR = 3
 
+// ── M4: directives (tactical-coordination.md §3.5) ───────────────────────────
+// DIRECTIVE_PULL_STRICT/LOOSE ⏱: pullDiscipline's scale on the posture-blended
+// pullMargin (§3.3's mutual-TTK race). Strict < 1 demands a more comfortable
+// win before engaging; loose > 1 takes nearer coin-flips. Too far from 1 →
+// strict refuses fights a steady party clearly wins / loose walks into wipes;
+// too near 1 → the discipline dial reads as noise.
+export const DIRECTIVE_PULL_STRICT = 0.7
+export const DIRECTIVE_PULL_LOOSE = 1.3
+// DIRECTIVE_WOUNDED_WEIGHT ⏱: the 'wounded' targetPolicy multiplies the base
+// kill-order score by (1 + w·(1 − hpFrac)) — at full HP it ranks exactly like
+// 'dangerous', then bends hard toward whatever's bleeding. Too small → the
+// policy is invisible; too big → the party chases every scratched trash mob.
+export const DIRECTIVE_WOUNDED_WEIGHT = 2
+// 'squishy' targetPolicy scoring: score = HEALER_MULT? × SCALE × partySustained
+// ÷ effective toughness — "how fast can we delete it", healers first (§3.5
+// Assassinate). SCALE is pure unit normalization onto the killScore range so
+// PRIMARY_SCORE_FLOOR / PRIMARY_SWITCH_MARGIN hysteresis keeps working
+// unchanged; HEALER_MULT ⏱ is how strongly a healer outranks a merely-squishy
+// target (too high → ignores a paper-thin caster to chase a tanky cleric).
+export const DIRECTIVE_SQUISHY_SCALE = 100
+export const DIRECTIVE_HEALER_MULT = 4
+
 // ── Postures (the player's behavior dial) ────────────────────────────────────
 //
 //   bold   — damage first: ignores incidental exposure, forces expensive

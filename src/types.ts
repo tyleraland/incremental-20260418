@@ -231,6 +231,12 @@ export interface MonsterDef {
   // door for skill/tactic-bearing humanoid encounters (the Elite Four, future
   // monsters with class-like kits).
   tactics?: TacticSlot[]
+  // §coordination M4 (tactical-coordination.md §3.5): a team directive this
+  // monster brings to its side of the battle (DIRECTIVE_REGISTRY id). Monsters
+  // use the same planner + directives as the party — pack roles are a
+  // directive, not new machinery. The store sets it on the enemy team when a
+  // carrier spawns (first carrier wins; a battle holds one directive per team).
+  directive?: string
   // §threat / §passive combat mechanics (engine combatant fields). armorReduction:
   // incoming-damage cut (0–0.5); dodgePeriod: dodge every Nth hit; threatMult:
   // threat-generation multiplier. The adapter passes these into the engine.
