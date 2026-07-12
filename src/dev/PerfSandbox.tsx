@@ -74,6 +74,7 @@ export default function PerfSandbox() {
   // Caption banner (a showcase's blurb, or a shared link's ?title) + a
   // copy-link confirmation.
   const [caption, setCaption] = useState<{ title: string; watch: string } | null>(null)
+  const [captionOpen, setCaptionOpen] = useState(true)
   const [linkCopied, setLinkCopied] = useState(false)
   // Perf-test lever: freeze "normal play" (the full store tick — world clock,
   // spawns/trickle, per-unit regen/KO/pack reconcile) and advance ONLY the battle
@@ -333,15 +334,30 @@ export default function PerfSandbox() {
         <BattleView locationId={SANDBOX_LOC} repositionEnabled={repositionMode} onReposition={handleReposition} />
       </div>
 
-      {/* Caption banner — a showcase's title/what-to-watch (or a shared link's ?title) */}
+      {/* Caption banner — a showcase's title/what-to-watch (or a shared link's
+          ?title). Anchored to the BOTTOM-centre (clear of the top-left ← Game nav
+          and the top-right control panel, which both crowd the top row on a
+          phone) and collapsible to just its title (tap) so it never hogs the
+          field. z below the panel as a belt-and-braces against overlap. */}
       {caption && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[95] max-w-[min(90vw,32rem)] rounded-xl border border-game-border bg-game-surface/95 backdrop-blur px-4 py-2 shadow-2xl text-center">
-          <div className="text-sm font-semibold text-game-text">{caption.title}</div>
-          {caption.watch && <div className="mt-0.5 text-[11px] text-game-accent leading-snug">Watch: {caption.watch}</div>}
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-[80] w-[min(92vw,30rem)] rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl">
+          <button
+            onClick={() => setCaptionOpen((v) => !v)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-left"
+            title={captionOpen ? 'Collapse' : 'Expand — what to watch'}
+          >
+            <span className="flex-1 text-sm font-semibold text-game-text leading-snug">{caption.title}</span>
+            {caption.watch && <span className="shrink-0 text-[11px] text-game-text-dim leading-none">{captionOpen ? '▾ hide' : 'ⓘ watch'}</span>}
+          </button>
+          {captionOpen && caption.watch && (
+            <div className="px-3 pb-2 -mt-0.5 text-[11px] text-game-accent leading-snug">Watch: {caption.watch}</div>
+          )}
         </div>
       )}
 
-      {/* control panel — a floating card so it overlays the field */}
+      {/* control panel — a floating card so it overlays the field. Sits ABOVE the
+          caption banner in z-order so Play/Reset stay tappable even when the two
+          overlap on a narrow screen. */}
       <div className="absolute top-2 right-2 z-[90] w-72 max-w-[85vw] max-h-[88vh] flex flex-col rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl">
         <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border">
           <span className="text-sm font-semibold">Battle Sandbox</span>
