@@ -81,6 +81,20 @@ export const ENGAGE_EXIT = 1.3
 // the same scale as CHARGER_DIVE_RADIUS so early parties don't commit to
 // enemies merely nearby but functionally unrelated.
 export const CAMP_RADIUS = 6
+// ROUT_SAFE_RADIUS ⏱ (tactical-coordination.md §3.1/§3.4, disengage): how far
+// the party must break contact before a rout (abandon-for-losing) clears — the
+// commitment's EXIT-side hysteresis, the mirror of ENGAGE_EXIT. While any
+// visible enemy sits within this radius of the members' centroid the break-off
+// persists (members keep running); once the nearest camp threat falls outside
+// it (or drops out of sight entirely), the rout ends and the party may
+// re-appraise. Chosen a clear band beyond CAMP_RADIUS(6)/ANCHOR_BARRIER_RADIUS(8)
+// so "we've disengaged" means the camp genuinely can't re-pull us. Too small →
+// clears while foes are still adjacent, so the party re-locks and thrashes
+// engage↔rout; too big → the party sprints across the whole map before it feels
+// safe. (Re-committing to the SAME camp additionally needs the stricter ENTRY
+// bar, so the entry/exit asymmetry — not this radius alone — is what forbids
+// flapping; this only decides when normal behavior resumes.)
+export const ROUT_SAFE_RADIUS = 10
 // PULL_SET_CAP ⏱ (tactical-coordination.md §3.3, M2 pull model): the BFS cap
 // for pullSetOf — who joins if we hit `seed`. Bounds the worst-case appraisal
 // cost (§5's "order of one steerAround call" budget) no matter how densely

@@ -14,13 +14,13 @@ import { EPS, HUNT_RETAIN_MULT } from './constants'
 import {
   PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR, ACUMEN, ENGAGE_EXIT, postureOf,
   STANCE_KITE_REACH_EDGE, ANCHOR_BARRIER_RADIUS, FRAGILITY_OUTLIER_FRACTION,
-  CAMP_RADIUS, PULL_SET_CAP,
+  CAMP_RADIUS, PULL_SET_CAP, ROUT_SAFE_RADIUS,
   DIRECTIVE_PULL_STRICT, DIRECTIVE_PULL_LOOSE, DIRECTIVE_WOUNDED_WEIGHT,
   DIRECTIVE_SQUISHY_SCALE, DIRECTIVE_HEALER_MULT,
 } from './tuning'
 import { directiveOf, type DirectiveDef } from './directives'
 import type {
-  Assignment, Barrier, BattleState, Combatant, Engagement, KitCapability, Stance, Team, Vec2,
+  Assignment, Barrier, BattleState, Combatant, Engagement, KitCapability, Rout, Stance, Team, Vec2,
 } from './types'
 
 // §acumen (tactical-coordination.md §3.2): smart members make a smart party.
@@ -417,6 +417,11 @@ export interface EngagementDecision {
   engagement: Engagement | null
   avoidTargetIds: string[]
   assignments?: Record<string, Assignment>
+  // §coordination disengage: present ⇒ the team is breaking off (dropped an
+  // engagement for LOSING the race, and no fresh affordable one replaced it,
+  // while a camp threat is still near). Absent ⇒ not routing (engaged, safe,
+  // won, or target unseen). executeMovement's default layer reads it.
+  rout?: Rout | null
 }
 
 // §coordination M1/M2 (tactical-coordination.md §3.1/§3.2/§3.3): the planner's
@@ -443,6 +448,7 @@ export function decideEngagement(
   threat: Record<string, number>,
   prevEngagement: Engagement | null,
   prevAssignments?: Record<string, Assignment>,
+  prevRout?: Rout | null,
 ): EngagementDecision {
   const sees = (e: Combatant, mult: number) =>
     members.some((m) => distance(m.pos, e.pos) <= m.visionRange * mult)
@@ -575,6 +581,16 @@ export function decideEngagement(
     return rtk + EPS < rtd * pullMargin
   }
 
+  // §coordination disengage (tactical-coordination.md §3.1/§3.4): did THIS
+  // decision round drop a held engagement because we're LOSING the mutual-TTK
+  // race (as opposed to "won — the committed camp is all dead" or "target
+  // unseen", which drop the engagement too but must NOT trigger a break-off)?
+  // Set only in the fast-path `losing` case below; read at the tail to publish a
+  // rout when nothing affordable replaces the abandoned fight. `abandonedFrom`
+  // is the centroid of the camp we're breaking off from (the rout's marker).
+  let abandonedForLosing = false
+  let abandonedFrom: Vec2 | null = null
+
   // §5 commitment fast path: while an engagement is held, run ONLY the cheap
   // abandon checks (a stored-id sum + a linear over-pull scan) — the wide
   // appraise (ranking every visible candidate, running pullSetOf per one) is
@@ -641,6 +657,11 @@ export function decideEngagement(
         }
       }
       // losing the race → commitment broken, fall through to the full appraise.
+      // Record it as a break-off-for-losing (distinct from the "won"/"unseen"
+      // drops that never reach here) and remember what we're fleeing FROM, so
+      // the tail can publish a rout if no fresh affordable fight replaces it.
+      abandonedForLosing = true
+      abandonedFrom = centroid(camp)
     }
   }
 
@@ -666,6 +687,29 @@ export function decideEngagement(
   }
 
   if (!chosenCamp || !chosenPrimary) {
+    // §coordination disengage (tactical-coordination.md §3.1/§3.4): nothing
+    // affordable. If we're breaking off — dropped a losing engagement THIS
+    // round, or already routing from a prior one (`prevRout`) — and a camp
+    // threat is still near, publish/continue a rout: executeMovement's default
+    // layer runs the Retreater back-off toward our own edge and drops locks,
+    // instead of standing and re-locking the fight we just fled. Every visible
+    // foe is avoid-listed while routing so selectTarget can't re-lock the camp.
+    // "Safe" (rout ends, normal behavior resumes) = the nearest visible foe is
+    // beyond ROUT_SAFE_RADIUS of the members' centroid — or nothing hostile is
+    // in sight at all (the visible.length===0 early bail above, which returns no
+    // rout). A fresh affordable engagement (chosenCamp above) also clears it.
+    // The engage-side entry bar is stricter than the exit bar we just failed, so
+    // the SAME camp can't re-commit next round — no engage↔rout thrash.
+    const routing = abandonedForLosing || !!prevRout
+    if (routing) {
+      const c = centroid(members)!
+      const stillThreatened = visible.some((e) => distance(e.pos, c) <= ROUT_SAFE_RADIUS)
+      if (stillThreatened) {
+        const from = abandonedFrom ?? prevRout?.from ?? c
+        const sinceRound = prevRout ? prevRout.sinceRound : state.round
+        return { engagement: null, avoidTargetIds: visible.map((e) => e.id).sort(), rout: { from, sinceRound } }
+      }
+    }
     const avoidTargetIds = visible.filter((e) => !alreadyFighting(e)).map((e) => e.id).sort()
     return { engagement: null, avoidTargetIds }
   }

@@ -622,16 +622,6 @@ rig.
 
 **M1–M3 follow-ups (from the phase bug-hunt reviews + live showcase QA):**
 
-- ***Abandon has no execution — it's bookkeeping.*** When the mutual-TTK
-  re-price crosses `ENGAGE_EXIT` the plan drops the `engagement`, but nothing
-  in `executeMovement` acts on it: units keep their sticky lock + threat and
-  fight on (the `fold-when-losing` showcase decides to fold, then dies anyway).
-  Wire abandon → a real disengage: on the round an engagement is dropped for
-  "losing the race" (not "everything's dead"), have members break off toward
-  the party edge / a safe rally, reusing the Retreater / kite back-off
-  movement. Higher value than the rest here — it turns an already-shipped
-  *decision* into visible *behavior*, and pairs naturally with M4 (a Skirmish
-  directive's whole point is knowing when to fold).
 - *Roam-into-avoided-camp gets stuck* — when the party correctly declines an
   unaffordable camp and roams away, `pickRoamPoint` / the fanned waypoint can
   route it THROUGH the sleeping pack's physical cluster, where `enforceSeparation`

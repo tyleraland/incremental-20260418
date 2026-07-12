@@ -524,6 +524,20 @@ export interface Engagement {
   sinceRound: number        // commitment age — abandon predicates read this
 }
 
+// §coordination disengage (tactical-coordination.md §3.1/§3.4): the OTHER piece
+// of cross-round plan memory besides `engagement`. Published on the round the
+// team drops an engagement for LOSING the mutual-TTK race (never for "won —
+// everything's dead" or "target unseen"); read by executeMovement's default
+// layer to break the line off toward its own edge (the Retreater back-off) and
+// drop sticky locks. Persists across decision rounds (like `engagement`) until
+// the party is safe (out of camp threat / nothing hostile in sight) or finds a
+// fresh affordable engagement — the hysteresis that stops engage↔rout thrash.
+// Serialized with the plan (only when set ⇒ legacy tokens stay byte-identical).
+export interface Rout {
+  from: Vec2          // centroid of the camp we broke off from — the "fleeing from" marker
+  sinceRound: number  // decision round the break-off began (age; abandon predicates / debug)
+}
+
 // §coordination: a member's job this plan (assigned per decision round from
 // declared intent — equipped tactics — else kit capability; never a stored role).
 export type Assignment =
@@ -550,6 +564,7 @@ export interface TeamPlan {
   assignments?: Record<string, Assignment>   // combatantId → role this plan
   avoidTargetIds?: string[]  // do-NOT-aggro list (over-pull prevention)
   corridor?: Vec2 | null     // shared route corner — the HERD_BIAS replacement
+  rout?: Rout | null         // active break-off (abandon-for-losing execution)
 }
 
 // §coordination (tactical-coordination.md §3.6): why the team is here — the

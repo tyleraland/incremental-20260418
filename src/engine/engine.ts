@@ -1255,6 +1255,36 @@ function clampFormationSlot(self: Combatant, slot: Vec2, anchor: Vec2, barriers:
   return clamped
 }
 
+// §coordination disengage / Retreater back-off (tactical-coordination.md §3.4):
+// THE one break-off movement — flee toward our own edge with a cohesion curve
+// (so a retreater drifts back toward the surviving party instead of into a
+// corner) at a speed-limited panic run, spending a ready blink if walking fails
+// to open the gap (backed into terrain). Factored out so the Retreater tactic's
+// `awayFromNearestEnemy` plan AND the plan layer's rout (an abandoned-for-losing
+// engagement) run the identical motion. Pure move of the former inline body.
+function breakOff(state: BattleState, self: Combatant): void {
+  const dir = self.team === 'player' ? -1 : 1
+  const coh = cohesionVec(self, state)
+  const dx = coh.x * COHESION_WEIGHT
+  const dy = dir + coh.y * COHESION_WEIGHT
+  const len = Math.hypot(dx, dy) || 1
+  // Magnitude: (scaled) move speed × a panic boost — a consistent run, not a
+  // fixed multi-cell hop.
+  const speed = moveSpeedOf(self) * RETREAT_SPEED_MULT
+  const before = { ...self.pos }
+  const walked = slideMove(self.pos, { x: self.pos.x + (dx / len) * speed, y: self.pos.y + (dy / len) * speed }, state.barriers)
+  // §blink: a disengage that fails to open the gap spends a ready teleport
+  // instead — same cornered rule as the kite retreat.
+  const near = nearestEnemyTo(self, state)
+  const cornered = !!near && distance(walked, near.pos) - distance(self.pos, near.pos) < speed * BLINK_WALK_MIN
+  if (cornered && tryBlinkEscape(state, self)) planNote = 'disengage: cornered → blink'
+  else self.pos = walked
+  enforceSeparation(self, state.combatants, state.barriers)
+  if (self.pos.x !== before.x || self.pos.y !== before.y) {
+    emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
+  }
+}
+
 function executeMovement(state: BattleState, self: Combatant, plan: MovementResult | null): void {
   if (plan?.clearLock) self.lockedTargetId = null
   // Wedged inside terrain (a crowded separation push or corner case can leave a
@@ -1270,31 +1300,7 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
   }
   if (self.statuses.some((s) => s.flags.includes('rooted'))) return   // §2 rooted: can act, can't move
   if (plan?.hold) return
-  if (plan?.awayFromNearestEnemy) {
-    const dir = self.team === 'player' ? -1 : 1
-    const coh = cohesionVec(self, state)
-    // Direction: toward our own edge, with a cohesion sideways curve so a
-    // retreater drifts back toward the surviving party instead of into a corner.
-    const dx = coh.x * COHESION_WEIGHT
-    const dy = dir + coh.y * COHESION_WEIGHT
-    const len = Math.hypot(dx, dy) || 1
-    // Magnitude: (scaled) move speed × a panic boost — a consistent run, not a
-    // fixed multi-cell hop. `plan.rows` is now just the disengage intent.
-    const speed = moveSpeedOf(self) * RETREAT_SPEED_MULT
-    const before = { ...self.pos }
-    const walked = slideMove(self.pos, { x: self.pos.x + (dx / len) * speed, y: self.pos.y + (dy / len) * speed }, state.barriers)
-    // §blink: a disengage that fails to open the gap (backed into terrain)
-    // spends a ready teleport instead — same cornered rule as the kite retreat.
-    const near = nearestEnemyTo(self, state)
-    const cornered = !!near && distance(walked, near.pos) - distance(self.pos, near.pos) < speed * BLINK_WALK_MIN
-    if (cornered && tryBlinkEscape(state, self)) planNote = 'disengage: cornered → blink'
-    else self.pos = walked
-    enforceSeparation(self, state.combatants, state.barriers)
-    if (self.pos.x !== before.x || self.pos.y !== before.y) {
-      emit(state, { round: state.round, type: 'retreat', sourceId: self.id, position: { ...self.pos } })
-    }
-    return
-  }
+  if (plan?.awayFromNearestEnemy) { breakOff(state, self); return }
   // Kite: hold a desired gap to the locked target (back off if too close, close in if too far).
   if (plan?.desiredRange != null) { kiteToward(state, self, plan.desiredRange); return }
   // Move to a computed spot (flank / guard / regroup).
@@ -1340,6 +1346,20 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
       }
       return
     }
+  }
+  // §coordination disengage (tactical-coordination.md §3.1/§3.4): the team
+  // abandoned an engagement for LOSING the mutual-TTK race (not "won" / target
+  // "unseen") and published a rout. Break the line off toward our own edge (the
+  // shared Retreater back-off) and DROP the sticky lock so the unit stops
+  // committing attacks to the fight we're leaving. Default layer only — an
+  // equipped Charger/aggressive movement tactic already claimed the turn above
+  // and still outranks this (the player lever wins); pull/guard jobs can't
+  // coexist with a rout (no engagement ⇒ the planner publishes no assignments).
+  if (teamPlan?.rout) {
+    self.lockedTargetId = null
+    planNote = 'disengage: rout'
+    breakOff(state, self)
+    return
   }
   // §coordination M3 stance execution (tactical-coordination.md §3.4): the
   // plan's default layer — only reached when nothing above (an equipped
@@ -1434,8 +1454,9 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
   // decideEngagement takes no dependency on waypoint/huntTargetId (state/team/
   // members/enemies/threat/prevEngagement/prevAssignments only), so computing
   // it first is safe and changes nothing about its own result.
-  const { engagement, avoidTargetIds, assignments } = decideEngagement(
+  const { engagement, avoidTargetIds, assignments, rout } = decideEngagement(
     state, team, members, enemies, threat, state.plans[team]?.engagement ?? null, state.plans[team]?.assignments,
+    state.plans[team]?.rout ?? null,
   )
 
   let waypoint = state.plans[team]?.waypoint ?? null
@@ -1506,6 +1527,9 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
     // case). Both stay absent only when nothing was visible at all.
     ...(engagement ? { engagement, avoidTargetIds } : avoidTargetIds.length ? { avoidTargetIds } : {}),
     ...(assignments && Object.keys(assignments).length ? { assignments } : {}),
+    // §coordination disengage: the active break-off (abandon-for-losing). Only
+    // when set — absent ⇒ not routing, so legacy tokens stay byte-identical.
+    ...(rout ? { rout } : {}),
   }
 }
 

@@ -136,7 +136,11 @@ Design rules:
   HP collapse and over-pull growth are felt (RTD shrinks as party HP falls;
   a re-anchored or cap-truncated pull set raises RTK), so no separate HP
   floor exists. That is the backlog's "strategy commitment": pursue, notice
-  failure, switch.
+  failure, switch. A drop *for losing* (not "won"/"unseen") also publishes a
+  short-lived `rout` — the OTHER piece of cross-round plan memory — so the
+  break-off is visible behavior (members flee to their own edge, drop locks)
+  and not just `engagement === null`; it holds until the party is safe or finds
+  a fresh affordable fight (§3.4).
 
 **What the blackboard is — and isn't:**
 
@@ -335,7 +339,10 @@ Three small, uniform hooks; no new channels, no new engine framework:
   aimed by the plan instead of "squishiest"). Stance reads: `kite` sets the
   non-kiter default to `desiredRange = preferredRangeVs` *with* back-off
   (today's opt-in kiter behavior, chosen by the team), `hold` pins to the
-  anchor, `collapse` is today's close-and-hold.
+  anchor, `collapse` is today's close-and-hold. A published `rout` (§3.1) reads
+  at the TOP of this default path: drop the lock and run the shared Retreater
+  `breakOff` toward the party edge — the abandon-for-losing execution, below any
+  equipped movement tactic (the player lever still closes).
 - **Candidate scoring.** `scoreCandidate` gains a conformance term:
   `− cohesionW · excessDistToAnchor(cand)` (dead-banded, like the ring
   term). `cohesionW` is a new POSTURES column — bold drifts, wary sticks.
@@ -649,7 +656,14 @@ TTK race vs posture-mean `pullMargin`, `ENGAGE_EXIT` asymmetric abandon,
 over-pull re-anchor, committed fast path (§5 — appraise skipped while
 held). Cap-filled pull sets read as **unaffordable** (truncated predictions
 undercount — review fix). `ACUMEN.pull` re-read every decision round. Pull
-assignment + Puller tactic share one tag-and-drag. Tests: `m2-pull.test.ts`.
+assignment + Puller tactic share one tag-and-drag. **Abandon-for-losing now
+executes** (M1–M3 follow-up): the drop publishes `TeamPlan.rout`
+(`{from, sinceRound}`, serialized only when set) which `executeMovement`'s
+default layer runs as the shared Retreater `breakOff` (flee to own edge + drop
+lock, avoid-list every visible foe), persisting until safe (`ROUT_SAFE_RADIUS`)
+or a fresh affordable engagement — "won"/"unseen" drops never rout, and the
+entry-vs-exit asymmetry forbids engage↔rout thrash. Tests: `m2-pull.test.ts`,
+`disengage.test.ts`.
 
 **M2.5 — rove (the jungler).** `rove` assignment: solo-TTK eligibility,
 micro-engagement in the assignment, rejoin predicates + share cadence, the
