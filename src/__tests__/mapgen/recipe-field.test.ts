@@ -280,4 +280,126 @@ describe('field recipe fuzz gate', () => {
     }
     expect(outcropped).toBeGreaterThan(SEEDS.length * 0.7)
   })
+
+  // ── desire paths (track C tail): the graph route painted as a dirt trail ───
+
+  it('desire paths fire: every multi-region map paints a trail, and the paint is real', () => {
+    const results = sweep(160, ['plains', 'water'])
+    let multi = 0, pathed = 0
+    for (const r of results) {
+      expect(r.report.ok, `seed ${r.spec.seed}: ${JSON.stringify(r.report.rules.filter((x) => !x.ok))}`).toBe(true)
+      if (r.spec.semantic.nav.nodes.length < 2) continue
+      multi++
+      const note = r.notes.find((n) => n.startsWith('desire-paths:') && n.includes('cell(s) painted'))
+      if (note && Number(note.match(/(\d+) cell\(s\) painted/)![1]) > 0) pathed++
+    }
+    // the feature fires wherever the graph is non-trivial — not a lottery
+    expect(multi).toBeGreaterThan(0)
+    expect(pathed).toBe(multi)
+    // …and the note isn't self-serving: skip-diff one multi-region seed — the
+    // surface delta must be exactly a dirt trail over dry ground (desire-paths
+    // is the only pass between the two bakes; scatter placement may drift but
+    // never paints surface)
+    const idx = results.findIndex((r) => r.spec.semantic.nav.nodes.length >= 2)
+    const probe = results[idx]
+    const bare = generateMap(FIELD_RECIPE, {
+      recipe: 'field', seed: SEEDS[idx], size: 160, themes: ['plains', 'water'], skipPasses: ['desire-paths'],
+    })
+    const dirt = SURFACE_MATERIALS.indexOf('dirt')
+    const dry = ['grass', 'meadow', 'sand'].map((m) => SURFACE_MATERIALS.indexOf(m as (typeof SURFACE_MATERIALS)[number]))
+    let trail = 0
+    for (let i = 0; i < probe.spec.surface.grid.length; i++) {
+      if (probe.spec.surface.grid[i] === bare.spec.surface.grid[i]) continue
+      trail++
+      expect(probe.spec.surface.grid[i], `cell ${i}: trail paint must be dirt`).toBe(dirt)
+      expect(dry, `cell ${i}: trail must only repaint dry ground`).toContain(bare.spec.surface.grid[i])
+    }
+    expect(trail).toBeGreaterThan(0)
+  })
+
+  it('desire paths route THROUGH the pinches: the trail funnels both banks of a crossing doorAt', () => {
+    // Portals across the river (the P2 follow-through setup) force a leg over a
+    // 'crossing' edge. The trail never paints the wet ford strip itself, so the
+    // proof is geometric: painted cells on BOTH sides of a doorAt, close in —
+    // the funnel a trail through a pinch produces and uniform dressing would not.
+    let funneled = 0
+    for (const seed of SEEDS.slice(0, 6)) {
+      const s = 140
+      const at: [number, number][] = [[3, s / 2], [s - 3, s / 2], [s / 2, 3], [s / 2, s - 3]]
+      const params = {
+        recipe: 'field', seed, size: s, themes: ['plains', 'water'] as ThemeTag[],
+        keepClear: at.map(([x, y]) => ({ x: x - 1.5, y: y - 1.5, w: 3, h: 3 })),
+        pois: at.map(([x, y], i) => ({ kind: 'portal' as const, at: { x, y }, id: `portal-${i}` })),
+      }
+      const r = generateMap(FIELD_RECIPE, params)
+      const bare = generateMap(FIELD_RECIPE, { ...params, skipPasses: ['desire-paths'] })
+      expect(r.report.ok, `seed ${seed}`).toBe(true)
+      const cols = r.spec.cols
+      const trail: { x: number; y: number }[] = []
+      for (let i = 0; i < r.spec.surface.grid.length; i++) {
+        if (r.spec.surface.grid[i] !== bare.spec.surface.grid[i]) trail.push({ x: i % cols, y: (i / cols) | 0 })
+      }
+      for (const e of r.spec.semantic.nav.edges) {
+        if (e.lockId || !e.doorAt) continue
+        const near = trail.filter((c) =>
+          Math.abs(c.x + 0.5 - e.doorAt!.x) <= 6 && Math.abs(c.y + 0.5 - e.doorAt!.y) <= 6)
+        const straddles = (axis: 'x' | 'y') =>
+          near.some((c) => c[axis] + 0.5 < e.doorAt![axis] - 2) && near.some((c) => c[axis] + 0.5 > e.doorAt![axis] + 2)
+        if (straddles('x') || straddles('y')) { funneled++; break }
+      }
+    }
+    // deterministic seeds; at least one bake must show the funnel signature
+    expect(funneled).toBeGreaterThan(0)
+  })
+
+  it('desire paths stay kit-invariant: open vs closed kit paints identical trail cells', () => {
+    // The pass routes the never-locked subgraph on the pre-gates walk mask, so
+    // the SURFACE must agree between kit variants everywhere except the gates
+    // pass's own sealed-ford repaint (deep-water cells, never trail dirt).
+    const params = { recipe: 'field', seed: 9, size: 160, themes: ['plains', 'water'] as ThemeTag[] }
+    const closed = generateMap(FIELD_RECIPE, params)
+    const open = generateMap(FIELD_RECIPE, { ...params, proficiencies: ['might', 'mobility', 'perception', 'arcane'] })
+    const deep = SURFACE_MATERIALS.indexOf('deep-water')
+    for (let i = 0; i < closed.spec.surface.grid.length; i++) {
+      if (closed.spec.surface.grid[i] === open.spec.surface.grid[i]) continue
+      // only the sealed-ford repaint may differ — and only toward deep water
+      expect(closed.spec.surface.grid[i]).toBe(deep)
+    }
+  })
+
+  it('trivial graphs skip gracefully: 1 region + no portals paints nothing', () => {
+    // plains-only small maps derive a single region; the pass must note the
+    // skip rather than draw a spawn→landmark scribble on an unpinched field
+    for (const r of sweep(60, ['plains']).slice(0, 6)) {
+      if (r.spec.semantic.nav.nodes.length >= 2) continue
+      expect(r.notes.some((n) => n.startsWith('desire-paths:') && n.includes('trivial graph'))).toBe(true)
+      expect(r.notes.some((n) => n.startsWith('desire-paths:') && n.includes('painted'))).toBe(false)
+    }
+  })
+
+  // ── the 72-envelope retune (track C tail): spend band pinned ───────────────
+
+  it('72-envelope retune: live-cap bakes spend the moderate envelope; rerolls stay calm', () => {
+    // Measured at the 2026-07 retune (RIVER_DIALS maxRects 14→20, segRows
+    // 20→12, outcropReserve 4→6; OUTCROP_DIALS divisor 12→8): 200² spends
+    // 50–53 rects, 96² (the mirror-vale shape) 27–30 — up from the old ~38/~21
+    // plateau — with every probed seed baking valid on the FIRST attempt.
+    // Floors carry a little slack; a dial regression back toward the plateau
+    // trips them loudly. Attempts are summed so reroll pressure can't silently
+    // pay for the richer geography.
+    let attempts = 0
+    for (const seed of SEEDS.slice(0, 10)) {
+      const r200 = generateMap(FIELD_RECIPE, { recipe: 'field', seed, size: 200, themes: ['plains', 'water'], maxBarriers: 72 })
+      expect(r200.report.ok, `seed ${seed} @200²: ${JSON.stringify(r200.report.rules.filter((x) => !x.ok))}`).toBe(true)
+      expect(r200.spec.collision.length, `seed ${seed} @200² spent ${r200.spec.collision.length}`).toBeGreaterThanOrEqual(45)
+      expect(r200.spec.collision.length).toBeLessThanOrEqual(72)
+      const r96 = generateMap(FIELD_RECIPE, { recipe: 'field', seed, size: 96, themes: ['plains', 'water'], maxBarriers: 72 })
+      expect(r96.report.ok, `seed ${seed} @96²: ${JSON.stringify(r96.report.rules.filter((x) => !x.ok))}`).toBe(true)
+      expect(r96.spec.collision.length, `seed ${seed} @96² spent ${r96.spec.collision.length}`).toBeGreaterThanOrEqual(24)
+      expect(r96.spec.collision.length).toBeLessThanOrEqual(72)
+      attempts += r200.attempts + r96.attempts
+    }
+    // 20 bakes; ≥18 must land first-roll (measured: all 20 do)
+    expect(attempts).toBeLessThanOrEqual(22)
+  })
 })

@@ -182,9 +182,8 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
   might-cleared rockfall — `placeProficiencyLock` on a derived edge, same
   seal-plug machinery as the dungeon, materials from the same table. Never
   the only route (contract rule 2).
-- **Paths**: a `desire-path` L7 pass paints dirt/road surface along the graph
-  route spawn → portals → landmark, through the pinches. Zero barrier cost,
-  makes the derived graph *visible* and routes readable.
+- **Paths** ✅ *(shipped 2026-07)*: the field recipe's `desire-paths` L7 pass —
+  see `src/mapgen/CLAUDE.md`.
 - **Secrets** (§J): a vault POI in a small region whose only edge is locked
   (perception) — the `locks` rule already guarantees sealed-when-closed /
   delivered-when-open. See-across materials (ravine, deep-water) give
@@ -198,11 +197,9 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
   `GenParams.manifest` seam, this doc.
 - **B. Derived graph producer** ✅ *(shipped as P1)*: `deriveRegions` + the
   `graph-truthful` validator rule; field recipe publishes real edges.
-- **C. Rivers + crossings + desire paths**: hydrology v2, ford/bridge edges,
-  the paths pass, first overworld proficiency gate. Starts with the
-  moderate-envelope bench (decision 3): re-bench `map-perf-envelope` on
-  river-map geometry, raise the live cap to what holds (~56–72 target),
-  then spend it.
+- **C. Rivers + crossings + desire paths** ✅ *(shipped: P2/P3/P5 + the
+  2026-07 tail — desire-path pass and the dial retune that spends the 72
+  envelope; facts in `src/mapgen/CLAUDE.md`)*.
 - **D. Flow/tension derived plane**: distance-to-goal BFS in scratch, node
   `intensity` on the semantic plane, store-side pacing consumption (settle
   the §4 ownership split in that PR, per decision 4).
@@ -246,7 +243,7 @@ never half-landed.
 | **P3** ✅ | **Overworld gates + secret pockets**: a gated *secondary* crossing (mobility ford / perception hidden trail) and a locked vault region, via the shared `gates.ts` on derived edges | proves the convergence thesis end-to-end — dungeon door and overworld ford are literally one call; lands phase-4's "field-recipe gates" | same seed × different kit bakes open/closed field variants; `locks` rule green both ways |
 | **P4** ✅ | **Cyclic dungeon core** (track E): cycle-as-primitive skeleton (entry→goal via two arcs) + tree-attached leaves replacing MST+2-spares; first rewrite step: the **shortcut lock** (a proficiency plug on the short arc — closed forces the long way, nothing stranded) | the dungeon-side structural piece — cycles by construction, not by accident; the rewrite-step shape is what lock/key/shortcut grammar (Unexplored) grows on. Independent of P1–P3, parallelizable | dungeon fuzz gates green; ≥1 cycle by construction; gates/stamps/carve untouched |
 | **P5** ✅ | **Moderate-envelope bench**: re-bench `map-perf-envelope.test.ts` on realistic river-map geometry; raise the live cap toward ~56–72 | converts decision 3 into a number; unlocks LIVE adoption of P2 maps AND the lab dungeon | new envelope measured + gated; adapter cap updated |
-| **P6+** | **Color-in (BACKLOG until the shape holds)**: desire paths, flow/`intensity` plane (track D), sightline ribbons + `tacticalTargets` (track F), NPC placement off the semantic plane, world director (track G) | none move the structure; all read the graph/planes laid above | (backlog) |
+| **P6+** | **Color-in (BACKLOG until the shape holds)**: flow/`intensity` plane (track D), sightline ribbons + `tacticalTargets` (track F), NPC placement off the semantic plane, world director (track G). Desire paths + the envelope-spend retune shipped 2026-07 (track C tail) | none move the structure; all read the graph/planes laid above | (backlog) |
 
 P1 → P2 → P3 is a strict dependency chain; P4 runs parallel to any of them;
 P5 anytime after P2 exists to measure. Ship after each packet — a partial

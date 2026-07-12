@@ -160,21 +160,14 @@ semantic planes) through recipe pass pipelines + validation; shipped
 mechanics and roadmap rationale live in the guide. The **layer architecture**
 (shipped: shared graph/gates modules, scratch tier, manifest seam, derived
 region graph, rivers+crossings, overworld gates, cyclic dungeons, the 72-rect
-envelope) and its extension **seams** live in
+envelope — spent since the 2026-07 dial retune — and desire paths) and its
+extension **seams** live in
 `procedural-generation-architecture-plan.md`. Open work below is grouped:
 future feature tracks, then discrete tech-debt/polish chunks, then the
 deferred content phases.
 
 ### Open feature tracks (each a distinct future build)
 
-- **Desire-path pass (track C tail).** Paint dirt/road surface along the
-  spawn→portal→landmark graph route through the pinches (zero rect cost) —
-  makes the derived graph *visible* and routes readable. Pure L7 dressing.
-- **Spend the 72 envelope (track C tail).** P5 landed the cap but the field
-  recipe plateaus real spend at ~21 rects @96² / ~38 @200² — RIVER_DIALS /
-  outcrop target / GATE_DIALS allotments were tuned for the old 40. Retune
-  them deliberately (lab-reviewed) so the moderate envelope buys richer
-  geography; nothing spends the headroom today.
 - **Track D — flow/tension derived plane.** Distance-to-goal BFS in
   `draft.scratch`, digested to a per-node `intensity` scalar on the semantic
   plane; store consumes it for spawn/reward pacing (mapgen makes the stage,

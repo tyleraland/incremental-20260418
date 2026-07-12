@@ -51,9 +51,10 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
    re-bench, 2026-07: synthetic cost flattens past 64, realistic geometry is
    cheaper than synthetic at equal count; `map-perf-envelope.test.ts` records
    the measurement). Lib default `maxBarriers`=24; the dungeon's 72 default
-   is now perf-viable live — adoption is a content decision. NB: no recipe
-   SPENDS past ~38 yet (allotment dials plateau); spending the headroom is a
-   deliberate dial retune (BACKLOG).
+   is now perf-viable live — adoption is a content decision. The field
+   recipe's dials were retuned to SPEND it (2026-07): ~50–53 rects @200²,
+   ~27–30 @96², first-attempt valid across the sweep; band pinned in
+   `recipe-field.test.ts`.
 
 ## Module map
 
@@ -68,7 +69,7 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `gates.ts` | recipe-agnostic lock-and-key: `placeProficiencyLock` (prize + gate POIs + tag-themed seal plug, resolved against the party kit) and `placeShortcutLock` (`gates: []` — locks a ROUTE, not a prize), `GATE_LOOKS`/`GATE_TAGS` |
 | `pipeline.ts` | `generateMap(recipe, params)`: pass runner, per-pass streams, skipPasses, bake→validate→reroll |
 | `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / graph-truthful (every unlocked/open nav edge connects its endpoints' flood components — anchors in substantial components speak for themselves exactly; only buried/tiny-pocket anchors get a ±4 envelope; `doorAt` open; closed-locked edges exempt) / water-coherence. Exports `occupancyGrid` (the shared PAD-inflated rasterizer recipes reuse) |
-| `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → **river** (P2: descending edge-to-edge channel in a lane beside the spawn apron, 2-wide punched fords — the pinches that become `crossing` edges — 35% dress one as a `road` bridge; explicit `RIVER_DIALS` allotment with `outcropReserve` headroom) → outcrops → **regions** (no-RNG: rasterizes collision → scratch `walk`/`regions` planes → `deriveRegions` publishes real nav nodes+edges, depth rooted at the spawn region) → **gates** (P3: kit-invariant route lock on a redundant crossing + vault lock on natural pockets, `GATE_DIALS`; skipped when `params.gates` is false — the adapter's live default) → scatter → semantic (links POIs onto region nodes; falls back to POI stubs when regions is skipped) |
+| `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → **river** (P2: descending edge-to-edge channel in a lane beside the spawn apron, 2-wide punched fords — the pinches that become `crossing` edges — 35% dress one as a `road` bridge; explicit `RIVER_DIALS` allotment with `outcropReserve` headroom) → outcrops (`OUTCROP_DIALS`) → **regions** (no-RNG: rasterizes collision → scratch `walk`/`regions` planes → `deriveRegions` publishes real nav nodes+edges, depth rooted at the spawn region) → **gates** (P3: kit-invariant route lock on a redundant crossing + vault lock on natural pockets, `GATE_DIALS`; skipped when `params.gates` is false — the adapter's live default) → semantic (links POIs onto region nodes; falls back to POI stubs when regions is skipped) → **desire-paths** (RNG-free L7 dressing: BFS the UNGATED nav subgraph spawn→portals→landmark, realize each leg on the pre-gates scratch `walk` mask through each edge's `doorAt`, paint `dirt` width 1–2 by the roughness field — zero rect cost, kit-invariant; skips trivial 1-region/no-portal graphs) → scatter (props keep off the trail via the `desire-paths` scratch mask) |
 | `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → **cycle-as-primitive skeleton** (entry→goal via two axis-split arcs — a real cycle by construction at ≥3 rooms — leaves tree-attached, optional chord for a second loop) → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects) → rewrite steps (the `shortcut` pass: a proficiency plug on a mid-arc cycle edge — closed forces the long way around; every rewrite decision is KIT-INVARIANT: budgets count as-if-all-locks-closed so an open kit only ever removes seal geometry): lab/encounter only until the pather perf pass |
 | `recipes/city.ts` | the road-first town: plaza + jittered gate roads + cross-street loops (nav skeleton FIRST) → paving (ground → road/stone) → street-fronting building rects (road-distance transform: every house ≥2 cells off pavement, ≤4 from a street) → yard/market scatter → plaza landmark. Generates the STAGE for a city (NPCs/spawns stay store-owned); **live on `prontera-city`** (`data/locations.ts`) — under a tighter budget it just starves to fewer houses |
 | `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
@@ -85,10 +86,11 @@ spec's **surface plane** (material regions → organic washes via
 two-band water read), **scatter plane** (abstract kinds → biome prop
 archetypes, `KIND_ARCHETYPE` — kinds never prop ids), and **materials**
 (deep-water rects vanish under the lake wash; hedges paint foliage). First
-live location: **`mirror-vale`** (96×96 field, cap 30). The lab explores with
-`maxBarriers` 24; `generateForLocation` pins live maps to **72** (the P5
-moderate-envelope re-bench, 2026-07, gated in `map-perf-envelope.test.ts` —
-no live bake changed at the raise: recipe dials plateau spend at ~38).
+live location: **`mirror-vale`** (96×96 field, cap 30; ~28 rects since the
+2026-07 dial retune). The lab explores with `maxBarriers` 24;
+`generateForLocation` pins live maps to **72** (the P5 moderate-envelope
+re-bench, 2026-07, gated in `map-perf-envelope.test.ts`; the field dials now
+spend ~52 of it at 200² — still under the bench's 64-rect plateau region).
 
 ## Harnesses (the human-validation bottleneck is the design center)
 

@@ -47,10 +47,13 @@ const MAX_BENCHED_CROWD = 50
 //   the heaviest dungeon seed found in a 40-seed probe (57 rects of
 //   maximal-rect wall cover on 48², spend median 43) ticked 15.2/7.9 at a
 //   harsh crowd-50 — under the synthetic-56 line — and 10.1/6.1 at a
-//   realistic crowd-30 (= the old cap-40 line). River+gates fields plateau
-//   under their allotment dials (~21 rects at 96², ~38 at 200², any cap ≥40)
-//   and ticked at or below their shape's cap-40 line (river200 12.7/10.8 vs
-//   beach-barriers40 12.7/9.8).
+//   realistic crowd-30 (= the old cap-40 line). River+gates fields at the
+//   bench plateaued under their allotment dials (~21 rects at 96², ~38 at
+//   200², any cap ≥40) and ticked at or below their shape's cap-40 line
+//   (river200 12.7/10.8 vs beach-barriers40 12.7/9.8). The 2026-07 field
+//   dial retune now spends ~28 @96² / ~52 @200² — still under the 56–64
+//   synthetic lines the sweep measured flat, and realistic geometry benched
+//   cheaper than synthetic at equal count.
 // So the moderate envelope is adopted at the dungeon recipe's own budget —
 // one bound serves the overworld headroom AND live dungeon adoption:
 const MAX_BENCHED_BARRIERS = 72

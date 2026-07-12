@@ -142,13 +142,20 @@ const hydrologyPass = {
 export const RIVER_DIALS = {
   minSize: 56,        // maps smaller than this stay river-less (the lane math below
                       //   needs size/2 ≥ apron + laneGap + laneMargin + minLaneWidth)
-  maxRects: 14,       // EXPLICIT budget allotment: the river never spends more rects
+  maxRects: 20,       // EXPLICIT budget allotment: the river never spends more rects
                       //   than min(this, maxBarriers − already-spent − outcropReserve);
-                      //   can't fit → skip whole
-  outcropReserve: 4,  // rects LEFT for the outcrops pass (decision 3: allotments, not a
+                      //   can't fit → skip whole. Was 14 under the old 40-rect cap;
+                      //   raised with the 72 envelope (P5) so a 200² course can afford
+                      //   its ~17 shorter segments (see segRows)
+  outcropReserve: 6,  // rects LEFT for the outcrops pass (decision 3: allotments, not a
                       //   race — without this a tight cap let the river starve outcrops
-                      //   to zero and the map reads as bare banks)
-  segRows: 20,        // ~rows of course per cover rect: one bbox rect per knot segment
+                      //   to zero and the map reads as bare banks). 4 → 6 with the fatter
+                      //   maxRects above, so the LAB's lean 24-cap bakes still grow
+                      //   outcrops after a maximal river
+  segRows: 12,        // ~rows of course per cover rect: one bbox rect per knot segment.
+                      //   20 → 12 with the 72 envelope: more, shorter segments = a windier
+                      //   course whose rects hug it tighter (narrower bboxes = MORE wet,
+                      //   so water-coherence gets safer as spend rises)
   minSegments: 3,     // fewer cover segments than this can't read as a river → skip
   maxSegDrift: 4,     // max cross-axis wander per knot segment (bounds rect width =
                       //   drift + 2·deepHalf, which keeps rects comfortably wet in
@@ -388,6 +395,18 @@ const riverPass = {
 
 interface Pt2 { x: number; y: number }
 
+// ── OUTCROP_DIALS — the outcrop-mass allotment knobs ─────────────────────────
+// Same one-commented-block discipline as RIVER_DIALS/SCATTER_DIALS/GATE_DIALS.
+const OUTCROP_DIALS = {
+  targetDivisor: 8,   // rect target ≈ size / this (then capped by remaining budget −
+                      //   gateReserve). Was 12 under the old 40-rect cap; 12 → 8 with
+                      //   the 72 envelope (P5) — 96² aims ~12 masses, 200² ~25, which
+                      //   is what makes the moderate envelope read as geography
+                      //   instead of a bare bank. Under the LAB's lean 24 cap the
+                      //   budget clamp, not this divisor, still rules
+  minTarget: 3,       // even a smooth small map tries for a few landmarks
+}
+
 // ── outcrops: rock/ravine/hedge masses where the ground is rough (layer 4) ───
 const outcropsPass = {
   id: 'outcrops',
@@ -397,7 +416,8 @@ const outcropsPass = {
     // allotment discipline as RIVER_DIALS.outcropReserve. Unconditional, so
     // budgets never depend on whether a gate later fires (kit-invariance).
     const budget = params.maxBarriers - draft.collision.length
-    const target = Math.min(budget - GATE_DIALS.gateReserve, Math.max(3, Math.round(size / 12)))
+    const target = Math.min(budget - GATE_DIALS.gateReserve,
+      Math.max(OUTCROP_DIALS.minTarget, Math.round(size / OUTCROP_DIALS.targetDivisor)))
     if (target <= 0) { note('no barrier budget left after hydrology'); return }
     const forest = params.themes.includes('forest')
     const r = rng('sites')
@@ -500,7 +520,9 @@ export const GATE_DIALS = {
                         //   ≥85% open-cell connectivity comfortably intact
   gateReserve: 2,       // rects the OUTCROPS pass leaves unspent for gate plugs (one
                         //   route + one vault, 1 rect each as-if-closed) — without it
-                        //   outcrops fill the cap and every gate skips on budget
+                        //   outcrops fill the cap and every gate skips on budget.
+                        //   Deliberately UNCHANGED by the 72-envelope retune: gates
+                        //   spend ≤2 rects regardless of how rich the geography gets
 }
 
 // ── gates: overworld lock-and-key on DERIVED edges (P3; track C / phase 4) ───
@@ -730,6 +752,158 @@ const gatesPass = {
   },
 }
 
+// ── desire-paths: paint the graph route (track C tail — pure L7 dressing) ────
+// Makes the DERIVED graph visible: a trodden dirt trail from the spawn to each
+// portal and to the landmark, routed over the nav graph and realized as a cell
+// path forced through each traversed edge's doorAt pinch. Zero rect cost —
+// surface paint only, 'dirt' from the existing vocabulary (locked decision 6:
+// no new vocab entry for a trail).
+//
+// KIT-INVARIANT by construction, twice over: the graph route runs on the
+// UNGATED subgraph only (edges with no lockId — a closed lock's edge is
+// impassable, and contract rule 2 keeps the critical path ungated; skipping
+// even OPEN-locked edges means both kit variants of a seed route identically),
+// and the cell path runs on the scratch 'walk' mask, which was rasterized
+// BEFORE the gates pass added any plug. Water/'road' cells are traversed but
+// never repainted — the ford/bridge IS the trail there, and repainting wet
+// cells would flip a covered deep cell dry (the water-coherence rule's exact
+// lie). So painted cells are identical across variants.
+//
+// Width: 1 cell, widened to 2 where the shared roughness field says the ground
+// is broken — substrate-coherent wonk, no RNG (the pass draws none; decision 7).
+//
+// ORDER (deliberate): after `semantic` — the landmark POI must exist to be
+// routed to — and BEFORE scatter, which treats painted trail cells as
+// off-limits (scatterBlocked below), so paths read UNDER the props instead of
+// growing trees mid-trail. Scatter still runs after gates and reads collision
+// through isPlaceable, unchanged.
+const desirePathsPass = {
+  id: 'desire-paths',
+  run({ draft, fields, note }: PassCtx) {
+    const walk = draft.scratch.get('walk') as Uint8Array | undefined
+    const claims = draft.scratch.get('regions') as Int32Array | undefined
+    const nodes = draft.semantic.nav.nodes
+    if (!walk || !claims || !nodes.length) { note('no derived graph (regions skipped?) — no paths'); return }
+    const spawn = draft.semantic.pois.find((p) => p.kind === 'spawn')
+    if (!spawn) { note('no spawn POI — no paths'); return }
+    const targets = draft.semantic.pois.filter((p) => p.kind === 'portal' || p.kind === 'landmark')
+    const hasPortals = targets.some((p) => p.kind === 'portal')
+    if (!targets.length) { note('no portal/landmark targets — no paths'); return }
+    if (nodes.length < 2 && !hasPortals) { note('trivial graph (1 region, no portals) — no paths'); return }
+
+    const { cols, rows } = draft
+    const cellOf = (p: Pt2) =>
+      Math.min(rows - 1, Math.max(0, Math.floor(p.y))) * cols + Math.min(cols - 1, Math.max(0, Math.floor(p.x)))
+
+    // graph-level route: parent-edge BFS from the spawn's region over the
+    // ungated subgraph (see header) — each reached node remembers the pinch
+    // it was entered through.
+    const spawnRegion = claims[cellOf(spawn.at)]
+    if (spawnRegion < 0) { note('spawn cell unclaimed — no paths'); return }
+    const ungated = draft.semantic.nav.edges.filter((e) => !e.lockId && e.doorAt)
+    const parent = new Map<string, { prev: string; door: Pt2 } | null>()
+    parent.set(`region-${spawnRegion}`, null)
+    const nq = [`region-${spawnRegion}`]
+    while (nq.length) {
+      const id = nq.shift()!
+      for (const e of ungated) {
+        const other = e.a === id ? e.b : e.b === id ? e.a : null
+        if (!other || parent.has(other)) continue
+        parent.set(other, { prev: id, door: e.doorAt! })
+        nq.push(other)
+      }
+    }
+
+    // shortest 4-neighbour cell path on the walk mask (BFS, deterministic
+    // expansion order), inclusive of both ends; null = unreachable.
+    const gridPath = (from: number, to: number): number[] | null => {
+      if (!walk[from] || !walk[to]) return null
+      if (from === to) return [from]
+      const prev = new Int32Array(cols * rows).fill(-1)
+      prev[from] = from
+      const q = [from]
+      for (let head = 0; head < q.length; head++) {
+        const i = q[head]
+        if (i === to) break
+        const x = i % cols, y = (i / cols) | 0
+        for (const j of [
+          x + 1 < cols ? i + 1 : -1, x > 0 ? i - 1 : -1,
+          y + 1 < rows ? i + cols : -1, y > 0 ? i - cols : -1,
+        ]) {
+          if (j >= 0 && walk[j] && prev[j] === -1) { prev[j] = i; q.push(j) }
+        }
+      }
+      if (prev[to] === -1) return null
+      const path = [to]
+      for (let i = to; i !== from; i = prev[i]) path.push(prev[i])
+      return path.reverse()
+    }
+
+    // trample: paint dry ground only (grass/meadow/sand/dirt — never water,
+    // road, or anything under a rect: those cells aren't on the walk mask).
+    const mask = new Uint8Array(cols * rows)
+    let painted = 0
+    const paintCell = (i: number) => {
+      if (mask[i]) return
+      const x = i % cols, y = (i / cols) | 0
+      const m = matAt(draft, x, y)
+      if (m !== 'grass' && m !== 'meadow' && m !== 'sand' && m !== 'dirt') return
+      paint(draft, x, y, 'dirt')
+      mask[i] = 1
+      painted++
+    }
+    const trample = (path: number[]) => {
+      for (let k = 0; k < path.length; k++) {
+        const i = path[k]
+        paintCell(i)
+        const x = i % cols, y = (i / cols) | 0
+        // widen to 2 where the ground is rough: the step direction's
+        // perpendicular neighbour, walk-mask-guarded (never under a rect)
+        const nxt = path[k + 1] ?? i
+        const horiz = Math.abs(nxt - i) === 1
+        const w = horiz ? (y + 1 < rows ? i + cols : -1) : (x + 1 < cols ? i + 1 : -1)
+        if (w >= 0 && walk[w] && fields.roughness(x + 0.5, y + 0.5) > 0.55) paintCell(w)
+      }
+    }
+
+    let legs = 0, crossings = 0
+    const skipped: string[] = []
+    for (const t of targets) {
+      const tr = claims[cellOf(t.at)]
+      if (tr < 0) { skipped.push(`${t.id} (cell unclaimed)`); continue }
+      if (!parent.has(`region-${tr}`)) { skipped.push(`${t.id} (no ungated route)`); continue }
+      // walk the parent chain target → spawn, collecting the pinches crossed
+      const doors: Pt2[] = []
+      for (let cur = `region-${tr}`; ;) {
+        const p = parent.get(cur)!
+        if (!p) break
+        doors.push(p.door)
+        cur = p.prev
+      }
+      doors.reverse()
+      // realize: spawn → each pinch in order → the target
+      const waypoints = [spawn.at, ...doors, t.at]
+      const cells: number[] = []
+      let ok = true
+      for (let k = 0; k + 1 < waypoints.length; k++) {
+        const seg = gridPath(cellOf(waypoints[k]), cellOf(waypoints[k + 1]))
+        if (!seg) { ok = false; break }
+        cells.push(...(k ? seg.slice(1) : seg))
+      }
+      if (!ok) { skipped.push(`${t.id} (walk-mask segment unreachable)`); continue }
+      trample(cells)
+      legs++
+      crossings += doors.length
+    }
+    if (skipped.length) note(`skipped leg(s): ${skipped.join('; ')}`)
+    if (!legs) { note('no routable targets — no paths'); return }
+    // L6 scratch: 'desire-paths' — Uint8Array, 1 = trail cell. Consumed by the
+    // scatter passes (props keep off the trail so it stays readable).
+    draft.scratch.set('desire-paths', mask)
+    note(`${legs} leg(s) through ${crossings} crossing(s), ${painted} cell(s) painted (0 rects)`)
+  },
+}
+
 // ── scatter (§A layer 9): props follow moisture + surface material ───────────
 // Two isolatable passes, each on its OWN rng stream so the ?mapgen=1 lab can
 // skip either independently (skipping one leaves the other byte-identical):
@@ -797,10 +971,17 @@ function kindFor(draft: PassCtx['draft'], x: number, y: number, m: number, r: Rn
 
 // Water cells are never placeable for scatter (fillers or clump members) —
 // nor is 'road' (only the river's bridge strips paint it in this recipe; a
-// tree sprouting mid-plank reads wrong and clutters the choke).
-function onWater(draft: PassCtx['draft'], x: number, y: number): boolean {
+// tree sprouting mid-plank reads wrong and clutters the choke) — nor a
+// desire-path trail cell (the scratch mask): a prop standing mid-trail would
+// bury the one pass whose whole job is staying readable.
+function scatterBlocked(draft: PassCtx['draft'], x: number, y: number): boolean {
   const mat = matAt(draft, x, y)
-  return mat === 'deep-water' || mat === 'shallow-water' || mat === 'road'
+  if (mat === 'deep-water' || mat === 'shallow-water' || mat === 'road') return true
+  const paths = draft.scratch.get('desire-paths') as Uint8Array | undefined
+  if (!paths) return false
+  const xi = Math.min(draft.cols - 1, Math.max(0, Math.floor(x)))
+  const yi = Math.min(draft.rows - 1, Math.max(0, Math.floor(y)))
+  return paths[yi * draft.cols + xi] === 1
 }
 
 function pushScatter(draft: PassCtx['draft'], x: number, y: number, kind: ScatterKind, r: Rng, intent: ScatterIntent): void {
@@ -834,7 +1015,7 @@ const scatterFillPass = {
         const x = (gx + r.range(0.15, 0.85)) * spacing
         const y = (gy + r.range(0.15, 0.85)) * spacing
         if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
-        if (!isPlaceable(draft, { x, y }, 0.5) || onWater(draft, x, y)) continue
+        if (!isPlaceable(draft, { x, y }, 0.5) || scatterBlocked(draft, x, y)) continue
         const m = fields.moisture(x, y)
         let w = SCATTER_DIALS.baseDensity * mult *
           (1 - SCATTER_DIALS.moistureBias + SCATTER_DIALS.moistureBias * m)
@@ -882,7 +1063,7 @@ const scatterClumpsPass = {
       let center: { x: number; y: number; m: number } | null = null
       for (let s = 0; s < 12; s++) {
         const x = r.range(3, size - 3), y = r.range(3, size - 3)
-        if (!isPlaceable(draft, { x, y }, 1) || onWater(draft, x, y)) continue
+        if (!isPlaceable(draft, { x, y }, 1) || scatterBlocked(draft, x, y)) continue
         if (matAt(draft, x, y) === 'sand') continue
         const m = fields.moisture(x, y)
         if (!center || m > center.m) center = { x, y, m }
@@ -898,7 +1079,7 @@ const scatterClumpsPass = {
         const rr = Math.pow(r.next(), SCATTER_DIALS.clumpFalloff) * radius
         const x = center.x + Math.cos(ang) * rr, y = center.y + Math.sin(ang) * rr
         if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
-        if (!isPlaceable(draft, { x, y }, 0.4) || onWater(draft, x, y)) continue
+        if (!isPlaceable(draft, { x, y }, 0.4) || scatterBlocked(draft, x, y)) continue
         pushScatter(draft, x, y, clumpKind, r, 'cluster')
         placed++
       }
@@ -908,7 +1089,7 @@ const scatterClumpsPass = {
         const rr = r.range(0.5, radius * 0.6)
         const x = center.x + Math.cos(ang) * rr, y = center.y + Math.sin(ang) * rr
         if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
-        if (!isPlaceable(draft, { x, y }, 0.4) || onWater(draft, x, y)) continue
+        if (!isPlaceable(draft, { x, y }, 0.4) || scatterBlocked(draft, x, y)) continue
         const uk: ScatterKind = clumpKind === 'tree'
           ? (r.chance(0.5) ? 'bush' : 'flower')
           : (r.chance(0.6) ? 'flower' : 'bush')
@@ -972,7 +1153,7 @@ const scatterEdgesPass = {
         else { t -= rect.w; bx = rect.x - inset; by = rect.y + rect.h - t }
         const px = bx + r.range(-0.25, 0.25), py = by + r.range(-0.25, 0.25)
         if (px < 1 || py < 1 || px > size - 1 || py > size - 1) continue
-        if (onWater(draft, px, py)) continue
+        if (scatterBlocked(draft, px, py)) continue
         if (!isPlaceable(draft, { x: px, y: py }, 0.2)) continue
         const kind: ScatterKind = r.chance(SCATTER_DIALS.skirtRockChance) ? 'rock' : 'flower'
         pushScatter(draft, px, py, kind, r, 'edge')
@@ -1032,6 +1213,9 @@ function nearWater(draft: PassCtx['draft'], x: number, y: number): boolean {
 }
 
 // ── semantic: POIs, nav stubs, tactical self-description (§A layers 5+7, §L) ─
+// Runs right after gates, BEFORE desire-paths/scatter: it reads only
+// collision/fields/scratch (+ its own stream), so nothing scatter does could
+// feed it — and desire-paths needs the landmark POI it places.
 const semanticPass = {
   id: 'semantic',
   run({ draft, params, fields, rng, note }: PassCtx) {
@@ -1100,8 +1284,12 @@ const semanticPass = {
 export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
-  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + river/crossings + outcrops → derived region graph → proficiency gates on derived edges → scatter → POIs + tactical profile.',
+  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + river/crossings + outcrops → derived region graph → proficiency gates on derived edges → POIs + tactical profile → desire paths → scatter.',
   // gates right after regions: locks are structure (they claim a derived edge
   // and its pinch), scatter is dressing (isPlaceable already avoids the plug).
-  passes: [surfacePass, hydrologyPass, riverPass, outcropsPass, regionsPass, gatesPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
+  // semantic sits BEFORE scatter (it reads collision/fields/scratch, never
+  // scatter — byte-identical output either side) so the landmark exists for
+  // desire-paths, which runs before scatter so props keep off the trail
+  // (scatterBlocked).
+  passes: [surfacePass, hydrologyPass, riverPass, outcropsPass, regionsPass, gatesPass, semanticPass, desirePathsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, premisePass],
 }

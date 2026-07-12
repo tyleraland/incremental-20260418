@@ -53,10 +53,10 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
     // flattens past 64 with no fps cliff, and the heaviest observed dungeon
     // bake (57 rects) ticks under the synthetic 56-rect line. 72 = the
     // dungeon recipe's own default, so a live location can adopt it without
-    // a special cap. NOTE: this is a GenParam — but today's recipes spend by
-    // explicit per-pass allotments and plateau well under it (mirror-vale 22
-    // rects, prontera-city 9 — probed byte-identical at 40 vs 72), so this
-    // raise changed no live bake; it buys the rivers+ridges+gates headroom.
+    // a special cap. NOTE: this is a GenParam — recipes spend by explicit
+    // per-pass allotments; the field dials were retuned to spend the
+    // envelope (2026-07: mirror-vale ~28 rects, ~52 at 200²; prontera-city
+    // stays at 9 — band pinned in recipe-field.test.ts).
     maxBarriers: 72,
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),

@@ -132,7 +132,7 @@ const inRect = (p: Pt, r: Rect, m: number) =>
 export function isPlaceable(d: MapDraft, p: Pt, margin = 0.6): boolean {
   // The apron protects the spawn POI once a pass has placed one (a dungeon's
   // entry room); until then it protects the map centre (a field's form-up
-  // knot — the field recipe adds its spawn last, at the centre).
+  // knot — the field recipe adds its spawn in its semantic pass, at the centre).
   const s = d.semantic.pois.find((x) => x.kind === 'spawn')?.at ?? { x: d.cols / 2, y: d.rows / 2 }
   if (Math.hypot(p.x - s.x, p.y - s.y) < d.params.spawnApron + margin) return false
   if (d.collision.some((r) => inRect(p, r, margin))) return false
