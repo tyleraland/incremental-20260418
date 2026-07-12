@@ -17,10 +17,12 @@
 // pass). A lean floor now fits; the full 72 budget is still lab/encounter
 // territory (BACKLOG → Procedural map generation, cross-cutting debts).
 
-import type { ProficiencyTag, Pt, Rect } from '../types'
+import type { Pt, Rect } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
-import { hashString, type Rng } from '../rng'
+import { hashString } from '../rng'
+import { bfsDepth, nodeDegrees } from '../graph'
+import { GATE_TAGS, placeProficiencyLock } from '../gates'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
 import { STAMP_REGISTRY, placeStamp, stampBarrierCost, type StampDef } from '../stamps'
@@ -44,13 +46,15 @@ interface Room {
   primary: Rect              // largest rect — stamp/POI anchor + node area
   rects: Rect[]              // full composite (primary + polymorph lobes)
 }
+// The layout plan — an L6 derived plane (ARCHITECTURE.md): produced by
+// `layout`, consumed by `carve` and `gates` via draft.scratch['plan'].
 interface Plan {
   walk: Uint8Array
   rooms: Room[]
   edges: { a: string; b: string; doorAt?: Pt }[]
   corridorCells: number[]
 }
-const PLANS = new WeakMap<object, Plan>()
+const getPlan = (draft: PassCtx['draft']) => draft.scratch.get('plan') as Plan | undefined
 
 const idx = (size: number, x: number, y: number) => y * size + x
 const center = (r: Rect): Pt => ({ x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) })
@@ -254,30 +258,13 @@ const layoutPass = {
     addPoi(draft, { id: 'spawn', kind: 'spawn', at: center(entry.primary), tags: ['entry'] })
 
     // Publish the plan on the nav skeleton (function-first: geometry realizes THIS).
-    const depth = bfsDepth(rooms, edges, entry.id)
+    const depth = bfsDepth(edges, entry.id)
     draft.semantic.nav.nodes = rooms.map((q) => ({
       id: q.id, at: center(q.primary), area: q.primary, depth: depth.get(q.id) ?? 0,
     }))
     draft.semantic.nav.edges = edges.map((e) => ({ a: e.a, b: e.b, kind: 'corridor' as const, doorAt: e.doorAt }))
-    PLANS.set(draft, { walk, rooms, edges, corridorCells })
+    draft.scratch.set('plan', { walk, rooms, edges, corridorCells } satisfies Plan)
   },
-}
-
-function bfsDepth(rooms: Room[], edges: Plan['edges'], entry: string): Map<string, number> {
-  const adj = new Map<string, string[]>()
-  for (const e of edges) {
-    adj.set(e.a, [...(adj.get(e.a) ?? []), e.b])
-    adj.set(e.b, [...(adj.get(e.b) ?? []), e.a])
-  }
-  const depth = new Map<string, number>([[entry, 0]])
-  const queue = [entry]
-  while (queue.length) {
-    const id = queue.shift()!
-    for (const n of adj.get(id) ?? []) {
-      if (!depth.has(n)) { depth.set(n, depth.get(id)! + 1); queue.push(n) }
-    }
-  }
-  return depth
 }
 
 // ── carve: cover the SOLID mask with few fat rects (maximal-rect greedy) ─────
@@ -288,7 +275,7 @@ function bfsDepth(rooms: Room[], edges: Plan['edges'], entry: string): Map<strin
 const carvePass = {
   id: 'carve',
   run({ draft, params, note }: PassCtx) {
-    const plan = PLANS.get(draft)
+    const plan = getPlan(draft)
     if (!plan) { note('no layout plan — skipped'); return }
     const { size } = params
     const solid = plan.walk.map((v) => (v ? 0 : 1))
@@ -361,11 +348,7 @@ const stampsPass = {
   id: 'stamps',
   run({ draft, params, rng, note }: PassCtx) {
     const nodes = draft.semantic.nav.nodes
-    const degree = new Map<string, number>()
-    for (const e of draft.semantic.nav.edges) {
-      degree.set(e.a, (degree.get(e.a) ?? 0) + 1)
-      degree.set(e.b, (degree.get(e.b) ?? 0) + 1)
-    }
+    const degree = nodeDegrees(draft.semantic.nav.edges)
     const entry = nodes.find((n) => (n.depth ?? 0) === 0)
     const lair = [...nodes].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0))[0]
     const r = rng('place')
@@ -411,34 +394,21 @@ const stampsPass = {
 }
 
 // ── gates: proficiency locks — the §F composition gate, resolved at bake ─────
-// Function-first, theme-late: place "a lock" on a dead-end room's single
-// corridor, THEN resolve its concrete by tag — rubble to shoulder through,
-// a rune-sealed door, a hidden door that reads as plain rock, a chasm you can
-// see the prize across. If the deploying party's kit (params.proficiencies)
-// carries the tag the lock bakes OPEN: no seal is emitted and the prize is
-// simply reachable. Same seed × different party = a different playable map.
+// The RECIPE's share of lock-and-key (candidate choice + seal proof): find a
+// seal-tight dead-end room off the critical path, pick a tag, then hand the
+// emit to the shared L5 machinery (gates.ts placeProficiencyLock — the same
+// call an overworld ford gate will make). Function-first, theme-late: the
+// tag→concrete look table lives in gates.ts.
 //
 // FEEL WARNING (see CLAUDE.md → phase 4): frequency, placement, and reward
 // weight here are first guesses — mechanics are gated by the validator, but
 // whether a gate is FUN needs human play. Iterate via the lab's party toggles.
-const GATE_LOOKS: Partial<Record<string, { kind: 'wall' | 'cliff'; material: 'rubble' | 'cut-stone' | 'rock' | 'ravine' }>> = {
-  might: { kind: 'wall', material: 'rubble' },        // collapsed passage — clear it
-  arcane: { kind: 'wall', material: 'cut-stone' },    // rune-sealed door
-  perception: { kind: 'wall', material: 'rock' },     // hidden door (reads as bare rock)
-  mobility: { kind: 'cliff', material: 'ravine' },    // chasm — see the prize, can't cross
-}
-const GATE_TAGS = Object.keys(GATE_LOOKS) as ProficiencyTag[]
-
 const gatesPass = {
   id: 'gates',
   run({ draft, params, rng, note }: PassCtx) {
     const nodes = draft.semantic.nav.nodes
     const edges = draft.semantic.nav.edges
-    const degree = new Map<string, number>()
-    for (const e of edges) {
-      degree.set(e.a, (degree.get(e.a) ?? 0) + 1)
-      degree.set(e.b, (degree.get(e.b) ?? 0) + 1)
-    }
+    const degree = nodeDegrees(edges)
     const entry = nodes.find((n) => (n.depth ?? 0) === 0)
     const lair = [...nodes].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0))[0]
     // Candidates: dead-end rooms off the critical path with a known door pinch
@@ -449,7 +419,7 @@ const gatesPass = {
     // (polymorph lobes and through-corridors can route around a door plug —
     // the sealTight mask check below vets each candidate exactly, so no shape
     // pre-filter is needed)
-    const plan = PLANS.get(draft)
+    const plan = getPlan(draft)
     const cands = nodes
       .filter((n) =>
         degree.get(n.id) === 1 && n.id !== entry?.id && n.id !== lair?.id &&
@@ -501,19 +471,9 @@ const gatesPass = {
     }
     if (!c) { note(`${cands.length} dead-end candidate(s), none seal-tight (through-corridors leak) — no locks this floor`); return }
     const tag = r.pick(GATE_TAGS)
-    const open = params.proficiencies.includes(tag)
-    const id = `lock-${tag}`
     const at = c.edge.doorAt!
-    addPoi(draft, { id: `${id}-prize`, kind: 'vault', at: c.n.at, tags: ['prize', `locked:${id}`] })
-    addPoi(draft, { id: `${id}-gate`, kind: 'gate', at, tags: open ? [tag, 'open'] : [tag] })
-    if (!open) {
-      const look = GATE_LOOKS[tag]!
-      // a fat plug over the door pinch — oversized so any ≤3-wide corridor is
-      // sealed regardless of its heading; the excess melts into the rock render
-      addBarrier(draft, { x: at.x - 2.25, y: at.y - 2.25, w: 4.5, h: 4.5, kind: look.kind, material: look.material })
-    }
+    const { id, open } = placeProficiencyLock(draft, { tag, at, prizeAt: c.n.at })
     c.edge.lockId = id
-    draft.semantic.locks.push({ id, kind: 'proficiency', tag, at, open, gates: [`${id}-prize`] })
     note(`${tag} gate ${open ? 'OPEN (party kit)' : 'sealed'} on ${c.n.id} at ${at.x},${at.y}`)
   },
 }

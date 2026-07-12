@@ -1,9 +1,14 @@
 # Procedural map generation (`src/mapgen/`)
 
 The generator scaffold. Idea inventory: `procedural-generation-ideas.md` (repo
-root — §refs below point there). This doc is the working contract: locked
-decisions, the layer stack, the hooks left open, and where each future phase
-plugs in. Keep it terse and accurate.
+root — §refs below point there); **target layer architecture + build-out
+tracks: `ARCHITECTURE.md`** (this dir) — the reorg plan of record: the L0–L9
+layer stack, the nav graph as the shared convergence layer with two producers
+(authored for dungeon/city, derived for overworld — track B), and the settled
+decisions (flat rects stay; ~2 macro geography features per overworld map;
+mapgen emits pacing, store consumes; cross-map manifest is a seam). This doc
+is the working contract for what EXISTS: locked decisions, the hooks left
+open, and where each future phase plugs in. Keep it terse and accurate.
 
 ## What this is (and isn't yet)
 
@@ -50,10 +55,13 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 
 | file | what lives there |
 |---|---|
-| `types.ts` | the universe: MapSpec planes, all vocabularies, GenParams, report shapes |
+| `ARCHITECTURE.md` | the target layer stack (L0–L9), settled reorg decisions, build-out tracks A–G |
+| `types.ts` | the universe: MapSpec planes, all vocabularies, GenParams (incl. the reserved `manifest` cross-map seam), report shapes |
 | `rng.ts` | `hashString`/`hash01`, `makeRng`, `streamRng` (the stream splitter) |
 | `fields.ts` | value-noise fBm; `makeFields` → the shared FieldBundle |
-| `draft.ts` | MapDraft + plane helpers (`paint`/`addBarrier`/`addPoi`/`isPlaceable`), `bake` |
+| `draft.ts` | MapDraft + plane helpers (`paint`/`addBarrier`/`addPoi`/`isPlaceable`), `bake`; `draft.scratch` = the derived-planes tier (walk masks, distance transforms — produced by one pass, consumed by later ones, never baked) |
+| `graph.ts` | the shared nav-graph layer ops (`bfsDepth`, `nodeDegrees`); track B's `deriveRegions` (overworld graph from geography) lands here |
+| `gates.ts` | recipe-agnostic lock-and-key: `placeProficiencyLock` (prize + gate POIs + tag-themed seal plug, resolved against the party kit), `GATE_LOOKS`/`GATE_TAGS` |
 | `pipeline.ts` | `generateMap(recipe, params)`: pass runner, per-pass streams, skipPasses, bake→validate→reroll |
 | `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / water-coherence |
 | `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → outcrops → scatter → semantic |
@@ -62,7 +70,7 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
 | `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
-| `recipes/index.ts` | `RECIPE_REGISTRY` — field / dungeon / city |
+| `recipes/index.ts` | `RECIPE_REGISTRY` — field / dungeon / city. Recipes own the DIVERGENCE layer (noise-first vs graph-first vs road-first, quarantined to production passes); the nav graph is where they converge (`ARCHITECTURE.md`) |
 | `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store) |
 
 Consumers today (phase 2): `createOpenBattleFor` (store) honors

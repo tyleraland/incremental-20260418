@@ -121,22 +121,27 @@ export interface Poi {
   tags: string[]     // free-form annotations ('vista', 'boss', a lock id…)
 }
 
-// Navigation skeleton (§A layer 5): the connectivity graph recipes reason over
-// BEFORE geometry exists (function-first), baked here for consumers (AI waypoint
-// hints, the deploy UI, stamps). The field recipe emits nodes only; roads /
-// corridors / cycles arrive with the city & dungeon recipes.
+// Navigation skeleton (§A layer 5) — THE CONVERGENCE LAYER (ARCHITECTURE.md
+// L4): the connectivity graph every downstream shared system (locks, depth,
+// secrets, paths, validation) reads. Two producers, one model: dungeon/city
+// AUTHOR the graph (the plan publishes it, geometry realizes it); the
+// overworld DERIVES it from geography (regions segmented from the walk mask,
+// natural pinches — fords, passes, gaps — become edges; `deriveRegions`,
+// track B). The field recipe emits node stubs only until track B lands.
 export interface NavNode {
   id: string
   at: Pt
   poiId?: string
-  area?: Rect        // the node's floor footprint (a dungeon room, a city block)
+  area?: Rect        // the node's floor footprint (a dungeon room, a city block, a region bbox)
   depth?: number     // graph distance from the entry node (§G depth gradient)
 }
 export interface NavEdge {
   a: string
   b: string
-  kind: 'road' | 'corridor' | 'desire-path'
-  doorAt?: Pt        // the edge's physical pinch (a dungeon door) — choke-tactic anchor
+  // 'crossing' is the natural-pinch kind (ford / bridge / mountain pass /
+  // cliff gap) — the overworld's derived edges (ARCHITECTURE.md track B/C).
+  kind: 'road' | 'corridor' | 'desire-path' | 'crossing'
+  doorAt?: Pt        // the edge's physical pinch (a dungeon door, a ford) — choke-tactic anchor
   lockId?: string    // edge gated by a Lock (conditional reachability)
 }
 
@@ -166,6 +171,20 @@ export interface Lock {
   at?: Pt                  // the gate's physical site (mirrored by a 'gate' POI)
   open: boolean            // bake-time resolution: true = the party's kit opened it
   gates: string[]          // POI ids behind this lock (each also tagged `locked:<id>`)
+}
+
+// L0 world-directives seam (ARCHITECTURE.md, decision 5): opaque tokens a
+// future world DIRECTOR plants into a bake — "this map must contain the key
+// for lock X on map Y" — the early cross-map constraint. Typed now so the
+// plumbing exists and GenParams doesn't reshape later; consumed by NOTHING
+// yet (track G). `kind: 'key'` binds to the reserved Lock kind of the same
+// name; 'clue' is discovery bait (phase-4 puzzle-solving); 'poi' is a bare
+// must-contain site.
+export interface ManifestToken {
+  id: string
+  kind: 'key' | 'clue' | 'poi'
+  forLock?: string         // the (possibly cross-map) lock id this token serves
+  tags?: string[]
 }
 
 // Tactical-profile annotation (§L): the map self-describes so richness reaches
@@ -232,6 +251,10 @@ export interface GenParams {
   // Lock docs above). Empty/absent = every lock bakes closed — also what the
   // lab's contact sheet and the fuzz gates review by default.
   proficiencies?: ProficiencyTag[]
+  // L0 world-directives seam — see ManifestToken. RESERVED: typed and carried
+  // through normalization so the director (track G) slots in like
+  // `proficiencies` did, but no pass consumes it yet.
+  manifest?: ManifestToken[]
   // Layer-inspector hook: pass ids to skip. Stream-isolated RNG guarantees the
   // remaining passes produce byte-identical output — the ?mapgen=1 lab's
   // layer-by-layer buildup rides this.

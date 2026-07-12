@@ -153,12 +153,47 @@ wiring display-only / mock seams to real, persisted state:
     and/or rate-limit / smooth the per-round auto-fit target so it doesn't
     step every round.
 
-## Procedural map generation (guide: `src/mapgen/CLAUDE.md`, ideas: `procedural-generation-ideas.md`)
+## Procedural map generation (guide: `src/mapgen/CLAUDE.md`, architecture: `src/mapgen/ARCHITECTURE.md`, ideas: `procedural-generation-ideas.md`)
 
 Pure deterministic leaf library baking a MapSpec (collision/surface/scatter/
 semantic planes) through recipe pass pipelines + validation; shipped
-mechanics and roadmap rationale live in the guide. Deferred phases (each
-independently shippable):
+mechanics and roadmap rationale live in the guide. The **layer architecture**
+(shipped: shared graph/gates modules, scratch tier, manifest seam) and its
+settled decisions live in `ARCHITECTURE.md`; its open build-out tracks:
+
+- **Track B — derived graph producer (the overworld's convergence layer;
+  unblocks everything overworld).** `deriveRegions(walkMask, minPinchWidth)`
+  in `graph.ts`: distance-transform → erode → connected components = region
+  nodes, pinches = `crossing` edges; field recipe publishes real edges
+  (today: POI node stubs only); add the `graph-truthful` validation rule
+  (flood-fill agrees with every published edge).
+- **Track C — rivers + crossings + desire paths** (consumes B). Hydrology
+  v2: descending river band on the elevation field; ford (shallow strip) /
+  bridge (road surface over the gap) crossings as graph edges; a desire-path
+  pass painting surface along spawn→portal routes (zero rect cost); first
+  overworld proficiency gate (mobility ford / perception hidden trail) via
+  the shared `gates.ts`. **Bench the rect spend first** — budget rule of
+  thumb is ~2 macro geography features per 40-rect map (ARCHITECTURE.md
+  decision 3); extend `map-perf-envelope.test.ts` with a river map.
+- **Track D — flow/tension derived plane.** Distance-to-goal BFS in
+  `draft.scratch`, digested to a per-node `intensity` scalar on the semantic
+  plane; store consumes it for spawn/reward pacing (mapgen makes the stage,
+  store populates — settle the split in that PR). Gives `field` the depth
+  notion it lacks.
+- **Track E — real cyclic dungeon generation.** Cycle-as-primitive templates
+  + lock/key/shortcut rewrite steps (Unexplored-style) replacing today's
+  MST+2-spares. A pure production-layer swap: gates/validation/stamps
+  untouched by construction.
+- **Track F — tactical legibility as a generation target.** Sightline-ribbon
+  pass (reserve 1–2 straight lanes pre-obstacles; pure AABB) turning
+  `longLanes` from annotation into guarantee; `tacticalTargets` in GenParams
+  scored by validator/reroll (the ASP idea without the solver). Ship paired
+  with consuming AI tactics (see AI & coordination).
+- **Track G — world director (Phase-0).** Computes `GenParams.manifest`
+  plants across the location graph (cross-map lock/key solvability). The
+  seam is typed and plumbed; gated behind single-map key logistics (phase 6).
+
+Deferred phases (each independently shippable):
 
 - **Phase 4 — lock-and-key + proficiency gates.** Foundation is in (enriched
   `Lock` model, the dungeon `gates` pass, proficiency tags) but feel needs

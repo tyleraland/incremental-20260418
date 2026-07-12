@@ -6,7 +6,7 @@
 // than by validator alone — the validator then guards the cross-plane rules.
 
 import type {
-  CollisionRect, GenParams, MapSpec, Poi, PoiKind, ProficiencyTag, Pt, Rect,
+  CollisionRect, GenParams, ManifestToken, MapSpec, Poi, PoiKind, ProficiencyTag, Pt, Rect,
   SurfaceMaterial, SurfacePlane, ThemeTag,
 } from './types'
 import { SURFACE_MATERIALS } from './types'
@@ -23,6 +23,7 @@ export interface NormParams {
   keepClear: Rect[]
   pois: { kind: PoiKind; at: Pt; id?: string; tags?: string[] }[]
   proficiencies: ProficiencyTag[]
+  manifest: ManifestToken[]
   skipPasses: string[]
   onFail: 'reroll' | 'accept' | 'throw'
 }
@@ -42,6 +43,7 @@ export function normalizeParams(p: GenParams): NormParams {
     // sorted + deduped so the same kit always keys the same variant (cache keys,
     // determinism tests, and reroll chains all read this)
     proficiencies: [...new Set(p.proficiencies ?? [])].sort(),
+    manifest: p.manifest ?? [],
     skipPasses: p.skipPasses ?? [],
     onFail: p.onFail ?? 'reroll',
   }
@@ -55,6 +57,12 @@ export interface MapDraft {
   surface: SurfacePlane
   scatter: MapSpec['scatter']
   semantic: MapSpec['semantic']
+  // The DERIVED-PLANES tier (ARCHITECTURE.md L6): named intermediate products
+  // one pass produces and later passes consume — a dungeon's walk mask, a
+  // city's road-distance transform, tomorrow's flow/tension/sightline fields.
+  // NEVER baked: the spec carries only digested summaries (NavNode.depth
+  // etc.). The producing pass owns its key and documents the value's shape.
+  scratch: Map<string, unknown>
 }
 
 const MAT_INDEX: Record<SurfaceMaterial, number> = Object.fromEntries(
@@ -70,6 +78,7 @@ export function makeDraft(params: NormParams): MapDraft {
     collision: [],
     surface: { cols: size, rows: size, cellsPerUnit: 1, grid: new Uint8Array(size * size) },
     scatter: [],
+    scratch: new Map(),
     semantic: {
       pois: [],
       nav: { nodes: [], edges: [] },

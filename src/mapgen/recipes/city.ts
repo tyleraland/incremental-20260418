@@ -29,7 +29,9 @@ interface CityPlan {
   dist: Int16Array         // BFS cell-steps to the nearest paved cell (≤ DIST_CAP)
   plazaR: number
 }
-const PLANS = new WeakMap<object, CityPlan>()
+// An L6 derived plane (ARCHITECTURE.md): produced by `roads`, consumed by
+// the paving/blocks/scatter passes via draft.scratch['plan'].
+const getPlan = (draft: PassCtx['draft']) => draft.scratch.get('plan') as CityPlan | undefined
 
 // ── roads: plaza + gate roads + cross-streets — the skeleton IS the plan ─────
 const roadsPass = {
@@ -131,7 +133,7 @@ const roadsPass = {
         if (dist[j] > dist[i] + 1) { dist[j] = dist[i] + 1; queue.push(j) }
       }
     }
-    PLANS.set(draft, { road, dist, plazaR })
+    draft.scratch.set('plan', { road, dist, plazaR } satisfies CityPlan)
     note(`${gates.length} gate road(s) [${gates.map((g) => g.id).join(',')}], ${crossEdges.length} cross-street(s), plaza r≈${plazaR.toFixed(1)}`)
   },
 }
@@ -140,7 +142,7 @@ const roadsPass = {
 const pavePass = {
   id: 'pave',
   run({ draft, params, fields, note }: PassCtx) {
-    const plan = PLANS.get(draft)
+    const plan = getPlan(draft)
     if (!plan) { note('no road plan — skipped'); return }
     const { size } = params
     const desert = params.themes.includes('desert')
@@ -162,7 +164,7 @@ const pavePass = {
 const blocksPass = {
   id: 'blocks',
   run({ draft, params, rng, note }: PassCtx) {
-    const plan = PLANS.get(draft)
+    const plan = getPlan(draft)
     if (!plan) { note('no road plan — skipped'); return }
     const { size } = params
     const r = rng('sites')
@@ -214,7 +216,7 @@ const blocksPass = {
 const scatterPass = {
   id: 'scatter',
   run({ draft, params, rng, note }: PassCtx) {
-    const plan = PLANS.get(draft)
+    const plan = getPlan(draft)
     if (!plan) { note('no road plan — skipped'); return }
     const { size } = params
     const r = rng('place')
@@ -256,7 +258,7 @@ const scatterPass = {
 const semanticPass = {
   id: 'semantic',
   run({ draft, params, rng }: PassCtx) {
-    const plan = PLANS.get(draft)
+    const plan = getPlan(draft)
     const { size } = params
     const r = rng('landmark')
     // Caller-owned anchors (portals) — pre-placed, validator must reach them.
