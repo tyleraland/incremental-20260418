@@ -74,6 +74,18 @@ export const PRIMARY_SCORE_FLOOR = 1
 // hair. Too close to 1 → flapping; too big → the party grinds a fight it
 // should have disengaged rounds ago.
 export const ENGAGE_EXIT = 1.3
+// CAMP_RADIUS ⏱ (tactical-coordination.md §3.1/§3.3, M1 camp v0): how close a
+// visible enemy must stand to the kill-order primary to ride along in the
+// committed pull set (Engagement.targetIds). A coarse placeholder — M2's
+// pullSetOf replaces this with the real transitive aggro-chain camp — kept on
+// the same scale as CHARGER_DIVE_RADIUS so early parties don't commit to
+// enemies merely nearby but functionally unrelated.
+export const CAMP_RADIUS = 6
+// PULL_SET_CAP ⏱ (tactical-coordination.md §3.3, M2 pull model): the BFS cap
+// for pullSetOf — who joins if we hit `seed`. Bounds the worst-case appraisal
+// cost (§5's "order of one steerAround call" budget) no matter how densely
+// packed a camp is; a real pull-set rarely gets anywhere near this in play.
+export const PULL_SET_CAP = 12
 
 // ── M3: stance / anchor / formation / corridor (tactical-coordination.md
 // §3.1/§3.4) ──────────────────────────────────────────────────────────────

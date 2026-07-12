@@ -487,13 +487,6 @@ the **intel mask** independent track (imperfect information).
   commit point; the no-drift test is stationary. A dragged fight re-anchors
   via the uninvited-joiner path (covered by test), but a regression pinning
   prediction quality for a genuinely mobile pull would strengthen it.
-- *Avoid list vs the hunt waypoint* — `avoidTargetIds` gates `selectTarget`
-  acquisition, but the open-world hunt/roam (`pickHuntTarget`/waypoint) is
-  NOT avoid-aware, so after the affordable fight ends the party can still
-  march at a deliberately-avoided camp and passively provoke it (the
-  `dont-over-pull` showcase asserts only the early window for this reason).
-  Feed `avoidTargetIds` into `pickHuntTarget` so an unaffordable camp stops
-  drawing the roam too.
 - *Coordination outcomes are id-tiebreak-sensitive* — plan picks
   (kill-order, puller, guard, formation slots) break ties on `id`, which
   cascades through the deterministic multi-round sim; the showcase scenes

@@ -28,7 +28,7 @@ import { buildStatus } from './status'
 import { elementMultiplier } from './elements'
 import {
   nearestEnemyTo, isCaster, castRange, cohesionVec, visibleEnemiesOf, bumpVisionGen, clearVisionCache,
-  pullMovement, lockedTarget, kiteDistanceFor, guardPoint,
+  pullMovement, lockedTarget, kiteDistanceFor, guardPoint, centroid,
 } from './spatial'
 import { preferredRangeVs, corridorExposure, scoreCandidate, forecastAction, bumpPlanGen, clearPlanCache, type MoveCandidate } from './plan'
 import { computeCapability, decideEngagement, callsPack, packRouses, fragilityOutlier } from './teamplan'
@@ -1342,11 +1342,9 @@ function executeMovement(state: BattleState, self: Combatant, plan: MovementResu
 
 // ── Team blackboard (§coordination) ─────────────────────────────────────────--
 
-function centroidOf(cs: Combatant[]): Vec2 {
-  let x = 0, y = 0
-  for (const c of cs) { x += c.pos.x; y += c.pos.y }
-  return { x: x / cs.length, y: y / cs.length }
-}
+// centroidOf calls below are all provably non-empty (engaged.length / members.length
+// checks upstream), so the shared `centroid` (spatial.ts, null on empty) is
+// asserted non-null rather than re-guarded here.
 
 // The built-in blackboard producer. Computes, per team:
 //   • waypoint — the party's shared roam target. If anyone's engaged it's the
@@ -1403,10 +1401,10 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
     return !!(t && t.alive && distance(m.pos, t.pos) <= m.visionRange)
   })
   if (engaged.length) {
-    waypoint = centroidOf(engaged)
+    waypoint = centroid(engaged)!
     huntTargetId = null   // already in the fight; the engaged centroid is the rally point
   } else if (members.length) {
-    const c = centroidOf(members)
+    const c = centroid(members)!
     // §hunt: in open world, route the whole party to the nearest enemy a member
     // can currently *see* (fog-of-war) and march there together; commit until it's
     // dead/out of sight, then re-pick. Nothing in sight → fall back to roaming a
@@ -1443,7 +1441,7 @@ export function defaultPlanner(state: BattleState, team: Team): TeamPlan {
   // through this one point instead of each unit picking its own side.
   let corridor: Vec2 | null = null
   if (waypoint && members.length && state.barriers.length) {
-    const c = centroidOf(members)
+    const c = centroid(members)!
     const { point, direct, reachable } = steerAround(c, waypoint, state.barriers)
     if (reachable && !direct) corridor = point
   }

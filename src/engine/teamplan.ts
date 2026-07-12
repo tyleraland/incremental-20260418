@@ -9,10 +9,12 @@ import { effectiveStat, skillDamageEstimate } from './damage'
 import { armoredFactor, hasTactic } from './tactics'
 import { isStealthed } from './behavior'
 import { barrierCorners, sightlineClear } from './barriers'
-import { EPS, CAMP_RADIUS, HUNT_RETAIN_MULT, PULL_SET_CAP } from './constants'
+import { centroid } from './spatial'
+import { EPS, HUNT_RETAIN_MULT } from './constants'
 import {
   PRIMARY_SWITCH_MARGIN, PRIMARY_SCORE_FLOOR, ACUMEN, ENGAGE_EXIT, postureOf,
   STANCE_KITE_REACH_EDGE, ANCHOR_BARRIER_RADIUS, FRAGILITY_OUTLIER_FRACTION,
+  CAMP_RADIUS, PULL_SET_CAP,
 } from './tuning'
 import type {
   Assignment, Barrier, BattleState, Combatant, Engagement, KitCapability, Stance, Team, Vec2,
@@ -136,11 +138,9 @@ export function pullSetOf(state: BattleState, seed: Combatant, at: Vec2): Combat
 // helpers + the puller pick — declared intent (equips the Puller tactic) first,
 // else the capability query (longest reach at ≥ party-median move speed, id
 // tiebreak). Both relative-to-the-party queries, never an absolute stat bar.
-function partyCentroid(members: Combatant[]): Vec2 {
-  let x = 0, y = 0
-  for (const m of members) { x += m.pos.x; y += m.pos.y }
-  return { x: x / members.length, y: y / members.length }
-}
+// `members` is always non-empty at every call site below (upstream
+// members.length/visible-enemy checks), so the shared `centroid` (spatial.ts,
+// null on empty) is asserted non-null rather than re-guarded here.
 function median(nums: number[]): number {
   const s = [...nums].sort((a, b) => a - b)
   const n = s.length
@@ -185,7 +185,7 @@ function pullAssignmentFor(
   const puller = pickPuller(members)
   if (!puller) return undefined
   const prev = prevAssignments?.[puller.id]
-  const to = prev && prev.role === 'pull' && prev.targetId === solo.id ? prev.to : partyCentroid(members)
+  const to = prev && prev.role === 'pull' && prev.targetId === solo.id ? prev.to : centroid(members)!
   return { [puller.id]: { role: 'pull', targetId: solo.id, to } }
 }
 
@@ -220,7 +220,7 @@ function decideStanceAnchor(
   state: BattleState, team: Team, members: Combatant[], camp: Combatant[], primary: Combatant,
 ): { stance: Stance; anchor: Vec2 | null } {
   if (teamAcumen(state, team) < ACUMEN.stance) return { stance: 'collapse', anchor: null }
-  const c = partyCentroid(members)
+  const c = centroid(members)!
   let campMaxReach = 0, campMaxSpeed = 0
   for (const e of camp) {
     campMaxReach = Math.max(campMaxReach, e.capability?.reach ?? 0)

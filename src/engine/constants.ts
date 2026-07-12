@@ -124,20 +124,6 @@ export const CHARGER_LEASH_PER_RANK = 2
 export const FLANKER_LEASH = 12
 export const FLANKER_LEASH_PER_RANK = 2
 
-// §coordination M1 camp v0 (tactical-coordination.md §3.1/§3.3): how close a
-// visible enemy must stand to the kill-order primary to ride along in the
-// committed pull set (Engagement.targetIds). A coarse placeholder — M2's
-// pullSetOf replaces this with the real transitive aggro-chain camp — kept on
-// the same scale as CHARGER_DIVE_RADIUS so early parties don't commit to
-// enemies merely nearby but functionally unrelated.
-export const CAMP_RADIUS = 6
-
-// §coordination M2 pull model (tactical-coordination.md §3.3): the BFS cap for
-// pullSetOf — who joins if we hit `seed`. Bounds the worst-case appraisal cost
-// (§5's "order of one steerAround call" budget) no matter how densely packed a
-// camp is; a real pull-set rarely gets anywhere near this in play.
-export const PULL_SET_CAP = 12
-
 // §Wary Caster — a caster's "wariness" (interruptedCount, the back-off it reads)
 // FADES when it's left alone: decay it by 1 every WARY_INTERRUPT_DECAY logical
 // rounds with no fresh interrupt. Otherwise a couple of early disruptions make a

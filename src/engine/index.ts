@@ -33,11 +33,11 @@ export type { ActionForecast, MoveCandidate, PreferredAttack } from './plan'
 export {
   POSTURES, postureOf, ACUMEN, ENGAGE_EXIT,
   STANCE_KITE_REACH_EDGE, ANCHOR_BARRIER_RADIUS, ANCHOR_SLACK, CORRIDOR_ARRIVE, FRAGILITY_OUTLIER_FRACTION,
+  PULL_SET_CAP, CAMP_RADIUS,
 } from './tuning'
 export type { PostureRow } from './tuning'
 export { teamAcumen, computeCapability, pullSetOf, decideEngagement, fragilityOutlier } from './teamplan'
 export type { EngagementDecision } from './teamplan'
-export { PULL_SET_CAP, CAMP_RADIUS } from './constants'
 export { STATUS_REGISTRY, buildStatus } from './status'
 export { serializeBattle, deserializeBattle } from './snapshot'
 export { ALL_ELEMENTS, elementMultiplier } from './elements'
