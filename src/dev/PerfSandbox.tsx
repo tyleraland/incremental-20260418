@@ -82,14 +82,24 @@ export default function PerfSandbox() {
   // heavy store orchestration the probe flags as the dominant Script cost is off,
   // and the roster is held (no respawns) for a steady, reproducible load.
   const [pauseNormalPlay, setPauseNormalPlay] = useState(false)
+  // Playback speed multiplier for the tick loop below — 1x is the real
+  // TICKS_PER_SECOND cadence, 0.25x-2x scale the wall-clock gap between steps.
+  // Never changes what a step does (still exactly one round/tick per fire) —
+  // only how often it fires — so determinism/replay-identity holds.
+  const [speed, setSpeed] = useState(() => {
+    const raw = Number(new URLSearchParams(window.location.search).get('speed'))
+    return raw >= 0.25 && raw <= 2 ? raw : 1
+  })
   // The tick loop is installed once (mount) but must read the CURRENT source +
-  // freeze flag each tick — refs keep it live without re-installing the interval.
+  // freeze flag + speed each tick — refs keep it live without re-installing.
   const sourceRef = useRef(source)
   sourceRef.current = source
   const engineOnlyRef = useRef(false)
   // A replay (Showcase / BSNAP) is engine-only by construction; Compose honours
   // the freeze toggle.
   engineOnlyRef.current = source !== 'compose' || pauseNormalPlay
+  const speedRef = useRef(speed)
+  speedRef.current = speed
 
   // The sandbox is primarily a visual/perf surface for the live battle renderer:
   // show authored paper assets by default even if an older localStorage toggle
@@ -228,22 +238,32 @@ export default function PerfSandbox() {
   // "pause normal play") advances just the watched battle's rounds directly,
   // bypassing the store's world clock + open-world spawn/reconcile machinery; a
   // full Compose tick drives spawns + trickle + per-unit systems.
+  //
+  // Speed-aware: a self-scheduling setTimeout (not setInterval) so each fire can
+  // read the CURRENT speed and sleep a different amount before the next one.
+  // Still exactly one round/tick per fire at every speed — the slider only
+  // changes wall-clock pacing between steps, never what a step does, so a
+  // shared BSNAP replays byte-identical regardless of the speed it's watched at.
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).has('play')) useGameStore.setState({ paused: true })
-    const id = setInterval(() => {
+    let timeoutId: ReturnType<typeof setTimeout>
+    const step = () => {
       const s = useGameStore.getState()
-      if (s.paused) return
-      if (engineOnlyRef.current) {
-        const b = s.battles[SANDBOX_LOC]
-        if (b && b.outcome === 'ongoing') {
-          advanceRound(b)   // mutates in place; sets its own arena/timescale ambient
-          useGameStore.setState({ battles: { ...s.battles, [SANDBOX_LOC]: { ...b } } })
+      if (!s.paused) {
+        if (engineOnlyRef.current) {
+          const b = s.battles[SANDBOX_LOC]
+          if (b && b.outcome === 'ongoing') {
+            advanceRound(b)   // mutates in place; sets its own arena/timescale ambient
+            useGameStore.setState({ battles: { ...s.battles, [SANDBOX_LOC]: { ...b } } })
+          }
+        } else {
+          s.tick()
         }
-      } else {
-        s.tick()
       }
-    }, 1000 / TICKS_PER_SECOND)
-    return () => clearInterval(id)
+      timeoutId = setTimeout(step, (1000 / TICKS_PER_SECOND) / speedRef.current)
+    }
+    timeoutId = setTimeout(step, (1000 / TICKS_PER_SECOND) / speedRef.current)
+    return () => clearTimeout(timeoutId)
   }, [])
 
   // Re-seed whenever a STRUCTURAL Compose control changes — heroes / map / size
@@ -355,9 +375,39 @@ export default function PerfSandbox() {
         </div>
       )}
 
+      {/* Pinned Play/Pause + speed bar — ALWAYS visible regardless of panelOpen,
+          so hiding the panel to see the field never costs you playback control.
+          The top row is already crowded (← Game nav top-left z-100, the control
+          panel's header top-right — see the caption banner's note above), so this
+          sits in its OWN row just below both (top-12, left-2) rather than
+          fighting them for the same 40px band. z ABOVE the panel (95 > 90) so if
+          the panel is open and its card extends under this row, this bar still
+          wins the overlap and stays tappable — same overlap-resolves-by-z-order
+          doctrine the caption banner uses against the panel. */}
+      <div className="absolute top-12 left-2 z-[95] flex items-center gap-2 rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl px-2 py-1.5">
+        <button
+          onClick={() => useGameStore.getState().togglePause()}
+          className={['h-9 px-3 rounded-lg border text-sm font-medium', paused ? 'border-game-green/60 bg-game-green/15 text-game-green' : 'border-game-gold/60 bg-game-gold/15 text-game-gold'].join(' ')}
+        >{paused ? '▶ Play' : '⏸ Pause'}</button>
+        <div className="flex items-center gap-1.5 pl-1">
+          <input
+            type="range"
+            min={0.25}
+            max={2}
+            step={0.25}
+            value={speed}
+            onChange={(e) => setSpeed(Number(e.target.value))}
+            aria-label="Playback speed"
+            className="w-20 accent-game-primary"
+          />
+          <span className="w-9 text-right text-xs tabular-nums text-game-text-dim">{speed.toFixed(2).replace(/0$/, '')}×</span>
+        </div>
+      </div>
+
       {/* control panel — a floating card so it overlays the field. Sits ABOVE the
-          caption banner in z-order so Play/Reset stay tappable even when the two
-          overlap on a narrow screen. */}
+          caption banner in z-order so Reset/Link stay tappable even when the two
+          overlap on a narrow screen. Play/Pause + speed live in the always-visible
+          pinned bar (top-left) instead — the panel can be hidden without losing them. */}
       <div className="absolute top-2 right-2 z-[90] w-72 max-w-[85vw] max-h-[88vh] flex flex-col rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl">
         <header className="shrink-0 flex items-center gap-2 px-3 h-10 border-b border-game-border">
           <span className="text-sm font-semibold">Battle Sandbox</span>
@@ -377,16 +427,13 @@ export default function PerfSandbox() {
               ))}
             </div>
 
-            {/* Play / pause + reset + live readout */}
+            {/* Reset/Rebuild + share link + live readout. Play/Pause + speed live in
+                the always-visible pinned bar (top-left), not here. */}
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => useGameStore.getState().togglePause()}
-                className={['flex-1 h-9 rounded-lg border text-sm font-medium', paused ? 'border-game-green/60 bg-game-green/15 text-game-green' : 'border-game-gold/60 bg-game-gold/15 text-game-gold'].join(' ')}
-              >{paused ? '▶ Play' : '⏸ Pause'}</button>
               <button
                 onClick={source === 'bsnap' ? loadBsnap : source === 'showcase' ? () => loadShowcase(showcaseId) : rebuild}
                 disabled={source === 'bsnap' && !bsnapText.trim()}
-                className="h-9 px-3 rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-xs disabled:opacity-40 disabled:hover:text-game-text-dim"
+                className="flex-1 h-9 rounded-lg border border-game-border text-game-text-dim hover:text-game-text text-xs disabled:opacity-40 disabled:hover:text-game-text-dim"
                 title={source === 'compose' ? 'Re-seed the scene' : 'Reload from the first round'}
               >{source === 'compose' ? '↻ Rebuild' : '↻ Reset'}</button>
               <button
