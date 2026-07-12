@@ -200,10 +200,8 @@ deferred content phases.
 - **Portal→node linking.** One `poiId` per region node, spawn-first — on a
   1-region map every portal POI goes unlinked (note()d, unconsumed). Graph
   contract rule 2 (portal on the ungated subgraph) will eventually need real
-  portal→node enforcement, not just the note.
-- **Lab region tinting.** Surface the `regions` claims plane in `?mapgen=1`
-  (tint cells by region in the layer inspector) — the derived graph is
-  invisible in the lab today.
+  portal→node enforcement, not just the note. (The `?mapgen=1` graph overlay
+  now makes the unlinked-portal case visible — surfacing, not enforcement.)
 
 *River (P2):*
 - **River→lake feed.** The river ignores the lake as a destination
@@ -266,7 +264,10 @@ deferred content phases.
   coordination) and should ship as a pair (⭐10).
 - **Lab authoring loop.** `?mapgen=1` could grow an export-to-Location
   snippet button (the curated-map authoring loop) and a bulk CLI sweep
-  (`npm run mapgen-sweep`) if the vitest fuzz gate ever gets slow.
+  (`npm run mapgen-sweep`) if the vitest fuzz gate ever gets slow. Also:
+  live per-pass dial sliders (RIVER/GATE/OUTCROP_DIALS) in the focused view —
+  the derived-layer overlays + showcase presets shipped, but the dials are
+  still edited in source. (Derived-graph/scratch overlays + showcase: DONE.)
 
 ### Feel-iteration knobs (need human play, not code)
 

@@ -99,6 +99,22 @@ spend ~52 of it at 200² — still under the bench's 64-rect plateau region).
   **per-pass skips** (the layer inspector — stream isolation means skipping a
   pass changes only that layer), validation report + pass notes beside the
   picture. Review recipe changes here first; screenshot for PRs.
+  - Surfaces the DERIVED structure, not just the four baked planes:
+    a **graph** overlay draws `spec.semantic.nav` (nodes heat-colored by
+    `intensity`, labeled `d<depth> i<intensity>`; edges through their `doorAt`
+    pinch; locked edges dashed + tagged from `spec.semantic.locks`), plus the
+    cell-resolution scratch planes — **regions** (claims tint), **flow** (the
+    BFS distance-to-spawn heatmap = full-res `intensity`), **paths** (the
+    desire-path mask), **walk** (the occupancy mask). Overlays compose.
+  - The scratch planes ride `GenResult.scratch`, attached ONLY when the lab
+    passes `debug: true` (GenParams). Never baked/serialized — determinism-
+    neutral (pinned in `pipeline.test.ts`: `debug` bakes an equal spec).
+    Skipping a producing pass (`regions`/`flow`/`desire-paths`) just empties
+    the matching overlay — reading an absent scratch key draws nothing.
+  - A **showcase preset row** jumps to curated verified seeds (river+fords,
+    gated crossing, intensity gradient, desire paths, secret vault, cyclic
+    dungeon, living city), each enabling its most illustrative overlays.
+    A **gates** toggle + preset-driven portals extend the influence levers.
 - **Fuzz gate** (`src/__tests__/mapgen/recipe-field.test.ts`): every sweep seed
   must bake valid; themed sweeps assert features actually fire (lakes form).
   Widen the sweep before widening a recipe's ambition.

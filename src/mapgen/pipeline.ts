@@ -62,6 +62,10 @@ export function generateMap(recipe: RecipeDef, rawParams: GenParams): GenResult 
   const notes: string[] = []
   let seed = base.seed
   let last: GenResult | null = null
+  // DEV-ONLY (base.debug): the accepted attempt's scratch, captured for the
+  // ?mapgen=1 lab. Tracks each attempt's draft so after the loop it holds the
+  // accepted (passing or final) attempt's derived planes. Never touches spec.
+  let lastScratch: Map<string, unknown> | null = null
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const params: NormParams = { ...base, seed }
@@ -80,10 +84,17 @@ export function generateMap(recipe: RecipeDef, rawParams: GenParams): GenResult 
     const spec = bake(draft)
     const report = validate(spec, params)
     last = { spec, report, attempts: attempt, notes }
+    lastScratch = draft.scratch
     if (report.ok || base.onFail !== 'reroll') break
     notes.push(`attempt ${attempt} failed: ${report.rules.filter((r) => !r.ok).map((r) => r.rule).join(',')} — rerolling`)
     seed = rerollSeed(seed)
   }
+
+  // Attach the derived planes ONLY under the dev debug flag. This rides the
+  // in-memory GenResult exclusively — it is never baked or serialized, so
+  // non-debug callers (adapter, fuzz gates, save path) see byte-identical
+  // behavior and the spec stays the sole persisted contract.
+  if (base.debug && lastScratch) last!.scratch = lastScratch
 
   if (!last!.report.ok && base.onFail === 'throw') {
     throw new Error(

@@ -81,6 +81,20 @@ describe('mapgen pipeline', () => {
     expect(same).toBeGreaterThan(full.spec.surface.grid.length * 0.7)
   })
 
+  it('debug flag is generation-neutral: same seed with/without debug bakes an equal spec + report', () => {
+    const off = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept' })
+    const on = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', debug: true })
+    // the flag touches no pass/RNG/bake — the persisted contract is byte-identical
+    expect(on.spec).toEqual(off.spec)
+    expect(on.report).toEqual(off.report)
+    // scratch (the L6 derived planes) rides ONLY the debug GenResult, never baked
+    expect(off.scratch).toBeUndefined()
+    expect(on.scratch).toBeInstanceOf(Map)
+    expect(on.scratch!.get('walk')).toBeInstanceOf(Uint8Array)
+    expect(on.scratch!.get('regions')).toBeInstanceOf(Int32Array)
+    expect(on.scratch!.get('flow')).toBeInstanceOf(Int32Array)
+  })
+
   it('reroll policy: failing recipe rerolls with derived seeds, then reports; throw/accept honor onFail', () => {
     const doomed: RecipeDef = {
       id: 'doomed',

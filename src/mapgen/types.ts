@@ -271,6 +271,14 @@ export interface GenParams {
   // remaining passes produce byte-identical output — the ?mapgen=1 lab's
   // layer-by-layer buildup rides this.
   skipPasses?: string[]
+  // DEV-ONLY debug channel (the ?mapgen=1 lab). When true, generateMap attaches
+  // the accepted attempt's `draft.scratch` (the L6 derived planes — walk /
+  // regions / flow / desire-paths masks) to GenResult.scratch so the lab can
+  // render them. Drawn from NOWHERE in generation logic: no pass, RNG stream,
+  // bake, or validation reads it, so a debug bake is byte-identical to a
+  // non-debug one (pinned in pipeline.test.ts). NEVER baked/serialized — scratch
+  // rides only the in-memory GenResult (locked decision: save = seed + params).
+  debug?: boolean
   // Validation policy: 'reroll' (default) re-runs with a derived seed up to
   // MAX_ATTEMPTS; 'accept' returns the first attempt with its failing report
   // (the lab wants to SEE bad maps); 'throw' for callers that must not ship one.
@@ -290,4 +298,11 @@ export interface GenResult {
   report: ValidationReport
   attempts: number            // 1 = first roll validated
   notes: string[]             // per-pass breadcrumbs (what was capped/dropped — no silent truncation)
+  // DEV-ONLY (GenParams.debug): the accepted attempt's `draft.scratch` — the L6
+  // derived planes (walk mask, region claims, flow distances, desire-path mask)
+  // one pass produces and later passes consume. Present ONLY when params.debug
+  // is set; NEVER baked into the spec or serialized (scratch stays unbaked —
+  // the spec carries only digested summaries like NavNode.intensity). The
+  // ?mapgen=1 lab reads it to draw the per-layer overlays.
+  scratch?: Map<string, unknown>
 }

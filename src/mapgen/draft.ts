@@ -27,6 +27,7 @@ export interface NormParams {
   gates: boolean
   skipPasses: string[]
   onFail: 'reroll' | 'accept' | 'throw'
+  debug: boolean
 }
 
 export function normalizeParams(p: GenParams): NormParams {
@@ -48,6 +49,9 @@ export function normalizeParams(p: GenParams): NormParams {
     gates: p.gates ?? true,
     skipPasses: p.skipPasses ?? [],
     onFail: p.onFail ?? 'reroll',
+    // Dev-only side-channel toggle: read only by the pipeline (to attach
+    // scratch to GenResult), never by a pass — determinism-neutral.
+    debug: p.debug ?? false,
   }
 }
 
