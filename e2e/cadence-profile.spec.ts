@@ -36,8 +36,26 @@ const CONFIGS = [
   // what MAX_BENCHED_BARRIERS in map-perf-envelope.test.ts cites.
   { name: 'barriers16 (old envelope)  ', q: 'barriers=16' },
   { name: 'barriers40                 ', q: 'barriers=40' },
-  { name: 'barriers72 (dungeon budget)', q: 'barriers=72' },
+  { name: 'barriers72 (live envelope) ', q: 'barriers=72' },
   { name: 'beach barriers40           ', q: 'cap=220&size=200&barriers=40' },
+  // P5 moderate-envelope re-bench (2026-07): fill in the synthetic COUNT sweep
+  // between 40 and 72, and add REALISTIC geometry via ?genmap (a real
+  // generateMap bake through specBarriers — river/lake band cover + gate plugs
+  // + outcrops, kitless so every plug is closed; the dungeon's maximal-rect
+  // wall cover at its 72 budget). The field recipe's per-pass allotments
+  // plateau its spend under the cap (~21 rects at size 96, ~38 at 200 for any
+  // cap ≥40 — probed 2026-07), so the realistic HIGH-count classes are heavy
+  // dungeon seeds (genseed=31 spends 57); genmap=field benches the long-thin
+  // band shapes live river maps actually ship. window.__perfGen carries the
+  // baked rect count into the log.
+  { name: 'barriers48                 ', q: 'barriers=48' },
+  { name: 'barriers56                 ', q: 'barriers=56' },
+  { name: 'barriers64                 ', q: 'barriers=64' },
+  { name: 'river96  (live field shape)', q: 'genmap=field&size=96' },
+  { name: 'river200 (big field shape) ', q: 'genmap=field&size=200' },
+  { name: 'beach river (engine-heavy) ', q: 'cap=220&size=200&genmap=field' },
+  { name: 'dungeon72 heavy (57 rects) ', q: 'genmap=dungeon&genseed=31' },
+  { name: 'dungeon72 heavy crowd30    ', q: 'genmap=dungeon&genseed=31&cap=30' },
 ] as const
 
 async function sampleRender(page: import('@playwright/test').Page) {
@@ -119,11 +137,15 @@ for (const cfg of CONFIGS) {
 
     const r = await sampleRender(page)
     const e = await sampleEngine(page)
+    // ?genmap runs bake real geometry — log what the bake actually spent (the
+    // rect COUNT is the variable under test; the cap is just its ceiling).
+    const gen = await page.evaluate(() => (window as unknown as { __perfGen?: { rects: number; size: number; ok: boolean } }).__perfGen ?? null)
     console.log(
       `[${cfg.name}] fps median ${r.fpsMedian.toFixed(1)} (min ${r.fpsMin.toFixed(1)}; ${r.fpsWindows.map((f) => f.toFixed(0)).join('/')})` +
       ` · longtask ${r.longTaskMs.toFixed(0)}ms · visible tokens ${r.tokens}` +
-      ` · tick ms mean ${e.meanTickMs.toFixed(1)} / p50 ${e.p50TickMs.toFixed(1)} / max ${e.maxTickMs.toFixed(1)}`,
+      ` · tick ms mean ${e.meanTickMs.toFixed(1)} / p50 ${e.p50TickMs.toFixed(1)} / max ${e.maxTickMs.toFixed(1)}` +
+      (gen ? ` · gen ${gen.rects} rects on ${gen.size}² (valid ${gen.ok})` : ''),
     )
-    await testInfo.attach(`cadence-${cfg.name.trim()}.json`, { body: JSON.stringify({ ...r, ...e }, null, 2), contentType: 'application/json' })
+    await testInfo.attach(`cadence-${cfg.name.trim()}.json`, { body: JSON.stringify({ ...r, ...e, gen }, null, 2), contentType: 'application/json' })
   })
 }

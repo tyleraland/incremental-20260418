@@ -31,14 +31,27 @@ const MAX_BENCHED_DENSITY = 0.016
 // small map whose WHOLE population is at or under the benched on-screen crowd
 // (Harpy's cap) can pack as tightly as it likes (e.g. wolf-den, 20 on 30×30).
 const MAX_BENCHED_CROWD = 50
-// Pathing (steerAround) cost grows with BARRIER COUNT, not map area. Measured
-// 2026-07 after the visibility-graph cache landed (cadence-profile "barriers"
-// sweep, this container's 4×-throttled harness — read gaps, not absolutes):
-// tick mean/max at barriers=16 ran 7.5/13ms; at 40, 13.2/43ms — i.e. the same
-// territory the old per-call pather occupied at 16 (9.6/27ms), and ~4× better
-// than the old code at 40 (33/164ms). 72 (the dungeon lab budget) is still
-// ~25/76ms — affordable in a pinch but not adopted as the live bound yet.
-const MAX_BENCHED_BARRIERS = 40
+// Pathing (steerAround) cost grows with BARRIER COUNT, not map area. History:
+// the per-call pather pinned live maps to 16; the visibility-graph cache
+// (2026-07) benched 40. RE-BENCHED 2026-07 for the MODERATE envelope (P5,
+// plan decision 3; cadence-profile "barriers" + "?genmap" sweeps, the same
+// 4×-throttled harness — read gaps, not absolutes; two runs each, engine tick
+// mean/p50 ms with render paused):
+//   synthetic scatter (cap 50 on 60×60): 16 → 6.8/4.5 · 40 → 10.6/6.2 ·
+//   48 → 10.9/6.1 · 56 → 13.8/7.0 · 64 → 17.7/8.8 · 72 → 17.2/8.1 — cost
+//   flattens past 64; fps median sat in the same 11–18 band at every point
+//   and max tick (33–73ms) moved inside its own noise.
+//   REALISTIC bakes (?genmap, real generateMap geometry through specBarriers):
+//   the heaviest dungeon seed found in a 40-seed probe (57 rects of
+//   maximal-rect wall cover on 48², spend median 43) ticked 15.2/7.9 at a
+//   harsh crowd-50 — under the synthetic-56 line — and 10.1/6.1 at a
+//   realistic crowd-30 (= the old cap-40 line). River+gates fields plateau
+//   under their allotment dials (~21 rects at 96², ~38 at 200², any cap ≥40)
+//   and ticked at or below their shape's cap-40 line (river200 12.7/10.8 vs
+//   beach-barriers40 12.7/9.8).
+// So the moderate envelope is adopted at the dungeon recipe's own budget —
+// one bound serves the overworld headroom AND live dungeon adoption:
+const MAX_BENCHED_BARRIERS = 72
 
 // Store defaults for unset fields (OPEN_WORLD_DEFAULT_CAP / _SIZE — private
 // consts in useGameStore; mirrored here so the envelope sees what the store

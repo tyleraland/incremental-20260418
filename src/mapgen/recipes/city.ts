@@ -13,7 +13,7 @@
 // (NPCs/spawns are store-owned, out of generator scope). LIVE on `prontera-city`
 // (50×50) since 2026-07: render/buildings.ts draws the cut-stone/wood wall rects
 // as paper-cutout buildings. The live pather envelope (adapter pins maxBarriers
-// 40) fits a full-density town; a tighter budget just starves it to fewer houses.
+// 72) fits a full-density town; a tighter budget just starves it to fewer houses.
 
 import type { Pt } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'

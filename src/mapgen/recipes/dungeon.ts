@@ -18,10 +18,11 @@
 // budget; depth is graph distance from the entry (§G), the lair sits at max
 // depth, and the goal anchors the cycle's far end.
 //
-// NOT live on any location yet: a dungeon spends ~30–60 rects against the
-// live pathing envelope of 40 (raised from 16 by the 2026-07 pather perf
-// pass). A lean floor now fits; the full 72 budget is still lab/encounter
-// territory (BACKLOG → Procedural map generation, cross-cutting debts).
+// Not live on any location yet, but PERF-VIABLE: the P5 moderate-envelope
+// re-bench (2026-07, map-perf-envelope.test.ts) adopted 72 — this recipe's
+// own default budget — as the live pathing bound, so a floor's ~30–60 rects
+// fit. Adoption is now a content decision (a location wiring the recipe,
+// spawn/lair integration), not a perf one.
 
 import type { Pt, Rect } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
@@ -708,8 +709,10 @@ export const DUNGEON_RECIPE: RecipeDef = {
   // rooms that already have POIs). gates before shortcut: the dead-end vault
   // keeps budget priority; the rewrite step only fires if budget remains.
   passes: [layoutPass, carvePass, floorPass, gatesPass, shortcutPass, stampsPass, scatterPass, semanticPass, premisePass],
-  // Free-form floors cost more rects (~30–60) than the old lattice — still
-  // lab/encounter only until the pather perf pass (BACKLOG). Spawn sits in the
-  // entry hall, so the apron is room-sized.
+  // Free-form floors cost more rects (~30–60) than the old lattice. The P5
+  // moderate-envelope re-bench (2026-07, map-perf-envelope.test.ts) adopted 72
+  // as the live pathing bound, so a dungeon bake is perf-viable on a live
+  // location as-is — adoption is now a content decision, not a perf one.
+  // Spawn sits in the entry hall, so the apron is room-sized.
   defaults: { size: 48, maxBarriers: 72, spawnApron: 3.5, themes: ['dungeon'] },
 }

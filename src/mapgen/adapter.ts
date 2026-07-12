@@ -47,12 +47,17 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
     size: loc.openWorldSize ?? 200,
     themes,
     // LIVE maps hold the measured pathing envelope (map-perf-envelope's
-    // MAX_BENCHED_BARRIERS=40, re-benched 2026-07 with the steerAround
-    // visibility-graph cache): cost grows with rect count. The lab explores up
-    // to the looser lib default; the game does not. NOTE: this is a GenParam —
-    // raising it changes what live locations bake (mirror-vale's outcrops were
-    // budget-starved at 16 and fill in at 40).
-    maxBarriers: 40,
+    // MAX_BENCHED_BARRIERS=72 — the MODERATE envelope of plan decision 3,
+    // re-benched 2026-07 on realistic post-river/gates geometry via the
+    // cadence-profile barriers+?genmap sweeps): cost grows with rect count,
+    // flattens past 64 with no fps cliff, and the heaviest observed dungeon
+    // bake (57 rects) ticks under the synthetic 56-rect line. 72 = the
+    // dungeon recipe's own default, so a live location can adopt it without
+    // a special cap. NOTE: this is a GenParam — but today's recipes spend by
+    // explicit per-pass allotments and plateau well under it (mirror-vale 22
+    // rects, prontera-city 9 — probed byte-identical at 40 vs 72), so this
+    // raise changed no live bake; it buys the rivers+ridges+gates headroom.
+    maxBarriers: 72,
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),
     proficiencies: opts.proficiencies,

@@ -98,7 +98,8 @@ export const INITIAL_LOCATIONS: Location[] = [
     // §mapgen phase 2: the FIRST live procedurally-generated location. Barriers +
     // arena size come from the baked MapSpec (recipe 'field', seed = location id);
     // the paper terrain reads the spec's surface/scatter planes. Perf: cap 30 is
-    // under the benched crowd, and the adapter holds barriers ≤ 16 (envelope test).
+    // under the benched crowd, and the adapter pins the live barrier envelope
+    // (map-perf-envelope test).
     openWorld: true, openWorldCap: 30, openWorldSize: 96,
     mapGen: { recipe: 'field' },
   },
