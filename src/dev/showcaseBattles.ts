@@ -29,6 +29,8 @@ const at = (b: BattleState, id: string, x: number, y: number) => {
 }
 const frostBolt = buildEngineSkill('frost-bolt', 3)!
 const bash = buildEngineSkill('bash', 3)!
+const cloak = buildEngineSkill('cloak', 1)!
+const backStab = buildEngineSkill('back-stab', 3)!
 const BLINK = { kind: 'teleport' as const, range: 8, cooldown: 25, needsLoS: true }
 
 export interface Showcase {
@@ -490,6 +492,185 @@ function sameSideAroundTheWall(): BattleState {
   return b
 }
 
+// ── 15. Directive — Hold the Line (M4): the ORDER forces the anchor ─────────
+function directiveHoldTheLine(): BattleState {
+  // The same kind of all-ranged, out-runs-and-out-ranges comp that
+  // `stance-by-comp` reads as a KITE from composition alone — but here the
+  // player has set the `hold-the-line` directive, whose `stanceBias: 'hold'`
+  // overrides the viable kite and stands the line on the nearest chokepoint.
+  // Contrast the two scenes back-to-back: identical instinct (the planner
+  // WOULD kite), opposite behaviour, because the order says hold.
+  const barriers: Barrier[] = [{ x: 6, y: 20, w: 6, h: 1.2, kind: 'wall' }]   // a bar beside the party = the choke to anchor
+  const archer = (id: string, int: number): EngineUnitInput => mk({
+    id, team: 'player', name: 'Ranger', str: 12, int, maxHp: 90, hp: 90, moveSpeed: 1.1, rangedRange: 6,
+    skills: [{ ...frostBolt }],
+  })
+  const b = createBattle({
+    playerUnits: [archer('r-anchor', 100), archer('r-2', 20), archer('r-3', 20)],
+    // A slow melee brute the archers out-range (6 vs melee) and out-run — the
+    // kite gate would clear, so skirmish kites; the directive holds instead.
+    enemyUnits: [mk({ id: 'brute', team: 'enemy', name: 'Brute', str: 15, def: 4, maxHp: 400, hp: 400, moveSpeed: 0.45, meleeRange: 1.4, visionRange: 30 })],
+    barriers, mode: 'open', cols: 40, rows: 30, playerDirective: 'hold-the-line',
+  })
+  at(b, 'r-anchor', 10, 22); at(b, 'r-2', 11, 22); at(b, 'r-3', 9, 23)
+  at(b, 'brute', 10, 8)
+  return b
+}
+
+// ── 16. Directive — Assassinate + ambush timing (M4): the orchestrated dive ──
+function directiveAssassinate(): BattleState {
+  // Under the `assassinate` directive the kill order flips to the squishiest
+  // target — the enemy HEALER over the beefy Brute — and a cloak-capable
+  // striker is timed by the PLAN: it vanishes, stalks the healer, and holds
+  // EVERY action (no early bow shots) until Back Stab range, then opens from
+  // stealth. The party's INT (the lone Sage) clears ACUMEN.ambush so the
+  // timing engages; below it the striker would reveal early.
+  const b = createBattle({
+    playerUnits: [
+      mk({
+        id: 'assassin', team: 'player', name: 'Assassin', str: 14, maxHp: 90, hp: 90,
+        rangedRange: 6, moveSpeed: 1.05, skills: [{ ...cloak }, { ...backStab }], tactics: [{ id: 'ambusher', rank: 1 }],
+      }),
+      // The brains: enough INT alone to clear ACUMEN.ambush (150). Hangs back.
+      mk({ id: 'sage', team: 'player', name: 'Sage', str: 8, int: 160, maxHp: 90, hp: 90, moveSpeed: 0 }),
+    ],
+    enemyUnits: [
+      // Squishy + carries Heal ⇒ the flipped kill order's primary.
+      mk({ id: 'healer', team: 'enemy', name: 'Healer', str: 2, int: 8, def: 0, maxHp: 70, hp: 70, moveSpeed: 0, visionRange: 20, skills: [buildEngineSkill('heal', 2)!] }),
+      // Fat and dangerous — the dangerous-FIRST pick, pointedly NOT the target
+      // under Assassinate. `skittish` keeps it dormant (non-provoked) so it never
+      // joins the healer's pull-set — the party can price and take the healer
+      // alone, isolating the kill-order flip + the timed dive.
+      mk({ id: 'brute', team: 'enemy', name: 'Brute', str: 40, def: 6, maxHp: 260, hp: 260, moveSpeed: 0, visionRange: 6, tactics: [{ id: 'skittish', rank: 1 }] }),
+    ],
+    mode: 'open', cols: 40, rows: 30, playerDirective: 'assassinate',
+  })
+  // The striker starts clear of both foes (>6 cells) so it can Cloak on turn one.
+  at(b, 'assassin', 10, 18); at(b, 'sage', 32, 26)
+  at(b, 'healer', 10, 5); at(b, 'brute', 15, 5)
+  return b
+}
+
+// ── 17. Directive — Pull to Camp (M4): mandatory, ambush-anchored ───────────
+function directivePullToCamp(): BattleState {
+  // The `pull-to-camp` directive makes the pull MANDATORY and anchors it behind
+  // a sight break. Wall A stands between the party and the mark; Wall B sits
+  // behind the party, its corners BLIND to the mark (A blocks the line) — the
+  // ambush spot. The designated Puller tags the mark and drags it around the
+  // corner to that blind anchor. Contrast `the-puller` (an opportunistic M2
+  // fringe pull); here the order + the ground force an achieved ambush.
+  const barriers: Barrier[] = [
+    { x: 16, y: 10, w: 8, h: 1, kind: 'wall' },   // wall A — between party and mark
+    { x: 18, y: 18, w: 4, h: 1, kind: 'wall' },   // wall B — behind the party (the blind anchor)
+  ]
+  const b = createBattle({
+    playerUnits: [
+      mk({ id: 'puller', team: 'player', name: 'Puller', str: 10, maxHp: 90, hp: 90, rangedRange: 5, moveSpeed: 1.2, visionRange: 22, tactics: [{ id: 'puller', rank: 1 }] }),
+      // Enough INT alone to clear ACUMEN.ambush (150) so the ambush anchor engages.
+      mk({ id: 'sage', team: 'player', name: 'Sage', str: 10, int: 160, maxHp: 90, hp: 90, moveSpeed: 0.9, visionRange: 22 }),
+      mk({ id: 'line', team: 'player', name: 'Line', str: 12, maxHp: 120, hp: 120, moveSpeed: 0.9, visionRange: 22 }),
+    ],
+    enemyUnits: [mk({ id: 'mark', team: 'enemy', name: 'Mark', str: 4, maxHp: 60, hp: 60, moveSpeed: 0.9, visionRange: 3 })],
+    barriers, mode: 'open', cols: 40, rows: 34, playerDirective: 'pull-to-camp',
+  })
+  at(b, 'puller', 19, 16); at(b, 'sage', 21, 16); at(b, 'line', 20, 16)
+  at(b, 'mark', 20, 5)
+  return b
+}
+
+// ── 18. Directive — Protect (M4): a guard on the carry, no outlier needed ────
+function directiveProtect(): BattleState {
+  // A UNIFORM-toughness party (no fragility outlier — so the shipped rule would
+  // assign no guard at all) under the `protect` directive. The directive forces
+  // a standing guard and aims it at the CARRY — the party's damage engine (top
+  // sustained damage), here the ranged striker — not a squishy. One tank peels
+  // to body-block the raiders diving the carry. Contrast `protect-the-carry`,
+  // where the guard is planner-DERIVED from a fragile outlier.
+  const tank = (id: string): EngineUnitInput => mk({
+    id, team: 'player', name: 'Guardian', str: 10, def: 6, maxHp: 140, hp: 140, meleeRange: 1.4, visionRange: 20,
+  })
+  const b = createBattle({
+    playerUnits: [
+      // Same toughness as the tanks (maxHp/def) so it is NOT a fragility outlier;
+      // top raw sustained (str 30, fires at range) ⇒ the 'carry' capability pick.
+      mk({ id: 'carry', team: 'player', name: 'Carry', str: 30, def: 6, maxHp: 140, hp: 140, rangedRange: 6, moveSpeed: 1.0, visionRange: 20 }),
+      tank('tank-a'), tank('tank-b'), tank('tank-c'),
+    ],
+    enemyUnits: [
+      mk({ id: 'raider-0', team: 'enemy', name: 'Raider', str: 10, maxHp: 120, hp: 120, moveSpeed: 0.9, meleeRange: 1.4, visionRange: 24 }),
+      mk({ id: 'raider-1', team: 'enemy', name: 'Raider', str: 10, maxHp: 120, hp: 120, moveSpeed: 0.9, meleeRange: 1.4, visionRange: 24 }),
+      mk({ id: 'raider-2', team: 'enemy', name: 'Raider', str: 10, maxHp: 120, hp: 120, moveSpeed: 0.9, meleeRange: 1.4, visionRange: 24 }),
+    ],
+    mode: 'open', cols: 40, rows: 34, playerDirective: 'protect',
+  })
+  // Carry hangs back; tanks a step ahead; raiders charge from the north.
+  at(b, 'carry', 20, 26); at(b, 'tank-a', 19, 23); at(b, 'tank-b', 20, 23); at(b, 'tank-c', 21, 23)
+  at(b, 'raider-0', 19, 9); at(b, 'raider-1', 20, 9); at(b, 'raider-2', 21, 9)
+  return b
+}
+
+// ── 19. Intel — first contact misjudges an unknown species (§3.7) ───────────
+// A three-hero party facing ONE lone "wraith" — a ghost-armored caster whose
+// real kit is a heavy Frost Bolt nuke, but whose BASIC attack (all a masked kit
+// reads as) is negligible. `masked` is the whole scene: an unknown first
+// contact prices the hidden kit as a harmless basic attacker and COMMITS
+// (over-pulls into the buzzsaw); the same wraith fully scouted prices the real
+// nuke, finds the trade unaffordable, and AVOIDS it. The party clears
+// ACUMEN.pull (the lone Scholar) so the affordability race actually runs — the
+// ONLY thing that changes between the two scenes is what the party KNOWS.
+// Staged, not learned: a pure builder can't run the store's reveal loop, so the
+// two knowledge states ship as adjacent scenes to make the flip legible.
+function intelContact(masked: boolean): BattleState {
+  const b = createBattle({
+    playerUnits: [
+      mk({ id: 'scholar', team: 'player', name: 'Scholar', str: 8, int: 60, maxHp: 90, hp: 90, moveSpeed: 0.9, meleeRange: 1.4 }),
+      mk({ id: 'fighter-a', team: 'player', name: 'Fighter', str: 12, maxHp: 90, hp: 90, moveSpeed: 0.9, meleeRange: 1.4 }),
+      mk({ id: 'fighter-b', team: 'player', name: 'Fighter', str: 12, maxHp: 90, hp: 90, moveSpeed: 0.9, meleeRange: 1.4 }),
+    ],
+    enemyUnits: [mk({
+      id: 'wraith', team: 'enemy', name: 'Wraith', str: 2, int: 90, def: 2, maxHp: 300, hp: 300, moveSpeed: 0.5,
+      rangedRange: 6, visionRange: 20, armorElement: 'ghost', skills: [{ ...frostBolt }],
+      ...(masked ? { intel: {} } : {}),
+    })],
+    mode: 'open', cols: 40, rows: 30,
+  })
+  at(b, 'scholar', 9, 22); at(b, 'fighter-a', 10, 22); at(b, 'fighter-b', 11, 22)
+  at(b, 'wraith', 10, 12)
+  return b
+}
+function intelUnknown(): BattleState { return intelContact(true) }
+function intelKnown(): BattleState { return intelContact(false) }
+
+// ── 20. 5v5 arena (M4 §3.6): two teams, two directives, one team fight ──────
+function arena5v5(): BattleState {
+  // The LoL-style capstone: both sides run a directive. The player line holds
+  // (`hold-the-line`) — three tanks anchor a wall choke, the Sage fires from
+  // range, the Healer tops them up from the rear. The enemy raiders run
+  // `assassinate` — their kill order flips off the tanks and onto the squishiest
+  // player, the Healer, and they dive it. Tanks anchor, carry pokes, the divers
+  // knife for the backline.
+  const barriers: Barrier[] = [{ x: 6, y: 14, w: 6, h: 1.2, kind: 'wall' }]
+  const b = createBattle({
+    playerUnits: [
+      mk({ id: 'p-tank1', team: 'player', name: 'Tank', str: 15, def: 8, maxHp: 200, hp: 200, meleeRange: 1.4, visionRange: 30 }),
+      mk({ id: 'p-tank2', team: 'player', name: 'Tank', str: 15, def: 8, maxHp: 200, hp: 200, meleeRange: 1.4, visionRange: 30 }),
+      mk({ id: 'p-tank3', team: 'player', name: 'Tank', str: 15, def: 8, maxHp: 200, hp: 200, meleeRange: 1.4, visionRange: 30 }),
+      // The Sage carries the party's stance acumen (ACUMEN.stance 90) on its own.
+      mk({ id: 'p-sage', team: 'player', name: 'Sage', str: 5, int: 100, maxHp: 80, hp: 80, rangedRange: 6, moveSpeed: 0.9, visionRange: 30, skills: [{ ...frostBolt }] }),
+      mk({ id: 'p-heal', team: 'player', name: 'Healer', str: 2, int: 12, def: 0, maxHp: 60, hp: 60, rangedRange: 5, moveSpeed: 0.9, visionRange: 30, skills: [buildEngineSkill('heal', 2)!] }),
+    ],
+    enemyUnits: Array.from({ length: 5 }, (_, i) => mk({
+      id: `raider${i}`, team: 'enemy', name: 'Raider', str: 9, def: 3, maxHp: 90, hp: 90, moveSpeed: 0.7, meleeRange: 1.4, visionRange: 30,
+    })),
+    barriers, mode: 'open', cols: 40, rows: 34, playerDirective: 'hold-the-line', enemyDirective: 'assassinate',
+  })
+  at(b, 'p-tank1', 10, 18); at(b, 'p-tank2', 11, 18); at(b, 'p-tank3', 9, 18)
+  at(b, 'p-sage', 10, 20); at(b, 'p-heal', 11, 20)
+  const rx = [8, 9, 10, 11, 12]
+  rx.forEach((x, i) => at(b, `raider${i}`, x, 8))
+  return b
+}
+
 export const SHOWCASES: Showcase[] = [
   {
     id: 'kite-anchor',
@@ -570,9 +751,9 @@ export const SHOWCASES: Showcase[] = [
   },
   {
     id: 'fold-when-losing',
-    title: 'Fold when losing',
-    blurb: 'A party commits to a boss it can just barely afford — as the trade turns against it, the shared commitment breaks off while everyone is still standing.',
-    watch: 'Engagement locks onto the boss round one; watch it flip from a committed `targetIds: [boss]` to absent in Debug → Plan as the live re-price crosses the exit bar — no more shared commitment, even though the fight itself keeps going.',
+    title: 'Fold when losing — and flee',
+    blurb: 'A party commits to a boss it can just barely afford — as the trade turns against it, it breaks off and physically RETREATS while everyone is still standing.',
+    watch: 'Engagement locks onto the boss round one; watch it drop AND a `rout` appear in Debug → Plan as the live re-price crosses the exit bar — the Vanguard then peels off the boss and backs away instead of dying on it. (Debug tab → Plan → rout.)',
     build: foldWhenLosing,
   },
   {
@@ -588,6 +769,55 @@ export const SHOWCASES: Showcase[] = [
     blurb: 'A wall open at both ends splits the party from its prey — the whole line commits to the SAME gap instead of splitting left and right.',
     watch: "The party's shared `corridor` points at one end of the wall the whole approach; every hero clears the wall on that same side. (Debug tab → Plan → corridor.)",
     build: sameSideAroundTheWall,
+  },
+  {
+    id: 'directive-hold-the-line',
+    title: 'Directive: Hold the Line',
+    blurb: 'The same out-runs-everything comp that `stance-by-comp` reads as a KITE instead stands and holds — because the player set the Hold the Line directive. The order overrides the instinct.',
+    watch: 'Skirmish would kite this brute; under the directive the plan commits `stance: hold` and anchors the wall choke, the line never backing off. Compare with `stance-by-comp` (same comp, no order → kite). (Debug tab → Plan → stance / anchor.)',
+    build: directiveHoldTheLine,
+  },
+  {
+    id: 'directive-assassinate',
+    title: 'Directive: Assassinate',
+    blurb: 'Under the Assassinate directive the kill order flips to the enemy healer, and a cloaked striker is timed by the plan — it holds every action until Back Stab range, then opens from stealth.',
+    watch: 'engagement.primaryId is the squishy HEALER (not the dangerous Brute); the Assassin cloaks, stalks, and its FIRST offensive act is a stealth Back Stab on the healer — no early bow shots. (Debug tab → Plan → engagement.primaryId; watch the Assassin stay stealthed until the strike.)',
+    build: directiveAssassinate,
+  },
+  {
+    id: 'directive-pull-to-camp',
+    title: 'Directive: Pull to Camp',
+    blurb: 'The Pull to Camp directive makes the pull mandatory and anchors it behind a sight break: the Puller tags the mark and drags it around a corner blind to where it stood.',
+    watch: 'The plan anchors on a corner with NO line to the mark (an ambush spot) and staffs a `pull` assignment dragging the mark to it — the Puller darts out, tags, and hauls it back behind the wall. Contrast `the-puller` (opportunistic, no ambush). (Debug tab → Plan → assignments → role: pull, and engagement.anchor.)',
+    build: directivePullToCamp,
+  },
+  {
+    id: 'directive-protect',
+    title: 'Directive: Protect',
+    blurb: 'A uniform-toughness party with no fragile outlier — so nobody would normally get a guard. The Protect directive forces one anyway and aims it at the CARRY (the damage engine), not a squishy.',
+    watch: 'A guard assignment materialises on the Carry (top sustained damage) and one tank peels to body-block the raiders diving it, instead of all three piling in. Contrast `protect-the-carry` (guard derived from a fragile outlier). (Debug tab → Plan → assignments → role: guard, allyId: carry.)',
+    build: directiveProtect,
+  },
+  {
+    id: 'intel-first-contact-unknown',
+    title: 'Intel: unknown species (misjudged)',
+    blurb: "A first contact: the wraith's kit is UNKNOWN, so the party prices its hidden Frost Bolt as a harmless basic attacker — and commits, over-pulling into a nuke it can't actually afford.",
+    watch: 'The party COMMITS: engagement locks onto the wraith (it reads the masked kit as a bare attacker). Flip to `intel-first-contact-known` — the SAME wraith, fully scouted — to see the opposite call. (Debug tab → Plan → engagement. Staged: a builder can\'t run the store\'s learning loop, so knowledge is pre-stamped.)',
+    build: intelUnknown,
+  },
+  {
+    id: 'intel-first-contact-known',
+    title: 'Intel: known species (avoided)',
+    blurb: 'The SAME wraith, now fully scouted: the party prices its real Frost Bolt nuke, finds the trade unaffordable, and puts it on the avoid list instead of diving in.',
+    watch: 'The party DECLINES: no engagement, the wraith sits on avoidTargetIds (its real nuke prices the fight as a loss). Flip to `intel-first-contact-unknown` for the misjudged first-contact call on the identical foe. (Debug tab → Plan → avoidTargetIds.)',
+    build: intelKnown,
+  },
+  {
+    id: 'arena-5v5',
+    title: '5v5 arena: two directives',
+    blurb: 'A full team fight with a directive on each side — the player line Holds the Line while the enemy raiders Assassinate, diving the backline healer.',
+    watch: 'The player plan commits `stance: hold` on the wall anchor (tanks forward, Sage poking, Healer rear); the enemy plan sets primaryId to the player HEALER and knifes for it. Two directives, one fight. (Debug tab → Plan on either team.)',
+    build: arena5v5,
   },
 ]
 

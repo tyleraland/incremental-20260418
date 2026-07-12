@@ -617,8 +617,7 @@ can loop cloak→hold→expire→re-cloak contributing zero offense (each hold
 window is bounded by Cloak's 25-round duration and normal behavior resumes
 between windows, so it degrades no worse than the shipped can't-reach idle;
 a bounded escape hatch would need serialized stalk-rounds memory — add it if
-live play ever surfaces the loop); directive showcases for the sandbox QA
-rig.
+live play ever surfaces the loop).
 
 **M1–M3 follow-ups (from the phase bug-hunt reviews + live showcase QA):**
 

@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest'
 import { SHOWCASES, showcaseById, protectTheCarrySetup } from '@/dev/showcaseBattles'
 import {
   serializeBattle, deserializeBattle, advanceRound, distance, teamAcumen, defaultPlanner,
-  createBattle, type BattleState, type Planner,
+  createBattle, setTeamDirective, sightlineClear, type BattleState, type Planner,
 } from '@/engine'
 
 const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
@@ -312,23 +312,34 @@ describe('showcase catalog', () => {
     expect(b.plans.enemy!.engagement?.stance ?? 'collapse').toBe('collapse')
   })
 
-  it('fold-when-losing: commits to the boss, then drops the commitment once the trade turns bad — everyone still alive', () => {
+  it('fold-when-losing: drops the boss AND physically routs — the Vanguard peels off and retreats, everyone alive', () => {
     const b = showcaseById('fold-when-losing')!.build()
     expect(teamAcumen(b, 'player')).toBeGreaterThanOrEqual(50)   // clears ACUMEN.pull
 
     advanceRound(b)
     expect(b.plans.player!.engagement!.targetIds).toEqual(['boss'])
     expect(b.plans.player!.engagement!.primaryId).toBe('boss')
+    const vStart = distance(find(b, 'vanguard').pos, find(b, 'boss').pos)   // ~1: plastered to the boss
 
-    let abandonRound = -1
-    for (let r = 0; r < 60 && abandonRound < 0; r++) {
+    // The abandon-for-losing now has EXECUTION: a published rout, not just a
+    // dropped commitment. Run until the rout appears.
+    let routRound = -1
+    for (let r = 0; r < 60 && routRound < 0; r++) {
       advanceRound(b)
-      if (!b.plans.player!.engagement) abandonRound = b.round
+      if (b.plans.player!.rout) routRound = b.round
     }
-    expect(abandonRound).toBeGreaterThan(0)   // the live re-price actually crossed ENGAGE_EXIT
-    // Folded — not wiped: every hero is still standing right when the party's
-    // shared commitment lets go (the boss itself is barely dented: the whole
-    // point is this was a genuine live-priced retreat, not a won fight).
+    expect(routRound).toBeGreaterThan(0)                        // a real break-off, not just a silent drop
+    expect(b.plans.player!.rout!.campIds).toContain('boss')     // fleeing the boss's camp specifically
+    expect(b.plans.player!.engagement).toBeFalsy()              // the shared commitment is gone
+
+    // Physically retreating: the Vanguard drops its lock and backs away from the
+    // boss it was plastered to (the fold is now visible behavior, not "decide to
+    // fold then die on it"). Give the break-off a few rounds to open the gap.
+    for (let r = 0; r < 12; r++) advanceRound(b)
+    expect(distance(find(b, 'vanguard').pos, find(b, 'boss').pos)).toBeGreaterThan(vStart + 3)
+
+    // Folded — not wiped: every hero is still standing, the boss barely dented
+    // (a genuine live-priced retreat, not a won fight).
     for (const id of ['scholar', 'fighter-a', 'fighter-b', 'vanguard']) {
       expect(find(b, id).hp).toBeGreaterThan(0)
     }
@@ -390,5 +401,94 @@ describe('showcase catalog', () => {
     expect(maxY).toBeLessThan(25)
     // Everyone actually clears the wall (reaches its east side) via that gap.
     for (const id of heroIds) expect(find(b, id).pos.x).toBeGreaterThan(24)
+  })
+
+  it('directive-hold-the-line: the ORDER holds a comp that would otherwise kite', () => {
+    const held = showcaseById('directive-hold-the-line')!.build()
+    for (let r = 0; r < 6; r++) advanceRound(held)
+    const eng = held.plans.player!.engagement!
+    expect(eng.stance).toBe('hold')          // the directive stands the line…
+    expect(eng.anchor).not.toBeNull()        // …on the wall choke
+
+    // The SAME scene with the directive cleared kites — proof the order is what
+    // holds it (this comp out-ranges and out-runs the brute, so skirmish kites).
+    const kited = showcaseById('directive-hold-the-line')!.build()
+    setTeamDirective(kited, 'player', null)
+    for (let r = 0; r < 6; r++) advanceRound(kited)
+    expect(kited.plans.player!.engagement!.stance).toBe('kite')
+  })
+
+  it('directive-assassinate: kill order flips to the squishy healer; the striker opens from stealth with Back Stab', () => {
+    const b = showcaseById('directive-assassinate')!.build()
+    advanceRound(b)
+    // The dangerous Brute is the naive dangerous-first pick; the directive picks
+    // the squishy Healer instead.
+    expect(b.plans.player!.engagement!.primaryId).toBe('healer')
+
+    // The plan times the dive: the striker holds EVERY action while cloaked and
+    // stalking — its first offensive act is the stealth opener, not an early shot.
+    let firstOffense: (typeof b.events)[number] | null = null
+    for (let r = 0; r < 40 && !firstOffense; r++) {
+      advanceRound(b)
+      const ev = b.events.filter((e) => e.round === b.round && e.sourceId === 'assassin'
+        && (e.type === 'melee_attack' || e.type === 'ranged_attack' || (e.type === 'skill_use' && e.skillId !== 'cloak')))
+      if (ev.length) firstOffense = ev[0]
+    }
+    expect(firstOffense).toBeTruthy()
+    expect(firstOffense!.type).toBe('skill_use')
+    expect(firstOffense!.skillId).toBe('back-stab')
+    expect(firstOffense!.targetId).toBe('healer')
+    expect(firstOffense!.value ?? 0).toBeGreaterThan(25)   // a stealth-boosted opener, not a plink
+  })
+
+  it('directive-pull-to-camp: anchors behind a sight break and staffs a mandatory pull dragging the mark to it', () => {
+    const b = showcaseById('directive-pull-to-camp')!.build()
+    advanceRound(b)
+    const eng = b.plans.player!.engagement!
+    expect(eng.anchor).not.toBeNull()
+    // The ambush anchor is BLIND to the mark — behind the sight break.
+    expect(sightlineClear(eng.anchor!, find(b, 'mark').pos, b.barriers)).toBe(false)
+    // Puller mandatory: exactly one pull, on the mark, dragged to that anchor.
+    const pulls = Object.values(b.plans.player!.assignments ?? {}).filter((a) => a.role === 'pull')
+    expect(pulls).toHaveLength(1)
+    const pull = pulls[0] as Extract<typeof pulls[number], { role: 'pull' }>
+    expect(pull.targetId).toBe('mark')
+    expect(pull.to).toEqual(eng.anchor)
+  })
+
+  it('directive-protect: forces a guard on the CARRY even though toughness is uniform (no fragile outlier)', () => {
+    const b = showcaseById('directive-protect')!.build()
+    advanceRound(b)
+    const guards = Object.entries(b.plans.player!.assignments!).filter(([, a]) => a.role === 'guard')
+    expect(guards).toHaveLength(1)
+    const [guardId, guard] = guards[0]
+    expect((guard as Extract<typeof guard, { role: 'guard' }>).allyId).toBe('carry')   // aimed at the damage engine
+    expect(guardId).not.toBe('carry')
+    // It's the DIRECTIVE, not the fragility rule: every member's toughness is
+    // identical, so the shipped fragility-outlier check would find nobody.
+    const tough = ['carry', 'tank-a', 'tank-b', 'tank-c'].map((id) => find(b, id).capability!.toughness)
+    expect(Math.max(...tough) - Math.min(...tough)).toBeLessThan(1e-6)
+  })
+
+  it('intel-first-contact: the unknown wraith is over-committed; the SAME wraith, scouted, is avoided', () => {
+    const unknown = showcaseById('intel-first-contact-unknown')!.build()
+    const known = showcaseById('intel-first-contact-known')!.build()
+    expect(teamAcumen(unknown, 'player')).toBeGreaterThanOrEqual(50)   // the affordability race actually runs
+    for (let r = 0; r < 4; r++) { advanceRound(unknown); advanceRound(known) }
+    // Masked kit prices as a bare basic attacker ⇒ the party commits.
+    expect(unknown.plans.player!.engagement!.primaryId).toBe('wraith')
+    // Scouted kit prices the real nuke ⇒ unaffordable ⇒ declined + avoided.
+    expect(known.plans.player!.engagement).toBeFalsy()
+    expect(known.plans.player!.avoidTargetIds).toContain('wraith')
+  })
+
+  it('arena-5v5: the player line holds while the enemy raiders dive the backline healer', () => {
+    const b = showcaseById('arena-5v5')!.build()
+    for (let r = 0; r < 3; r++) advanceRound(b)
+    // Player Hold the Line: a committed hold on the wall anchor.
+    expect(b.plans.player!.engagement!.stance).toBe('hold')
+    expect(b.plans.player!.engagement!.anchor).not.toBeNull()
+    // Enemy Assassinate: kill order flips onto the squishiest player, the Healer.
+    expect(b.plans.enemy!.engagement!.primaryId).toBe('p-heal')
   })
 })
