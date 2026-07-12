@@ -239,9 +239,9 @@ export interface GenParams {
   size: number                // square arena side, world units
   themes: ThemeTag[]
   // Pather budget: open-world routing cost grows with BARRIER COUNT, not map
-  // area (store BARRIER_CAP=16). Default is deliberately close to that cap;
-  // recipes that spend more (a lake's rect chain) must be perf-passed before a
-  // live location adopts them. See BACKLOG → Procedural map generation.
+  // area. The live envelope is 72 (P5 re-bench; the adapter pins it, the
+  // barrier-budget validation rule enforces it per bake); the lib default
+  // stays a lean 24 for lab exploration.
   maxBarriers?: number
   spawnApron?: number         // clear radius around the spawn POI (default scales with size)
   keepClear?: Rect[]          // externally-owned cells (portals) no pass may cover

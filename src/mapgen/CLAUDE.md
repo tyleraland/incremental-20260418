@@ -5,10 +5,9 @@ root — §refs below point there); **target layer architecture + build-out
 tracks: `procedural-generation-architecture-plan.md`** (repo root) — the reorg plan of record: the L0–L9
 layer stack, the nav graph as the shared convergence layer with two producers
 (authored for dungeon/city, derived for overworld — track B), and the settled
-decisions (flat rects stay; a MODERATE barrier envelope is the target — 40 is
-the currently-benched number, not a design ceiling, re-bench toward ~56–72
-before track C spends it; mapgen emits pacing, store consumes; cross-map
-manifest is a seam). This doc
+decisions (flat rects stay; the MODERATE barrier envelope LANDED — the P5
+re-bench adopted 72 as the live pathing bound; mapgen emits pacing, store
+consumes; cross-map manifest is a seam). This doc
 is the working contract for what EXISTS: locked decisions, the hooks left
 open, and where each future phase plugs in. Keep it terse and accurate.
 
@@ -48,10 +47,13 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
    (elevation/moisture/roughness), never private noise, so planes agree by
    construction (sand rings the lake because both consulted the same field).
 8. **Barrier budget is a pather budget**: open-world routing cost grows with
-   rect *count*. The live envelope is **40** (re-benched 2026-07 after the
-   engine's steerAround visibility-graph cache; `map-perf-envelope.test.ts`
-   cites the measurement). Lib default `maxBarriers`=24; the dungeon's 72 is
-   still lab/encounter territory — bench before a live location adopts more.
+   rect *count*. The live envelope is **72** (the P5 moderate-envelope
+   re-bench, 2026-07: synthetic cost flattens past 64, realistic geometry is
+   cheaper than synthetic at equal count; `map-perf-envelope.test.ts` records
+   the measurement). Lib default `maxBarriers`=24; the dungeon's 72 default
+   is now perf-viable live — adoption is a content decision. NB: no recipe
+   SPENDS past ~38 yet (allotment dials plateau); spending the headroom is a
+   deliberate dial retune (BACKLOG).
 
 ## Module map
 
@@ -73,7 +75,7 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
 | `profile.ts` | `tacticalProfile` — the §L self-description shared by every recipe's semantic pass |
 | `recipes/index.ts` | `RECIPE_REGISTRY` — field / dungeon / city. Recipes own the DIVERGENCE layer (noise-first vs graph-first vs road-first, quarantined to production passes); the nav graph is where they converge (`procedural-generation-architecture-plan.md`) |
-| `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store; pins live maxBarriers 40 and defaults `gates: false` — a live location opts into composition gates via `mapGen.gates: true`) |
+| `adapter.ts` | the ONLY cross-boundary file: `specBarriers` (→ engine), `generateForLocation` (→ store; pins live maxBarriers 72 (P5 re-bench) and defaults `gates: false` — a live location opts into composition gates via `mapGen.gates: true`) |
 
 Consumers today (phase 2): `createOpenBattleFor` (store) honors
 `Location.mapGen` via `generateForLocationCached` (pure generation + static
@@ -84,9 +86,9 @@ two-band water read), **scatter plane** (abstract kinds → biome prop
 archetypes, `KIND_ARCHETYPE` — kinds never prop ids), and **materials**
 (deep-water rects vanish under the lake wash; hedges paint foliage). First
 live location: **`mirror-vale`** (96×96 field, cap 30). The lab explores with
-`maxBarriers` 24; `generateForLocation` pins live maps to **40** (the
-pathing envelope re-benched 2026-07 with the engine's visibility-graph
-cache, gated in `map-perf-envelope.test.ts`).
+`maxBarriers` 24; `generateForLocation` pins live maps to **72** (the P5
+moderate-envelope re-bench, 2026-07, gated in `map-perf-envelope.test.ts` —
+no live bake changed at the raise: recipe dials plateau spend at ~38).
 
 ## Harnesses (the human-validation bottleneck is the design center)
 

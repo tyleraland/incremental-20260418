@@ -84,13 +84,14 @@ rivers are what make the graph non-trivial.)
    else.
 2. **Representation: flat rect list stays; corner-stitching rejected for
    now.** Its O(√N) local queries beat O(N) scans only at N far above our
-   ceiling — the live barrier budget is 40 rects and even the lab dungeon is
-   ~72; flood-fill on a ≤200² grid is microseconds. It also collides with two
+   ceiling — the live barrier budget is 72 rects (P5) and flood-fill on a
+   ≤200² grid is microseconds. It also collides with two
    locked decisions (rects-forever as the engine seam; the adapter drops to
    bare rects). Revisit trigger: budget ≥ ~200 rects, or validation/derivation
    shows up in a profile.
-3. **Barrier budget: aim for a MODERATE envelope; 40 is the currently-benched
-   number, not a design ceiling.** Napkin: lake ≈ 4–8 rects (today's band
+3. **Barrier budget: a MODERATE envelope — LANDED at 72 (P5 re-bench,
+   2026-07).** The posture that got there, kept for the reasoning record:
+   40 was the previously-benched number, not a design ceiling. Napkin: lake ≈ 4–8 rects (today's band
    cover), river ≈ 8–14 (band cover per reach), ridge line ≈ 4–8, outcrops
    want ≥ 12, gate plugs 1–2 each. At 40 that means ~2 macro geography
    features per map; a moderate envelope (~56–72, the lab dungeon's
@@ -211,10 +212,10 @@ never half-landed.
 | # | packet | why it's first-order structural | shippable when |
 |---|---|---|---|
 | **P1** ✅ | **Derived region graph** (track B): `deriveRegions` in `graph.ts` (walk mask → distance transform → erode by pinch width → components = region nodes → pinches = `crossing` edges with `doorAt`); field recipe rasterizes its collision into a scratch walk mask and publishes real nodes/edges (depth from the spawn region); `graph-truthful` validation rule | the convergence layer's second producer — decides whether locks/secrets/paths can EVER be shared with the overworld; every overworld packet hangs on it; no analog exists in the codebase | field bakes publish truthful graphs (synthetic-mask unit tests + fuzz gates + crafted validator pair green) |
-| **P2** | **River + crossings** (track C core): hydrology v2 — a descending river band traced on the elevation field, ford (shallow strip) / bridge (surface `road` over the gap) crossings punched at pinches the graph confirms | the region DIVIDER that makes derived graphs non-trivial; the hardest budget/coherence interaction (river rects vs. envelope, water-coherence rule) — better to hit it early | water-themed field seeds bake a river with ≥1 crossing, valid, rect spend `note()`d |
+| **P2** ✅ | **River + crossings** (track C core): hydrology v2 — a descending river band traced on the elevation field, ford (shallow strip) / bridge (surface `road` over the gap) crossings punched at pinches the graph confirms | the region DIVIDER that makes derived graphs non-trivial; the hardest budget/coherence interaction (river rects vs. envelope, water-coherence rule) — better to hit it early | water-themed field seeds bake a river with ≥1 crossing, valid, rect spend `note()`d |
 | **P3** ✅ | **Overworld gates + secret pockets**: a gated *secondary* crossing (mobility ford / perception hidden trail) and a locked vault region, via the shared `gates.ts` on derived edges | proves the convergence thesis end-to-end — dungeon door and overworld ford are literally one call; lands phase-4's "field-recipe gates" | same seed × different kit bakes open/closed field variants; `locks` rule green both ways |
 | **P4** ✅ | **Cyclic dungeon core** (track E): cycle-as-primitive skeleton (entry→goal via two arcs) + tree-attached leaves replacing MST+2-spares; first rewrite step: the **shortcut lock** (a proficiency plug on the short arc — closed forces the long way, nothing stranded) | the dungeon-side structural piece — cycles by construction, not by accident; the rewrite-step shape is what lock/key/shortcut grammar (Unexplored) grows on. Independent of P1–P3, parallelizable | dungeon fuzz gates green; ≥1 cycle by construction; gates/stamps/carve untouched |
-| **P5** | **Moderate-envelope bench**: re-bench `map-perf-envelope.test.ts` on realistic river-map geometry; raise the live cap toward ~56–72 | converts decision 3 into a number; unlocks LIVE adoption of P2 maps AND the lab dungeon | new envelope measured + gated; adapter cap updated |
+| **P5** ✅ | **Moderate-envelope bench**: re-bench `map-perf-envelope.test.ts` on realistic river-map geometry; raise the live cap toward ~56–72 | converts decision 3 into a number; unlocks LIVE adoption of P2 maps AND the lab dungeon | new envelope measured + gated; adapter cap updated |
 | **P6+** | **Color-in (BACKLOG until the shape holds)**: desire paths, flow/`intensity` plane (track D), sightline ribbons + `tacticalTargets` (track F), NPC placement off the semantic plane, world director (track G) | none move the structure; all read the graph/planes laid above | (backlog) |
 
 P1 → P2 → P3 is a strict dependency chain; P4 runs parallel to any of them;

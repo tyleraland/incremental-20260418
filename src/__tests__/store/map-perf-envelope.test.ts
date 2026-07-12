@@ -38,9 +38,11 @@ const MAX_BENCHED_CROWD = 50
 // 4×-throttled harness — read gaps, not absolutes; two runs each, engine tick
 // mean/p50 ms with render paused):
 //   synthetic scatter (cap 50 on 60×60): 16 → 6.8/4.5 · 40 → 10.6/6.2 ·
-//   48 → 10.9/6.1 · 56 → 13.8/7.0 · 64 → 17.7/8.8 · 72 → 17.2/8.1 — cost
-//   flattens past 64; fps median sat in the same 11–18 band at every point
-//   and max tick (33–73ms) moved inside its own noise.
+//   48 → 10.9/6.1 · 56 → 13.8/7.0 · 64 → 17.7/8.8 · 72 → 17.2/8.1 — 64 ≈ 72
+//   (a plateau PAIR at two runs each, not a fitted trend; an independent
+//   headless micro-bench in the P5 review reproduced the flattening from
+//   56); fps median sat in the same 11–18 band at every point and max tick
+//   (33–73ms) moved inside its own noise.
 //   REALISTIC bakes (?genmap, real generateMap geometry through specBarriers):
 //   the heaviest dungeon seed found in a 40-seed probe (57 rects of
 //   maximal-rect wall cover on 48², spend median 43) ticked 15.2/7.9 at a

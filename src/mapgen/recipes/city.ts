@@ -282,7 +282,7 @@ export const CITY_RECIPE: RecipeDef = {
   description: 'Road-first town: plaza + gate roads + cross-street loops → paving → street-fronting buildings → yard/market scatter → plaza landmark + premise.',
   passes: [roadsPass, pavePass, blocksPass, scatterPass, semanticPass, premisePass],
   // The spawn apron is the plaza's clear heart (plaza r ≈ size*0.1, so houses
-  // hug the rim); budget matches the live envelope (40 since the 2026-07
-  // pather perf pass) so a default bake IS a full-density town.
+  // hug the rim); budget 40 sits comfortably under the live envelope (72
+  // since the P5 re-bench) — a default bake IS a full-density town.
   defaults: { size: 64, maxBarriers: 40, spawnApron: 7, themes: ['city'] },
 }

@@ -177,10 +177,10 @@ settled decisions live in `procedural-generation-architecture-plan.md`; its open
   gates SHIPPED as P3, live-opt-in via `mapGen.gates` pending the phase-4
   feel pass — no live location has opted in yet): the **desire-path pass**
   (paint dirt/road surface along spawn→portal graph routes through the
-  pinches, zero rect cost); the **moderate-envelope bench**
-  (procedural-generation-architecture-plan.md decision 3): re-bench
-  `map-perf-envelope.test.ts` on river-map geometry and raise the live cap
-  toward ~56–72 (the same bench retires the dungeon's 72-rect live debt).
+  pinches, zero rect cost); **retune the field allotment dials to SPEND the
+  72 envelope** (P5 landed the cap, but RIVER_DIALS/outcrop/gate allotments
+  plateau real spend at ~21 rects @96² / ~38 @200² — the new headroom buys
+  nothing until the dials are deliberately retuned and lab-reviewed).
   River polish punts: river ignores the lake as a destination (edge-to-edge
   guarantees bisection; feed-the-lake is coherence polish); the lane design
   means a river never crosses the map centre (an apron-band detour would
@@ -247,9 +247,9 @@ Deferred phases (each independently shippable):
 - **Phase 6 — interactables / dynamic barriers.** The one invariant-breaker
   (BSNAP byte-identical replay must survive it); gated behind everything
   above.
-- **Cross-cutting.** The dungeon's 72-rect budget still wants either a
-  further pather-perf pass or a trimmed live variant (or the track-C
-  moderate-envelope bench). `GenResult.notes` accumulate across reroll
+- **Cross-cutting.** The dungeon recipe is perf-viable live (P5 benched 72);
+  what remains for a live dungeon is content wiring (a location adopting the
+  recipe, spawn/lair integration). `GenResult.notes` accumulate across reroll
   attempts — note-matching tests/tools can see notes from rejected attempts;
   consider per-attempt note scoping. `Math.hypot` feeds strict-inequality
   tie-breaks in mapgen sorts — same-process determinism (the save contract)
