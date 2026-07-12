@@ -173,17 +173,21 @@ settled decisions live in `procedural-generation-architecture-plan.md`; its open
   rule 2 eventually needs portal-on-ungated-subgraph enforcement); surface
   the `regions` claims plane in the `?mapgen=1` lab (region tinting in the
   layer inspector).
-- **Track C — rivers + crossings + desire paths** (consumes B). Hydrology
-  v2: descending river band on the elevation field; ford (shallow strip) /
-  bridge (road surface over the gap) crossings as graph edges; a desire-path
-  pass painting surface along spawn→portal routes (zero rect cost); first
-  overworld proficiency gate (mobility ford / perception hidden trail) via
-  the shared `gates.ts`. **Starts with the moderate-envelope bench**
-  (procedural-generation-architecture-plan.md decision 3): re-bench `map-perf-envelope.test.ts` on
-  realistic river-map geometry and raise the live cap to what holds (~56–72
-  target — the posture is a moderate budget, with 40 as the currently-benched
-  number, not a design ceiling). The same bench retires the dungeon's
-  72-rect live debt (cross-cutting, below).
+- **Track C — remaining** (rivers + ford/bridge crossings SHIPPED as P2;
+  still open): the **desire-path pass** (paint dirt/road surface along
+  spawn→portal graph routes through the pinches, zero rect cost); the first
+  **overworld proficiency gate** (P3 — mobility ford / perception hidden
+  trail via the shared `gates.ts`); the **moderate-envelope bench**
+  (procedural-generation-architecture-plan.md decision 3): re-bench
+  `map-perf-envelope.test.ts` on river-map geometry and raise the live cap
+  toward ~56–72 (the same bench retires the dungeon's 72-rect live debt).
+  River polish punts: river ignores the lake as a destination (edge-to-edge
+  guarantees bisection; feed-the-lake is coherence polish); the lane design
+  means a river never crosses the map centre (an apron-band detour would
+  allow it); the river often hugs its lane's outer margin, so the far bank
+  can be a thin rim sliver — review `laneMargin` in the `?mapgen=1` lab;
+  outcrops' L/T second rect bypasses isPlaceable and can seal one ford
+  (tolerated at fordCount 2, validation backstops — watch if it drops to 1).
 - **Track D — flow/tension derived plane.** Distance-to-goal BFS in
   `draft.scratch`, digested to a per-node `intensity` scalar on the semantic
   plane; store consumes it for spawn/reward pacing (mapgen makes the stage,

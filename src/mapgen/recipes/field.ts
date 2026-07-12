@@ -1,13 +1,14 @@
-// The FIELD recipe — overworld, field-first (idea catalog prototyping order
-// steps 1–3 in one vertical slice): macro fields → surface partition → hard
-// geography (lake + ford, outcrops) → scatter → semantic. The point of this
-// recipe is to prove the layers COMPOSE — each pass reads the shared substrate
-// and the planes agree by construction (sand rings the water, trees follow
-// moisture, outcrops sit on rough ground, the ford is walkable because the
-// deep-water rects were built around it).
+// The FIELD recipe — overworld, field-first: macro fields → surface partition
+// → hard geography (lake + ford, river + crossings, outcrops) → derived region
+// graph → scatter → semantic. The point of this recipe is that the layers
+// COMPOSE — each pass reads the shared substrate and the planes agree by
+// construction (sand rings the water, trees follow moisture, outcrops sit on
+// rough ground, fords are walkable because the deep-water rects were built
+// around them), and the nav graph is DERIVED from whatever geography grew
+// (regions pass → deriveRegions), never authored.
 //
-// Dungeon (graph-first) and city (road-first) are future recipes over this same
-// pipeline; they share the bake/validate tail unchanged.
+// Dungeon (graph-first) and city (road-first) are sibling recipes over this
+// same pipeline; they share the bake/validate tail unchanged.
 
 import type { ScatterIntent, ScatterKind, SurfaceMaterial } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
@@ -141,11 +142,17 @@ export const RIVER_DIALS = {
   minSize: 56,        // maps smaller than this stay river-less (the lane math below
                       //   needs size/2 ≥ apron + laneGap + laneMargin + minLaneWidth)
   maxRects: 14,       // EXPLICIT budget allotment: the river never spends more rects
-                      //   than min(this, maxBarriers − already-spent); can't fit → skip whole
+                      //   than min(this, maxBarriers − already-spent − outcropReserve);
+                      //   can't fit → skip whole
+  outcropReserve: 4,  // rects LEFT for the outcrops pass (decision 3: allotments, not a
+                      //   race — without this a tight cap let the river starve outcrops
+                      //   to zero and the map reads as bare banks)
   segRows: 20,        // ~rows of course per cover rect: one bbox rect per knot segment
   minSegments: 3,     // fewer cover segments than this can't read as a river → skip
   maxSegDrift: 4,     // max cross-axis wander per knot segment (bounds rect width =
-                      //   drift + 2·deepHalf, which is what keeps rects ≥60% wet)
+                      //   drift + 2·deepHalf, which keeps rects comfortably wet in
+                      //   practice — a keep-clear push can exceed this bound, where
+                      //   the water-coherence rule + reroll policy backstop)
   deepHalf: 1.5,      // deep channel half-width → ~3 painted deep cells per row
   shallowRim: 1.5,    // shallow-water rim beyond the deep core (the wet margin)
   sandRim: 1.5,       // sand banks beyond the shallows (same read as the lake shore)
@@ -187,8 +194,10 @@ const riverPass = {
     if (size < D.minSize) { note(`map ${size} < ${D.minSize} — too small for a river, skipped`); return }
 
     // ── budget allotment (decision 3: explicit per-pass allotment) ──────────
+    // The reserve keeps the river from winning the whole race under a tight
+    // cap: outcrops run after and must still be able to fire.
     const remaining = params.maxBarriers - draft.collision.length
-    const allot = Math.min(D.maxRects, remaining)
+    const allot = Math.min(D.maxRects, remaining - D.outcropReserve)
     const nSeg = Math.min(Math.ceil(size / D.segRows), allot - D.fordCount)
     if (nSeg < D.minSegments) {
       note(`no barrier budget for a coherent river (${remaining} rect(s) left, need ≥ ${D.minSegments + D.fordCount}) — skipped`)
@@ -321,7 +330,7 @@ const riverPass = {
     for (let a = 0; a < size; a++) {
       const c = cLine[a]
       const ford = inFord(a)
-      const fordMat: SurfaceMaterial = a >= bridgeAt && a < bridgeAt + D.fordRows ? 'road' : 'shallow-water'
+      const fordMat: SurfaceMaterial = bridgeAt >= 0 && a >= bridgeAt && a < bridgeAt + D.fordRows ? 'road' : 'shallow-water'
       for (let bi = Math.floor(c - sandHalf); bi <= Math.ceil(c + sandHalf); bi++) {
         if (bi < 0 || bi >= size) continue
         const d = Math.abs(bi + 0.5 - c)
@@ -371,7 +380,7 @@ const riverPass = {
       }
     }
     const spent = draft.collision.length - spent0
-    note(`river: ${vert ? 'N–S' : 'W–E'} course, ${fords.length} ford(s)${bridgeAt >= 0 ? ' (1 bridge)' : ''}, ` +
+    note(`${vert ? 'N–S' : 'W–E'} course, ${fords.length} ford(s)${bridgeAt >= 0 ? ' (1 bridge)' : ''}, ` +
       `${spent} rect(s) spent of ${allot} allotted (${draft.collision.length}/${params.maxBarriers} total)`)
   },
 }
@@ -734,7 +743,9 @@ const scatterEdgesPass = {
       for (let x = 1; x < size - 1; x++) {
         if (placed >= cap) break shore
         const mat = matAt(draft, x, y)
-        if (mat === 'shallow-water' || mat === 'deep-water') continue
+        // road too: a bridge plank flanked by river water reads as "shore",
+        // but a reed mid-plank sits in the tactical choke (review finding)
+        if (mat === 'shallow-water' || mat === 'deep-water' || mat === 'road') continue
         let onShore = false
         for (let dy = -1; dy <= 1 && !onShore; dy++) {
           for (let dx = -1; dx <= 1; dx++) {

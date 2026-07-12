@@ -257,8 +257,22 @@ describe('field recipe fuzz gate', () => {
       keepClear: [{ x: 0, y: 45, w: 6, h: 10 }],
     })
     expect(r.spec.collision.length).toBeLessThanOrEqual(12)
-    for (const c of r.spec.collision.filter((x) => x.material !== 'deep-water')) {
+    // EVERY rect (water included — the river's avoidBoxes and the lake's site
+    // pick both dodge keep-clear) stays out of the box; and the non-water
+    // filter below must filter a non-empty set, or this assertion is vacuous
+    // (review finding: at cap 12 the river once starved outcrops to zero).
+    for (const c of r.spec.collision) {
       expect(c.x + c.w < 0 || c.x > 6 || c.y + c.h < 45 || c.y > 55, `rect ${JSON.stringify(c)} in keep-clear`).toBe(true)
     }
+    expect(r.spec.collision.filter((x) => x.material !== 'deep-water').length,
+      'outcrops were budget-starved to zero — the keep-clear check above proved nothing about them').toBeGreaterThan(0)
+  })
+
+  it('outcrops still fire on water maps at the default cap (the river reserves them headroom)', () => {
+    let outcropped = 0
+    for (const r of sweep(120, ['plains', 'water'])) {
+      if (r.spec.collision.some((c) => c.material === 'rock' || c.material === 'hedge' || c.material === 'ravine')) outcropped++
+    }
+    expect(outcropped).toBeGreaterThan(SEEDS.length * 0.7)
   })
 })
