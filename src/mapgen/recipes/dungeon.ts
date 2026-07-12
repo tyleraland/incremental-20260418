@@ -3,14 +3,20 @@
 // spread, "polymorph" irregular rooms, Errant corridors, kept dead-ends).
 //
 // The plan comes BEFORE the geometry: `layout` free-places rooms of wildly
-// varied size and shape on the cell grid, connects them with a spanning tree
-// plus extra edges — CYCLIC layouts (⭐4: loops, not trees — back-routes and
-// flanking) — and carves winding corridors between them. Only then does
-// `carve` realize the negative space as wall rects (greedy maximal-rectangle
-// cover of the solid mask), so floor shape is FREE-FORM — L/T composites,
-// closets, long halls, cave-notched edges — while collision stays rects
-// forever. Stamps (§I) drop authored set pieces into rooms under budget;
-// depth is graph distance from the entry (§G), and the lair sits at max depth.
+// varied size and shape on the cell grid, then builds the graph CYCLE-FIRST
+// (Unexplored-style, architecture plan track E): the primary cycle is the
+// DESIGNED skeleton — entry → goal (the farthest room) along two node-disjoint
+// arcs — every remaining room hangs off it as a tree leaf, and an optional
+// chord adds a second loop. Rewrite steps then operate ON the cycle (the
+// `shortcut` pass gates one mid-arc edge). ⭐4's loops-not-trees is thus a
+// guarantee, not an accident: ≥3 rooms ⇒ edges ≥ nodes by construction.
+// Corridors carve winding door-to-door between the chained rooms; only then
+// does `carve` realize the negative space as wall rects (greedy
+// maximal-rectangle cover of the solid mask), so floor shape is FREE-FORM —
+// L/T composites, closets, long halls, cave-notched edges — while collision
+// stays rects forever. Stamps (§I) drop authored set pieces into rooms under
+// budget; depth is graph distance from the entry (§G), the lair sits at max
+// depth, and the goal anchors the cycle's far end.
 //
 // NOT live on any location yet: a dungeon spends ~30–60 rects against the
 // live pathing envelope of 40 (raised from 16 by the 2026-07 pather perf
@@ -22,7 +28,7 @@ import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
 import { hashString } from '../rng'
 import { bfsDepth, nodeDegrees } from '../graph'
-import { GATE_TAGS, placeProficiencyLock } from '../gates'
+import { GATE_TAGS, placeProficiencyLock, placeShortcutLock } from '../gates'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
 import { STAMP_REGISTRY, placeStamp, stampBarrierCost, type StampDef } from '../stamps'
@@ -47,12 +53,17 @@ interface Room {
   rects: Rect[]              // full composite (primary + polymorph lobes)
 }
 // The layout plan — an L6 derived plane (procedural-generation-architecture-plan.md): produced by
-// `layout`, consumed by `carve` and `gates` via draft.scratch['plan'].
+// `layout`, consumed by `carve`, `gates`, and `shortcut` via draft.scratch['plan'].
+// `arc` records each edge's role in the cycle-first skeleton: 'A'/'B' = the
+// primary cycle's two arcs (the rewrite substrate), 'chord' = the optional
+// second loop, 'leaf' = tree-attached fringe (the dead-end candidates).
 interface Plan {
   walk: Uint8Array
   rooms: Room[]
-  edges: { a: string; b: string; doorAt?: Pt }[]
+  edges: { a: string; b: string; doorAt?: Pt; arc: 'A' | 'B' | 'chord' | 'leaf' }[]
   corridorCells: number[]
+  entryId: string
+  goalId: string
 }
 const getPlan = (draft: PassCtx['draft']) => draft.scratch.get('plan') as Plan | undefined
 
@@ -65,7 +76,7 @@ function carveRect(walk: Uint8Array, size: number, r: Rect) {
   for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) walk[idx(size, x, y)] = 1
 }
 
-// ── layout: scattered polymorph rooms + a cyclic graph + errant corridors ────
+// ── layout: scattered polymorph rooms + cycle-first skeleton + corridors ─────
 const layoutPass = {
   id: 'layout',
   run({ draft, params, fields, rng, note }: PassCtx) {
@@ -140,36 +151,116 @@ const layoutPass = {
       }, r.chance(0.6))
     }
 
-    // Graph: candidate edges to each room's 3 nearest neighbours, randomized
-    // spanning tree, plus up to 2 spares — the cycles.
-    const cands: { a: number; b: number; d: number }[] = []
-    for (let i = 0; i < rooms.length; i++) {
-      const near = rooms
-        .map((q, j) => ({ j, d: Math.hypot(center(q.primary).x - center(rooms[i].primary).x, center(q.primary).y - center(rooms[i].primary).y) }))
-        .filter((q) => q.j !== i)
-        .sort((p, q) => p.d - q.d)
-        .slice(0, 3)
-      for (const n of near) {
-        const [a, b] = [Math.min(i, n.j), Math.max(i, n.j)]
-        if (!cands.some((c) => c.a === a && c.b === b)) cands.push({ a, b, d: n.d })
-      }
-    }
-    const shuf = rng('graph')
-    for (let i = cands.length - 1; i > 0; i--) { const j = shuf.int(i + 1); [cands[i], cands[j]] = [cands[j], cands[i]] }
-    const parent = rooms.map((_, i) => i)
-    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])))
+    // Graph: CYCLE-AS-PRIMITIVE (Unexplored-style; architecture plan track E).
+    // The primary cycle is the designed skeleton: entry → GOAL (the farthest
+    // room — max graph depth lands there naturally) along two node-disjoint
+    // arcs, split by which side of the entry→goal axis each room's centre
+    // falls on and chained in axis-projection order. Rooms that would make a
+    // degenerate arc (behind the entry, past the goal, far off the axis) hang
+    // off the cycle as tree leaves instead — the dead-end fringe the vault
+    // gates pass needs. One optional chord (~0.4) adds a second loop.
+    // ≥3 rooms ⇒ ≥1 cycle by construction: connected AND edges ≥ nodes.
+    const g = rng('graph')
     const edges: Plan['edges'] = []
-    const spare: typeof cands = []
-    for (const c of cands) {
-      if (find(c.a) === find(c.b)) { spare.push(c); continue }
-      parent[find(c.a)] = find(c.b)
-      edges.push({ a: rooms[c.a].id, b: rooms[c.b].id })
-    }
-    let loops = 0
-    for (const c of spare) {
-      if (loops >= 2) break
-      edges.push({ a: rooms[c.a].id, b: rooms[c.b].id })
-      loops++
+    const entryId = rooms.length ? rooms[0].id : ''
+    let goalId = ''
+    let arcSizes: [number, number] = [0, 0]
+    let chorded = false
+    let leafCount = 0
+    if (rooms.length >= 2) {
+      const eC = center(rooms[0].primary)
+      // farthest room from the entry (Euclidean; strictly-greater keeps the
+      // first max — deterministic tie-break by room index)
+      let goalIdx = 1, goalD = -1
+      for (let i = 1; i < rooms.length; i++) {
+        const c = center(rooms[i].primary)
+        const d = Math.hypot(c.x - eC.x, c.y - eC.y)
+        if (d > goalD) { goalD = d; goalIdx = i }
+      }
+      goalId = rooms[goalIdx].id
+      const gC = center(rooms[goalIdx].primary)
+      const ax = gC.x - eC.x, ay = gC.y - eC.y
+      const axisLen = Math.hypot(ax, ay) || 1
+      type ArcRoom = { i: number; t: number }
+      const arcA: ArcRoom[] = [], arcB: ArcRoom[] = []
+      const leftover: number[] = []
+      for (let i = 1; i < rooms.length; i++) {
+        if (i === goalIdx) continue
+        const c = center(rooms[i].primary)
+        const t = ((c.x - eC.x) * ax + (c.y - eC.y) * ay) / (axisLen * axisLen)
+        const cross = ax * (c.y - eC.y) - ay * (c.x - eC.x)
+        const perp = Math.abs(cross) / axisLen
+        // degenerate-arc filter: keep arcs reasonable — a room behind the
+        // entry, past the goal, or far off the axis would be a huge detour
+        if (t <= 0.02 || t >= 0.98 || perp > axisLen * 0.4) { leftover.push(i); continue }
+        ;(cross >= 0 ? arcA : arcB).push({ i, t })
+      }
+      // A cycle needs ≥1 intermediate room (two parallel entry→goal edges
+      // would be one corridor, not a loop): if both arcs came up empty but
+      // other rooms exist, promote the one nearest the axis midpoint.
+      if (!arcA.length && !arcB.length && leftover.length) {
+        const mid = { x: eC.x + ax / 2, y: eC.y + ay / 2 }
+        let best = 0, bestD = Infinity
+        for (let k = 0; k < leftover.length; k++) {
+          const c = center(rooms[leftover[k]].primary)
+          const d = Math.hypot(c.x - mid.x, c.y - mid.y)
+          if (d < bestD) { bestD = d; best = k }
+        }
+        arcA.push({ i: leftover[best], t: 0.5 })
+        leftover.splice(best, 1)
+      }
+      const byT = (p: ArcRoom, q: ArcRoom) => p.t - q.t || p.i - q.i
+      arcA.sort(byT); arcB.sort(byT)
+      arcSizes = [arcA.length, arcB.length]
+      // chain entry → side rooms (projection order) → goal; an empty side
+      // still contributes its direct entry→goal edge so the cycle survives
+      const chain = (arc: ArcRoom[], tag: 'A' | 'B') => {
+        let prev = 0
+        for (const { i } of arc) { edges.push({ a: rooms[prev].id, b: rooms[i].id, arc: tag }); prev = i }
+        edges.push({ a: rooms[prev].id, b: rooms[goalIdx].id, arc: tag })
+      }
+      if (arcA.length || arcB.length) { chain(arcA, 'A'); chain(arcB, 'B') }
+      else edges.push({ a: entryId, b: goalId, arc: 'A' })   // 2-room floor: a bare link, no cycle possible
+
+      // one optional chord between two non-adjacent cycle nodes — a second
+      // loop, picked among the closest pairs so it stays a lane, not a
+      // map-crossing highway
+      const cycleIdx = [0, ...arcA.map((q) => q.i), goalIdx, ...arcB.map((q) => q.i)]
+      if ((arcA.length || arcB.length) && g.chance(0.4)) {
+        const linked = new Set(edges.map((e) => `${e.a}|${e.b}`))
+        const pairs: { a: number; b: number; d: number }[] = []
+        for (let p = 0; p < cycleIdx.length; p++) {
+          for (let q = p + 1; q < cycleIdx.length; q++) {
+            const A = rooms[cycleIdx[p]], B = rooms[cycleIdx[q]]
+            if (linked.has(`${A.id}|${B.id}`) || linked.has(`${B.id}|${A.id}`)) continue
+            const cA = center(A.primary), cB = center(B.primary)
+            pairs.push({ a: cycleIdx[p], b: cycleIdx[q], d: Math.hypot(cA.x - cB.x, cA.y - cB.y) })
+          }
+        }
+        pairs.sort((p, q) => p.d - q.d || p.a - q.a || p.b - q.b)
+        if (pairs.length) {
+          const c = g.pick(pairs.slice(0, Math.min(3, pairs.length)))
+          edges.push({ a: rooms[c.a].id, b: rooms[c.b].id, arc: 'chord' })
+          chorded = true
+        }
+      }
+
+      // every remaining room hangs off the nearest already-connected room
+      // (deterministic order: ascending room index; strictly-less keeps the
+      // earliest-connected on ties) — the tree fringe that keeps dead-ends
+      const connected = [...cycleIdx]
+      for (const i of leftover) {
+        const c = center(rooms[i].primary)
+        let near = connected[0], nearD = Infinity
+        for (const j of connected) {
+          const cj = center(rooms[j].primary)
+          const d = Math.hypot(cj.x - c.x, cj.y - c.y)
+          if (d < nearD) { nearD = d; near = j }
+        }
+        edges.push({ a: rooms[near].id, b: rooms[i].id, arc: 'leaf' })
+        connected.push(i)
+        leafCount++
+      }
     }
 
     // Errant corridors: DOOR to DOOR (each end exits its room's boundary
@@ -251,7 +342,7 @@ const layoutPass = {
     }
 
     for (let i = 0; i < size * size; i++) if (walk[i]) corridorCells.push(i)
-    note(`${rooms.length} rooms (${rooms.filter((q) => q.rects.length > 1).length} polymorph), ${edges.length} corridors (${loops} loop edge(s)), ${stubs} stub(s)`)
+    note(`${rooms.length} rooms (${rooms.filter((q) => q.rects.length > 1).length} polymorph), ${edges.length} corridors: cycle of ${2 + arcSizes[0] + arcSizes[1]} (arcs ${arcSizes[0]}+${arcSizes[1]}${chorded ? ', +1 chord' : ''}), ${leafCount} leaf room(s), ${stubs} stub(s)`)
 
     // Spawn in the entry hall FIRST (isPlaceable apron guards it from here on).
     const entry = rooms[0]
@@ -263,7 +354,7 @@ const layoutPass = {
       id: q.id, at: center(q.primary), area: q.primary, depth: depth.get(q.id) ?? 0,
     }))
     draft.semantic.nav.edges = edges.map((e) => ({ a: e.a, b: e.b, kind: 'corridor' as const, doorAt: e.doorAt }))
-    draft.scratch.set('plan', { walk, rooms, edges, corridorCells } satisfies Plan)
+    draft.scratch.set('plan', { walk, rooms, edges, corridorCells, entryId, goalId } satisfies Plan)
   },
 }
 
@@ -478,6 +569,83 @@ const gatesPass = {
   },
 }
 
+// ── shortcut: the first cycle REWRITE step (architecture plan track E) ───────
+// With the cycle guaranteed by layout, rewrite steps operate ON it: with ~0.5
+// chance this pass plugs the doorAt of ONE mid-arc cycle edge (never an edge
+// touching entry or goal) with a proficiency seal. Closed = the party takes
+// the long way around the cycle; open = the shortcut works. It gates a ROUTE,
+// not a prize (Lock.gates = []) — nothing is ever stranded: the long way is
+// proven on the walk mask before committing (with every already-closed lock's
+// plug also blocked), and the validator's `reachable` rule proves the bake.
+const shortcutPass = {
+  id: 'shortcut',
+  run({ draft, params, rng, note }: PassCtx) {
+    const plan = getPlan(draft)
+    if (!plan) { note('no layout plan — skipped'); return }
+    const r = rng('place')
+    if (!r.chance(0.5)) { note('rewrite skipped (coin)'); return }
+    if (draft.collision.length >= params.maxBarriers) { note('no barrier budget left — shortcut skipped'); return }
+    const navEdges = draft.semantic.nav.edges
+    // mid-arc cycle edges only — the cycle's first/last legs are the entry and
+    // goal rooms' critical fan-out, never gated
+    const cands = plan.edges
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => (e.arc === 'A' || e.arc === 'B') && e.doorAt &&
+        e.a !== plan.entryId && e.b !== plan.entryId && e.a !== plan.goalId && e.b !== plan.goalId)
+    if (!cands.length) { note('no mid-arc cycle edge — shortcut skipped'); return }
+
+    // The long way must hold for EVERYTHING: flood the walk mask from the
+    // spawn with this plug AND every already-closed lock's plug blocked, and
+    // require every room centre outside sealed dead-ends to stay reached.
+    const { size } = params
+    const half = 2.25
+    const closedPlugs = draft.semantic.locks.filter((l) => !l.open && l.at).map((l) => l.at!)
+    const degree = nodeDegrees(navEdges)
+    const sealedRooms = new Set<string>()
+    for (const e of navEdges) {
+      if (!e.lockId) continue
+      const lock = draft.semantic.locks.find((l) => l.id === e.lockId)
+      if (lock && !lock.open) sealedRooms.add(degree.get(e.a) === 1 ? e.a : e.b)
+    }
+    const spawnPoi = draft.semantic.pois.find((p) => p.kind === 'spawn')!
+    const longWayHolds = (at: Pt): boolean => {
+      const plugs = [...closedPlugs, at]
+      const passable = (x: number, y: number) =>
+        plan.walk[y * size + x] === 1 && !plugs.some((p) => Math.abs(x + 0.5 - p.x) < half && Math.abs(y + 0.5 - p.y) < half)
+      const start = Math.floor(spawnPoi.at.y) * size + Math.floor(spawnPoi.at.x)
+      if (!passable(start % size, Math.floor(start / size))) return false
+      const seen = new Uint8Array(size * size)
+      const stack = [start]
+      seen[start] = 1
+      while (stack.length) {
+        const i = stack.pop()!
+        const x = i % size, y = (i / size) | 0
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue
+          const j = ny * size + nx
+          if (!seen[j] && passable(nx, ny)) { seen[j] = 1; stack.push(j) }
+        }
+      }
+      return draft.semantic.nav.nodes.every((n) =>
+        sealedRooms.has(n.id) || seen[Math.floor(n.at.y) * size + Math.floor(n.at.x)])
+    }
+
+    const start = r.int(cands.length)
+    let choice: (typeof cands)[number] | null = null
+    for (let k = 0; k < cands.length; k++) {
+      const probe = cands[(start + k) % cands.length]
+      if (longWayHolds(probe.e.doorAt!)) { choice = probe; break }
+    }
+    if (!choice) { note(`${cands.length} cycle edge candidate(s), none keeps the long way open — shortcut skipped`); return }
+    const tag = r.pick(GATE_TAGS)
+    const at = choice.e.doorAt!
+    const { id, open } = placeShortcutLock(draft, { tag, at })
+    navEdges[choice.i].lockId = id
+    note(`${tag} shortcut ${open ? 'OPEN (party kit)' : 'sealed'} on ${choice.e.a}→${choice.e.b} at ${at.x},${at.y}`)
+  },
+}
+
 // ── scatter: debris thickens with depth (§G gradient made visible) ───────────
 const scatterPass = {
   id: 'scatter',
@@ -516,10 +684,12 @@ const semanticPass = {
 export const DUNGEON_RECIPE: RecipeDef = {
   id: 'dungeon',
   name: 'Dungeon Floor',
-  description: 'Graph-first, donjon-flavored dungeon: scattered polymorph rooms → cyclic corridor graph → errant corridors + dead-end stubs → maximal-rect wall cover → stamps → depth-graded debris → lair.',
-  // gates BEFORE stamps: locks are structure (they claim a dead-end and its
-  // door), stamps are dressing (they skip rooms that already have POIs).
-  passes: [layoutPass, carvePass, floorPass, gatesPass, stampsPass, scatterPass, semanticPass, premisePass],
+  description: 'Graph-first, donjon-flavored dungeon: scattered polymorph rooms → cycle-first skeleton (entry→goal twin arcs + leaf fringe) → errant corridors + dead-end stubs → maximal-rect wall cover → shortcut-lock rewrite → stamps → depth-graded debris → lair.',
+  // gates + shortcut BEFORE stamps: locks are structure (they claim a
+  // dead-end / a cycle edge and its door), stamps are dressing (they skip
+  // rooms that already have POIs). gates before shortcut: the dead-end vault
+  // keeps budget priority; the rewrite step only fires if budget remains.
+  passes: [layoutPass, carvePass, floorPass, gatesPass, shortcutPass, stampsPass, scatterPass, semanticPass, premisePass],
   // Free-form floors cost more rects (~30–60) than the old lattice — still
   // lab/encounter only until the pather perf pass (BACKLOG). Spawn sits in the
   // entry hall, so the apron is room-sized.

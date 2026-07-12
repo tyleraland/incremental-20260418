@@ -61,3 +61,37 @@ export function placeProficiencyLock(
   draft.semantic.locks.push({ id, kind: 'proficiency', tag, at, open, gates: [`${id}-prize`] })
   return { id, open }
 }
+
+export interface ShortcutLockSite {
+  tag: ProficiencyTag
+  at: Pt              // the pinch (mirrored by the 'gate' POI; a closed seal centers here)
+  look?: GateLook     // seal dressing override (defaults to GATE_LOOKS[tag])
+  sealHalf?: number   // half-extent of the square seal plug (default 2.25 — swallows a ≤3-wide pinch)
+}
+
+// A ROUTE lock, not a prize lock — the cycle-rewrite shortcut (architecture
+// plan track E). It gates a graph EDGE the caller has proven redundant (a
+// cycle's short way): closed = the party takes the long way around; open = the
+// shortcut works. `gates: []` because no POI is behind it — the validator's
+// `locks` rule then only checks gate-site approachability, and the `reachable`
+// rule proves nothing was stranded. Id is namespaced `lock-shortcut-<tag>` so
+// it never collides with a dead-end vault lock of the same tag on one floor.
+// Caller wires the edge (`edge.lockId = id`) — the lock doesn't know its graph.
+export function placeShortcutLock(
+  draft: MapDraft,
+  site: ShortcutLockSite,
+): { id: string; open: boolean } {
+  const { tag, at } = site
+  const open = draft.params.proficiencies.includes(tag)
+  const id = `lock-shortcut-${tag}`
+  addPoi(draft, { id: `${id}-gate`, kind: 'gate', at, tags: open ? [tag, 'open'] : [tag] })
+  if (!open) {
+    const look = site.look ?? GATE_LOOKS[tag]!
+    const half = site.sealHalf ?? 2.25
+    // same fat-plug pattern as placeProficiencyLock: oversized so any pinch
+    // narrower than the plug is sealed regardless of heading
+    addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material })
+  }
+  draft.semantic.locks.push({ id, kind: 'proficiency', tag, at, open, gates: [] })
+  return { id, open }
+}

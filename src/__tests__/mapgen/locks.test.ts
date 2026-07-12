@@ -78,16 +78,22 @@ describe('locks validation rule', () => {
 })
 
 describe('dungeon composition gates (variant-at-deploy)', () => {
-  // deterministically find seeds whose floor actually grew a gate
+  // Deterministically find seeds whose floor grew EXACTLY the dead-end vault
+  // gate (no shortcut lock on the same floor — the rect-delta and wrong-kit
+  // assertions below assume the vault lock is the floor's only lock; floors
+  // where both fire are covered by the shortcut suite in recipe-dungeon.test).
   const gated = [] as { seed: number; closed: ReturnType<typeof generateMap>; tag: string }[]
-  for (let seed = 1; seed <= 40 && gated.length < 5; seed++) {
+  for (let seed = 1; seed <= 60 && gated.length < 5; seed++) {
     const r = generateMap(DUNGEON_RECIPE, { recipe: 'dungeon', seed, size: 48, themes: ['dungeon'] })
-    const l = r.spec.semantic.locks[0]
-    if (r.report.ok && l && !l.open) gated.push({ seed, closed: r, tag: l.tag! })
+    const locks = r.spec.semantic.locks
+    const l = locks[0]
+    if (r.report.ok && locks.length === 1 && l && !l.open && !l.id.startsWith('lock-shortcut-')) {
+      gated.push({ seed, closed: r, tag: l.tag! })
+    }
   }
 
   it('gates occur at a healthy rate and validate closed by default', () => {
-    expect(gated.length, 'fewer than 5 gated floors in 40 seeds — gate frequency regressed').toBe(5)
+    expect(gated.length, 'fewer than 5 vault-gated floors in 60 seeds — gate frequency regressed').toBe(5)
     for (const g of gated) {
       const l = g.closed.spec.semantic.locks[0]
       expect(l.open).toBe(false)

@@ -1,12 +1,16 @@
 // Dungeon fuzz gate — graph-first promises, checked over a seed sweep: every
 // map validates (spawn room reachable through its corridors), layouts are
-// CYCLIC (loops, not trees), depth grades to a lair, stamps land under budget,
-// the §J barred-cell's optional vault rides the reachability exemption — and
-// (donjon-flavored) floors are DIVERSE: room sizes spread closet→hall, a good
-// share of rooms are polymorph (L/T composites), corridors wind.
+// CYCLIC BY CONSTRUCTION (the cycle-as-primitive skeleton, architecture plan
+// track E: connected AND edges ≥ nodes on every seed), depth grades to a lair,
+// stamps land under budget, the §J barred-cell's optional vault rides the
+// reachability exemption, the shortcut-lock rewrite step gates a route without
+// stranding anything — and (donjon-flavored) floors are DIVERSE: room sizes
+// spread closet→hall, a good share of rooms are polymorph (L/T composites),
+// corridors wind.
 
 import { describe, it, expect } from 'vitest'
 import { generateMap } from '@/mapgen'
+import { bfsDepth } from '@/mapgen/graph'
 import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
 
 const SEEDS = Array.from({ length: 25 }, (_, i) => i + 1)
@@ -42,18 +46,21 @@ describe('dungeon recipe fuzz gate', () => {
     expect(polymorphSeeds).toBeGreaterThan(SEEDS.length * 0.5)
   })
 
-  it('graph-first: rooms + corridors published on the nav skeleton; most layouts carry a cycle', () => {
-    let cyclic = 0
+  it('cycle by construction: every layout is connected AND carries a cycle (edges ≥ nodes)', () => {
     for (const r of results) {
       const { nodes, edges } = r.spec.semantic.nav
       expect(nodes.length).toBeGreaterThanOrEqual(3)
-      expect(edges.length).toBeGreaterThanOrEqual(nodes.length - 1)   // connected
+      // connected: BFS from the entry node reaches every node
+      const entry = nodes.find((n) => (n.depth ?? 0) === 0)
+      expect(entry, `${r.spec.seed}: no entry node`).toBeDefined()
+      const depth = bfsDepth(edges, entry!.id)
+      for (const n of nodes) expect(depth.has(n.id), `${r.spec.seed}/${n.id} unreachable in the nav graph`).toBe(true)
+      // the cycle guarantee — designed skeleton, not spare-edge luck
+      expect(edges.length, `${r.spec.seed}: tree, no cycle`).toBeGreaterThanOrEqual(nodes.length)
       for (const n of nodes) expect(n.area, `${r.spec.seed}/${n.id} missing area`).toBeDefined()
-      if (edges.length >= nodes.length) cyclic++                      // spanning tree + extra = loop
       // every corridor got a physical door
       for (const e of edges) expect(e.doorAt, `${r.spec.seed}: ${e.a}→${e.b} has no door`).toBeDefined()
     }
-    expect(cyclic).toBeGreaterThan(SEEDS.length * 0.7)
   })
 
   it('depth grades from the entry; the lair sits at max depth; doors read as chokepoints', () => {
@@ -97,7 +104,58 @@ describe('dungeon recipe fuzz gate', () => {
     expect(gen(2).report.ok).toBe(true)
   })
 
-  it('deterministic per (seed, params)', () => {
-    expect(gen(3).spec).toEqual(gen(3).spec)
+  it('deterministic per (seed, params): two bakes of every sweep seed are byte-identical', () => {
+    for (const [k, r] of results.entries()) {
+      expect(JSON.stringify(gen(SEEDS[k]).spec), `seed ${SEEDS[k]} rebaked differently`).toBe(JSON.stringify(r.spec))
+    }
+  })
+})
+
+describe('shortcut lock — the cycle rewrite step', () => {
+  // Deterministically find a floor whose shortcut fired closed AND is that
+  // seed's only lock carrying its tag (a same-tag vault lock would open too
+  // under the kit, muddying the rect-delta assertion). attempts === 1 keeps
+  // the open/closed variants on the same seed, not divergent reroll chains.
+  let found: { seed: number; res: ReturnType<typeof generateMap> } | null = null
+  for (let seed = 1; seed <= 60 && !found; seed++) {
+    const r = gen(seed)
+    const sc = r.spec.semantic.locks.find((l) => l.id.startsWith('lock-shortcut-'))
+    if (!r.report.ok || r.attempts !== 1 || !sc || sc.open) continue
+    if (r.spec.semantic.locks.filter((l) => !l.open && l.tag === sc.tag).length !== 1) continue
+    found = { seed, res: r }
+  }
+
+  it('fires within the sweep and gates a ROUTE, not a prize', () => {
+    expect(found, 'no shortcut lock fired in 60 seeds — rewrite step regressed').not.toBeNull()
+    const lock = found!.res.spec.semantic.locks.find((l) => l.id.startsWith('lock-shortcut-'))!
+    expect(lock.kind).toBe('proficiency')
+    expect(lock.gates).toEqual([])           // nothing behind it — it gates the short way
+    expect(lock.tag).toBeDefined()
+    expect(lock.at).toBeDefined()
+    // wired onto a nav edge whose door it plugs
+    const edge = found!.res.spec.semantic.nav.edges.find((e) => e.lockId === lock.id)
+    expect(edge).toBeDefined()
+    expect(edge!.doorAt).toEqual(lock.at)
+    // never an edge touching entry or goal (depth-0 node = entry)
+    const nodes = found!.res.spec.semantic.nav.nodes
+    const entry = nodes.find((n) => (n.depth ?? 0) === 0)!
+    expect(edge!.a).not.toBe(entry.id)
+    expect(edge!.b).not.toBe(entry.id)
+    // and its gate POI marks the site
+    expect(found!.res.spec.semantic.pois.some((p) => p.id === `${lock.id}-gate` && p.kind === 'gate')).toBe(true)
+  })
+
+  it('closed forces the long way (valid), open kit removes exactly the plug (valid)', () => {
+    const { seed, res: closed } = found!
+    const lock = closed.spec.semantic.locks.find((l) => l.id.startsWith('lock-shortcut-'))!
+    expect(closed.report.ok, JSON.stringify(closed.report.rules.filter((r) => !r.ok))).toBe(true)
+    const open = generateMap(DUNGEON_RECIPE, {
+      recipe: 'dungeon', seed, size: 48, themes: ['dungeon'], proficiencies: [lock.tag!],
+    })
+    expect(open.report.ok, JSON.stringify(open.report.rules.filter((r) => !r.ok))).toBe(true)
+    const openLock = open.spec.semantic.locks.find((l) => l.id === lock.id)!
+    expect(openLock.open).toBe(true)
+    // the closed variant spends exactly one more collision rect — the plug
+    expect(closed.spec.collision.length).toBe(open.spec.collision.length + 1)
   })
 })
