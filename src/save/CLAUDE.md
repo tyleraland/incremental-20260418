@@ -10,7 +10,7 @@ Each `SliceCodec` owns `serialize`/`deserialize`/`empty` and optional `migrate`.
 - Add a persistent concern as a codec in `src/save/*Codec.ts` and register it in `ALL_CODECS` (`src/save/index.ts`).
 
 ## State tiers
-- Persistent: units, inventory, learned recipes, location familiarity/seen, codex, location stats, unit stats/history, party tactics, ticks, battle cooldown/spawn state, item sockets, `savedAt`.
+- Persistent: units, inventory, learned recipes, location familiarity/seen, codex, per-species intel (`intelCodec` — revealed armor/dodge/kit fields, §3.7 intel mask), location stats, unit stats/history, party tactics, ticks, battle cooldown/spawn state, item sockets, `savedAt`.
 - Runtime: location registry materialized from data, event log, `lastTickAt`, offline summary.
 - Ephemeral UI: separate localStorage keys for tabs, selections, expand state, camera nonces, etc.
 

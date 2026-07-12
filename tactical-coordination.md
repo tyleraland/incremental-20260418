@@ -712,12 +712,26 @@ party holds position while a member works, recalls it when the race flips.
 few rounds (RNG-free ⇒ one rollout is a verdict), behind the same planner
 signature. Explicitly not foundation.
 
-**Independent — the intel mask (§3.7).** Off the ladder (any time after
-M0): knowledge codec + event learning in the store, adapter `intel`,
-`knownView` in the scorer. Tests: first contact with an unknown species
-misjudges then sharpens after the reveal; a replayed snapshot carries the
-knowledge held at serialization; fully-revealed codex ⇒ byte-identical to
-omniscient scoring.
+**Independent — the intel mask (§3.7).** ✅ Shipped. Off the ladder (any
+time after M0). Store owns knowledge: `speciesIntel` (per-monster revealed
+fields — armor/dodge/kit) persisted via `intelCodec`, learned by
+`intelRevealsFrom` reading each round's damage events (`eff`/`element` ⇒
+armor, a `dodge` event ⇒ dodge, `skill_use`/`cast_start` ⇒ kit) — pure
+observation, no engine/battle mutation (bugwatch rule), accrues in BOTH
+modes. Adapter masks: `EngineUnitInput.intel?` stamped on enemy inputs and
+serialized on the combatant (`Combatant.intel`, only when set ⇒ legacy
+tokens stay byte-identical), the store's `syncBattleIntel` sweep keeps it in
+step with the codex via `setCombatantIntel` — CURATED mode only, sandbox
+stays omniscient. One choke point: `knownView(target)` (damage.ts) — a
+prototype view whose UNREVEALED fields fall back to priors (neutral armor,
+no dodge, bare kit); `intel` absent OR fully-revealed ⇒ returns the real
+combatant (omniscient fast path). Read by `estimateDamageVs`, `threatProfile`
+(plan.ts), and the masked `knownCapability` (derived beside `capability`,
+never serialized) which `teamplan.ts`'s `appraised` prices camps/kill-order
+through. Resolution keeps true stats. UI: `?` for unrevealed enemy fields in
+`BattleUnitSheet` Stats tab. Tests: `intel-mask.test.ts` (engine byte-identity
++ first-contact sharpening + snapshot-carried knowledge), `intel.test.ts`
+(store learning + codec round-trip/legacy-default).
 
 ## 9. Deliberately not building
 

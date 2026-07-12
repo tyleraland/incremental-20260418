@@ -191,7 +191,24 @@ export function StatsTab({ c, battle, battleOnly = false }: { c: Combatant; batt
           <div>SPD <span className="text-game-text tabular-nums">{c.spd}</span></div>
         </div>
       )}
-      {c.skills.length > 0 && (
+      {/* §intel (tactical-coordination.md §3.7): what the party has LEARNED about
+          this enemy species. Present only when the combatant carries a mask
+          (curated mode; sandbox/heroes are omniscient → no intel → nothing here).
+          An unrevealed fact reads '?' — it sharpens as the codex fills through
+          combat. Purely a readout; the mask itself lives on the combatant. */}
+      {c.intel && (
+        <div className="mt-2 grid grid-cols-3 gap-1 text-[10px] text-game-text-dim">
+          <div>Element <span className={c.intel.armor ? 'text-game-text capitalize' : 'text-amber-300'}>{c.intel.armor ? (c.armorElement ?? 'neutral') : '?'}</span></div>
+          <div>Dodge <span className={c.intel.dodge ? 'text-game-text tabular-nums' : 'text-amber-300'}>{c.intel.dodge ? (c.dodgePeriod ? `1/${c.dodgePeriod}` : 'none') : '?'}</span></div>
+          <div>Kit <span className={c.intel.kit ? 'text-game-text tabular-nums' : 'text-amber-300'}>{c.intel.kit ? c.skills.length : '?'}</span></div>
+        </div>
+      )}
+      {/* Kit unknown until seen cast: hide the true skill list behind '?'. */}
+      {c.intel && !c.intel.kit ? (
+        <div className="mt-2">
+          <div className="text-[10px] text-game-text-dim mb-1">Skills <span className="text-amber-300">? — unseen</span></div>
+        </div>
+      ) : c.skills.length > 0 && (
         <div className="mt-2">
           <div className="text-[10px] text-game-text-dim mb-1">Skills</div>
           <div className="space-y-0.5">

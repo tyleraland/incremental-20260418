@@ -593,13 +593,14 @@ work), sliced into milestones. **M0–M4 shipped** (engagement/kill-order/
 avoid list; pullSetOf + mutual-TTK race + Puller; stance/anchor/formation/
 standing guard/corridor; acumen gates; directives — registry, party slot,
 planner consumption, cloak-hold ambush timing) — see the doc's milestone
-ledger and `src/engine/CLAUDE.md` §coordination. Still open: **M2.5
-rove/jungler**, **M5 objectives + chaperone**, **M6 rollout experiment**, and
-the **intel mask** independent track (imperfect information).
+ledger and `src/engine/CLAUDE.md` §coordination. The **intel mask**
+independent track (imperfect information) is also shipped (`intelCodec` +
+`intelRevealsFrom` learning, adapter `intel` masking gated to curated,
+`knownView` scorer seam). Still open: **M2.5 rove/jungler**, **M5 objectives +
+chaperone**, **M6 rollout experiment**.
 
-**Sequencing (agreed).** Run the **intel mask** as a parallel independent
-track (touches no planner code — mergeable anytime). Slot a **browser tuning
-pass** on the ⏱ knobs alongside, using the sandbox showcases as the QA rig —
+**Sequencing (agreed).** Slot a **browser tuning
+pass** on the ⏱ knobs, using the sandbox showcases as the QA rig —
 `ACUMEN.stance = 90` (vs a fresh roster's ≈75, hides all of M3 from early
 curated play) is the highest-risk knob to confirm first, and the new M4 knobs
 (`DIRECTIVE_PULL_*`, `DIRECTIVE_WOUNDED_WEIGHT`/`HEALER_MULT`, the

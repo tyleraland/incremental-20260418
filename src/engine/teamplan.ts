@@ -48,7 +48,11 @@ export function teamAcumen(state: BattleState, team: Team): number {
 //     threatProfile's reach logic in plan.ts).
 //   hasHeal — any heal skill in the kit.
 export function computeCapability(c: Combatant): KitCapability {
-  const base = c.statuses.length ? { ...c, statuses: [] } : c
+  // Status strip via prototype delegation, not spread: §intel prices a masked
+  // capability by running THIS function over a knownView (itself a prototype
+  // view), and a `{ ...view }` spread would drop every delegated field. Reads
+  // are value-identical to the old shallow copy.
+  const base = c.statuses.length ? (Object.assign(Object.create(c), { statuses: [] }) as Combatant) : c
   let sustainedDamage = effectiveStat(base, 'str')   // basic attack: str * 1, cycle 1
   let reach = attackReach(c)
   for (const s of c.skills) {
@@ -99,6 +103,15 @@ export function passiveAcquires(candidate: Combatant, at: Vec2): boolean {
 }
 
 const byId = (a: Combatant, b: Combatant): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+
+// §intel (tactical-coordination.md §3.7): an ENEMY's capability as this team is
+// entitled to price it — the masked `knownCapability` (computeCapability over
+// knownView, derived beside `capability`) when intel is set, else the true
+// capability (absent intel = omniscient/legacy). Own-team reads (partySustained,
+// medians, fragility) deliberately stay on the true `capability`: a unit always
+// knows itself. Every enemy-appraisal read below (camp pricing, camp reach,
+// squishy kill-order) goes through this one helper — no parallel re-derivations.
+const appraised = (e: Combatant): KitCapability | undefined => e.knownCapability ?? e.capability
 
 // §coordination M2 (tactical-coordination.md §3.3): who joins if we hit `seed`
 // fighting near `at`? Transitive closure over the enemy team's OWN aggro rules
@@ -230,7 +243,9 @@ function directivePullAssignment(
 // killScore shape so M2's pricing is "a few adds," not a new scoring pass.
 function priceOf(camp: Combatant[]): { hp: number; sustained: number } {
   let hp = 0, sustained = 0
-  for (const e of camp) { hp += e.hp; sustained += e.capability?.sustainedDamage ?? 0 }
+  // §intel: camp damage output is priced through `appraised` — an unknown kit
+  // reads as a bare basic attacker, so a first contact can honestly over-pull.
+  for (const e of camp) { hp += e.hp; sustained += appraised(e)?.sustainedDamage ?? 0 }
   return { hp, sustained }
 }
 
@@ -274,7 +289,7 @@ function decideStanceAnchor(
   const c = centroid(members)!
   let campMaxReach = 0, campMaxSpeed = 0
   for (const e of camp) {
-    campMaxReach = Math.max(campMaxReach, e.capability?.reach ?? 0)
+    campMaxReach = Math.max(campMaxReach, appraised(e)?.reach ?? 0)   // §intel: known reach only
     campMaxSpeed = Math.max(campMaxSpeed, moveSpeedOf(e))
   }
   const medReach = median(members.map((m) => m.capability?.reach ?? 0))
@@ -482,8 +497,10 @@ export function decideEngagement(
   const policy = directive?.targetPolicy ?? 'dangerous'
   const killScore = (e: Combatant): number => {
     if (policy === 'squishy') {
-      const toughness = Math.max(EPS, e.capability?.toughness ?? e.maxHp)
-      return (e.capability?.hasHeal ? DIRECTIVE_HEALER_MULT : 1) * DIRECTIVE_SQUISHY_SCALE * partySustained / toughness
+      // §intel: healer-flag and toughness read what we KNOW about the target.
+      const known = appraised(e)
+      const toughness = Math.max(EPS, known?.toughness ?? e.maxHp)
+      return (known?.hasHeal ? DIRECTIVE_HEALER_MULT : 1) * DIRECTIVE_SQUISHY_SCALE * partySustained / toughness
     }
     const ttk = e.hp / Math.max(EPS, partySustained)
     const base = (threat[e.id] ?? 0) / Math.max(EPS, ttk)

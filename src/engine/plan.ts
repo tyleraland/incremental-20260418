@@ -12,7 +12,7 @@
 
 import { attackReach, distance } from './grid'
 import { EPS } from './constants'
-import { estimateDamageVs } from './damage'
+import { estimateDamageVs, knownView } from './damage'
 import { isCaster, castRange, visibleEnemiesOf, nearestEnemyTo } from './spatial'
 import { isChanneledAoe, skillCastTarget, canFinishChannel } from './skills'
 import { findCombatant } from './behavior'
@@ -168,6 +168,14 @@ export function clearPlanCache(): void { threatMemo.clear() }
 
 // The enemy's offensive reach + amortized best-attack score against `self` —
 // the position-independent half of exposureAt's per-enemy work.
+//
+// §intel (tactical-coordination.md §3.7): the enemy is read through knownView —
+// an unrevealed KIT prices as a bare basic attacker (its skill reaches and
+// nukes are invisible until the store's codex learns them), so exposure, kite
+// anchors, and corridor pricing are honestly uncertain about a new species.
+// Memo-safe: intel only changes between rounds (host seam), and the memo is
+// generation-bumped every turn and cleared each round, so a cached value is
+// always what a recompute would produce.
 function threatProfile(state: BattleState, e: Combatant, self: Combatant): { reach: number; score: number } {
   const hash = spatialHashFor(state.combatants)
   const key = `${e.id}|${self.id}`
@@ -175,17 +183,18 @@ function threatProfile(state: BattleState, e: Combatant, self: Combatant): { rea
     const hit = threatMemo.get(key)
     if (hit && hit.gen === planGen) return hit
   }
+  const ke = knownView(e)
   // Threat radius = the enemy's OFFENSIVE reach only (basic attack + damage
   // skills). Not castRange: its utility-standoff fallback counts heal/buff
   // ranges, which made a pure healer price as a threat disc it can't hurt
   // anyone from (review finding).
-  let reach = attackReach(e)
-  for (const s of e.skills) {
+  let reach = attackReach(ke)
+  for (const s of ke.skills) {
     if (s.damageFormula && s.range > reach) reach = s.range
   }
   // Floor at 1: a landed hit always deals ≥1 (defaultCalculateDamage), so an
   // in-reach threat is never free even when mitigation eats its whole formula.
-  const score = Math.max(1, preferredAttackVs(e, self)?.score ?? 0)
+  const score = Math.max(1, preferredAttackVs(ke, self)?.score ?? 0)
   const out = { gen: planGen, reach, score }
   if (hash) threatMemo.set(key, out)
   return out

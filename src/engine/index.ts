@@ -18,10 +18,10 @@ export {
 } from './spatial'
 export {
   variation, evalFormula, effectiveStat, defaultCalculateDamage, calculateHeal,
-  skillDamageEstimate, estimateDamageVs, effectiveArmor,
+  skillDamageEstimate, estimateDamageVs, effectiveArmor, knownView,
 } from './damage'
 export { selectTarget, chooseAction, livingEnemies, livingAllies, findCombatant } from './behavior'
-export { createBattle, addCombatant, relinkCombatant, issueMoveOrder, clearMoveOrder, advanceRound, resolve, finalize, defaultPlanner } from './engine'
+export { createBattle, addCombatant, relinkCombatant, issueMoveOrder, clearMoveOrder, advanceRound, resolve, finalize, defaultPlanner, setCombatantIntel } from './engine'
 export { unitToEngineInput, monsterToEngineInput, companionToEngineInput, COMPANION_LEASH } from './adapter'
 export {
   TACTIC_REGISTRY, resolveTactics, getTactic, hasTactic,

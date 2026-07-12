@@ -15,12 +15,13 @@ import { battlesCodec }     from './battlesCodec'
 import { socketsCodec }     from './socketsCodec'
 import { logisticsCodec }   from './logisticsCodec'
 import { questsCodec }      from './questsCodec'
+import { intelCodec }       from './intelCodec'
 
-export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec, unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec, logisticsCodec, questsCodec }
+export { unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec, unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec, logisticsCodec, questsCodec, intelCodec }
 
 export const ALL_CODECS: SliceCodec<any>[] = [
   unitsCodec, inventoryCodec, locationsCodec, codexCodec, worldCodec, combatStatsCodec,
-  unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec, logisticsCodec, questsCodec,
+  unitStatsCodec, unitHistoryCodec, battlesCodec, socketsCodec, logisticsCodec, questsCodec, intelCodec,
 ]
 
 // Write the current game to *its own mode's* slot and mark that mode active. The

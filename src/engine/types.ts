@@ -224,6 +224,25 @@ export interface TacticResolution {
 
 
 
+// §intel (tactical-coordination.md §3.7): what the OPPOSING team currently
+// knows about a unit — the imperfect-information mask. Each field flags one
+// maskable fact as revealed. The semantics are deliberate and load-bearing:
+//   • ABSENT (`intel` undefined) ⇒ fully known. Every legacy snapshot token,
+//     every hero input, and every sandbox battle carries no intel, so they are
+//     omniscient — byte-identical to pre-intel behavior.
+//   • PRESENT-BUT-EMPTY (`{}`) ⇒ knows NOTHING: scorers read the unit through
+//     `knownView` (damage.ts) and unrevealed fields fall back to priors
+//     (neutral armor, no dodge rhythm, bare kit — a basic attacker).
+// Only ESTIMATION is masked (estimateDamageVs / threatProfile / the masked
+// capability); damage RESOLUTION always reads true stats — reality doesn't
+// care what you know. The store owns learning (it watches damage events) and
+// sets this via the adapter at spawn / `setCombatantIntel` live.
+export interface IntelMask {
+  armor?: boolean   // armorElement revealed
+  dodge?: boolean   // dodgePeriod revealed
+  kit?: boolean     // skills (the kit) revealed
+}
+
 export interface EngineUnitInput {
   id: string
   name: string
@@ -274,6 +293,10 @@ export interface EngineUnitInput {
   leashRange?: number | null
   summonTtl?: number | null
   summonTag?: string | null
+  // §intel: what the OPPOSING team knows about this unit (see IntelMask above).
+  // The adapter stamps it on ENEMY (monster) inputs in curated mode; absent
+  // everywhere else ⇒ omniscient.
+  intel?: IntelMask
 }
 
 // An in-progress channeled cast (channelTime ≥ 1). Resolves when roundsLeft hits
@@ -435,6 +458,17 @@ export interface Combatant {
   // snapshot deserialize; NEVER serialized (rebuilt on load, like `tactics`).
   // Read by nothing in the sim yet (M0).
   capability?: KitCapability
+
+  // §intel (tactical-coordination.md §3.7): what the OPPOSING team knows about
+  // this unit — see the IntelMask doc above. SERIALIZED like any stat (only
+  // when set), so a snapshot replays 1:1 with the knowledge the party had at
+  // serialization time; absent (legacy tokens, heroes, sandbox) ⇒ omniscient.
+  intel?: IntelMask
+  // §intel: this unit's capability as the OPPOSING team is entitled to price it
+  // — computeCapability run through knownView. Set only when `intel` is (absent
+  // ⇒ appraisal reads the true `capability`). Derived at makeCombatant /
+  // deserialize / setCombatantIntel; NEVER serialized (rebuilt, like capability).
+  knownCapability?: KitCapability
 
   // §debug: a small ring buffer of one-line summaries of what this unit did each
   // turn (targeting / movement / action). Purely observational — the BattleView

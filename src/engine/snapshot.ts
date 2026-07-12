@@ -14,7 +14,7 @@
 import { TACTIC_REGISTRY } from './tactics'
 import { makeSkillTactic } from './skills'
 import { makeConsumableTactic, CONSUMABLE_TACTIC_PREFIX } from './consumables'
-import { defaultCalculateDamage } from './damage'
+import { defaultCalculateDamage, knownView } from './damage'
 import { defaultPlanner } from './engine'
 import { computeCapability } from './teamplan'
 import { MAX_ROUNDS } from './constants'
@@ -54,11 +54,12 @@ function bodyTag(body: string): number {
 // A combatant minus its resolved-tactic objects (functions); tactics travel as
 // {id, rank} refs and are re-resolved on load. `capability` is derived from the
 // kit (recomputed on load, like tactics) so it's stripped too — keeps tokens
-// byte-identical to pre-capability ones.
-type CombatantSnap = Omit<Combatant, 'tactics' | 'trace' | 'lastResolution' | 'capability'> & { tacticRefs: TacticRef[] }
+// byte-identical to pre-capability ones. `knownCapability` (§intel) is likewise
+// derived (from `intel`, which DOES serialize — only when set) and stripped.
+type CombatantSnap = Omit<Combatant, 'tactics' | 'trace' | 'lastResolution' | 'capability' | 'knownCapability'> & { tacticRefs: TacticRef[] }
 
 function combatantToSnap(c: Combatant): CombatantSnap {
-  const { tactics, trace: _trace, lastResolution: _res, capability: _cap, ...rest } = c
+  const { tactics, trace: _trace, lastResolution: _res, capability: _cap, knownCapability: _kcap, ...rest } = c
   return { ...rest, tacticRefs: tactics.map((t) => ({ id: t.def.id, rank: t.rank })) }
 }
 
@@ -235,6 +236,10 @@ export function deserializeBattle(token: string): BattleState {
     // §coordination: kit capability is derived — rebuilt here like tactics, so
     // it matches what makeCombatant produced (never serialized).
     c.capability = computeCapability(c)
+    // §intel: `intel` rides the snapshot (only when set — legacy tokens have
+    // none ⇒ omniscient), so a replay carries the knowledge held at
+    // serialization time; the masked capability re-derives from it.
+    if (c.intel) c.knownCapability = computeCapability(knownView(c))
     return c
   })
 

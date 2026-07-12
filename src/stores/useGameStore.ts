@@ -25,7 +25,7 @@ import {
   type ReturnModeId, type SupplyModeId, type ShareFlag,
 } from '@/proto/expedition'
 import type { ClassQuestCommit } from '@/proto/protoStore'
-import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, DIRECTIVE_REGISTRY, DEFAULT_DIRECTIVE_ID, setTeamDirective, withDirectiveTactics, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type TacticDef, type TacticChannel } from '@/engine'
+import { createBattle, addCombatant, relinkCombatant, advanceRound, issueMoveOrder, unitToEngineInput, monsterToEngineInput, companionToEngineInput, pointBlocked, MULTI_ATTACK_MAX, TACTIC_REGISTRY, SKILL_TACTICS, inheritedTacticIds, DIRECTIVE_REGISTRY, DEFAULT_DIRECTIVE_ID, setTeamDirective, withDirectiveTactics, setCombatantIntel, type Barrier, type BattleState, type Combatant, type EngineUnitInput, type IntelMask, type TacticDef, type TacticChannel } from '@/engine'
 import { RECIPE_REGISTRY } from '@/data/recipes'
 import { generateForLocationCached, specBarriers } from '@/mapgen'
 import { partyProficiencyTags } from '@/lib/proficiencies'
@@ -93,6 +93,13 @@ export interface GameState {
   locationMonstersSeen:   Record<string, string[]>    // locationId → monsterIds seen
   monsterSeen:            Record<string, number>      // monsterId → total global sighting count
   monsterDefeated:        Record<string, number>      // monsterId → total defeat count
+  // §intel (tactical-coordination.md §3.7): per-species revealed-fields codex —
+  // which facts about each monster species the party has LEARNED by watching
+  // combat (armor element / dodge rhythm / skill kit). The store owns learning
+  // (intelRevealsFrom over the round's events); the adapter/sweep masks enemy
+  // combatants with it in CURATED mode only (sandbox stays omniscient).
+  // Persisted via intelCodec; accrues in both modes.
+  speciesIntel:           Record<string, IntelMask>   // monsterId → revealed fields
   locationStats:          Record<string, LocationCombatStats>  // locationId → cumulative combat stats
   unitStats:              Record<string, UnitCombatStats>      // unitId → lifetime combat tally (Report panel)
   unitStatHistory:        Record<string, StatBucket[]>         // unitId → rolling minute-buckets (battle-report 5m/1h windows)
@@ -501,6 +508,34 @@ function openWorldSize(loc: Location): number {
 // Enemy combatant ids are `${monsterId}#${index}`; players use the unit id.
 export function monsterIdOf(combatantId: string): string {
   return combatantId.split('#')[0]
+}
+
+// §intel (tactical-coordination.md §3.7): what did THIS round's events reveal
+// about enemy species? The engine only EMITS what happened; the store
+// interprets — same authority split as loot RNG:
+//   armor — a damage event on a monster that carries the element matrix's
+//     verdict: a non-neutral attacking element, or any eff ≠ 1 (neutral vs
+//     ghost is 0×) — you watched how its armor answered;
+//   dodge — the monster dodged (its rhythm exists and was seen);
+//   kit   — the monster cast (skill_use / cast_start — it has a kit).
+// Pure observation of the event log — never mutates engine/battle state (the
+// bugwatch rule), so snapshot replays stay byte-identical.
+export function intelRevealsFrom(battle: BattleState): Record<string, IntelMask> {
+  const out: Record<string, IntelMask> = {}
+  const teamOf = new Map(battle.combatants.map((c) => [c.id, c.team]))
+  const mark = (combatantId: string | undefined, field: keyof IntelMask) => {
+    if (!combatantId || teamOf.get(combatantId) !== 'enemy') return
+    const mid = monsterIdOf(combatantId)
+    if (!MONSTER_REGISTRY[mid]) return   // enemy-team hero units (arena) aren't species
+    ;(out[mid] ??= {})[field] = true
+  }
+  for (const e of battle.events) {
+    if (e.round !== battle.round) continue
+    if (e.eff !== undefined && (e.eff !== 1 || (e.element && e.element !== 'neutral'))) mark(e.targetId, 'armor')
+    if (e.type === 'dodge') mark(e.targetId, 'dodge')
+    if (e.type === 'skill_use' || e.type === 'cast_start') mark(e.sourceId, 'kit')
+  }
+  return out
 }
 
 // Combat setup at a location flows through its `testScenarioId`: if set, the
@@ -1193,6 +1228,7 @@ interface CombatStep {
   questDropDelta: Record<string, number>  // quest-item id → quest items collected this tick
   monsterDefeated: Record<string, number>
   monsterSeen: Record<string, number>
+  speciesIntel: Record<string, IntelMask>   // §intel: per-species revealed fields (learning folded in)
   locationMonstersSeen: Record<string, string[]>
   locationStats: Record<string, LocationCombatStats>
   unitStatsDelta: Record<string, CombatTally>   // unitId → lifetime-stat deltas this tick
@@ -1210,6 +1246,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   const monsterSpawnTimers   = { ...s.monsterSpawnTimers }
   const monsterDefeated      = { ...s.monsterDefeated }
   const monsterSeen          = { ...s.monsterSeen }
+  const speciesIntel         = { ...s.speciesIntel }   // §intel: revealed fields fold in here
   const locationMonstersSeen = { ...s.locationMonstersSeen }
   const locationStats        = { ...s.locationStats }
   const unitLevel = new Map(s.units.map((u) => [u.id, u.level]))  // for level-weighted XP split
@@ -1255,6 +1292,51 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
   }
   const enemyMonsterIds = (battle: BattleState) =>
     battle.combatants.filter((c) => c.team === 'enemy').map((c) => monsterIdOf(c.id))
+
+  // §intel learning (tactical-coordination.md §3.7): fold what this round's
+  // events revealed into the per-species codex. Runs in BOTH modes (knowledge
+  // is codex data and survives a mode's whole save); only the masking sweep
+  // below is curated-gated. New-info-only writes, so a fully-learned species
+  // costs one skipped merge.
+  const learnIntel = (battle: BattleState) => {
+    for (const [mid, seen] of Object.entries(intelRevealsFrom(battle))) {
+      const cur = speciesIntel[mid]
+      if (cur?.armor === seen.armor && cur?.dodge === seen.dodge && cur?.kit === seen.kit) continue
+      const next = { ...(cur ?? {}) }
+      let changed = false
+      for (const k of ['armor', 'dodge', 'kit'] as const) {
+        if (seen[k] && !next[k]) { next[k] = true; changed = true }
+      }
+      if (changed) speciesIntel[mid] = next
+    }
+  }
+
+  // §intel sweep: keep every enemy monster's serialized mask in step with the
+  // codex — CURATED mode only. Sandbox (and enemy-team hero units in arena
+  // scenarios, which have no species entry) stays omniscient: absent intel =
+  // fully known, so every existing sandbox flow/test/showcase is untouched.
+  // Runs each tick before the round (cheap three-field compares; a change goes
+  // through setCombatantIntel so the masked capability re-derives and the
+  // battle snapshot carries the knowledge — replays stay 1:1). Mirrors the
+  // setTeamDirective re-apply: it also heals battles deserialized from saves
+  // written in the other mode.
+  const syncBattleIntel = (battle: BattleState) => {
+    const curated = s.progressionMode === 'curated'
+    for (const c of battle.combatants) {
+      if (c.team !== 'enemy') continue
+      if (!curated) {
+        if (c.intel) setCombatantIntel(battle, c.id, undefined)
+        continue
+      }
+      const mid = monsterIdOf(c.id)
+      if (!MONSTER_REGISTRY[mid]) continue
+      const want = speciesIntel[mid] ?? {}
+      const cur = c.intel
+      if (!cur || cur.armor !== want.armor || cur.dodge !== want.dodge || cur.kit !== want.kit) {
+        setCombatantIntel(battle, c.id, want)
+      }
+    }
+  }
 
   // Award exp/gold/loot for every enemy that died this round (was alive before).
   const rewardKills = (loc: Location, battle: BattleState, enemiesBefore: Set<string>) => {
@@ -1511,6 +1593,9 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       // snapshot — re-apply it here so a reloaded city battle (deserialized with
       // peaceful=false) still has its heroes mill about individually.
       battle.peaceful = loc.traits.includes('city')
+      // §intel: mask enemy monsters with the party's current species knowledge
+      // (curated only; covers fresh spawns from last tick and mid-fight reveals).
+      syncBattleIntel(battle)
       // Field the right heroes (fresh deploys, KO removals, recovery returnees).
       if (reconcileOpenPlayers(battle, eligible, s.equipment, s.partyTactics ?? [], s.portalArrivals)) {
         battles[locationId] = { ...battle }
@@ -1539,6 +1624,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
         rewardKills(loc, battle, enemiesBefore)
         recordDamage(battle)
         detectDeaths(battle)
+        learnIntel(battle)   // §intel: fold this round's reveals into the codex
       }
 
       // Respawn trickle (every tick, independent of the round cadence): while the
@@ -1587,6 +1673,9 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
     // §coordination M4: keep the player team's directive current (see the
     // open-world branch above).
     setTeamDirective(battle, 'player', s.partyDirective ?? null)
+    // §intel: keep enemy masks in step with the codex (curated only; sandbox
+    // discrete waves stay omniscient — absent intel = fully known).
+    syncBattleIntel(battle)
     // Live-edit: push any loadout changes onto the heroes already in the wave.
     syncPlayerLoadouts(battle, eligible, s.equipment, s.partyTactics ?? [])
 
@@ -1600,6 +1689,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
       rewardKills(loc, battle, enemiesBefore)
       recordDamage(battle)
       detectDeaths(battle)
+      learnIntel(battle)   // §intel: fold this round's reveals into the codex
       if (battle.outcome !== 'ongoing') {
         battleCooldown[locationId] = BATTLE_RESPAWN_TICKS
         logs.push({ category: battle.outcome === 'victory' ? 'victory' : 'defeat', message: `${loc.name}: ${battle.outcome}` })
@@ -1618,7 +1708,7 @@ function advanceBattles(s: GameState, newTicks: number, advance: boolean): Comba
 
   return {
     battles, battleCooldown, monsterSpawnTimers, hpByUnit, packByUnit, koUnitIds, expByUnit, goldEarned, lootDelta, foundLootByUnit,
-    questDropDelta, monsterDefeated, monsterSeen, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, arrivals, logs,
+    questDropDelta, monsterDefeated, monsterSeen, speciesIntel, locationMonstersSeen, locationStats, unitStatsDelta, travelMoves, arrivals, logs,
   }
 }
 
@@ -1681,6 +1771,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   monsterSeen:          BOOT_SEED.monsterSeen,
   ticks: 0,
   monsterDefeated: {},
+  speciesIntel: {},   // §intel: per-species revealed-fields codex (learned through play)
   locationStats: {},
   unitStats: {},
   unitStatHistory: {},
@@ -1890,6 +1981,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       monsterDefeated: combat.monsterDefeated,
       questItems,
       monsterSeen: combat.monsterSeen,
+      speciesIntel: combat.speciesIntel,
       locationMonstersSeen: combat.locationMonstersSeen,
       locationStats: foldLocationByUnit(combat.locationStats, combat.unitStatsDelta, locationOf, newTicks),
       unitStats: foldUnitStats(s.unitStats, combat.unitStatsDelta),
@@ -2881,6 +2973,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       equipment: INITIAL_EQUIPMENT,
       miscItems: INITIAL_MISC,
       monsterDefeated: {},
+      speciesIntel:    {},   // §intel: reset the per-species codex with the mode's slot
       locationStats:   {},
       unitStats:       {},
       // The rolling rate-history + 5s ring + catch-up debug are per-unit combat

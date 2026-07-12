@@ -15,7 +15,7 @@ import { setArenaBounds, arenaClamp } from './arena'
 import { setTimeScale, timeScale, scaleRounds, onBeat, attacksThisEngineRound, setMultiAttackMax } from './timescale'
 import { SpatialHash, setSpatialHash } from './spatialhash'
 import { startingPosition, moveToward, moveTowardPoint, attackReach, moveSpeedOf, distance, enforceSeparation, setDirectMove } from './grid'
-import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor } from './damage'
+import { defaultCalculateDamage, calculateHeal, effectiveStat, skillDamageEstimate, estimateDamageVs, effectiveArmor, knownView } from './damage'
 import {
   selectTarget, chooseAction, findCombatant, livingEnemies, livingAllies, isStealthed,
 } from './behavior'
@@ -54,7 +54,7 @@ import type {
   BattleState, BattleResult, BattleStats, Combatant, CombatSetup,
   EngineUnitInput, Outcome, Team, BattleEvent, EngineSkill, Element,
   ResolvedTactic, TacticRef, MovementResult, ReactionResult, ActionResult, Vec2,
-  TeamPlan, Planner, Barrier, TacticOutcome, BattleZone,
+  TeamPlan, Planner, Barrier, TacticOutcome, BattleZone, IntelMask,
 } from './types'
 
 // Deterministic [0,1) hash of an integer — seeds open-world wander choices
@@ -248,7 +248,35 @@ function makeCombatant(input: EngineUnitInput, index: number, pos: { x: number; 
   // §coordination: precompute kit capability (tactical-coordination.md §5) —
   // derived from the assembled kit, never serialized; read by nothing yet (M0).
   c.capability = computeCapability(c)
+  // §intel (tactical-coordination.md §3.7): the adapter's mask — what the
+  // OPPOSING team knows about this unit. Cloned (never share the input's
+  // object), serialized like any stat; knownCapability is the masked pricing
+  // (derived, never serialized — rebuilt like capability).
+  if (input.intel) {
+    c.intel = { ...input.intel }
+    c.knownCapability = computeCapability(knownView(c))
+  }
   return c
+}
+
+// §intel: host seam — replace what the opposing team knows about combatant `id`
+// mid-battle (the store's learning sweep calls this as its codex fills, the
+// same host-authored mutation shape as setTeamDirective). `undefined` restores
+// omniscience (absent = fully known). Installs a FRESH intel object, which
+// self-invalidates knownView's cached view, and re-derives the masked
+// capability. The field is serialized, so a snapshot taken after a reveal
+// replays 1:1 with the knowledge held at serialization time.
+export function setCombatantIntel(state: BattleState, id: string, intel: IntelMask | undefined): boolean {
+  const c = state.combatants.find((x) => x.id === id)
+  if (!c) return false
+  if (intel) {
+    c.intel = { ...intel }
+    c.knownCapability = computeCapability(knownView(c))
+  } else {
+    delete c.intel
+    delete c.knownCapability
+  }
+  return true
 }
 
 // Re-apply a unit's CURRENT loadout (stats, skills, tactics, vision) to a live
@@ -283,6 +311,10 @@ export function relinkCombatant(c: Combatant, input: EngineUnitInput, partyTacti
   c.posture = fresh.posture
   c.moveAbilities = fresh.moveAbilities
   c.capability = fresh.capability   // §coordination: kit changed ⇒ capability re-derives with it
+  // §intel: keep the masked appraisal coherent with the re-derived kit (only
+  // relevant if a masked unit is ever relinked — heroes, the sole relink target,
+  // carry no intel; guards the derived-field invariant regardless).
+  if (c.intel) c.knownCapability = computeCapability(knownView(c))
   if (c.channel && !c.skills.some((s) => s.id === c.channel!.skillId)) c.channel = null
 }
 

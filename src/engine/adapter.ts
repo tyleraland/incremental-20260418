@@ -3,7 +3,7 @@
 // owns no stat definitions; this is where the game's stats are projected in.
 
 import type { Unit, DerivedStats, MonsterDef } from '@/types'
-import type { EngineUnitInput, EngineSkill, Team, TacticRef, ConsumableSpec, MoveAbility } from './types'
+import type { EngineUnitInput, EngineSkill, Team, TacticRef, ConsumableSpec, MoveAbility, IntelMask } from './types'
 import { buildEngineSkill, inheritedTacticIds } from './skills'
 import { consumableDef } from '@/data/consumables'
 
@@ -170,7 +170,14 @@ export function unitToEngineInput(unit: Unit, derived: DerivedStats, team: Team)
   }
 }
 
-export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: Team): EngineUnitInput {
+// §intel (tactical-coordination.md §3.7): `intel` is what the OPPOSING team
+// (the player party) currently knows about this monster — the store passes its
+// per-species codex slice here in curated mode and nothing in sandbox (absent
+// = omniscient, the shipped behavior). Monsters' knowledge of HEROES is the
+// mirror question: hero inputs carry no intel, i.e. monsters stay omniscient —
+// there is no persistence story for a monster team's memory, and absent-means-
+// known keeps that side byte-identical by construction.
+export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: Team, intel?: IntelMask): EngineUnitInput {
   const rangedRange = gridRangeFromFeet(def.stats.attackRange ?? RANGED_FEET_THRESHOLD)
   const ranged = rangedRange > 0
   const defense = def.stats.defense[0] + def.stats.defense[1]   // ability + armor
@@ -207,5 +214,8 @@ export function monsterToEngineInput(def: MonsterDef, instanceId: string, team: 
     threatMult: def.threatMult,
     armorReduction: def.armorReduction,
     dodgePeriod: def.dodgePeriod,
+    // §intel: only when the host passes one — absent keeps the input (and the
+    // snapshot it lands in) byte-identical to pre-intel.
+    ...(intel ? { intel } : {}),
   }
 }
