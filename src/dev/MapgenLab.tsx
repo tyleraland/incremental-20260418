@@ -51,6 +51,12 @@ const EDGE_COLOR: Record<string, string> = {
 const heat = (t: number) => `hsl(${(1 - Math.max(0, Math.min(1, t))) * 240}, 85%, 50%)`
 // stable per-region hue for the claims tint.
 const regionColor = (id: number) => `hsl(${(id * 67) % 360}, 55%, ${46 + (id % 3) * 7}%)`
+// scratch values are `unknown` (the L6 tier is untyped by contract). Guard the
+// read so a future pass storing a different shape under a key the lab knows
+// mis-draws NOTHING instead of throwing on a bad cast. Every producer today
+// writes exactly these arrays; this only future-proofs the debug view.
+const asU8 = (v: unknown): Uint8Array | undefined => (v instanceof Uint8Array ? v : undefined)
+const asI32 = (v: unknown): Int32Array | undefined => (v instanceof Int32Array ? v : undefined)
 
 interface Toggles {
   // baked MapSpec planes
@@ -93,14 +99,14 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
   // walk mask: translucent wash over reachable ground (the validator's occupancy
   // model). Reading an absent key (regions skipped / recipe didn't produce it)
   // just draws nothing.
-  const walk = scratch?.get('walk') as Uint8Array | undefined
+  const walk = asU8(scratch?.get('walk'))
   if (t.walk && walk) {
     g.globalAlpha = 0.22
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (walk[y * cols + x]) fillCell(x, y, '#4ade80')
     g.globalAlpha = 1
   }
   // region claims: stable per-region tint; -1 = unclaimed/blocked = transparent.
-  const claims = scratch?.get('regions') as Int32Array | undefined
+  const claims = asI32(scratch?.get('regions'))
   if (t.regions && claims) {
     g.globalAlpha = 0.5
     for (let y = 0; y < rows; y++) {
@@ -114,7 +120,7 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
   // flow: the 'flow' Int32Array (BFS cell distance from spawn) as a heatmap,
   // normalized to the plane's max; -1/blocked = transparent. Full-resolution
   // NavNode.intensity.
-  const flow = scratch?.get('flow') as Int32Array | undefined
+  const flow = asI32(scratch?.get('flow'))
   if (t.flow && flow) {
     let fmax = 0
     for (let i = 0; i < flow.length; i++) if (flow[i] > fmax) fmax = flow[i]
@@ -149,7 +155,7 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
     }
   }
   // desire-path mask: the trodden trail cells, over fills but under the graph.
-  const paths = scratch?.get('desire-paths') as Uint8Array | undefined
+  const paths = asU8(scratch?.get('desire-paths'))
   if (t.paths && paths) {
     g.globalAlpha = 0.85
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (paths[y * cols + x]) fillCell(x, y, '#e08a2c')
