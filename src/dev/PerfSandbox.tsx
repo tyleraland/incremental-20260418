@@ -101,6 +101,23 @@ export default function PerfSandbox() {
   const speedRef = useRef(speed)
   speedRef.current = speed
 
+  // Advance exactly one round/tick — the granular sim unit. Shared by the tick
+  // loop (below) and the Step button, which pauses first so each press single-
+  // steps the frozen field (the same branch the loop runs, so stepping and
+  // playing are byte-identical). engine-only ⇒ just the watched battle's round.
+  const stepOnce = useCallback(() => {
+    const s = useGameStore.getState()
+    if (engineOnlyRef.current) {
+      const b = s.battles[SANDBOX_LOC]
+      if (b && b.outcome === 'ongoing') {
+        advanceRound(b)
+        useGameStore.setState({ battles: { ...s.battles, [SANDBOX_LOC]: { ...b } } })
+      }
+    } else {
+      s.tick()
+    }
+  }, [])
+
   // The sandbox is primarily a visual/perf surface for the live battle renderer:
   // show authored paper assets by default even if an older localStorage toggle
   // still says circle. Keep `?skin=circle` as the explicit debug override.
@@ -375,20 +392,24 @@ export default function PerfSandbox() {
         </div>
       )}
 
-      {/* Pinned Play/Pause + speed bar — ALWAYS visible regardless of panelOpen,
-          so hiding the panel to see the field never costs you playback control.
-          The top row is already crowded (← Game nav top-left z-100, the control
-          panel's header top-right — see the caption banner's note above), so this
-          sits in its OWN row just below both (top-12, left-2) rather than
-          fighting them for the same 40px band. z ABOVE the panel (95 > 90) so if
-          the panel is open and its card extends under this row, this bar still
-          wins the overlap and stays tappable — same overlap-resolves-by-z-order
-          doctrine the caption banner uses against the panel. */}
-      <div className="absolute top-12 left-2 z-[95] flex items-center gap-2 rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl px-2 py-1.5">
+      {/* Pinned Play/Pause + Step + speed bar — ALWAYS visible regardless of
+          panelOpen, so hiding the panel to see the field never costs you playback
+          control. The top row is already crowded (← Game nav top-left z-100, the
+          control panel's header top-right), so this sits in its OWN row just below
+          both (top-12, left-2). z BELOW the panel (85 < 90) so when the panel is
+          open its card wins the overlap and stays fully readable/tappable; hide
+          the panel and this bar is unobstructed. */}
+      <div className="absolute top-12 left-2 z-[85] flex items-center gap-2 rounded-xl border border-game-border bg-game-surface/95 backdrop-blur shadow-2xl px-2 py-1.5">
         <button
           onClick={() => useGameStore.getState().togglePause()}
           className={['h-9 px-3 rounded-lg border text-sm font-medium', paused ? 'border-game-green/60 bg-game-green/15 text-game-green' : 'border-game-gold/60 bg-game-gold/15 text-game-gold'].join(' ')}
         >{paused ? '▶ Play' : '⏸ Pause'}</button>
+        <button
+          onClick={() => { useGameStore.setState({ paused: true }); stepOnce() }}
+          title="Advance one round (pauses first)"
+          aria-label="Step one round"
+          className="h-9 px-3 rounded-lg border border-game-border text-sm font-medium text-game-text-dim hover:text-game-text"
+        >⏭ Step</button>
         <div className="flex items-center gap-1.5 pl-1">
           <input
             type="range"
