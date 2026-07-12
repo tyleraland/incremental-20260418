@@ -6,7 +6,8 @@
 
 import { describe, it, expect } from 'vitest'
 import { generateMap, SURFACE_MATERIALS, type ThemeTag } from '@/mapgen'
-import { FIELD_RECIPE } from '@/mapgen/recipes/field'
+import { occupancyGrid } from '@/mapgen/validate'
+import { FIELD_RECIPE, RIVER_DIALS } from '@/mapgen/recipes/field'
 
 const SEEDS = Array.from({ length: 25 }, (_, i) => i + 1)
 
@@ -148,12 +149,97 @@ describe('field recipe fuzz gate', () => {
     }
   })
 
-  // NB: no "edges from real bakes" sweep exists on purpose — today's geography
-  // (a lone lake you can walk around, ~3-wide fords that survive erosion at
-  // pinchWidth 3) NEVER bisects a map, so any such sweep would iterate empty
-  // arrays forever (review finding). The full seam on real collision rects is
-  // pinned by graph.test.ts's integration test; production edges arrive with
-  // P2 rivers, which must then add the sweep here.
+  // ── P2 rivers + crossings: the "edges from real bakes" sweep ───────────────
+  // (Replaces the vacuous sweep the P1 review deleted — pre-river geography
+  // never bisected a map. The river is the region divider, so real bakes now
+  // publish real 'crossing' edges, and the sweep below can never go vacuous:
+  // it asserts at least one edge was actually seen.)
+
+  it('P2 water sweep: rivers fire, maps multi-region, every edge a walkable crossing', () => {
+    const results = sweep(160, ['plains', 'water'])
+    let rivers = 0, multiRegion = 0, edgesSeen = 0
+    for (const r of results) {
+      expect(r.report.ok, `seed ${r.spec.seed}: ${JSON.stringify(r.report.rules.filter((x) => !x.ok))}`).toBe(true)
+      expect(r.attempts, `seed ${r.spec.seed} needed ${r.attempts} attempts`).toBeLessThanOrEqual(4)
+      if (r.notes.some((n) => n.startsWith('river:') && n.includes('rect(s) spent'))) rivers++
+      const { nodes, edges } = r.spec.semantic.nav
+      if (nodes.length >= 2 && edges.length >= 1) multiRegion++
+      edgesSeen += edges.length
+      // every published edge is a 'crossing' whose doorAt is a WALKABLE cell —
+      // the validator-mirror occupancy check (same rasterizer flood-fill sees)
+      const blocked = occupancyGrid(r.spec.collision, r.spec.cols, r.spec.rows)
+      for (const e of edges) {
+        expect(e.kind).toBe('crossing')
+        expect(e.doorAt, `seed ${r.spec.seed}: edge ${e.a}→${e.b} has no doorAt`).toBeDefined()
+        const i = Math.floor(e.doorAt!.y) * r.spec.cols + Math.floor(e.doorAt!.x)
+        expect(blocked[i], `seed ${r.spec.seed}: doorAt ${e.doorAt!.x},${e.doorAt!.y} blocked`).toBe(0)
+      }
+    }
+    // the river must be a real layer, not a lottery (probe: 25/25 at this size)
+    expect(rivers).toBeGreaterThan(SEEDS.length * 0.7)
+    // ≥40% multi-region is the floor the packet commits to; observed 100% at
+    // 96–200 — a bar low enough to survive dial tuning, high enough that a
+    // regression to "rivers never divide" trips it immediately
+    expect(multiRegion).toBeGreaterThanOrEqual(Math.ceil(SEEDS.length * 0.4))
+    // and NEVER vacuous again: the sweep saw at least one real edge
+    expect(edgesSeen).toBeGreaterThan(0)
+  })
+
+  it('P2 budget: the river note()s a spend within its allotment; totals hold the cap', () => {
+    for (const r of sweep(200, ['plains', 'water'])) {
+      // validator already gates barrier-budget; assert it stayed ≤ the default cap
+      expect(r.spec.collision.length).toBeLessThanOrEqual(24)
+      const note = r.notes.find((n) => n.startsWith('river:') && n.includes('rect(s) spent'))
+      if (!note) continue
+      const spend = Number(note.match(/(\d+) rect\(s\) spent/)![1])
+      expect(spend).toBeGreaterThan(0)
+      expect(spend).toBeLessThanOrEqual(RIVER_DIALS.maxRects)
+    }
+  })
+
+  it('P2 determinism: a river seed double-bakes byte-equal', () => {
+    const params = { recipe: 'field', seed: 9, size: 160, themes: ['plains', 'water'] as ThemeTag[] }
+    const a = generateMap(FIELD_RECIPE, params)
+    const b = generateMap(FIELD_RECIPE, params)
+    expect(a.notes.some((n) => n.startsWith('river:') && n.includes('spent')), 'seed 9 must grow a river').toBe(true)
+    expect(a.spec).toEqual(b.spec)
+    expect(Array.from(a.spec.surface.grid)).toEqual(Array.from(b.spec.surface.grid))
+  })
+
+  it('P2 bridges: some fords dress as road-strip bridges', () => {
+    // bridgeChance 0.35 across ~25 rivers → P(zero bridges) ≈ 0.65^25, negligible
+    const results = sweep(160, ['plains', 'water'])
+    const bridged = results.filter((r) => r.notes.some((n) => n.startsWith('river:') && n.includes('bridge')))
+    expect(bridged.length).toBeGreaterThan(0)
+    // the field recipe paints 'road' ONLY for bridge strips — so a bridged bake
+    // must carry road surface cells, an un-bridged one must not
+    const road = SURFACE_MATERIALS.indexOf('road')
+    const hasRoad = (r: (typeof results)[number]) => Array.from(r.spec.surface.grid).some((v) => v === road)
+    expect(hasRoad(bridged[0])).toBe(true)
+    const unbridged = results.find((r) => !r.notes.some((n) => n.startsWith('river:') && n.includes('bridge')))
+    if (unbridged) expect(hasRoad(unbridged)).toBe(false)
+  })
+
+  it('P2 regions follow-through: a portal across the river lands in a DEEPER region', () => {
+    // Real locations pin portals at edge midpoints (see data/locations.ts);
+    // with a river bisecting the map, some portal must land across it — its
+    // linked region node then carries depth ≥ 1 from the spawn region.
+    let deeperPortals = 0
+    for (const seed of SEEDS.slice(0, 12)) {
+      const s = 140
+      const at: [number, number][] = [[3, s / 2], [s - 3, s / 2], [s / 2, 3], [s / 2, s - 3]]
+      const r = generateMap(FIELD_RECIPE, {
+        recipe: 'field', seed, size: s, themes: ['plains', 'water'],
+        keepClear: at.map(([x, y]) => ({ x: x - 1.5, y: y - 1.5, w: 3, h: 3 })),
+        pois: at.map(([x, y], i) => ({ kind: 'portal' as const, at: { x, y }, id: `portal-${i}` })),
+      })
+      expect(r.report.ok, `seed ${r.spec.seed}: ${JSON.stringify(r.report.rules.filter((x) => !x.ok))}`).toBe(true)
+      for (const nd of r.spec.semantic.nav.nodes) {
+        if (nd.poiId?.startsWith('portal') && (nd.depth ?? 0) >= 1) deeperPortals++
+      }
+    }
+    expect(deeperPortals).toBeGreaterThan(0)
+  })
 
   it('skipPasses regions → semantic falls back to POI-stub nodes (layer inspector stays alive)', () => {
     const r = generateMap(FIELD_RECIPE, {

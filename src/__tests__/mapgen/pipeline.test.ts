@@ -65,16 +65,17 @@ describe('mapgen pipeline', () => {
     // plane), but the surface pass — which reads only the fields — must be
     // byte-identical, proving no pass consumed another's sequence.
     const full = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept' })
-    const noHydro = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['hydrology'] })
-    // surface runs BEFORE hydrology; hydrology repaints lake cells. Compare a
-    // corner far from any lake instead of the whole grid: row 0 is sand-ring
-    // free on this seed only by luck — so assert on the dry-land majority:
+    // both water passes off (hydrology lake AND the P2 river — each paints
+    // water from its own streams), so the no-water grid is pure `surface`.
+    const noHydro = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['hydrology', 'river'] })
+    // surface runs BEFORE the water passes; they repaint lake/channel cells.
+    // Compare the dry-land majority instead of the whole grid:
     let same = 0
     for (let i = 0; i < full.spec.surface.grid.length; i++) {
       if (full.spec.surface.grid[i] === noHydro.spec.surface.grid[i]) same++
     }
-    // every difference must be a WATER/SAND cell the lake painted, never a
-    // reshuffled base cell — the no-hydro grid can't contain water at all
+    // every difference must be a WATER/SAND cell the water passes painted,
+    // never a reshuffled base cell — the no-water grid can't contain water
     const water = [SURFACE_MATERIALS.indexOf('shallow-water'), SURFACE_MATERIALS.indexOf('deep-water')]
     expect(Array.from(noHydro.spec.surface.grid).some((v) => water.includes(v))).toBe(false)
     expect(same).toBeGreaterThan(full.spec.surface.grid.length * 0.7)

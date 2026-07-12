@@ -88,6 +88,12 @@ const hydrologyPass = {
     }
     if (deep.length === 0) { note('lake came out all-shallow — no collision emitted'); return }
 
+    // L6 scratch: the lake's site, for later passes (the river keeps its fords
+    // off the lake — a ford strip punched into lake water would be walkable
+    // surface under the LAKE's collision rects, the exact lie water-coherence
+    // exists to prevent). Owned by this pass; shape { x, y, r }.
+    draft.scratch.set('lake', { x: best.x, y: best.y, r })
+
     // Cover the deep cells with few fat rects: split at the ford, slice each
     // side into horizontal bands, one bbox rect per band. Coarse cover may lap
     // onto the shallow rim (wet, walk-blocked is a lie only on DRY land — the
@@ -113,6 +119,264 @@ const hydrologyPass = {
     note(`lake at ${best.x},${best.y} r≈${r.toFixed(0)}, ford at x≈${fordX.toFixed(0)}, ${draft.collision.length} water rect(s)`)
   },
 }
+
+// ── RIVER_DIALS — the P2 river's review knobs (track C structural core) ──────
+// Group ALL river tunables here (same discipline as SCATTER_DIALS). The river
+// is the region DIVIDER: it bisects the map edge-to-edge so the derived graph
+// (regions pass) becomes non-trivial, and its punched fords become the
+// 'crossing' edges.
+//
+// FORD-AS-EDGE DECISION (settled here, per BACKLOG track-B follow-up): ford
+// strips are `fordRows` = 2 cells wide and the regions pass STAYS at
+// deriveRegions' default pinchWidth 3. A 2-wide walkable gap has max clearance
+// 1 < ceil(3/2) = 2, so it erodes away and registers as a pinch → a real
+// 'crossing' edge with its doorAt inside the ford. The alternative (3–4-wide
+// fords + pinchWidth 5) was rejected: it would ALSO reclassify every 3–4-wide
+// gap between outcrops as a region boundary, exploding graphs that read fine
+// today. The lake's ~3-wide ford deliberately stays NON-pinch (the lake never
+// bisects a map — you can walk around it — so an edge there would be noise).
+// A 2-wide strip is a genuine tactical choke and stays engine-passable (the
+// dungeon's corridors are 2-wide).
+export const RIVER_DIALS = {
+  minSize: 56,        // maps smaller than this stay river-less (the lane math below
+                      //   needs size/2 ≥ apron + laneGap + laneMargin + minLaneWidth)
+  maxRects: 14,       // EXPLICIT budget allotment: the river never spends more rects
+                      //   than min(this, maxBarriers − already-spent); can't fit → skip whole
+  segRows: 20,        // ~rows of course per cover rect: one bbox rect per knot segment
+  minSegments: 3,     // fewer cover segments than this can't read as a river → skip
+  maxSegDrift: 4,     // max cross-axis wander per knot segment (bounds rect width =
+                      //   drift + 2·deepHalf, which is what keeps rects ≥60% wet)
+  deepHalf: 1.5,      // deep channel half-width → ~3 painted deep cells per row
+  shallowRim: 1.5,    // shallow-water rim beyond the deep core (the wet margin)
+  sandRim: 1.5,       // sand banks beyond the shallows (same read as the lake shore)
+  fordCount: 2,       // fords punched per river (2 keeps one outcrop mishap from
+                      //   severing the map; validation still backstops)
+  fordRows: 2,        // ford strip width along the flow axis — see the decision above
+  fordMinSpacing: 0.22, // min ford separation as a fraction of map size
+  fordEdgeMargin: 8,  // fords keep off the map rim (border-seeded clearance is noisy there)
+  laneMargin: 6,      // river centreline keeps this far off the cross-axis map edges
+  laneGap: 6,         // extra clearance beyond the spawn apron: the whole course runs in
+                      //   one LANE beside the apron, so apron-clear holds by construction
+  minLaneWidth: 10,   // a lane narrower than this can't wander → no river
+  bridgeChance: 0.35, // chance ONE ford dresses as a plank bridge ('road' strip instead
+                      //   of shallow-water; rng-conditioned, no new vocabulary)
+}
+
+// ── river: hydrology v2 — the descending edge-to-edge channel (P2, track C) ──
+// Trigger: theme 'water' only (a water map gets lake AND river; 'beach' alone
+// keeps its lake/shore but no river — a beach is coastline, not a valley) and
+// size ≥ minSize (small skirmish fields stay river-less).
+//
+// Shape: a monotone polyline along the FLOW axis (the axis with the stronger
+// edge-to-edge elevation gradient), source = the higher edge. Cross-axis
+// position is elevation-guided (knots descend toward low ground, jittered from
+// the 'trace' stream) inside one LANE beside the spawn apron — |cross − spawn|
+// ≥ apron + laneGap for the entire course, so no rect can violate apron-clear.
+// Fords are punched (forced walkable) BEFORE the collision rects are built,
+// exactly like the lake's ford; cover is one fat bbox rect per knot segment
+// (cliff kind, 'deep-water' material — the locked two-primitive trick), split
+// at the fords. Budget discipline: allotment ≤ RIVER_DIALS.maxRects and ≤ the
+// remaining maxBarriers, spend note()d; if a coherent river can't fit, the
+// pass skips ENTIRELY (no half-rivers).
+const riverPass = {
+  id: 'river',
+  run({ draft, params, fields, rng, note }: PassCtx) {
+    if (!params.themes.includes('water')) return
+    const { size } = params
+    const D = RIVER_DIALS
+    if (size < D.minSize) { note(`map ${size} < ${D.minSize} — too small for a river, skipped`); return }
+
+    // ── budget allotment (decision 3: explicit per-pass allotment) ──────────
+    const remaining = params.maxBarriers - draft.collision.length
+    const allot = Math.min(D.maxRects, remaining)
+    const nSeg = Math.min(Math.ceil(size / D.segRows), allot - D.fordCount)
+    if (nSeg < D.minSegments) {
+      note(`no barrier budget for a coherent river (${remaining} rect(s) left, need ≥ ${D.minSegments + D.fordCount}) — skipped`)
+      return
+    }
+
+    // ── flow axis + direction: descend the stronger edge-to-edge gradient ───
+    const edgeMean = (pt: (t: number) => Pt2) => {
+      let s = 0
+      for (let i = 0; i < 9; i++) { const p = pt((i + 0.5) * (size / 9)); s += fields.elevation(p.x, p.y) }
+      return s / 9
+    }
+    const eN = edgeMean((t) => ({ x: t, y: 1 })), eS = edgeMean((t) => ({ x: t, y: size - 1 }))
+    const eW = edgeMean((t) => ({ x: 1, y: t })), eE = edgeMean((t) => ({ x: size - 1, y: t }))
+    const vert = Math.abs(eN - eS) >= Math.abs(eE - eW)
+    const forward = vert ? eN >= eS : eW >= eE  // a=0 sits at the HIGHER edge
+    // (a, b) = (along-flow, cross-axis) → grid cell. All geometry below works in
+    // flow coords; only this mapper and the rect emitter know the orientation.
+    const at = (a: number, b: number): Pt2 => {
+      const flow = forward ? a : size - 1 - a
+      return vert ? { x: b, y: flow } : { x: flow, y: b }
+    }
+
+    // ── lane: one side of the spawn apron, whole course (see header) ────────
+    const spawnAt = params.pois.find((p) => p.kind === 'spawn')?.at ?? { x: size / 2, y: size / 2 }
+    const cross = vert ? spawnAt.x : spawnAt.y
+    const gap = params.spawnApron + D.laneGap
+    const lanes: [number, number][] = [
+      [D.laneMargin, cross - gap],
+      [cross + gap, size - D.laneMargin],
+    ].filter(([lo, hi]) => hi - lo >= D.minLaneWidth) as [number, number][]
+    if (!lanes.length) { note('no lane wide enough beside the spawn apron — river skipped'); return }
+    const laneElev = (l: [number, number]) => {
+      let s = 0
+      for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+        const p = at((i + 0.5) * (size / 5), l[0] + (j + 0.5) * ((l[1] - l[0]) / 5))
+        s += fields.elevation(p.x, p.y)
+      }
+      return s / 25
+    }
+    let lane = lanes[0]
+    if (lanes.length === 2) {
+      const d = laneElev(lanes[0]) - laneElev(lanes[1])
+      // rivers sit in the valley — take the lower lane; near-tie → coin flip
+      lane = Math.abs(d) < 0.02 ? (rng('lane').chance(0.5) ? lanes[0] : lanes[1]) : d < 0 ? lanes[0] : lanes[1]
+    }
+    const clampLane = (b: number) => Math.min(lane[1], Math.max(lane[0], b))
+
+    // ── knots: elevation-guided descending wander, bounded drift per segment ─
+    const H = Math.ceil(size / nSeg)
+    // keep-clear boxes (portals): the channel + banks must never cover one.
+    // Knots within the box's (inflated) flow-range are pushed outside its
+    // cross-range; both bracketing knots of any affected row get pushed to the
+    // SAME side (nearest viable), so the interpolated course clears it too.
+    const rim = D.deepHalf + D.shallowRim + D.sandRim + 2
+    const avoidBoxes = (a: number, b: number): number | null => {
+      for (const box of params.keepClear) {
+        const f0 = (vert ? box.y : box.x) - 2 * H, f1 = (vert ? box.y + box.h : box.x + box.w) + 2 * H
+        const flow = forward ? a : size - 1 - a
+        if (flow < f0 || flow > f1) continue
+        const c0 = (vert ? box.x : box.y) - rim, c1 = (vert ? box.x + box.w : box.y + box.h) + rim
+        if (b <= c0 || b >= c1) continue
+        const sides = [c0, c1].filter((v) => v >= lane[0] && v <= lane[1])
+        if (!sides.length) return null  // box blocks the whole lane at this reach
+        b = sides.reduce((p, q) => (Math.abs(q - b) < Math.abs(p - b) ? q : p))
+      }
+      return b
+    }
+    const tr = rng('trace')
+    const knotA = Array.from({ length: nSeg + 1 }, (_, k) => Math.round((k * (size - 1)) / nSeg))
+    const knotB: number[] = []
+    let prev = 0
+    for (let k = 0; k <= nSeg; k++) {
+      let best = Number.NaN, bestScore = Infinity
+      const steps = k === 0 ? 7 : 5
+      for (let i = 0; i < steps; i++) {
+        const cand = k === 0
+          ? lane[0] + (i + 0.5) * ((lane[1] - lane[0]) / steps)   // source: scan the lane
+          : clampLane(prev + (i - (steps - 1) / 2) * (D.maxSegDrift / 2))
+        const p = at(knotA[k], cand)
+        const score = fields.elevation(p.x, p.y) + tr.range(0, 0.06)
+        if (score < bestScore) { bestScore = score; best = cand }
+      }
+      const routed = avoidBoxes(knotA[k], best)
+      if (routed === null) { note('keep-clear box blocks the river lane — skipped'); return }
+      prev = routed
+      knotB.push(routed)
+    }
+    // per-row centreline (linear between knots — the slope bound is what keeps
+    // one bbox rect per segment mostly wet)
+    const cLine = new Float64Array(size)
+    for (let k = 0; k < nSeg; k++) {
+      const a0 = knotA[k], a1 = knotA[k + 1]
+      for (let a = a0; a <= a1; a++) cLine[a] = knotB[k] + ((knotB[k + 1] - knotB[k]) * (a - a0)) / (a1 - a0)
+    }
+
+    // ── fords: shallow reaches, spaced, off the rim and the lake ────────────
+    // Chosen BEFORE painting so the strips are walkable by construction; low
+    // elevation preferred (fords are where the water runs shallow).
+    const lake = draft.scratch.get('lake') as { x: number; y: number; r: number } | undefined
+    const fordable: { a: number; e: number }[] = []
+    for (let a = D.fordEdgeMargin; a <= size - 1 - D.fordEdgeMargin - D.fordRows; a++) {
+      const p = at(a, cLine[a])
+      if (lake && Math.hypot(p.x - lake.x, p.y - lake.y) < lake.r * 1.6) continue
+      fordable.push({ a, e: fields.elevation(p.x, p.y) })
+    }
+    fordable.sort((p, q) => p.e - q.e || p.a - q.a)
+    const fords: number[] = []
+    for (const c of fordable) {
+      if (fords.length >= D.fordCount) break
+      if (fords.every((f) => Math.abs(f - c.a) >= size * D.fordMinSpacing)) fords.push(c.a)
+    }
+    if (!fords.length) { note('no viable ford reach — river skipped (a fordless river would sever the map)'); return }
+    fords.sort((p, q) => p - q)
+    // bridge dressing: one ford may wear 'road' instead of shallow-water — the
+    // same walkable gap as a plank crossing; the regions pass doesn't care.
+    const br = rng('bridge')
+    const bridgeAt = br.chance(D.bridgeChance) ? fords[br.int(fords.length)] : -1
+
+    // ── paint the channel (lake's discipline: deep core, shallow rim, sand) ──
+    // Wetness ordering: deep paints over anything (it gets covered), shallow
+    // never downgrades deep, sand never downgrades water — so the river can
+    // cross the lake without poking holes in either feature's coherence.
+    const wetHalf = D.deepHalf + D.shallowRim
+    const sandHalf = wetHalf + D.sandRim
+    const inFord = (a: number) => fords.some((f) => a >= f && a < f + D.fordRows)
+    // deep span per flow-row (cross-cell min/max) — what the cover rects wrap
+    const spanMin = new Int32Array(size).fill(-1)
+    const spanMax = new Int32Array(size).fill(-1)
+    for (let a = 0; a < size; a++) {
+      const c = cLine[a]
+      const ford = inFord(a)
+      const fordMat: SurfaceMaterial = a >= bridgeAt && a < bridgeAt + D.fordRows ? 'road' : 'shallow-water'
+      for (let bi = Math.floor(c - sandHalf); bi <= Math.ceil(c + sandHalf); bi++) {
+        if (bi < 0 || bi >= size) continue
+        const d = Math.abs(bi + 0.5 - c)
+        const p = at(a, bi)
+        const cur = matAt(draft, p.x, p.y)
+        if (d < wetHalf && ford) {
+          paint(draft, p.x, p.y, fordMat)
+        } else if (d < D.deepHalf) {
+          paint(draft, p.x, p.y, 'deep-water')
+          if (spanMin[a] < 0 || bi < spanMin[a]) spanMin[a] = bi
+          if (bi > spanMax[a]) spanMax[a] = bi
+        } else if (d < wetHalf) {
+          if (cur !== 'deep-water') paint(draft, p.x, p.y, 'shallow-water')
+        } else if (d < sandHalf) {
+          if (cur !== 'deep-water' && cur !== 'shallow-water') paint(draft, p.x, p.y, 'sand')
+        }
+      }
+    }
+
+    // ── cover: one bbox rect per knot segment, split at the fords ───────────
+    // The drift bound keeps each bbox ≤ maxSegDrift + 2·deepHalf wide, so the
+    // rect is mostly wet (water-coherence's ≥60%) by construction; rect count
+    // ≤ nSeg + fords ≤ the allotment by construction.
+    const spent0 = draft.collision.length
+    const emit = (a0: number, a1: number) => {
+      let bMin = Infinity, bMax = -Infinity
+      for (let a = a0; a <= a1; a++) {
+        if (spanMin[a] < 0) continue
+        if (spanMin[a] < bMin) bMin = spanMin[a]
+        if (spanMax[a] > bMax) bMax = spanMax[a]
+      }
+      if (bMin > bMax) return
+      const fa = forward ? a0 : size - 1 - a1
+      const fb = forward ? a1 : size - 1 - a0
+      addBarrier(draft, vert
+        ? { x: bMin, y: fa, w: bMax - bMin + 1, h: fb - fa + 1, kind: 'cliff', material: 'deep-water' }
+        : { x: fa, y: bMin, w: fb - fa + 1, h: bMax - bMin + 1, kind: 'cliff', material: 'deep-water' })
+    }
+    for (let k = 0; k < nSeg; k++) {
+      let a = knotA[k]
+      const end = k === nSeg - 1 ? size - 1 : knotA[k + 1] - 1
+      while (a <= end) {
+        const cut = fords.find((f) => f + D.fordRows > a && f <= end)
+        if (cut === undefined) { emit(a, end); break }
+        if (cut > a) emit(a, Math.min(cut - 1, end))
+        a = cut + D.fordRows
+      }
+    }
+    const spent = draft.collision.length - spent0
+    note(`river: ${vert ? 'N–S' : 'W–E'} course, ${fords.length} ford(s)${bridgeAt >= 0 ? ' (1 bridge)' : ''}, ` +
+      `${spent} rect(s) spent of ${allot} allotted (${draft.collision.length}/${params.maxBarriers} total)`)
+  },
+}
+
+interface Pt2 { x: number; y: number }
 
 // ── outcrops: rock/ravine/hedge masses where the ground is rough (layer 4) ───
 const outcropsPass = {
@@ -180,6 +444,10 @@ const regionsPass = {
     //   'walk'    — Uint8Array, 1 = walkable (the validator's occupancy model)
     //   'regions' — Int32Array, region index per cell, -1 = blocked/unclaimed
     draft.scratch.set('walk', walk)
+    // pinchWidth stays at deriveRegions' default 3: the river's 2-wide ford
+    // strips erode into 'crossing' edges, while 3-wide gaps (the lake's ford,
+    // ordinary outcrop gaps) stay intra-region — the settled ford-as-edge
+    // decision (see RIVER_DIALS).
     const { nodes, edges, claims } = deriveRegions(walk, draft.cols, draft.rows)
     draft.scratch.set('regions', claims)
     if (!nodes.length) { note('no regions derived — nav left empty'); return }
@@ -267,10 +535,12 @@ function kindFor(draft: PassCtx['draft'], x: number, y: number, m: number, r: Rn
   return m > 0.55 ? 'tree' : r.chance(0.5) ? 'bush' : 'flower'
 }
 
-// Water cells are never placeable for scatter (fillers or clump members).
+// Water cells are never placeable for scatter (fillers or clump members) —
+// nor is 'road' (only the river's bridge strips paint it in this recipe; a
+// tree sprouting mid-plank reads wrong and clutters the choke).
 function onWater(draft: PassCtx['draft'], x: number, y: number): boolean {
   const mat = matAt(draft, x, y)
-  return mat === 'deep-water' || mat === 'shallow-water'
+  return mat === 'deep-water' || mat === 'shallow-water' || mat === 'road'
 }
 
 function pushScatter(draft: PassCtx['draft'], x: number, y: number, kind: ScatterKind, r: Rng, intent: ScatterIntent): void {
@@ -558,6 +828,6 @@ const semanticPass = {
 export const FIELD_RECIPE: RecipeDef = {
   id: 'field',
   name: 'Overworld Field',
-  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + outcrops → derived region graph → scatter → POIs + tactical profile.',
-  passes: [surfacePass, hydrologyPass, outcropsPass, regionsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
+  description: 'Field-first open-world map: noise substrate → material bands → lake/ford + river/crossings + outcrops → derived region graph → scatter → POIs + tactical profile.',
+  passes: [surfacePass, hydrologyPass, riverPass, outcropsPass, regionsPass, scatterFillPass, scatterClumpsPass, scatterEdgesPass, semanticPass, premisePass],
 }
