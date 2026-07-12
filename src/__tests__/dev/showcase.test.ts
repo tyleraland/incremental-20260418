@@ -311,4 +311,84 @@ describe('showcase catalog', () => {
     advanceRound(b)
     expect(b.plans.enemy!.engagement?.stance ?? 'collapse').toBe('collapse')
   })
+
+  it('fold-when-losing: commits to the boss, then drops the commitment once the trade turns bad — everyone still alive', () => {
+    const b = showcaseById('fold-when-losing')!.build()
+    expect(teamAcumen(b, 'player')).toBeGreaterThanOrEqual(50)   // clears ACUMEN.pull
+
+    advanceRound(b)
+    expect(b.plans.player!.engagement!.targetIds).toEqual(['boss'])
+    expect(b.plans.player!.engagement!.primaryId).toBe('boss')
+
+    let abandonRound = -1
+    for (let r = 0; r < 60 && abandonRound < 0; r++) {
+      advanceRound(b)
+      if (!b.plans.player!.engagement) abandonRound = b.round
+    }
+    expect(abandonRound).toBeGreaterThan(0)   // the live re-price actually crossed ENGAGE_EXIT
+    // Folded — not wiped: every hero is still standing right when the party's
+    // shared commitment lets go (the boss itself is barely dented: the whole
+    // point is this was a genuine live-priced retreat, not a won fight).
+    for (const id of ['scholar', 'fighter-a', 'fighter-b', 'vanguard']) {
+      expect(find(b, id).hp).toBeGreaterThan(0)
+    }
+    expect(find(b, 'boss').hp).toBeGreaterThan(1000)   // barely dented — this was never close to a kill
+  })
+
+  it('wake-one-not-the-herd: the avoid list is live — the self-provoked loner drops off it, the sleeping pack never does', () => {
+    const b = showcaseById('wake-one-not-the-herd')!.build()
+    expect(teamAcumen(b, 'player')).toBeGreaterThanOrEqual(50)   // clears ACUMEN.pull
+
+    advanceRound(b)
+    const avoidRound1 = b.plans.player!.avoidTargetIds ?? []
+    // Everything — the lone wolf included — starts on the avoid list.
+    expect(avoidRound1).toContain('lone-wolf')
+    for (let i = 0; i < 6; i++) expect(avoidRound1).toContain(`wolf-${i}`)
+
+    let droppedRound = -1
+    for (let r = 0; r < 40 && droppedRound < 0; r++) {
+      advanceRound(b)
+      const avoid = b.plans.player!.avoidTargetIds ?? []
+      if (!avoid.includes('lone-wolf')) droppedRound = b.round
+      // The pack stays avoid-listed and asleep for the entire run.
+      for (let i = 0; i < 6; i++) {
+        expect(avoid).toContain(`wolf-${i}`)
+        expect(find(b, `wolf-${i}`).provoked).toBe(false)
+      }
+    }
+    expect(droppedRound).toBeGreaterThan(0)   // it left the list once it provoked itself onto a hero
+    expect(find(b, 'lone-wolf').provoked).toBe(true)
+
+    // The party fights and kills just the loner — the pack never wakes.
+    for (let r = 0; r < 60; r++) {
+      advanceRound(b)
+      for (let i = 0; i < 6; i++) expect(find(b, `wolf-${i}`).provoked).toBe(false)
+    }
+    expect(find(b, 'lone-wolf').alive).toBe(false)
+    expect(find(b, 'p1').alive).toBe(true)
+    expect(find(b, 'p2').alive).toBe(true)
+  })
+
+  it('same-side-around-the-wall: the whole party routes through the SAME gap', () => {
+    const b = showcaseById('same-side-around-the-wall')!.build()
+    const heroIds = ['h0', 'h1', 'h2', 'h3']
+    let sawCorridor = false
+    const corridorYs: number[] = []
+    let maxY = -Infinity
+    for (let r = 0; r < 30; r++) {
+      advanceRound(b)
+      const corridor = b.plans.player!.corridor
+      if (corridor) { sawCorridor = true; corridorYs.push(corridor.y) }
+      for (const id of heroIds) maxY = Math.max(maxY, find(b, id).pos.y)
+    }
+    expect(sawCorridor).toBe(true)
+    // Every published corridor corner points at the SAME (north) end of the
+    // wall — never a mix of the two ends.
+    for (const y of corridorYs) expect(y).toBeLessThan(15)
+    // No hero ever drifts toward the south gap (wall spans y 8..32; its
+    // midline sits at y 20) — the whole line stays committed to the north end.
+    expect(maxY).toBeLessThan(25)
+    // Everyone actually clears the wall (reaches its east side) via that gap.
+    for (const id of heroIds) expect(find(b, id).pos.x).toBeGreaterThan(24)
+  })
 })

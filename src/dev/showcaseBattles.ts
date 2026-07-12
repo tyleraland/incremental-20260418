@@ -374,6 +374,122 @@ function killTheShaman(): BattleState {
   return b
 }
 
+// ── 12. Fold when losing (M2): the party knows when to cut losses ───────────
+function foldWhenLosing(): BattleState {
+  // A tanky Vanguard plants on a Camp Boss the party can just barely afford
+  // (a genuine mutual-TTK race, not a landslide) while three teammates stand
+  // clear. The boss's raw STR prices as real danger (RTD), but its huge DEF
+  // means only the Vanguard — the one hero actually in melee — ever lands or
+  // takes a hit; the coarse pull-price (a flat sum over capabilities, no
+  // per-matchup mitigation — tactical-coordination.md §3.3) can't see that, so
+  // the fight looks evenly costed on paper while draining one hero for real.
+  // As HP drains, the LIVE re-price (decideEngagement's fast path) keeps
+  // recomputing RTD off the shrinking pool; once it crosses the ENGAGE_EXIT
+  // hysteresis the party's shared commitment breaks — `engagement` drops —
+  // while the Vanguard and all three teammates are still standing. Pre-M2 the
+  // party had no notion of "this is now a losing trade": it would have just
+  // kept swinging until someone died.
+  const b = createBattle({
+    playerUnits: [
+      mk({ id: 'scholar', team: 'player', name: 'Scholar', str: 12, def: 4, int: 55, maxHp: 150, hp: 150 }),
+      mk({ id: 'fighter-a', team: 'player', name: 'Fighter', str: 12, def: 4, maxHp: 150, hp: 150 }),
+      mk({ id: 'fighter-b', team: 'player', name: 'Fighter', str: 12, def: 4, maxHp: 150, hp: 150 }),
+      // Deliberately huge hp: with only one hero ever physically in melee range
+      // of a solo boss, ALL of its damage concentrates on whoever's touching
+      // it — the Vanguard needs a pool big enough to still be standing when
+      // the TEAM's price (summed over all four) crosses the exit bar.
+      mk({ id: 'vanguard', team: 'player', name: 'Vanguard', str: 12, def: 4, maxHp: 900, hp: 900 }),
+    ],
+    enemyUnits: [
+      mk({
+        id: 'boss', team: 'enemy', name: 'Camp Boss', str: 40, def: 100, maxHp: 1200, hp: 1200, moveSpeed: 0, meleeRange: 1.4,
+      }),
+    ],
+    mode: 'open', cols: 44, rows: 36,
+  })
+  // The Vanguard starts already adjacent (locks + trades from round one) so
+  // it — not whichever teammate the id/tiebreak order happens to favour —
+  // is deterministically the one the boss ever touches.
+  at(b, 'scholar', 9, 10); at(b, 'fighter-a', 10, 10); at(b, 'fighter-b', 11, 10); at(b, 'vanguard', 10, 19)
+  at(b, 'boss', 10, 20)
+  return b
+}
+
+// ── 13. Wake one, not the herd (M2): the avoid list is live, not a snapshot ─
+function wakeOneNotTheHerd(): BattleState {
+  // A lone AGGRESSIVE wolf (no skittish — hostile from spawn) stands beside a
+  // sleeping Dire Wolf pack (skittish + pack-tactics — never wakes on its
+  // own). Both are visible to the party from round 0; the lone wolf's own
+  // pull-price reads as too costly in isolation to commit to on paper (a
+  // deliberately padded HP pool — see `foldWhenLosing`'s note on the coarse
+  // price ignoring the party's own DEF), so at the FIRST decision round
+  // EVERYTHING — the lone wolf AND all six pack wolves — lands on
+  // avoidTargetIds. But the lone wolf doesn't care what the plan priced: it's
+  // provoked from spawn, closes the gap on its own, and locks a hero within
+  // that same round. From the very next decision round on, `alreadyFighting`
+  // (teamplan.ts) reads that self-provoked lock/threat and the SAME id drops
+  // off avoidTargetIds automatically — "a foe that provokes itself onto the
+  // party leaves the list automatically because it enters the fight"
+  // (tactical-coordination.md §3.3) — while the pack, never provoked, never
+  // moves off it. avoidTargetIds is recomputed fresh every decision round
+  // from LIVE state, not a fixed snapshot from the round the fight started:
+  // that's what lets one id leave the list while its neighbours stay on it.
+  const b = createBattle({
+    playerUnits: [
+      mk({ id: 'p1', team: 'player', name: 'Scholar', str: 14, def: 130, int: 55, maxHp: 250, hp: 250 }),
+      mk({ id: 'p2', team: 'player', name: 'Fighter', str: 14, def: 130, maxHp: 250, hp: 250 }),
+    ],
+    enemyUnits: [
+      mk({
+        id: 'lone-wolf', team: 'enemy', name: 'Lone Wolf', str: 70, maxHp: 210, hp: 210,
+        moveSpeed: 1.1, meleeRange: 1.4, visionRange: 30,
+      }),
+      ...Array.from({ length: 6 }, (_, i) => mk({
+        id: `wolf-${i}`, team: 'enemy', name: 'Dire Wolf', str: 10, maxHp: 5000, hp: 5000, moveSpeed: 0, visionRange: 3,
+        tactics: [{ id: 'skittish', rank: 1 }, { id: 'pack-tactics', rank: 1 }],
+      })),
+    ],
+    mode: 'open', cols: 44, rows: 36,
+  })
+  at(b, 'p1', 9, 14); at(b, 'p2', 11, 14)
+  at(b, 'lone-wolf', 10, 24)
+  const offsets: [number, number][] = [[-1.2, -1.2], [-1.2, 0], [-1.2, 1.2], [0, -1.2], [0, 1.2], [1.2, -1.2]]
+  offsets.forEach((o, i) => at(b, `wolf-${i}`, 22 + o[0], 20 + o[1]))
+  return b
+}
+
+// ── 14. Same side around the wall (M3): the party routes as one ─────────────
+function sameSideAroundTheWall(): BattleState {
+  // A vertical wall bar (open at both the north and south ends) splits the
+  // party from prey clear on the other side of the map. Nothing forces which
+  // end to use — this is exactly the "route the same way" question
+  // HERD_BIAS used to fudge with a global left tax. Instead the planner
+  // publishes ONE shared `corridor` (the first steerAround corner from the
+  // party's own centroid to the shared waypoint — tactical-coordination.md
+  // §3.4) and every member's own roam-toward-waypoint step aims at that same
+  // point, so the whole party commits to the same gap instead of some of them
+  // peeling off toward the closer-looking end. Heroes get finite vision (the
+  // default is infinite, which would fold "engaged" over the whole map before
+  // they ever set out) so the crossing is a real hunt-and-route, not an
+  // instant lock from across the level.
+  const barriers: Barrier[] = [{ x: 20, y: 8, w: 2, h: 24, kind: 'wall' }]   // spans y 8..32; open above/below
+  const hero = (id: string): EngineUnitInput => mk({
+    id, team: 'player', name: 'Hero', str: 12, def: 4, maxHp: 150, hp: 150, moveSpeed: 0.9, meleeRange: 1.4, visionRange: 14,
+  })
+  const b = createBattle({
+    playerUnits: ['h0', 'h1', 'h2', 'h3'].map(hero),
+    enemyUnits: [
+      // A distant, tanky lure the party hunts toward but can't reach within
+      // the routing window — the scene isolates the APPROACH, not the fight.
+      mk({ id: 'prey', team: 'enemy', name: 'Prey', str: 5, def: 2, maxHp: 8000, hp: 8000, moveSpeed: 0, visionRange: 0 }),
+    ],
+    barriers, mode: 'open', cols: 60, rows: 40,
+  })
+  at(b, 'h0', 8, 18); at(b, 'h1', 9, 20); at(b, 'h2', 8, 22); at(b, 'h3', 10, 20)
+  at(b, 'prey', 50, 20)
+  return b
+}
+
 export const SHOWCASES: Showcase[] = [
   {
     id: 'kite-anchor',
@@ -451,6 +567,27 @@ export const SHOWCASES: Showcase[] = [
     blurb: "A wolf pack fights smart while its Shaman lives — kill the shaman and its coordination visibly collapses.",
     watch: "The enemy plan holds a real stance while the shaman's alive; watch enemy acumen cross the gate in Debug → Plan the instant it dies.",
     build: killTheShaman,
+  },
+  {
+    id: 'fold-when-losing',
+    title: 'Fold when losing',
+    blurb: 'A party commits to a boss it can just barely afford — as the trade turns against it, the shared commitment breaks off while everyone is still standing.',
+    watch: 'Engagement locks onto the boss round one; watch it flip from a committed `targetIds: [boss]` to absent in Debug → Plan as the live re-price crosses the exit bar — no more shared commitment, even though the fight itself keeps going.',
+    build: foldWhenLosing,
+  },
+  {
+    id: 'wake-one-not-the-herd',
+    title: 'Wake one, not the herd',
+    blurb: 'A lone aggressive wolf and a sleeping Dire Wolf pack both start on the avoid list — the moment the loner attacks on its own, it (and only it) drops off.',
+    watch: 'Every wolf sits on avoidTargetIds at round one; the lone wolf locks a hero and leaves the list the next decision round while the pack — never provoked — stays on it for the whole fight. (Debug tab → Plan → avoidTargetIds.)',
+    build: wakeOneNotTheHerd,
+  },
+  {
+    id: 'same-side-around-the-wall',
+    title: 'Same side around the wall',
+    blurb: 'A wall open at both ends splits the party from its prey — the whole line commits to the SAME gap instead of splitting left and right.',
+    watch: "The party's shared `corridor` points at one end of the wall the whole approach; every hero clears the wall on that same side. (Debug tab → Plan → corridor.)",
+    build: sameSideAroundTheWall,
   },
 ]
 
