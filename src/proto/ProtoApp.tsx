@@ -410,6 +410,7 @@ function DecisionsInbox({ decisions, onClose }: { decisions: Decision[]; onClose
 // — App.tsx swaps them in for the whole app. Sandbox-only (see `devEnabled`).
 const DEV_PAGES: { param: string; icon: string; label: string; sub: string }[] = [
   { param: 'riglab', icon: '🦴', label: 'Rig Lab', sub: 'shape, pose, preview + share a reusable monster skeleton' },
+  { param: 'rigperf', icon: '🐴', label: 'Horse Rig Probe', sub: 'eight projected headings + full/animated/far density modes' },
   { param: 'monsterlab', icon: '🧟', label: 'Monster Lab',    sub: 'live-tune monster stats/skills + change-request report' },
   { param: 'sandbox',  icon: '🧪', label: 'Battle Sandbox', sub: 'compose a scene or replay a BSNAP live — play/pause' },
   { param: 'mapgen',   icon: '🗺', label: 'Mapgen Lab',     sub: 'procedural map generator — seeds, planes, validation' },
