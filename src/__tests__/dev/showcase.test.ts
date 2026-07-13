@@ -27,12 +27,12 @@ describe('showcase catalog', () => {
     }
   })
 
-  it('horse-swarm seeds four heroes and 48 paper horses for the mobile probe', () => {
+  it('horse-swarm seeds four heroes and 100 paper horses for the mobile probe', () => {
     const b = showcaseById('horse-swarm')!.build()
     const heroes = b.combatants.filter((c) => c.team === 'player')
     const horses = b.combatants.filter((c) => c.team === 'enemy')
     expect(heroes).toHaveLength(4)
-    expect(horses).toHaveLength(48)
+    expect(horses).toHaveLength(100)
     expect(horses.every((c) => c.id.startsWith('paper-horse#') && c.name === 'Paper Horse')).toBe(true)
   })
 

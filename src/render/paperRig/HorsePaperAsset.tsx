@@ -35,7 +35,10 @@ export const HorsePaperAsset = memo(function HorsePaperAsset({
       aria-hidden
       className="block w-full h-full overflow-visible"
     >
-      <ellipse {...view.shadow} fill={PAPER_PALETTE.shadow} opacity="0.24" />
+      {/* A separate shadow helps the close model read, but is invisible once a
+          dense herd collapses to the merged silhouette. Dropping it at far LOD
+          removes one SVG shape (and one raster target) per horse. */}
+      {lod === 'detail' && <ellipse {...view.shadow} fill={PAPER_PALETTE.shadow} opacity="0.24" />}
       {lod === 'far' ? (
         <path d={view.mergedD} fill={PAPER_PALETTE.wood} stroke={PAPER_PALETTE.ink} strokeWidth="2.4" strokeLinejoin="round" />
       ) : view.parts.map((part) => (

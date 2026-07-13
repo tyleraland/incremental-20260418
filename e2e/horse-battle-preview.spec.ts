@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 const LOCATION = 'perf-sandbox'
 const WINDOW_MS = 4000
 
-test('4 heroes fight 48 compiled horses in the real mobile battle view', async ({ page, browserName }, testInfo) => {
+test('4 heroes fight 100 oversized compiled horses in the real mobile battle view', async ({ page, browserName }, testInfo) => {
   await page.goto('/?sandbox=1&showcase=horse-swarm&skin=horse&play=1')
   const cdp = await page.context().newCDPSession(page)
   if (testInfo.project.name.startsWith('mobile') && browserName === 'chromium') {
@@ -15,7 +15,7 @@ test('4 heroes fight 48 compiled horses in the real mobile battle view', async (
   await page.waitForFunction((location) => {
     const b = (window as any).__game?.getState().battles[location]
     return b?.combatants.filter((c: any) => c.team === 'player').length === 4
-      && b?.combatants.filter((c: any) => c.team === 'enemy').length === 48
+      && b?.combatants.filter((c: any) => c.team === 'enemy').length === 100
   }, LOCATION, { timeout: 30_000 })
   await page.waitForTimeout(800)
 
@@ -29,8 +29,15 @@ test('4 heroes fight 48 compiled horses in the real mobile battle view', async (
       namedHorses: horses.filter((c: any) => c.name === 'Paper Horse' && c.id.startsWith('paper-horse#')).length,
     }
   }, LOCATION)
-  expect(roster).toEqual({ heroes: 4, horses: 48, namedHorses: 48 })
+  expect(roster).toEqual({ heroes: 4, horses: 100, namedHorses: 100 })
   await expect(page.locator('[data-skin="horse"]').first()).toBeVisible()
+  await expect(page.locator('[data-horse-scale="1.5"]').first()).toBeAttached()
+  const visualScale = await page.evaluate(() => {
+    const horse = document.querySelector('[data-horse-scale="1.5"]')!.getBoundingClientRect()
+    const hero = document.querySelector('[data-skin="paper"]')!.getBoundingClientRect()
+    return horse.width / hero.width
+  })
+  expect(visualScale).toBeGreaterThan(1.45)
 
   const metrics = async () => Object.fromEntries(
     (await cdp.send('Performance.getMetrics')).metrics.map((metric) => [metric.name, metric.value]),

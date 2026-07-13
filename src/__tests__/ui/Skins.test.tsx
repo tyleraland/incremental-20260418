@@ -63,6 +63,7 @@ describe('battlefield skins', () => {
     expect(container.querySelectorAll('[data-skin="paper"]').length).toBe(1)
     expect(container.querySelectorAll('[data-skin="horse"]').length).toBe(1)
     expect(container.querySelector('[data-paper-rig-asset="horse"]')).toBeTruthy()
+    expect(container.querySelector('[data-horse-scale="1.5"]')).toBeTruthy()
     expect(getByTitle(/Hero —/)).toBeTruthy()
   })
 
@@ -79,7 +80,20 @@ describe('battlefield skins', () => {
 
     const far = renderHorse(true)
     expect(far.container.querySelectorAll('svg path').length).toBe(1)
+    expect(far.container.querySelectorAll('svg ellipse').length).toBe(0)
     expect(far.container.querySelectorAll('[data-rig-animate]').length).toBe(0)
+  })
+
+  it('far horse memo follows its eight compiled headings and ignores movement churn', () => {
+    const Horse = TOKEN_SKINS.horse
+    const dims = { width: '48px', height: '48px', fontSize: '13px' }
+    const props = { glyph: '', tone: 'enemy' as const, bodyShape: 'canine' as const, alive: true, selected: false, creature: true, simple: true, dims }
+    const { rerender } = render(<Horse {...props} facingDeg={0} moving={false} />)
+    const mounted = BODY_RENDER_PROBE.count
+    rerender(<Horse {...props} facingDeg={15} moving />)
+    expect(BODY_RENDER_PROBE.count).toBe(mounted)       // still the same 90° compiled view
+    rerender(<Horse {...props} facingDeg={30} moving />)
+    expect(BODY_RENDER_PROBE.count).toBe(mounted + 1)   // crosses to the 135° compiled view
   })
 
   // The memo contract, end-to-end: a store-tick re-render where nothing visual

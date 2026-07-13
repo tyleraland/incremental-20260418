@@ -702,7 +702,7 @@ function horseSwarm(): BattleState {
     mk({ id: 'horse-probe-mage', team: 'player', name: 'Mage', str: 4, int: 20, def: 11, maxHp: 1800, hp: 1800, moveSpeed: 0.85, visionRange: 40, rangedRange: 6, skills: [{ ...frostBolt }] }),
     mk({ id: 'horse-probe-cleric', team: 'player', name: 'Cleric', str: 7, int: 16, def: 13, maxHp: 2100, hp: 2100, moveSpeed: 0.85, visionRange: 40, rangedRange: 5, skills: [buildEngineSkill('heal', 2)!] }),
   ]
-  const enemies = Array.from({ length: 48 }, (_, i) => mk({
+  const enemies = Array.from({ length: 100 }, (_, i) => mk({
     id: `paper-horse#${i + 1}`,
     team: 'enemy',
     name: 'Paper Horse',
@@ -720,7 +720,7 @@ function horseSwarm(): BattleState {
   at(b, 'horse-probe-mage', 20, 22)
   at(b, 'horse-probe-cleric', 22, 22)
   enemies.forEach((enemy, i) => {
-    const ring = 8.5 + (i % 4) * 2.2
+    const ring = 5 + (i % 5) * 2.1
     const angle = (Math.PI * 2 * i) / enemies.length
     at(b, enemy.id, 21 + Math.cos(angle) * ring, 21 + Math.sin(angle) * ring)
   })
@@ -730,8 +730,8 @@ function horseSwarm(): BattleState {
 export const SHOWCASES: Showcase[] = [
   {
     id: 'horse-swarm',
-    title: 'Paper horse swarm — 4 vs 48',
-    blurb: 'Four durable heroes surrounded by 48 compiled eight-heading horses in the real battle renderer.',
+    title: 'Paper horse swarm — 4 vs 100',
+    blurb: 'Four durable heroes surrounded by 100 oversized compiled eight-heading horses in the real battle renderer.',
     watch: 'Pan/zoom through the herd: dense view uses merged far LOD; following a hero or zooming in restores colored plate detail and three-part gait motion.',
     build: horseSwarm,
   },

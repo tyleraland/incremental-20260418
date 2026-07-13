@@ -5,6 +5,7 @@ import type { BodyPart } from '@/render/bodyTypes'
 import { PAPER_TONE, PAPER_PALETTE as PAL } from '@/render/palette'
 import { PaperTerrain, type TerrainProps } from '@/render/terrain'
 import { HorsePaperAsset } from '@/render/paperRig/HorsePaperAsset'
+import { nearestPaperRigHeading } from '@/render/paperRig/compile'
 
 // ── Battlefield skins ────────────────────────────────────────────────────────
 //
@@ -301,6 +302,16 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
 // Workbench import experiment: heroes/NPCs retain the production paper body;
 // enemy creatures use the compiled eight-heading horse. The projection math is
 // precomputed at module load, so battle renders only select static SVG paths.
+const HORSE_VISUAL_SCALE = 1.5
+// Dense horses render one of only eight compiled directions and do not animate
+// parts. Compare the values the far body ACTUALLY consumes: a generic token's
+// 15° facing and moving edges must not reconcile the same 45° static horse.
+const HORSE_BODY_PROPS_EQUAL = (a: TokenBodyProps, b: TokenBodyProps) => {
+  if (!(a.creature && b.creature && a.simple && b.simple)) return BODY_PROPS_EQUAL(a, b)
+  return a.tone === b.tone && a.alive === b.alive && a.selected === b.selected &&
+    nearestPaperRigHeading((a.facingDeg ?? 0) + 90) === nearestPaperRigHeading((b.facingDeg ?? 0) + 90) &&
+    a.dims.width === b.dims.width && a.dims.height === b.dims.height
+}
 const HorseBattleBody = memo(function HorseBattleBody(props: TokenBodyProps) {
   if (!props.creature) return <PaperBody {...props} />
   BODY_RENDER_PROBE.count++
@@ -313,7 +324,11 @@ const HorseBattleBody = memo(function HorseBattleBody(props: TokenBodyProps) {
     >
       {selected && <div className="absolute -inset-1 rounded-full ring-2 ring-emerald-300 pointer-events-none" />}
       {tone === 'casting' && <div className="absolute -inset-1 rounded-full ring-2 ring-amber-400/70 animate-pulse pointer-events-none" />}
-      <div className={`absolute inset-0 ${alive ? '' : 'origin-center rotate-[-9deg] scale-y-[0.46]'}`}>
+      <div
+        className="absolute inset-0 origin-center"
+        data-horse-scale={HORSE_VISUAL_SCALE}
+        style={{ transform: alive ? `scale(${HORSE_VISUAL_SCALE})` : `rotate(-9deg) scale(${HORSE_VISUAL_SCALE}, 0.69)` }}
+      >
         {/* Compiler heading 0 points screen-up; battle facing 0 points right. */}
         <HorsePaperAsset
           headingDeg={(facingDeg ?? 0) + 90}
@@ -324,7 +339,7 @@ const HorseBattleBody = memo(function HorseBattleBody(props: TokenBodyProps) {
       </div>
     </div>
   )
-}, BODY_PROPS_EQUAL)
+}, HORSE_BODY_PROPS_EQUAL)
 
 export const TOKEN_SKINS: Record<BattleSkin, typeof CircleBody> = {
   circle: CircleBody,
