@@ -54,6 +54,7 @@ function Projection({
   vertical,
   label,
   domains,
+  onSelectJoint,
 }: {
   joints: RigJoint[]
   selectedId: string
@@ -61,6 +62,7 @@ function Projection({
   vertical: 'y' | 'z'
   label: string
   domains: Domains
+  onSelectJoint: (id: string) => void
 }) {
   const h = domains[horizontal]
   const v = domains[vertical]
@@ -102,7 +104,18 @@ function Projection({
       {joints.map((joint, index) => {
         const p = point(joint)
         const selected = joint.id === selectedId
-        return <g key={joint.id}>
+        const select = () => onSelectJoint(joint.id)
+        return <g
+          key={joint.id}
+          data-rig-projection-joint={joint.id}
+          role="button"
+          tabIndex={0}
+          aria-label={`Select ${joint.label}`}
+          onClick={select}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select() } }}
+          style={{ cursor: 'pointer', touchAction: 'manipulation' }}
+        >
+          <circle cx={p.x} cy={p.y} r="7" fill={PAPER_PALETTE.shadow} opacity="0" />
           <circle cx={p.x} cy={p.y} r={selected ? 4 : 2.8} fill={selected ? PAPER_PALETTE.lampGlow : PAPER_PALETTE.cream} stroke={PAPER_PALETTE.ink} strokeWidth="0.8" />
           <text x={p.x + 3.5} y={p.y - 3} fontSize="4.5" fontWeight="700" fill={selected ? PAPER_PALETTE.lampGlow : PAPER_PALETTE.cream}>{index + 1}</text>
         </g>
@@ -111,7 +124,7 @@ function Projection({
   </div>
 }
 
-export function RigSegmentViews({ rig, selectedJoint }: { rig: ResolvedRig; selectedJoint: string }) {
+export function RigSegmentViews({ rig, selectedJoint, onSelectJoint }: { rig: ResolvedRig; selectedJoint: string; onSelectJoint: (id: string) => void }) {
   const [scaleMode, setScaleMode] = useState<ScaleMode>('normalized')
   const joints = focusJoints(rig, selectedJoint)
   if (!joints.length) return null
@@ -125,14 +138,14 @@ export function RigSegmentViews({ rig, selectedJoint }: { rig: ResolvedRig; sele
       </div>
     </div>
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-      <Projection joints={joints} selectedId={selectedJoint} horizontal="x" vertical="y" label="Top" domains={domains} />
-      <Projection joints={joints} selectedId={selectedJoint} horizontal="x" vertical="z" label="Side" domains={domains} />
-      <Projection joints={joints} selectedId={selectedJoint} horizontal="y" vertical="z" label="Front" domains={domains} />
+      <Projection joints={joints} selectedId={selectedJoint} horizontal="x" vertical="y" label="Top" domains={domains} onSelectJoint={onSelectJoint} />
+      <Projection joints={joints} selectedId={selectedJoint} horizontal="x" vertical="z" label="Side" domains={domains} onSelectJoint={onSelectJoint} />
+      <Projection joints={joints} selectedId={selectedJoint} horizontal="y" vertical="z" label="Front" domains={domains} onSelectJoint={onSelectJoint} />
     </div>
     <div className="overflow-x-auto rounded-lg border border-game-border bg-game-bg/50">
       <table className="w-full min-w-[420px] border-collapse text-[9px]">
         <thead className="text-game-muted"><tr><th className="px-2 py-1.5 text-left font-medium"># Joint</th><th className="px-2 py-1.5 text-right font-medium">X</th><th className="px-2 py-1.5 text-right font-medium">Y</th><th className="px-2 py-1.5 text-right font-medium">Z</th></tr></thead>
-        <tbody>{joints.map((joint, index) => <tr key={joint.id} className={`border-t border-game-border/60 ${joint.id === selectedJoint ? 'bg-game-gold/10 text-game-gold' : 'text-game-text-dim'}`}><td className="px-2 py-1.5">{index + 1} · {joint.label}</td><td className="px-2 py-1.5 text-right font-mono">{joint.x.toFixed(2)}</td><td className="px-2 py-1.5 text-right font-mono">{joint.y.toFixed(2)}</td><td className="px-2 py-1.5 text-right font-mono">{joint.z.toFixed(2)}</td></tr>)}</tbody>
+        <tbody>{joints.map((joint, index) => <tr key={joint.id} data-rig-coordinate-joint={joint.id} onClick={() => onSelectJoint(joint.id)} className={`cursor-pointer border-t border-game-border/60 ${joint.id === selectedJoint ? 'bg-game-gold/10 text-game-gold' : 'text-game-text-dim hover:bg-white/5'}`}><td className="px-2 py-1.5"><button onClick={() => onSelectJoint(joint.id)} className="text-left">{index + 1} · {joint.label}</button></td><td className="px-2 py-1.5 text-right font-mono">{joint.x.toFixed(2)}</td><td className="px-2 py-1.5 text-right font-mono">{joint.y.toFixed(2)}</td><td className="px-2 py-1.5 text-right font-mono">{joint.z.toFixed(2)}</td></tr>)}</tbody>
       </table>
     </div>
   </div>

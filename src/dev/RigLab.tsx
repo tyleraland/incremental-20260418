@@ -326,7 +326,7 @@ export default function RigLab() {
 
           <section className="rounded-2xl border border-game-border bg-game-surface p-3 space-y-2">
             <div><h2 className="text-sm font-semibold">Selected chain in 3-D</h2><p className="text-[10px] text-game-muted">The same joints projected top (x/y), side (x/z), and front (y/z).</p></div>
-            <RigSegmentViews rig={editRig} selectedJoint={selectedJoint} />
+            <RigSegmentViews rig={editRig} selectedJoint={selectedJoint} onSelectJoint={setSelectedJoint} />
           </section>
         </div>
 
