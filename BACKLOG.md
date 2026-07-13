@@ -250,6 +250,18 @@ deferred content phases.
   plug would swallow a small room's centre; nudging the plug's `doorAt`
   outward into the corridor would raise the shortcut fire rate.
 
+*Desire paths (L7 dressing):*
+- **Widening is single-sided.** The width-2 trample only widens toward +y
+  (horizontal legs) / +x (vertical legs), so rough ground on the north/west
+  side of a trail never gets captured — a slight directional bias. Widen
+  toward the rougher side (sample both perpendicular neighbours) if it reads
+  lopsided in the lab.
+- **Portalless maps funnel nothing.** With no portal POIs the landmark
+  usually sits in the spawn region, so the trail crosses 0 pinches (the
+  funnel-through-a-ford read only appears with portals — real locations have
+  them). A spawn→a-far-region fallback target would give single-region maps a
+  trail with a crossing.
+
 *Cross-cutting infra:*
 - **`GenResult.notes` cross-attempt bleed.** Notes accumulate across reroll
   attempts, so note-matching tests/tools can see notes from rejected
@@ -265,9 +277,18 @@ deferred content phases.
 - **Lab authoring loop.** `?mapgen=1` could grow an export-to-Location
   snippet button (the curated-map authoring loop) and a bulk CLI sweep
   (`npm run mapgen-sweep`) if the vitest fuzz gate ever gets slow. Also:
-  live per-pass dial sliders (RIVER/GATE/OUTCROP_DIALS) in the focused view —
-  the derived-layer overlays + showcase presets shipped, but the dials are
-  still edited in source. (Derived-graph/scratch overlays + showcase: DONE.)
+  live per-pass dial sliders (RIVER/GATE/OUTCROP_DIALS) — the derived-layer
+  overlays, showcase presets, and the **staged layer tabs** (Final + one
+  cumulative+highlight tab per stage, with per-stage pass-skip controls)
+  shipped, but the dials are still edited in source; sliders are the missing
+  "influence the *numbers*" half of the per-stage authoring UI.
+- **Staged-tab lab polish (dev-tool only).** Minor rough edges in the tabbed
+  layer inspector: (a) the *field* recipe places spawn/landmark POIs in the
+  `semantic` pass, so those markers first appear on the Dressing stage rather
+  than accreting earlier (documented via a legend hint; a synthesized early
+  spawn crosshair would read better); (b) a manual pass-skip toggled on one
+  stage still shows its `skip:` note on unrelated earlier tabs (cosmetic
+  clutter). Neither affects a bake.
 
 ### Feel-iteration knobs (need human play, not code)
 
