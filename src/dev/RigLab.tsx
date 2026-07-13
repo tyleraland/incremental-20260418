@@ -4,15 +4,16 @@ import { RiggedMonster } from '@/render/rigs/RiggedMonster'
 import { RigSegmentViews } from '@/render/rigs/RigSegmentViews'
 import { createRigDraft, poseLayers, resolveRigPose, sampleRigAnimation, validateRigTemplate } from '@/render/rigs/model'
 import { quadrupedRig } from '@/render/rigs/quadruped'
-import type { RigAnimationId, RigDraft, RigParams, RigPartColors, RigPartStyle, RigPoint, RigPoseId } from '@/render/rigs/types'
+import type { RigAnimationId, RigDraft, RigHornNode, RigParams, RigPartColors, RigPartStyle, RigPoint, RigPoseId } from '@/render/rigs/types'
 
 const STORAGE_KEY = 'rig-lab-draft-v1'
 const POSES: RigPoseId[] = ['bind', 'idleA', 'idleB', 'walkA', 'walkB', 'attack', 'hit']
 const ANIMATIONS: RigAnimationId[] = ['idle', 'walk', 'attack', 'hit']
 const PARAMS: { id: keyof RigParams; label: string; min: number; max: number; step: number }[] = [
-  { id: 'bodyLength', label: 'Body length', min: 22, max: 48, step: 1 },
-  { id: 'bodyWidth', label: 'Body width', min: 18, max: 38, step: 1 },
-  { id: 'headSize', label: 'Head size', min: 8, max: 22, step: 1 },
+  { id: 'bodyLength', label: 'Body length', min: 6, max: 80, step: 1 },
+  { id: 'bodyWidth', label: 'Body width', min: 5, max: 64, step: 1 },
+  { id: 'headSize', label: 'Head width', min: 3, max: 40, step: 1 },
+  { id: 'headLength', label: 'Head length', min: 4, max: 44, step: 1 },
   { id: 'neckLength', label: 'Neck length', min: 3, max: 22, step: 1 },
   { id: 'legLength', label: 'Leg length', min: 10, max: 26, step: 1 },
   { id: 'stance', label: 'Stance', min: -2, max: 9, step: 0.5 },
@@ -38,6 +39,8 @@ function normalizeDraft(value: Partial<RigDraft>): RigDraft {
     poseOffsets: value.poseOffsets ?? {},
     partStyles: value.partStyles ?? {},
     partColors: value.partColors ?? {},
+    hornNodes: value.hornNodes ?? [],
+    modelScale: Math.min(1.35, Math.max(0.45, value.modelScale ?? 1)),
   }
 }
 
@@ -85,6 +88,9 @@ export default function RigLab() {
   const [showRig, setShowRig] = useState(true)
   const [selectedJoint, setSelectedJoint] = useState('head')
   const [selectedPart, setSelectedPart] = useState('body')
+  const [hornParent, setHornParent] = useState('head')
+  const [newHornOffset, setNewHornOffset] = useState<RigPoint>({ x: 7, y: 0, z: 1.5 })
+  const [newHornWidth, setNewHornWidth] = useState(5)
   const [liveMirror, setLiveMirror] = useState(false)
   const [lastEdit, setLastEdit] = useState<LastEdit | null>(null)
   const [repeatTarget, setRepeatTarget] = useState('nearFrontFoot')
@@ -101,6 +107,8 @@ export default function RigLab() {
     offset: RigPoint
     mirrorId?: string
     mirrorOffset?: RigPoint
+    hornOffset?: RigPoint
+    modelScale: number
     svg: SVGSVGElement
   } | null>(null)
 
@@ -130,11 +138,19 @@ export default function RigLab() {
       const rect = active.svg.getBoundingClientRect()
       const [, , vw, vh] = quadrupedRig.viewBox
       const delta = {
-        x: (event.clientX - active.x) * vw / rect.width,
-        y: (event.clientY - active.y) * vh / rect.height,
+        x: (event.clientX - active.x) * vw / rect.width / active.modelScale,
+        y: (event.clientY - active.y) * vh / rect.height / active.modelScale,
         z: 0,
       }
       setDraft((current) => {
+        if (active.hornOffset) {
+          return {
+            ...current,
+            hornNodes: current.hornNodes.map((node) => node.id === active.id
+              ? { ...node, offset: { x: active.hornOffset!.x + delta.x, y: active.hornOffset!.y + delta.y, z: active.hornOffset!.z } }
+              : node),
+          }
+        }
         const offsets = { ...current.poseOffsets[active.pose] }
         offsets[active.id] = { x: active.offset.x + delta.x, y: active.offset.y + delta.y, z: active.offset.z }
         if (active.mirrorId && active.mirrorOffset) {
@@ -190,6 +206,17 @@ export default function RigLab() {
     lit: PAPER_PALETTE[part.lit],
     outline: PAPER_PALETTE[part.outline ?? 'ink'],
   }
+  const selectedHorn = draft.hornNodes.find((node) => node.id === selectedJoint)
+  const hornById = new Map(draft.hornNodes.map((node) => [node.id, node]))
+  const hornReparentOptions = joints.filter((joint) => {
+    if (!selectedHorn || joint.id === selectedHorn.id) return !selectedHorn
+    let current: RigHornNode | undefined = hornById.get(joint.id)
+    while (current) {
+      if (current.parent === selectedHorn.id) return false
+      current = hornById.get(current.parent)
+    }
+    return true
+  })
   const errors = validateRigTemplate(quadrupedRig)
   const json = JSON.stringify(draft, null, 2)
 
@@ -199,7 +226,8 @@ export default function RigLab() {
     setSelectedJoint(id)
     const svg = event.currentTarget.ownerSVGElement
     if (!svg) return
-    const mirrorId = liveMirror ? mirroredJoint(id) : undefined
+    const horn = draft.hornNodes.find((node) => node.id === id)
+    const mirrorId = !horn && liveMirror ? mirroredJoint(id) : undefined
     drag.current = {
       id,
       pose: editPose,
@@ -209,6 +237,8 @@ export default function RigLab() {
       offset: pointFor(draft, editPose, id),
       mirrorId,
       mirrorOffset: mirrorId ? pointFor(draft, editPose, mirrorId) : undefined,
+      hornOffset: horn ? { ...horn.offset } : undefined,
+      modelScale: draft.modelScale,
       svg,
     }
   }
@@ -217,6 +247,15 @@ export default function RigLab() {
     if (![delta.x, delta.y, delta.z].every(Number.isFinite)) return
     setAnimation(null)
     setDraft((current) => {
+      const horn = current.hornNodes.find((node) => node.id === id)
+      if (horn) {
+        return {
+          ...current,
+          hornNodes: current.hornNodes.map((node) => node.id === id
+            ? { ...node, offset: { x: node.offset.x + delta.x, y: node.offset.y + delta.y, z: node.offset.z + delta.z } }
+            : node),
+        }
+      }
       const offsets = { ...current.poseOffsets[editPose] }
       const existing = pointFor(current, editPose, id)
       offsets[id] = { x: existing.x + delta.x, y: existing.y + delta.y, z: existing.z + delta.z }
@@ -241,6 +280,15 @@ export default function RigLab() {
     setEditPose(lastEdit.pose)
     const delta = transformed(lastEdit.delta, repeatAngle, flipY)
     setDraft((current) => {
+      const horn = current.hornNodes.find((node) => node.id === target)
+      if (horn) {
+        return {
+          ...current,
+          hornNodes: current.hornNodes.map((node) => node.id === target
+            ? { ...node, offset: { x: node.offset.x + delta.x, y: node.offset.y + delta.y, z: node.offset.z + delta.z } }
+            : node),
+        }
+      }
       const offsets = { ...current.poseOffsets[lastEdit.pose] }
       const existing = pointFor(current, lastEdit.pose, target)
       offsets[target] = { x: existing.x + delta.x, y: existing.y + delta.y, z: existing.z + delta.z }
@@ -268,6 +316,43 @@ export default function RigLab() {
       ...current,
       partColors: { ...current.partColors, [selectedPart]: { ...partColors, [key]: value } },
     }))
+  }
+
+  const addHornNode = () => {
+    if (!editRig[hornParent]) return
+    let index = draft.hornNodes.length + 1
+    while (draft.hornNodes.some((node) => node.id === `horn${index}`)) index++
+    const node: RigHornNode = {
+      id: `horn${index}`,
+      label: `Horn ${index}`,
+      parent: hornParent,
+      offset: { ...newHornOffset },
+      width: newHornWidth,
+    }
+    setDraft((current) => ({ ...current, hornNodes: [...current.hornNodes, node] }))
+    setSelectedJoint(node.id)
+    setHornParent(node.id)
+    setAnimation(null)
+    setStatus(`Added ${node.label}`)
+  }
+
+  const updateSelectedHorn = (patch: Partial<RigHornNode>) => {
+    if (!selectedHorn) return
+    setDraft((current) => ({ ...current, hornNodes: current.hornNodes.map((node) => node.id === selectedHorn.id ? { ...node, ...patch } : node) }))
+  }
+
+  const removeSelectedHorn = () => {
+    if (!selectedHorn) return
+    const removed = new Set([selectedHorn.id])
+    let changed = true
+    while (changed) {
+      changed = false
+      draft.hornNodes.forEach((node) => { if (removed.has(node.parent) && !removed.has(node.id)) { removed.add(node.id); changed = true } })
+    }
+    setDraft((current) => ({ ...current, hornNodes: current.hornNodes.filter((node) => !removed.has(node.id)) }))
+    setSelectedJoint(selectedHorn.parent)
+    setHornParent(selectedHorn.parent)
+    setStatus(`Removed ${removed.size} horn node${removed.size === 1 ? '' : 's'}`)
   }
 
   const copy = async () => {
@@ -306,7 +391,7 @@ export default function RigLab() {
         <div className="space-y-3">
           <section className="rounded-2xl border border-game-border bg-game-surface overflow-hidden">
             <div className="aspect-square max-h-[66vh] min-h-[320px] p-4 bg-game-bg/40">
-              <RiggedMonster template={quadrupedRig} rig={rig} params={draft.params} showRig={showRig} selectedJoint={selectedJoint} onJointPointerDown={startDrag} partStyles={draft.partStyles} partColors={draft.partColors} />
+              <RiggedMonster template={quadrupedRig} rig={rig} params={draft.params} showRig={showRig} selectedJoint={selectedJoint} onJointPointerDown={startDrag} partStyles={draft.partStyles} partColors={draft.partColors} hornNodes={draft.hornNodes} modelScale={draft.modelScale} />
             </div>
             <div className="p-3 border-t border-game-border space-y-3">
               <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
@@ -334,6 +419,7 @@ export default function RigLab() {
           <section className="rounded-2xl border border-game-border bg-game-surface p-4 space-y-3">
             <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Skeleton proportions</h2><button onClick={reset} className="text-[10px] text-game-muted">Reset</button></div>
             <input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} aria-label="Rig name" className="w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs" />
+            <label className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>Model size</span><output>{draft.modelScale.toFixed(2)}×</output></span><input aria-label="Model size" type="range" min="0.45" max="1.35" step="0.05" value={draft.modelScale} onChange={(event) => setDraft((current) => ({ ...current, modelScale: Number(event.target.value) }))} className="w-full accent-game-primary" /></label>
             {PARAMS.map((param) => <label key={param.id} className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>{param.label}</span><output>{draft.params[param.id]}</output></span><input type="range" min={param.min} max={param.max} step={param.step} value={draft.params[param.id]} onChange={(event) => updateParam(param.id, Number(event.target.value))} className="w-full accent-game-primary" /></label>)}
           </section>
 
@@ -345,6 +431,20 @@ export default function RigLab() {
               <label className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>Z height / layer</span><output>{selected.z.toFixed(2)}</output></span><input type="range" min="-2" max="8" step="0.1" value={selected.z} onChange={(event) => setCoordinate('absolute', 'z', Number(event.target.value))} className="w-full accent-game-gold" /></label>
             </>}
             <div className="rounded-lg bg-game-bg/60 p-2 font-mono text-[9px] text-game-muted">rig center [{center.x.toFixed(1)}, {center.y.toFixed(1)}, {center.z.toFixed(1)}]<br />extent [{(bounds.maxX - bounds.minX).toFixed(1)}, {(bounds.maxY - bounds.minY).toFixed(1)}, {(bounds.maxZ - bounds.minZ).toFixed(1)}]</div>
+          </section>
+
+          <section className="rounded-2xl border border-game-border bg-game-surface p-4 space-y-3" data-horn-builder>
+            <div><h2 className="text-sm font-semibold">Horn builder</h2><p className="mt-1 text-[9px] text-game-muted">Attach a tapered segment to any skeleton or horn node. Add more nodes to bend and sharpen the silhouette in 3-D.</p></div>
+            <label className="block text-[9px] uppercase text-game-muted">Connect new node to<select aria-label="Horn parent" value={hornParent} onChange={(event) => setHornParent(event.target.value)} className="mt-1 w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs normal-case text-game-text">{joints.map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}</select></label>
+            <div><div className="mb-1 text-[9px] uppercase tracking-wider text-game-muted">New node offset from parent</div><div className="grid grid-cols-3 gap-2">{(['x', 'y', 'z'] as const).map((axis) => <label key={axis} className="text-[9px] uppercase text-game-muted">{axis}<input aria-label={`New horn ${axis}`} type="number" step="0.5" value={newHornOffset[axis]} onChange={(event) => setNewHornOffset((point) => ({ ...point, [axis]: Number(event.target.value) }))} className="mt-1 w-full rounded-md border border-game-border bg-game-bg p-1.5 text-[11px] text-game-text" /></label>)}</div></div>
+            <label className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>Segment width</span><output>{newHornWidth.toFixed(1)}</output></span><input aria-label="New horn width" type="range" min="0.8" max="12" step="0.2" value={newHornWidth} onChange={(event) => setNewHornWidth(Number(event.target.value))} className="w-full accent-game-primary" /></label>
+            <button onClick={addHornNode} className="w-full rounded-lg border border-game-primary bg-game-primary/15 px-3 py-2 text-xs">+ Add horn node</button>
+            {selectedHorn && <div className="space-y-2 rounded-lg border border-game-gold/40 bg-game-gold/5 p-2">
+              <div className="flex items-center justify-between"><span className="text-[11px] font-medium text-game-gold">Editing {selectedHorn.label}</span><button onClick={removeSelectedHorn} className="text-[9px] text-red-300">Delete branch</button></div>
+              <label className="block text-[9px] uppercase text-game-muted">Connected to<select aria-label="Selected horn parent" value={selectedHorn.parent} onChange={(event) => updateSelectedHorn({ parent: event.target.value })} className="mt-1 w-full rounded-md border border-game-border bg-game-bg px-2 py-1.5 text-[11px] normal-case text-game-text">{hornReparentOptions.map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}</select></label>
+              <label className="block"><span className="flex justify-between text-[10px] text-game-text-dim"><span>Width</span><output>{selectedHorn.width.toFixed(1)}</output></span><input aria-label="Selected horn width" type="range" min="0.8" max="12" step="0.2" value={selectedHorn.width} onChange={(event) => updateSelectedHorn({ width: Number(event.target.value) })} className="w-full accent-game-gold" /></label>
+              <p className="text-[9px] text-game-muted">Drag this node in the main view or edit its relative XYZ above. New nodes default to attaching here.</p>
+            </div>}
           </section>
 
           <section className="rounded-2xl border border-game-border bg-game-surface p-4 space-y-3">

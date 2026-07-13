@@ -30,6 +30,22 @@ round/tapered/angular/spiky geometry, width, sharpness, and exploratory
 base/lit/outline color pickers. Custom colors remain draft data until a
 production compiler maps them to palette roles.
 
+Quadruped proportions deliberately have broad exploratory ranges. Head width
+and head length are independent parameters; the latter controls the neck→head→
+muzzle span. `modelScale` scales the complete rendered group around the rig
+origin, including parts, horn attachments, rig overlay, and pose motion. Every
+render also emits a concentric bottom shadow copy at 1.18× part thickness before
+the visible model, so the shadow silhouette is strictly larger than every part
+instead of relying on a fixed ground ellipse.
+
+`hornNodes` are a small attachment graph stored in the shared draft. Each node
+chooses any template joint or prior horn node as its parent and stores local
+XYZ plus segment width. The resolver appends these nodes after posing the base
+rig, so a horn follows idle/attack/hit inheritance automatically. The lab can
+chain, reparent, resize, drag, numerically edit, or delete a horn branch; each
+edge renders as a tapered paper segment and participates in all orthographic
+views and selection surfaces.
+
 ## Contract for a future skeleton producer
 
 - Author top-down in a normalized box, facing `+x`, independent of final token

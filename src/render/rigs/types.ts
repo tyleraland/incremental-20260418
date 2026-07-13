@@ -23,6 +23,7 @@ export interface RigParams {
   bodyLength: number
   bodyWidth: number
   headSize: number
+  headLength: number
   neckLength: number
   legLength: number
   stance: number
@@ -67,6 +68,16 @@ export interface RigPartColors {
   outline: string
 }
 
+export interface RigHornNode {
+  id: string
+  label: string
+  // May attach to a template joint or another horn node. Offset stays local to
+  // that parent, so the whole horn follows inherited poses automatically.
+  parent: RigJointId
+  offset: RigPoint
+  width: number
+}
+
 export interface RigDraft {
   version: 1
   templateId: string
@@ -79,6 +90,8 @@ export interface RigDraft {
   // Lab-only exploratory colors. A production compiler must snap/promote them
   // to named palette roles before a model enters the battle renderer.
   partColors: Record<string, RigPartColors>
+  hornNodes: RigHornNode[]
+  modelScale: number
 }
 
 export const zeroPoint = (): RigPoint => ({ x: 0, y: 0, z: 0 })

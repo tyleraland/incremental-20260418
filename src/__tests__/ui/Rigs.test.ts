@@ -52,5 +52,27 @@ describe('rigged monster prototype', () => {
     const draft = createRigDraft(quadrupedRig)
     expect(draft.partStyles).toEqual({})
     expect(draft.partColors).toEqual({})
+    expect(draft.hornNodes).toEqual([])
+    expect(draft.modelScale).toBe(1)
+  })
+
+  it('resolves nested horn nodes from their chosen parent', () => {
+    const draft = createRigDraft(quadrupedRig)
+    draft.hornNodes = [
+      { id: 'horn1', label: 'Horn 1', parent: 'head', offset: { x: 3, y: -2, z: 1 }, width: 4 },
+      { id: 'horn2', label: 'Horn 2', parent: 'horn1', offset: { x: 4, y: -1, z: 0.5 }, width: 2 },
+    ]
+    const rig = resolveRigPose(quadrupedRig, draft, 'attack')
+    expect(rig.horn1).toMatchObject({ x: rig.head.x + 3, y: rig.head.y - 2, z: rig.head.z + 1, parent: 'head' })
+    expect(rig.horn2).toMatchObject({ x: rig.horn1.x + 4, y: rig.horn1.y - 1, z: rig.horn1.z + 0.5, parent: 'horn1' })
+  })
+
+  it('separates quadruped head length from head width', () => {
+    const draft = createRigDraft(quadrupedRig)
+    const before = resolveRigPose(quadrupedRig, draft, 'bind')
+    draft.params.headLength += 10
+    const after = resolveRigPose(quadrupedRig, draft, 'bind')
+    expect(after.muzzle.x - before.muzzle.x).toBeCloseTo(10)
+    expect(after.head.y).toBe(before.head.y)
   })
 })

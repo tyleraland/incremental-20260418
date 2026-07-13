@@ -1,7 +1,7 @@
 import type { PointerEventHandler } from 'react'
 import { PAPER_PALETTE } from '@/render/palette'
 import type { ResolvedRig } from '@/render/rigs/model'
-import type { RigParams, RigPart, RigPartColors, RigPartStyle, RigTemplate } from '@/render/rigs/types'
+import type { RigHornNode, RigParams, RigPart, RigPartColors, RigPartStyle, RigTemplate } from '@/render/rigs/types'
 
 const PROJECT_Z = 0.72
 
@@ -13,6 +13,7 @@ function widthFor(part: Extract<RigPart, { kind: 'capsule' | 'ellipse' }>, param
 }
 
 const DEFAULT_STYLE: RigPartStyle = { shape: 'round', widthScale: 1, sharpness: 0.35 }
+const HORN_STYLE: RigPartStyle = { shape: 'tapered', widthScale: 1, sharpness: 0.9 }
 
 function pathFrom(points: [number, number][]) {
   return `${points.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join(' ')} Z`
@@ -48,27 +49,30 @@ function Segment({
   params,
   style = DEFAULT_STYLE,
   colors,
+  sizeBoost = 1,
 }: {
   part: RigPart
   rig: ResolvedRig
   params: RigParams
   style?: RigPartStyle
   colors?: RigPartColors
+  sizeBoost?: number
 }) {
   const fill = colors?.fill ?? PAPER_PALETTE[part.fill]
   const lit = colors?.lit ?? PAPER_PALETTE[part.lit]
   const outline = colors?.outline ?? PAPER_PALETTE[part.outline ?? 'ink']
   if (part.kind === 'joint') {
     const p = projected(rig[part.at])
+    const radius = part.radius * sizeBoost
     return <g data-rig-part={part.id}>
-      <circle cx={p.x} cy={p.y} r={part.radius + 1.3} fill={outline} />
-      <circle cx={p.x} cy={p.y} r={part.radius} fill={fill} />
-      <circle cx={p.x - 0.8} cy={p.y - 0.8} r={part.radius * 0.78} fill={lit} />
+      <circle cx={p.x} cy={p.y} r={radius + 1.3} fill={outline} />
+      <circle cx={p.x} cy={p.y} r={radius} fill={fill} />
+      <circle cx={p.x - 0.8} cy={p.y - 0.8} r={radius * 0.78} fill={lit} />
     </g>
   }
   const a = projected(rig[part.a])
   const b = projected(rig[part.b])
-  const width = widthFor(part, params) * style.widthScale
+  const width = widthFor(part, params) * style.widthScale * sizeBoost
   if (part.kind === 'capsule' && style.shape === 'round') {
     return <g data-rig-part={part.id}>
       <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={outline} strokeWidth={width + 2.6} strokeLinecap="round" />
@@ -104,6 +108,8 @@ export function RiggedMonster({
   onJointPointerDown,
   partStyles = {},
   partColors = {},
+  hornNodes = [],
+  modelScale = 1,
 }: {
   template: RigTemplate
   rig: ResolvedRig
@@ -113,9 +119,23 @@ export function RiggedMonster({
   onJointPointerDown?: (id: string) => PointerEventHandler<SVGCircleElement>
   partStyles?: Record<string, RigPartStyle>
   partColors?: Record<string, RigPartColors>
+  hornNodes?: RigHornNode[]
+  modelScale?: number
 }) {
   const joints = Object.values(rig)
-  const sorted = [...template.parts].sort((a, b) => {
+  const hornParts: RigPart[] = hornNodes.filter((node) => rig[node.id] && rig[node.parent]).map((node) => ({
+    id: `horn-${node.id}`,
+    kind: 'capsule',
+    a: node.parent,
+    b: node.id,
+    width: node.width,
+    z: 4.4 + rig[node.id].z * 0.02,
+    fill: 'cream',
+    lit: 'lightWarm',
+    outline: 'ink',
+  }))
+  const allParts = [...template.parts, ...hornParts]
+  const sorted = allParts.sort((a, b) => {
     const az = a.z + (a.kind === 'joint' ? rig[a.at].z : (rig[a.a].z + rig[a.b].z) / 2) * 0.01
     const bz = b.z + (b.kind === 'joint' ? rig[b.at].z : (rig[b.a].z + rig[b.b].z) / 2) * 0.01
     return az - bz
@@ -129,31 +149,38 @@ export function RiggedMonster({
       className="block w-full h-full overflow-visible"
       style={{ touchAction: 'none' }}
     >
-      <ellipse cx="50" cy="72" rx="38" ry="9" fill={PAPER_PALETTE.shadow} opacity="0.2" />
-      {sorted.map((part) => <Segment key={part.id} part={part} rig={rig} params={params} style={partStyles[part.id]} colors={partColors[part.id]} />)}
-      {showRig && <g data-rig-overlay>
-        {joints.filter((joint) => joint.parent && rig[joint.parent]).map((joint) => {
-          const a = projected(rig[joint.parent!])
-          const b = projected(joint)
-          return <line key={`bone-${joint.id}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={PAPER_PALETTE.bannerGold} strokeWidth="0.8" strokeDasharray="2 2" />
-        })}
-        {joints.map((joint) => {
-          const p = projected(joint)
-          const selected = joint.id === selectedJoint
-          return <circle
-            key={joint.id}
-            data-rig-joint={joint.id}
-            cx={p.x}
-            cy={p.y}
-            r={selected ? 3.2 : 2.3}
-            fill={selected ? PAPER_PALETTE.lampGlow : PAPER_PALETTE.cream}
-            stroke={PAPER_PALETTE.bannerGold}
-            strokeWidth="1"
-            onPointerDown={onJointPointerDown?.(joint.id)}
-            style={{ pointerEvents: onJointPointerDown ? 'all' : 'none', touchAction: 'none' }}
-          />
-        })}
-      </g>}
+      <g data-rig-model transform={`translate(50 50) scale(${modelScale}) translate(-50 -50)`}>
+        <g data-rig-shadow opacity="0.32">
+          {sorted.map((part) => {
+            const style = partStyles[part.id] ?? (part.id.startsWith('horn-') ? HORN_STYLE : DEFAULT_STYLE)
+            return <Segment key={`shadow-${part.id}`} part={part} rig={rig} params={params} style={style} colors={{ fill: PAPER_PALETTE.shadow, lit: PAPER_PALETTE.shadow, outline: PAPER_PALETTE.shadow }} sizeBoost={1.18} />
+          })}
+        </g>
+        {sorted.map((part) => <Segment key={part.id} part={part} rig={rig} params={params} style={partStyles[part.id] ?? (part.id.startsWith('horn-') ? HORN_STYLE : undefined)} colors={partColors[part.id]} />)}
+        {showRig && <g data-rig-overlay>
+          {joints.filter((joint) => joint.parent && rig[joint.parent]).map((joint) => {
+            const a = projected(rig[joint.parent!])
+            const b = projected(joint)
+            return <line key={`bone-${joint.id}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={PAPER_PALETTE.bannerGold} strokeWidth="0.8" strokeDasharray="2 2" />
+          })}
+          {joints.map((joint) => {
+            const p = projected(joint)
+            const selected = joint.id === selectedJoint
+            return <circle
+              key={joint.id}
+              data-rig-joint={joint.id}
+              cx={p.x}
+              cy={p.y}
+              r={selected ? 3.2 : 2.3}
+              fill={selected ? PAPER_PALETTE.lampGlow : PAPER_PALETTE.cream}
+              stroke={PAPER_PALETTE.bannerGold}
+              strokeWidth="1"
+              onPointerDown={onJointPointerDown?.(joint.id)}
+              style={{ pointerEvents: onJointPointerDown ? 'all' : 'none', touchAction: 'none' }}
+            />
+          })}
+        </g>}
+      </g>
     </svg>
   )
 }

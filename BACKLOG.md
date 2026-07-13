@@ -1049,8 +1049,9 @@ shipped, `thiefBug` first. Still open:
 The `?riglab=1` quadruped prototype establishes a parameterized joint tree,
 z-aware layered + orthographic preview, idle-inherited action clips, direct
 touch/numeric editing, replayable mirror/diagonal transforms, silhouette/color
-tuning, local persistence, and share/import JSON. Open production work, in
-leverage order:
+tuning, nested 3-D horn attachments, whole-model scaling, guaranteed enlarged
+bottom shadows, local persistence, and share/import JSON. Open production work,
+in leverage order:
 
 1. *Prove a second family* — adapt the humanoid reference (or a segmented body)
    to expose assumptions accidentally baked into `quadruped-v0`; only then

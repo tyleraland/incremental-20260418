@@ -7,7 +7,7 @@ function joints(p: RigParams): RigJoint[] {
   const kneeDrop = p.legLength * 0.52
   const footDrop = p.legLength + p.stance
   const neckX = frontX + p.neckLength
-  const headX = neckX + p.headSize * 0.55
+  const headX = neckX + p.headLength * 0.45
   const tailX = rearX - p.tailLength
   const leg = (id: string, label: string, parent: string, x: number, y: number, z: number): RigJoint[] => {
     const rear = id.includes('Rear')
@@ -25,7 +25,7 @@ function joints(p: RigParams): RigJoint[] {
     { id: 'chest', label: 'Chest', parent: 'pelvis', x: frontX, y: 50, z: 2.7 },
     { id: 'neck', label: 'Neck', parent: 'chest', x: neckX, y: 50, z: 3.2 },
     { id: 'head', label: 'Head', parent: 'neck', x: headX, y: 50, z: 3.6 },
-    { id: 'muzzle', label: 'Muzzle', parent: 'head', x: headX + p.headSize * 0.62, y: 50, z: 3.45 },
+    { id: 'muzzle', label: 'Muzzle', parent: 'head', x: headX + p.headLength * 0.55, y: 50, z: 3.45 },
     { id: 'tailRoot', label: 'Tail root', parent: 'pelvis', x: rearX - 2, y: 50, z: 2.1 },
     { id: 'tailTip', label: 'Tail tip', parent: 'tailRoot', x: tailX, y: 54, z: 1.25 },
     ...leg('farRear', 'Far rear', 'pelvis', rearX, -1, 0.75),
@@ -52,6 +52,7 @@ export const quadrupedRig: RigTemplate = {
     bodyLength: 34,
     bodyWidth: 28,
     headSize: 13,
+    headLength: 15,
     neckLength: 10,
     legLength: 17,
     stance: 2,
