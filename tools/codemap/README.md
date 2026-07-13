@@ -76,11 +76,25 @@ complex-and-untested code.
 **Commit classification (Timeline).** `commit-tags.json` maps each commit (10-char
 hash) → `{category, feature, tags}`. It was **backfilled once** by fanning the git
 log out to Haiku subagents; the Timeline lens joins it with git dates. It's a
-plain, hash-keyed, committed file — to keep it current, classify new commits and
-merge them in (any commit not present shows in an `unclassified` lane, so gaps are
-visible). A pre-push hook that classifies the outgoing commits and appends them is
-the intended next step (needs an LLM call at hook time); for now it's a one-time
-backfill + manual append.
+plain, hash-keyed, committed file — any commit not present shows in an
+`unclassified` lane, so gaps are visible.
+
+Keeping it current — `classify-commits.mjs` + a pre-push hook:
+
+```sh
+node tools/codemap/classify-commits.mjs           # --check: nudge if any commit is unclassified
+node tools/codemap/classify-commits.mjs --json    # unclassified commits as a batch to hand an LLM
+node tools/codemap/classify-commits.mjs --append <<'JSON'   # write classifications back
+[{"hash":"<10-char>","category":"feature|fix|refactor|perf|docs|test|chore|infra","feature":"<slug>","tags":["kw"]}]
+JSON
+```
+
+The committed hook at `scripts/hooks/pre-push` runs `--check` on push and prints
+that instruction when commits are unclassified — so the LLM in the loop can
+analyze the new commits and append them (the classification is an LLM judgment;
+the script only finds gaps and writes what you hand back). It's **non-blocking**
+(skip with `SKIP_CODEMAP_CLASSIFY=1`). Activate the hook once per clone with
+`git config core.hooksPath scripts/hooks`. Re-run `npm run codemap` after appending.
 
 **Raw source.** The build mirrors tracked text files into `dist/source/`, and the
 viewer opens any file's code (line-numbered, with line-jump) on demand — from the

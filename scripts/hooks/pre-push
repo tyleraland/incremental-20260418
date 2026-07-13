@@ -1,0 +1,9 @@
+#!/bin/sh
+# Codemap Timeline: remind the LLM/committer to classify new commits so they can
+# be rendered on the Timeline lens. Non-blocking — prints an instruction only.
+# Skip with: SKIP_CODEMAP_CLASSIFY=1 git push …
+[ -n "$SKIP_CODEMAP_CLASSIFY" ] && exit 0
+if command -v node >/dev/null 2>&1 && [ -f tools/codemap/classify-commits.mjs ]; then
+  node tools/codemap/classify-commits.mjs --check 2>&1 || true
+fi
+exit 0
