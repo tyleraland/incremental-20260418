@@ -16,6 +16,7 @@ import { extractGit } from './extract/git.mjs'
 import { extractComplexity } from './extract/complexity.mjs'
 import { extractCoverage } from './extract/coverage.mjs'
 import { extractSmells } from './extract/smells.mjs'
+import { extractTimeline } from './extract/timeline.mjs'
 import { extractFilesystem } from './extract/filesystem.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -32,6 +33,7 @@ const git = extractGit({ REPO })
 const complexity = extractComplexity({ REPO })
 const coverage = extractCoverage({ REPO })
 const smells = extractSmells({ REPO })
+const timeline = extractTimeline({ REPO, HERE })
 const filesystem = extractFilesystem({ REPO, modules, git, complexity, coverage, smells })
 
 const datasets = {
@@ -40,6 +42,7 @@ const datasets = {
   complexity: { ...complexity, generatedAt, gitHash },
   coverage: { ...coverage, generatedAt, gitHash },
   smells: { ...smells, generatedAt, gitHash },
+  timeline: { ...timeline, generatedAt, gitHash },
   filesystem: { ...filesystem, generatedAt, gitHash },
 }
 
@@ -82,8 +85,9 @@ const copyTree = (from, to) => {
   }
 }
 copyTree(join(HERE, 'viewer'), OUT_DIR)
-// vendor pinned cytoscape (no runtime CDN dependency)
+// vendor pinned cytoscape + marked (no runtime CDN dependency)
 copyFileSync(join(HERE, 'node_modules', 'cytoscape', 'dist', 'cytoscape.min.js'), join(OUT_DIR, 'cytoscape.min.js'))
+copyFileSync(join(HERE, 'node_modules', 'marked', 'lib', 'marked.umd.js'), join(OUT_DIR, 'marked.umd.js'))
 
 // Mirror the tracked text source into dist/source/ so the viewer can show raw
 // code on demand (fetched per-file, not bundled into a dataset). The repo is
@@ -115,6 +119,7 @@ console.log(
   `  complexity: ${complexity.stats.functions} functions, ${complexity.stats.over10} over CC>10, median MI ${complexity.stats.medianMi}\n` +
   `  coverage:   ` + (coverage.available ? `${coverage.stats.statements}% statements over ${coverage.stats.files} files` : 'unavailable (run `npm run coverage`)') + '\n' +
   `  smells:     ${smells.stats.total} across ${smells.stats.files} files · ${modules.stats.deadExports} dead exports\n` +
+  `  timeline:   ${timeline.stats.classified}/${timeline.stats.commits} commits classified across ${timeline.stats.features} features\n` +
   `  source:     ${sourceFiles} files mirrored to source/\n` +
   `  -> ${relative(REPO, DATA_DIR)}/{modules,git,complexity,coverage,smells,filesystem,manifest}.json`,
 )

@@ -49,6 +49,8 @@ file in **Git** to focus it in **Modules**).
 | **Features** | modules | directed feature-dependency graph (hybrid semantic layer) |
 | **Files** | filesystem | nested treemap; area ∝ bytes, color by importance / type / churn / **complexity** / **coverage** |
 | **Heatmap** | filesystem, modules | expandable file tree with a heat cell per metric (size, LOC, CC, MI, line %, branch %, churn, smells, dead exports); folders bubble up their worst descendant; click a file to browse source + deps |
+| **Explorer** | filesystem, git, modules | repo file browser — every doc (README/CLAUDE/AGENTS/*.md wherever it hides) + full tree; reads files (markdown rendered, code line-numbered) with each file's git **history** (versions) |
+| **Timeline** | timeline | swimlane per feature — one dot per commit by date, colored by category; see WHEN each feature was developed |
 | **Git** | git | commit calendar, authors, most-churned files, recent commits |
 | **Complexity** | complexity, git, coverage | per-function cyclomatic / cognitive / nesting / size + **risk hotspots (complexity × churn)** |
 | **Coverage** | coverage, complexity | per-file test coverage + **best test targets (complex × untested)** |
@@ -70,6 +72,15 @@ text scan: TODO/FIXME/HACK, `@ts-ignore`, `eslint-disable`, `: any`/`as any`,
 empty `catch {}`, stray `console.log`). Those signals are also heat columns on the
 **Heatmap**, and the risk/test-target tables point at complex-and-churny /
 complex-and-untested code.
+
+**Commit classification (Timeline).** `commit-tags.json` maps each commit (10-char
+hash) → `{category, feature, tags}`. It was **backfilled once** by fanning the git
+log out to Haiku subagents; the Timeline lens joins it with git dates. It's a
+plain, hash-keyed, committed file — to keep it current, classify new commits and
+merge them in (any commit not present shows in an `unclassified` lane, so gaps are
+visible). A pre-push hook that classifies the outgoing commits and appends them is
+the intended next step (needs an LLM call at hook time); for now it's a one-time
+backfill + manual append.
 
 **Raw source.** The build mirrors tracked text files into `dist/source/`, and the
 viewer opens any file's code (line-numbered, with line-jump) on demand — from the

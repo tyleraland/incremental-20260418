@@ -50,11 +50,12 @@ export function extractGit({ REPO }) {
       const d = m[1] === '-' ? 0 : parseInt(m[1], 10) || 0
       const path = newPath(m.slice(2).join('\t'))
       ins += a; del += d; changed++
-      const f = files[path] || (files[path] = { commits: 0, ins: 0, del: 0, first: date, last: date, authors: [] })
+      const f = files[path] || (files[path] = { commits: 0, ins: 0, del: 0, first: date, last: date, authors: [], history: [] })
       f.commits++; f.ins += a; f.del += d
       f.first = date < f.first ? date : f.first
       f.last = date > f.last ? date : f.last
       if (!f.authors.includes(author)) f.authors.push(author)
+      if (f.history.length < 40) f.history.push({ short, date, subject }) // newest-first (git log order); "versions" of the file
     }
     commits.push({ hash, short, author, date, subject, files: changed, ins, del })
     const day = dailyMap.get(date) || { date, commits: 0, ins: 0, del: 0 }

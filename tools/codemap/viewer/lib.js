@@ -45,7 +45,7 @@ export async function loadData(id) {
 
 /* ── raw source viewer ────────────────────────────────────────────────────── */
 const srcCache = new Map()
-function loadSource(path) {
+export function loadSource(path) {
   if (!srcCache.has(path)) srcCache.set(path, fetch(`./source/${path}`).then((r) => r.ok ? r.text() : Promise.reject(new Error('HTTP ' + r.status))))
   return srcCache.get(path)
 }

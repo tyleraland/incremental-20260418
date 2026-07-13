@@ -16,8 +16,10 @@ import inventoryView from './views/inventory.js'
 import complexityView from './views/complexity.js'
 import coverageView from './views/coverage.js'
 import heatmapView from './views/heatmap.js'
+import explorerView from './views/explorer.js'
+import timelineView from './views/timeline.js'
 
-const VIEWS = [modulesView, featuresView, filesView, heatmapView, gitView, complexityView, coverageView, inventoryView]
+const VIEWS = [modulesView, featuresView, filesView, heatmapView, explorerView, gitView, timelineView, complexityView, coverageView, inventoryView]
 const byId = new Map(VIEWS.map((v) => [v.id, v]))
 
 const el = lib.el
