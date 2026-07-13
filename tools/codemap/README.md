@@ -82,19 +82,23 @@ plain, hash-keyed, committed file — any commit not present shows in an
 Keeping it current — `classify-commits.mjs` + a pre-push hook:
 
 ```sh
-node tools/codemap/classify-commits.mjs           # --check: nudge if any commit is unclassified
-node tools/codemap/classify-commits.mjs --json    # unclassified commits as a batch to hand an LLM
-node tools/codemap/classify-commits.mjs --append <<'JSON'   # write classifications back
+node tools/codemap/classify-commits.mjs --auto    # classify unclassified commits via `claude -p` (haiku) + append
+node tools/codemap/classify-commits.mjs --list    # or just list what's unclassified
+node tools/codemap/classify-commits.mjs --json | …  # or hand the batch to your own classifier
+node tools/codemap/classify-commits.mjs --append <<'JSON'   # …and write it back
 [{"hash":"<10-char>","category":"feature|fix|refactor|perf|docs|test|chore|infra","feature":"<slug>","tags":["kw"]}]
 JSON
 ```
 
-The committed hook at `scripts/hooks/pre-push` runs `--check` on push and prints
-that instruction when commits are unclassified — so the LLM in the loop can
-analyze the new commits and append them (the classification is an LLM judgment;
-the script only finds gaps and writes what you hand back). It's **non-blocking**
-(skip with `SKIP_CODEMAP_CLASSIFY=1`). Activate the hook once per clone with
-`git config core.hooksPath scripts/hooks`. Re-run `npm run codemap` after appending.
+`--auto` is the whole loop in one call: it hands the unclassified commits to Haiku
+through the `claude` CLI and appends the result. The committed hook at
+`scripts/hooks/pre-push` runs `--auto` on every push, so classification just
+happens. It runs after the commits exist, so the **tip commit lands one push
+behind** (it shows in the Timeline's `unclassified` lane until then — that's fine).
+The hook leaves the updated `commit-tags.json` for you to commit; it's
+**non-blocking** and degrades to a nudge if `claude` isn't on PATH (skip with
+`SKIP_CODEMAP_CLASSIFY=1`). Activate once per clone: `git config core.hooksPath
+scripts/hooks`. Re-run `npm run codemap` to rebuild the Timeline.
 
 **Raw source.** The build mirrors tracked text files into `dist/source/`, and the
 viewer opens any file's code (line-numbered, with line-jump) on demand — from the
