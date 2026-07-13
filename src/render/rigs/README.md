@@ -44,7 +44,10 @@ XYZ plus segment width. The resolver appends these nodes after posing the base
 rig, so a horn follows idle/attack/hit inheritance automatically. The lab can
 chain, reparent, resize, drag, numerically edit, or delete a horn branch; each
 edge renders as a tapered paper segment and participates in all orthographic
-views and selection surfaces.
+views and selection surfaces. Optional reciprocal `mirrorId` links identify a
+symmetric pair. With symmetric editing enabled, local X/Z and width stay equal
+while local Y is reflected. Rig Lab keeps a 50-checkpoint, session-only undo
+history around draft mutations; the exported draft contains only model data.
 
 ## Contract for a future skeleton producer
 

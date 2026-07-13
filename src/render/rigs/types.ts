@@ -76,6 +76,9 @@ export interface RigHornNode {
   parent: RigJointId
   offset: RigPoint
   width: number
+  // Symmetric nodes point at each other. Editing either node mirrors local Y
+  // while keeping X/Z and width in sync.
+  mirrorId?: RigJointId
 }
 
 export interface RigDraft {

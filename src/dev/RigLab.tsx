@@ -89,8 +89,9 @@ export default function RigLab() {
   const [selectedJoint, setSelectedJoint] = useState('head')
   const [selectedPart, setSelectedPart] = useState('body')
   const [hornParent, setHornParent] = useState('head')
-  const [newHornOffset, setNewHornOffset] = useState<RigPoint>({ x: 7, y: 0, z: 1.5 })
+  const [newHornOffset, setNewHornOffset] = useState<RigPoint>({ x: 7, y: -4, z: 1.5 })
   const [newHornWidth, setNewHornWidth] = useState(5)
+  const [symmetricHorns, setSymmetricHorns] = useState(true)
   const [liveMirror, setLiveMirror] = useState(false)
   const [lastEdit, setLastEdit] = useState<LastEdit | null>(null)
   const [repeatTarget, setRepeatTarget] = useState('nearFrontFoot')
@@ -98,6 +99,10 @@ export default function RigLab() {
   const [repeatFlipY, setRepeatFlipY] = useState(false)
   const [status, setStatus] = useState('Saved on this device')
   const [importText, setImportText] = useState('')
+  const draftRef = useRef(draft)
+  const undoStack = useRef<RigDraft[]>([])
+  const lastHistoryGroup = useRef<{ key: string; at: number } | null>(null)
+  const [undoCount, setUndoCount] = useState(0)
   const drag = useRef<{
     id: string
     pose: RigPoseId
@@ -108,9 +113,44 @@ export default function RigLab() {
     mirrorId?: string
     mirrorOffset?: RigPoint
     hornOffset?: RigPoint
+    hornMirrorId?: string
     modelScale: number
     svg: SVGSVGElement
   } | null>(null)
+
+  const replaceDraft = (next: RigDraft | ((current: RigDraft) => RigDraft)) => {
+    const value = typeof next === 'function' ? next(draftRef.current) : next
+    draftRef.current = value
+    setDraft(value)
+  }
+
+  const rememberDraft = (group?: string) => {
+    const now = performance.now()
+    const grouped = group && lastHistoryGroup.current?.key === group && now - lastHistoryGroup.current.at < 600
+    if (!grouped) {
+      undoStack.current.push(draftRef.current)
+      if (undoStack.current.length > 50) undoStack.current.shift()
+      setUndoCount(undoStack.current.length)
+    }
+    lastHistoryGroup.current = group ? { key: group, at: now } : null
+  }
+
+  const changeDraft = (next: RigDraft | ((current: RigDraft) => RigDraft), group?: string) => {
+    rememberDraft(group)
+    replaceDraft(next)
+  }
+
+  const undo = () => {
+    const previous = undoStack.current.pop()
+    if (!previous) return
+    replaceDraft(previous)
+    const ids = new Set([...quadrupedRig.buildJoints(previous.params).map((joint) => joint.id), ...previous.hornNodes.map((node) => node.id)])
+    if (!ids.has(selectedJoint)) setSelectedJoint('head')
+    if (!ids.has(hornParent)) setHornParent('head')
+    setUndoCount(undoStack.current.length)
+    lastHistoryGroup.current = null
+    setStatus('Undid last edit')
+  }
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(draft))
@@ -142,13 +182,15 @@ export default function RigLab() {
         y: (event.clientY - active.y) * vh / rect.height / active.modelScale,
         z: 0,
       }
-      setDraft((current) => {
+      replaceDraft((current) => {
         if (active.hornOffset) {
           return {
             ...current,
-            hornNodes: current.hornNodes.map((node) => node.id === active.id
-              ? { ...node, offset: { x: active.hornOffset!.x + delta.x, y: active.hornOffset!.y + delta.y, z: active.hornOffset!.z } }
-              : node),
+            hornNodes: current.hornNodes.map((node) => {
+              if (node.id === active.id) return { ...node, offset: { x: active.hornOffset!.x + delta.x, y: active.hornOffset!.y + delta.y, z: active.hornOffset!.z } }
+              if (node.id === active.hornMirrorId) return { ...node, offset: { x: active.hornOffset!.x + delta.x, y: -(active.hornOffset!.y + delta.y), z: active.hornOffset!.z } }
+              return node
+            }),
           }
         }
         const offsets = { ...current.poseOffsets[active.pose] }
@@ -226,6 +268,7 @@ export default function RigLab() {
     setSelectedJoint(id)
     const svg = event.currentTarget.ownerSVGElement
     if (!svg) return
+    rememberDraft()
     const horn = draft.hornNodes.find((node) => node.id === id)
     const mirrorId = !horn && liveMirror ? mirroredJoint(id) : undefined
     drag.current = {
@@ -238,6 +281,7 @@ export default function RigLab() {
       mirrorId,
       mirrorOffset: mirrorId ? pointFor(draft, editPose, mirrorId) : undefined,
       hornOffset: horn ? { ...horn.offset } : undefined,
+      hornMirrorId: symmetricHorns ? horn?.mirrorId : undefined,
       modelScale: draft.modelScale,
       svg,
     }
@@ -246,14 +290,16 @@ export default function RigLab() {
   const commitDelta = (id: string, delta: RigPoint, includeLiveMirror = liveMirror) => {
     if (![delta.x, delta.y, delta.z].every(Number.isFinite)) return
     setAnimation(null)
-    setDraft((current) => {
+    changeDraft((current) => {
       const horn = current.hornNodes.find((node) => node.id === id)
       if (horn) {
         return {
           ...current,
-          hornNodes: current.hornNodes.map((node) => node.id === id
-            ? { ...node, offset: { x: node.offset.x + delta.x, y: node.offset.y + delta.y, z: node.offset.z + delta.z } }
-            : node),
+          hornNodes: current.hornNodes.map((node) => {
+            if (node.id === id) return { ...node, offset: { x: node.offset.x + delta.x, y: node.offset.y + delta.y, z: node.offset.z + delta.z } }
+            if (symmetricHorns && node.id === horn.mirrorId) return { ...node, offset: { x: node.offset.x + delta.x, y: node.offset.y - delta.y, z: node.offset.z + delta.z } }
+            return node
+          }),
         }
       }
       const offsets = { ...current.poseOffsets[editPose] }
@@ -265,7 +311,7 @@ export default function RigLab() {
         offsets[mirrorId] = { x: mirror.x + delta.x, y: mirror.y - delta.y, z: mirror.z + delta.z }
       }
       return { ...current, poseOffsets: { ...current.poseOffsets, [editPose]: offsets } }
-    })
+    }, `coordinate:${editPose}:${id}`)
     setLastEdit({ source: id, pose: editPose, delta })
   }
 
@@ -279,7 +325,7 @@ export default function RigLab() {
     if (!lastEdit || !target || !editRig[target]) return
     setEditPose(lastEdit.pose)
     const delta = transformed(lastEdit.delta, repeatAngle, flipY)
-    setDraft((current) => {
+    changeDraft((current) => {
       const horn = current.hornNodes.find((node) => node.id === target)
       if (horn) {
         return {
@@ -301,55 +347,83 @@ export default function RigLab() {
 
   const updateParam = (id: keyof RigParams, value: number) => {
     setAnimation(null)
-    setDraft((current) => ({ ...current, params: { ...current.params, [id]: value } }))
+    changeDraft((current) => ({ ...current, params: { ...current.params, [id]: value } }), `param:${id}`)
   }
 
   const updatePartStyle = <K extends keyof RigPartStyle>(key: K, value: RigPartStyle[K]) => {
-    setDraft((current) => ({
+    changeDraft((current) => ({
       ...current,
       partStyles: { ...current.partStyles, [selectedPart]: { ...partStyle, [key]: value } },
-    }))
+    }), `part-style:${selectedPart}:${key}`)
   }
 
   const updatePartColor = (key: keyof RigPartColors, value: string) => {
-    setDraft((current) => ({
+    changeDraft((current) => ({
       ...current,
       partColors: { ...current.partColors, [selectedPart]: { ...partColors, [key]: value } },
-    }))
+    }), `part-color:${selectedPart}:${key}`)
   }
 
   const addHornNode = () => {
     if (!editRig[hornParent]) return
     let index = draft.hornNodes.length + 1
     while (draft.hornNodes.some((node) => node.id === `horn${index}`)) index++
+    let pairIndex = index + 1
+    while (draft.hornNodes.some((node) => node.id === `horn${pairIndex}`)) pairIndex++
+    const parentNode = draft.hornNodes.find((node) => node.id === hornParent)
+    const skeletonMirror = mirroredJoint(hornParent)
+    const pairedParent = parentNode?.mirrorId ?? (skeletonMirror && editRig[skeletonMirror] ? skeletonMirror : hornParent)
     const node: RigHornNode = {
       id: `horn${index}`,
       label: `Horn ${index}`,
       parent: hornParent,
       offset: { ...newHornOffset },
       width: newHornWidth,
+      mirrorId: symmetricHorns ? `horn${pairIndex}` : undefined,
     }
-    setDraft((current) => ({ ...current, hornNodes: [...current.hornNodes, node] }))
+    const pair: RigHornNode | undefined = symmetricHorns ? {
+      id: `horn${pairIndex}`,
+      label: `Horn ${pairIndex}`,
+      parent: pairedParent,
+      offset: { ...newHornOffset, y: -newHornOffset.y },
+      width: newHornWidth,
+      mirrorId: node.id,
+    } : undefined
+    changeDraft((current) => ({ ...current, hornNodes: [...current.hornNodes, node, ...(pair ? [pair] : [])] }))
     setSelectedJoint(node.id)
     setHornParent(node.id)
     setAnimation(null)
-    setStatus(`Added ${node.label}`)
+    setStatus(pair ? `Added symmetric ${node.label} + ${pair.label}` : `Added ${node.label}`)
   }
 
   const updateSelectedHorn = (patch: Partial<RigHornNode>) => {
     if (!selectedHorn) return
-    setDraft((current) => ({ ...current, hornNodes: current.hornNodes.map((node) => node.id === selectedHorn.id ? { ...node, ...patch } : node) }))
+    changeDraft((current) => ({
+      ...current,
+      hornNodes: current.hornNodes.map((node) => {
+        if (node.id === selectedHorn.id) return { ...node, ...patch }
+        if (!symmetricHorns || node.id !== selectedHorn.mirrorId) return node
+        if (patch.width !== undefined) return { ...node, width: patch.width }
+        if (patch.parent !== undefined) {
+          const parentNode = current.hornNodes.find((candidate) => candidate.id === patch.parent)
+          const skeletonMirror = mirroredJoint(patch.parent)
+          const parent = parentNode?.mirrorId ?? (skeletonMirror && editRig[skeletonMirror] ? skeletonMirror : patch.parent)
+          return { ...node, parent }
+        }
+        return node
+      }),
+    }), `horn:${selectedHorn.id}:${Object.keys(patch).join('-')}`)
   }
 
   const removeSelectedHorn = () => {
     if (!selectedHorn) return
-    const removed = new Set([selectedHorn.id])
+    const removed = new Set([selectedHorn.id, ...(selectedHorn.mirrorId ? [selectedHorn.mirrorId] : [])])
     let changed = true
     while (changed) {
       changed = false
       draft.hornNodes.forEach((node) => { if (removed.has(node.parent) && !removed.has(node.id)) { removed.add(node.id); changed = true } })
     }
-    setDraft((current) => ({ ...current, hornNodes: current.hornNodes.filter((node) => !removed.has(node.id)) }))
+    changeDraft((current) => ({ ...current, hornNodes: current.hornNodes.filter((node) => !removed.has(node.id)) }))
     setSelectedJoint(selectedHorn.parent)
     setHornParent(selectedHorn.parent)
     setStatus(`Removed ${removed.size} horn node${removed.size === 1 ? '' : 's'}`)
@@ -369,12 +443,12 @@ export default function RigLab() {
     try {
       const parsed = JSON.parse(importText)
       if (!isDraft(parsed)) throw new Error('Expected a quadruped-v0 rig draft')
-      setDraft(normalizeDraft(parsed)); setImportText(''); setStatus('Imported and saved')
+      changeDraft(normalizeDraft(parsed)); setImportText(''); setStatus('Imported and saved')
     } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not import rig') }
   }
   const reset = () => {
     if (!confirm('Reset this local rig draft?')) return
-    setDraft(createRigDraft(quadrupedRig)); setLastEdit(null); setStatus('Reset')
+    changeDraft(createRigDraft(quadrupedRig)); setLastEdit(null); setStatus('Reset')
   }
 
   return (
@@ -383,7 +457,7 @@ export default function RigLab() {
         <p className="text-[10px] uppercase tracking-[0.18em] text-game-primary">Prototype · template {quadrupedRig.id}</p>
         <div className="flex items-end justify-between gap-3">
           <div><h1 className="text-xl sm:text-2xl font-semibold">Rig Lab</h1><p className="text-xs text-game-text-dim mt-1">Author idle once, layer actions, inspect in 3-D, then share the draft.</p></div>
-          <span className="text-[10px] text-game-muted text-right">forward +x<br />{status}</span>
+          <div className="flex flex-col items-end gap-1"><span className="text-[10px] text-game-muted text-right">forward +x<br />{status}</span><button onClick={undo} disabled={!undoCount} aria-label="Undo last rig edit" className="rounded-md border border-game-border px-2.5 py-1.5 text-[11px] text-game-text-dim disabled:opacity-35">↶ Undo{undoCount ? ` (${undoCount})` : ''}</button></div>
         </div>
         <nav aria-label="Rig Lab tools" className="mt-3 flex gap-2 overflow-x-auto no-scrollbar">
           <a href="#horn-builder" className="shrink-0 rounded-lg border border-game-gold bg-game-gold/10 px-3 py-2 text-xs text-game-gold">＋ Build horns</a>
@@ -424,8 +498,8 @@ export default function RigLab() {
         <aside className="space-y-3">
           <section id="skeleton-proportions" className="scroll-mt-3 rounded-2xl border border-game-border bg-game-surface p-4 space-y-3">
             <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Skeleton proportions</h2><button onClick={reset} className="text-[10px] text-game-muted">Reset</button></div>
-            <input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} aria-label="Rig name" className="w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs" />
-            <label className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>Model size</span><output>{draft.modelScale.toFixed(2)}×</output></span><input aria-label="Model size" type="range" min="0.45" max="1.35" step="0.05" value={draft.modelScale} onChange={(event) => setDraft((current) => ({ ...current, modelScale: Number(event.target.value) }))} className="w-full accent-game-primary" /></label>
+            <input value={draft.name} onChange={(event) => changeDraft((current) => ({ ...current, name: event.target.value }), 'rig-name')} aria-label="Rig name" className="w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs" />
+            <label className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>Model size</span><output>{draft.modelScale.toFixed(2)}×</output></span><input aria-label="Model size" type="range" min="0.45" max="1.35" step="0.05" value={draft.modelScale} onChange={(event) => changeDraft((current) => ({ ...current, modelScale: Number(event.target.value) }), 'model-scale')} className="w-full accent-game-primary" /></label>
             {PARAMS.map((param) => <label key={param.id} className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>{param.label}</span><output>{draft.params[param.id]}</output></span><input type="range" min={param.min} max={param.max} step={param.step} value={draft.params[param.id]} onChange={(event) => updateParam(param.id, Number(event.target.value))} className="w-full accent-game-primary" /></label>)}
           </section>
 
@@ -441,12 +515,13 @@ export default function RigLab() {
 
           <section id="horn-builder" className="scroll-mt-3 rounded-2xl border border-game-gold/50 bg-game-surface p-4 space-y-3" data-horn-builder>
             <div><h2 className="text-sm font-semibold">Horn builder</h2><p className="mt-1 text-[9px] text-game-muted">Attach a tapered segment to any skeleton or horn node. Add more nodes to bend and sharpen the silhouette in 3-D.</p></div>
+            <label className="flex items-start gap-2 rounded-lg border border-game-border bg-game-bg/50 p-2 text-[11px] text-game-text-dim"><input aria-label="Symmetric horn segments" type="checkbox" checked={symmetricHorns} onChange={(event) => setSymmetricHorns(event.target.checked)} className="mt-0.5 accent-game-gold" /><span><b className="text-game-text">Symmetric create + edit</b><br /><span className="text-[9px] text-game-muted">Creates a pair across local Y. While on, dragging or editing either side moves both.</span></span></label>
             <label className="block text-[9px] uppercase text-game-muted">Connect new node to<select aria-label="Horn parent" value={hornParent} onChange={(event) => setHornParent(event.target.value)} className="mt-1 w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs normal-case text-game-text">{joints.map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}</select></label>
             <div><div className="mb-1 text-[9px] uppercase tracking-wider text-game-muted">New node offset from parent</div><div className="grid grid-cols-3 gap-2">{(['x', 'y', 'z'] as const).map((axis) => <label key={axis} className="text-[9px] uppercase text-game-muted">{axis}<input aria-label={`New horn ${axis}`} type="number" step="0.5" value={newHornOffset[axis]} onChange={(event) => setNewHornOffset((point) => ({ ...point, [axis]: Number(event.target.value) }))} className="mt-1 w-full rounded-md border border-game-border bg-game-bg p-1.5 text-[11px] text-game-text" /></label>)}</div></div>
             <label className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>Segment width</span><output>{newHornWidth.toFixed(1)}</output></span><input aria-label="New horn width" type="range" min="0.8" max="12" step="0.2" value={newHornWidth} onChange={(event) => setNewHornWidth(Number(event.target.value))} className="w-full accent-game-primary" /></label>
             <button onClick={addHornNode} className="w-full rounded-lg border border-game-primary bg-game-primary/15 px-3 py-2 text-xs">+ Add horn node</button>
             {selectedHorn && <div className="space-y-2 rounded-lg border border-game-gold/40 bg-game-gold/5 p-2">
-              <div className="flex items-center justify-between"><span className="text-[11px] font-medium text-game-gold">Editing {selectedHorn.label}</span><button onClick={removeSelectedHorn} className="text-[9px] text-red-300">Delete branch</button></div>
+              <div className="flex items-center justify-between"><span className="text-[11px] font-medium text-game-gold">Editing {selectedHorn.label}{selectedHorn.mirrorId ? ' + symmetric pair' : ''}</span><button onClick={removeSelectedHorn} className="text-[9px] text-red-300">Delete branch</button></div>
               <label className="block text-[9px] uppercase text-game-muted">Connected to<select aria-label="Selected horn parent" value={selectedHorn.parent} onChange={(event) => updateSelectedHorn({ parent: event.target.value })} className="mt-1 w-full rounded-md border border-game-border bg-game-bg px-2 py-1.5 text-[11px] normal-case text-game-text">{hornReparentOptions.map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}</select></label>
               <label className="block"><span className="flex justify-between text-[10px] text-game-text-dim"><span>Width</span><output>{selectedHorn.width.toFixed(1)}</output></span><input aria-label="Selected horn width" type="range" min="0.8" max="12" step="0.2" value={selectedHorn.width} onChange={(event) => updateSelectedHorn({ width: Number(event.target.value) })} className="w-full accent-game-gold" /></label>
               <p className="text-[9px] text-game-muted">Drag this node in the main view or edit its relative XYZ above. New nodes default to attaching here.</p>
