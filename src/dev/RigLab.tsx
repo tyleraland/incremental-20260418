@@ -385,6 +385,11 @@ export default function RigLab() {
           <div><h1 className="text-xl sm:text-2xl font-semibold">Rig Lab</h1><p className="text-xs text-game-text-dim mt-1">Author idle once, layer actions, inspect in 3-D, then share the draft.</p></div>
           <span className="text-[10px] text-game-muted text-right">forward +x<br />{status}</span>
         </div>
+        <nav aria-label="Rig Lab tools" className="mt-3 flex gap-2 overflow-x-auto no-scrollbar">
+          <a href="#horn-builder" className="shrink-0 rounded-lg border border-game-gold bg-game-gold/10 px-3 py-2 text-xs text-game-gold">＋ Build horns</a>
+          <a href="#skeleton-proportions" className="shrink-0 rounded-lg border border-game-border px-3 py-2 text-xs text-game-text-dim">Skeleton size</a>
+          <a href="#joint-coordinates" className="shrink-0 rounded-lg border border-game-border px-3 py-2 text-xs text-game-text-dim">Joint coordinates</a>
+        </nav>
       </header>
 
       <div className="max-w-6xl mx-auto grid lg:grid-cols-[minmax(0,1fr)_360px] gap-3">
@@ -404,6 +409,7 @@ export default function RigLab() {
               <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-game-text-dim">
                 <label className="flex items-center gap-2"><input type="checkbox" checked={showRig} onChange={(event) => setShowRig(event.target.checked)} className="accent-game-primary" />Show skeleton</label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={liveMirror} onChange={(event) => setLiveMirror(event.target.checked)} className="accent-game-primary" />Live mirror paired limbs</label>
+                <a href="#horn-builder" className="font-medium text-game-gold">＋ Add horns</a>
               </div>
               <p className="text-[10px] text-game-muted">Editing <b className="text-game-text-dim">{editPose}</b>{quadrupedRig.poseBase?.[editPose as Exclude<RigPoseId, 'bind'>] ? ` over ${quadrupedRig.poseBase[editPose as Exclude<RigPoseId, 'bind'>]}` : ''}. Tap and drag a joint; actions inherit their idle posture.</p>
             </div>
@@ -416,14 +422,14 @@ export default function RigLab() {
         </div>
 
         <aside className="space-y-3">
-          <section className="rounded-2xl border border-game-border bg-game-surface p-4 space-y-3">
+          <section id="skeleton-proportions" className="scroll-mt-3 rounded-2xl border border-game-border bg-game-surface p-4 space-y-3">
             <div className="flex items-center justify-between gap-3"><h2 className="text-sm font-semibold">Skeleton proportions</h2><button onClick={reset} className="text-[10px] text-game-muted">Reset</button></div>
             <input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} aria-label="Rig name" className="w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs" />
             <label className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>Model size</span><output>{draft.modelScale.toFixed(2)}×</output></span><input aria-label="Model size" type="range" min="0.45" max="1.35" step="0.05" value={draft.modelScale} onChange={(event) => setDraft((current) => ({ ...current, modelScale: Number(event.target.value) }))} className="w-full accent-game-primary" /></label>
             {PARAMS.map((param) => <label key={param.id} className="block"><span className="flex justify-between text-[11px] text-game-text-dim"><span>{param.label}</span><output>{draft.params[param.id]}</output></span><input type="range" min={param.min} max={param.max} step={param.step} value={draft.params[param.id]} onChange={(event) => updateParam(param.id, Number(event.target.value))} className="w-full accent-game-primary" /></label>)}
           </section>
 
-          <section className="rounded-2xl border border-game-border bg-game-surface p-4 space-y-3">
+          <section id="joint-coordinates" className="scroll-mt-3 rounded-2xl border border-game-border bg-game-surface p-4 space-y-3">
             <h2 className="text-sm font-semibold">Joint coordinates</h2>
             <select value={selectedJoint} onChange={(event) => setSelectedJoint(event.target.value)} className="w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs">{joints.map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}</select>
             {selected && <>
@@ -433,7 +439,7 @@ export default function RigLab() {
             <div className="rounded-lg bg-game-bg/60 p-2 font-mono text-[9px] text-game-muted">rig center [{center.x.toFixed(1)}, {center.y.toFixed(1)}, {center.z.toFixed(1)}]<br />extent [{(bounds.maxX - bounds.minX).toFixed(1)}, {(bounds.maxY - bounds.minY).toFixed(1)}, {(bounds.maxZ - bounds.minZ).toFixed(1)}]</div>
           </section>
 
-          <section className="rounded-2xl border border-game-border bg-game-surface p-4 space-y-3" data-horn-builder>
+          <section id="horn-builder" className="scroll-mt-3 rounded-2xl border border-game-gold/50 bg-game-surface p-4 space-y-3" data-horn-builder>
             <div><h2 className="text-sm font-semibold">Horn builder</h2><p className="mt-1 text-[9px] text-game-muted">Attach a tapered segment to any skeleton or horn node. Add more nodes to bend and sharpen the silhouette in 3-D.</p></div>
             <label className="block text-[9px] uppercase text-game-muted">Connect new node to<select aria-label="Horn parent" value={hornParent} onChange={(event) => setHornParent(event.target.value)} className="mt-1 w-full rounded-lg border border-game-border bg-game-bg px-3 py-2 text-xs normal-case text-game-text">{joints.map((joint) => <option key={joint.id} value={joint.id}>{joint.label}</option>)}</select></label>
             <div><div className="mb-1 text-[9px] uppercase tracking-wider text-game-muted">New node offset from parent</div><div className="grid grid-cols-3 gap-2">{(['x', 'y', 'z'] as const).map((axis) => <label key={axis} className="text-[9px] uppercase text-game-muted">{axis}<input aria-label={`New horn ${axis}`} type="number" step="0.5" value={newHornOffset[axis]} onChange={(event) => setNewHornOffset((point) => ({ ...point, [axis]: Number(event.target.value) }))} className="mt-1 w-full rounded-md border border-game-border bg-game-bg p-1.5 text-[11px] text-game-text" /></label>)}</div></div>
