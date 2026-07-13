@@ -33,7 +33,7 @@ export const HorsePaperAsset = memo(function HorsePaperAsset({
       width={size}
       height={size}
       aria-hidden
-      className="block overflow-visible"
+      className="block w-full h-full overflow-visible"
     >
       <ellipse {...view.shadow} fill={PAPER_PALETTE.shadow} opacity="0.24" />
       {lod === 'far' ? (

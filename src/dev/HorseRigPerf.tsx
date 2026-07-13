@@ -35,11 +35,7 @@ export default function HorseRigPerf() {
     <main data-horse-rig-perf={mode} className="min-h-screen bg-game-bg text-game-text p-3 pt-12 overflow-hidden">
       <style>{`
         @keyframes horse-rig-drift { from { transform: translate3d(-3px,-2px,0) rotate(-1.2deg) } to { transform: translate3d(4px,3px,0) rotate(1.2deg) } }
-        @keyframes horse-rig-bob { 0%,100% { transform: translate(0,0) } 50% { transform: translate(1.8px,-1.2px) } }
-        @keyframes horse-rig-sway { 0%,100% { transform: rotate(-5deg) } 50% { transform: rotate(6deg) } }
         [data-rig-token] { animation: horse-rig-drift var(--rig-duration) ease-in-out var(--rig-delay) infinite alternate; will-change: transform }
-        [data-rig-animate="horse-rig-bob"] { animation: horse-rig-bob 720ms ease-in-out var(--rig-delay) infinite; transform-box: fill-box; transform-origin: center; will-change: transform }
-        [data-rig-animate="horse-rig-sway"] { animation: horse-rig-sway 840ms ease-in-out var(--rig-delay) infinite; transform-box: fill-box; transform-origin: center; will-change: transform }
       `}</style>
       <header className="max-w-4xl mx-auto mb-3 flex items-end justify-between gap-3">
         <div>

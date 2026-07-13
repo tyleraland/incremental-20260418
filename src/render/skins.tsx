@@ -4,6 +4,7 @@ import { PAPER_BODIES } from '@/render/bodies'
 import type { BodyPart } from '@/render/bodyTypes'
 import { PAPER_TONE, PAPER_PALETTE as PAL } from '@/render/palette'
 import { PaperTerrain, type TerrainProps } from '@/render/terrain'
+import { HorsePaperAsset } from '@/render/paperRig/HorsePaperAsset'
 
 // ── Battlefield skins ────────────────────────────────────────────────────────
 //
@@ -34,14 +35,14 @@ import { PaperTerrain, type TerrainProps } from '@/render/terrain'
 // procedural flat-vector "paper cutout" tokens (no image assets — crisp at any
 // zoom, nothing to license, restyle = edit the shapes/palette below).
 
-export type BattleSkin = 'circle' | 'paper'
-export const BATTLE_SKIN_IDS: BattleSkin[] = ['circle', 'paper']
+export type BattleSkin = 'circle' | 'paper' | 'horse'
+export const BATTLE_SKIN_IDS: BattleSkin[] = ['circle', 'paper', 'horse']
 
 // Resolve the boot skin: URL ?skin=… (also persists, like ?mode=) > localStorage
 // > paper. Ephemeral-UI tier — never part of the save string. `circle` remains
 // the explicit debug skin; the authored paper assets are the live-game default.
 export function bootBattleSkin(): BattleSkin {
-  const valid = (v: string | null): v is BattleSkin => v === 'circle' || v === 'paper'
+  const valid = (v: string | null): v is BattleSkin => v === 'circle' || v === 'paper' || v === 'horse'
   try {
     const q = new URLSearchParams(window.location.search).get('skin')
     if (valid(q)) { localStorage.setItem('battle-skin', q); return q }
@@ -100,7 +101,7 @@ const BODY_PROPS_EQUAL = (a: TokenBodyProps, b: TokenBodyProps) =>
 
 // True when the skin's body itself shows facing (so BattleChip drops the
 // separate FacingNub — the paper token's blade IS the facing indicator).
-export const SKIN_CARRIES_FACING: Record<BattleSkin, boolean> = { circle: false, paper: true }
+export const SKIN_CARRIES_FACING: Record<BattleSkin, boolean> = { circle: false, paper: true, horse: true }
 
 // Render-count probe: every ACTUAL body render bumps this (a memo hit doesn't).
 // Skins.test.tsx asserts the whole contract end-to-end with it — a re-render of
@@ -297,9 +298,38 @@ const PaperBody = memo(function PaperBody({ glyph, tone, bodyShape, tint, weapon
   )
 }, BODY_PROPS_EQUAL)
 
+// Workbench import experiment: heroes/NPCs retain the production paper body;
+// enemy creatures use the compiled eight-heading horse. The projection math is
+// precomputed at module load, so battle renders only select static SVG paths.
+const HorseBattleBody = memo(function HorseBattleBody(props: TokenBodyProps) {
+  if (!props.creature) return <PaperBody {...props} />
+  BODY_RENDER_PROBE.count++
+  const { alive, selected, tone, facingDeg, moving, simple, dims } = props
+  return (
+    <div
+      data-skin="horse"
+      style={{ width: dims.width, height: dims.height }}
+      className={`relative flex items-center justify-center select-none transition-opacity ${alive ? '' : 'opacity-60'}`}
+    >
+      {selected && <div className="absolute -inset-1 rounded-full ring-2 ring-emerald-300 pointer-events-none" />}
+      {tone === 'casting' && <div className="absolute -inset-1 rounded-full ring-2 ring-amber-400/70 animate-pulse pointer-events-none" />}
+      <div className={`absolute inset-0 ${alive ? '' : 'origin-center rotate-[-9deg] scale-y-[0.46]'}`}>
+        {/* Compiler heading 0 points screen-up; battle facing 0 points right. */}
+        <HorsePaperAsset
+          headingDeg={(facingDeg ?? 0) + 90}
+          lod={simple || !alive ? 'far' : 'detail'}
+          animateParts={alive && !simple && !!moving}
+          size={100}
+        />
+      </div>
+    </div>
+  )
+}, BODY_PROPS_EQUAL)
+
 export const TOKEN_SKINS: Record<BattleSkin, typeof CircleBody> = {
   circle: CircleBody,
   paper: PaperBody,
+  horse: HorseBattleBody,
 }
 
 // ── Arena (ground) skins ─────────────────────────────────────────────────────
@@ -412,6 +442,14 @@ export const FX_SKINS: Record<BattleSkin, FxSkin> = {
     firewall: 'bg-[#d8813c]/65 border-2 border-[#7c3212]/80',
     portal: 'bg-[#b96fd6]/25 border-2 border-[#e3b7f2]/80',
   },
+  horse: {
+    arcPlayer: 'rgb(143 176 232 / 0.9)',
+    arcEnemy: 'rgb(224 141 127 / 0.9)',
+    hitRing: 'border-[3px] border-[#f3e9d4]/80',
+    zone: 'bg-[#c97f3d]/20 border-2 border-dashed border-[#c97f3d]/60',
+    firewall: 'bg-[#d8813c]/65 border-2 border-[#7c3212]/80',
+    portal: 'bg-[#b96fd6]/25 border-2 border-[#e3b7f2]/80',
+  },
 }
 
 export const ARENA_SKINS: Record<BattleSkin, ArenaSkin> = {
@@ -428,6 +466,21 @@ export const ARENA_SKINS: Record<BattleSkin, ArenaSkin> = {
     },
     gridLine: 'rgb(255 255 255 / 0.03)',
     // the organic terrain layer replaces the rect barrier restyle + perimeter ring
+    terrain: (p) => <PaperTerrain {...p} />,
+    heroLight: {
+      field: 'radial-gradient(closest-side, rgb(214 226 255 / 0.09), rgb(214 226 255 / 0.04) 55%, transparent 75%)',
+      city:  'radial-gradient(closest-side, rgb(255 214 150 / 0.13), rgb(255 200 130 / 0.05) 55%, transparent 75%)',
+    },
+    vignette: 'radial-gradient(120% 120% at 50% 45%, transparent 55%, rgb(0 0 0 / 0.42) 100%)',
+  },
+  horse: {
+    surface: { backgroundColor: '#191713' },
+    grounds: {
+      grass: { image: PAPER_TILE_GRASS, cellsPerTile: 2 },
+      stone: { image: PAPER_TILE_STONE, cellsPerTile: 2 },
+      plaza: { image: PAPER_TILE_PLAZA, cellsPerTile: 2 },
+    },
+    gridLine: 'rgb(255 255 255 / 0.03)',
     terrain: (p) => <PaperTerrain {...p} />,
     heroLight: {
       field: 'radial-gradient(closest-side, rgb(214 226 255 / 0.09), rgb(214 226 255 / 0.04) 55%, transparent 75%)',

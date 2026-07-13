@@ -1,5 +1,5 @@
 // Battlefield skin seam: the store's `battleSkin` swaps the token body (circle ↔
-// paper) at runtime without touching the chip contract — the per-token `title`
+// paper ↔ compiled horse) at runtime without touching the chip contract — the per-token `title`
 // stays the stable handle either way (Lod.test relies on it), and the paper body
 // is pure render (no engine/store reads). Also pins the boot resolution order.
 import { describe, it, expect, beforeEach } from 'vitest'
@@ -55,6 +55,31 @@ describe('battlefield skins', () => {
     // the paper skin carries facing in the body — the separate FacingNub is gone,
     // and the body brings its own vector shapes
     expect(bodies[0].querySelector('svg')).toBeTruthy()
+  })
+
+  it('battleSkin=horse preserves hero paper dolls and replaces creatures with the compiled rig', () => {
+    useGameStore.setState({ battleSkin: 'horse' })
+    const { container, getByTitle } = show(openBattle())
+    expect(container.querySelectorAll('[data-skin="paper"]').length).toBe(1)
+    expect(container.querySelectorAll('[data-skin="horse"]').length).toBe(1)
+    expect(container.querySelector('[data-paper-rig-asset="horse"]')).toBeTruthy()
+    expect(getByTitle(/Hero —/)).toBeTruthy()
+  })
+
+  it('horse LOD collapses 21 colored plates to one path and drops part animation', () => {
+    const Horse = TOKEN_SKINS.horse
+    const dims = { width: '48px', height: '48px', fontSize: '13px' }
+    const renderHorse = (simple: boolean) => render(
+      <Horse glyph="" tone="enemy" bodyShape="canine" alive selected={false} facingDeg={0} creature moving simple={simple} dims={dims} />,
+    )
+    const detail = renderHorse(false)
+    expect(detail.container.querySelectorAll('svg path').length).toBeGreaterThan(20)
+    expect(detail.container.querySelectorAll('[data-rig-animate]').length).toBe(3)
+    detail.unmount()
+
+    const far = renderHorse(true)
+    expect(far.container.querySelectorAll('svg path').length).toBe(1)
+    expect(far.container.querySelectorAll('[data-rig-animate]').length).toBe(0)
   })
 
   // The memo contract, end-to-end: a store-tick re-render where nothing visual
@@ -158,6 +183,8 @@ describe('battlefield skins', () => {
     expect(bootBattleSkin()).toBe('paper')
     localStorage.setItem('battle-skin', 'circle')
     expect(bootBattleSkin()).toBe('circle')
+    localStorage.setItem('battle-skin', 'horse')
+    expect(bootBattleSkin()).toBe('horse')
     localStorage.setItem('battle-skin', 'sprite-sheet-3000')
     expect(bootBattleSkin()).toBe('paper')
   })

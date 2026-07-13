@@ -27,6 +27,15 @@ describe('showcase catalog', () => {
     }
   })
 
+  it('horse-swarm seeds four heroes and 48 paper horses for the mobile probe', () => {
+    const b = showcaseById('horse-swarm')!.build()
+    const heroes = b.combatants.filter((c) => c.team === 'player')
+    const horses = b.combatants.filter((c) => c.team === 'enemy')
+    expect(heroes).toHaveLength(4)
+    expect(horses).toHaveLength(48)
+    expect(horses.every((c) => c.id.startsWith('paper-horse#') && c.name === 'Paper Horse')).toBe(true)
+  })
+
   it('kite-anchor: melees the golem, ranges the sorcerer', () => {
     const b = showcaseById('kite-anchor')!.build()
     run(b, 40)   // the golem-mage frost-bolts (3-round channels) while closing, so give it time to reach Bash range

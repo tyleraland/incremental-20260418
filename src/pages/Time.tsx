@@ -86,7 +86,7 @@ function BattleSkinControl() {
         <span className="text-xs font-mono text-game-text capitalize">{skin}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        {(['circle', 'paper'] as const).map((m) => (
+        {(['circle', 'paper', 'horse'] as const).map((m) => (
           <button
             key={m}
             onClick={() => setSkin(m)}
