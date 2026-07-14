@@ -39,6 +39,7 @@ import {
   ROUT_SAFE_RADIUS,
 } from './tuning'
 import { wallCrossing, firewallBlocks, snapNormal } from './firewall'
+import { ENGINE_PERF_PROBE, beginEnginePerfRound } from './perfProbe'
 
 // Weight applied to the cohesion bias when a unit is moving AWAY from enemies
 // (kite retreat or retreater fall-back). Kept light — the back-off direction
@@ -1160,6 +1161,7 @@ function setLock(state: BattleState, self: Combatant, id: string): void {
 // default threat/proximity fallback (or there is none). The M4 cloak-stalk
 // reads this: it may only claim the default layer, never a lever's pick (§6).
 function evalTargeting(state: BattleState, self: Combatant): boolean {
+  if (ENGINE_PERF_PROBE.enabled) ENGINE_PERF_PROBE.targetEvaluations++
   // §aggression: a non-provoked unit (a skittish monster that hasn't been hit or
   // called) ignores foes entirely — no lock, so it wanders/holds instead of
   // hunting. It flips provoked on a hit (applyDamageRaw) or a packmate's call.
@@ -2382,6 +2384,7 @@ export function advanceRound(state: BattleState): BattleState {
     state.events.splice(0, state.events.length - EVENT_CAP)
   }
   state.round += 1
+  beginEnginePerfRound(state.round, isDecisionRound(state))
 
   // §coordination: refresh every team's blackboard (shared waypoint, focus,
   // threat) before any unit acts; tactics/wander read it this round. Throttled to

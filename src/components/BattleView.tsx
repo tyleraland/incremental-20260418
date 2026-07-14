@@ -44,6 +44,10 @@ interface CastLabelEntry { id: string; sourceId: string; skillId: string; born: 
 // live their full lob-and-fade animation instead of unmounting when the next round
 // arrives (rounds are ~200ms, the arc is ~1.35s). Matches the CSS animation length.
 const FLOAT_NUM_MS = 1350
+// Dense battles can produce hundreds of overlapping numbers inside that window.
+// Keep the newest visual samples bounded; the underlying event/report data is
+// untouched, and 64 simultaneous labels is already more than a phone can parse.
+const MAX_FLOAT_NUMS = 64
 
 function hpColor(ratio: number): string {
   if (ratio >= 0.75) return 'bg-emerald-500'
@@ -995,6 +999,14 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   const my = (y: number) => (1 - (y - oy) / span) * BOX // +y is up on screen
   const px = (cells: number) => (cells / span) * BOX     // a cell-length in radar px
   const ref = useRef<HTMLDivElement>(null)
+  const enemies = visibleEnemyDots(battle)
+  const squarePath = (units: Combatant[], size: number) => units.map((c) => {
+    const x = mx(c.pos.x) - size / 2, y = my(c.pos.y) - size / 2
+    return `M${x} ${y}h${size}v${size}h-${size}Z`
+  }).join('')
+  const enemyPath = squarePath(enemies, 1)
+  const heroPath = squarePath(heroes.filter((c) => c.id !== followId), 1)
+  const followedPath = squarePath(heroes.filter((c) => c.id === followId), 1.5)
 
   const handlePick = (e: React.PointerEvent) => {
     e.stopPropagation()
@@ -1016,25 +1028,19 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
       ref={ref}
       onPointerDown={handlePick}
       title="Minimap — tap a hero to follow, elsewhere to look around"
+      data-minimap-enemy-count={enemies.length}
       className="absolute top-1 right-1 rounded-md border border-game-border bg-game-surface/85 backdrop-blur-sm overflow-hidden pointer-events-auto cursor-pointer"
       style={{ width: BOX, height: BOX, touchAction: 'none' }}
     >
-      {battle.barriers.map((b, i) => (
-        <div key={i} className="absolute bg-stone-500/40" style={{ left: mx(b.x), top: my(b.y + b.h), width: px(b.w), height: px(b.h) }} />
-      ))}
-      {/* Enemy dots — fog-of-war: only foes a living hero can actually SEE (within
-          their visionRange AND an unobstructed sightline, so walls hide what's
-          behind them). Foes outside every hero's sight show no dot. */}
-      {visibleEnemyDots(battle).map((c) => (
-        <div key={c.id} className="absolute w-1 h-1 rounded-full bg-red-400/90 -translate-x-1/2 -translate-y-1/2 pointer-events-none" style={{ left: mx(c.pos.x), top: my(c.pos.y) }} />
-      ))}
-      {heroes.map((c) => (
-        <div
-          key={c.id}
-          className={`absolute rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none ${c.id === followId ? 'w-1.5 h-1.5 bg-emerald-300' : 'w-1 h-1 bg-blue-300'}`}
-          style={{ left: mx(c.pos.x), top: my(c.pos.y) }}
-        />
-      ))}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${BOX} ${BOX}`} aria-hidden>
+        {battle.barriers.map((b, i) => (
+          <rect key={i} className="fill-stone-500/40" x={mx(b.x)} y={my(b.y + b.h)} width={px(b.w)} height={px(b.h)} />
+        ))}
+        {/* One path per role keeps a 100-unit radar at O(1) DOM nodes. */}
+        <path data-minimap-enemies d={enemyPath} className="fill-red-400/90" />
+        <path d={heroPath} className="fill-blue-300" />
+        <path d={followedPath} className="fill-emerald-300" />
+      </svg>
     </div>
   )
 }
@@ -1382,7 +1388,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
     lastFloatRoundRef.current = battle.round
     const now = Date.now()
     const fresh: typeof floatNums = []
-    const at = (id: string | null | undefined): Vec2 | null => { const c = id ? battle.combatants.find((x) => x.id === id) : null; return c ? rpos(c) : null }
+    const at = (id: string | null | undefined): Vec2 | null => { const c = id ? combatantById.get(id) : null; return c ? rpos(c) : null }
     for (const e of battle.events) {
       if (e.round !== battle.round) continue
       if ((e.type === 'melee_attack' || e.type === 'ranged_attack' || e.type === 'skill_use') && e.value != null) {
@@ -1403,7 +1409,9 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
     }
     setFloatNums((prev) => {
       const kept = prev.filter((f) => now - f.born < FLOAT_NUM_MS)
-      return fresh.length === 0 ? (kept.length === prev.length ? prev : kept) : [...kept, ...fresh]
+      if (fresh.length === 0) return kept.length === prev.length ? prev : kept
+      const next = [...kept, ...fresh]
+      return next.length > MAX_FLOAT_NUMS ? next.slice(-MAX_FLOAT_NUMS) : next
     })
   }, [battle])
 
@@ -1626,6 +1634,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
   return (
     <div
       className="relative flex-1 min-h-0 flex flex-col"
+      data-active-combat-floats={floatNums.length}
       onClickCapture={(e) => {
         // Tap empty battlefield (not a combatant chip or a control button) to
         // dismiss an open detail card — a lightweight tap-away without a backdrop
@@ -1805,8 +1814,11 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
           })}
 
           {/* Tokens (see visibleTokens / tokenDetail above). */}
-          {visibleTokens.map((c) => (
-            <BattleChip
+          {visibleTokens.map((c) => {
+            // Dense/far scenes stay uniformly collapsed; only the explicitly
+            // selected unit may temporarily expand for inspection.
+            const detail = tokenDetail || (sameWave && c.id === selectedId)
+            return <BattleChip
               key={c.id}
               c={c}
               cam={cam}
@@ -1816,7 +1828,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
               onSelect={() => handleSelect(c)}
               appearance={getAppearance(c, classFor)}
               scale={battle.timeScale}
-              detail={tokenDetail}
+              detail={detail}
               skin={skin}
               castLabels={castLabelsBySource.get(c.id)}
               spawnPop={!mountIdsRef.current!.has(c.id)}
@@ -1824,11 +1836,11 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
               // a compositor layer for its 0.3s and drops it again — fine for a
               // handful of zoomed-in tokens, layer churn × the whole mob when
               // zoomed out (measured ~-7 fps on the ?perf scene un-gated).
-              lungeDeg={tokenDetail ? lungeDegs.get(c.id) ?? null : null}
+              lungeDeg={detail ? lungeDegs.get(c.id) ?? null : null}
               lungeFlip={battle.round % 2 === 0}
-              hitDeg={tokenDetail ? hitDegs.get(c.id) ?? null : null}
+              hitDeg={detail ? hitDegs.get(c.id) ?? null : null}
             />
-          ))}
+          })}
 
           {battle.outcome !== 'ongoing' && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

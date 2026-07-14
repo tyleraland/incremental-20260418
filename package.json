@@ -29,6 +29,7 @@
     "perf-probe": "\"${npm_node_execpath:-node}\" ./node_modules/playwright/cli.js test dense-probe.spec.ts --project=mobile-chrome --workers=1",
     "horse-rig-perf": "\"${npm_node_execpath:-node}\" ./node_modules/playwright/cli.js test horse-rig-perf.spec.ts --project=mobile-chrome --workers=1",
     "horse-battle-e2e": "\"${npm_node_execpath:-node}\" ./node_modules/playwright/cli.js test horse-battle-preview.spec.ts --project=mobile-chrome --workers=1",
+    "horse-battle-prod": "\"${npm_node_execpath:-node}\" ./node_modules/playwright/cli.js test horse-battle-production.spec.ts --config=playwright.prod.config.ts --project=mobile-chrome --workers=1",
     "horse-model-profile": "\"${npm_node_execpath:-node}\" ./node_modules/playwright/cli.js test horse-model-profile.spec.ts --project=mobile-chrome --workers=1",
     "e2e:install": "\"${npm_node_execpath:-node}\" ./node_modules/playwright/cli.js install chromium",
     "gallery-shot": "\"${npm_node_execpath:-node}\" ./node_modules/playwright/cli.js test gallery.spec.ts --project=mobile-chrome",

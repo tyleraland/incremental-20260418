@@ -62,6 +62,10 @@ test('4 heroes fight 100 oversized compiled horses in the real mobile battle vie
       paths: arena.querySelectorAll('[data-skin="horse"] path').length,
       animatedParts: arena.querySelectorAll('[data-skin="horse"] [data-rig-animate]').length,
       nodes: arena.querySelectorAll('*').length,
+      minimapEnemies: Number(document.querySelector('[data-minimap-enemy-count]')?.getAttribute('data-minimap-enemy-count') ?? 0),
+      minimapEnemyPaths: document.querySelectorAll('[data-minimap-enemies]').length,
+      activeFloats: Number(document.querySelector('[data-active-combat-floats]')?.getAttribute('data-active-combat-floats') ?? 0),
+      engine: { ...(window as any).__enginePerf },
     }
   })
   const delta = (key: string) => (after[key] ?? 0) - (before[key] ?? 0)
@@ -83,5 +87,6 @@ test('4 heroes fight 100 oversized compiled horses in the real mobile battle vie
 
   // This is primarily a measurement, but catching a complete render collapse is useful.
   expect(render.horseBodies).toBeGreaterThan(0)
+  expect(render.activeFloats).toBeLessThanOrEqual(64)
   expect(fps).toBeGreaterThan(5)
 })
