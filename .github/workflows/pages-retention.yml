@@ -1,0 +1,54 @@
+name: Pages preview retention
+
+# Closed-event cleanup normally happens in pr-preview.yml. This sweep repairs
+# missed/legacy cleanup and compacts generated Pages history so stale preview
+# builds cannot accumulate toward GitHub Pages' site-size limit.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+# Serialize every writer of gh-pages so the retained tree is never based on a
+# stale deployment while main or a PR preview is publishing.
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 1
+
+      - name: Remove closed PR previews
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open_prs="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+            --jq '.[].number')"
+
+          shopt -s nullglob
+          for preview in pr-preview/pr-*; do
+            pr_number="${preview##*/pr-}"
+            [[ "$pr_number" =~ ^[0-9]+$ ]] || continue
+            grep -qx "$pr_number" <<< "$open_prs" || rm -rf -- "$preview"
+          done
+
+      - name: Compact Pages branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git checkout --orphan retained-pages
+          git add -A
+          git commit -m "Retain main and open PR previews"
+          git push --force origin HEAD:gh-pages
