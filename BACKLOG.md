@@ -630,6 +630,22 @@ per-hero attribution is round-robin, not true kill credit.
 
 ## AI & coordination
 
+### Dense-combat performance levers
+
+- **Event-invalidated target locks across decision rounds.** Production already
+  holds a valid lock between `decisionInterval` rounds; if profiling still puts
+  targeting on top, prototype keeping it across decision rounds too, invalidated
+  by target death/disappearance, hard-taunt/tactic changes, or a blackboard focus
+  change. The 100-horse probe currently observes 104 target evaluations on a
+  decision round, so this is a direct O(units) frequency lever. Preserve tactic
+  responsiveness and snapshot replay exactly.
+- **Share visibility candidate sets by team/spatial cell for one round.** The
+  current cache is per-unit/per-turn and the 100-horse probe sees zero cache hits
+  when each combatant asks once. Cache only the coarse spatial candidate pool by
+  team+cell; keep exact range, stealth, and LoS filtering per combatant so visible
+  sets and ordering remain byte-identical. Measure allocation/sort savings before
+  retaining it.
+
 **Design: `tactical-coordination.md`** — TeamPlan v2, planner pipeline +
 pull model, directives (player lever), host objectives (escort / hold /
 work), sliced into milestones. **M0–M4 shipped** (engagement/kill-order/

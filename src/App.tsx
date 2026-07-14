@@ -7,6 +7,7 @@ import { OfflineSummary } from '@/components/OfflineSummary'
 import { BattleView, prewarmLocationTerrain } from '@/components/BattleView'
 import { ProtoApp } from '@/proto/ProtoApp'
 import { applyPersistedOverrides } from '@/data/monsterOverrides'
+import { ENGINE_PERF_PROBE } from '@/engine'
 
 // Re-apply any Monster Lab (?monsterlab=1) experiments onto the live registry at
 // boot, so tuned stats/skills persist across reloads and take effect on the next
@@ -19,7 +20,13 @@ applyPersistedOverrides()
 // to assert on it, or `__game.getState().enterBattleView(id)` to poke it. The DEV
 // gate dead-code-strips this from production bundles.
 if (import.meta.env.DEV && typeof window !== 'undefined') {
-  ;(window as unknown as { __game?: typeof useGameStore }).__game = useGameStore
+  const debugWindow = window as unknown as {
+    __game?: typeof useGameStore
+    __enginePerf?: typeof ENGINE_PERF_PROBE
+  }
+  debugWindow.__game = useGameStore
+  ENGINE_PERF_PROBE.enabled = true
+  debugWindow.__enginePerf = ENGINE_PERF_PROBE
 }
 
 // Developer tool pages, reached from the ☰ Menu (Developer section) or by URL.

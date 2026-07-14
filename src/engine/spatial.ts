@@ -10,6 +10,7 @@
 import { distance, moveSpeedOf, attackReach } from './grid'
 import { spatialHashFor, SPATIAL_MARGIN } from './spatialhash'
 import { EPS } from './constants'
+import { ENGINE_PERF_PROBE } from './perfProbe'
 import type { BattleState, Combatant, EngineSkill, MovementResult, Vec2 } from './types'
 
 const isHidden = (c: Combatant) => c.statuses.some((s) => s.flags.includes('stealthed'))
@@ -59,10 +60,14 @@ export function bumpVisionGen(): void { visionGen++ }
 export function clearVisionCache(): void { visionCache.clear() }
 
 export function visibleEnemiesOf(state: BattleState, self: Combatant): Combatant[] {
+  if (ENGINE_PERF_PROBE.enabled) ENGINE_PERF_PROBE.visibleEnemyQueries++
   const hash = spatialHashFor(state.combatants)   // non-null ⇒ inside a live round for this state
   if (hash) {
     const hit = visionCache.get(self.id)
-    if (hit && hit.gen === visionGen && hit.x === self.pos.x && hit.y === self.pos.y) return hit.result
+    if (hit && hit.gen === visionGen && hit.x === self.pos.x && hit.y === self.pos.y) {
+      if (ENGINE_PERF_PROBE.enabled) ENGINE_PERF_PROBE.visionCacheHits++
+      return hit.result
+    }
   }
   const r = self.visionRange
   // Finite vision (open-world fog): query the spatial hash for nearby buckets and

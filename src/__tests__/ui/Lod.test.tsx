@@ -3,7 +3,7 @@
 // and renders just the circle; zoomed in (a tight group or single hero), the
 // full label returns. The chip's title is kept either way as a stable handle.
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, within, cleanup } from '@testing-library/react'
+import { render, within, cleanup, fireEvent } from '@testing-library/react'
 import { useGameStore } from '@/stores/useGameStore'
 import { BattleView } from '@/components/BattleView'
 import { createBattle, addCombatant, type BattleState } from '@/engine'
@@ -59,5 +59,14 @@ describe('level-of-detail tokens', () => {
     const a = within(arena(show(b).container))
     expect(a.queryByText('Hero')).toBeNull()         // LOD by on-screen count
     expect(a.getByTitle(/Hero —/)).toBeTruthy()
+  })
+
+  it('expands only the selected token while the scene remains in low detail', () => {
+    const { container } = show(openBattle(true))
+    const a = within(arena(container))
+    expect(a.queryByText('Hero')).toBeNull()
+    fireEvent.click(a.getByTitle(/Hero —/))
+    expect(a.getByText('Hero')).toBeTruthy()
+    expect(a.queryByText('Mate')).toBeNull()
   })
 })

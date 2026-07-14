@@ -265,6 +265,12 @@ teeth, a nose, a shell spiral — `fill` is a tone field `base`/`top`/`outline`/
    `'outline'` (near-black) vanishes against the dark arena — use
    `fill: 'base', stroke: true` like legs; and anything inside x≈92 hides
    under the body silhouette (weapon-tip rule above).
+   BattleView collapses the whole visible scene when its zoom/count LOD budget
+   trips; only the explicitly selected token expands for inspection. Floating
+   combat numbers are render-capped to the newest 64 (events/reports remain
+   complete), and minimap units are packed into one compound SVG path per role.
+   The live counts are exposed as `data-active-combat-floats` and
+   `data-minimap-enemy-count` for the mobile probes.
 5. Iterate against the **body sheet** (`?bodyshot=<shape>`, screenshot via
    `SHAPE=<shape> npm run body-shot`): one image renders the creature's full
    state machine as deterministic stills — the real index.css keyframes frozen

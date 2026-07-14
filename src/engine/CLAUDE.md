@@ -30,6 +30,7 @@ Engine changes must keep snapshot replays byte-identical.
 
 ## Combat systems
 - Spatial hash (`spatialhash.ts`) and per-turn vision cache (`spatial.ts`) are pure optimizations and must stay byte-identical to brute scan. The vision cache assumes one battle steps at a time.
+- `perfProbe.ts` holds opt-in current-round counters outside `BattleState`; DEV exposes them at `window.__enginePerf`. Never serialize them or branch combat behavior on them.
 - Targeting = hard taunt (`taunted`) > targeting tactics > threat fallback (`selectTarget`: threat - distance, with hysteresis). Damage and healing accrue threat; Taunt peels.
 - Zones (`BattleZone`) are persistent ground areas. Damage uses the element matrix vs effective armor; DoT runs once per logical round.
 - Defensive passives (Toughness/Evasion/Defensive Stance) set `Combatant.armorReduction`/`dodgePeriod`/`threatMult` in `adapter.ts`; monsters carry the same fields.

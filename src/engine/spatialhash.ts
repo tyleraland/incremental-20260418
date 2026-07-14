@@ -24,6 +24,7 @@
 // brute force — which is byte-identical anyway.
 
 import type { Combatant, Vec2 } from './types'
+import { ENGINE_PERF_PROBE } from './perfProbe'
 
 // Cell width and the over-scan margin (≥ the most a unit can move in one round:
 // move × retreat-boost, knockback, barrier-escape — all a few cells). Larger is
@@ -54,6 +55,7 @@ export class SpatialHash {
 
   // Alive combatants whose bucket overlaps [pos ± radius], in array-index order.
   near(pos: Vec2, radius: number): Combatant[] {
+    if (ENGINE_PERF_PROBE.enabled) ENGINE_PERF_PROBE.spatialNearQueries++
     const cell = this.cell
     const minx = Math.floor((pos.x - radius) / cell), maxx = Math.floor((pos.x + radius) / cell)
     const miny = Math.floor((pos.y - radius) / cell), maxy = Math.floor((pos.y + radius) / cell)
@@ -65,6 +67,7 @@ export class SpatialHash {
       }
     }
     out.sort((a, b) => a.i - b.i)
+    if (ENGINE_PERF_PROBE.enabled) ENGINE_PERF_PROBE.spatialCandidates += out.length
     return out.map((e) => e.c)
   }
 }
