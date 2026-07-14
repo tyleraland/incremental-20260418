@@ -4,7 +4,9 @@ name: Pages preview retention
 # missed/legacy cleanup and compacts generated Pages history so stale preview
 # builds cannot accumulate toward GitHub Pages' site-size limit.
 on:
-  push:
+  workflow_run:
+    workflows: [Deploy to GitHub Pages]
+    types: [completed]
     branches: [main]
   schedule:
     - cron: '17 4 * * 0'
@@ -22,6 +24,7 @@ concurrency:
 
 jobs:
   prune:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
