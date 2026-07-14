@@ -39,7 +39,7 @@ export default function HorseRigPerf() {
       `}</style>
       <header className="max-w-4xl mx-auto mb-3 flex items-end justify-between gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-game-primary">paper-rig/1 · horse · 60° · eight headings</p>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-game-primary">paper-rig/1@1.1 · horse · 60° · semantic compositor</p>
           <h1 className="text-xl font-semibold">Compiled horse density probe</h1>
           <p className="text-[11px] text-game-muted">{count} moving tokens · mode {mode}</p>
         </div>
