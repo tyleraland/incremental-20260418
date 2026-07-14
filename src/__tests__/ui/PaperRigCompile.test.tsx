@@ -2,8 +2,9 @@ import { render } from '@testing-library/react'
 import { compilePaperRigDirections, nearestPaperRigHeading, PAPER_RIG_HEADINGS, validatePaperRigSpec } from '@/render/paperRig/compile'
 import { HorsePaperAsset, HORSE_PAPER_VIEWS } from '@/render/paperRig/HorsePaperAsset'
 import { WORKBENCH_V2_HORSE } from '@/render/paperRig/horse'
+import { PAPER_RIG_SPECIMENS } from '@/render/paperRig/specimens'
 
-describe('paper-rig horse compiler', () => {
+describe('paper-rig compiler', () => {
   it('imports and validates the workbench v2 semantic package', () => {
     expect(WORKBENCH_V2_HORSE.schemaVersion).toBe('1.1.0')
     expect(WORKBENCH_V2_HORSE.generatorVersion).toBe('0.6.0')
@@ -14,6 +15,15 @@ describe('paper-rig horse compiler', () => {
     expect(WORKBENCH_V2_HORSE.anchors).toHaveLength(8)
     expect(Object.keys(WORKBENCH_V2_HORSE.clips)).toEqual(['idleA', 'walkA', 'attack', 'idle', 'walk', 'hit', 'ko'])
     expect(() => validatePaperRigSpec(WORKBENCH_V2_HORSE)).not.toThrow()
+  })
+
+  it('accepts every generated v2 specimen package', () => {
+    expect(Object.fromEntries(Object.entries(PAPER_RIG_SPECIMENS).map(([id, spec]) => [id, spec.modelId]))).toEqual({
+      horse: 'horseBase',
+      humanoid: 'humanoidBase',
+      rhino: 'rhinoBase',
+    })
+    Object.values(PAPER_RIG_SPECIMENS).forEach((spec) => expect(() => validatePaperRigSpec(spec)).not.toThrow())
   })
 
   it('deterministically compiles semantic groups, gaskets, and eight directions', () => {

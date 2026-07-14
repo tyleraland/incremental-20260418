@@ -18,6 +18,7 @@
     "test": "\"${npm_node_execpath:-node}\" ./node_modules/vitest/vitest.mjs run",
     "bsnap": "\"${npm_node_execpath:-node}\" scripts/bsnap.mjs",
     "import-svg": "\"${npm_node_execpath:-node}\" scripts/import-svg.mjs",
+    "import-paper-rigs": "\"${npm_node_execpath:-node}\" scripts/import-paper-rigs.mjs",
     "codemap": "cd tools/codemap && npm install && npm run build && rm -rf ../../public/codemap && cp -R dist ../../public/codemap",
     "coverage": "\"${npm_node_execpath:-node}\" ./node_modules/vitest/vitest.mjs run --coverage.enabled --coverage.provider=v8 --coverage.all --coverage.reporter=json --coverage.reportsDirectory=coverage",
     "test:watch": "\"${npm_node_execpath:-node}\" ./node_modules/vitest/vitest.mjs",

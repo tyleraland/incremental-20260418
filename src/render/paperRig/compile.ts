@@ -11,7 +11,7 @@ import type {
   PaperRigVec3,
 } from '@/render/paperRig/types'
 
-const ELEVATION_DEG = 60
+export const DEFAULT_PAPER_RIG_ELEVATION = 60
 export const PAPER_RIG_HEADINGS = [0, 45, 90, 135, 180, 225, 270, 315] as const
 
 export const PAPER_RIG_PAINT: Readonly<Record<PaperRigPaletteRole, PaperRole>> = {
@@ -43,7 +43,9 @@ export function validatePaperRigSpec(spec: PaperRigSpec) {
   const renderableIds = new Set([...spec.plates, ...spec.gaskets].map((part) => part.id))
   for (const joint of spec.joints) {
     if (joint.parentId && !jointIds.has(joint.parentId)) throw new Error(`Missing paper-rig parent joint: ${joint.parentId}`)
-    if (joint.coverageGasketId && !renderableIds.has(joint.coverageGasketId)) throw new Error(`Missing paper-rig gasket: ${joint.coverageGasketId}`)
+    if (joint.coverageGasketId && joint.coverageGasketId !== 'not-required-nonvisible-helper' && !renderableIds.has(joint.coverageGasketId)) {
+      throw new Error(`Missing paper-rig gasket: ${joint.coverageGasketId}`)
+    }
   }
   for (const part of [...spec.plates, ...spec.gaskets]) {
     const referenced = part.attachment.type === 'rigidBone' ? [part.attachment.boneId] : part.attachment.jointIds
@@ -152,9 +154,10 @@ function dynamicGroup(
   return ownDepth > counterpartDepth ? 'camera-far appendages' : 'camera-near appendages'
 }
 
-export function compilePaperRigView(spec: PaperRigSpec, headingDeg: number): CompiledPaperRigView {
+export function compilePaperRigView(spec: PaperRigSpec, headingDeg: number, elevationDeg = DEFAULT_PAPER_RIG_ELEVATION): CompiledPaperRigView {
   validatePaperRigSpec(spec)
-  const e = ELEVATION_DEG * Math.PI / 180
+  if (!spec.directionalBake.validationElevationsDegrees.includes(elevationDeg)) throw new Error(`Paper-rig elevation was not validated: ${elevationDeg}°`)
+  const e = elevationDeg * Math.PI / 180
   const basis = {
     right: [0, 1, 0] as PaperRigVec3,
     up: [Math.sin(e), 0, Math.cos(e)] as PaperRigVec3,
@@ -189,10 +192,13 @@ export function compilePaperRigView(spec: PaperRigSpec, headingDeg: number): Com
   })
   const groupIndex = new Map(spec.compositingPolicy.orderedGroups.map((group, index) => [group, index]))
   const compiled = [
-    ...physical.map((item): CompiledPaperRigPart & { depth: number } => ({
+    ...physical.map((item): Omit<CompiledPaperRigPart, 'depthBand'> & { depth: number } => ({
       id: item.source.id,
       d: item.d,
       paint: PAPER_RIG_PAINT[item.source.paletteRole],
+      paletteRole: item.source.paletteRole,
+      semanticRole: item.source.semanticRole,
+      bodyRegion: item.source.bodyRegion,
       sourceKind: 'jointId' in item.source ? 'gasket' : 'plate',
       compositingGroup: item.group,
       lodTier: item.source.lodTier,
@@ -202,31 +208,41 @@ export function compilePaperRigView(spec: PaperRigSpec, headingDeg: number): Com
       id: spec.coreOccluder.id,
       d: occluderMembers.map((item) => item.d).join(''),
       paint: PAPER_RIG_PAINT[spec.coreOccluder.paletteRole],
+      paletteRole: spec.coreOccluder.paletteRole,
+      semanticRole: 'opaqueCoreOccluder',
+      bodyRegion: 'core',
       sourceKind: 'coreOccluder' as const,
       compositingGroup: spec.coreOccluder.compositingGroup,
       lodTier: 'silhouette' as const,
       depth: occluderMembers.reduce((sum, item) => sum + item.depth, 0) / occluderMembers.length,
     },
   ].sort((a, b) => (groupIndex.get(a.compositingGroup) ?? 99) - (groupIndex.get(b.compositingGroup) ?? 99) || b.depth - a.depth || a.id.localeCompare(b.id))
+  const minDepth = Math.min(...compiled.map((part) => part.depth))
+  const maxDepth = Math.max(...compiled.map((part) => part.depth))
+  const depthSpan = Math.max(0.0001, maxDepth - minDepth)
 
   return {
     headingDeg,
+    elevationDeg,
     shadow: {
       cx: groundX,
       cy: groundY,
       rx: shadowPlate.localGeometry.sizeMeters[0] * spec.scale.tokenUnitsPerMeter / 2,
       ry: shadowPlate.localGeometry.sizeMeters[1] * spec.scale.tokenUnitsPerMeter / 2,
     },
-    parts: compiled.map(({ depth: _depth, ...part }) => part),
+    parts: compiled.map(({ depth, ...part }) => ({
+      ...part,
+      depthBand: Math.max(0, Math.min(4, Math.round((depth - minDepth) / depthSpan * 4))) as 0 | 1 | 2 | 3 | 4,
+    })),
     // Far LOD stays a single fully opaque path. Keeping all physical geometry
     // costs path bytes but no extra DOM nodes and preserves legs/contact points.
     mergedD: physical.map((item) => item.d).join(''),
   }
 }
 
-export function compilePaperRigDirections(spec: PaperRigSpec): readonly CompiledPaperRigView[] {
+export function compilePaperRigDirections(spec: PaperRigSpec, elevationDeg = DEFAULT_PAPER_RIG_ELEVATION): readonly CompiledPaperRigView[] {
   validatePaperRigSpec(spec)
-  return spec.directionalBake.headingsDegrees.map((heading) => compilePaperRigView(spec, heading))
+  return spec.directionalBake.headingsDegrees.map((heading) => compilePaperRigView(spec, heading, elevationDeg))
 }
 
 export function nearestPaperRigHeading(deg: number): number {

@@ -181,13 +181,18 @@ export interface CompiledPaperRigPart {
   id: string
   d: string
   paint: PaperRole
+  paletteRole: PaperRigPaletteRole
+  semanticRole: string
+  bodyRegion: string
   sourceKind: 'plate' | 'gasket' | 'coreOccluder'
   compositingGroup: PaperRigCompositingGroup
   lodTier: PaperRigLodTier
+  depthBand: 0 | 1 | 2 | 3 | 4
 }
 
 export interface CompiledPaperRigView {
   headingDeg: number
+  elevationDeg: number
   shadow: { cx: number; cy: number; rx: number; ry: number }
   parts: readonly CompiledPaperRigPart[]
   mergedD: string

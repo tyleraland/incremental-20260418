@@ -95,6 +95,21 @@ export const PAPER_PALETTE = {
   bannerGold:    '#c7a54a',   // banner trim / crest
   pineLit:       '#41562a',   // conifer highlight (over foliageDeep)
 
+  // Paper-rig style bake experiments. Both are strictly opaque; the Rim-like
+  // set emphasizes a pale animal silhouette with sparse ink/readable anatomy,
+  // while the five stencil values quantize camera depth into solid cut layers.
+  rigRimInk:    '#292b2a',
+  rigRimShade:  '#9d9b91',
+  rigRimBase:   '#d4d1c3',
+  rigRimLight:  '#e9e6da',
+  rigRimAccent: '#69675f',
+  rigStencil0:  '#263238',
+  rigStencil1:  '#48595b',
+  rigStencil2:  '#718078',
+  rigStencil3:  '#a7ad96',
+  rigStencil4:  '#ded9bd',
+  rigGround:    '#85877f',
+
   // ── City ground surfaces (render/terrain.tsx spec consumption) ─────────────
   // Paved regions of a city's surface plane read as distinct materials over the
   // biome ground: warm cobbled roads, a pale flagstone plaza, packed-dirt yards.
