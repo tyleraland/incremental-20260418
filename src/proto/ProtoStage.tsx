@@ -5,6 +5,7 @@ import { BattleView } from '@/components/BattleView'
 import { useProtoStore, type ZoomLevel } from './protoStore'
 import { useQuestBoard } from './QuestJournal'
 import { StageOverlay } from './StageOverlay'
+import { mapPreviewUrl } from './mapPreview'
 
 // ── Prototype Stage ────────────────────────────────────────────────────────────
 //
@@ -51,21 +52,7 @@ const REGIONS: Record<string, { name: string; icon: string; entryLocationId?: st
 }
 
 const CELL = 96 // world-space px per grid step
-
-const KIND_GLYPH: Record<string, { symbol: string; ring: string; glow: string }> = {
-  city:     { symbol: '⌂', ring: 'border-amber-600/60',  glow: 'text-amber-300'   },
-  arena:    { symbol: '⚔', ring: 'border-violet-600/60', glow: 'text-violet-300'  },
-  dungeon:  { symbol: '◆', ring: 'border-rose-600/60',   glow: 'text-rose-300'    },
-  mountain: { symbol: '▲', ring: 'border-stone-500/60',  glow: 'text-stone-300'   },
-  forest:   { symbol: '♣', ring: 'border-green-700/60',  glow: 'text-green-300'   },
-  beach:    { symbol: '≈', ring: 'border-sky-700/60',    glow: 'text-sky-300'     },
-  plains:   { symbol: '·', ring: 'border-emerald-800/50',glow: 'text-emerald-300' },
-}
-const KIND_PRIORITY = ['dungeon', 'arena', 'city', 'mountain', 'forest', 'beach', 'plains'] as const
-function kindOf(traits: string[]) {
-  for (const k of KIND_PRIORITY) if (traits.includes(k)) return { key: k, ...KIND_GLYPH[k] }
-  return { key: 'plains', ...KIND_GLYPH.plains }
-}
+const TILE = CELL - 6 // the blurry map-preview tile; a thin seam between neighbours reads as water/void
 
 function worldX(c: [number, number]) { return c[0] * CELL + CELL / 2 }
 function worldY(c: [number, number]) { return c[1] * CELL + CELL / 2 }
@@ -96,18 +83,17 @@ const battleScaleFor   = (z: number) => lerp(0.94, 1, clamp((z - 1.25) / 0.55, 0
 // are summarised by the node's live foe-count badge (not plotted here — the dot
 // swarm belongs on the battlefield mini-map, not the overworld). Fades in from
 // world→locale altitude so the zoomed-out overview stays legible.
-const NODE_PX = 48                      // matches the node box (w-12 h-12)
-function NodeScatter({ battle, zoom }: { battle: BattleState; zoom: number }) {
-  const op = clamp((zoom - 0.5) / 0.7, 0, 1)     // ~0 at full world, ~1 by locale
+function NodeScatter({ battle, zoom, px }: { battle: BattleState; zoom: number; px: number }) {
+  const op = clamp((zoom - 0.4) / 0.7, 0, 1)     // ~0 at full world, ~1 by locale
   if (op <= 0.02) return null
   const cols = battle.cols || 1, rows = battle.rows || 1
   const heroes = battle.combatants.filter((c) => c.team === 'player' && c.alive)
   const tx = (p: { x: number; y: number }) =>
-    `translate(${(p.x / cols) * NODE_PX}px, ${((rows - p.y) / rows) * NODE_PX}px)`
+    `translate(${(p.x / cols) * px}px, ${((rows - p.y) / rows) * px}px)`
   return (
-    <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none" style={{ opacity: op }}>
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ opacity: op }}>
       {heroes.map((c) => (
-        <span key={c.id} className="absolute top-0 left-0 w-[4px] h-[4px] -ml-[2px] -mt-[2px] rounded-full bg-blue-300 ring-1 ring-blue-200/40"
+        <span key={c.id} className="absolute top-0 left-0 w-[5px] h-[5px] -ml-[2.5px] -mt-[2.5px] rounded-full bg-sky-300 ring-1 ring-sky-100/50 shadow-sm"
           style={{ transform: tx(c.pos), transition: 'transform 220ms linear', willChange: 'transform' }} />
       ))}
     </div>
@@ -121,9 +107,9 @@ export function WorldNode({ loc, units, equipment, battle, zoom, selected, quest
   selected: boolean; questReady: boolean; onTap: () => void; onDive: () => void
 }) {
   const c = LOCATION_COORDS[loc.id]; if (!c) return null
-  const kind = kindOf(loc.traits)
   const here = units.filter((u) => u.locationId === loc.id)
   const showScatter = loc.openWorld && !!battle && battle.mode === 'open'
+  const preview = mapPreviewUrl(loc)
   const lastTap = useRef(0)
   function tap() {
     const now = Date.now()
@@ -134,40 +120,60 @@ export function WorldNode({ loc, units, equipment, battle, zoom, selected, quest
     <button
       onClick={tap}
       title={loc.name}
-      className="absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 group"
-      style={{ left: worldX(c), top: worldY(c), width: CELL - 14 }}
-    >
-      <div className={[
-        'relative w-12 h-12 rounded-xl border-2 flex items-center justify-center backdrop-blur-sm transition-all',
+      className={[
+        'absolute -translate-x-1/2 -translate-y-1/2 group rounded-lg overflow-hidden border transition-[box-shadow,border-color] duration-150',
         selected
-          ? 'border-game-primary bg-game-primary/25 ring-4 ring-game-primary/30 scale-110'
-          : `${kind.ring} bg-game-surface/80 group-hover:scale-105 group-hover:border-game-primary/60`,
-      ].join(' ')}>
-        {/* hero positions, plotted behind the symbol — the field is genuinely running */}
-        {showScatter && <NodeScatter battle={battle!} zoom={zoom} />}
-        <span className={`relative text-2xl leading-none drop-shadow ${kind.glow}`}>{kind.symbol}</span>
-        {loc.openWorld && (
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-game-bg" title="Open world" />
-        )}
-        {/* a quest here is ready to collect — a yellow (?) nudge */}
-        {questReady && (
-          <span
-            className="absolute -top-2 -left-2 w-4 h-4 rounded-full bg-game-gold text-game-bg text-[11px] font-bold leading-none flex items-center justify-center border border-game-bg shadow"
-            title="Rewards ready to collect"
-          >?</span>
-        )}
-        {here.length > 0 && (
-          <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex gap-0.5 px-1 py-0.5 rounded-full bg-game-bg/90 border border-game-border">
-            {here.slice(0, 4).map((u) => (
-              <span key={u.id} className={`w-1.5 h-1.5 rounded-full ${heroDot(u, getDerivedStats(u, equipment).maxHp)}`} />
-            ))}
-          </span>
-        )}
-      </div>
-      <span className={[
-        'mt-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap transition-colors',
-        selected ? 'text-game-text bg-game-bg/80' : 'text-game-text-dim bg-game-bg/40 group-hover:text-game-text',
-      ].join(' ')}>{loc.name}</span>
+          ? 'border-game-primary ring-2 ring-game-primary/50 z-10 shadow-[0_0_16px_rgba(99,102,241,0.5)]'
+          : 'border-white/10 hover:border-game-primary/50',
+      ].join(' ')}
+      style={{ left: worldX(c), top: worldY(c), width: TILE, height: TILE }}
+    >
+      {/* blurry terrain preview — the landmass/water/barrier read. Scaled out a
+          touch so the blur halo never exposes the tile edge. */}
+      <div
+        className="absolute inset-0 bg-game-surface"
+        style={{
+          backgroundImage: preview ? `url(${preview})` : undefined,
+          backgroundSize: 'cover', backgroundPosition: 'center',
+          filter: 'blur(2.2px) saturate(1.14) brightness(1.1)',
+          transform: 'scale(1.18)',
+        }}
+      />
+      {/* inner vignette gives the flat thumbnail some depth + keeps chrome legible */}
+      <div className="absolute inset-0 rounded-lg" style={{ boxShadow: 'inset 0 0 10px 1px rgba(0,0,0,0.45)' }} />
+      {selected && <div className="absolute inset-0 rounded-lg bg-game-primary/10" />}
+
+      {/* live hero positions, gliding — the map reads as alive */}
+      {showScatter && <NodeScatter battle={battle!} zoom={zoom} px={TILE} />}
+
+      {/* open-world marker */}
+      {loc.openWorld && (
+        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-1 ring-black/50" title="Open world" />
+      )}
+      {/* a quest here is ready to collect — a yellow (?) nudge */}
+      {questReady && (
+        <span
+          className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-game-gold text-game-bg text-[11px] font-bold leading-none flex items-center justify-center border border-black/40 shadow"
+          title="Rewards ready to collect"
+        >?</span>
+      )}
+      {/* heroes stationed here (HP-coloured pips) — presence even without a live battle */}
+      {here.length > 0 && (
+        <span className="absolute top-1 left-1/2 -translate-x-1/2 flex gap-0.5 px-1 py-0.5 rounded-full bg-black/55 backdrop-blur-sm">
+          {here.slice(0, 4).map((u) => (
+            <span key={u.id} className={`w-1.5 h-1.5 rounded-full ${heroDot(u, getDerivedStats(u, equipment).maxHp)}`} />
+          ))}
+        </span>
+      )}
+
+      {/* location name plate, printed on the map */}
+      <span
+        className={[
+          'absolute bottom-1 left-1/2 -translate-x-1/2 max-w-[130%] px-1.5 py-0.5 rounded whitespace-nowrap text-[10px] font-semibold leading-none transition-colors',
+          selected ? 'text-white bg-black/75' : 'text-white/90 bg-black/55 group-hover:text-white group-hover:bg-black/70',
+        ].join(' ')}
+        style={{ textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}
+      >{loc.name}</span>
     </button>
   )
 }
@@ -485,12 +491,6 @@ export function ProtoStage() {
         >
           <div className="absolute top-0 left-0 origin-top-left"
                style={{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }}>
-            <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0 }}>
-              {lines.map((ln, i) => (
-                <line key={i} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2}
-                      stroke="#2a2a3a" strokeWidth={3} strokeDasharray="2 6" strokeLinecap="round" />
-              ))}
-            </svg>
             {pageLocs.map((loc) => (
               <WorldNode key={loc.id} loc={loc} units={units} equipment={equipment}
                          battle={battles[loc.id]} zoom={zoom}
@@ -498,6 +498,20 @@ export function ProtoStage() {
                          questReady={questReadyLocs.has(loc.id)}
                          onTap={() => flyTo(loc)} onDive={() => dive(loc)} />
             ))}
+            {/* travel routes — dashed connections drawn OVER the tiles (the tiles
+                now fill their cells, so a route reads as a path across the map,
+                not a line hidden beneath the nodes). Dark halo + light dashes for
+                contrast on any terrain. */}
+            <svg className="absolute overflow-visible pointer-events-none" style={{ left: 0, top: 0 }}>
+              {lines.map((ln, i) => (
+                <line key={`h${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2}
+                      stroke="rgba(0,0,0,0.4)" strokeWidth={5} strokeLinecap="round" />
+              ))}
+              {lines.map((ln, i) => (
+                <line key={`d${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2}
+                      stroke="#c7cdea" strokeOpacity={0.75} strokeWidth={2.5} strokeDasharray="1.5 7" strokeLinecap="round" />
+              ))}
+            </svg>
           </div>
         </div>
 
