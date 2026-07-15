@@ -135,7 +135,7 @@ export function WorldNode({ loc, units, equipment, battle, zoom, selected, quest
         style={{
           backgroundImage: preview ? `url(${preview})` : undefined,
           backgroundSize: 'cover', backgroundPosition: 'center',
-          filter: 'blur(2.2px) saturate(1.14) brightness(1.1)',
+          filter: 'blur(1.6px) saturate(1.14) brightness(1.1)',
           transform: 'scale(1.18)',
         }}
       />
