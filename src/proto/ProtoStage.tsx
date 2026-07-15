@@ -384,13 +384,22 @@ export function ProtoStage() {
     animateZoomTo(z)
   }
 
+  // Connection markers: a SHORT dashed connector straddling the shared border
+  // between two neighbouring maps — not a full line reaching into either tile's
+  // centre. Centred on the midpoint of the two cells, oriented along the link.
+  const CONNECTOR_LEN = 24 // world px
   const lines: { x1: number; y1: number; x2: number; y2: number }[] = []
   for (const l of pageLocs) {
     const a = LOCATION_COORDS[l.id]; if (!a) continue
     for (const cid of l.connections) {
       if (cid < l.id) continue
       const b = LOCATION_COORDS[cid]; if (!b) continue
-      lines.push({ x1: worldX(a), y1: worldY(a), x2: worldX(b), y2: worldY(b) })
+      const ax = worldX(a), ay = worldY(a), bx = worldX(b), by = worldY(b)
+      const mx = (ax + bx) / 2, my = (ay + by) / 2
+      const len = Math.hypot(bx - ax, by - ay) || 1
+      const ux = (bx - ax) / len, uy = (by - ay) / len
+      const h = CONNECTOR_LEN / 2
+      lines.push({ x1: mx - ux * h, y1: my - uy * h, x2: mx + ux * h, y2: my + uy * h })
     }
   }
   const battleLive = focusLoc ? !!battles[focusLoc.id] : false
