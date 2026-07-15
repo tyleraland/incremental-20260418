@@ -24,48 +24,60 @@
 import { generateForLocationCached, generateMap, RECIPE_REGISTRY, THEME_TAGS } from '@/mapgen'
 import type { GenParams, MapSpec, SurfaceMaterial, BarrierMaterial, ThemeTag } from '@/mapgen'
 import { SURFACE_MATERIALS, BARRIER_MATERIALS } from '@/mapgen'
+import { biomeForLocation, type Biome } from '@/render/appearance'
 import type { Location } from '@/stores/useGameStore'
 
 // ── Colour vocabularies ──────────────────────────────────────────────────────
-// Lifted brighter than the battlefield washes so a 2px-blurred thumbnail still
-// reads as landscape. Kept local (not palette.ts roles) — a preview is not a
-// paper asset and shouldn't drag the palette toward map-legible tints.
+// Keyed to how the REAL map renders: a solid biome GROUND tile first (grass
+// field / stone dungeon / city plaza — skins.tsx), then distinctive surface
+// materials washed on top, then barrier masses. That's why the tiles now vary
+// by biome (a mountain reads grey, a city warm-brown) instead of all-green.
+// Values track the real ground/wash/palette hues but are lifted a stop or two
+// from their near-black battlefield tone so a 2px-blurred thumbnail stays
+// legible (the arena tiles are ~#1b2113 dark — a black blob when shrunk + blurred).
 type RGB = [number, number, number]
 
-const SURFACE_RGB: Record<SurfaceMaterial, RGB> = {
-  grass:           [58, 84, 40],
-  meadow:          [74, 104, 44],
-  dirt:            [104, 84, 52],
-  sand:            [186, 164, 108],
-  'shallow-water': [64, 128, 150],
-  'deep-water':    [34, 78, 104],
-  'stone-floor':   [92, 96, 104],
-  road:            [156, 144, 116],
+// The solid ground each biome paints under everything (skins.tsx PAPER_TILE_*),
+// lifted for thumbnail legibility.
+const GROUND_RGB: Record<Biome, RGB> = {
+  grass: [54, 68, 34],   // dark meadow green (over #1b2113)
+  stone: [72, 78, 88],   // cool grey slab (over #22262b)
+  plaza: [78, 68, 50],   // warm dressed brown (over #26221a)
+}
+
+// Surface washes painted over the ground. `grass` is the biome's default ground
+// (rendered as "no wash" in-game), so it resolves to GROUND_RGB at paint time
+// and is intentionally absent here.
+const WASH_RGB: Partial<Record<SurfaceMaterial, RGB>> = {
+  meadow:          [70, 96, 40],    // lusher green band (meadowWash, lifted)
+  dirt:            [108, 88, 56],   // packed dirt (dirtPath)
+  sand:            [188, 166, 110], // beach tan (sandWash, warmed)
+  'shallow-water': [62, 126, 148],  // ford/shore (waterShallow)
+  'deep-water':    [36, 78, 102],   // lake/sea (waterDeep)
+  'stone-floor':   [96, 100, 110],  // dungeon flags
+  road:            [166, 154, 128], // cobbled street (roadPave)
 }
 
 const BARRIER_RGB: Record<BarrierMaterial, RGB> = {
-  rock:         [70, 66, 58],
-  'cut-stone':  [110, 104, 88],
-  wood:         [108, 80, 46],
-  hedge:        [46, 66, 30],
-  'deep-water': [30, 72, 96],
-  ravine:       [54, 42, 30],
-  rubble:       [78, 72, 62],
-  bars:         [86, 96, 106],
+  rock:         [61, 56, 45],   // natural outcrop mass (wallTop, darkened)
+  'cut-stone':  [116, 110, 92], // built wall (stoneWall)
+  wood:         [110, 82, 48],  // palisade / timber
+  hedge:        [46, 70, 30],   // dense growth (foliageDeep)
+  'deep-water': [32, 74, 96],   // impassable water
+  ravine:       [51, 38, 24],   // chasm (cliffFill)
+  rubble:       [74, 70, 62],   // collapsed structure
+  bars:         [85, 96, 106],  // portcullis
 }
 
 // Void/ocean the whole preview floats on (also the fallback when a bake fails).
 const VOID_RGB: RGB = [12, 16, 24]
 
 // Biome-flavoured flat fallback if generation ever throws (keeps a tile from
-// going black). Cheap: one wash colour by trait.
+// going black): the location's ground colour, water for coastal.
 function fallbackRGB(loc: Location): RGB {
   const t = loc.traits
-  if (t.includes('city')) return SURFACE_RGB['road']
-  if (t.includes('beach') || t.includes('water')) return SURFACE_RGB['shallow-water']
-  if (t.includes('mountain') || t.includes('dungeon') || t.includes('ruins')) return SURFACE_RGB['stone-floor']
-  if (t.includes('desert')) return SURFACE_RGB['sand']
-  return SURFACE_RGB['grass']
+  if (t.includes('beach') || t.includes('water')) return WASH_RGB['shallow-water']!
+  return GROUND_RGB[biomeForLocation(loc)]
 }
 
 // ── Spec resolution ──────────────────────────────────────────────────────────
@@ -115,7 +127,7 @@ function previewSpecFor(loc: Location): MapSpec | null {
 // and blurs it, so a small crisp source is all we need.
 const urlCache = new Map<string, string>()
 
-function paintSpec(ctx: CanvasRenderingContext2D, spec: MapSpec) {
+function paintSpec(ctx: CanvasRenderingContext2D, spec: MapSpec, ground: RGB) {
   const { cols, rows } = spec
   const surf = spec.surface
   const img = ctx.createImageData(cols, rows)
@@ -126,7 +138,9 @@ function paintSpec(ctx: CanvasRenderingContext2D, spec: MapSpec) {
       const sx = Math.min(surf.cols - 1, Math.floor((x / cols) * surf.cols))
       const sy = Math.min(surf.rows - 1, Math.floor((y / rows) * surf.rows))
       const mat = SURFACE_MATERIALS[surf.grid[sy * surf.cols + sx]] ?? 'grass'
-      const rgb = SURFACE_RGB[mat] ?? SURFACE_RGB.grass
+      // Default ground ('grass') shows the biome ground; only distinctive
+      // materials wash over it — exactly the real render's layering.
+      const rgb = WASH_RGB[mat] ?? ground
       const i = (y * cols + x) * 4
       data[i] = rgb[0]; data[i + 1] = rgb[1]; data[i + 2] = rgb[2]; data[i + 3] = 255
     }
@@ -151,6 +165,7 @@ export function mapPreviewUrl(loc: Location): string {
   const spec = previewSpecFor(loc)
   const canvas = document.createElement('canvas')
   const [fr, fg, fb] = fallbackRGB(loc)
+  const ground = GROUND_RGB[biomeForLocation(loc)]
   let url = ''
   if (!spec) {
     canvas.width = canvas.height = 1
@@ -163,7 +178,7 @@ export function mapPreviewUrl(loc: Location): string {
     if (ctx) {
       ctx.fillStyle = `rgb(${VOID_RGB[0]},${VOID_RGB[1]},${VOID_RGB[2]})`
       ctx.fillRect(0, 0, spec.cols, spec.rows)
-      paintSpec(ctx, spec)
+      paintSpec(ctx, spec, ground)
       url = canvas.toDataURL()
     }
   }
