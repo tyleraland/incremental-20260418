@@ -41,6 +41,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
 //   ?monsterlab=1 — live monster stat/skill tuning + change-request generator.
 //   ?riglab=1 — mobile rig shaping, pose preview and share/import workflow.
 //   ?rigperf=1 — compiled angled horse density/performance experiment.
+//   ?stylelab=1 — one rig × three 3D→2D stylizers across the eight headings.
 //   ?bodyshot=<shape|all> — per-body animation contact sheet (frozen keyframes).
 const SkinGallery  = lazy(() => import('@/dev/SkinGallery'))
 const BodySheet    = lazy(() => import('@/dev/BodySheet'))
@@ -50,12 +51,13 @@ const PerfSandbox  = lazy(() => import('@/dev/PerfSandbox'))
 const MonsterLab   = lazy(() => import('@/dev/MonsterLab'))
 const RigLab       = lazy(() => import('@/dev/RigLab'))
 const HorseRigPerf = lazy(() => import('@/dev/HorseRigPerf'))
+const StyleLab     = lazy(() => import('@/dev/StyleLab'))
 
 // The dev tool pages and perf harness are gated to sandbox mode (or a real DEV
 // build). Sandbox is the dev/everything-open mode; curated is the new-player
 // build and stays free of debug surfaces. Read once at render (a full reload
 // mounts the page fresh, so the bootstrapped mode is current).
-const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox', 'monsterlab', 'riglab', 'rigperf', 'bodyshot'] as const
+const DEV_TOOL_PARAMS = ['gallery', 'workshop', 'mapgen', 'sandbox', 'monsterlab', 'riglab', 'rigperf', 'stylelab', 'bodyshot'] as const
 function devToolsEnabled() {
   return import.meta.env.DEV || useGameStore.getState().progressionMode === 'sandbox'
 }
@@ -205,6 +207,7 @@ function App() {
     if (params.has('monsterlab')) return <DevPage><MonsterLab /></DevPage>
     if (params.has('riglab')) return <DevPage><RigLab /></DevPage>
     if (params.has('rigperf')) return <DevPage><HorseRigPerf /></DevPage>
+    if (params.has('stylelab')) return <DevPage><StyleLab /></DevPage>
     if (params.has('bodyshot')) return <DevPage><BodySheet /></DevPage>
   }
 

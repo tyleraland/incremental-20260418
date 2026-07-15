@@ -96,7 +96,7 @@ export function compilePaperRigView(spec: PaperRigSpec, headingDeg: number): Com
       if (!p || part.size.length < 2) throw new Error(`Missing ellipse data for ${part.id}`)
       d = ellipsePath(p.x, p.y, part.size[0] * spec.tokenScale / 2, part.size[1] * spec.tokenScale / 2)
     }
-    return { id: part.id, d, paint: paintById.get(part.id)! }
+    return { id: part.id, d, paint: paintById.get(part.id)!, role: part.role as 'body' | 'accent' }
   })
   return {
     headingDeg,

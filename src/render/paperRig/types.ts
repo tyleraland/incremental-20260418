@@ -42,6 +42,9 @@ export interface CompiledPaperRigPart {
   id: string
   d: string
   paint: PaperRole
+  // The plate's semantic role, carried through so a downstream stylizer can
+  // paint by meaning (body vs. accent) instead of the loud diagnostic `paint`.
+  role: 'body' | 'accent'
 }
 
 export interface CompiledPaperRigView {
