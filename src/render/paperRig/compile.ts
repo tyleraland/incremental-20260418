@@ -1,7 +1,7 @@
 import { HORSE_PART_PAINTS } from '@/render/paperRig/horse'
 import type { CompiledPaperRigView, PaperRigSpec, PaperRigVec3 } from '@/render/paperRig/types'
 
-export const PAPER_RIG_ELEVATION_DEG = 60
+const PAPER_RIG_ELEVATION_DEG = 60
 export const PAPER_RIG_HEADINGS = [0, 45, 90, 135, 180, 225, 270, 315] as const
 
 const add = (a: PaperRigVec3, b: PaperRigVec3): PaperRigVec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
