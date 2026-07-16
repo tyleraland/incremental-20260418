@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Compiled horse experiment: only three signature parts animate, and only when
+   BattleView keeps a token at detail LOD. Dense mobs receive the merged far SVG
+   with no data-rig-animate nodes, so these never scale across the full herd. */
+@keyframes horse-rig-bob {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(1.8px, -1.2px); }
+}
+@keyframes horse-rig-sway {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(6deg); }
+}
+[data-rig-animate="horse-rig-bob"] {
+  animation: horse-rig-bob 720ms ease-in-out var(--idle-delay, 0s) infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform;
+}
+[data-rig-animate="horse-rig-sway"] {
+  animation: horse-rig-sway 840ms ease-in-out var(--idle-delay, 0s) infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform;
+}
+
 @layer base {
   html, body, #root {
     @apply h-full;

@@ -123,7 +123,7 @@ export default function PerfSandbox() {
   // still says circle. Keep `?skin=circle` as the explicit debug override.
   useEffect(() => {
     const explicitSkin = new URLSearchParams(window.location.search).get('skin')
-    if (explicitSkin === 'circle' || explicitSkin === 'paper') return
+    if (explicitSkin === 'circle' || explicitSkin === 'paper' || explicitSkin === 'horse') return
     useGameStore.getState().setBattleSkin('paper')
   }, [])
 

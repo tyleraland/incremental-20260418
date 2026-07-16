@@ -691,7 +691,50 @@ function arena5v5(): BattleState {
   return b
 }
 
+// ── Graphics probe: four heroes in a dense compiled-horse herd ──────────────
+function horseSwarm(): BattleState {
+  // Long-lived, low-damage combatants keep the scene dense long enough for a
+  // mobile visual/perf review. The battle is otherwise real: spatial movement,
+  // target selection, attacks, hit reactions and camera/LOD all run normally.
+  const players: EngineUnitInput[] = [
+    mk({ id: 'horse-probe-fighter', team: 'player', name: 'Fighter', str: 13, def: 15, maxHp: 2400, hp: 2400, moveSpeed: 0.9, visionRange: 40, skills: [{ ...bash }] }),
+    mk({ id: 'horse-probe-ranger', team: 'player', name: 'Ranger', str: 11, def: 12, maxHp: 2000, hp: 2000, moveSpeed: 0.9, visionRange: 40, rangedRange: 6 }),
+    mk({ id: 'horse-probe-mage', team: 'player', name: 'Mage', str: 4, int: 20, def: 11, maxHp: 1800, hp: 1800, moveSpeed: 0.85, visionRange: 40, rangedRange: 6, skills: [{ ...frostBolt }] }),
+    mk({ id: 'horse-probe-cleric', team: 'player', name: 'Cleric', str: 7, int: 16, def: 13, maxHp: 2100, hp: 2100, moveSpeed: 0.85, visionRange: 40, rangedRange: 5, skills: [buildEngineSkill('heal', 2)!] }),
+  ]
+  const enemies = Array.from({ length: 100 }, (_, i) => mk({
+    id: `paper-horse#${i + 1}`,
+    team: 'enemy',
+    name: 'Paper Horse',
+    str: 5,
+    def: 8,
+    maxHp: 900,
+    hp: 900,
+    moveSpeed: 0.72 + (i % 4) * 0.03,
+    meleeRange: 1.4,
+    visionRange: 40,
+  }))
+  const b = createBattle({ playerUnits: players, enemyUnits: enemies, mode: 'open', cols: 42, rows: 42 })
+  at(b, 'horse-probe-fighter', 20, 20)
+  at(b, 'horse-probe-ranger', 22, 20)
+  at(b, 'horse-probe-mage', 20, 22)
+  at(b, 'horse-probe-cleric', 22, 22)
+  enemies.forEach((enemy, i) => {
+    const ring = 5 + (i % 5) * 2.1
+    const angle = (Math.PI * 2 * i) / enemies.length
+    at(b, enemy.id, 21 + Math.cos(angle) * ring, 21 + Math.sin(angle) * ring)
+  })
+  return b
+}
+
 export const SHOWCASES: Showcase[] = [
+  {
+    id: 'horse-swarm',
+    title: 'Paper horse swarm — 4 vs 100',
+    blurb: 'Four durable heroes surrounded by 100 oversized compiled eight-heading horses in the real battle renderer.',
+    watch: 'Pan/zoom through the herd: dense view uses merged far LOD; following a hero or zooming in restores colored plate detail and three-part gait motion.',
+    build: horseSwarm,
+  },
   {
     id: 'kite-anchor',
     title: 'Right range per target',

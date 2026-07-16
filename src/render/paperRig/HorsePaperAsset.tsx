@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { PAPER_PALETTE } from '@/render/palette'
-import { compilePaperRigDirections, nearestPaperRigHeading } from '@/render/paperRig/compile'
+import { compilePaperRigDirections, nearestPaperRigHeading, PAPER_RIG_PAINT } from '@/render/paperRig/compile'
 import { WORKBENCH_HORSE } from '@/render/paperRig/horse'
 
 const HORSE_VIEWS = compilePaperRigDirections(WORKBENCH_HORSE)
@@ -33,24 +33,30 @@ export const HorsePaperAsset = memo(function HorsePaperAsset({
       width={size}
       height={size}
       aria-hidden
-      className="block overflow-visible"
+      className="block w-full h-full overflow-visible"
     >
-      <ellipse {...view.shadow} fill={PAPER_PALETTE.shadow} opacity="0.24" />
+      {/* v2 requires fully opaque output. The semantic shadow is dropped at far
+          LOD; detail adds one shared outer silhouette, then paints un-stroked
+          plates/gaskets over it so joints never read as outlined stickers. */}
+      {lod === 'detail' && <ellipse {...view.shadow} fill={PAPER_PALETTE.shadow} />}
       {lod === 'far' ? (
-        <path d={view.mergedD} fill={PAPER_PALETTE.wood} stroke={PAPER_PALETTE.ink} strokeWidth="2.4" strokeLinejoin="round" />
-      ) : view.parts.map((part) => (
-        <path
-          key={part.id}
-          data-rig-part={part.id}
-          data-rig-animate={animateParts ? ANIMATED_PARTS[part.id] : undefined}
-          d={part.d}
-          fill={PAPER_PALETTE[part.paint]}
-          stroke={PAPER_PALETTE.ink}
-          strokeWidth="1.15"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
+        <path d={view.mergedD} fill={PAPER_PALETTE[PAPER_RIG_PAINT.base]} stroke={PAPER_PALETTE.ink} strokeWidth="2.4" strokeLinejoin="round" />
+      ) : (
+        <>
+          <path data-rig-outline d={view.mergedD} fill={PAPER_PALETTE.ink} stroke={PAPER_PALETTE.ink} strokeWidth="2.4" strokeLinejoin="round" />
+          {view.parts.map((part) => (
+            <path
+              key={part.id}
+              data-rig-part={part.id}
+              data-rig-source={part.sourceKind}
+              data-rig-group={part.compositingGroup}
+              data-rig-animate={animateParts ? ANIMATED_PARTS[part.id] : undefined}
+              d={part.d}
+              fill={PAPER_PALETTE[part.paint]}
+            />
+          ))}
+        </>
+      )}
     </svg>
   )
 })
