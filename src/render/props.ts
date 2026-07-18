@@ -506,12 +506,11 @@ const PROP_META: Record<string, PropPlacement> = {
   // ── jungle ──
   hangvines:   { kinds: ['bush', 'flower'], weight: 0.5, themes: ['jungle'], role: 'understory', rotate: 'free', near: ['tree'], pass: 'walkable', footprint: 0.2, layer: 'canopy' },
   giantleaf:   { kinds: ['bush', 'flower'], weight: 0.7, themes: ['jungle'], role: 'field', rotate: 'upright', pass: 'walkable', footprint: 0.2, scaleJitter: [0.9, 1.25] },
-  bamboo:      { kinds: ['tree', 'reed'], weight: 0.6, themes: ['jungle'], role: 'cluster', rotate: 'upright', pass: 'solid', footprint: 0.3, tall: true },
   exoticbloom: { kinds: ['flower'], weight: 0.4, themes: ['jungle'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.2, maxPerChunk: 3 },
   // ── forest & desert fills ──
   bramble:       { kinds: ['bush'], weight: 0.5, themes: ['forest', 'haunted'], role: 'field', rotate: 'free', pass: 'solid', footprint: 0.3, gameplay: ['flammable'] },
   beehive:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['forest'], role: 'accent', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.15, layer: 'canopy', maxPerChunk: 2, gameplay: ['destructible'] },
-  toadstoolring: { kinds: ['flower', 'bush'], weight: 0.3, themes: ['forest'], role: 'accent', rotate: 'free', pass: 'walkable', footprint: 0.4, maxPerChunk: 2 },
+  toadstoolring: { kinds: ['flower', 'bush'], weight: 0.3, themes: ['forest', 'haunted', 'arcane'], role: 'understory', rotate: 'upright', pass: 'walkable', footprint: 0.4, maxPerChunk: 2, tags: ['ring', 'fae'] },
   quicksand:     { kinds: ['rock', 'flower'], weight: 0.3, themes: ['desert'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.4, maxPerChunk: 2 },
   digspot:       { kinds: ['flower', 'rock'], weight: 0.3, themes: ['desert', 'beach'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.25, gameplay: ['lootable'] },
   // ── shore & beach fills ──
@@ -1565,13 +1564,6 @@ const GIANTLEAF_D = GIANTLEAF_A + GIANTLEAF_B
 const GIANTLEAF_RIB = 'M-0.06 0.7Q-0.2 0.05 -0.14 -0.72M0.08 0.68Q0.22 0.02 0.16 -0.74'
 const GIANTLEAF_SHADOW = 'M-0.4 0.78C-0.2 0.66 0.3 0.66 0.5 0.8C0.36 0.96 -0.26 0.96 -0.4 0.78Z'
 
-// bamboo — tight cluster of 6 ringed culm cross-sections (cutout foliage/
-// pineLit) + cream node dots + 2 thin leaf-blade strokes.
-const BAMBOO_CULMS = ringPath(0.2, -0.34, -0.18) + ringPath(0.18, 0.02, -0.32) + ringPath(0.19, 0.36, -0.14) + ringPath(0.21, -0.18, 0.16) + ringPath(0.17, 0.2, 0.28) + ringPath(0.16, -0.4, 0.32)
-const BAMBOO_NODES = ringPath(0.05, -0.37, -0.21) + ringPath(0.045, -0.01, -0.35) + ringPath(0.05, 0.33, -0.17) + ringPath(0.055, -0.21, 0.13) + ringPath(0.045, 0.17, 0.25) + ringPath(0.04, -0.43, 0.29)
-const BAMBOO_LEAVES = 'M-0.48 -0.32Q-0.72 -0.55 -0.9 -0.74M0.4 0.34Q0.64 0.54 0.86 0.7'
-const BAMBOO_SHADOW = 'M-0.55 0.42C-0.3 0.56 0.35 0.56 0.58 0.4C0.5 0.64 -0.48 0.64 -0.55 0.42Z'
-
 // exoticbloom — layered pointed petals (bloom outer star + cream inner star)
 // over a pair of dark leaves, one bannerGold stamen dot.
 const EXOTICBLOOM_LEAVES = leafD(-0.3, 0.55, 0.28, 0.12, 2.5) + leafD(0.3, 0.55, 0.28, 0.12, 0.65)
@@ -2333,12 +2325,6 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: GIANTLEAF_SHADOW, fill: 'shadow', opacity: 0.22 },
       ...cutout(GIANTLEAF_D, 'foliage', 'mossBase'),
       { d: GIANTLEAF_RIB, stroke: 'foliageDeep', sw: 0.05 },
-    ] },
-    { id: 'bamboo', size: 1.1, wonk: 0.03, paths: [
-      { d: BAMBOO_SHADOW, fill: 'shadow', opacity: 0.22 },
-      ...cutout(BAMBOO_CULMS, 'foliage', 'pineLit'),
-      { d: BAMBOO_NODES, fill: 'cream' },
-      { d: BAMBOO_LEAVES, stroke: 'foliageDeep', sw: 0.07 },
     ] },
     { id: 'exoticbloom', size: 1.05, wonk: 0.03, paths: [
       { d: EXOTICBLOOM_SHADOW, fill: 'shadow', opacity: 0.22 },
