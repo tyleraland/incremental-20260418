@@ -93,12 +93,16 @@ const MOTTLE_SHADES: Record<Biome, [string, string]> = {
 // swaps the mottle shades — the cheapest possible "base texture per biome":
 // one rect + recolored blobs, all baked. First match wins; city never tints
 // (its paving/yard washes are the ground look).
+// Tuned by a pixel-sampled judge pass: tints must measurably shift the base
+// (0.3-ish was a no-op over the dark ground) while mottles stay LOW-contrast
+// vs the tinted base (the control biome's mottle delta is tiny — high-value
+// mottles like sandLit/snowShade read as bleach stains, not ground variation).
 const THEME_GROUND: { theme: ThemeTag; tint: string; tintOp: number; mottles: [string, string] }[] = [
-  { theme: 'desert', tint: P.sand, tintOp: 0.28, mottles: [P.sandLit, P.dirtPath] },
-  { theme: 'swamp', tint: P.murkDeep, tintOp: 0.32, mottles: [P.murk, P.mossInk] },
-  { theme: 'volcanic', tint: P.emberDeep, tintOp: 0.14, mottles: [P.stoneDark, P.bloodDry] },
-  { theme: 'mountain', tint: P.snowShade, tintOp: 0.1, mottles: [P.snowShade, P.stoneDark] },
-  { theme: 'haunted', tint: P.stoneDark, tintOp: 0.2, mottles: [P.stoneDark, P.mossInk] },
+  { theme: 'desert', tint: P.sand, tintOp: 0.4, mottles: [P.sand, P.dirtPath] },
+  { theme: 'swamp', tint: P.murkDeep, tintOp: 0.55, mottles: [P.murk, P.mossInk] },
+  { theme: 'volcanic', tint: P.emberDeep, tintOp: 0.2, mottles: [P.stoneDark, P.bloodDry] },
+  { theme: 'mountain', tint: P.snowShade, tintOp: 0.25, mottles: [P.stoneLight, P.stoneDark] },
+  { theme: 'haunted', tint: P.stoneDark, tintOp: 0.3, mottles: [P.stoneDark, P.mossInk] },
 ]
 function themeGround(themes: readonly string[]): (typeof THEME_GROUND)[number] | null {
   if (themes.includes('city')) return null
@@ -259,7 +263,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       // dirt renders EVERYWHERE now (was city-only): on a field spec these are
       // the desire-path trails — softer than the city's packed lots, with a
       // worn verge stroke so the path-to-grass edge reads (the road-edge ask).
-      { want: (v) => v === dirt, fill: P.dirtPath, opacity: isCity ? 0.6 : 0.45, amp: 0.22, verge: true },
+      { want: (v) => v === dirt, fill: P.dirtPath, opacity: isCity ? 0.6 : 0.35, amp: 0.22, verge: true },
       { want: (v) => v === shallow || v === deep, fill: P.waterShallow, opacity: 0.85, amp: NAT, shore: true },
       { want: (v) => v === deep, fill: P.waterDeep, opacity: 0.9, amp: NAT },
     ]
@@ -525,7 +529,7 @@ export function terrainSvg(p: TerrainProps): string {
     parts.push(
       `<path d='${s.d}' fill='${s.fill}' fill-opacity='${s.opacity}' fill-rule='evenodd'` +
       (s.shore ? ` stroke='${P.cream}' stroke-opacity='0.3' stroke-width='0.14' stroke-linejoin='round'` : '') +
-      (s.verge ? ` stroke='${P.woodDeep}' stroke-opacity='0.3' stroke-width='0.12' stroke-linejoin='round'` : '') +
+      (s.verge ? ` stroke='${P.woodDeep}' stroke-opacity='0.35' stroke-width='0.22' stroke-linejoin='round'` : '') +
       '/>',
     )
   }
@@ -538,9 +542,13 @@ export function terrainSvg(p: TerrainProps): string {
   // cliffs: the dark FACE band first (the same path nudged down-right, peeking
   // out along the south/east edge — the two-tone trick as an elevation read),
   // then the translucent top plate + dashed cut edge above it.
+  // The plate must be opaque enough to MASK the face beneath it — at 0.3 the
+  // dark face showed through the whole silhouette and outcrops read as pits
+  // (judge pass); at 0.65 only the SE band peeks and the ground still ghosts
+  // through faintly for the "walk-under ledge" translucency.
   for (const c of m.cliffs) {
     parts.push(`<path d='${c.d}' fill='${c.face}' fill-opacity='0.5' transform='translate(0.22 0.4)'/>`)
-    parts.push(`<path d='${c.d}' fill='${c.fill}' fill-opacity='0.3' stroke='${c.edge}' stroke-opacity='0.55' stroke-width='0.12' stroke-dasharray='0.5 0.3' stroke-linejoin='round'/>`)
+    parts.push(`<path d='${c.d}' fill='${c.fill}' fill-opacity='0.65' stroke='${c.edge}' stroke-opacity='0.55' stroke-width='0.12' stroke-dasharray='0.5 0.3' stroke-linejoin='round'/>`)
   }
   m.walls.forEach((w, i) => {
     parts.push(
