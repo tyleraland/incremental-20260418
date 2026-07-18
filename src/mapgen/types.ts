@@ -238,6 +238,9 @@ export const THEME_TAGS = [
   'plains', 'forest', 'beach', 'water', 'mountain', 'desert',
   'ruins', 'city', 'dungeon', 'haunted', 'volcanic', 'arcane', 'swamp',
   'snow', 'cave', 'jungle',
+  // flora-catalog additions (props.ts flora/*): cultivated + cold biomes the
+  // existing tags didn't name. 'mtn' in specs = 'mountain'; 'water' already here.
+  'farm', 'orchard', 'tundra',
 ] as const
 export type ThemeTag = (typeof THEME_TAGS)[number]
 

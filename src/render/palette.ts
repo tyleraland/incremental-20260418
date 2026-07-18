@@ -109,6 +109,22 @@ export const PAPER_PALETTE = {
   glowFungus: '#6fd0b7',   // bioluminescent caps / will-o'-wisp glow
   bloodDry:   '#571f1a',   // old dried bloodstain (dungeon decal)
 
+  // ── Flora catalog roles (render/flora/*) ──────────────────────────────────
+  // Ripe-produce + bloom + magic-glow colors the wilderness set lacked. Each is
+  // a two-tone family (lit face + `…Deep` cutout base) so fruit/gourds read 3D
+  // via the standard cutout, never a gradient. `arcaneGlow` is a FLAT halo fill
+  // (draw a soft blob at low fill-opacity — no filter/blur) for glow/pulse props.
+  fruitRed:       '#c0392b',   // ripe tomato / apple / cherry / rosehip
+  fruitRedDeep:   '#7f2418',   // its cutout base (shaded far side)
+  gourdOrange:    '#d47a2c',   // pumpkin / squash / persimmon (warmer than ember)
+  gourdOrangeDeep:'#8f4a19',   // its cutout base
+  berryPurple:    '#6a3d78',   // grapes / plums / elderberry / nightshade
+  berryPurpleDeep:'#3f2149',   // its cutout base
+  petalGold:      '#e6b93a',   // sunflower / corn silk / marigold / ripe grain head
+  petalGoldDeep:  '#a8801f',   // its cutout base
+  blossom:        '#e2a7b8',   // pale spring blossom (orchard/berry flower) — lighter than `bloom`
+  arcaneGlow:     '#a880e6',   // flat violet magic halo (glow/pulse; low fill-opacity, NO filter)
+
   // ── City ground surfaces (render/terrain.tsx spec consumption) ─────────────
   // Paved regions of a city's surface plane read as distinct materials over the
   // biome ground: warm cobbled roads, a pale flagstone plaza, packed-dirt yards.

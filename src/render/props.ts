@@ -3,6 +3,27 @@ import type { ScatterKind, ThemeTag } from '@/mapgen'
 import type { PaperRole } from '@/render/palette'
 import { hashString, hash01, wonkPathD, blobPath, type Pt } from '@/render/authoring'
 
+// ── Flora asset-catalog groups (one file per builder; src/render/flora/*) ─────
+// Each module exports a PropDef[] whose entries carry FULL inline placement meta
+// (kinds/themes/role/pass/footprint …), so they flow into TERRAIN_PROPS +
+// listAssets + the PROP_META merge below (a no-op for ids absent from PROP_META)
+// without editing this file. Bucketed into the legacy biomes exactly like the
+// themed props above: nature/farm/orchard → grass, alpine/arcane/volcanic → stone.
+// Runtime helpers those files use live in flora/kit.ts (NOT re-imported here), so
+// this graph stays acyclic.
+import { CROPS_A } from '@/render/flora/crops-a'
+import { CROPS_B } from '@/render/flora/crops-b'
+import { FRUIT_TREES } from '@/render/flora/fruit-trees'
+import { BERRIES } from '@/render/flora/berries'
+import { VINES } from '@/render/flora/vines'
+import { DESERT_FLORA } from '@/render/flora/desert'
+import { WETLAND_FLORA } from '@/render/flora/wetland'
+import { JUNGLE_FLORA } from '@/render/flora/jungle'
+import { FOREST_FLORA } from '@/render/flora/forest'
+import { ALPINE_FLORA } from '@/render/flora/alpine'
+import { ARCANE_FLORA } from '@/render/flora/arcane'
+import { VOLCANIC_FLORA } from '@/render/flora/volcanic'
+
 // ── Prop assets as data ──────────────────────────────────────────────────────
 //
 // The paper language's scatter-prop registry (asset-pipeline step 3 — see
@@ -2413,6 +2434,9 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       ...cutout(BERRYBUSH_D, 'foliageDeep', 'foliage'),
       { d: BERRYPICKED_NOTCHES, stroke: 'foliageDeep', sw: 0.05, opacity: 0.7 },
     ] },
+    // ── flora catalog (nature/farm/orchard groups) ──
+    ...CROPS_A, ...CROPS_B, ...FRUIT_TREES, ...BERRIES, ...VINES,
+    ...DESERT_FLORA, ...WETLAND_FLORA, ...JUNGLE_FLORA, ...FOREST_FLORA,
   ]),
   stone: withVariants([
     { id: 'rubble', size: 1, paths: [
@@ -2906,6 +2930,8 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: BRAZIER_BOWL, fill: 'stoneDark' },
       { d: BRAZIERCOLD_ASH, fill: 'cream', opacity: 0.6 },
     ] },
+    // ── flora catalog (alpine/arcane/volcanic groups) ──
+    ...ALPINE_FLORA, ...ARCANE_FLORA, ...VOLCANIC_FLORA,
   ]),
   plaza: withVariants([
     { id: 'crate', size: 1, paths: [
