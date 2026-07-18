@@ -1181,12 +1181,66 @@ at a time.
   feeding distinct washes/patterns per `SurfaceMaterial`).
 
 **Asset-coverage gaps** (checklist — confirm against the live `?workshop=1`
-theme-coverage table, which is the source of truth, before working one):
-desert / volcanic / arcane have NO props at all (total cross-theme fallback);
-plains / forest / mountain have no edge/ribbon prop; beach / water are thin
-(edge-only — no cluster/accent, few kinds); `understory` is forest-only.
-Filling one = tagging (or authoring) a prop in `PROP_META` (`props.ts`) with
-that theme + role.
+theme-coverage table, which is the source of truth, before working one).
+Every theme now has themed props; the remaining gaps are ROLE/KIND holes in
+the newest themes (2026-07 audit): snow / cave / volcanic / arcane have no
+`edge` or `cluster` props; jungle / desert / mountain have no `edge`; most
+themes outside forest/plains/city/dungeon/ruins lack a `reed`-kind prop
+(reed cells near water fall back cross-theme); jungle misses `rock`, water
+misses `tree`, volcanic misses `stump`, arcane misses `bush`. Filling one =
+tagging (or authoring) a prop in `PROP_META` (`props.ts`) with that theme +
+role/kind.
+
+### Environmental-asset → generator integration seams (2026-07 audit)
+
+The catalog now carries rich placement metadata; most of it has no consumer
+yet. Each seam below is an isolatable chunk (file:line refs verified):
+
+- **Scatter solidity is dead-ended.** `ScatterItem.solid` is emitted `false`
+  by every recipe and read by nobody; `PropDef.pass`/`footprint` are gated
+  by tests but unconsumed. The wiring: recipes (or the render's pick,
+  reported back via a spec-side plane) mark solid-prop cells, and
+  `createOpenBattleFor`/`adapter` emit small collision rects for them —
+  boulders/structures should block movement, `overhang` trunks block a
+  sub-cell circle. Watch the barrier budget (72): cluster/merge or cap the
+  solid-scatter rects. Until then every scatter prop is walk-through decor.
+- **`accent` intent is never emitted.** The field recipe emits
+  field/cluster/understory/edge intents but no `accent`; dungeon/city/stamps
+  emit NO intent (all roles compete unfiltered there). A hero-prop pass —
+  place 1–3 accent-intent items per map honoring `maxPerChunk` — is the
+  cheapest "designed, not sprinkled" win and unlocks the connective accents
+  (bridges/shrines/bonfires) that today only appear by lottery.
+- **Portal/gate POIs don't pick portal props.** POI kinds portal/gate/vault/
+  lair have zero render treatment (only `landmark`→fountain is wired). The
+  portal-tagged props (cavemouth/mineentrance/stairdown/ladder/cellarhatch/
+  portalframe) exist precisely for this: render a themed portal prop at
+  `portal` POIs (pick by map themes), a gate prop at `gate` POIs. Pure
+  render-side wiring in `buildTerrainModel` (mirror the landmark path).
+- **`SCATTER_SETS` has no placer.** The prefab mini-scenes (camp/graveyard/
+  ruin/…, member-checked in tests) need a mapgen clustering pass: pick ≤1–2
+  theme-matching sets per field map, stamp members inside `spread` around a
+  clear anchor (respecting keep-clear + footprints), emit as scatter items
+  with a set id so the render keeps companions adjacent. This is the single
+  highest-leverage "interesting maps" chunk.
+- **Recipes barely read themes.** Only desert (sand base), water/beach
+  (lake/river), forest (hedges) steer field geography; snow/swamp/volcanic/
+  jungle/cave/mountain fields are geometrically identical to plains (the
+  render tint fakes the difference). Next dials: swamp→more/murkier water +
+  soft ground, snow→frozen-water material + sparse scatter, volcanic→no
+  water + more outcrops, jungle→dense tree scatter + narrow paths,
+  mountain→outcrop-heavy. One theme = one small dial PR, fuzz-gated.
+- **Declared-but-unconsumed metadata** (in rough consumption order):
+  `near`/`avoid` + `clusterWith` (phase-2/3 adjacency in the scatter pass),
+  `patch` (even vs clumped placement), `maxPerChunk` (cap accents at bake),
+  `layer` (`ceiling` props should only appear on cave/roofed maps; `wall`
+  props want wall-adjacent cells), `light` (a night/mood pass compositing
+  baked glow discs per emissive prop), `anim` (opt props into the live FX
+  budget — ripple is the prototype), `tall` (y-sort/occlusion so units walk
+  behind trees/pillars), `gameplay` (destructible/harvestable/lootable hooks
+  once interactables land — phase 6).
+- **Consumed today** (for reference, don't re-plumb): `kinds`, `themes`,
+  `role`←intent (field maps), `weight`+`themeWeight`, `rotate`,
+  `scaleJitter`, legacy trait-theme filter + `water-surface` skip.
 
 ### Remaining visual polish
 
