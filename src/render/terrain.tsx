@@ -659,7 +659,7 @@ export function prewarmTerrain(p: TerrainProps): void {
 // §fx: water-region anchors (centroid + mean radius per water loop) for the
 // live ripple overlay. Pure + cheap (one mask walk); capped to the 3 largest
 // regions so the overlay never exceeds 6 animated elements.
-export function waterFxAnchors(spec: MapSpec | undefined, rows: number): { x: number; y: number; r: number }[] {
+function waterFxAnchors(spec: MapSpec | undefined, rows: number): { x: number; y: number; r: number }[] {
   if (!spec) return []
   const g = spec.surface.grid
   const shallow = SURFACE_MATERIALS.indexOf('shallow-water')
