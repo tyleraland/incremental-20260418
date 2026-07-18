@@ -8,6 +8,7 @@ import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSki
 import { hashString, type Rect } from '@/render/authoring'
 import { generateForLocationCached, specBarriers, type MapSpec, type ThemeTag } from '@/mapgen'
 import { prewarmTerrain } from '@/render/terrain'
+import { PAPER_PALETTE } from '@/render/palette'
 import { partyProficiencyTags } from '@/lib/proficiencies'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
 import {
@@ -585,6 +586,10 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
         </div>
         {children}
       </div>
+      {/* ambient weather FX (experimental): screen-space falling leaves / snow /
+          rising bog motes keyed off the location's themes. Capped particle
+          count, transform/opacity keyframes only; only on terrain skins. */}
+      {terrainEl && <AmbientFX themes={terrainThemes} />}
       {/* skin lighting: ONE static viewport-fixed vignette layer (a single
           compositor layer, like the perimeter ring) — it never pans or repaints,
           so the lighting read is free. */}
@@ -592,6 +597,53 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
       {/* viewport-fixed overlay (off-screen markers): not panned, clipped to the
           arena square so edge bubbles sit on the rim. */}
       {overlay && <div className="absolute inset-0 z-10 pointer-events-none">{overlay}</div>}
+    </div>
+  )
+}
+
+// ── Ambient weather FX (experimental) ─────────────────────────────────────────
+// A handful of screen-space particles keyed off the location's themes: forest →
+// falling leaves, mountain → snow, swamp/haunted → rising glow motes. Six divs,
+// transform/opacity-only keyframes (index.css `ambient-fall`/`ambient-drift`),
+// staggered by fixed per-index tables (deterministic — no Math.random). Each
+// particle is one long-lived compositor layer, so the count stays capped; drop
+// this component first if a perf pass fingers it.
+const AMBIENT_LANES = [8, 22, 37, 55, 71, 88]        // left, % of arena
+const AMBIENT_DUR = [11, 14, 9.5, 12.5, 10, 13.5]    // s
+const AMBIENT_DELAY = [0, -3.5, -7, -1.8, -5.2, -8.6] // s; negative = mid-flight at mount
+const LEAF_COLORS = [PAPER_PALETTE.mossBase, PAPER_PALETTE.woodLight, PAPER_PALETTE.foliage]
+
+function AmbientFX({ themes }: { themes?: ThemeTag[] }) {
+  const kind = themes?.includes('mountain') ? 'snow'
+    : themes?.includes('forest') ? 'leaves'
+    : themes?.includes('swamp') || themes?.includes('haunted') ? 'motes'
+    : null
+  if (!kind) return null
+  const rise = kind === 'motes'
+  const size = kind === 'leaves' ? 7 : kind === 'snow' ? 5 : 4
+  const slow = kind === 'snow' ? 1.5 : 1
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden data-ambient-fx={kind}>
+      {AMBIENT_LANES.map((left, i) => (
+        <div
+          key={i}
+          className={rise ? 'animate-ambient-drift' : 'animate-ambient-fall'}
+          style={{
+            position: 'absolute',
+            left: `${left}%`,
+            top: rise ? `${58 + (i % 3) * 14}%` : '-3%',
+            width: size,
+            height: size,
+            backgroundColor: kind === 'snow' ? PAPER_PALETTE.snow
+              : kind === 'motes' ? PAPER_PALETTE.glowFungus
+              : LEAF_COLORS[i % LEAF_COLORS.length],
+            borderRadius: kind === 'leaves' ? '20% 70% 30% 60%' : '50%',
+            animationDuration: `${AMBIENT_DUR[i] * slow}s`,
+            animationDelay: `${AMBIENT_DELAY[i]}s`,
+            opacity: 0,
+          }}
+        />
+      ))}
     </div>
   )
 }

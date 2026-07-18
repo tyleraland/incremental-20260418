@@ -86,21 +86,44 @@ const MOTTLE_SHADES: Record<Biome, [string, string]> = {
   plaza: [P.plazaLight, P.plazaDark],
 }
 
+// ── Theme ground looks ───────────────────────────────────────────────────────
+// The base ground TILE is per-biome (3 CSS tiles), but a desert field should
+// not read as green meadow. A matching theme (spec regionTags, else the legacy
+// trait-derived `themes`) lays a full-field TINT wash under everything and
+// swaps the mottle shades — the cheapest possible "base texture per biome":
+// one rect + recolored blobs, all baked. First match wins; city never tints
+// (its paving/yard washes are the ground look).
+const THEME_GROUND: { theme: ThemeTag; tint: string; tintOp: number; mottles: [string, string] }[] = [
+  { theme: 'desert', tint: P.sand, tintOp: 0.28, mottles: [P.sandLit, P.dirtPath] },
+  { theme: 'swamp', tint: P.murkDeep, tintOp: 0.32, mottles: [P.murk, P.mossInk] },
+  { theme: 'volcanic', tint: P.emberDeep, tintOp: 0.14, mottles: [P.stoneDark, P.bloodDry] },
+  { theme: 'mountain', tint: P.snowShade, tintOp: 0.1, mottles: [P.snowShade, P.stoneDark] },
+  { theme: 'haunted', tint: P.stoneDark, tintOp: 0.2, mottles: [P.stoneDark, P.mossInk] },
+]
+function themeGround(themes: readonly string[]): (typeof THEME_GROUND)[number] | null {
+  if (themes.includes('city')) return null
+  return THEME_GROUND.find((t) => themes.includes(t.theme)) ?? null
+}
+
 // ── Model builder (pure, exported for tests) ────────────────────────────────
 // All output geometry is in SVG coords (y down): world y flips at build time,
 // so the component below is a dumb emitter with no coordinate math.
 
 export interface TerrainModel {
+  // full-field theme tint under everything (desert sand / swamp murk / …)
+  tint: { fill: string; opacity: number } | null
   mottles: { d: string; fill: string }[]
   // §mapgen surface washes, paint order as listed (meadow under sand under water)
-  surface: { d: string; fill: string; opacity: number; shore?: boolean }[]
+  // shore = pale foam stroke (water); verge = dark worn-edge stroke (paths)
+  surface: { d: string; fill: string; opacity: number; shore?: boolean; verge?: boolean }[]
   // §city paving: inked cobblestones (render/inked.ts) over the paved washes —
   // one filled+outlined stone per paved cell. Pre-rendered markup strings (the
   // per-piece pool pick lives in the model so the emit stays a dumb concat).
   // Empty unless the spec is a city.
   paving: string[]
   props: { v: number; x: number; y: number; s: number; rot: number; flip: boolean }[]
-  cliffs: { d: string; fill: string; edge: string }[]
+  // face = the dark elevation band peeking out down-right so height reads
+  cliffs: { d: string; fill: string; edge: string; face: string }[]
   walls: { d: string; multi: boolean }[]
   // §city buildings: BUILT-material wall rects (cut-stone/wood/rubble) rendered as
   // pitched-roof cutout structures (render/buildings.ts) instead of rock blobs.
@@ -189,11 +212,15 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
 
   // cliffs: tighter overhang, straight cut-stone edges, no merging fuss (they
   // render translucent, so a rare overlap just darkens a corner).
-  const cliffs = cliffSrc.map((b, i) => ({
-    d: blobFor({ x: b.x - OVERHANG / 2, y: b.y - OVERHANG / 2, w: b.w + OVERHANG, h: b.h + OVERHANG }, seed + 4700 + i * 613, 0.2, false),
-    fill: spec && (b as MapSpec['collision'][number]).material === 'hedge' ? P.foliageDeep : P.cliffFill,
-    edge: spec && (b as MapSpec['collision'][number]).material === 'hedge' ? P.foliage : P.cliffEdge,
-  }))
+  const cliffs = cliffSrc.map((b, i) => {
+    const hedge = spec && (b as MapSpec['collision'][number]).material === 'hedge'
+    return {
+      d: blobFor({ x: b.x - OVERHANG / 2, y: b.y - OVERHANG / 2, w: b.w + OVERHANG, h: b.h + OVERHANG }, seed + 4700 + i * 613, 0.2, false),
+      fill: hedge ? P.foliageDeep : P.cliffFill,
+      edge: hedge ? P.foliage : P.cliffEdge,
+      face: hedge ? P.mossInk : P.stoneDark,
+    }
+  })
 
   // §mapgen surface washes: each material region of the surface plane becomes
   // ONE organic multi-subpath (mask → boundary loops → decimate → wonk → blob;
@@ -225,17 +252,20 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     // Instead the paved area is defined entirely by the cobblestones below (the
     // cell mask is just their placement guide), so the street edge is the ragged
     // stone edge, not a smooth wash outline.
-    const bands: { want: (v: number) => boolean; fill: string; opacity: number; amp: number; shore?: boolean }[] = [
+    const bands: { want: (v: number) => boolean; fill: string; opacity: number; amp: number; shore?: boolean; verge?: boolean }[] = [
       ...(isCity ? [{ want: (v: number) => v === grass, fill: P.yardWash, opacity: 0.5, amp: NAT }] : []),
       { want: (v) => v === meadow, fill: P.meadowWash, opacity: 0.5, amp: NAT },
       { want: (v) => v === sand, fill: P.sandWash, opacity: 0.6, amp: NAT },
-      ...(isCity ? [{ want: (v: number) => v === dirt, fill: P.dirtPath, opacity: 0.6, amp: 0.22 }] : []),
+      // dirt renders EVERYWHERE now (was city-only): on a field spec these are
+      // the desire-path trails — softer than the city's packed lots, with a
+      // worn verge stroke so the path-to-grass edge reads (the road-edge ask).
+      { want: (v) => v === dirt, fill: P.dirtPath, opacity: isCity ? 0.6 : 0.45, amp: 0.22, verge: true },
       { want: (v) => v === shallow || v === deep, fill: P.waterShallow, opacity: 0.85, amp: NAT, shore: true },
       { want: (v) => v === deep, fill: P.waterDeep, opacity: 0.9, amp: NAT },
     ]
     bands.forEach((b, i) => {
       const d = pathFor(b.want, 5200 + i * 977, b.amp)
-      if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore })
+      if (d) surface.push({ d, fill: b.fill, opacity: b.opacity, shore: b.shore, verge: b.verge })
     })
 
     // Paving: inked cobblestones ARE the paved surface (no underlying wash).
@@ -308,9 +338,15 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     rim = { d: `M0 0H${cols}V${rows}H0Z` + inner, inner }
   }
 
+  // theme ground look: a matching theme tints the whole field + swaps mottle
+  // shades (spec regionTags first, else the legacy trait-derived themes).
+  const themed = themeGround((spec?.semantic.regionTags ?? p.themes ?? []) as string[])
+  const tint: TerrainModel['tint'] = themed ? { fill: themed.tint, opacity: themed.tintOp } : null
+
   // floor mottling: a few large soft blobs in near-tile shades, under everything.
   const mottleCount = Math.max(6, Math.min(48, Math.round((cols * rows) / 60)))
   const mottles: TerrainModel['mottles'] = []
+  const mottleShades = themed?.mottles ?? MOTTLE_SHADES[p.biome]
   for (let i = 0; i < mottleCount; i++) {
     const s = seed + 7000 + i * 227
     const cx = hash01(s) * cols
@@ -318,7 +354,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     const rad = 1.4 + hash01(s + 29) * 2.8
     mottles.push({
       d: blobPath(roughCircle(cx, cy, rad, 8, s + 41)),
-      fill: MOTTLE_SHADES[p.biome][hash01(s + 57) < 0.55 ? 0 : 1],
+      fill: mottleShades[hash01(s + 57) < 0.55 ? 0 : 1],
     })
   }
 
@@ -380,7 +416,7 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     })
   }
 
-  return { mottles, surface, paving, props, cliffs, walls, buildings, landmark, decor, rim }
+  return { tint, mottles, surface, paving, props, cliffs, walls, buildings, landmark, decor, rim }
 }
 
 // ScatterKind → the biome prop indices that can fill it. Props SELF-DECLARE
@@ -480,13 +516,16 @@ function fountainMarkup(cx: number, cy: number, r: number, seed: number): string
 export function terrainSvg(p: TerrainProps): string {
   const m = buildTerrainModel(p)
   const parts: string[] = []
+  if (m.tint) parts.push(`<rect x='0' y='0' width='${p.cols}' height='${p.rows}' fill='${m.tint.fill}' fill-opacity='${m.tint.opacity}'/>`)
   for (const x of m.mottles) parts.push(`<path d='${x.d}' fill='${x.fill}' fill-opacity='0.5'/>`)
   // §mapgen surface washes above the mottles, below everything discrete. The
-  // water band gets a pale shoreline stroke — the paper "cut edge" read.
+  // water band gets a pale shoreline FOAM stroke; path/dirt bands get a dark
+  // worn VERGE stroke — both are the paper "cut edge" read for transitions.
   for (const s of m.surface) {
     parts.push(
       `<path d='${s.d}' fill='${s.fill}' fill-opacity='${s.opacity}' fill-rule='evenodd'` +
       (s.shore ? ` stroke='${P.cream}' stroke-opacity='0.3' stroke-width='0.14' stroke-linejoin='round'` : '') +
+      (s.verge ? ` stroke='${P.woodDeep}' stroke-opacity='0.3' stroke-width='0.12' stroke-linejoin='round'` : '') +
       '/>',
     )
   }
@@ -496,7 +535,11 @@ export function terrainSvg(p: TerrainProps): string {
     const def = TERRAIN_PROPS[p.biome][pl.v]
     parts.push(`<g transform='translate(${pl.x} ${pl.y}) rotate(${pl.rot}) scale(${pl.flip ? -pl.s : pl.s} ${pl.s})'>${propMarkup(def)}</g>`)
   }
+  // cliffs: the dark FACE band first (the same path nudged down-right, peeking
+  // out along the south/east edge — the two-tone trick as an elevation read),
+  // then the translucent top plate + dashed cut edge above it.
   for (const c of m.cliffs) {
+    parts.push(`<path d='${c.d}' fill='${c.face}' fill-opacity='0.5' transform='translate(0.22 0.4)'/>`)
     parts.push(`<path d='${c.d}' fill='${c.fill}' fill-opacity='0.3' stroke='${c.edge}' stroke-opacity='0.55' stroke-width='0.12' stroke-dasharray='0.5 0.3' stroke-linejoin='round'/>`)
   }
   m.walls.forEach((w, i) => {
@@ -613,6 +656,27 @@ export function prewarmTerrain(p: TerrainProps): void {
   rasterizeTerrain(terrainSvg(p), res).then((cv) => cacheSet(key, cv)).catch(() => {})
 }
 
+// §fx: water-region anchors (centroid + mean radius per water loop) for the
+// live ripple overlay. Pure + cheap (one mask walk); capped to the 3 largest
+// regions so the overlay never exceeds 6 animated elements.
+export function waterFxAnchors(spec: MapSpec | undefined, rows: number): { x: number; y: number; r: number }[] {
+  if (!spec) return []
+  const g = spec.surface.grid
+  const shallow = SURFACE_MATERIALS.indexOf('shallow-water')
+  const deep = SURFACE_MATERIALS.indexOf('deep-water')
+  const loops = maskLoops((x, y) => { const v = g[y * spec.cols + x]; return v === shallow || v === deep }, spec.cols, spec.rows)
+  return loops
+    .map((lp) => {
+      const cx = lp.reduce((a, q) => a + q.x, 0) / lp.length
+      const cy = lp.reduce((a, q) => a + q.y, 0) / lp.length
+      const r = lp.reduce((a, q) => a + Math.hypot(q.x - cx, q.y - cy), 0) / lp.length
+      return { x: r2(cx), y: r2(rows - cy), r: r2(r) }
+    })
+    .filter((a) => a.r > 1.2)
+    .sort((a, b) => b.r - a.r)
+    .slice(0, 3)
+}
+
 export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   const sig = sigOf(p)
   // eslint-disable-next-line react-hooks/exhaustive-deps — sig covers every input
@@ -665,13 +729,41 @@ export const PaperTerrain = memo(function PaperTerrain(p: TerrainProps) {
   // decoded (hidden until it is). A fade would delay the terrain ~240ms behind
   // the un-faded tokens — reading as the "tokens first, map an instant later"
   // stagger. Appears instantly the moment it's ready.
+  // §fx (experimental): slow ripple rings pulsing on the largest water regions.
+  // Rides the ground layer's compositor transform (world-locked); CSS keyframes
+  // are transform/opacity-only and the count is capped at 3 regions × 2 rings.
+  // eslint-disable-next-line react-hooks/exhaustive-deps — sig covers the spec
+  const ripples = useMemo(() => waterFxAnchors(p.spec, p.rows), [sig])
+
   return (
-    <canvas
-      ref={canvasRef}
-      data-terrain
-      aria-hidden
-      className="absolute inset-0 w-full h-full pointer-events-none"
-      style={{ opacity: ready ? 1 : 0 }}
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        data-terrain
+        aria-hidden
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ opacity: ready ? 1 : 0 }}
+      />
+      {ready && ripples.map((a, i) => {
+        const rr = Math.min(a.r * 0.75, 2.6)
+        return (
+          <div
+            key={i}
+            data-water-fx
+            aria-hidden
+            className="absolute pointer-events-none"
+            style={{
+              left: `${((a.x - rr) / p.cols) * 100}%`,
+              top: `${((a.y - rr) / p.rows) * 100}%`,
+              width: `${((rr * 2) / p.cols) * 100}%`,
+              height: `${((rr * 2) / p.rows) * 100}%`,
+            }}
+          >
+            <div className="absolute inset-0 rounded-full animate-water-ripple" style={{ border: `1.5px solid ${P.waterHi}`, opacity: 0 }} />
+            <div className="absolute inset-0 rounded-full animate-water-ripple" style={{ border: `1px solid ${P.waterHi}`, opacity: 0, animationDelay: `${-1.7 - i * 0.6}s` }} />
+          </div>
+        )
+      })}
+    </>
   )
 })

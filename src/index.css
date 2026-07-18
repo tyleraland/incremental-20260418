@@ -183,3 +183,35 @@
   100% { opacity: 0; }
 }
 .animate-cast-label { animation: cast-label 3s ease-out forwards; }
+
+/* ── Ambient terrain FX (experimental; WaterFX in terrain.tsx, AmbientFX in
+   BattleView). Transform/opacity only (compositor contract), few elements,
+   infinite loops — each particle is one promoted layer, so counts stay capped
+   (3 water regions × 2 rings; 6 ambient particles). */
+@keyframes water-ripple {
+  0%   { transform: scale(0.18); opacity: 0; }
+  12%  { opacity: 0.45; }
+  70%  { transform: scale(1); opacity: 0; }
+  100% { transform: scale(1); opacity: 0; }
+}
+.animate-water-ripple { animation: water-ripple 3.4s linear infinite; }
+
+/* Falling leaf/snow particle: drifts down-right across most of the arena with
+   a slow tumble, fading in/out at the ends. vh/vw ≈ arena scale (the arena is
+   a viewport-fit square); overflow-hidden clips any overshoot. */
+@keyframes ambient-fall {
+  0%   { transform: translate3d(0, -4vh, 0) rotate(0deg); opacity: 0; }
+  8%   { opacity: 0.7; }
+  78%  { opacity: 0.55; }
+  100% { transform: translate3d(5vw, 74vh, 0) rotate(280deg); opacity: 0; }
+}
+.animate-ambient-fall { animation: ambient-fall 12s linear infinite; }
+
+/* Rising bog/haunt mote: slow upward drift with a slight sway, dim. */
+@keyframes ambient-drift {
+  0%   { transform: translate3d(0, 0, 0); opacity: 0; }
+  22%  { opacity: 0.4; }
+  60%  { transform: translate3d(2.5vw, -18vh, 0); opacity: 0.3; }
+  100% { transform: translate3d(-1vw, -34vh, 0); opacity: 0; }
+}
+.animate-ambient-drift { animation: ambient-drift 9s linear infinite; }

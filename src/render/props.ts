@@ -292,6 +292,24 @@ const PROP_META: Record<string, PropPlacement> = {
   beamframe:   { kinds: ['tree', 'stump'], weight: 0.35, themes: ['mountain', 'dungeon'], role: 'field', rotate: 'free', near: ['wall'] },
   cairn:       { kinds: ['rock', 'stump'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['path'] },
   alpinebloom: { kinds: ['flower'], weight: 0.5, themes: ['mountain'], role: 'field', rotate: 'upright', near: ['rock'] },
+  // ── interactable STATE assets (future interactable system; kinds: [] keeps
+  // them off the scatter placer — reachable via the catalog/gallery only) ──
+  // Interactable/stateful asset library — NOT scatter-placed (empty kinds keeps
+  // them off the scatter placer, like lamppost/banner); tagged for the future
+  // interactable system. Paired states share base geometry so a flip reads as
+  // the same object changing, not a swap.
+  doorshut:   { kinds: [], tags: ['interactable'] },
+  dooropen:   { kinds: [], tags: ['interactable'] },
+  lever:      { kinds: [], tags: ['interactable'] },
+  floorplate: { kinds: [], tags: ['interactable'] },
+  chestopen:  { kinds: [], tags: ['interactable'] },
+  urnshards:  { kinds: [], tags: ['interactable'] },
+  campcold:   { kinds: [], tags: ['interactable'] },
+  // ── pickup/loot assets (future pickup system; same non-scatter rule) ──
+  coin:   { kinds: [], tags: ['pickup'] },
+  gem:    { kinds: [], tags: ['pickup'] },
+  potion: { kinds: [], tags: ['pickup'] },
+  key:    { kinds: [], tags: ['pickup'] },
   // decor-ring assets: placed by the plaza landmark ring, not scatter (no
   // placement tags needed — empty kinds keeps them off the scatter placer)
   lamppost: { kinds: [] },
@@ -926,6 +944,84 @@ const ALPINEBLOOM_LEAVES = leafD(-0.08, -0.14, 0.16, 0.08, 2.2) + leafD(0.14, -0
 const ALPINEBLOOM_DOTS = ringPath(0.13, -0.04, -0.34) + ringPath(0.11, 0.2, -0.18)
 const ALPINEBLOOM_CREAM = ringPath(0.08, -0.26, -0.46)
 
+// ── interactable state props ─────────────────────────────────────────────
+// DOOR pair: two stone jamb stubs flanking a 1.0-wide gap; the plank panel is
+// the SAME rect in both states — `doorshut` spans the gap, `dooropen` is that
+// exact rect rotated 70° about the left-jamb hinge at (-0.5, 0).
+const DOOR_JAMBS = rectD(-0.82, -0.2, 0.32, 0.4) + rectD(0.5, -0.2, 0.32, 0.4)
+const DOOR_PANEL = rectD(-0.5, -0.09, 1, 0.18)
+// hinge ticks (left, hinge side) + two plank seams across the panel
+const DOORSHUT_TICKS = 'M-0.42 -0.09L-0.42 0.09M-0.34 -0.09L-0.34 0.09M0.02 -0.08L0.02 0.08M0.28 -0.08L0.28 0.08'
+// DOOR_PANEL's four corners rotated -70° about the hinge (-0.5, 0) — same
+// 1 × 0.18 plank, swung up-left; NOT a new shape.
+const DOOROPEN_PANEL = 'M-0.585 -0.031L-0.243 -0.971L-0.073 -0.909L-0.415 0.031Z'
+// revealed dark doorway spanning the gap + the hinge pin dot, one ink path
+const DOOROPEN_GAP = rectD(-0.5, -0.13, 1, 0.26) + ringPath(0.05, -0.5, 0)
+
+// LEVER: stone base plate, dark throw slot, angled iron handle to a gold knob
+const LEVER_PLATE = rectD(-0.3, -0.26, 0.6, 0.52)
+const LEVER_SLOT = 'M-0.18 0.17L0.18 -0.21'
+const LEVER_HANDLE = 'M-0.14 0.13L0.4 -0.44'
+const LEVER_KNOB = ringPath(0.11, 0.46, -0.5)
+
+// FLOORPLATE: dark recess, inset pressure plate, worn center dimple
+const FLOORPLATE_RECESS = rectD(-0.5, -0.5, 1, 1)
+const FLOORPLATE_D = rectD(-0.38, -0.38, 0.76, 0.76)
+const FLOORPLATE_DIMPLE = ringPath(0.12, 0.02, 0.02)
+
+// CHESTOPEN: reuses CHEST_D (the closed chest's exact body rect); the lid is a
+// second rect flipped up behind it, inner face lit; ink interior + gold loot
+// glints (the hasp dot rides the lid's flipped face at (0, -0.62)).
+const CHESTOPEN_LID = rectD(-0.5, -0.74, 1, 0.36)
+const CHESTOPEN_HOLLOW = rectD(-0.4, -0.28, 0.8, 0.56)
+const CHESTOPEN_GLINTS = ringPath(0.07, -0.18, -0.02) + ringPath(0.055, 0.12, 0.1) + ringPath(0.05, 0.2, -0.14) + ringPath(0.09, 0, -0.62)
+
+// URNSHARDS: broken `urn` — angular ceramic fragments ringing the big urn's
+// old footprint (URN_BIG sat at (-0.24, 0)), incl. one out by the tipped small
+// urn; a dark spill blob underneath and one surviving rim-arc shard.
+const URNSHARDS_D =
+  'M-0.72 -0.3L-0.5 -0.46L-0.4 -0.28L-0.62 -0.18Z' +
+  'M-0.22 -0.54L-0.02 -0.44L-0.14 -0.28Z' +
+  'M0.16 -0.12L0.36 -0.2L0.44 0.02L0.22 0.08Z' +
+  'M0.08 0.28L0.28 0.36L0.08 0.5Z' +
+  'M-0.28 0.36L-0.12 0.5L-0.38 0.56Z' +
+  'M-0.78 0.08L-0.6 0.04L-0.58 0.26L-0.76 0.3Z' +
+  'M0.52 0.16L0.72 0.24L0.56 0.38Z'
+const URNSHARDS_SPILL = 'M-0.56 0C-0.6 -0.18 -0.44 -0.3 -0.24 -0.28C-0.04 -0.26 0.08 -0.12 0.04 0.06C0 0.22 -0.16 0.3 -0.34 0.26C-0.5 0.22 -0.54 0.14 -0.56 0Z'
+const URNSHARDS_RIM = 'M-0.48 -0.14A0.27 0.27 0 0 1 -0.08 -0.08'
+
+// CAMPCOLD reuses CAMPRING_STONES + campring's charred disc / crossed sticks
+// verbatim; only the ember layers change to cold char (no ember roles).
+const CAMPCOLD_STICKS = 'M-0.3 -0.26L0.32 0.3M-0.28 0.3L0.26 -0.3'
+
+// ── pickup props ─────────────────────────────────────────────────────────
+// ── Pickup props (loot library — placed by a future pickup system, not scatter) ──
+// Gold coin: a second coin peeks from under the main disc down-right; the main
+// disc is a gold cutout with an inset dark rim ring and a lit crescent glint.
+const COIN_UNDER = ringPath(0.34, 0.26, 0.22)
+const COIN_D = ringPath(0.44, -0.08, -0.06)
+const COIN_RIM = ringPath(0.36, -0.08, -0.06)
+const COIN_GLINT = 'M-0.38 -0.16A0.32 0.32 0 0 1 -0.16 -0.38'
+
+// Cut gem: flat-topped pentagon silhouette; seam strokes trace the table
+// trapezoid and radiate to the girdle points and culet; one cream sparkle.
+const GEM_D = 'M-0.32 -0.48L0.32 -0.48L0.56 -0.1L0 0.58L-0.56 -0.1Z'
+const GEM_SEAMS = 'M-0.32 -0.48L-0.2 -0.14L0.2 -0.14L0.32 -0.48M-0.2 -0.14L-0.56 -0.1M0.2 -0.14L0.56 -0.1M-0.2 -0.14L0 0.58M0.2 -0.14L0 0.58'
+const GEM_SPARK = ringPath(0.07, -0.16, -0.3)
+
+// Round-bellied flask: dark glass belly + neck (one multi-subpath cutout), a
+// bright liquid fill disc, a cream cork dot capping the neck, a glass glint arc.
+const POTION_GLASS = ringPath(0.42, 0, 0.16) + rectD(-0.13, -0.62, 0.26, 0.42)
+const POTION_LIQUID = ringPath(0.31, 0, 0.19)
+const POTION_CORK = ringPath(0.1, 0, -0.62)
+const POTION_GLINT = 'M-0.31 0A0.34 0.34 0 0 1 -0.13 -0.16'
+
+// Old iron key lying flat: round bow as a thick ring stroke, straight shaft,
+// two square teeth hanging off the far end; a lit steel edge sells the metal.
+const KEY_FRAME = ringPath(0.24, -0.5, 0) + 'M-0.28 0L0.64 0'
+const KEY_TEETH = rectD(0.36, 0.06, 0.12, 0.24) + rectD(0.56, 0.06, 0.12, 0.32)
+const KEY_HI = 'M-0.72 0.06A0.23 0.23 0 0 1 -0.5 -0.24M-0.2 -0.02L0.5 -0.02'
+
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
   grass: withVariants([
     { id: 'tuft', size: 0.9, paths: [
@@ -1306,6 +1402,16 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: 'M-0.62 -0.13L0.62 -0.13M-0.62 0.12L0.62 0.12', stroke: 'ink', sw: 0.04, opacity: 0.45 },
       { d: 'M0.62 -0.16L0.92 -0.1M0.62 0.16L0.92 0.1', stroke: 'wood', sw: 0.06 },
     ] },
+    // ── interactable states (grass) ──
+    // COLD camp: `campring`'s exact stone ring (CAMPRING_STONES), charred disc
+    // and crossed sticks, but the embers are out — a darker char core instead
+    // of the glow. State pair with `campring` (no ember roles).
+    { id: 'campcold', size: 1, wonk: 0.035, paths: [
+      { d: ringPath(0.42), fill: 'ink', opacity: 0.85 },
+      { d: ringPath(0.24), fill: 'stoneDark' },
+      { d: CAMPCOLD_STICKS, stroke: 'woodDeep', sw: 0.07 },
+      ...cutout(CAMPRING_STONES, 'rockDeep', 'rock'),
+    ] },
   ]),
   stone: withVariants([
     { id: 'rubble', size: 1, paths: [
@@ -1483,6 +1589,78 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: ALPINEBLOOM_LEAVES, fill: 'foliage' },
       { d: ALPINEBLOOM_DOTS, fill: 'bloom' },
       { d: ALPINEBLOOM_CREAM, fill: 'cream' },
+    ] },
+    // ── interactable states (stone) ──
+    // SHUT door: two stone jamb stubs bracketing a plank panel that spans the
+    // gap; ink hinge ticks at the left jamb + plank seams. State pair with
+    // `dooropen` — identical jambs, identical panel rect.
+    { id: 'doorshut', size: 1.05, wonk: 0.025, paths: [
+      ...cutout(DOOR_JAMBS, 'rockDeep', 'rock'),
+      ...cutout(DOOR_PANEL, 'woodDeep', 'wood'),
+      { d: DOORSHUT_TICKS, stroke: 'ink', sw: 0.04, opacity: 0.7 },
+    ] },
+    // OPEN door: the SAME jambs, the SAME panel swung ~70° from the left-jamb
+    // hinge, revealing the dark doorway (+ hinge pin) beneath.
+    { id: 'dooropen', size: 1.05, wonk: 0.025, paths: [
+      { d: DOOROPEN_GAP, fill: 'ink', opacity: 0.9 },
+      ...cutout(DOOR_JAMBS, 'rockDeep', 'rock'),
+      ...cutout(DOOROPEN_PANEL, 'woodDeep', 'wood'),
+    ] },
+    // floor LEVER: small stone base plate with a dark throw slot, an angled
+    // iron handle ending in a gold knob — the knob is the "pull me" cue.
+    { id: 'lever', size: 0.7, wonk: 0.03, paths: [
+      ...cutout(LEVER_PLATE, 'rockDeep', 'rock'),
+      { d: LEVER_SLOT, stroke: 'ink', sw: 0.07, opacity: 0.8 },
+      { d: LEVER_HANDLE, stroke: 'lampPost', sw: 0.09 },
+      { d: LEVER_KNOB, fill: 'bannerGold' },
+    ] },
+    // pressure FLOORPLATE: square dark recess with the plate inset a step
+    // below floor level, a worn dimple at its center.
+    { id: 'floorplate', size: 0.85, wonk: 0.025, paths: [
+      { d: FLOORPLATE_RECESS, fill: 'stoneDark' },
+      ...cutout(FLOORPLATE_D, 'rockDeep', 'rock'),
+      { d: FLOORPLATE_DIMPLE, fill: 'stoneDark', opacity: 0.8 },
+    ] },
+    // OPEN chest: `chest`'s exact body rect (CHEST_D), lid flipped up behind
+    // it showing the lit inner face, ink interior with gold loot glints; the
+    // gold hasp dot now rides the lid. State pair with `chest`.
+    { id: 'chestopen', size: 0.85, wonk: 0.03, paths: [
+      { d: CHESTOPEN_LID, fill: 'woodLight' },
+      ...cutout(CHEST_D, 'woodDeep', 'wood'),
+      { d: CHESTOPEN_HOLLOW, fill: 'ink' },
+      { d: CHESTOPEN_GLINTS, fill: 'bannerGold' },
+    ] },
+    // SHATTERED urn: `urn`'s ceramic tones as an angular shard ring around a
+    // dark spill where URN_BIG stood, one surviving rim-arc shard. State pair
+    // with `urn`.
+    { id: 'urnshards', size: 0.9, wonk: 0.04, paths: [
+      { d: URNSHARDS_SPILL, fill: 'ink', opacity: 0.75 },
+      ...cutout(URNSHARDS_D, 'woodDeep', 'woodLight'),
+      { d: URNSHARDS_RIM, stroke: 'ink', sw: 0.05, opacity: 0.55 },
+    ] },
+
+    // ── pickups ──
+    { id: 'coin', size: 0.6, wonk: 0.03, paths: [
+      { d: COIN_UNDER, fill: 'woodDeep' },
+      ...cutout(COIN_D, 'woodDeep', 'bannerGold'),
+      { d: COIN_RIM, stroke: 'woodDeep', sw: 0.055, opacity: 0.7 },
+      { d: COIN_GLINT, stroke: 'lampGlow', sw: 0.07, opacity: 0.9 },
+    ] },
+    { id: 'gem', size: 0.55, wonk: 0.025, paths: [
+      ...cutout(GEM_D, 'bannerBlueDk', 'bannerBlue'),
+      { d: GEM_SEAMS, stroke: 'bannerBlueDk', sw: 0.045, opacity: 0.8 },
+      { d: GEM_SPARK, fill: 'cream' },
+    ] },
+    { id: 'potion', size: 0.62, wonk: 0.03, paths: [
+      ...cutout(POTION_GLASS, 'stoneDark', 'murkDeep'),
+      { d: POTION_LIQUID, fill: 'glowFungus', opacity: 0.92 },
+      { d: POTION_CORK, fill: 'cream' },
+      { d: POTION_GLINT, stroke: 'cream', sw: 0.05, opacity: 0.55 },
+    ] },
+    { id: 'key', size: 0.62, wonk: 0.025, paths: [
+      { d: KEY_FRAME, stroke: 'lampPost', sw: 0.13 },
+      { d: KEY_TEETH, fill: 'lampPost' },
+      { d: KEY_HI, stroke: 'steel', sw: 0.06, opacity: 0.85, lit: true },
     ] },
   ]),
   plaza: withVariants([

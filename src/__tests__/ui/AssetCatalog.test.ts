@@ -5,10 +5,15 @@ import { SCATTER_KINDS } from '@/mapgen'
 import type { Biome } from '@/render/appearance'
 
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
-// Props deliberately placed by the plaza decor ring, NOT scatter — the ONLY
-// props allowed to carry no scatter kinds. Anything else with empty kinds would
-// go invisible on generated maps, which is the bug this suite guards.
+// Props deliberately placed by the plaza decor ring, NOT scatter — allowed to
+// carry no scatter kinds. Anything else with empty kinds would go invisible on
+// generated maps, which is the bug this suite guards.
 const DECOR_RING = new Set(['lamppost', 'banner'])
+// Asset-library props placed by FUTURE systems (interactables phase 6, pickups),
+// not scatter — the tags declare the intent, so empty kinds is correct, not a
+// reachability bug. They stay reviewable via the catalog/gallery/workshop.
+const NON_SCATTER_TAGS = ['interactable', 'pickup']
+const isAssetLibrary = (tags?: string[]) => (tags ?? []).some((t) => NON_SCATTER_TAGS.includes(t))
 
 describe('scatter reachability (no authored prop goes dark on generated maps)', () => {
   it('every base prop either declares scatter kinds or is a known decor-ring asset', () => {
@@ -17,8 +22,8 @@ describe('scatter reachability (no authored prop goes dark on generated maps)', 
         if (def.id.includes('~')) continue // seeded variant, carries the base's kinds
         const scatterable = (def.kinds?.length ?? 0) > 0
         expect(
-          scatterable || DECOR_RING.has(def.id),
-          `${biome}/${def.id} has no scatter kinds and isn't a decor-ring asset — it will never appear on a generated map`,
+          scatterable || DECOR_RING.has(def.id) || isAssetLibrary(def.tags),
+          `${biome}/${def.id} has no scatter kinds and isn't a decor-ring or tagged asset-library prop — it will never appear on a generated map`,
         ).toBe(true)
       }
     }
