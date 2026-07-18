@@ -427,18 +427,18 @@ const PROP_META: Record<string, PropPlacement> = {
   // them off the scatter placer, like lamppost/banner); tagged for the future
   // interactable system. Paired states share base geometry so a flip reads as
   // the same object changing, not a swap.
-  doorshut:   { kinds: [], tags: ['interactable'] },
-  dooropen:   { kinds: [], tags: ['interactable'] },
-  lever:      { kinds: [], tags: ['interactable'] },
-  floorplate: { kinds: [], tags: ['interactable'] },
-  chestopen:  { kinds: [], tags: ['interactable'] },
-  urnshards:  { kinds: [], tags: ['interactable'] },
-  campcold:   { kinds: [], tags: ['interactable'] },
+  doorshut:   { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.5 },
+  dooropen:   { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.5 },
+  lever:      { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.2 },
+  floorplate: { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.3 },
+  chestopen:  { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.4 },
+  urnshards:  { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.3 },
+  campcold:   { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.45 },
   // ── pickup/loot assets (future pickup system; same non-scatter rule) ──
-  coin:   { kinds: [], tags: ['pickup'] },
-  gem:    { kinds: [], tags: ['pickup'] },
-  potion: { kinds: [], tags: ['pickup'] },
-  key:    { kinds: [], tags: ['pickup'] },
+  coin:   { kinds: [], tags: ['pickup'], pass: 'walkable', footprint: 0.1 },
+  gem:    { kinds: [], tags: ['pickup'], pass: 'walkable', footprint: 0.1 },
+  potion: { kinds: [], tags: ['pickup'], pass: 'walkable', footprint: 0.1 },
+  key:    { kinds: [], tags: ['pickup'], pass: 'walkable', footprint: 0.1 },
   // ── snow / tundra ──
   frozenpond:    { kinds: ['flower', 'rock'], weight: 0.5, themes: ['snow'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.3 },
   snowdrift:     { kinds: ['bush', 'flower'], weight: 0.8, themes: ['snow'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2, scaleJitter: [0.85, 1.2] },
@@ -475,6 +475,47 @@ const PROP_META: Record<string, PropPlacement> = {
   cellarhatch:  { kinds: ['stump', 'rock'], weight: 0.15, themes: ['city', 'plains'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.45, maxPerChunk: 1, tags: ['portal'] },
   shrine:       { kinds: ['rock', 'stump'], weight: 0.15, themes: ['forest', 'plains', 'mountain', 'arcane'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.45, maxPerChunk: 1, light: { color: 'ember', radius: 1.5 }, tags: ['waypoint'] },
   bonfire:      { kinds: ['rock', 'stump'], weight: 0.15, themes: ['plains', 'forest', 'mountain', 'haunted'], role: 'accent', rotate: 'free', near: ['path'], clusterWith: ['tent', 'campring'], pass: 'solid', footprint: 0.5, maxPerChunk: 1, light: { color: 'ember', radius: 3.5 }, anim: true, tags: ['waypoint'] },
+  // ── cave / underground ──
+  stalagmite:     { kinds: ['tree', 'rock'], weight: 0.6, themes: ['cave'], role: 'field', rotate: 'free', pass: 'solid', footprint: 0.35, tall: true },
+  stalactite:     { kinds: ['flower', 'rock'], weight: 0.4, themes: ['cave'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.15, layer: 'ceiling' },
+  crystalcluster: { kinds: ['rock', 'tree'], weight: 0.3, themes: ['cave', 'arcane'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.35, light: { color: 'bannerBlue', radius: 1.5 }, maxPerChunk: 3 },
+  cavepool:       { kinds: ['flower', 'rock'], weight: 0.4, themes: ['cave'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.35 },
+  glowworms:      { kinds: ['flower'], weight: 0.4, themes: ['cave'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.2, layer: 'ceiling', light: { color: 'glowFungus', radius: 2 } },
+  flowstone:      { kinds: ['rock', 'bush'], weight: 0.5, themes: ['cave'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.3 },
+  // ── jungle ──
+  hangvines:   { kinds: ['bush', 'flower'], weight: 0.5, themes: ['jungle'], role: 'understory', rotate: 'free', near: ['tree'], pass: 'walkable', footprint: 0.2, layer: 'canopy' },
+  giantleaf:   { kinds: ['bush', 'flower'], weight: 0.7, themes: ['jungle'], role: 'field', rotate: 'upright', pass: 'walkable', footprint: 0.2, scaleJitter: [0.9, 1.25] },
+  bamboo:      { kinds: ['tree', 'reed'], weight: 0.6, themes: ['jungle'], role: 'cluster', rotate: 'upright', pass: 'solid', footprint: 0.3, tall: true },
+  exoticbloom: { kinds: ['flower'], weight: 0.4, themes: ['jungle'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.2, maxPerChunk: 3 },
+  // ── forest & desert fills ──
+  bramble:       { kinds: ['bush'], weight: 0.5, themes: ['forest', 'haunted'], role: 'field', rotate: 'free', pass: 'solid', footprint: 0.3, gameplay: ['flammable'] },
+  beehive:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['forest'], role: 'accent', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.15, layer: 'canopy', maxPerChunk: 2, gameplay: ['destructible'] },
+  toadstoolring: { kinds: ['flower', 'bush'], weight: 0.3, themes: ['forest'], role: 'accent', rotate: 'free', pass: 'walkable', footprint: 0.4, maxPerChunk: 2 },
+  quicksand:     { kinds: ['rock', 'flower'], weight: 0.3, themes: ['desert'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.4, maxPerChunk: 2 },
+  digspot:       { kinds: ['flower', 'rock'], weight: 0.3, themes: ['desert', 'beach'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.25, gameplay: ['lootable'] },
+  // ── shore & beach fills ──
+  pier:       { kinds: ['stump'], weight: 0.2, themes: ['water', 'beach', 'city'], role: 'accent', rotate: 'upright', near: ['water'], clusterWith: ['rowboat', 'fishnet'], pass: 'walkable', footprint: 0.5, maxPerChunk: 1 },
+  buoy:       { kinds: ['reed'], weight: 0.3, themes: ['water'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.12, layer: 'water-surface' },
+  algaemat:   { kinds: ['reed'], weight: 0.5, themes: ['water', 'swamp'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.25, layer: 'water-surface', scaleJitter: [0.85, 1.2] },
+  seashells:  { kinds: ['flower', 'rock'], weight: 0.7, themes: ['beach'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.12, scaleJitter: [0.85, 1.15] },
+  tidepool:   { kinds: ['rock', 'flower'], weight: 0.4, themes: ['beach'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.3 },
+  coral:      { kinds: ['rock', 'bush'], weight: 0.35, themes: ['beach'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2 },
+  sandcastle: { kinds: ['stump', 'rock'], weight: 0.15, themes: ['beach'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.25, maxPerChunk: 1, gameplay: ['destructible'] },
+  // ── city & dungeon furniture ──
+  marketstall: { kinds: ['stump', 'tree'], weight: 0.3, themes: ['city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.6, maxPerChunk: 3, clusterWith: ['crate', 'sack', 'barrel'] },
+  bench:       { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'field', rotate: 'upright', near: ['path', 'wall'], pass: 'solid', footprint: 0.35 },
+  awning:      { kinds: ['flower', 'bush'], weight: 0.3, themes: ['city'], role: 'edge', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.2, layer: 'wall' },
+  hanglantern: { kinds: ['flower'], weight: 0.3, themes: ['city'], role: 'field', rotate: 'upright', pass: 'walkable', footprint: 0.1, layer: 'canopy', light: { color: 'lampGlow', radius: 2 } },
+  sarcophagus: { kinds: ['stump', 'rock'], weight: 0.2, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.55, maxPerChunk: 2, gameplay: ['lootable'] },
+  bookshelf:   { kinds: ['stump', 'tree'], weight: 0.3, themes: ['dungeon', 'city'], role: 'field', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.45, gameplay: ['flammable'] },
+  weaponrack:  { kinds: ['stump', 'tree'], weight: 0.25, themes: ['dungeon', 'city'], role: 'field', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.4, gameplay: ['lootable'] },
+  hoard:       { kinds: ['rock', 'flower'], weight: 0.15, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'free', pass: 'walkable', footprint: 0.35, maxPerChunk: 1, gameplay: ['lootable'], light: { color: 'bannerGold', radius: 1 } },
+  floorrunes:  { kinds: ['flower'], weight: 0.3, themes: ['dungeon', 'arcane', 'ruins'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.3 },
+  // ── state pairs II ──
+  berrypicked: { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.3 },
+  braziercold: { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.3 },
+  cratedebris: { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.3 },
+  potdebris:   { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.25 },
   // decor-ring assets: placed by the plaza landmark ring, not scatter (no
   // placement tags needed — empty kinds keeps them off the scatter placer)
   lamppost: { kinds: [] },
@@ -1419,6 +1460,412 @@ const BONFIRE_STONES = (() => {
 const BONFIRE_LOGS = 'M0 0.05L-0.38 -0.3M0 0.05L0.4 -0.26M0 0.05L0.02 0.42'
 const BONFIRE_FLAME = 'M-0.26 0.1C-0.32 -0.14 -0.14 -0.32 0.04 -0.28C0.24 -0.24 0.32 -0.02 0.22 0.16C0.08 0.32 -0.16 0.28 -0.26 0.1Z'
 
+// ── cave / underground props ─────────────────────────────────────────────────────
+// STALAGMITE: two concentric-ringed cone discs (one big, one small) sharing one
+// two-tone rockDeep/rock cutout (both cones' outer rims in one multi-subpath d),
+// a flat stoneBase mid-ring per cone for the "concentric" contour read, and a
+// pale cream tip dot per cone offset up-left as the light-caught peak.
+const STALAGMITE_OUTER = ringPath(0.5, 0.08, 0.08) + ringPath(0.26, -0.42, -0.4)
+const STALAGMITE_MID = ringPath(0.3, 0.08, 0.08) + ringPath(0.16, -0.42, -0.4)
+const STALAGMITE_TIP = ringPath(0.08, -0.04, -0.04) + ringPath(0.05, -0.5, -0.48)
+
+// STALACTITE: a soft down-right ground shadow disc under a small pale
+// rockDeep/cream tip disc offset up-left — the shadow implies the ceiling
+// spike hangs above the point where its shadow lands.
+const STALACTITE_SHADOW = ringPath(0.28, 0.12, 0.14)
+const STALACTITE_TIP = ringPath(0.2, -0.12, -0.12)
+
+// CRYSTALCLUSTER: 4 clumped angular shards (one center-tall + 3 short
+// satellites, all shorter and more tightly packed than the existing tall
+// `crystalspire`), one bannerBlueDk/bannerBlue two-tone cutout, cast shadow,
+// one cream facet glint.
+const CRYSTALCLUSTER_SHADOW = 'M-0.2 0.42A0.3 0.13 0 1 0 0.4 0.42A0.3 0.13 0 1 0 -0.2 0.42Z'
+const CRYSTALCLUSTER_D =
+  'M-0.06 0.4L-0.2 0.05L-0.04 -0.5L0.12 -0.12L0.2 0.38Z' +
+  'M-0.5 0.32L-0.36 -0.02L-0.18 0.3Z' +
+  'M0.32 0.36L0.46 0.02L0.62 0.34Z' +
+  'M0.05 0.42L0.22 0.15L0.34 0.44Z'
+const CRYSTALCLUSTER_GLINT = 'M-0.02 0.32L0 -0.42M-0.42 0.22L-0.36 0'
+
+// CAVEPOOL: still waterDeep blob (blobPath/lobeRing, matches murkpool's flat
+// no-cutout decal style), one thin waterHi rim-glint arc, two pale cream
+// drip-ring dots where ceiling drips have pocked the surface.
+const CAVEPOOL_D = blobPath(lobeRing(6, 0.6, 0.46, 0.02, 0.02))
+const CAVEPOOL_RIM = 'M-0.42 -0.18Q-0.1 -0.44 0.32 -0.22'
+// asymmetric drips (judge pass: two same-size dots side by side read as eyes)
+const CAVEPOOL_DOTS = ringPath(0.055, -0.28, 0.16) + ringPath(0.03, 0.24, -0.14)
+
+// GLOWWORMS: a seeded scatter of tiny glowFungus dots (gravelD-style helper,
+// prefixed distinctly so it doesn't collide with the existing `gravelD`) over
+// a faint flat low-opacity glow blob, matching glowshroom's glow-disc read.
+const glowwormScatterD = (seed: number, n: number): string => {
+  let d = ''
+  for (let i = 0; i < n; i++) {
+    const x = (hash01(seed + i * 733) - 0.5) * 1.1
+    const y = (hash01(seed + i * 733 + 271) - 0.5) * 0.9
+    const r = 0.03 + hash01(seed + i * 733 + 409) * 0.03
+    d += ringPath(r, r3(x), r3(y))
+  }
+  return d
+}
+const GLOWWORMS_DOTS_D = glowwormScatterD(hashString('glowworms'), 9)
+
+// FLOWSTONE: 3 stacked smooth crescent lobes (leafD lenses stacked top-to-
+// bottom, widening downward like a draped terrace) in one rock/stoneBase
+// two-tone cutout, plus two faint rib seams marking the lobe boundaries.
+const FLOWSTONE_D =
+  leafD(0.05, -0.42, 0.38, 0.14, 0.15) +
+  leafD(0, -0.05, 0.5, 0.18, -0.1) +
+  leafD(-0.03, 0.38, 0.6, 0.2, 0.05)
+const FLOWSTONE_RIBS = 'M-0.3 -0.2Q0.05 -0.28 0.35 -0.15M-0.35 0.15Q0 0.05 0.35 0.2'
+
+// ── jungle props ─────────────────────────────────────────────────────
+// hangvines — canopy-edge bar + 6 trailing vine strands (deep + lit subset),
+// each strand ending in 1-2 leafD leaves.
+const HANGVINES_BAR = 'M-0.85 -0.62Q0 -0.72 0.85 -0.62'
+const HANGVINES_VINES = 'M-0.78 -0.55Q-0.84 -0.05 -0.72 0.48M-0.46 -0.56Q-0.38 0.05 -0.5 0.66M-0.15 -0.58Q-0.07 0.1 -0.16 0.74M0.15 -0.56Q0.23 0 0.14 0.55M0.46 -0.58Q0.54 0.08 0.44 0.7M0.78 -0.55Q0.86 -0.02 0.72 0.46'
+const HANGVINES_VINES_LIT = 'M-0.46 -0.56Q-0.38 0.05 -0.5 0.66M-0.15 -0.58Q-0.07 0.1 -0.16 0.74M0.46 -0.58Q0.54 0.08 0.44 0.7'
+const HANGVINES_LEAF_TIP1 = leafD(-0.72, 0.48, 0.13, 0.065, 2.0)
+const HANGVINES_LEAF_TIP2 = leafD(-0.5, 0.66, 0.14, 0.07, 1.85)
+const HANGVINES_LEAF_MID2 = leafD(-0.55, 0.42, 0.1, 0.05, 2.1)
+const HANGVINES_LEAF_TIP3 = leafD(-0.16, 0.74, 0.15, 0.075, 1.6)
+const HANGVINES_LEAF_TIP4 = leafD(0.14, 0.55, 0.12, 0.06, 1.5)
+const HANGVINES_LEAF_TIP5 = leafD(0.44, 0.7, 0.14, 0.07, 1.3)
+const HANGVINES_LEAF_MID5 = leafD(0.5, 0.44, 0.1, 0.05, 1.1)
+const HANGVINES_LEAF_TIP6 = leafD(0.72, 0.46, 0.13, 0.065, 1.0)
+const HANGVINES_LEAVES_DEEP = HANGVINES_LEAF_TIP1 + HANGVINES_LEAF_TIP2 + HANGVINES_LEAF_MID2 + HANGVINES_LEAF_TIP3 + HANGVINES_LEAF_TIP4 + HANGVINES_LEAF_TIP5 + HANGVINES_LEAF_MID5 + HANGVINES_LEAF_TIP6
+const HANGVINES_LEAVES_LIT = HANGVINES_LEAF_TIP2 + HANGVINES_LEAF_TIP3 + HANGVINES_LEAF_TIP5
+
+// giantleaf — 2 huge paddle-leaf lenses (notches baked into the outline as
+// small inward L-dips) sharing a base, + a center rib stroke per leaf.
+const GIANTLEAF_A = 'M-0.08 0.76C-0.34 0.6 -0.5 0.28 -0.52 -0.06L-0.62 -0.02C-0.66 -0.2 -0.58 -0.3 -0.48 -0.34C-0.56 -0.52 -0.5 -0.66 -0.36 -0.76C-0.2 -0.86 -0.02 -0.84 0.06 -0.7C0.14 -0.4 0.16 -0.02 0.1 0.34C0.06 0.54 0 0.68 -0.08 0.76Z'
+const GIANTLEAF_B = 'M0.1 0.72C0.36 0.54 0.52 0.22 0.52 -0.12L0.64 -0.06C0.68 -0.24 0.6 -0.34 0.5 -0.38C0.58 -0.56 0.52 -0.7 0.38 -0.8C0.22 -0.9 0.04 -0.86 -0.04 -0.72C-0.12 -0.42 -0.14 -0.04 -0.06 0.32C-0.02 0.52 0.02 0.64 0.1 0.72Z'
+const GIANTLEAF_D = GIANTLEAF_A + GIANTLEAF_B
+const GIANTLEAF_RIB = 'M-0.06 0.7Q-0.2 0.05 -0.14 -0.72M0.08 0.68Q0.22 0.02 0.16 -0.74'
+const GIANTLEAF_SHADOW = 'M-0.4 0.78C-0.2 0.66 0.3 0.66 0.5 0.8C0.36 0.96 -0.26 0.96 -0.4 0.78Z'
+
+// bamboo — tight cluster of 6 ringed culm cross-sections (cutout foliage/
+// pineLit) + cream node dots + 2 thin leaf-blade strokes.
+const BAMBOO_CULMS = ringPath(0.2, -0.34, -0.18) + ringPath(0.18, 0.02, -0.32) + ringPath(0.19, 0.36, -0.14) + ringPath(0.21, -0.18, 0.16) + ringPath(0.17, 0.2, 0.28) + ringPath(0.16, -0.4, 0.32)
+const BAMBOO_NODES = ringPath(0.05, -0.37, -0.21) + ringPath(0.045, -0.01, -0.35) + ringPath(0.05, 0.33, -0.17) + ringPath(0.055, -0.21, 0.13) + ringPath(0.045, 0.17, 0.25) + ringPath(0.04, -0.43, 0.29)
+const BAMBOO_LEAVES = 'M-0.48 -0.32Q-0.72 -0.55 -0.9 -0.74M0.4 0.34Q0.64 0.54 0.86 0.7'
+const BAMBOO_SHADOW = 'M-0.55 0.42C-0.3 0.56 0.35 0.56 0.58 0.4C0.5 0.64 -0.48 0.64 -0.55 0.42Z'
+
+// exoticbloom — layered pointed petals (bloom outer star + cream inner star)
+// over a pair of dark leaves, one bannerGold stamen dot.
+const EXOTICBLOOM_LEAVES = leafD(-0.3, 0.55, 0.28, 0.12, 2.5) + leafD(0.3, 0.55, 0.28, 0.12, 0.65)
+const EXOTICBLOOM_OUTER = starPath(6, 0.62, 0.24, 0)
+const EXOTICBLOOM_INNER = starPath(6, 0.34, 0.13, 0.52)
+const EXOTICBLOOM_STAMEN = ringPath(0.07, 0, -0.02)
+const EXOTICBLOOM_SHADOW = 'M-0.42 0.66C-0.2 0.78 0.26 0.78 0.46 0.64C0.36 0.86 -0.3 0.86 -0.42 0.66Z'
+
+// ── forest & desert fills props ─────────────────────────────────────────────────────
+// bramble: a denser two-layer scribble tangle than `tumbleweed` (7 dark outer
+// strokes + 4 woodDeep inner twigs, lit), tiny thorn ticks off the branches,
+// a few dried-blood berry dots.
+const BRAMBLE_TANGLE_OUT =
+  'M-0.55 -0.2C-0.35 -0.62 0.32 -0.6 0.52 -0.15M-0.4 0.5C-0.65 0.05 -0.12 -0.55 0.4 -0.42' +
+  'M0.52 0.3C0.18 0.62 -0.42 0.42 -0.32 -0.18M-0.05 -0.58C0.4 -0.35 0.5 0.3 0.02 0.48' +
+  'M-0.58 0.18C-0.4 -0.2 0.2 -0.42 0.45 -0.22M0.15 -0.6C0.5 -0.28 0.3 0.18 -0.12 0.15' +
+  'M-0.55 -0.02C-0.3 0.25 0.08 -0.08 -0.18 -0.4'
+const BRAMBLE_TANGLE_IN =
+  'M-0.28 -0.28C0 -0.5 0.32 -0.12 0.18 0.25M0.32 -0.32C0.05 0.05 -0.32 0.1 -0.4 0.05' +
+  'M-0.15 0.38C-0.28 0.05 0.15 -0.18 0.32 0.02M0.02 -0.48Q0.28 -0.32 0.12 -0.02'
+const BRAMBLE_THORNS =
+  'M-0.35 -0.4L-0.28 -0.48M0.1 -0.55L0.18 -0.48M0.45 -0.05L0.54 0.02' +
+  'M0.3 0.4L0.38 0.46M-0.5 0.15L-0.58 0.08M-0.15 0.45L-0.08 0.52'
+const BRAMBLE_BERRIES =
+  'M-0.2 -0.1A0.05 0.05 0 1 0 -0.1 -0.1A0.05 0.05 0 1 0 -0.2 -0.1Z' +
+  'M0.15 0.05A0.045 0.045 0 1 0 0.24 0.05A0.045 0.045 0 1 0 0.15 0.05Z' +
+  'M-0.05 0.3A0.05 0.05 0 1 0 0.05 0.3A0.05 0.05 0 1 0 -0.05 0.3Z'
+
+// beehive: a hanging paper-nest teardrop built from two stacked thatch-tone
+// bands (th4 top+tip / th2 mid), an ink entrance dot, all shifted up-left off
+// the origin so a separate down-right ground shadow reads DETACHED — the gap
+// is what sells "hanging from a branch" in a top-down view.
+const BEEHIVE_LIGHT = 'M-0.42 -0.58L0.22 -0.58L0.32 -0.3L-0.52 -0.3Z' + 'M-0.4 0L0.2 0L-0.1 0.32Z'
+const BEEHIVE_DARK = 'M-0.52 -0.3L0.32 -0.3L0.2 0L-0.4 0Z'
+
+// toadstoolring: a seeded ring (CAMPRING_STONES' technique) of 7 tiny mushrooms
+// around an EMPTY center — caps reuse `mushroom`'s exact MUSHCAP_D control
+// points (translated + scaled per instance) so the cap tones match; stems are
+// small cream rects drawn first so the caps overlap and hide their tops.
+const TOADCAP_PTS: [number, number][] = [
+  [-0.55, -0.02], [-0.56, -0.5], [0.54, -0.52], [0.55, -0.04], [0.28, 0.05], [-0.28, 0.06], [-0.55, -0.02],
+]
+const toadMushcapAt = (cx: number, cy: number, s: number): string => {
+  const T = (i: number) => `${r3(cx + TOADCAP_PTS[i][0] * s)} ${r3(cy + TOADCAP_PTS[i][1] * s)}`
+  return `M${T(0)}C${T(1)} ${T(2)} ${T(3)}C${T(4)} ${T(5)} ${T(6)}Z`
+}
+const toadStemAt = (cx: number, cy: number, s: number): string =>
+  rectD(cx - 0.045 * s, cy - 0.02 * s, 0.09 * s, 0.36 * s)
+const TOADSTOOLRING = (() => {
+  const seed = hashString('toadstoolring')
+  const n = 7
+  let caps = '', stems = ''
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + (hash01(seed + i * 191) - 0.5) * 0.25
+    const rad = 0.5 + (hash01(seed + i * 191 + 61) - 0.5) * 0.2
+    const s = 0.24 + hash01(seed + i * 191 + 127) * 0.06
+    const cx = r3(Math.cos(a) * rad), cy = r3(Math.sin(a) * rad)
+    caps += toadMushcapAt(cx, cy, s)
+    stems += toadStemAt(cx, cy, s)
+  }
+  return { caps, stems }
+})()
+
+// quicksand: concentric sand/sandLit target-rings (largest-first, so each
+// smaller circle drawn on top leaves the outer tone as a visible ring) under a
+// faint inward spiral stroke + one half-sunk stick.
+const quicksandSpiralD = (turns: number, r0: number, steps: number): string => {
+  let d = ''
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const a = t * turns * Math.PI * 2
+    const r = r0 * (1 - t * 0.82)
+    d += (i ? 'L' : 'M') + r3(Math.cos(a) * r) + ' ' + r3(Math.sin(a) * r)
+  }
+  return d
+}
+const QUICKSAND_SPIRAL = quicksandSpiralD(2.4, 0.55, 18)
+
+// digspot: two overlapping dirtPath mounds (one multi-subpath fill), a small
+// flung-crumb fan, and a subtle woodDeep X dig-marker between them.
+const DIGSPOT_MOUNDS =
+  'M-0.5 0.1C-0.55 -0.15 -0.3 -0.28 -0.08 -0.2C0.05 -0.12 0.02 0.15 -0.15 0.22C-0.35 0.3 -0.48 0.25 -0.5 0.1Z' +
+  'M0.55 0.15C0.6 -0.1 0.35 -0.24 0.12 -0.16C-0.02 -0.08 0.02 0.2 0.2 0.26C0.4 0.32 0.53 0.28 0.55 0.15Z'
+const DIGSPOT_CRUMBS =
+  'M0.15 -0.4A0.045 0.045 0 1 0 0.24 -0.4A0.045 0.045 0 1 0 0.15 -0.4Z' +
+  'M0.3 -0.5A0.04 0.04 0 1 0 0.38 -0.5A0.04 0.04 0 1 0 0.3 -0.5Z' +
+  'M0.05 -0.55A0.05 0.05 0 1 0 0.15 -0.55A0.05 0.05 0 1 0 0.05 -0.55Z' +
+  'M0.35 -0.32A0.035 0.035 0 1 0 0.42 -0.32A0.035 0.035 0 1 0 0.35 -0.32Z' +
+  'M-0.1 -0.48A0.04 0.04 0 1 0 -0.02 -0.48A0.04 0.04 0 1 0 -0.1 -0.48Z'
+const DIGSPOT_XMARK = 'M-0.12 -0.02L0.12 0.18M0.12 -0.02L-0.12 0.18'
+
+// ── shore & beach fills props ─────────────────────────────────────────────────────
+// PIER: four wide contiguous deck planks (wider than plankwalk's) running the
+// dock's length + two ink seam lines between them + two mooring-post dots at
+// the far (water) end.
+const PIER_D = rectD(-0.78, -0.62, 1.56, 0.28) + rectD(-0.78, -0.3, 1.56, 0.28) + rectD(-0.78, 0.02, 1.56, 0.28) + rectD(-0.78, 0.34, 1.56, 0.28)
+const PIER_SEAMS = 'M-0.78 -0.34L0.78 -0.34M-0.78 -0.02L0.78 -0.02M-0.78 0.3L0.78 0.3'
+const PIER_POSTS = ringPath(0.1, -0.35, 0.78) + ringPath(0.1, 0.35, 0.78)
+
+// BUOY: flat mooring float disc + a lit cap dot + one tiny ripple arc beside it.
+const BUOY_BODY = ringPath(0.28)
+const BUOY_CAP = ringPath(0.11, 0, -0.05)
+const BUOY_RIPPLE = 'M0.42 0.08A0.22 0.14 0 0 1 0.1 0.32'
+
+// ALGAEMAT: an irregular floating blob — a hexagon-ish point ring radially
+// jittered per-point (seeded), smoothed by blobPath — + four seeded fleck dots.
+const ALGAEMAT_SEED = hashString('algaemat')
+const ALGAEMAT_PTS: Pt[] = lobeRing(6, 0.55, 0.55, 0, 0).map((p, i) => {
+  const j = (hash01(ALGAEMAT_SEED + i * 71) - 0.5) * 0.3
+  const ang = Math.atan2(p.y, p.x)
+  return { x: p.x + Math.cos(ang) * j, y: p.y + Math.sin(ang) * j }
+})
+const ALGAEMAT_D = blobPath(ALGAEMAT_PTS)
+const ALGAEMAT_FLECKS = (() => {
+  let d = ''
+  for (let i = 0; i < 4; i++) {
+    const a = hash01(ALGAEMAT_SEED + i * 191) * Math.PI * 2
+    const r = 0.15 + hash01(ALGAEMAT_SEED + i * 191 + 53) * 0.3
+    d += ringPath(0.035, r3(Math.cos(a) * r), r3(Math.sin(a) * r))
+  }
+  return d
+})()
+
+// SEASHELLS: five tiny seeded fan-shell lenses (leafD, alternating cream/bloom,
+// one path per tone — multi-subpath) + growth-arc ridge strokes on shell #0.
+const SEASHELL_SEED = hashString('seashells')
+const SEASHELL_PTS = Array.from({ length: 5 }, (_, i) => {
+  const x = (hash01(SEASHELL_SEED + i * 233) - 0.5) * 1.3
+  const y = (hash01(SEASHELL_SEED + i * 233 + 71) - 0.5) * 1.0
+  const len = 0.1 + hash01(SEASHELL_SEED + i * 233 + 149) * 0.06
+  const ang = hash01(SEASHELL_SEED + i * 233 + 307) * Math.PI
+  return { x, y, len, ang }
+})
+const SEASHELLS_CREAM_D = SEASHELL_PTS.filter((_, i) => i % 2 === 0).map((p) => leafD(p.x, p.y, p.len, p.len * 0.55, p.ang)).join('')
+const SEASHELLS_BLOOM_D = SEASHELL_PTS.filter((_, i) => i % 2 === 1).map((p) => leafD(p.x, p.y, p.len, p.len * 0.55, p.ang)).join('')
+const SEASHELLS_RIDGES = (() => {
+  const p = SEASHELL_PTS[0]
+  const dx = Math.cos(p.ang), dy = Math.sin(p.ang)
+  const px = -dy, py = dx
+  let d = ''
+  for (const rad of [p.len * 0.5, p.len * 0.85]) {
+    const x0 = p.x + px * rad, y0 = p.y + py * rad
+    const x1 = p.x - px * rad, y1 = p.y - py * rad
+    d += `M${r3(x0)} ${r3(y0)}A${r3(rad)} ${r3(rad * 0.6)} 0 0 1 ${r3(x1)} ${r3(y1)}`
+  }
+  return d
+})()
+
+// TIDEPOOL: a seeded ring of 8 small stones around a jittered round pool blob +
+// one glint arc + a tiny 5-point starfish dot.
+const TIDEPOOL_SEED = hashString('tidepool')
+const TIDEPOOL_STONES = (() => {
+  let d = ''
+  const n = 8
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + (hash01(TIDEPOOL_SEED + i * 53) - 0.5) * 0.5
+    const r = 0.5 + (hash01(TIDEPOOL_SEED + i * 53 + 19) - 0.5) * 0.12
+    const x = Math.cos(a) * r, y = Math.sin(a) * r * 0.82
+    const rad = 0.08 + hash01(TIDEPOOL_SEED + i * 53 + 37) * 0.05
+    d += ringPath(rad, r3(x), r3(y))
+  }
+  return d
+})()
+const TIDEPOOL_POOL_D = blobPath(lobeRing(7, 0.4, 0.4, 0, 0).map((p, i) => {
+  const j = (hash01(TIDEPOOL_SEED + i * 89 + 500) - 0.5) * 0.12
+  const ang = Math.atan2(p.y, p.x)
+  return { x: p.x + Math.cos(ang) * j, y: p.y + Math.sin(ang) * j }
+}))
+const TIDEPOOL_GLINT = 'M-0.12 -0.16Q0.02 -0.06 0.14 -0.2'
+const TIDEPOOL_STARFISH = (() => {
+  const cx = 0.16, cy = 0.14, ro = 0.09, ri = 0.035, n = 5
+  let d = ''
+  for (let i = 0; i < n * 2; i++) {
+    const a = 0.3 + (i / (n * 2)) * Math.PI * 2
+    const r = i % 2 ? ri : ro
+    d += (i ? 'L' : 'M') + r3(cx + Math.cos(a) * r) + ' ' + r3(cy + Math.sin(a) * r)
+  }
+  return d + 'Z'
+})()
+
+// CORAL: a small jittered sand blob under a branching antler coral skeleton
+// (one multi-subpath M/L/Q stroke, drawn twice — bloom base, cream lit).
+const CORAL_SEED = hashString('coral')
+const CORAL_SAND_D = blobPath(lobeRing(6, 0.42, 0.42, 0.02, 0.15).map((p, i) => {
+  const j = (hash01(CORAL_SEED + i * 61) - 0.5) * 0.1
+  const ang = Math.atan2(p.y - 0.15, p.x - 0.02)
+  return { x: p.x + Math.cos(ang) * j, y: p.y + Math.sin(ang) * j }
+}))
+const CORAL_BRANCHES_D = 'M-0.08 0.32Q-0.22 0.06 -0.18 -0.22M-0.18 -0.22L-0.32 -0.42M-0.18 -0.22L-0.04 -0.46M0.06 0.34Q0.16 0.04 0.1 -0.28M0.1 -0.28L-0.02 -0.5M0.1 -0.28L0.26 -0.44M0.28 0.3Q0.34 0.06 0.26 -0.14M0.26 -0.14L0.4 -0.28'
+
+// SANDCASTLE: rectangular keep + a turret pair (all one two-tone multi-subpath
+// cutout) + a hand-drawn stick-and-pennant flag stroke.
+const SANDCASTLE_D = rectD(-0.42, -0.12, 0.84, 0.62) + ringPath(0.15, -0.3, -0.22) + ringPath(0.15, 0.3, -0.22)
+const SANDCASTLE_FLAG = 'M0 -0.22L0 -0.72L0.2 -0.62L0 -0.52'
+
+// ── city & dungeon furniture props ─────────────────────────────────────────────────────
+// ── marketstall (plaza) ──
+const MARKETSTALL_SHADOW = rectD(-0.6, 0.05, 1.15, 0.4)
+const MARKETSTALL_CANOPY_BASE = rectD(-0.62, -0.62, 1.24, 0.6)
+// three cream stripes as ONE multi-subpath, laid over the bannerBlue cloth base
+const MARKETSTALL_STRIPES = rectD(-0.49, -0.58, 0.16, 0.54) + rectD(-0.15, -0.58, 0.16, 0.54) + rectD(0.19, -0.58, 0.16, 0.54)
+const MARKETSTALL_POSTS = ringPath(0.06, -0.5, 0.15) + ringPath(0.06, 0.5, 0.15)
+const MARKETSTALL_CRATE = rectD(0.28, 0.12, 0.3, 0.32)
+
+// ── bench (plaza) ──
+// two planks as one multi-subpath so the cutout() pair stays at 2 paths total
+const BENCH_PLANKS = rectD(-0.75, -0.2, 1.5, 0.17) + rectD(-0.75, 0.03, 1.5, 0.17)
+const BENCH_FRAME = 'M-0.75 -0.22L-0.75 0.22M0.75 -0.22L0.75 0.22'
+const BENCH_SHADOW = rectD(-0.65, 0.24, 1.25, 0.1)
+
+// ── awning (plaza) ──
+const AWNING_BASE = rectD(-0.65, -0.72, 1.3, 0.6)
+const AWNING_STRIPES = rectD(-0.5, -0.7, 0.16, 0.56) + rectD(-0.16, -0.7, 0.16, 0.56) + rectD(0.18, -0.7, 0.16, 0.56)
+// scalloped front edge: 5 small filled lens-bumps (M-arc-Z closes each with a
+// straight chord, so it reads as a fringe of half-discs) along the outer hem
+const AWNING_SCALLOPS = [-0.52, -0.26, 0, 0.26, 0.52]
+  .map((cx) => `M${r3(cx - 0.13)} -0.1A0.13 0.13 0 0 1 ${r3(cx + 0.13)} -0.1Z`)
+  .join('')
+const AWNING_TIES = 'M-0.35 -0.75L-0.35 -0.68M0.35 -0.75L0.35 -0.68'
+
+// ── hanglantern (plaza) ──
+// the shadow sits on the GROUND (center-ish); the lamp itself hangs offset
+// up-left of it, so the two never share a center — that offset IS the "hang".
+const HANGLANTERN_SHADOW = ringPath(0.22, 0.18, 0.2)
+const HANGLANTERN_RING = ringPath(0.26, -0.15, -0.18)
+const HANGLANTERN_GLOW = ringPath(0.16, -0.15, -0.18)
+const HANGLANTERN_CORD = 'M-0.15 -0.85L-0.15 -0.44'
+
+// ── sarcophagus (stone) ──
+// tapered coffin-lid outline (wide shoulders, narrow feet)
+const SARCOPHAGUS_BODY = 'M-0.42 -0.6L0.42 -0.6L0.5 -0.1L0.32 0.6L-0.32 0.6L-0.5 -0.1Z'
+// carved-figure hint: shoulder lens + head ring, same read as the `statue` prop's STATUE_FIGURE/stoneBase pairing
+const SARCOPHAGUS_FIGURE = 'M-0.3 -0.28A0.26 0.14 0 1 0 0.22 -0.28A0.26 0.14 0 1 0 -0.3 -0.28Z' + ringPath(0.11, -0.04, -0.5)
+const SARCOPHAGUS_CHIP = 'M-0.48 -0.18L-0.28 -0.08L-0.44 0.02Z'
+
+// ── bookshelf (stone) ──
+const BOOKSHELF_FRAME = rectD(-0.55, -0.5, 1.1, 1.0)
+const BOOKSHELF_ROWS = 'M-0.5 -0.25L0.5 -0.25M-0.5 0L0.5 0M-0.5 0.25L0.5 0.25'
+const BOOKSHELF_BLUE = rectD(-0.42, -0.46, 0.08, 0.19) + rectD(-0.18, -0.46, 0.08, 0.19) + rectD(0.05, -0.46, 0.08, 0.19)
+const BOOKSHELF_BLOOD = rectD(-0.4, -0.21, 0.08, 0.19) + rectD(-0.05, -0.21, 0.08, 0.19) + rectD(0.28, -0.21, 0.08, 0.19)
+const BOOKSHELF_TH2 = rectD(-0.35, 0.04, 0.08, 0.19) + rectD(0.02, 0.04, 0.08, 0.19) + rectD(0.3, 0.04, 0.08, 0.19)
+
+// ── weaponrack (stone) ──
+const WEAPONRACK_FRAME = rectD(-0.5, -0.18, 1.0, 0.36)
+// three crossed hafts (woodDeep) + their blade tips (steel), sharing endpoints at center
+const WEAPONRACK_HAFTS = 'M-0.55 -0.55L0.05 0.02M-0.55 0.55L0.05 -0.02M0 -0.62L0 -0.02'
+const WEAPONRACK_BLADES = 'M0.05 0.02L0.6 0.55M0.05 -0.02L0.6 -0.55M0 -0.02L0 0.62'
+
+// ── hoard (stone) ──
+const HOARD_BASE = 'M-0.55 0.15C-0.6 -0.15 -0.25 -0.35 0.05 -0.3C0.4 -0.25 0.62 0.05 0.55 0.3C0.48 0.55 0.1 0.6 -0.2 0.55C-0.48 0.5 -0.5 0.35 -0.55 0.15Z'
+// seeded coin-dot cluster (same recipe as gravelD: hash01-jittered rings), scoped to the mound
+const hoardCoinsD = (seed: number, n: number): string => {
+  let d = ''
+  for (let i = 0; i < n; i++) {
+    const x = (hash01(seed + i * 701) - 0.5) * 1.1
+    const y = (hash01(seed + i * 701 + 293) - 0.5) * 0.9
+    const r = 0.06 + hash01(seed + i * 701 + 577) * 0.05
+    d += ringPath(r, x, y)
+  }
+  return d
+}
+const HOARD_COINS = hoardCoinsD(hashString('hoard'), 16)
+const HOARD_GEM = 'M0.07 -0.23L0.23 -0.23L0.29 -0.07L0.15 0.13L0.01 -0.07Z'
+const HOARD_GLINT = ringPath(0.045, -0.2, 0.05)
+
+// ── floorrunes (stone) ──
+// deterministic tick arc (pure trig, like starPath) — n ticks from angle a0 to a1 at radius r, length len
+const floorruneTicksD = (n: number, r: number, len: number, a0: number, a1: number): string => {
+  let d = ''
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : i / (n - 1)
+    const a = a0 + t * (a1 - a0)
+    d += `M${r3(Math.cos(a) * r)} ${r3(Math.sin(a) * r)}L${r3(Math.cos(a) * (r + len))} ${r3(Math.sin(a) * (r + len))}`
+  }
+  return d
+}
+const FLOORRUNES_TICKS = floorruneTicksD(9, 0.38, 0.17, Math.PI * 0.12, Math.PI * 0.88)
+const FLOORRUNES_GLYPH = 'M0 -0.4L0 0.05M0 -0.4L-0.16 -0.22M0 -0.25L0.16 -0.08'
+
+// ── state pairs II props ─────────────────────────────────────────────────────
+// BERRYPICKED reuses BERRYBUSH_D (the same foliage silhouette) with the six
+// berries removed; two short pinch-mark notches stand in for the plucked
+// gaps in the foliage — the "picked clean" tell.
+const BERRYPICKED_NOTCHES = 'M-0.42 -0.22L-0.3 -0.14M-0.38 -0.14L-0.3 -0.22M0.14 -0.42L0.26 -0.34M0.18 -0.34L0.26 -0.42'
+
+// BRAZIERCOLD reuses BRAZIER_LEGS/BRAZIER_RIM/BRAZIER_BOWL verbatim (same
+// iron tripod + rim + bowl geometry); only the ember-family fills change —
+// the bowl's coal bed goes emberDeep→stoneDark char, and the live flame is
+// dropped entirely in favor of one small pale ash fleck (no ember roles).
+const BRAZIERCOLD_ASH = ringPath(0.07, 0.05, -0.03)
+
+// CRATEDEBRIS: three angular plank-splinter slivers (multi-subpath, same
+// woodDeep/wood tones as `crate`) scattered across CRATE_D's old footprint,
+// one intact bottom-left corner L surviving whole, a few thin ink splinter
+// flecks among the wreckage.
+const CRATEDEBRIS_PLANKS =
+  'M-0.48 -0.38L0.02 -0.5L0.08 -0.4L-0.42 -0.28Z' +
+  'M0.1 -0.15L0.54 -0.32L0.5 -0.18L0.12 0Z' +
+  'M-0.3 0.1L0.2 0.34L0.14 0.46L-0.36 0.24Z'
+const CRATEDEBRIS_CORNER = 'M-0.5 0.5L-0.5 0.22L-0.36 0.22L-0.36 0.36L-0.22 0.36L-0.22 0.5Z'
+const CRATEDEBRIS_FLECKS = 'M0.2 -0.05L0.3 -0.1M-0.1 0.3L-0.02 0.36M0.35 0.1L0.42 0.16'
+
+// POTDEBRIS: five ceramic shard fragments ringing POT_D's old footprint
+// (same woodDeep/woodLight tones as `pot`), a spilled two-leaf foliage
+// sprig (reuses `leafD`, tipped out of the pot rather than upright in it),
+// and a soft dirtPath soil blob where the potting earth spilled.
+const POTDEBRIS_SHARDS =
+  'M-0.4 -0.05L-0.22 -0.18L-0.14 -0.06L-0.3 0.06Z' +
+  'M0.05 -0.3L0.24 -0.36L0.3 -0.2L0.12 -0.16Z' +
+  'M0.28 0.05L0.44 0.02L0.4 0.22L0.24 0.2Z' +
+  'M-0.1 0.3L0.08 0.24L0.14 0.42L-0.06 0.46Z' +
+  'M-0.42 0.2L-0.26 0.14L-0.22 0.32L-0.38 0.36Z'
+const POTDEBRIS_SPRIG = leafD(-0.05, 0.15, 0.22, 0.07, 0.3) + leafD(0.08, 0.05, 0.16, 0.06, -0.6)
+const POTDEBRIS_SOIL = 'M-0.2 0.35C-0.28 0.24 -0.16 0.14 -0.02 0.16C0.12 0.18 0.2 0.3 0.12 0.4C0.04 0.5 -0.12 0.46 -0.2 0.35Z'
+
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
   grass: withVariants([
     { id: 'tuft', size: 0.9, paths: [
@@ -1853,6 +2300,119 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: ringPath(0.14, -0.02, 0), fill: 'ember' },
       ...cutout(BONFIRE_STONES, 'rockDeep', 'rock'),
     ] },
+    // ── jungle (grass) ──
+    { id: 'hangvines', size: 1.05, wonk: 0.035, paths: [
+      { d: HANGVINES_BAR, stroke: 'foliageDeep', sw: 0.1 },
+      { d: HANGVINES_VINES, stroke: 'foliageDeep', sw: 0.07 },
+      { d: HANGVINES_VINES_LIT, stroke: 'foliage', sw: 0.05, lit: true },
+      { d: HANGVINES_LEAVES_DEEP, fill: 'foliageDeep' },
+      { d: HANGVINES_LEAVES_LIT, fill: 'foliage', lit: true },
+    ] },
+    { id: 'giantleaf', size: 1.15, wonk: 0.035, paths: [
+      { d: GIANTLEAF_SHADOW, fill: 'shadow', opacity: 0.22 },
+      ...cutout(GIANTLEAF_D, 'foliage', 'mossBase'),
+      { d: GIANTLEAF_RIB, stroke: 'foliageDeep', sw: 0.05 },
+    ] },
+    { id: 'bamboo', size: 1.1, wonk: 0.03, paths: [
+      { d: BAMBOO_SHADOW, fill: 'shadow', opacity: 0.22 },
+      ...cutout(BAMBOO_CULMS, 'foliage', 'pineLit'),
+      { d: BAMBOO_NODES, fill: 'cream' },
+      { d: BAMBOO_LEAVES, stroke: 'foliageDeep', sw: 0.07 },
+    ] },
+    { id: 'exoticbloom', size: 1.05, wonk: 0.03, paths: [
+      { d: EXOTICBLOOM_SHADOW, fill: 'shadow', opacity: 0.22 },
+      { d: EXOTICBLOOM_LEAVES, fill: 'foliageDeep' },
+      { d: EXOTICBLOOM_OUTER, fill: 'bloom' },
+      { d: EXOTICBLOOM_INNER, fill: 'cream' },
+      { d: EXOTICBLOOM_STAMEN, fill: 'bannerGold' },
+    ] },
+    // ── forest & desert fills (grass) ──
+    { id: 'bramble', size: 0.9, wonk: 0.04, paths: [
+      { d: BRAMBLE_TANGLE_OUT, stroke: 'foliageDeep', sw: 0.09, opacity: 0.95 },
+      { d: BRAMBLE_TANGLE_IN, stroke: 'woodDeep', sw: 0.06, opacity: 0.85, lit: true },
+      { d: BRAMBLE_THORNS, stroke: 'woodDeep', sw: 0.045, opacity: 0.85 },
+      { d: BRAMBLE_BERRIES, fill: 'bloodDry' },
+    ] },
+    { id: 'beehive', size: 0.8, wonk: 0.035, paths: [
+      { d: ringPath(0.18, 0.3, 0.36), fill: 'shadow', opacity: 0.25 },
+      { d: BEEHIVE_LIGHT, fill: 'th4' },
+      { d: BEEHIVE_DARK, fill: 'th2' },
+      { d: ringPath(0.05, -0.1, 0.16), fill: 'ink' },
+    ] },
+    { id: 'toadstoolring', size: 1.05, wonk: 0.03, paths: [
+      { d: TOADSTOOLRING.stems, fill: 'cream' },
+      ...cutout(TOADSTOOLRING.caps, 'woodDeep', 'woodLight'),
+    ] },
+    { id: 'quicksand', size: 1.1, paths: [
+      { d: ringPath(0.62), fill: 'sand', opacity: 0.3 },
+      { d: ringPath(0.42), fill: 'sandLit', opacity: 0.28 },
+      { d: ringPath(0.24), fill: 'sand', opacity: 0.35 },
+      { d: QUICKSAND_SPIRAL, stroke: 'sandLit', sw: 0.035, opacity: 0.5 },
+      { d: 'M-0.15 -0.05L0.08 0.18', stroke: 'woodDeep', sw: 0.09, opacity: 0.85 },
+    ] },
+    { id: 'digspot', size: 0.85, wonk: 0.035, paths: [
+      { d: DIGSPOT_MOUNDS, fill: 'dirtPath' },
+      { d: DIGSPOT_CRUMBS, fill: 'sand', opacity: 0.85 },
+      { d: DIGSPOT_XMARK, stroke: 'woodDeep', sw: 0.05, opacity: 0.5 },
+    ] },
+    // ── shore & beach fills (grass) ──
+
+    // PIER: wide contiguous deck run + seam ink lines + two post dots at the far
+    // end. Rare accent — clusters with rowboat/fishnet at a fishing spot.
+    { id: 'pier', size: 1.1, wonk: 0.035, paths: [
+      ...cutout(PIER_D, 'woodDeep', 'wood'),
+      { d: PIER_SEAMS, stroke: 'ink', sw: 0.03, opacity: 0.4 },
+      { d: PIER_POSTS, fill: 'woodDeep' },
+    ] },
+
+    // BUOY: small mooring float on open water, one glinting ripple beside it.
+    { id: 'buoy', size: 0.5, paths: [
+      { d: BUOY_BODY, fill: 'bloodDry' },
+      { d: BUOY_CAP, fill: 'cream' },
+      { d: BUOY_RIPPLE, stroke: 'waterHi', sw: 0.04, opacity: 0.5 },
+    ] },
+
+    // ALGAEMAT: low-opacity two-tone floating algae patch with darker flecks.
+    { id: 'algaemat', size: 0.9, paths: [
+      ...cutout(ALGAEMAT_D, 'mossBase', 'ms2').map((p) => ({ ...p, opacity: 0.7 })),
+      { d: ALGAEMAT_FLECKS, fill: 'mossInk', opacity: 0.6 },
+    ] },
+
+    // SEASHELLS: a small scatter of tiny cream/bloom fan shells, one ridged.
+    { id: 'seashells', size: 0.7, wonk: 0.03, paths: [
+      { d: SEASHELLS_CREAM_D, fill: 'cream', opacity: 0.7 },
+      { d: SEASHELLS_BLOOM_D, fill: 'bloom', opacity: 0.7 },
+      { d: SEASHELLS_RIDGES, stroke: 'ink', sw: 0.025, opacity: 0.4 },
+    ] },
+
+    // TIDEPOOL: a stone-ringed shallow pool with a glint and a resting starfish.
+    { id: 'tidepool', size: 0.85, paths: [
+      { d: TIDEPOOL_STONES, fill: 'rock' },
+      { d: TIDEPOOL_POOL_D, fill: 'waterShallow' },
+      { d: TIDEPOOL_GLINT, stroke: 'waterHi', sw: 0.04, opacity: 0.6 },
+      { d: TIDEPOOL_STARFISH, fill: 'bloom' },
+    ] },
+
+    // CORAL: washed-up antler coral chunk, muted two-tone branches on sand.
+    { id: 'coral', size: 0.75, wonk: 0.03, paths: [
+      { d: CORAL_SAND_D, fill: 'sand', opacity: 0.8 },
+      { d: CORAL_BRANCHES_D, stroke: 'bloom', sw: 0.11, opacity: 0.65 },
+      { d: CORAL_BRANCHES_D, stroke: 'cream', sw: 0.06, opacity: 0.5, lit: true },
+    ] },
+
+    // SANDCASTLE: two-tone keep + turret pair, one stick-flag stroke. Destructible.
+    { id: 'sandcastle', size: 0.85, wonk: 0.03, paths: [
+      ...cutout(SANDCASTLE_D, 'sand', 'sandLit'),
+      { d: SANDCASTLE_FLAG, stroke: 'woodDeep', sw: 0.05 },
+    ] },
+    // ── state pairs II (grass) ──
+    // HARVESTED berry bush: `berrybush`'s exact BERRYBUSH_D silhouette, no
+    // berries — the picked-clean tell — plus two small pinch-notch strokes
+    // where clusters were plucked. State pair with `berrybush`.
+    { id: 'berrypicked', size: 1, wonk: 0.04, paths: [
+      ...cutout(BERRYBUSH_D, 'foliageDeep', 'foliage'),
+      { d: BERRYPICKED_NOTCHES, stroke: 'foliageDeep', sw: 0.05, opacity: 0.7 },
+    ] },
   ]),
   stone: withVariants([
     { id: 'rubble', size: 1, paths: [
@@ -2277,6 +2837,75 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: LADDER_RAILS, stroke: 'wood', sw: 0.09 },
       { d: LADDER_RUNGS, stroke: 'woodDeep', sw: 0.06 },
     ] },
+    // ── cave / underground (stone) ──
+    { id: 'stalagmite', size: 1, wonk: 0.035, paths: [
+      ...cutout(STALAGMITE_OUTER, 'rockDeep', 'rock'),
+      { d: STALAGMITE_MID, fill: 'stoneBase', opacity: 0.55 },
+      { d: STALAGMITE_TIP, fill: 'cream', opacity: 0.85 },
+    ] },
+    { id: 'stalactite', size: 0.8, paths: [
+      { d: STALACTITE_SHADOW, fill: 'shadow', opacity: 0.3 },
+      ...cutout(STALACTITE_TIP, 'rockDeep', 'cream'),
+    ] },
+    { id: 'crystalcluster', size: 0.85, wonk: 0.03, paths: [
+      { d: CRYSTALCLUSTER_SHADOW, fill: 'shadow', opacity: 0.24 },
+      ...cutout(CRYSTALCLUSTER_D, 'bannerBlueDk', 'bannerBlue'),
+      { d: CRYSTALCLUSTER_GLINT, stroke: 'cream', sw: 0.05, opacity: 0.85 },
+    ] },
+    { id: 'cavepool', size: 1.05, paths: [
+      { d: CAVEPOOL_D, fill: 'waterDeep' },
+      { d: CAVEPOOL_RIM, stroke: 'waterHi', sw: 0.045, opacity: 0.6 },
+      { d: CAVEPOOL_DOTS, fill: 'cream', opacity: 0.5 },
+    ] },
+    { id: 'glowworms', size: 0.9, wonk: 0.03, paths: [
+      { d: ringPath(0.55, 0.02, -0.02), fill: 'glowFungus', opacity: 0.12 },
+      { d: GLOWWORMS_DOTS_D, fill: 'glowFungus', opacity: 0.85 },
+    ] },
+    { id: 'flowstone', size: 1, wonk: 0.04, paths: [
+      ...cutout(FLOWSTONE_D, 'rock', 'stoneBase'),
+      { d: FLOWSTONE_RIBS, stroke: 'mortarInk', sw: 0.035, opacity: 0.4 },
+    ] },
+    // ── city & dungeon furniture (stone) ──
+    { id: 'sarcophagus', size: 1.05, wonk: 0.03, paths: [
+      ...cutout(SARCOPHAGUS_BODY, 'rockDeep', 'rock'),
+      { d: SARCOPHAGUS_FIGURE, fill: 'stoneBase' },
+      { d: SARCOPHAGUS_CHIP, fill: 'stoneDark' },
+    ] },
+    { id: 'bookshelf', size: 1, wonk: 0.03, paths: [
+      { d: BOOKSHELF_FRAME, fill: 'woodDeep' },
+      { d: BOOKSHELF_ROWS, stroke: 'ink', sw: 0.04, opacity: 0.7 },
+      { d: BOOKSHELF_BLUE, fill: 'bannerBlue' },
+      { d: BOOKSHELF_BLOOD, fill: 'bloodDry' },
+      { d: BOOKSHELF_TH2, fill: 'th2' },
+    ] },
+    { id: 'weaponrack', size: 0.9, wonk: 0.03, paths: [
+      ...cutout(WEAPONRACK_FRAME, 'woodDeep', 'wood'),
+      { d: WEAPONRACK_HAFTS, stroke: 'woodDeep', sw: 0.09 },
+      { d: WEAPONRACK_BLADES, stroke: 'steel', sw: 0.06 },
+    ] },
+    { id: 'hoard', size: 0.85, wonk: 0.03, paths: [
+      { d: HOARD_BASE, fill: 'woodDeep' },
+      { d: HOARD_COINS, fill: 'bannerGold' },
+      { d: HOARD_GEM, fill: 'bannerBlue' },
+      { d: HOARD_GLINT, fill: 'cream' },
+    ] },
+    { id: 'floorrunes', size: 1, wonk: 0.03, paths: [
+      { d: FLOORRUNES_TICKS, stroke: 'mortarInk', sw: 0.05, opacity: 0.55 },
+      { d: FLOORRUNES_GLYPH, stroke: 'bannerBlue', sw: 0.06, opacity: 0.5 },
+    ] },
+    // ── state pairs II (stone) ──
+    // UNLIT brazier: `brazier`'s exact iron legs/rim/bowl geometry, but the
+    // coal bed reads cold (stoneDark, no ember roles) and the flame is gone,
+    // left with a single pale ash fleck. State pair with `brazier`.
+    // lit rim arc up-left (judge pass: all-dark iron + char vanished on the
+    // dark floor — same fix as `grate`); the missing glow stays the state tell.
+    { id: 'braziercold', size: 0.85, wonk: 0.03, paths: [
+      { d: BRAZIER_LEGS, stroke: 'lampPost', sw: 0.11 },
+      { d: BRAZIER_RIM, fill: 'lampPost' },
+      { d: 'M-0.49 -0.1A0.5 0.5 0 0 1 -0.1 -0.49', stroke: 'rockDeep', sw: 0.06, opacity: 0.9 },
+      { d: BRAZIER_BOWL, fill: 'stoneDark' },
+      { d: BRAZIERCOLD_ASH, fill: 'cream', opacity: 0.6 },
+    ] },
   ]),
   plaza: withVariants([
     { id: 'crate', size: 1, paths: [
@@ -2349,6 +2978,48 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       ...cutout(CELLARHATCH_FRAME, 'rockDeep', 'rock'),
       ...cutout(CELLARHATCH_LEAVES, 'woodDeep', 'wood'),
       { d: CELLARHATCH_HANDLE, stroke: 'ink', sw: 0.05 },
+    ] },
+    // ── city & dungeon furniture (plaza) ──
+    { id: 'marketstall', size: 1.05, wonk: 0.03, paths: [
+      { d: MARKETSTALL_SHADOW, fill: 'shadow', opacity: 0.22 },
+      ...cutout(MARKETSTALL_CANOPY_BASE, 'bannerBlueDk', 'bannerBlue'),
+      { d: MARKETSTALL_STRIPES, fill: 'cream' },
+      { d: MARKETSTALL_POSTS, fill: 'woodDeep' },
+      { d: MARKETSTALL_CRATE, fill: 'wood' },
+    ] },
+    { id: 'bench', size: 1, wonk: 0.03, paths: [
+      { d: BENCH_SHADOW, fill: 'shadow', opacity: 0.25 },
+      ...cutout(BENCH_PLANKS, 'woodDeep', 'wood'),
+      { d: BENCH_FRAME, stroke: 'ink', sw: 0.09, opacity: 0.7 },
+    ] },
+    { id: 'awning', size: 0.95, wonk: 0.03, paths: [
+      { d: AWNING_BASE, fill: 'bannerGold' },
+      { d: AWNING_STRIPES, fill: 'cream' },
+      { d: AWNING_SCALLOPS, fill: 'bannerGold' },
+      { d: AWNING_TIES, stroke: 'woodDeep', sw: 0.05 },
+    ] },
+    { id: 'hanglantern', size: 0.65, wonk: 0.03, paths: [
+      { d: HANGLANTERN_SHADOW, fill: 'shadow', opacity: 0.28 },
+      { d: HANGLANTERN_CORD, stroke: 'lampPost', sw: 0.05 },
+      { d: HANGLANTERN_RING, fill: 'lampPost' },
+      { d: HANGLANTERN_GLOW, fill: 'lampGlow' },
+    ] },
+    // ── state pairs II (plaza) ──
+    // SMASHED crate: `crate`'s exact woodDeep/wood tones as splintered plank
+    // slivers scattered across its old footprint, one intact corner surviving
+    // whole, a scatter of thin ink splinter flecks. State pair with `crate`.
+    { id: 'cratedebris', size: 1, paths: [
+      ...cutout(CRATEDEBRIS_PLANKS, 'woodDeep', 'wood'),
+      { d: CRATEDEBRIS_CORNER, fill: 'wood' },
+      { d: CRATEDEBRIS_FLECKS, stroke: 'ink', sw: 0.04, opacity: 0.6 },
+    ] },
+    // SHATTERED planter pot: `pot`'s exact woodDeep/woodLight ceramic tones as
+    // an angular shard ring around its old footprint, a spilled foliage sprig
+    // tipped out, and a soft dirtPath soil blob. State pair with `pot`.
+    { id: 'potdebris', size: 0.9, paths: [
+      { d: POTDEBRIS_SOIL, fill: 'dirtPath' },
+      ...cutout(POTDEBRIS_SHARDS, 'woodDeep', 'woodLight'),
+      { d: POTDEBRIS_SPRIG, fill: 'foliage' },
     ] },
   ]),
 }
