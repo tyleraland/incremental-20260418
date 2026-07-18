@@ -95,6 +95,20 @@ export const PAPER_PALETTE = {
   bannerGold:    '#c7a54a',   // banner trim / crest
   pineLit:       '#41562a',   // conifer highlight (over foliageDeep)
 
+  // ── Wilderness prop materials (biome scatter sets — render/props.ts) ───────
+  // Flat roles for the desert/mountain/swamp/dungeon dressing props. Same
+  // rules as every role: opaque hex, translucency at the use site.
+  sand:       '#9c8656',   // dry sand / dune ripple base
+  sandLit:    '#bfa877',   // lit sand face (dune crests, cracked-earth plates)
+  snow:       '#d8e2e4',   // snow patch / icicle lit face
+  snowShade:  '#8fa3ab',   // snow shade side
+  ember:      '#d98a3a',   // live flame / coals (torches, campfires)
+  emberDeep:  '#8f4a1c',   // flame base / dying coals
+  murk:       '#39493c',   // stagnant swamp water
+  murkDeep:   '#242e20',   // deep murk / bog shadow
+  glowFungus: '#6fd0b7',   // bioluminescent caps / will-o'-wisp glow
+  bloodDry:   '#571f1a',   // old dried bloodstain (dungeon decal)
+
   // ── City ground surfaces (render/terrain.tsx spec consumption) ─────────────
   // Paved regions of a city's surface plane read as distinct materials over the
   // biome ground: warm cobbled roads, a pale flagstone plaza, packed-dirt yards.

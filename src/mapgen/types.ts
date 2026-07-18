@@ -236,7 +236,7 @@ export interface MapSpec {
 
 export const THEME_TAGS = [
   'plains', 'forest', 'beach', 'water', 'mountain', 'desert',
-  'ruins', 'city', 'dungeon', 'haunted', 'volcanic', 'arcane',
+  'ruins', 'city', 'dungeon', 'haunted', 'volcanic', 'arcane', 'swamp',
 ] as const
 export type ThemeTag = (typeof THEME_TAGS)[number]
 
