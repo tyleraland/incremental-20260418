@@ -3,10 +3,10 @@ import { useGameStore, waveComposition, locationBarriers, type Location, type Un
 import { expectedRoundGapMs, glideMs } from '@/render/cadence'
 import { getDerivedStats } from '@/lib/stats'
 import { MONSTER_REGISTRY } from '@/data/monsters'
-import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
+import { getAppearance, initials, monsterBodyShape, weaponForClass, biomeForLocation, themesForLocation, CLASS_ICON, type Appearance, type BodyShape, type Weapon, type Biome } from '@/render/appearance'
 import { TOKEN_SKINS, SKIN_CARRIES_FACING, ARENA_SKINS, FX_SKINS, type BattleSkin } from '@/render/skins'
 import { hashString, type Rect } from '@/render/authoring'
-import { generateForLocationCached, specBarriers, type MapSpec } from '@/mapgen'
+import { generateForLocationCached, specBarriers, type MapSpec, type ThemeTag } from '@/mapgen'
 import { prewarmTerrain } from '@/render/terrain'
 import { partyProficiencyTags } from '@/lib/proficiencies'
 import { UnitDetailOverlay } from '@/components/BattleUnitSheet'
@@ -243,7 +243,7 @@ interface ZoomCtl { size: number; min: number; max: number; set: (n: number) => 
 // on a chip repositions it instead of panning; empty-ground drags still pan.
 interface RepositionCtl { begin: (cid: string) => void; move: (cid: string, world: Vec2) => void; end: (cid: string) => void }
 
-function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, mapSpec, sidePx = null, onPanStart, onPanMove, onPanEnd, onPinch, reposition }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; mapSpec?: MapSpec; sidePx?: number | null; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void; reposition?: RepositionCtl }) {
+function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, groundOverlay, panResetKey, panEnabled = true, mapCols = cam.size, mapRows = cam.size, perimeter = false, framed = true, skin = 'circle', biome = 'grass', terrainSeed = 0, terrainAvoid, terrainThemes, mapSpec, sidePx = null, onPanStart, onPanMove, onPanEnd, onPinch, reposition }: { cam: Cam; barriers: Barrier[]; children: React.ReactNode; centerY?: number; zoom?: ZoomCtl; overlay?: React.ReactNode; groundOverlay?: React.ReactNode; panResetKey?: string | number; panEnabled?: boolean; mapCols?: number; mapRows?: number; perimeter?: boolean; framed?: boolean; skin?: BattleSkin; biome?: Biome; terrainSeed?: number; terrainAvoid?: Rect[]; terrainThemes?: ThemeTag[]; mapSpec?: MapSpec; sidePx?: number | null; onPanStart?: () => void; onPanMove?: (worldDx: number, worldDy: number) => void; onPanEnd?: () => void; onPinch?: (active: boolean) => void; reposition?: RepositionCtl }) {
   const arenaSkin = ARENA_SKINS[skin]
   const ground = arenaSkin.grounds?.[biome]
   // The baked terrain bitmap decodes async and fades in; the base ground/grid
@@ -256,8 +256,8 @@ function Arena({ cam, barriers, children, centerY = CENTER_Y, zoom, overlay, gro
   // inside the ground layer. When a skin carries it, it REPLACES the rect
   // barrier divs and the classic perimeter ring below. §mapgen locations hand
   // it their baked MapSpec so the surface/scatter planes drive the dressing.
-  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, spec: mapSpec, onReady: onTerrainReady })
-  const terrainSig = terrainEl ? `${biome}|${mapCols}x${mapRows}|${terrainSeed}|${mapSpec ? mapSpec.recipe + mapSpec.seed : ''}` : ''
+  const terrainEl = arenaSkin.terrain?.({ biome, cols: mapCols, rows: mapRows, barriers, seed: terrainSeed, rim: perimeter, avoid: terrainAvoid, themes: terrainThemes, spec: mapSpec, onReady: onTerrainReady })
+  const terrainSig = terrainEl ? `${biome}|${mapCols}x${mapRows}|${terrainSeed}|${(terrainThemes ?? []).join(',')}|${mapSpec ? mapSpec.recipe + mapSpec.seed : ''}` : ''
   useEffect(() => { if (terrainSig) setTerrainReady(false) }, [terrainSig])
   // Reveal the WHOLE field — terrain + ground + grid + tokens — atomically once
   // the terrain bitmap is drawn, so nothing renders on a bare surface ahead of
@@ -1045,7 +1045,7 @@ function Minimap({ battle, cam, followId, onPick }: { battle: BattleState; cam: 
   )
 }
 
-function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity = false, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls, repositionEnabled, onReposition }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; mapSpec?: MapSpec; peacefulCity?: boolean; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean; repositionEnabled?: boolean; onReposition?: (combatantId: string, pos: Vec2) => void }) {
+function LiveBattle({ battle, portals, biome, terrainSeed, terrainThemes, mapSpec, peacefulCity = false, onFollow, inspectRequest, closeNonce, onInspect, insetTopControls, repositionEnabled, onReposition }: { battle: BattleState; portals?: Location['portals']; biome?: Biome; terrainSeed?: number; terrainThemes?: ThemeTag[]; mapSpec?: MapSpec; peacefulCity?: boolean; onFollow?: (unitId: string) => void; inspectRequest?: BattleInspectRequest | null; closeNonce?: number; onInspect?: (unitId: string) => void; insetTopControls?: boolean; repositionEnabled?: boolean; onReposition?: (combatantId: string, pos: Vec2) => void }) {
   const units = useGameStore((s) => s.units)
   const skin  = useGameStore((s) => s.battleSkin)
   const fx    = FX_SKINS[skin]
@@ -1693,6 +1693,7 @@ function LiveBattle({ battle, portals, biome, terrainSeed, mapSpec, peacefulCity
           biome={biome}
           terrainSeed={terrainSeed}
           terrainAvoid={terrainAvoid}
+          terrainThemes={terrainThemes}
           mapSpec={mapSpec}
           panEnabled
           onPanStart={beginPan}
@@ -1920,7 +1921,7 @@ export function Preview({ location }: { location: Location | null }) {
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 flex justify-center items-start">
-        <Arena cam={cam} barriers={locationBarriers(location)} skin={skin} biome={biomeForLocation(location)} terrainSeed={hashString(location?.id ?? '')}>
+        <Arena cam={cam} barriers={locationBarriers(location)} skin={skin} biome={biomeForLocation(location)} terrainSeed={hashString(location?.id ?? '')} terrainThemes={themesForLocation(location)}>
           {enemyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={false} skin={skin} bodyShape={c.bodyShape} />)}
           {partyChips.map((c) => <PreviewChip key={c.key} cam={cam} pos={c.pos} label={c.label} name={c.name} title={c.title} isPlayer={true} skin={skin} weapon={c.weapon} />)}
           {(party.length === 0 && foes.length === 0) && (
@@ -1960,6 +1961,7 @@ export function prewarmLocationTerrain(location: Location, units: Unit[]): void 
     seed: hashString(location.id),
     rim: true,
     avoid: portalKeepClear(location.portals),
+    themes: themesForLocation(location),
     spec,
   })
 }
@@ -2002,6 +2004,6 @@ export function BattleView({ locationId, onFollow, inspectRequest, closeNonce, o
     ? generateForLocationCached(location, { proficiencies: partyProficiencyTags(units.filter((u) => u.locationId === location.id)) }).spec
     : undefined
   return battle
-    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} mapSpec={mapSpec} peacefulCity={!!location?.traits.includes('city')} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} repositionEnabled={repositionEnabled} onReposition={onReposition} />
+    ? <LiveBattle key={locationId ?? 'none'} battle={battle} portals={location?.portals} biome={biomeForLocation(location)} terrainSeed={hashString(locationId ?? '')} terrainThemes={themesForLocation(location)} mapSpec={mapSpec} peacefulCity={!!location?.traits.includes('city')} onFollow={onFollow} inspectRequest={inspectRequest} closeNonce={closeNonce} onInspect={onInspect} insetTopControls={insetTopControls} repositionEnabled={repositionEnabled} onReposition={onReposition} />
     : <Preview location={location} />
 }

@@ -4,7 +4,7 @@ import { propMarkup, scatterArchetype } from '@/render/terrain'
 import { buildingMarkup, BUILDING_LOOKS, ROOF_COVERINGS } from '@/render/buildings'
 import { fanCobble } from '@/render/inked'
 import { PAPER_PALETTE } from '@/render/palette'
-import { generateMap, specBarriers, SCATTER_KINDS, type BarrierMaterial, type MapSpec } from '@/mapgen'
+import { generateMap, specBarriers, SCATTER_KINDS, type BarrierMaterial, type MapSpec, type ThemeTag } from '@/mapgen'
 import { FIELD_RECIPE } from '@/mapgen/recipes/field'
 import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
 import { CITY_RECIPE } from '@/mapgen/recipes/city'
@@ -30,6 +30,18 @@ const CREATURES: BodyShape[] = SHAPES.filter((s) => s !== 'humanoid')
 const TONES: Tone[] = ['player', 'enemy', 'neutral', 'casting']
 const WEAPONS: Weapon[] = ['sword', 'dagger', 'bow', 'staff']
 const BIOMES: Biome[] = ['grass', 'stone', 'plaza']
+
+// Themed legacy-terrain review panels: the biome scatter pool cut to one theme
+// set — exactly what a hand-authored location with those traits renders.
+const THEMED_FIELDS: { label: string; biome: Biome; themes: ThemeTag[] }[] = [
+  { label: 'plains', biome: 'grass', themes: ['plains'] },
+  { label: 'forest', biome: 'grass', themes: ['forest'] },
+  { label: 'desert', biome: 'grass', themes: ['desert'] },
+  { label: 'shore/water', biome: 'grass', themes: ['water', 'beach'] },
+  { label: 'swamp', biome: 'grass', themes: ['swamp'] },
+  { label: 'dungeon', biome: 'stone', themes: ['dungeon'] },
+  { label: 'mountain', biome: 'stone', themes: ['mountain'] },
+]
 const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-up
 // Circle-skin cell text only (paper creatures are silhouette-only anyway).
 const GLYPH = (s: BodyShape): string => (s === 'humanoid' ? '⚔' : s.slice(0, 2).toUpperCase())
@@ -271,6 +283,25 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
               <span className="text-[9px] text-neutral-500">light: {k}</span>
             </div>
           ))}
+        </Section>
+      )}
+
+      {terrain && (
+        <Section title="themed terrain (legacy trait filter: the biome's scatter pool cut to one theme set)">
+          {THEMED_FIELDS.map((t, i) => {
+            const g = arena.grounds?.[t.biome]
+            return (
+              <div key={t.label} className="flex flex-col items-center gap-1">
+                <div
+                  className="w-56 h-56 rounded border border-neutral-800 relative overflow-hidden"
+                  style={{ ...arena.surface, ...(g ? { backgroundImage: g.image, backgroundSize: `${g.cellsPerTile * 14}px` } : null) }}
+                >
+                  {terrain({ biome: t.biome, cols: 16, rows: 16, barriers: TERRAIN_SAMPLE, seed: 11 + i * 1000, rim: true, themes: t.themes })}
+                </div>
+                <span className="text-[9px] text-neutral-500">{t.label}</span>
+              </div>
+            )
+          })}
         </Section>
       )}
 

@@ -50,6 +50,12 @@ export interface TerrainProps {
   // vanish under the lake instead of reading as stone; hedges go green).
   // Absent → the classic barrier-derived dressing, byte-identical to before.
   spec?: MapSpec
+  // LEGACY-path theme filter (locations WITHOUT a spec): the location's traits
+  // projected onto ThemeTags (appearance.ts themesForLocation), so hand-authored
+  // maps keep biome-coherent scatter (no cactus on a plains field). Spec maps
+  // ignore this — they filter by the spec's own regionTags. Empty/absent = no
+  // filter (gallery/tests keep the full candidate pool).
+  themes?: ThemeTag[]
   // Fires once the baked bitmap is decoded and drawn (the moment it fades in),
   // so the caller can reveal the base ground/grid IN SYNC with it instead of
   // popping them in early under a not-yet-ready terrain. Must be stable (the
@@ -351,13 +357,15 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     })
   } else {
     // seeded placement clear of barrier boxes (+margin) and the caller's
-    // keep-clear rects (portals). No spec → no map themes, so no theme filter;
+    // keep-clear rects (portals). No spec → the location's trait-derived
+    // `themes` stand in for regionTags (absent/empty = keep everything);
     // weight + rotate policy still apply (cheap, and keeps looks consistent).
     const keepClear: Rect[] = [...p.barriers, ...(p.avoid ?? [])]
+    const themedIdx = themeFilteredCands(variants, allIdx, p.themes ?? [])
     const propCount = Math.max(8, Math.min(64, Math.round((cols * rows) / 45)))
     props = scatter(cols, rows, seed + 9000, propCount, keepClear, 0.6).map((pt: Pt, i: number) => {
       const s = seed + 9000 + i * 379
-      const v = weightedPick(variants, allIdx, hash01(s))
+      const v = weightedPick(variants, themedIdx, hash01(s))
       return {
         v,
         x: r2(pt.x),
@@ -416,6 +424,7 @@ const sigOf = (p: TerrainProps) =>
   `${p.seed}|${p.biome}|${p.cols}x${p.rows}|${p.rim}|` +
   p.barriers.map((b) => `${b.x},${b.y},${b.w},${b.h},${b.kind ?? 'w'}`).join(';') + '|' +
   (p.avoid ?? []).map((r) => `${r.x},${r.y},${r.w},${r.h}`).join(';') + '|' +
+  (p.themes ?? []).join(',') + '|' +
   // a spec is fully determined by (recipe, seed, version) — save = seed
   (p.spec ? `${p.spec.recipe}:${p.spec.seed}:v${p.spec.specVersion}` : '')
 

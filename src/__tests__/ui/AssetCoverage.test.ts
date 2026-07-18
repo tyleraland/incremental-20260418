@@ -95,8 +95,11 @@ describe('known-covered themes report their capabilities', () => {
 })
 
 describe('themesMissingEdge helper', () => {
-  it('flags a plains-only theme set (plains has no edge/ribbon prop today)', () => {
-    expect(themesMissingEdge(['plains'])).toContain('plains')
+  it('plains no longer misses an edge prop (fencerun closed the gap)', () => {
+    expect(themesMissingEdge(['plains'])).toEqual([])
+  })
+  it('still flags a theme set with no edge/ribbon prop (volcanic has none)', () => {
+    expect(themesMissingEdge(['volcanic'])).toContain('volcanic')
   })
   it('does not flag a theme set that includes water', () => {
     expect(themesMissingEdge(['water'])).toEqual([])

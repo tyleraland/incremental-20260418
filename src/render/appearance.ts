@@ -2,6 +2,7 @@ import type { Combatant, Element } from '@/engine'
 import { MONSTER_REGISTRY } from '@/data/monsters'
 import { NPC_REGISTRY } from '@/data/npcs'
 import type { MonsterSize } from '@/types'
+import { THEME_TAGS, type ThemeTag } from '@/mapgen'
 
 // ── Appearance resolver ──────────────────────────────────────────────────────
 //
@@ -183,4 +184,25 @@ export function biomeForLocation(loc: { traits?: string[] } | null | undefined):
   if (traits.includes('city')) return 'plaza'
   if (STONE_TRAITS.some((t) => traits.includes(t))) return 'stone'
   return 'grass'
+}
+
+// Location traits → mapgen ThemeTags, for theme-filtering the LEGACY (no-spec)
+// scatter pick (terrain.tsx) the same way spec regionTags filter generated
+// maps — so a plains field never grows a cactus and an arena stays bare stone.
+// Non-theme traits that still imply a look are aliased; everything else drops.
+// Empty result = no filter (the never-render-nothing fallback upstream).
+const TRAIT_THEME_ALIAS: Record<string, ThemeTag[]> = {
+  arena: ['dungeon', 'ruins'],
+  cliff: ['mountain'],
+  underground: ['dungeon'],
+  cave: ['dungeon'],
+}
+export function themesForLocation(loc: { traits?: string[] } | null | undefined): ThemeTag[] {
+  const traits = loc?.traits ?? []
+  const out = new Set<ThemeTag>()
+  for (const t of traits) {
+    if ((THEME_TAGS as readonly string[]).includes(t)) out.add(t as ThemeTag)
+    for (const alias of TRAIT_THEME_ALIAS[t] ?? []) out.add(alias)
+  }
+  return [...out]
 }
