@@ -84,6 +84,14 @@ tree/bush/rock/stump/flower, never `reed`). Reachability is pinned by
 `AssetCatalog.test.ts`. Decor-ring-only assets (`lamppost`/`banner`, placed by
 the plaza landmark ring) intentionally carry empty `kinds`.
 
+Theme filtering applies on BOTH placement paths: spec maps filter by the
+spec's `regionTags`; legacy (no-spec) locations filter by their traits
+projected onto ThemeTags (`themesForLocation` in `appearance.ts`, aliases:
+arena→dungeon/ruins, cliff→mountain, underground/cave→dungeon) — so a plains
+field never grows a cactus. Props tagged `'on-water'` (lilypad/ripple) are
+additionally skipped on legacy maps entirely (no water plane to float on).
+Review themed pools in `?gallery=1` → "themed terrain".
+
 **Tag the prop's PLACEMENT so it belongs with the others (strongly encouraged).**
 Beyond `kinds`, `PROP_META` carries a declarative placement schema the render's
 scatter pick READS today (weighted + theme-filtered + rotation-aware — a rare

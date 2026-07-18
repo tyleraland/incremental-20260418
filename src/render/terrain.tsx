@@ -361,7 +361,10 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     // `themes` stand in for regionTags (absent/empty = keep everything);
     // weight + rotate policy still apply (cheap, and keeps looks consistent).
     const keepClear: Rect[] = [...p.barriers, ...(p.avoid ?? [])]
-    const themedIdx = themeFilteredCands(variants, allIdx, p.themes ?? [])
+    // 'on-water' props (lilypad/ripple) only make sense floating ON a water
+    // surface — legacy maps have no surface plane, so drop them outright.
+    const dryIdx = allIdx.filter((i) => !variants[i].tags?.includes('on-water'))
+    const themedIdx = themeFilteredCands(variants, dryIdx.length ? dryIdx : allIdx, p.themes ?? [])
     const propCount = Math.max(8, Math.min(64, Math.round((cols * rows) / 45)))
     props = scatter(cols, rows, seed + 9000, propCount, keepClear, 0.6).map((pt: Pt, i: number) => {
       const s = seed + 9000 + i * 379
