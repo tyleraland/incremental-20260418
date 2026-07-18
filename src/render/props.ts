@@ -1611,7 +1611,7 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     { id: 'lever', size: 0.7, wonk: 0.03, paths: [
       ...cutout(LEVER_PLATE, 'rockDeep', 'rock'),
       { d: LEVER_SLOT, stroke: 'ink', sw: 0.07, opacity: 0.8 },
-      { d: LEVER_HANDLE, stroke: 'lampPost', sw: 0.09 },
+      { d: LEVER_HANDLE, stroke: 'steel', sw: 0.09 },
       { d: LEVER_KNOB, fill: 'bannerGold' },
     ] },
     // pressure FLOORPLATE: square dark recess with the plate inset a step
@@ -1628,15 +1628,20 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: CHESTOPEN_LID, fill: 'woodLight' },
       ...cutout(CHEST_D, 'woodDeep', 'wood'),
       { d: CHESTOPEN_HOLLOW, fill: 'ink' },
+      // the closed chest's signature center strap continues across the flipped
+      // lid, so open reads as the SAME chest opened (judge pass)
+      { d: 'M0 -0.74L0 -0.38', stroke: 'ink', sw: 0.07, opacity: 0.7 },
       { d: CHESTOPEN_GLINTS, fill: 'bannerGold' },
     ] },
     // SHATTERED urn: `urn`'s ceramic tones as an angular shard ring around a
     // dark spill where URN_BIG stood, one surviving rim-arc shard. State pair
     // with `urn`.
+    // spill damped + rim restroked in the urn's own lit ceramic (judge pass:
+    // both ink anchors died on the dark floor, leaving unanchored chips)
     { id: 'urnshards', size: 0.9, wonk: 0.04, paths: [
-      { d: URNSHARDS_SPILL, fill: 'ink', opacity: 0.75 },
+      { d: URNSHARDS_SPILL, fill: 'ink', opacity: 0.4 },
       ...cutout(URNSHARDS_D, 'woodDeep', 'woodLight'),
-      { d: URNSHARDS_RIM, stroke: 'ink', sw: 0.05, opacity: 0.55 },
+      { d: URNSHARDS_RIM, stroke: 'woodLight', sw: 0.06, opacity: 0.85 },
     ] },
 
     // ── pickups ──
@@ -1657,10 +1662,12 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: POTION_CORK, fill: 'cream' },
       { d: POTION_GLINT, stroke: 'cream', sw: 0.05, opacity: 0.55 },
     ] },
+    // steel body, not lampPost (judge pass: near-black iron vanished on the
+    // dark tile — the one prop a player must SPOT); a dark under-copy keeps depth.
     { id: 'key', size: 0.62, wonk: 0.025, paths: [
-      { d: KEY_FRAME, stroke: 'lampPost', sw: 0.13 },
-      { d: KEY_TEETH, fill: 'lampPost' },
-      { d: KEY_HI, stroke: 'steel', sw: 0.06, opacity: 0.85, lit: true },
+      { d: KEY_FRAME, stroke: 'lampPost', sw: 0.16 },
+      { d: KEY_FRAME, stroke: 'steel', sw: 0.1, lit: true },
+      { d: KEY_TEETH, fill: 'steel' },
     ] },
   ]),
   plaza: withVariants([
