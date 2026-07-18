@@ -100,6 +100,10 @@ const MOTTLE_SHADES: Record<Biome, [string, string]> = {
 const THEME_GROUND: { theme: ThemeTag; tint: string; tintOp: number; mottles: [string, string] }[] = [
   { theme: 'desert', tint: P.sand, tintOp: 0.4, mottles: [P.sand, P.dirtPath] },
   { theme: 'swamp', tint: P.murkDeep, tintOp: 0.55, mottles: [P.murk, P.mossInk] },
+  // snow BEFORE mountain: a snowy mountain map reads snow-first
+  { theme: 'snow', tint: P.snowShade, tintOp: 0.45, mottles: [P.stoneLight, P.stoneDark] },
+  { theme: 'cave', tint: P.ink, tintOp: 0.28, mottles: [P.stoneDark, P.mossInk] },
+  { theme: 'jungle', tint: P.foliageDeep, tintOp: 0.35, mottles: [P.mossBase, P.foliageDeep] },
   { theme: 'volcanic', tint: P.emberDeep, tintOp: 0.2, mottles: [P.stoneDark, P.bloodDry] },
   { theme: 'mountain', tint: P.snowShade, tintOp: 0.25, mottles: [P.stoneLight, P.stoneDark] },
   { theme: 'haunted', tint: P.stoneDark, tintOp: 0.3, mottles: [P.stoneDark, P.mossInk] },
@@ -385,12 +389,14 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       // its input if it would empty the pool — never render nothing.
       const themed = themeFilteredCands(variants, ARCHETYPE_INDEX(p.biome, it.kind), themes)
       const cands = roleFilteredCands(variants, themed, it.intent)
-      const v = weightedPick(variants, cands, hash01(it.seed))
+      const v = weightedPick(variants, cands, hash01(it.seed), themes)
+      const sj = variants[v].scaleJitter
+      const jit = sj ? sj[0] + hash01(it.seed + 47) * (sj[1] - sj[0]) : 1
       return {
         v,
         x: r2(it.x),
         y: r2(rows - it.y),
-        s: r2(it.size * variants[v].size),
+        s: r2(it.size * variants[v].size * jit),
         rot: r2(rotForPolicy(variants[v].rotate, hash01(it.seed + 19))),
         flip: hash01(it.seed + 31) < 0.5,
       }
@@ -401,19 +407,21 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
     // `themes` stand in for regionTags (absent/empty = keep everything);
     // weight + rotate policy still apply (cheap, and keeps looks consistent).
     const keepClear: Rect[] = [...p.barriers, ...(p.avoid ?? [])]
-    // 'on-water' props (lilypad/ripple) only make sense floating ON a water
-    // surface — legacy maps have no surface plane, so drop them outright.
-    const dryIdx = allIdx.filter((i) => !variants[i].tags?.includes('on-water'))
+    // 'water-surface'-layer props (lilypad/ripple) only make sense floating ON
+    // water — legacy maps have no surface plane, so drop them outright.
+    const dryIdx = allIdx.filter((i) => variants[i].layer !== 'water-surface')
     const themedIdx = themeFilteredCands(variants, dryIdx.length ? dryIdx : allIdx, p.themes ?? [])
     const propCount = Math.max(8, Math.min(64, Math.round((cols * rows) / 45)))
     props = scatter(cols, rows, seed + 9000, propCount, keepClear, 0.6).map((pt: Pt, i: number) => {
       const s = seed + 9000 + i * 379
-      const v = weightedPick(variants, themedIdx, hash01(s))
+      const v = weightedPick(variants, themedIdx, hash01(s), p.themes)
+      const sj = variants[v].scaleJitter
+      const jit = sj ? sj[0] + hash01(s + 47) * (sj[1] - sj[0]) : 1
       return {
         v,
         x: r2(pt.x),
         y: r2(rows - pt.y),
-        s: r2((0.55 + hash01(s + 7) * 0.5) * variants[v].size),
+        s: r2((0.55 + hash01(s + 7) * 0.5) * variants[v].size * jit),
         rot: r2(rotForPolicy(variants[v].rotate, hash01(s + 19))),
         flip: hash01(s + 31) < 0.5,
       }

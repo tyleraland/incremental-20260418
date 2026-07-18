@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TERRAIN_PROPS } from '@/render/props'
+import { TERRAIN_PROPS, SCATTER_SETS } from '@/render/props'
 import { listAssets, assetKey, type AssetCategory } from '@/render/assets'
 import { SCATTER_KINDS } from '@/mapgen'
 import type { Biome } from '@/render/appearance'
@@ -65,6 +65,40 @@ describe('scatter reachability (no authored prop goes dark on generated maps)', 
         expect(def.weight, `${biome}/${def.id} lost weight`).toBe(parent.weight)
         expect(def.rotate, `${biome}/${def.id} lost rotate`).toBe(parent.rotate)
         expect(def.themes, `${biome}/${def.id} lost themes`).toEqual(parent.themes)
+        expect(def.pass, `${biome}/${def.id} lost pass`).toBe(parent.pass)
+        expect(def.footprint, `${biome}/${def.id} lost footprint`).toBe(parent.footprint)
+        expect(def.layer, `${biome}/${def.id} lost layer`).toBe(parent.layer)
+        expect(def.themeWeight, `${biome}/${def.id} lost themeWeight`).toEqual(parent.themeWeight)
+        expect(def.scaleJitter, `${biome}/${def.id} lost scaleJitter`).toEqual(parent.scaleJitter)
+      }
+    }
+  })
+
+  // Part-2 metadata coverage: passability + footprint are what pathfinding,
+  // spawn validity, and the overlap-reserving placer read — an unset value is
+  // a real hole (the placer can't tell a boulder from a pebble), so coverage
+  // is a gate exactly like kinds/role/themes.
+  it('every scatterable base prop declares pass + footprint', () => {
+    for (const biome of BIOMES) {
+      for (const def of TERRAIN_PROPS[biome]) {
+        if (def.id.includes('~')) continue
+        if ((def.kinds?.length ?? 0) === 0) continue
+        expect(def.pass, `${biome}/${def.id} has no 'pass' (solid/walkable/overhang)`).toBeTruthy()
+        expect(
+          typeof def.footprint === 'number' && def.footprint > 0,
+          `${biome}/${def.id} has no positive 'footprint'`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  it('every SCATTER_SETS member references an existing base prop', () => {
+    const ids = new Set(BIOMES.flatMap((b) => TERRAIN_PROPS[b].map((d) => d.id)))
+    for (const set of SCATTER_SETS) {
+      expect(set.members.length, `set ${set.id} has no members`).toBeGreaterThan(0)
+      for (const m of set.members) {
+        expect(ids.has(m.prop), `set ${set.id} references unknown prop '${m.prop}'`).toBe(true)
+        expect(m.n[0] <= m.n[1], `set ${set.id}/${m.prop} has inverted n range`).toBe(true)
       }
     }
   })

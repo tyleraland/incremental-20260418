@@ -41,6 +41,11 @@ const THEMED_FIELDS: { label: string; biome: Biome; themes: ThemeTag[] }[] = [
   { label: 'swamp', biome: 'grass', themes: ['swamp'] },
   { label: 'dungeon', biome: 'stone', themes: ['dungeon'] },
   { label: 'mountain', biome: 'stone', themes: ['mountain'] },
+  { label: 'snow', biome: 'stone', themes: ['snow'] },
+  { label: 'cave', biome: 'stone', themes: ['cave'] },
+  { label: 'volcanic', biome: 'stone', themes: ['volcanic'] },
+  { label: 'jungle', biome: 'grass', themes: ['jungle'] },
+  { label: 'arcane', biome: 'stone', themes: ['arcane'] },
 ]
 const SIZES = [20, 32, 48, 72]           // the LOD ladder: far zoom → close-up
 // Circle-skin cell text only (paper creatures are silhouette-only anyway).

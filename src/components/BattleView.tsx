@@ -614,8 +614,8 @@ const AMBIENT_DELAY = [0, -3.5, -7, -1.8, -5.2, -8.6] // s; negative = mid-fligh
 const LEAF_COLORS = [PAPER_PALETTE.mossBase, PAPER_PALETTE.woodLight, PAPER_PALETTE.foliage]
 
 function AmbientFX({ themes }: { themes?: ThemeTag[] }) {
-  const kind = themes?.includes('mountain') ? 'snow'
-    : themes?.includes('forest') ? 'leaves'
+  const kind = themes?.includes('mountain') || themes?.includes('snow') ? 'snow'
+    : themes?.includes('forest') || themes?.includes('jungle') ? 'leaves'
     : themes?.includes('swamp') || themes?.includes('haunted') ? 'motes'
     : null
   if (!kind) return null

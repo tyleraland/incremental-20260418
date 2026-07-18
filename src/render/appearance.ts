@@ -194,8 +194,8 @@ export function biomeForLocation(loc: { traits?: string[] } | null | undefined):
 const TRAIT_THEME_ALIAS: Record<string, ThemeTag[]> = {
   arena: ['dungeon', 'ruins'],
   cliff: ['mountain'],
-  underground: ['dungeon'],
-  cave: ['dungeon'],
+  underground: ['dungeon', 'cave'],
+  cave: ['cave'],
 }
 export function themesForLocation(loc: { traits?: string[] } | null | undefined): ThemeTag[] {
   const traits = loc?.traits ?? []

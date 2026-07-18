@@ -74,12 +74,55 @@ export interface PropDef {
   // prop ids that co-occur — phase-2 grove/bed companions (a canopy with ferns
   // and leaf litter). Fill where obvious; render ignores it today.
   clusterWith?: string[]
+  // ── Part-2 placement/gameplay metadata (see render/CLAUDE.md) ──────────────
+  // PASSABILITY: what a body can do at this prop's cell. REQUIRED on every
+  // scatterable prop (AssetCatalog gate) — pathfinding/spawn-validity/cover
+  // consume it later; declarative today (scatter stays visual-only).
+  // solid = blocks movement · walkable = flat, walk straight over ·
+  // overhang = trunk/post blocks but canopy overhangs (walk near, not through).
+  pass?: PropPass
+  // approx collision/reserve RADIUS in world cells at size 1 (placer overlap
+  // reserve; a pebble ≈0.15, a canopy trunk ≈0.5). REQUIRED with `pass`.
+  footprint?: number
+  // which surface the prop lives on. Default 'ground'. 'water-surface' props
+  // are skipped on legacy maps (no water plane); 'ceiling'/'wall'/'canopy'
+  // guide future cave/indoor placement (stalactites hang, webs span corners).
+  layer?: PropLayer
+  // PER-THEME weight override (CONSUMED by the pick, both paths): when the
+  // map's themes intersect these keys, the effective weight is the MAX of the
+  // matching values, else `weight`. `deadtree` can be common in swamp and rare
+  // in forest without splitting the asset.
+  themeWeight?: Partial<Record<ThemeTag, number>>
+  // clustering shape for phase-2+ placers: even (Poisson-ish spread) vs
+  // clumped (blue-noise clumps). Declarative today.
+  patch?: 'even' | 'clumped'
+  // hard cap per map/chunk (accents: no five wells on one screen). Declarative.
+  maxPerChunk?: number
+  // gameplay affordances (reuses the interactable concept for scatter):
+  // destructible/harvestable/lootable/flammable/climbable/cover. Declarative.
+  gameplay?: GameplayTag[]
+  // emissive props (brazier/wisp/glowshroom/lamppost): palette role + world-cell
+  // radius, for a future procedural night/mood lighting pass. Declarative.
+  light?: { color: PaperRole; radius: number }
+  // true = the prop wants live animation (wisp/ripple/flame); the render's FX
+  // budget decides what actually animates. Declarative.
+  anim?: boolean
+  // per-instance scale jitter range multiplier (CONSUMED at placement, seeded).
+  scaleJitter?: [number, number]
+  // tall upright (tree/pillar/post): y-sort anchor at the base + occluder flag
+  // so bodies render behind it correctly later. Declarative.
+  tall?: boolean
 }
+
+export type PropPass = 'solid' | 'walkable' | 'overhang'
+export type PropLayer = 'ground' | 'wall' | 'ceiling' | 'water-surface' | 'canopy'
+export type GameplayTag = 'destructible' | 'harvestable' | 'lootable' | 'flammable' | 'climbable' | 'cover'
 
 // Placement archetype — how a prop wants to be laid down (read by mapgen phases).
 export type PropRole = 'field' | 'cluster' | 'edge' | 'understory' | 'accent'
 // Feature a prop wants to be near / avoid (phase-2 adjacency hints).
-export type Affinity = 'water' | 'wall' | 'path' | 'tree' | 'rock'
+// 'accent' = other accent-role props (accents repel accents; sets attract).
+export type Affinity = 'water' | 'wall' | 'path' | 'tree' | 'rock' | 'accent'
 // Whole-token rotation policy the render applies at placement.
 export type RotatePolicy = 'upright' | 'free' | 'flat'
 
@@ -87,7 +130,8 @@ export type RotatePolicy = 'upright' | 'free' | 'flat'
 // onto variants). Kept in sync with the PropDef fields above by construction.
 export type PropPlacement = Pick<
   PropDef,
-  'kinds' | 'playerSelectable' | 'tags' | 'weight' | 'themes' | 'role' | 'near' | 'avoid' | 'rotate' | 'clusterWith'
+  | 'kinds' | 'playerSelectable' | 'tags' | 'weight' | 'themes' | 'role' | 'near' | 'avoid' | 'rotate' | 'clusterWith'
+  | 'pass' | 'footprint' | 'layer' | 'themeWeight' | 'patch' | 'maxPerChunk' | 'gameplay' | 'light' | 'anim' | 'scaleJitter' | 'tall'
 >
 
 // ── Pure placement helpers (deterministic; also used by terrain.tsx) ─────────
@@ -108,16 +152,31 @@ export function themeFilteredCands(defs: PropDef[], cands: number[], themes: rea
   return kept.length ? kept : cands
 }
 
-// Weighted pick over an index list into `defs`, driven by a roll ∈ [0,1).
-// Returns the chosen index (an element of `idxs`). Deterministic — the caller
-// supplies the seed-derived roll.
-export function weightedPick(defs: PropDef[], idxs: number[], roll: number): number {
+// Effective weight for a prop on a map with `themes`: the MAX matching
+// `themeWeight` entry when the map's themes intersect it, else the flat
+// `weight`. This is how one asset is common in swamp and rare in forest.
+export function effectiveWeight(def: PropDef, themes?: readonly ThemeTag[]): number {
+  if (def.themeWeight && themes?.length) {
+    let best = -1
+    for (const t of themes) {
+      const w = def.themeWeight[t]
+      if (w !== undefined && w > best) best = w
+    }
+    if (best >= 0) return best
+  }
+  return def.weight ?? 1
+}
+
+// Weighted pick over an index list into `defs`, driven by a roll ∈ [0,1) and
+// (optionally) the map's themes for per-theme weights. Returns the chosen
+// index (an element of `idxs`). Deterministic — the caller supplies the roll.
+export function weightedPick(defs: PropDef[], idxs: number[], roll: number, themes?: readonly ThemeTag[]): number {
   if (idxs.length === 0) return 0
   let total = 0
-  for (const i of idxs) total += defs[i].weight ?? 1
+  for (const i of idxs) total += effectiveWeight(defs[i], themes)
   let t = roll * total
   for (const i of idxs) {
-    t -= defs[i].weight ?? 1
+    t -= effectiveWeight(defs[i], themes)
     if (t < 0) return i
   }
   return idxs[idxs.length - 1]
@@ -159,8 +218,78 @@ export function variants(def: PropDef, n: number, amp = def.wonk ?? 0.07): PropD
     avoid: def.avoid,
     rotate: def.rotate,
     clusterWith: def.clusterWith,
+    pass: def.pass,
+    footprint: def.footprint,
+    layer: def.layer,
+    themeWeight: def.themeWeight,
+    patch: def.patch,
+    maxPerChunk: def.maxPerChunk,
+    gameplay: def.gameplay,
+    light: def.light,
+    anim: def.anim,
+    scaleJitter: def.scaleJitter,
+    tall: def.tall,
   }))
 }
+
+// ── Prefab scatter SETS (the "interesting maps" lever) ───────────────────────
+// Hand-authored mini-scenes the generator can stamp instead of loose props: a
+// camp is a tent + fire ring + wagon + crates, a graveyard is stones + a dead
+// tree + a wisp. Declarative registry — mapgen's clustering passes consume it
+// later; today it's reviewable data (member ids are existence-checked by
+// AssetCatalog.test). `n` = [min,max] members of that prop; `spread` = rough
+// scene radius in world cells.
+export interface ScatterSetDef {
+  id: string
+  themes: ThemeTag[]
+  spread: number
+  members: { prop: string; n: [number, number] }[]
+}
+
+export const SCATTER_SETS: ScatterSetDef[] = [
+  { id: 'camp', themes: ['plains', 'forest', 'mountain'], spread: 4, members: [
+    { prop: 'tent', n: [1, 2] }, { prop: 'campring', n: [1, 1] }, { prop: 'wagon', n: [0, 1] }, { prop: 'sack', n: [0, 2] },
+  ] },
+  { id: 'graveyard', themes: ['haunted', 'plains', 'forest'], spread: 5, members: [
+    { prop: 'gravestone', n: [3, 6] }, { prop: 'deadtree', n: [1, 1] }, { prop: 'wisp', n: [0, 2] }, { prop: 'fencerun', n: [0, 3] },
+  ] },
+  { id: 'ruin', themes: ['ruins', 'dungeon', 'desert'], spread: 5, members: [
+    { prop: 'pillar', n: [1, 3] }, { prop: 'rubble', n: [2, 4] }, { prop: 'bricks', n: [1, 2] }, { prop: 'moss', n: [0, 2] }, { prop: 'chest', n: [0, 1] },
+  ] },
+  { id: 'grove', themes: ['forest'], spread: 4, members: [
+    { prop: 'canopy', n: [2, 3] }, { prop: 'fern', n: [1, 3] }, { prop: 'mushroom', n: [0, 2] }, { prop: 'leaves', n: [1, 2] },
+  ] },
+  { id: 'oasis', themes: ['desert'], spread: 4, members: [
+    { prop: 'oasispalm', n: [1, 2] }, { prop: 'reeds', n: [1, 2] }, { prop: 'boulder', n: [0, 1] },
+  ] },
+  { id: 'boneyard', themes: ['desert', 'haunted'], spread: 4, members: [
+    { prop: 'sunbones', n: [2, 3] }, { prop: 'skull', n: [0, 1] }, { prop: 'earthcrack', n: [1, 2] },
+  ] },
+  { id: 'fishing-spot', themes: ['water', 'beach'], spread: 3, members: [
+    { prop: 'rowboat', n: [1, 1] }, { prop: 'fishnet', n: [1, 1] }, { prop: 'driftwood', n: [0, 2] }, { prop: 'steppingstone', n: [0, 1] },
+  ] },
+  { id: 'mine-camp', themes: ['mountain'], spread: 4, members: [
+    { prop: 'minecart', n: [1, 1] }, { prop: 'beamframe', n: [1, 2] }, { prop: 'orevein', n: [1, 2] }, { prop: 'cask', n: [0, 1] },
+  ] },
+  { id: 'ritual-site', themes: ['haunted', 'arcane', 'dungeon'], spread: 4, members: [
+    { prop: 'altar', n: [1, 1] }, { prop: 'brazier', n: [1, 2] }, { prop: 'bloodstain', n: [0, 1] }, { prop: 'bone', n: [0, 2] },
+  ] },
+  { id: 'farmstead', themes: ['plains'], spread: 5, members: [
+    { prop: 'haybale', n: [1, 3] }, { prop: 'fencerun', n: [2, 4] }, { prop: 'scarecrow', n: [0, 1] }, { prop: 'wheat', n: [2, 4] },
+  ] },
+  { id: 'crossing', themes: ['water', 'swamp'], spread: 3, members: [
+    { prop: 'bridgeplank', n: [1, 1] }, { prop: 'waysign', n: [0, 1] }, { prop: 'reeds', n: [1, 2] },
+  ] },
+  { id: 'rest-stop', themes: ['plains', 'forest', 'mountain'], spread: 4, members: [
+    { prop: 'bonfire', n: [1, 1] }, { prop: 'shrine', n: [0, 1] }, { prop: 'waysign', n: [1, 1] }, { prop: 'tent', n: [0, 1] },
+  ] },
+  { id: 'ley-circle', themes: ['arcane'], spread: 4, members: [
+    { prop: 'runestone', n: [2, 4] }, { prop: 'magiccircle', n: [1, 1] }, { prop: 'floatshard', n: [0, 2] },
+  ] },
+  { id: 'delve-mouth', themes: ['mountain', 'cave'], spread: 4, members: [
+    { prop: 'mineentrance', n: [1, 1] }, { prop: 'minecart', n: [0, 1] }, { prop: 'beamframe', n: [1, 2] }, { prop: 'cask', n: [0, 1] },
+  ] },
+]
 
 // Per-prop discoverable metadata, co-located so the PropDef path literals stay
 // terse. `kinds` = the mapgen scatter kinds this prop can fill (see PropDef);
@@ -169,129 +298,129 @@ export function variants(def: PropDef, n: number, amp = def.wonk ?? 0.07): PropD
 // (and its variants) by withVariants.
 const PROP_META: Record<string, PropPlacement> = {
   // ── grass biome (plains / forest ground) ──
-  tuft:     { kinds: ['bush', 'flower'], weight: 1, themes: ['plains', 'forest'], role: 'field', rotate: 'upright', near: ['path'] },
-  bush:     { kinds: ['tree', 'bush'], weight: 0.8, themes: ['plains', 'forest'], role: 'cluster', rotate: 'upright', near: ['tree'] },
-  pebble:   { kinds: ['rock'], weight: 0.8, themes: ['plains', 'forest', 'mountain', 'beach'], role: 'field', rotate: 'free', near: ['wall', 'rock'] },
-  bloom:    { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['flowers', 'tuft'] },
-  stump:    { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'upright', near: ['tree'] },
-  mushroom: { kinds: ['flower', 'bush'], weight: 0.5, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
+  tuft:     { kinds: ['bush', 'flower'], weight: 1, themes: ['plains', 'forest'], role: 'field', rotate: 'upright', near: ['path'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
+  bush:     { kinds: ['tree', 'bush'], weight: 0.8, themes: ['plains', 'forest'], role: 'cluster', rotate: 'upright', near: ['tree'], pass: 'solid', footprint: 0.35 },
+  pebble:   { kinds: ['rock'], weight: 0.8, themes: ['plains', 'forest', 'mountain', 'beach'], role: 'field', rotate: 'free', near: ['wall', 'rock'], pass: 'walkable', footprint: 0.15, themeWeight: { beach: 0.9, mountain: 0.85, plains: 0.7, forest: 0.7 }, scaleJitter: [0.85, 1.15] },
+  bloom:    { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['flowers', 'tuft'], pass: 'walkable', footprint: 0.1 },
+  stump:    { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'upright', near: ['tree'], pass: 'solid', footprint: 0.3 },
+  mushroom: { kinds: ['flower', 'bush'], weight: 0.5, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.15 },
   // water/wetland edge ONLY — reaches a forest map solely when it also has a
   // `water`/`beach` feature (a lake/stream); kept off dry forest by NOT being
   // themed `forest` and by reed-kind only emitting near water.
-  reeds:    { kinds: ['reed', 'bush'], weight: 0.8, themes: ['water', 'beach'], role: 'edge', rotate: 'upright', near: ['water'], tags: ['wetland'] },
-  log:      { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'] },
-  grassclump: { kinds: ['bush', 'flower'], weight: 1, themes: ['plains', 'forest'], role: 'field', rotate: 'upright', near: ['path'] },
-  leaves:     { kinds: ['flower', 'bush'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'free', near: ['tree'] },
+  reeds:    { kinds: ['reed', 'bush'], weight: 0.8, themes: ['water', 'beach'], role: 'edge', rotate: 'upright', near: ['water'], tags: ['wetland'], pass: 'walkable', footprint: 0.2, scaleJitter: [0.85, 1.15] },
+  log:      { kinds: ['stump'], weight: 0.6, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'], pass: 'solid', footprint: 0.35, gameplay: ['flammable'] },
+  grassclump: { kinds: ['bush', 'flower'], weight: 1, themes: ['plains', 'forest'], role: 'field', rotate: 'upright', near: ['path'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
+  leaves:     { kinds: ['flower', 'bush'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'free', near: ['tree'], pass: 'walkable', footprint: 0.1, scaleJitter: [0.85, 1.15] },
   // forest EDGE verge (fills the forest edge-role gap): a mossy fern skirt for
   // dry-forest outcrop/wall skirts. `flower` kind so the field recipe's flower
   // edge items pick it up; `bush` lets it serve as a general forest edge.
-  fernverge:  { kinds: ['flower', 'bush'], weight: 0.8, themes: ['forest'], role: 'edge', rotate: 'upright', near: ['wall', 'path', 'tree'], clusterWith: ['fern', 'mushroom'] },
+  fernverge:  { kinds: ['flower', 'bush'], weight: 0.8, themes: ['forest'], role: 'edge', rotate: 'upright', near: ['wall', 'path', 'tree'], clusterWith: ['fern', 'mushroom'], pass: 'walkable', footprint: 0.2 },
   // forest (from the inked top-down forest sheet)
   // weight 0.5: the only broadleaf tree-kind the forest theme has — at 0.2 a
   // themed forest field starved of tree mass (judge pass); in-theme it competes
   // with nothing, so weigh it against its in-theme pool, not the global one.
-  canopy:   { kinds: ['tree'], weight: 0.5, themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright', near: ['tree'], clusterWith: ['fern', 'leaves', 'mushroom'] },
-  fern:     { kinds: ['bush', 'flower'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'] },
-  boulder:  { kinds: ['rock'], weight: 0.25, themes: ['mountain', 'forest', 'plains'], role: 'accent', rotate: 'upright', near: ['wall', 'rock'] },
-  flowers:  { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['bloom', 'tuft'] },
+  canopy:   { kinds: ['tree'], weight: 0.5, themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright', near: ['tree'], clusterWith: ['fern', 'leaves', 'mushroom'], pass: 'overhang', footprint: 0.5, tall: true },
+  fern:     { kinds: ['bush', 'flower'], weight: 0.7, themes: ['forest'], role: 'understory', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.2 },
+  boulder:  { kinds: ['rock'], weight: 0.25, themes: ['mountain', 'forest', 'plains'], role: 'accent', rotate: 'upright', near: ['wall', 'rock'], pass: 'solid', footprint: 0.5, themeWeight: { mountain: 0.35, forest: 0.2, plains: 0.15 }, gameplay: ['cover'], maxPerChunk: 2 },
+  flowers:  { kinds: ['flower'], weight: 0.5, themes: ['plains'], role: 'cluster', rotate: 'upright', near: ['path'], clusterWith: ['bloom', 'tuft'], pass: 'walkable', footprint: 0.15 },
   // ── stone biome (dungeon / ruins) ──
-  rubble:   { kinds: ['stump', 'rock'], weight: 1, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'free', near: ['wall'] },
-  crack:    { kinds: ['reed', 'rock'], weight: 0.6, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'flat', near: ['wall'] },
-  shard:    { kinds: ['rock'], weight: 0.8, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['rock', 'wall'] },
-  bone:     { kinds: ['flower'], weight: 0.5, themes: ['dungeon', 'ruins', 'haunted'], role: 'field', rotate: 'free' },
-  pillar:   { kinds: ['tree', 'stump'], weight: 0.4, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'] },
-  skull:    { kinds: ['flower', 'rock'], weight: 0.3, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'upright' },
-  spikes:   { kinds: ['tree'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright' },
-  moss:     { kinds: ['bush'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'edge', rotate: 'flat', near: ['wall'] },
-  column:   { kinds: ['tree', 'stump'], weight: 0.3, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'] },
-  bricks:   { kinds: ['rock', 'stump'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'upright', near: ['wall'] },
-  gravel:   { kinds: ['rock'], weight: 1, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['path', 'wall'] },
-  cobweb:   { kinds: ['flower', 'bush'], weight: 0.4, themes: ['dungeon', 'ruins', 'haunted'], role: 'edge', rotate: 'flat', near: ['wall'] },
+  rubble:   { kinds: ['stump', 'rock'], weight: 1, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'free', near: ['wall'], pass: 'solid', footprint: 0.35, gameplay: ['cover'] },
+  crack:    { kinds: ['reed', 'rock'], weight: 0.6, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'flat', near: ['wall'], pass: 'walkable', footprint: 0.1 },
+  shard:    { kinds: ['rock'], weight: 0.8, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['rock', 'wall'], pass: 'walkable', footprint: 0.2 },
+  bone:     { kinds: ['flower'], weight: 0.5, themes: ['dungeon', 'ruins', 'haunted'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.15 },
+  pillar:   { kinds: ['tree', 'stump'], weight: 0.4, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.4, tall: true, gameplay: ['cover'], maxPerChunk: 2 },
+  skull:    { kinds: ['flower', 'rock'], weight: 0.3, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.2, maxPerChunk: 1 },
+  spikes:   { kinds: ['tree'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright', pass: 'solid', footprint: 0.3 },
+  moss:     { kinds: ['bush'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'edge', rotate: 'flat', near: ['wall'], pass: 'walkable', footprint: 0.15 },
+  column:   { kinds: ['tree', 'stump'], weight: 0.3, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.45, tall: true, gameplay: ['cover'], maxPerChunk: 2 },
+  bricks:   { kinds: ['rock', 'stump'], weight: 0.7, themes: ['dungeon', 'ruins'], role: 'cluster', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.35 },
+  gravel:   { kinds: ['rock'], weight: 1, themes: ['dungeon', 'ruins', 'mountain'], role: 'field', rotate: 'free', near: ['path', 'wall'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
+  cobweb:   { kinds: ['flower', 'bush'], weight: 0.4, themes: ['dungeon', 'ruins', 'haunted'], role: 'edge', rotate: 'flat', near: ['wall'], pass: 'walkable', footprint: 0.15, layer: 'wall' },
   // ── plaza biome (city market clutter fills the generic ground kinds) ──
-  crate:    { kinds: ['stump'], weight: 1, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'] },
-  barrel:   { kinds: ['stump', 'rock'], weight: 0.9, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'] },
-  sack:     { kinds: ['rock', 'stump'], weight: 0.8, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall'] },
-  wheel:    { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'free', near: ['wall'] },
-  pot:      { kinds: ['bush', 'flower'], weight: 0.7, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'] },
-  signpost: { kinds: ['tree'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'upright', near: ['path'] },
-  coil:     { kinds: ['reed', 'rock'], weight: 0.5, themes: ['city'], role: 'field', rotate: 'free', near: ['wall'] },
-  conifer:  { kinds: ['tree'], weight: 0.4, themes: ['city', 'mountain', 'forest'], role: 'cluster', rotate: 'upright', near: ['path'] },
-  cobbles:  { kinds: ['rock', 'stump'], weight: 0.9, themes: ['city'], role: 'edge', rotate: 'upright', near: ['path'] },
-  flagstone:{ kinds: ['stump', 'rock'], weight: 0.8, themes: ['city'], role: 'edge', rotate: 'upright', near: ['path'] },
+  crate:    { kinds: ['stump'], weight: 1, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'], pass: 'solid', footprint: 0.35, gameplay: ['destructible'] },
+  barrel:   { kinds: ['stump', 'rock'], weight: 0.9, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'], pass: 'solid', footprint: 0.3, gameplay: ['destructible'] },
+  sack:     { kinds: ['rock', 'stump'], weight: 0.8, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.25 },
+  wheel:    { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'free', near: ['wall'], pass: 'walkable', footprint: 0.25, maxPerChunk: 1 },
+  pot:      { kinds: ['bush', 'flower'], weight: 0.7, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'], pass: 'solid', footprint: 0.25, gameplay: ['destructible'] },
+  signpost: { kinds: ['tree'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.25, tall: true, maxPerChunk: 1 },
+  coil:     { kinds: ['reed', 'rock'], weight: 0.5, themes: ['city'], role: 'field', rotate: 'free', near: ['wall'], pass: 'walkable', footprint: 0.15 },
+  conifer:  { kinds: ['tree'], weight: 0.4, themes: ['city', 'mountain', 'forest'], role: 'cluster', rotate: 'upright', near: ['path'], pass: 'overhang', footprint: 0.45, tall: true, themeWeight: { mountain: 0.5, forest: 0.45, city: 0.2 } },
+  cobbles:  { kinds: ['rock', 'stump'], weight: 0.9, themes: ['city'], role: 'edge', rotate: 'upright', near: ['path'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
+  flagstone:{ kinds: ['stump', 'rock'], weight: 0.8, themes: ['city'], role: 'edge', rotate: 'upright', near: ['path'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
   // ── forest floor & wilderness ──
-  deadtree:  { kinds: ['tree'], weight: 0.25, themes: ['forest', 'swamp', 'haunted'], role: 'accent', rotate: 'upright' },
-  roots:     { kinds: ['stump', 'rock'], weight: 0.5, themes: ['forest', 'swamp'], role: 'field', rotate: 'free', near: ['tree'] },
-  hollowlog: { kinds: ['stump'], weight: 0.45, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'], clusterWith: ['mushroom', 'leaves'] },
-  berrybush: { kinds: ['bush'], weight: 0.5, themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright', clusterWith: ['bush', 'tuft'] },
-  websnare:  { kinds: ['flower', 'bush'], weight: 0.3, themes: ['forest', 'haunted'], role: 'edge', rotate: 'flat', near: ['tree'] },
-  campring:  { kinds: ['rock', 'stump'], weight: 0.25, themes: ['forest', 'plains', 'mountain'], role: 'accent', rotate: 'free', near: ['path'] },
-  waysign:   { kinds: ['tree'], weight: 0.25, themes: ['forest', 'plains', 'mountain'], role: 'accent', rotate: 'upright', near: ['path'] },
+  deadtree:  { kinds: ['tree'], weight: 0.25, themes: ['forest', 'swamp', 'haunted'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.35, tall: true, themeWeight: { swamp: 0.45, haunted: 0.4, forest: 0.1 }, gameplay: ['flammable'], maxPerChunk: 1 },
+  roots:     { kinds: ['stump', 'rock'], weight: 0.5, themes: ['forest', 'swamp'], role: 'field', rotate: 'free', near: ['tree'], pass: 'walkable', footprint: 0.2 },
+  hollowlog: { kinds: ['stump'], weight: 0.45, themes: ['forest'], role: 'field', rotate: 'free', near: ['tree'], clusterWith: ['mushroom', 'leaves'], pass: 'solid', footprint: 0.4, gameplay: ['flammable'] },
+  berrybush: { kinds: ['bush'], weight: 0.5, themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright', clusterWith: ['bush', 'tuft'], pass: 'solid', footprint: 0.35, gameplay: ['harvestable'] },
+  websnare:  { kinds: ['flower', 'bush'], weight: 0.3, themes: ['forest', 'haunted'], role: 'edge', rotate: 'flat', near: ['tree'], pass: 'walkable', footprint: 0.15, layer: 'wall' },
+  campring:  { kinds: ['rock', 'stump'], weight: 0.25, themes: ['forest', 'plains', 'mountain'], role: 'accent', rotate: 'free', near: ['path'], pass: 'solid', footprint: 0.3, themeWeight: { forest: 0.3, mountain: 0.3, plains: 0.15 }, light: { color: 'ember', radius: 2.5 }, maxPerChunk: 1 },
+  waysign:   { kinds: ['tree'], weight: 0.25, themes: ['forest', 'plains', 'mountain'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.25, tall: true, themeWeight: { plains: 0.3, forest: 0.2, mountain: 0.2 }, maxPerChunk: 1 },
   // ── desert ──
-  cactus:     { kinds: ['tree'], weight: 0.5, themes: ['desert'], role: 'accent', rotate: 'upright', clusterWith: ['cactuspad', 'tumbleweed'] },
-  cactuspad:  { kinds: ['bush'], weight: 0.6, themes: ['desert'], role: 'cluster', rotate: 'upright', clusterWith: ['cactus', 'duneripple'] },
-  tumbleweed: { kinds: ['bush', 'rock'], weight: 0.6, themes: ['desert'], role: 'field', rotate: 'free' },
-  sunbones:   { kinds: ['flower', 'rock'], weight: 0.35, themes: ['desert'], role: 'field', rotate: 'free' },
-  duneripple: { kinds: ['flower'], weight: 0.5, themes: ['desert', 'beach'], role: 'field', rotate: 'flat' },
-  earthcrack: { kinds: ['rock'], weight: 0.5, themes: ['desert'], role: 'field', rotate: 'flat' },
-  oasispalm:  { kinds: ['tree'], weight: 0.25, themes: ['desert', 'beach'], role: 'accent', rotate: 'upright', near: ['water'] },
-  obelisk:    { kinds: ['tree', 'stump'], weight: 0.2, themes: ['desert', 'ruins'], role: 'accent', rotate: 'upright' },
-  potsherds:  { kinds: ['rock', 'flower'], weight: 0.5, themes: ['desert', 'ruins'], role: 'field', rotate: 'free', clusterWith: ['obelisk'] },
+  cactus:     { kinds: ['tree'], weight: 0.5, themes: ['desert'], role: 'accent', rotate: 'upright', clusterWith: ['cactuspad', 'tumbleweed'], pass: 'solid', footprint: 0.35, tall: true, maxPerChunk: 2 },
+  cactuspad:  { kinds: ['bush'], weight: 0.6, themes: ['desert'], role: 'cluster', rotate: 'upright', clusterWith: ['cactus', 'duneripple'], pass: 'solid', footprint: 0.3 },
+  tumbleweed: { kinds: ['bush', 'rock'], weight: 0.6, themes: ['desert'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2 },
+  sunbones:   { kinds: ['flower', 'rock'], weight: 0.35, themes: ['desert'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2 },
+  duneripple: { kinds: ['flower'], weight: 0.5, themes: ['desert', 'beach'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1, scaleJitter: [0.85, 1.15] },
+  earthcrack: { kinds: ['rock'], weight: 0.5, themes: ['desert'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1 },
+  oasispalm:  { kinds: ['tree'], weight: 0.25, themes: ['desert', 'beach'], role: 'accent', rotate: 'upright', near: ['water'], pass: 'overhang', footprint: 0.45, tall: true, maxPerChunk: 1 },
+  obelisk:    { kinds: ['tree', 'stump'], weight: 0.2, themes: ['desert', 'ruins'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.45, tall: true, maxPerChunk: 1 },
+  potsherds:  { kinds: ['rock', 'flower'], weight: 0.5, themes: ['desert', 'ruins'], role: 'field', rotate: 'free', clusterWith: ['obelisk'], pass: 'walkable', footprint: 0.15 },
   // ── plains / farmland ──
-  haybale:   { kinds: ['stump', 'rock'], weight: 0.4, themes: ['plains'], role: 'field', rotate: 'free', clusterWith: ['fencerun', 'wheat'] },
-  fencerun:  { kinds: ['tree', 'stump'], weight: 0.5, themes: ['plains'], role: 'edge', rotate: 'upright', near: ['path'], clusterWith: ['haybale'] },
-  wheat:     { kinds: ['reed', 'bush'], weight: 0.9, themes: ['plains'], role: 'field', rotate: 'upright', clusterWith: ['tuft', 'grassclump'] },
-  scarecrow: { kinds: ['tree'], weight: 0.2, themes: ['plains'], role: 'accent', rotate: 'upright', clusterWith: ['wheat'] },
-  burrow:    { kinds: ['rock', 'flower'], weight: 0.4, themes: ['plains'], role: 'field', rotate: 'free' },
-  waystone:  { kinds: ['rock'], weight: 0.25, themes: ['plains', 'mountain'], role: 'accent', rotate: 'upright', near: ['path'] },
+  haybale:   { kinds: ['stump', 'rock'], weight: 0.4, themes: ['plains'], role: 'field', rotate: 'free', clusterWith: ['fencerun', 'wheat'], pass: 'solid', footprint: 0.45, gameplay: ['cover', 'flammable'] },
+  fencerun:  { kinds: ['tree', 'stump'], weight: 0.5, themes: ['plains'], role: 'edge', rotate: 'upright', near: ['path'], clusterWith: ['haybale'], pass: 'solid', footprint: 0.5 },
+  wheat:     { kinds: ['reed', 'bush'], weight: 0.9, themes: ['plains'], role: 'field', rotate: 'upright', clusterWith: ['tuft', 'grassclump'], pass: 'walkable', footprint: 0.15, anim: true, scaleJitter: [0.85, 1.15] },
+  scarecrow: { kinds: ['tree'], weight: 0.2, themes: ['plains'], role: 'accent', rotate: 'upright', clusterWith: ['wheat'], pass: 'solid', footprint: 0.25, tall: true, maxPerChunk: 1 },
+  burrow:    { kinds: ['rock', 'flower'], weight: 0.4, themes: ['plains'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2 },
+  waystone:  { kinds: ['rock'], weight: 0.25, themes: ['plains', 'mountain'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.35, maxPerChunk: 1 },
   // ── river / pond / shoreline ──
   // reed-kind ONLY: the field recipe emits `reed` cells near water, so floating
   // props stay off dry grass (a flower-kind lilypad/ripple landed mid-field).
-  // 'on-water' tag: legacy (no-spec) maps have no water plane at all, so the
-  // legacy scatter pick skips these entirely (terrain.tsx).
-  lilypad:       { kinds: ['reed'], weight: 0.6, themes: ['water', 'swamp'], role: 'field', rotate: 'free', near: ['water'], clusterWith: ['ripple'], tags: ['on-water'] },
-  steppingstone: { kinds: ['rock'], weight: 0.4, themes: ['water', 'beach'], role: 'edge', rotate: 'free', near: ['water', 'path'] },
-  driftwood:     { kinds: ['stump'], weight: 0.5, themes: ['beach', 'water'], role: 'field', rotate: 'free', near: ['water'] },
-  rowboat:       { kinds: ['stump'], weight: 0.15, themes: ['water', 'beach'], role: 'accent', rotate: 'upright', near: ['water'] },
-  fishnet:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['water', 'beach', 'city'], role: 'edge', rotate: 'flat', near: ['water'] },
-  ripple:        { kinds: ['reed'], weight: 0.8, themes: ['water'], role: 'field', rotate: 'flat', near: ['water'], clusterWith: ['lilypad'], tags: ['on-water'] },
-  mudbank:       { kinds: ['bush', 'flower'], weight: 0.5, themes: ['water', 'swamp'], role: 'field', rotate: 'flat', near: ['water'] },
+  // layer 'water-surface': legacy (no-spec) maps have no water plane at all,
+  // so the legacy scatter pick skips these entirely (terrain.tsx).
+  lilypad:       { kinds: ['reed'], weight: 0.6, themes: ['water', 'swamp'], role: 'field', rotate: 'free', near: ['water'], clusterWith: ['ripple'], layer: 'water-surface', pass: 'walkable', footprint: 0.2 },
+  steppingstone: { kinds: ['rock'], weight: 0.4, themes: ['water', 'beach'], role: 'edge', rotate: 'free', near: ['water', 'path'], pass: 'walkable', footprint: 0.25 },
+  driftwood:     { kinds: ['stump'], weight: 0.5, themes: ['beach', 'water'], role: 'field', rotate: 'free', near: ['water'], pass: 'solid', footprint: 0.3, gameplay: ['flammable'] },
+  rowboat:       { kinds: ['stump'], weight: 0.15, themes: ['water', 'beach'], role: 'accent', rotate: 'upright', near: ['water'], pass: 'solid', footprint: 0.6, maxPerChunk: 1 },
+  fishnet:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['water', 'beach', 'city'], role: 'edge', rotate: 'flat', near: ['water'], pass: 'walkable', footprint: 0.2 },
+  ripple:        { kinds: ['reed'], weight: 0.8, themes: ['water'], role: 'field', rotate: 'flat', near: ['water'], clusterWith: ['lilypad'], layer: 'water-surface', anim: true, pass: 'walkable', footprint: 0.1, scaleJitter: [0.85, 1.15] },
+  mudbank:       { kinds: ['bush', 'flower'], weight: 0.5, themes: ['water', 'swamp'], role: 'field', rotate: 'flat', near: ['water'], pass: 'walkable', footprint: 0.2, themeWeight: { swamp: 0.55, water: 0.35 } },
   // ── swamp + cross-biome structures ──
-  gnarltree:  { kinds: ['tree'], weight: 0.25, themes: ['swamp', 'haunted'], role: 'accent', rotate: 'upright' },
-  hangmoss:   { kinds: ['bush', 'flower'], weight: 0.5, themes: ['swamp'], role: 'understory', rotate: 'free', near: ['tree'] },
-  murkpool:   { kinds: ['flower', 'rock'], weight: 0.6, themes: ['swamp'], role: 'field', rotate: 'flat' },
-  glowshroom: { kinds: ['flower', 'bush'], weight: 0.4, themes: ['swamp', 'dungeon'], role: 'understory', rotate: 'upright', near: ['tree'] },
-  sunkenlog:  { kinds: ['stump'], weight: 0.5, themes: ['swamp', 'water'], role: 'field', rotate: 'free', near: ['water'] },
-  wisp:       { kinds: ['flower'], weight: 0.2, themes: ['swamp', 'haunted'], role: 'accent', rotate: 'free' },
-  plankwalk:  { kinds: ['stump', 'rock'], weight: 0.4, themes: ['swamp'], role: 'edge', rotate: 'upright', near: ['path', 'water'] },
-  gaspocket:  { kinds: ['flower'], weight: 0.5, themes: ['swamp'], role: 'field', rotate: 'flat' },
-  well:       { kinds: ['rock', 'stump'], weight: 0.2, themes: ['plains', 'forest', 'city'], role: 'accent', rotate: 'upright' },
+  gnarltree:  { kinds: ['tree'], weight: 0.25, themes: ['swamp', 'haunted'], role: 'accent', rotate: 'upright', pass: 'overhang', footprint: 0.45, tall: true, maxPerChunk: 1 },
+  hangmoss:   { kinds: ['bush', 'flower'], weight: 0.5, themes: ['swamp'], role: 'understory', rotate: 'free', near: ['tree'], pass: 'walkable', footprint: 0.15, layer: 'canopy' },
+  murkpool:   { kinds: ['flower', 'rock'], weight: 0.6, themes: ['swamp'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.15 },
+  glowshroom: { kinds: ['flower', 'bush'], weight: 0.4, themes: ['swamp', 'dungeon'], role: 'understory', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.2, themeWeight: { swamp: 0.45, dungeon: 0.3 }, light: { color: 'glowFungus', radius: 1.5 } },
+  sunkenlog:  { kinds: ['stump'], weight: 0.5, themes: ['swamp', 'water'], role: 'field', rotate: 'free', near: ['water'], pass: 'solid', footprint: 0.35, themeWeight: { swamp: 0.55, water: 0.4 } },
+  wisp:       { kinds: ['flower'], weight: 0.2, themes: ['swamp', 'haunted'], role: 'accent', rotate: 'free', pass: 'walkable', footprint: 0.1, light: { color: 'glowFungus', radius: 2 }, anim: true, maxPerChunk: 2 },
+  plankwalk:  { kinds: ['stump', 'rock'], weight: 0.4, themes: ['swamp'], role: 'edge', rotate: 'upright', near: ['path', 'water'], pass: 'walkable', footprint: 0.2 },
+  gaspocket:  { kinds: ['flower'], weight: 0.5, themes: ['swamp'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1, anim: true },
+  well:       { kinds: ['rock', 'stump'], weight: 0.2, themes: ['plains', 'forest', 'city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.55, maxPerChunk: 1 },
   // weight 0.12: a random grave can appear on a sunny starter field (it keeps
   // the cross-biome themes), but rarely — headline frequency is haunted work.
-  gravestone: { kinds: ['rock', 'stump'], weight: 0.12, themes: ['haunted', 'plains', 'forest'], role: 'accent', rotate: 'upright' },
-  tent:       { kinds: ['stump', 'tree'], weight: 0.2, themes: ['plains', 'forest', 'mountain'], role: 'accent', rotate: 'upright', clusterWith: ['campring'] },
-  wagon:      { kinds: ['stump'], weight: 0.2, themes: ['plains', 'city'], role: 'accent', rotate: 'upright', near: ['path'] },
+  gravestone: { kinds: ['rock', 'stump'], weight: 0.12, themes: ['haunted', 'plains', 'forest'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.3, themeWeight: { haunted: 0.5, plains: 0.06, forest: 0.06 }, maxPerChunk: 2 },
+  tent:       { kinds: ['stump', 'tree'], weight: 0.2, themes: ['plains', 'forest', 'mountain'], role: 'accent', rotate: 'upright', clusterWith: ['campring'], pass: 'solid', footprint: 0.6, maxPerChunk: 1 },
+  wagon:      { kinds: ['stump'], weight: 0.2, themes: ['plains', 'city'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.6, maxPerChunk: 1 },
   // ── dungeon dressing ──
-  brazier:    { kinds: ['tree', 'flower'], weight: 0.3, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'free', near: ['wall'] },
-  chains:     { kinds: ['reed', 'flower'], weight: 0.4, themes: ['dungeon', 'ruins', 'haunted'], role: 'field', rotate: 'free', near: ['wall'], clusterWith: ['cage'] },
-  cage:       { kinds: ['stump', 'tree'], weight: 0.2, themes: ['dungeon', 'haunted'], role: 'accent', rotate: 'upright', near: ['wall'], clusterWith: ['chains', 'bone'] },
-  urn:        { kinds: ['flower', 'bush'], weight: 0.6, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright', near: ['wall'], clusterWith: ['cask'] },
-  grate:      { kinds: ['rock', 'stump'], weight: 0.35, themes: ['dungeon'], role: 'field', rotate: 'flat' },
-  puddle:     { kinds: ['flower', 'rock'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'flat' },
-  bloodstain: { kinds: ['flower'], weight: 0.35, themes: ['dungeon', 'haunted'], role: 'field', rotate: 'flat' },
-  statue:     { kinds: ['tree', 'stump'], weight: 0.2, themes: ['dungeon', 'ruins', 'city'], role: 'accent', rotate: 'upright' },
-  altar:      { kinds: ['stump', 'rock'], weight: 0.2, themes: ['dungeon', 'haunted', 'arcane'], role: 'accent', rotate: 'upright' },
-  chest:      { kinds: ['stump', 'rock'], weight: 0.15, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'] },
-  spiketrap:  { kinds: ['rock', 'stump'], weight: 0.2, themes: ['dungeon'], role: 'field', rotate: 'flat' },
-  cask:       { kinds: ['stump', 'rock'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright', near: ['wall'], clusterWith: ['urn'] },
+  brazier:    { kinds: ['tree', 'flower'], weight: 0.3, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'free', near: ['wall'], pass: 'solid', footprint: 0.3, light: { color: 'ember', radius: 3 }, maxPerChunk: 2 },
+  chains:     { kinds: ['reed', 'flower'], weight: 0.4, themes: ['dungeon', 'ruins', 'haunted'], role: 'field', rotate: 'free', near: ['wall'], clusterWith: ['cage'], pass: 'walkable', footprint: 0.1 },
+  cage:       { kinds: ['stump', 'tree'], weight: 0.2, themes: ['dungeon', 'haunted'], role: 'accent', rotate: 'upright', near: ['wall'], clusterWith: ['chains', 'bone'], pass: 'solid', footprint: 0.5, maxPerChunk: 1 },
+  urn:        { kinds: ['flower', 'bush'], weight: 0.6, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright', near: ['wall'], clusterWith: ['cask'], pass: 'solid', footprint: 0.25, gameplay: ['destructible'] },
+  grate:      { kinds: ['rock', 'stump'], weight: 0.35, themes: ['dungeon'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.15 },
+  puddle:     { kinds: ['flower', 'rock'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1 },
+  bloodstain: { kinds: ['flower'], weight: 0.35, themes: ['dungeon', 'haunted'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1 },
+  statue:     { kinds: ['tree', 'stump'], weight: 0.2, themes: ['dungeon', 'ruins', 'city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.5, tall: true, themeWeight: { ruins: 0.25, dungeon: 0.2, city: 0.15 }, maxPerChunk: 1 },
+  altar:      { kinds: ['stump', 'rock'], weight: 0.2, themes: ['dungeon', 'haunted', 'arcane'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.5, maxPerChunk: 1 },
+  chest:      { kinds: ['stump', 'rock'], weight: 0.15, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.3, gameplay: ['lootable'], maxPerChunk: 1 },
+  spiketrap:  { kinds: ['rock', 'stump'], weight: 0.2, themes: ['dungeon'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.2 },
+  cask:       { kinds: ['stump', 'rock'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright', near: ['wall'], clusterWith: ['urn'], pass: 'solid', footprint: 0.3, gameplay: ['destructible'] },
   // ── mountain / high country ──
-  pine:        { kinds: ['tree'], weight: 0.6, themes: ['mountain', 'forest'], role: 'cluster', rotate: 'upright', clusterWith: ['snag', 'snowpatch'] },
-  snag:        { kinds: ['tree'], weight: 0.25, themes: ['mountain', 'haunted'], role: 'accent', rotate: 'upright', near: ['rock'] },
-  snowpatch:   { kinds: ['flower', 'bush'], weight: 0.7, themes: ['mountain'], role: 'field', rotate: 'flat', clusterWith: ['pine'] },
-  orevein:     { kinds: ['rock'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['wall', 'rock'] },
-  minecart:    { kinds: ['stump', 'rock'], weight: 0.2, themes: ['mountain'], role: 'accent', rotate: 'upright', near: ['path', 'wall'], clusterWith: ['beamframe'] },
-  beamframe:   { kinds: ['tree', 'stump'], weight: 0.35, themes: ['mountain', 'dungeon'], role: 'field', rotate: 'free', near: ['wall'] },
-  cairn:       { kinds: ['rock', 'stump'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['path'] },
-  alpinebloom: { kinds: ['flower'], weight: 0.5, themes: ['mountain'], role: 'field', rotate: 'upright', near: ['rock'] },
+  pine:        { kinds: ['tree'], weight: 0.6, themes: ['mountain', 'forest'], role: 'cluster', rotate: 'upright', clusterWith: ['snag', 'snowpatch'], pass: 'overhang', footprint: 0.45, tall: true, themeWeight: { mountain: 0.65, forest: 0.5 } },
+  snag:        { kinds: ['tree'], weight: 0.25, themes: ['mountain', 'haunted'], role: 'accent', rotate: 'upright', near: ['rock'], pass: 'solid', footprint: 0.3, tall: true, themeWeight: { mountain: 0.3, haunted: 0.2 }, gameplay: ['flammable'], maxPerChunk: 1 },
+  snowpatch:   { kinds: ['flower', 'bush'], weight: 0.7, themes: ['mountain'], role: 'field', rotate: 'flat', clusterWith: ['pine'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
+  orevein:     { kinds: ['rock'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['wall', 'rock'], pass: 'solid', footprint: 0.35, gameplay: ['harvestable'], maxPerChunk: 2 },
+  minecart:    { kinds: ['stump', 'rock'], weight: 0.2, themes: ['mountain'], role: 'accent', rotate: 'upright', near: ['path', 'wall'], clusterWith: ['beamframe'], pass: 'solid', footprint: 0.45, maxPerChunk: 1 },
+  beamframe:   { kinds: ['tree', 'stump'], weight: 0.35, themes: ['mountain', 'dungeon'], role: 'field', rotate: 'free', near: ['wall'], pass: 'solid', footprint: 0.4, themeWeight: { mountain: 0.4, dungeon: 0.25 } },
+  cairn:       { kinds: ['rock', 'stump'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['path'], pass: 'solid', footprint: 0.3, maxPerChunk: 2 },
+  alpinebloom: { kinds: ['flower'], weight: 0.5, themes: ['mountain'], role: 'field', rotate: 'upright', near: ['rock'], pass: 'walkable', footprint: 0.1 },
   // ── interactable STATE assets (future interactable system; kinds: [] keeps
   // them off the scatter placer — reachable via the catalog/gallery only) ──
   // Interactable/stateful asset library — NOT scatter-placed (empty kinds keeps
@@ -310,6 +439,42 @@ const PROP_META: Record<string, PropPlacement> = {
   gem:    { kinds: [], tags: ['pickup'] },
   potion: { kinds: [], tags: ['pickup'] },
   key:    { kinds: [], tags: ['pickup'] },
+  // ── snow / tundra ──
+  frozenpond:    { kinds: ['flower', 'rock'], weight: 0.5, themes: ['snow'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.3 },
+  snowdrift:     { kinds: ['bush', 'flower'], weight: 0.8, themes: ['snow'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2, scaleJitter: [0.85, 1.2] },
+  iciclecluster: { kinds: ['rock'], weight: 0.4, themes: ['snow', 'mountain', 'cave'], role: 'field', rotate: 'upright', near: ['wall', 'rock'], pass: 'solid', footprint: 0.3 },
+  icetree:       { kinds: ['tree'], weight: 0.3, themes: ['snow'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.35, tall: true, maxPerChunk: 3 },
+  icehut:        { kinds: ['stump', 'rock'], weight: 0.15, themes: ['snow'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.6, maxPerChunk: 1 },
+  icefloe:       { kinds: ['rock', 'flower'], weight: 0.4, themes: ['snow', 'water'], role: 'field', rotate: 'free', near: ['water'], pass: 'walkable', footprint: 0.3, layer: 'water-surface' },
+  // ── volcanic ──
+  lavacrack:    { kinds: ['rock', 'reed'], weight: 0.6, themes: ['volcanic'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.2, light: { color: 'ember', radius: 1.5 }, anim: true },
+  obsidianflow: { kinds: ['rock', 'bush'], weight: 0.5, themes: ['volcanic'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.3 },
+  sulfurvent:   { kinds: ['rock', 'flower'], weight: 0.4, themes: ['volcanic'], role: 'field', rotate: 'free', pass: 'solid', footprint: 0.3, anim: true },
+  ashpile:      { kinds: ['bush', 'flower'], weight: 0.7, themes: ['volcanic'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2, scaleJitter: [0.85, 1.2] },
+  charsnag:     { kinds: ['tree'], weight: 0.3, themes: ['volcanic', 'haunted'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.3, tall: true, gameplay: ['flammable'], maxPerChunk: 2 },
+  geyserpool:   { kinds: ['rock', 'flower'], weight: 0.25, themes: ['volcanic'], role: 'accent', rotate: 'free', pass: 'solid', footprint: 0.4, anim: true, maxPerChunk: 2 },
+  // ── arcane ──
+  runestone:    { kinds: ['rock', 'tree'], weight: 0.3, themes: ['arcane', 'ruins'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.4, tall: true, light: { color: 'bannerBlue', radius: 1.5 }, maxPerChunk: 3 },
+  floatshard:   { kinds: ['rock', 'flower'], weight: 0.4, themes: ['arcane'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.15, anim: true },
+  manapool:     { kinds: ['flower', 'rock'], weight: 0.35, themes: ['arcane'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.35, light: { color: 'bannerBlue', radius: 2 } },
+  magiccircle:  { kinds: ['flower', 'rock'], weight: 0.25, themes: ['arcane', 'dungeon'], role: 'accent', rotate: 'flat', pass: 'walkable', footprint: 0.45, maxPerChunk: 1 },
+  portalframe:  { kinds: ['tree', 'stump'], weight: 0.15, themes: ['arcane', 'ruins'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.55, tall: true, tags: ['portal'], maxPerChunk: 1, anim: true },
+  crystalspire: { kinds: ['tree', 'rock'], weight: 0.25, themes: ['arcane', 'cave'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.4, tall: true, light: { color: 'bannerBlue', radius: 2.5 }, maxPerChunk: 2 },
+  // ── connective structures: bridges, gates, portals, waypoints ──
+  bridgeplank:  { kinds: ['stump'], weight: 0.2, themes: ['water', 'swamp', 'plains', 'forest'], role: 'accent', rotate: 'upright', near: ['water', 'path'], pass: 'walkable', footprint: 0.5, maxPerChunk: 1 },
+  bridgestone:  { kinds: ['stump', 'rock'], weight: 0.15, themes: ['water', 'mountain', 'city'], role: 'accent', rotate: 'upright', near: ['water', 'path'], pass: 'walkable', footprint: 0.55, maxPerChunk: 1 },
+  bridgerope:   { kinds: ['stump'], weight: 0.15, themes: ['mountain', 'jungle', 'swamp'], role: 'accent', rotate: 'upright', near: ['water'], pass: 'walkable', footprint: 0.5, maxPerChunk: 1 },
+  woodgate:     { kinds: ['tree', 'stump'], weight: 0.2, themes: ['plains', 'forest', 'city'], role: 'accent', rotate: 'upright', near: ['path'], clusterWith: ['fencerun'], pass: 'solid', footprint: 0.5, maxPerChunk: 2, tags: ['interactable'] },
+  woodgateopen: { kinds: ['tree', 'stump'], weight: 0.2, themes: ['plains', 'forest', 'city'], role: 'accent', rotate: 'upright', near: ['path'], clusterWith: ['fencerun'], pass: 'walkable', footprint: 0.5, maxPerChunk: 2, tags: ['interactable'] },
+  portcullis:   { kinds: ['stump', 'tree'], weight: 0.2, themes: ['dungeon', 'ruins', 'city'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.55, maxPerChunk: 2, tags: ['interactable'] },
+  brokengate:   { kinds: ['stump', 'rock'], weight: 0.25, themes: ['ruins', 'dungeon', 'haunted'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.5, maxPerChunk: 2 },
+  cavemouth:    { kinds: ['rock', 'tree'], weight: 0.2, themes: ['mountain', 'cave', 'forest'], role: 'accent', rotate: 'upright', near: ['wall', 'rock'], pass: 'solid', footprint: 0.7, maxPerChunk: 1, tags: ['portal'] },
+  mineentrance: { kinds: ['stump', 'tree'], weight: 0.15, themes: ['mountain', 'cave'], role: 'accent', rotate: 'upright', near: ['wall'], clusterWith: ['minecart', 'beamframe'], pass: 'solid', footprint: 0.6, maxPerChunk: 1, tags: ['portal'] },
+  stairdown:    { kinds: ['rock', 'stump'], weight: 0.15, themes: ['dungeon', 'ruins', 'cave'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.5, maxPerChunk: 1, tags: ['portal'] },
+  ladder:       { kinds: ['stump'], weight: 0.15, themes: ['dungeon', 'cave', 'city'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.35, maxPerChunk: 1, tags: ['portal'], gameplay: ['climbable'] },
+  cellarhatch:  { kinds: ['stump', 'rock'], weight: 0.15, themes: ['city', 'plains'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.45, maxPerChunk: 1, tags: ['portal'] },
+  shrine:       { kinds: ['rock', 'stump'], weight: 0.15, themes: ['forest', 'plains', 'mountain', 'arcane'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.45, maxPerChunk: 1, light: { color: 'ember', radius: 1.5 }, tags: ['waypoint'] },
+  bonfire:      { kinds: ['rock', 'stump'], weight: 0.15, themes: ['plains', 'forest', 'mountain', 'haunted'], role: 'accent', rotate: 'free', near: ['path'], clusterWith: ['tent', 'campring'], pass: 'solid', footprint: 0.5, maxPerChunk: 1, light: { color: 'ember', radius: 3.5 }, anim: true, tags: ['waypoint'] },
   // decor-ring assets: placed by the plaza landmark ring, not scatter (no
   // placement tags needed — empty kinds keeps them off the scatter placer)
   lamppost: { kinds: [] },
@@ -1022,6 +1187,238 @@ const KEY_FRAME = ringPath(0.24, -0.5, 0) + 'M-0.28 0L0.64 0'
 const KEY_TEETH = rectD(0.36, 0.06, 0.12, 0.24) + rectD(0.56, 0.06, 0.12, 0.32)
 const KEY_HI = 'M-0.72 0.06A0.23 0.23 0 0 1 -0.5 -0.24M-0.2 -0.02L0.5 -0.02'
 
+// ── snow / tundra props ─────────────────────────────────────────────────────
+// FROZEN POND decal: pale blue-grey ice blob, a steel sheen offset up-left,
+// two thin polyline cracks, and a snow rim crescent hugging the up-left shore.
+const FROZENPOND_D =
+  'M-0.78 0.05C-0.8 -0.35 -0.45 -0.6 -0.05 -0.62C0.35 -0.64 0.72 -0.42 0.76 -0.05C0.8 0.3 0.5 0.58 0.08 0.6C-0.35 0.62 -0.76 0.42 -0.78 0.05Z'
+const FROZENPOND_SHEEN =
+  'M-0.5 -0.1C-0.5 -0.35 -0.25 -0.48 0.02 -0.46C0.3 -0.44 0.48 -0.28 0.46 -0.05C0.44 0.16 0.2 0.28 -0.08 0.26C-0.35 0.24 -0.5 0.1 -0.5 -0.1Z'
+const FROZENPOND_CRACKS = 'M-0.45 0.2L-0.1 0.02L0.15 0.1L0.5 -0.12M-0.15 -0.4L-0.02 -0.12L0.3 0.3'
+const FROZENPOND_RIM =
+  'M-0.76 0.02C-0.78 -0.32 -0.45 -0.56 -0.08 -0.58C-0.12 -0.45 -0.3 -0.44 -0.42 -0.32C-0.55 -0.2 -0.6 -0.05 -0.62 0.08C-0.7 0.1 -0.75 0.1 -0.76 0.02Z'
+
+// SNOWDRIFT: wind-tailed drift — a two-tone elongated blob whose eastern end
+// streamlines into a tapering tail (wind read); free rotation spins the tail.
+const SNOWDRIFT_D =
+  'M-0.85 0.02C-0.88 -0.22 -0.62 -0.38 -0.32 -0.36C-0.05 -0.35 0.3 -0.24 0.9 -0.04C0.55 0.06 0.15 0.18 -0.25 0.2C-0.6 0.22 -0.83 0.18 -0.85 0.02Z'
+const SNOWDRIFT_CORE =
+  'M-0.7 -0.04C-0.7 -0.2 -0.5 -0.3 -0.26 -0.29C-0.02 -0.28 0.25 -0.2 0.62 -0.07C0.35 -0.02 0.05 0.05 -0.25 0.07C-0.52 0.09 -0.68 0.07 -0.7 -0.04Z'
+
+// ICICLE CLUSTER: a low rock lip with four translucent pale spikes jutting
+// down-right (away from the light) — one multi-subpath triangle fan.
+const ICICLECLUSTER_ROCK =
+  'M-0.6 -0.12C-0.64 -0.4 -0.4 -0.58 -0.08 -0.6C0.24 -0.61 0.46 -0.44 0.46 -0.18C0.45 0.04 0.22 0.18 -0.1 0.17C-0.4 0.16 -0.57 0.08 -0.6 -0.12Z'
+const ICICLECLUSTER_SPIKES =
+  'M-0.38 0.1L-0.2 0.14L-0.31 0.62Z' +
+  'M-0.12 0.14L0.06 0.15L-0.02 0.72Z' +
+  'M0.12 0.12L0.3 0.08L0.28 0.6Z' +
+  'M0.36 0.02L0.48 -0.06L0.55 0.42Z'
+
+// ICE TREE: frozen dead snag from above — crooked bare limbs off a broken
+// trunk disc, with snow/ice dabs clinging to the up-left (lit-side) limbs.
+const ICETREE_BRANCHES =
+  'M0 0.02L0.34 -0.2L0.5 -0.62M0.34 -0.2L0.66 -0.28M0 0.02L0.56 0.24L0.84 0.14M0 0.02L0.1 0.5L-0.1 0.8M0 0.02L-0.46 0.3L-0.78 0.24M0 0.02L-0.34 -0.34L-0.3 -0.76M-0.34 -0.34L-0.62 -0.44'
+const ICETREE_TRUNK = ringPath(0.18)
+const ICETREE_ICE =
+  ringPath(0.08, -0.34, -0.34) + ringPath(0.07, -0.62, -0.44) + ringPath(0.065, -0.3, -0.72) + ringPath(0.06, -0.14, -0.12)
+
+// ICE HUT (igloo) from above: shade dome + a lit snow cap nudged up-left (two
+// distinct blobs, cairn-style — not a cutout pair, so the snow can stay muted),
+// spiral block-course seams (two concentric arcs + radial ticks), and a dark
+// entrance tunnel stub jutting down-right.
+const ICEHUT_SHADOW = 'M0.6 0.18A0.55 0.34 0 1 0 0.62 0.22Z'
+const ICEHUT_DOME = ringPath(0.55, -0.02, 0)
+const ICEHUT_CAP = ringPath(0.4, -0.12, -0.1)
+const ICEHUT_SEAMS =
+  'M-0.44 0.1A0.44 0.44 0 0 1 -0.08 -0.44M0.1 -0.29A0.31 0.31 0 0 1 0.28 0.1M-0.3 -0.02L-0.16 -0.01M0.02 -0.36L0.04 -0.22M0.15 0.28L0.22 0.4'
+const ICEHUT_DOOR = 'M0.24 0.4L0.52 0.28L0.62 0.5L0.34 0.62Z'
+
+// ICE FLOE: three angular pale plates drifting over a waterDeep gap that shows
+// between them (one multi-subpath plate layer), pale glint on two broken edges.
+const ICEFLOE_GAP =
+  'M-0.7 0.05C-0.72 -0.3 -0.4 -0.55 0 -0.56C0.4 -0.57 0.7 -0.32 0.7 0.02C0.7 0.35 0.4 0.55 0 0.55C-0.4 0.55 -0.68 0.35 -0.7 0.05Z'
+const ICEFLOE_PLATES =
+  'M-0.66 -0.05L-0.4 -0.44L-0.05 -0.3L-0.12 0.05L-0.45 0.18Z' +
+  'M0.06 -0.4L0.5 -0.35L0.62 0L0.3 0.12L0.08 -0.08Z' +
+  'M-0.25 0.28L0.12 0.2L0.3 0.42L-0.05 0.52Z'
+const ICEFLOE_EDGE = 'M-0.4 -0.44L-0.05 -0.3M0.5 -0.35L0.62 0'
+
+// ── volcanic props ─────────────────────────────────────────────────────
+// ── volcanic props (glowing fissures, cooled flows, fumaroles, ash, char) ────
+// Glowing FISSURE decal: one branching crack polyline (wider than `crack`),
+// drawn three times — dark gape, cooling emberDeep mid, live ember core along
+// the main run only (the single glow accent).
+const LAVACRACK_MAIN = 'M-0.85 -0.28L-0.42 -0.16L-0.08 0.1L0.38 0.22L0.8 0.42M-0.42 -0.16L-0.28 -0.55M-0.08 0.1L-0.18 0.5M0.38 0.22L0.55 -0.12'
+const LAVACRACK_CORE = 'M-0.78 -0.26L-0.42 -0.16L-0.08 0.1L0.38 0.22L0.72 0.38'
+
+// Cooled OBSIDIAN lobe: a lumpy multi-lobe flow blob, near-black two-tone
+// (stoneDark base under an ink lit face), one thin cream glint for the gloss.
+const OBSIDIANFLOW_D = 'M-0.78 -0.1C-0.82 -0.42 -0.5 -0.58 -0.18 -0.48C0.02 -0.66 0.42 -0.6 0.55 -0.38C0.82 -0.34 0.92 -0.06 0.74 0.14C0.78 0.4 0.5 0.56 0.24 0.46C0.06 0.62 -0.3 0.58 -0.42 0.4C-0.7 0.4 -0.84 0.16 -0.78 -0.1Z'
+const OBSIDIANFLOW_GLINT = 'M-0.45 -0.2Q-0.05 -0.4 0.4 -0.22'
+
+// FUMAROLE: a low two-tone crater cone ringed by a sulfur crust, with a faint
+// downwind sulfur stain fan and a dark vent throat.
+const SULFURVENT_FAN = 'M0.05 0.08C0.4 -0.02 0.78 0.12 0.82 0.32C0.8 0.52 0.45 0.62 0.2 0.52C0.02 0.42 -0.02 0.22 0.05 0.08Z'
+const SULFURVENT_CONE = ringPath(0.42)
+const SULFURVENT_CRUST = ringPath(0.27)
+const SULFURVENT_THROAT = ringPath(0.13)
+
+// Soft ASH drift: wide low mound (snowpatch technique — dark wash + a pale
+// wind-lit core offset up-left, no cutout pair) with a few unburnt flecks.
+const ASHPILE_D = 'M-0.8 0.12C-0.85 -0.2 -0.5 -0.4 -0.12 -0.34C0.25 -0.46 0.68 -0.34 0.8 -0.05C0.88 0.2 0.6 0.4 0.22 0.44C-0.18 0.52 -0.62 0.44 -0.8 0.12Z'
+const ASHPILE_CORE = 'M-0.52 0C-0.55 -0.2 -0.28 -0.3 -0.02 -0.26C0.22 -0.32 0.5 -0.22 0.55 -0.04C0.58 0.12 0.4 0.24 0.12 0.26C-0.18 0.3 -0.48 0.22 -0.52 0Z'
+const ASHPILE_FLECKS = ringPath(0.045, -0.3, 0.05) + ringPath(0.035, 0.15, -0.12) + ringPath(0.04, 0.35, 0.18) + ringPath(0.03, -0.05, 0.28)
+
+// CHARRED SNAG from above: bare ink limbs radiating from a burnt trunk disc
+// (the coal-black cousin of mountain `snag`), two limb tips still smoldering —
+// an emberDeep coal under a smaller live-ember dot at each.
+const CHARSNAG_LIMBS = 'M0 0.02L0.32 -0.3L0.28 -0.72M0.32 -0.3L0.6 -0.42M0 0.02L0.72 0.16M0 0.02L-0.38 0.48L-0.7 0.62M-0.38 0.48L-0.32 0.8M0 0.02L-0.58 -0.26L-0.84 -0.18'
+const CHARSNAG_TRUNK = ringPath(0.15)
+const CHARSNAG_COALS = ringPath(0.07, 0.28, -0.72) + ringPath(0.06, -0.7, 0.62)
+const CHARSNAG_TIPS = ringPath(0.04, 0.28, -0.72) + ringPath(0.032, -0.7, 0.62)
+
+// GEYSER mouth: concentric mineral terraces — two-tone stone outer ring, a th2
+// sulfur-crust ring, a dark rim, and the pale steaming pool dot at the center.
+const GEYSERPOOL_TERRACE = ringPath(0.62)
+const GEYSERPOOL_CRUST = ringPath(0.38)
+const GEYSERPOOL_RIM = ringPath(0.24)
+const GEYSERPOOL_POOL = ringPath(0.15)
+
+// ── arcane props ─────────────────────────────────────────────────────
+// ── arcane props (bannerBlue energy accents on rockDeep/rock stonework) ──────
+// Carved STANDING RUNE STONE: a broad flat-topped tapered slab (visibly not the
+// pointed `waystone` menhir or the leaning `obelisk`), three glowing rune ticks
+// down the face.
+const RUNESTONE_D = 'M-0.34 0.62L-0.42 -0.4L-0.22 -0.66L0.16 -0.72L0.38 -0.44L0.3 0.6Z'
+// three angular runic marks, the middle one a kinked chevron
+const RUNESTONE_RUNES = 'M-0.1 -0.46L0.08 -0.36M-0.12 -0.14L0.02 -0.26L0.12 -0.08M-0.1 0.12L0.08 0.22'
+
+// LEVITATING SHARD: the shard cutout hangs up-left of its own detached soft
+// shadow — the gap between body and shadow sells the float.
+const FLOATSHARD_SHADOW = 'M-0.1 0.38A0.28 0.13 0 1 0 0.46 0.38A0.28 0.13 0 1 0 -0.1 0.38Z'
+const FLOATSHARD_D = 'M-0.52 -0.24L-0.28 -0.64L0.08 -0.54L0.18 -0.16L-0.16 0Z'
+const FLOATSHARD_GLINT = 'M-0.52 -0.24L-0.28 -0.64L0.08 -0.54'
+
+// GLOWING MANA POOL decal (murkpool's flat-blob build, arcane-blue): dark pool,
+// bright inner welling, one thin cream rim glint on the up-left lip.
+const MANAPOOL_D = 'M0.74 0.02Q0.72 -0.32 0.4 -0.44Q0.1 -0.6 -0.24 -0.48Q-0.6 -0.42 -0.7 -0.12Q-0.78 0.2 -0.5 0.4Q-0.2 0.58 0.16 0.5Q0.6 0.4 0.74 0.02Z'
+const MANAPOOL_CORE = 'M0.4 0Q0.36 -0.22 0.12 -0.28Q-0.16 -0.36 -0.36 -0.18Q-0.5 0 -0.36 0.18Q-0.16 0.36 0.1 0.3Q0.36 0.22 0.4 0Z'
+const MANAPOOL_GLINT = 'M-0.56 -0.26Q-0.2 -0.5 0.28 -0.38'
+
+// Inscribed RITUAL CIRCLE decal: two concentric inked rings, a triangle strung
+// between them, three glowing node dots on the outer ring at the vertices.
+const MAGICCIRCLE_RINGS = ringPath(0.62) + ringPath(0.42)
+const MAGICCIRCLE_TRI = 'M0 -0.52L-0.45 0.26L0.45 0.26Z'
+const MAGICCIRCLE_NODES = ringPath(0.07, 0, -0.62) + ringPath(0.07, -0.537, 0.31) + ringPath(0.07, 0.537, 0.31)
+
+// Freestanding BROKEN PORTAL frame, top-down: two ragged pillar stubs (one
+// multi-subpath cutout) with a faint arcane shimmer arcing across the gap.
+const PORTALFRAME_D =
+  'M-0.78 0.44L-0.84 -0.28L-0.64 -0.52L-0.44 -0.32L-0.46 0.46Z' +
+  'M0.46 0.44L0.42 -0.34L0.6 -0.54L0.8 -0.28L0.76 0.46Z'
+const PORTALFRAME_SHIMMER = 'M-0.5 -0.16Q0 -0.7 0.48 -0.18'
+const PORTALFRAME_HAZE = 'M-0.54 0.04Q0 -0.46 0.52 0.02'
+
+// Tall ARCANE CRYSTAL spire: one big faceted spike + two satellite shards, all
+// one two-tone cutout, with a cream facet-seam glint.
+const CRYSTALSPIRE_SHADOW = 'M-0.3 0.52A0.42 0.18 0 1 0 0.54 0.52A0.42 0.18 0 1 0 -0.3 0.52Z'
+const CRYSTALSPIRE_D =
+  'M-0.08 0.5L-0.32 0.08L-0.2 -0.55L0.04 -0.88L0.3 -0.35L0.2 0.42Z' +
+  'M-0.66 0.36L-0.5 -0.06L-0.3 0.4Z' +
+  'M0.36 0.46L0.54 0.08L0.68 0.44Z'
+const CRYSTALSPIRE_GLINT = 'M0.02 -0.76L-0.1 0.36M-0.5 0.02L-0.44 0.24'
+
+// ── connective structure props ──────────────────────────────────────────
+// Plank footbridge: deck of cross-planks between two side rails (span reads
+// horizontally; the placer's upright wobble keeps it roughly axis-aligned).
+const BRIDGEPLANK_D = (() => {
+  let d = ''
+  for (let i = 0; i < 7; i++) d += rectD(-0.82 + i * 0.24, -0.38, 0.2, 0.76)
+  return d
+})()
+const BRIDGEPLANK_RAILS = 'M-0.85 -0.44L0.85 -0.44M-0.85 0.44L0.85 0.44'
+
+// Stone arch bridge from above: dressed deck slab, parapet edges, masonry
+// seams with a keystone line at mid-span.
+const BRIDGESTONE_D = rectD(-0.85, -0.42, 1.7, 0.84)
+const BRIDGESTONE_SEAMS = 'M-0.55 -0.42L-0.55 0.42M-0.28 -0.42L-0.28 0.42M0 -0.42L0 0.42M0.28 -0.42L0.28 0.42M0.55 -0.42L0.55 0.42'
+const BRIDGESTONE_PARAPET = 'M-0.85 -0.42L0.85 -0.42M-0.85 0.42L0.85 0.42'
+
+// Rope bridge: two inward-sagging side ropes + slat run with two missing slats.
+const BRIDGEROPE_ROPES = 'M-0.85 -0.36Q0 -0.24 0.85 -0.36M-0.85 0.36Q0 0.24 0.85 0.36'
+const BRIDGEROPE_SLATS = (() => {
+  let d = ''
+  for (const x of [-0.74, -0.54, -0.34, 0.06, 0.26, 0.66]) d += rectD(x, -0.28, 0.14, 0.56)
+  return d
+})()
+
+// Fence gate (state pair): two round post tops + a plank panel between them;
+// the open state swings the same panel ~75° from the left post hinge.
+const WOODGATE_D = ringPath(0.13, -0.7, 0) + ringPath(0.13, 0.7, 0) + rectD(-0.57, -0.09, 1.14, 0.18)
+const WOODGATE_BRACE = 'M-0.52 -0.07L0.52 0.07'
+const WOODGATEOPEN_D = ringPath(0.13, -0.7, 0) + ringPath(0.13, 0.7, 0) + 'M-0.613 0.023L-0.787 -0.023L-0.541 -0.941L-0.367 -0.895Z'
+const WOODGATEOPEN_BRACE = 'M-0.73 -0.06L-0.42 -0.86'
+
+// Portcullis: stone jambs + an iron lattice (two-tone like `chains`).
+const PORTCULLIS_JAMBS = rectD(-0.85, -0.5, 0.25, 1) + rectD(0.6, -0.5, 0.25, 1)
+const PORTCULLIS_GRID = 'M-0.45 -0.42L-0.45 0.42M-0.15 -0.42L-0.15 0.42M0.15 -0.42L0.15 0.42M0.45 -0.42L0.45 0.42M-0.58 -0.28L0.58 -0.28M-0.58 0L0.58 0M-0.58 0.28L0.58 0.28'
+const PORTCULLIS_GRID_HI = 'M-0.45 -0.42L-0.45 0.42M0.15 -0.42L0.15 0.42M-0.58 0L0.58 0'
+
+// Ruined gate: one standing jamb, one toppled slab, splintered plank scraps.
+const BROKENGATE_D = rectD(-0.8, -0.5, 0.24, 1) + 'M0.05 0.28L0.75 0.05L0.82 0.22L0.12 0.45Z'
+const BROKENGATE_SPLINTERS = 'M-0.3 -0.05L-0.05 -0.18L-0.12 0.02ZM0.2 -0.3L0.42 -0.38L0.3 -0.15ZM-0.45 0.3L-0.28 0.22L-0.35 0.42Z'
+
+// Cave mouth: rocky arch blob around a dark maw, scree at the lip.
+const CAVEMOUTH_D = blobPath(lobeRing(7, 0.74, 0.6))
+const CAVEMOUTH_MAW = 'M-0.42 0.2A0.42 0.32 0 1 0 0.42 0.2A0.42 0.32 0 1 0 -0.42 0.2Z'
+const CAVEMOUTH_SCREE = ringPath(0.09, -0.3, 0.58) + ringPath(0.07, 0.05, 0.64) + ringPath(0.08, 0.38, 0.56)
+
+// Mine adit: dark opening framed by timber uprights + a lintel, rail stubs out.
+const MINEENTRANCE_MAW = rectD(-0.36, -0.36, 0.72, 0.78)
+const MINEENTRANCE_BEAMS = 'M-0.44 -0.5L-0.44 0.46M0.44 -0.5L0.44 0.46'
+const MINEENTRANCE_LINTEL = 'M-0.58 -0.46L0.58 -0.46'
+const MINEENTRANCE_RAILS = 'M-0.12 0.44L-0.12 0.88M0.12 0.44L0.12 0.88'
+
+// Stairwell: banded steps descending into ink.
+const STAIRDOWN_WELL = rectD(-0.5, -0.62, 1, 1.24)
+const STAIRDOWN_S1 = rectD(-0.44, -0.56, 0.88, 0.26)
+const STAIRDOWN_S2 = rectD(-0.44, -0.27, 0.88, 0.26)
+const STAIRDOWN_S3 = rectD(-0.44, 0.02, 0.88, 0.26)
+const STAIRDOWN_PIT = rectD(-0.44, 0.31, 0.88, 0.28)
+
+// Ladder over a dark hatch: rails + rungs across an ink circle.
+const LADDER_HATCH = ringPath(0.36)
+const LADDER_RAILS = 'M-0.16 -0.72L-0.16 0.72M0.16 -0.72L0.16 0.72'
+const LADDER_RUNGS = 'M-0.16 -0.52L0.16 -0.52M-0.16 -0.26L0.16 -0.26M-0.16 0L0.16 0M-0.16 0.26L0.16 0.26M-0.16 0.52L0.16 0.52'
+
+// Cellar hatch: stone frame around two plank leaves with a ring handle.
+const CELLARHATCH_FRAME = rectD(-0.55, -0.45, 1.1, 0.9)
+const CELLARHATCH_LEAVES = rectD(-0.45, -0.35, 0.42, 0.7) + rectD(0.03, -0.35, 0.42, 0.7)
+const CELLARHATCH_HANDLE = ringPath(0.07, 0.24, 0)
+
+// Roadside shrine: stone base, roofed niche, dark recess, votive ember.
+const SHRINE_BASE = rectD(-0.4, 0.05, 0.8, 0.45)
+const SHRINE_NICHE = 'M-0.3 0.05L-0.3 -0.35L0 -0.6L0.3 -0.35L0.3 0.05Z'
+const SHRINE_RECESS = 'M-0.16 0.05L-0.16 -0.28L0 -0.42L0.16 -0.28L0.16 0.05Z'
+const SHRINE_VOTIVE = ringPath(0.06, 0, -0.08)
+
+// Waypoint bonfire: a wider seeded stone ring than campring, log tripod, big
+// two-stage flame.
+const BONFIRE_STONES = (() => {
+  const seed = hashString('bonfire')
+  let d = ''
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + (hash01(seed + i * 373) - 0.5) * 0.25
+    const rad = 0.72 + (hash01(seed + i * 373 + 131) - 0.5) * 0.08
+    const r = 0.11 + hash01(seed + i * 373 + 211) * 0.05
+    d += ringPath(r, r3(Math.cos(a) * rad), r3(Math.sin(a) * rad))
+  }
+  return d
+})()
+const BONFIRE_LOGS = 'M0 0.05L-0.38 -0.3M0 0.05L0.4 -0.26M0 0.05L0.02 0.42'
+const BONFIRE_FLAME = 'M-0.26 0.1C-0.32 -0.14 -0.14 -0.32 0.04 -0.28C0.24 -0.24 0.32 -0.02 0.22 0.16C0.08 0.32 -0.16 0.28 -0.26 0.1Z'
+
 export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
   grass: withVariants([
     { id: 'tuft', size: 0.9, paths: [
@@ -1412,6 +1809,50 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: CAMPCOLD_STICKS, stroke: 'woodDeep', sw: 0.07 },
       ...cutout(CAMPRING_STONES, 'rockDeep', 'rock'),
     ] },
+    // ── connective structures (grass) ──
+    // PLANK FOOTBRIDGE: cross-plank deck between two side rails — the river/gap
+    // crossing connector.
+    { id: 'bridgeplank', size: 1.2, wonk: 0.03, paths: [
+      { d: BRIDGEPLANK_RAILS, stroke: 'woodDeep', sw: 0.09 },
+      ...cutout(BRIDGEPLANK_D, 'woodDeep', 'wood'),
+    ] },
+    // STONE ARCH BRIDGE: dressed masonry deck with parapets + keystone seams.
+    { id: 'bridgestone', size: 1.2, wonk: 0.025, paths: [
+      ...cutout(BRIDGESTONE_D, 'rockDeep', 'stoneBase'),
+      { d: BRIDGESTONE_SEAMS, stroke: 'mortarInk', sw: 0.04 },
+      { d: BRIDGESTONE_PARAPET, stroke: 'rockDeep', sw: 0.09 },
+    ] },
+    // ROPE BRIDGE: sagging side ropes + slat run with missing slats.
+    { id: 'bridgerope', size: 1.2, wonk: 0.03, paths: [
+      { d: BRIDGEROPE_ROPES, stroke: 'canvas', sw: 0.06 },
+      ...cutout(BRIDGEROPE_SLATS, 'woodDeep', 'wood'),
+    ] },
+    // WOOD GATE (closed): plank panel slung between fence-post tops, Z-brace.
+    { id: 'woodgate', size: 1, wonk: 0.03, paths: [
+      ...cutout(WOODGATE_D, 'woodDeep', 'wood'),
+      { d: WOODGATE_BRACE, stroke: 'ink', sw: 0.05, opacity: 0.6 },
+    ] },
+    // WOOD GATE (open): the SAME posts + panel swung ~75° from the left hinge.
+    { id: 'woodgateopen', size: 1, wonk: 0.03, paths: [
+      ...cutout(WOODGATEOPEN_D, 'woodDeep', 'wood'),
+      { d: WOODGATEOPEN_BRACE, stroke: 'ink', sw: 0.05, opacity: 0.6 },
+    ] },
+    // ROADSIDE SHRINE: stone base + roofed niche, votive ember in the recess.
+    { id: 'shrine', size: 0.95, wonk: 0.03, paths: [
+      ...cutout(SHRINE_BASE, 'rockDeep', 'rock'),
+      ...cutout(SHRINE_NICHE, 'woodDeep', 'wood'),
+      { d: SHRINE_RECESS, fill: 'ink' },
+      { d: SHRINE_VOTIVE, fill: 'ember' },
+    ] },
+    // WAYPOINT BONFIRE: big stone ring, log tripod, two-stage flame — the rest
+    // stop. Bigger + tripod-fed vs the small crossed-stick `campring`.
+    { id: 'bonfire', size: 1.15, wonk: 0.035, paths: [
+      { d: ringPath(0.5), fill: 'ink', opacity: 0.85 },
+      { d: BONFIRE_LOGS, stroke: 'woodDeep', sw: 0.11 },
+      { d: BONFIRE_FLAME, fill: 'emberDeep' },
+      { d: ringPath(0.14, -0.02, 0), fill: 'ember' },
+      ...cutout(BONFIRE_STONES, 'rockDeep', 'rock'),
+    ] },
   ]),
   stone: withVariants([
     { id: 'rubble', size: 1, paths: [
@@ -1669,6 +2110,173 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: KEY_FRAME, stroke: 'steel', sw: 0.1, lit: true },
       { d: KEY_TEETH, fill: 'steel' },
     ] },
+    // ── snow / tundra ──
+    // FROZEN POND decal: snowShade ice blob, steel sheen up-left, two hairline
+    // cracks, snow rim crescent on the windward shore — all muted, no white glare.
+    { id: 'frozenpond', size: 1.15, paths: [
+      { d: FROZENPOND_D, fill: 'snowShade', opacity: 0.55 },
+      { d: FROZENPOND_SHEEN, fill: 'steel', opacity: 0.45 },
+      { d: FROZENPOND_CRACKS, stroke: 'waterHi', sw: 0.05, opacity: 0.6 },
+      { d: FROZENPOND_RIM, fill: 'snow', opacity: 0.7 },
+    ] },
+    // SNOWDRIFT: two-tone wind-tailed drift, shade base + muted lit core; the
+    // tapering tail is the signature (snowpatch is round — this one streams).
+    { id: 'snowdrift', size: 1.05, paths: [
+      { d: SNOWDRIFT_D, fill: 'snowShade', opacity: 0.6 },
+      { d: SNOWDRIFT_CORE, fill: 'snow', opacity: 0.75 },
+    ] },
+    // ICICLE CLUSTER: two-tone rock lip + a fan of translucent snow spikes with a
+    // faint snowShade outline so the pale ice reads on dark ground.
+    { id: 'iciclecluster', size: 0.85, wonk: 0.035, paths: [
+      ...cutout(ICICLECLUSTER_ROCK, 'rockDeep', 'rock'),
+      { d: ICICLECLUSTER_SPIKES, fill: 'snow', opacity: 0.7 },
+      { d: ICICLECLUSTER_SPIKES, stroke: 'snowShade', sw: 0.04, opacity: 0.5 },
+    ] },
+    // ICE TREE: bare woodDeep limbs + two-tone trunk disc, snow dabs iced onto the
+    // up-left limbs — the frozen counterpoint to the mountain snag.
+    { id: 'icetree', size: 1.1, wonk: 0.04, paths: [
+      { d: ICETREE_BRANCHES, stroke: 'woodDeep', sw: 0.07 },
+      ...cutout(ICETREE_TRUNK, 'woodDeep', 'wood'),
+      { d: ICETREE_ICE, fill: 'snow', opacity: 0.75 },
+    ] },
+    // ICE HUT: domed snow shelter — shade dome, muted lit cap, block-course seam
+    // strokes, dark entrance stub down-right. Marquee snow accent (5 paths).
+    { id: 'icehut', size: 1.15, wonk: 0.03, paths: [
+      { d: ICEHUT_SHADOW, fill: 'shadow', opacity: 0.22 },
+      { d: ICEHUT_DOME, fill: 'snowShade', opacity: 0.9 },
+      { d: ICEHUT_CAP, fill: 'snow', opacity: 0.75 },
+      { d: ICEHUT_SEAMS, stroke: 'snowShade', sw: 0.05, opacity: 0.8 },
+      { d: ICEHUT_DOOR, fill: 'stoneDark' },
+    ] },
+    // ICE FLOE: waterDeep gap under three angular translucent plates; waterHi
+    // glints on the freshly-broken edges.
+    { id: 'icefloe', size: 1.05, wonk: 0.05, paths: [
+      { d: ICEFLOE_GAP, fill: 'waterDeep', opacity: 0.85 },
+      { d: ICEFLOE_PLATES, fill: 'snow', opacity: 0.7 },
+      { d: ICEFLOE_EDGE, stroke: 'waterHi', sw: 0.05, opacity: 0.5 },
+    ] },
+    // ── volcanic ──
+    // ── volcanic ──
+    // glowing lava FISSURE decal: dark gape > emberDeep cooling seam > live
+    // ember core down the main run (registered strokes — keep wonk gentle).
+    { id: 'lavacrack', size: 1.2, wonk: 0.035, paths: [
+      { d: LAVACRACK_MAIN, stroke: 'stoneDark', sw: 0.16 },
+      { d: LAVACRACK_MAIN, stroke: 'emberDeep', sw: 0.085, opacity: 0.9 },
+      { d: LAVACRACK_CORE, stroke: 'ember', sw: 0.045, opacity: 0.95 },
+    ] },
+    { id: 'obsidianflow', size: 1, paths: [
+      ...cutout(OBSIDIANFLOW_D, 'stoneDark', 'ink'),
+      { d: OBSIDIANFLOW_GLINT, stroke: 'cream', sw: 0.04, opacity: 0.5 },
+    ] },
+    { id: 'sulfurvent', size: 0.9, wonk: 0.03, paths: [
+      { d: SULFURVENT_FAN, fill: 'bannerGold', opacity: 0.3 },
+      ...cutout(SULFURVENT_CONE, 'rockDeep', 'rock'),
+      { d: SULFURVENT_CRUST, stroke: 'th2', sw: 0.1 },
+      { d: SULFURVENT_THROAT, fill: 'stoneDark' },
+    ] },
+    { id: 'ashpile', size: 1, paths: [
+      { d: ASHPILE_D, fill: 'stoneDark', opacity: 0.9 },
+      { d: ASHPILE_CORE, fill: 'stoneBase', opacity: 0.3 },
+      { d: ASHPILE_FLECKS, fill: 'stoneBase', opacity: 0.5 },
+    ] },
+    { id: 'charsnag', size: 1, wonk: 0.035, paths: [
+      { d: CHARSNAG_LIMBS, stroke: 'ink', sw: 0.11 },
+      { d: CHARSNAG_TRUNK, fill: 'ink' },
+      { d: CHARSNAG_COALS, fill: 'emberDeep' },
+      { d: CHARSNAG_TIPS, fill: 'ember' },
+    ] },
+    { id: 'geyserpool', size: 1.1, wonk: 0.03, paths: [
+      ...cutout(GEYSERPOOL_TERRACE, 'rockDeep', 'stoneBase'),
+      { d: GEYSERPOOL_CRUST, fill: 'th2', opacity: 0.9 },
+      { d: GEYSERPOOL_RIM, fill: 'rockDeep' },
+      { d: GEYSERPOOL_POOL, fill: 'waterHi' },
+    ] },
+    // ── arcane ──
+    // ── arcane dressing ──
+    // carved STANDING RUNE STONE: tapered two-tone slab, three bannerBlue rune
+    // ticks reading as a live glow on the dark face.
+    { id: 'runestone', size: 1.05, wonk: 0.03, paths: [
+      { d: 'M-0.26 0.6A0.38 0.15 0 1 0 0.5 0.6A0.38 0.15 0 1 0 -0.26 0.6Z', fill: 'shadow', opacity: 0.25 },
+      ...cutout(RUNESTONE_D, 'rockDeep', 'rock'),
+      { d: RUNESTONE_RUNES, stroke: 'bannerBlue', sw: 0.06 },
+    ] },
+    // LEVITATING SHARD: small angular shard hanging up-left of its detached
+    // shadow; a bannerBlue edge glint marks the lifting magic.
+    { id: 'floatshard', size: 0.6, wonk: 0.04, paths: [
+      { d: FLOATSHARD_SHADOW, fill: 'shadow', opacity: 0.25 },
+      ...cutout(FLOATSHARD_D, 'rockDeep', 'rock'),
+      { d: FLOATSHARD_GLINT, stroke: 'bannerBlue', sw: 0.05, opacity: 0.8 },
+    ] },
+    // glowing MANA POOL decal: dark arcane pool, bright welling core, thin
+    // cream lip glint up-left. Flat — no cutout, like murkpool.
+    { id: 'manapool', size: 1.05, paths: [
+      { d: MANAPOOL_D, fill: 'bannerBlueDk' },
+      { d: MANAPOOL_CORE, fill: 'bannerBlue', opacity: 0.85 },
+      { d: MANAPOOL_GLINT, stroke: 'cream', sw: 0.035, opacity: 0.75 },
+    ] },
+    // inscribed RITUAL CIRCLE decal: double inked ring, a triangle between
+    // them, three glowing node dots at the vertices.
+    { id: 'magiccircle', size: 1.15, wonk: 0.025, paths: [
+      { d: MAGICCIRCLE_RINGS, stroke: 'mortarInk', sw: 0.045 },
+      { d: MAGICCIRCLE_TRI, stroke: 'mortarInk', sw: 0.04, opacity: 0.85 },
+      { d: MAGICCIRCLE_NODES, fill: 'bannerBlue' },
+    ] },
+    // broken PORTAL FRAME: two ragged two-tone pillar stubs, a faint bannerBlue
+    // shimmer arcing across the dead gate's gap (a second, fainter haze arc).
+    { id: 'portalframe', size: 1.2, wonk: 0.04, paths: [
+      ...cutout(PORTALFRAME_D, 'rockDeep', 'rock'),
+      { d: PORTALFRAME_SHIMMER, stroke: 'bannerBlue', sw: 0.07, opacity: 0.55 },
+      { d: PORTALFRAME_HAZE, stroke: 'bannerBlue', sw: 0.05, opacity: 0.25 },
+    ] },
+    // tall ARCANE CRYSTAL spire: big faceted spike + two satellite shards in
+    // one two-tone cutout, cream facet glints selling the gleam.
+    { id: 'crystalspire', size: 1.15, wonk: 0.04, paths: [
+      { d: CRYSTALSPIRE_SHADOW, fill: 'shadow', opacity: 0.24 },
+      ...cutout(CRYSTALSPIRE_D, 'bannerBlueDk', 'bannerBlue'),
+      { d: CRYSTALSPIRE_GLINT, stroke: 'cream', sw: 0.05, opacity: 0.85 },
+    ] },
+    // ── connective structures (stone) ──
+    // PORTCULLIS: iron lattice between stone jambs — the closed choke point.
+    { id: 'portcullis', size: 1.05, wonk: 0.025, paths: [
+      ...cutout(PORTCULLIS_JAMBS, 'rockDeep', 'rock'),
+      { d: PORTCULLIS_GRID, stroke: 'lampPost', sw: 0.07 },
+      { d: PORTCULLIS_GRID_HI, stroke: 'steel', sw: 0.045, lit: true },
+    ] },
+    // BROKEN GATE: one jamb standing, one toppled, splintered scraps — the choke
+    // point that no longer chokes.
+    { id: 'brokengate', size: 1.05, wonk: 0.035, paths: [
+      ...cutout(BROKENGATE_D, 'rockDeep', 'rock'),
+      { d: BROKENGATE_SPLINTERS, fill: 'woodDeep' },
+      { d: 'M-0.5 -0.1L-0.2 -0.02M0.1 0.1L0.35 0.32', stroke: 'ink', sw: 0.04, opacity: 0.5 },
+    ] },
+    // CAVE MOUTH: rocky arch blob around a dark maw + scree lip — the
+    // overworld→underground portal.
+    { id: 'cavemouth', size: 1.3, wonk: 0.04, paths: [
+      ...cutout(CAVEMOUTH_D, 'rockDeep', 'rock'),
+      { d: CAVEMOUTH_MAW, fill: 'ink' },
+      { d: CAVEMOUTH_SCREE, fill: 'rock' },
+    ] },
+    // MINE ADIT: timber-framed dark opening with rail stubs running out.
+    { id: 'mineentrance', size: 1.1, wonk: 0.03, paths: [
+      { d: MINEENTRANCE_MAW, fill: 'ink' },
+      { d: MINEENTRANCE_RAILS, stroke: 'steel', sw: 0.05, opacity: 0.8 },
+      { d: MINEENTRANCE_BEAMS, stroke: 'woodDeep', sw: 0.13 },
+      { d: MINEENTRANCE_LINTEL, stroke: 'wood', sw: 0.13, lit: true },
+    ] },
+    // STAIRWELL DOWN: banded steps descending into ink — the dungeon-level portal.
+    { id: 'stairdown', size: 1, wonk: 0.02, paths: [
+      { d: STAIRDOWN_WELL, fill: 'stoneDark' },
+      { d: STAIRDOWN_S1, fill: 'stoneBase' },
+      { d: STAIRDOWN_S2, fill: 'rock' },
+      { d: STAIRDOWN_S3, fill: 'rockDeep' },
+      { d: STAIRDOWN_PIT, fill: 'ink' },
+    ] },
+    // LADDER over a hatch: rails + rungs across a dark hole.
+    { id: 'ladder', size: 0.85, wonk: 0.03, paths: [
+      { d: LADDER_HATCH, fill: 'ink' },
+      { d: LADDER_RAILS, stroke: 'wood', sw: 0.09 },
+      { d: LADDER_RUNGS, stroke: 'woodDeep', sw: 0.06 },
+    ] },
   ]),
   plaza: withVariants([
     { id: 'crate', size: 1, paths: [
@@ -1733,6 +2341,14 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: FLAGSTONE_SHADOW, fill: 'shadow', opacity: 0.22 },
       ...cutout(FLAGSTONE_D, 'roadSeam', 'flagstoneLit'),
       { d: FLAGSTONE_SEAM, stroke: 'flagSeam', sw: 0.045 },
+    ] },
+    // ── connective structures (plaza) ──
+    // CELLAR HATCH: two plank leaves in a stone frame, ring handle — the
+    // town→cellar portal.
+    { id: 'cellarhatch', size: 0.95, wonk: 0.025, paths: [
+      ...cutout(CELLARHATCH_FRAME, 'rockDeep', 'rock'),
+      ...cutout(CELLARHATCH_LEAVES, 'woodDeep', 'wood'),
+      { d: CELLARHATCH_HANDLE, stroke: 'ink', sw: 0.05 },
     ] },
   ]),
 }

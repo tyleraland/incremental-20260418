@@ -110,6 +110,18 @@ canopy: { kinds: ['tree'], weight: 0.2, themes: ['forest','plains'],
           role: 'cluster', rotate: 'upright', clusterWith: ['fern','leaves','mushroom'] },
 ```
 
+Beyond the phase-1 tags, `PropDef` carries a second declarative tier (the
+"Part-2" schema — see the field docs in `props.ts`): `pass`/`footprint`
+(REQUIRED on scatterable props — passability + reserve radius, gated by
+`AssetCatalog.test`), `layer` (ground/wall/ceiling/water-surface/canopy —
+water-surface props are skipped on legacy no-spec maps), `themeWeight`
+(per-theme weight override, CONSUMED by the pick on both paths),
+`scaleJitter` (CONSUMED: seeded per-instance scale), and declarative-only
+`patch`/`maxPerChunk`/`gameplay`/`light`/`anim`/`tall` for later mapgen/
+lighting/y-sort phases. `SCATTER_SETS` (same file) holds prefab mini-scenes
+(camp/graveyard/ruin/…) whose member ids are existence-checked; mapgen's
+clustering passes consume them later.
+
 An UNTAGGED prop defaults to universal / `field` / `weight: 1` / `upright` — it
 still places, but leaving it untagged makes generation dumber (it never clumps,
 never prefers a theme, and competes evenly with signature props). The
