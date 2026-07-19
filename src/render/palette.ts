@@ -35,10 +35,17 @@ export const PAPER_PALETTE = {
   cliffFill:   '#4a3623',
   cliffEdge:   '#a37c48',
 
-  // floor-mottle shades, one light/dark pair per biome
-  grassLight: '#202818', grassDark: '#11150b',
-  stoneLight: '#282d34', stoneDark: '#0e1013',
-  plazaLight: '#2c2719', plazaDark: '#0f0d09',
+  // floor-mottle shades. Each biome ground is a RAMP (dark→light) sampled per
+  // soft blob for tonal drift, and each biome offers a few named "looks"
+  // (terrain.tsx BIOME_LOOKS) a location picks by seed — so two grass fields
+  // differ. These sit deliberately CLOSE to the biome tile: large soft patches,
+  // not features. The …Light/…Dark are the ramp extremes; …Mid the common tone.
+  grassLight: '#202818', grassDark: '#11150b', grassMid: '#19200f',
+  grassDry:   '#262614', grassDryDark: '#15160b', grassMoss: '#16260f',  // dry / damp grass looks
+  stoneLight: '#282d34', stoneDark: '#0e1013', stoneMid: '#1a1f26',
+  stoneWarm:  '#262019', stoneWarmDark: '#14100b', stoneWarmLit: '#352c20', stoneMoss: '#172219', // sandstone / mossy-cave stone looks
+  plazaLight: '#2c2719', plazaDark: '#0f0d09', plazaMid: '#1c1810',
+  plazaGrey:  '#22201b', plazaGreyLit: '#302d26', plazaSand: '#2a2214', plazaSandLit: '#3a3020', // grey-cobble / sandy-lot plaza looks
 
   // §mapgen surface plane (terrain.tsx spec consumption): material washes laid
   // over the biome ground. Values sit near the mottle shades — large soft

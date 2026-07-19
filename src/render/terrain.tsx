@@ -80,37 +80,69 @@ const PLAZA_DECOR: Record<string, PropDef> = Object.fromEntries(
   TERRAIN_PROPS.plaza.filter((d) => d.id === 'banner' || d.id === 'lamppost').map((d) => [d.id, d]),
 )
 
-const MOTTLE_SHADES: Record<Biome, [string, string]> = {
-  grass: [P.grassLight, P.grassDark],
-  stone: [P.stoneLight, P.stoneDark],
-  plaza: [P.plazaLight, P.plazaDark],
+// ── Ground looks ─────────────────────────────────────────────────────────────
+// The base ground TILE is per-biome (3 CSS tiles, skins.tsx). On top, the bake
+// lays an optional full-field TINT wash + soft MOTTLE blobs whose fills come
+// from a RAMP of near-tile shades — the tonal drift that keeps a field from
+// reading as a flat 2-colour checker. A biome offers SEVERAL named looks; a
+// location deterministically picks one by hashing its seed (so two grass fields
+// differ). A matching THEME (desert/swamp/…) overrides with its own look.
+// Ramps run dark→light and are sampled with a triangular bias (mid-tones common,
+// extremes rare) so the field DRIFTS rather than speckles.
+// Tuning (pixel-sampled judge pass): tints must measurably shift the base
+// (0.3-ish was a no-op over the dark ground); mottles stay LOW-contrast vs the
+// tinted base — a bright ramp extreme reads as a bleach stain, so it earns its
+// spot only as a RARE (triangular-tail) fleck, never a mid stop.
+interface GroundLook {
+  tint?: { fill: string; op: number }
+  ramp: string[]   // ≥2 near-tile roles, ordered dark→light
 }
 
-// ── Theme ground looks ───────────────────────────────────────────────────────
-// The base ground TILE is per-biome (3 CSS tiles), but a desert field should
-// not read as green meadow. A matching theme (spec regionTags, else the legacy
-// trait-derived `themes`) lays a full-field TINT wash under everything and
-// swaps the mottle shades — the cheapest possible "base texture per biome":
-// one rect + recolored blobs, all baked. First match wins; city never tints
-// (its paving/yard washes are the ground look).
-// Tuned by a pixel-sampled judge pass: tints must measurably shift the base
-// (0.3-ish was a no-op over the dark ground) while mottles stay LOW-contrast
-// vs the tinted base (the control biome's mottle delta is tiny — high-value
-// mottles like sandLit/snowShade read as bleach stains, not ground variation).
-const THEME_GROUND: { theme: ThemeTag; tint: string; tintOp: number; mottles: [string, string] }[] = [
-  { theme: 'desert', tint: P.sand, tintOp: 0.4, mottles: [P.sand, P.dirtPath] },
-  { theme: 'swamp', tint: P.murkDeep, tintOp: 0.55, mottles: [P.murk, P.mossInk] },
+const BIOME_LOOKS: Record<Biome, GroundLook[]> = {
+  // A subtle look-level tint (~0.1–0.18) lifts/warms/cools a variant enough to
+  // read distinct from the field's default look without muddying — the default
+  // (first) look of each biome stays tint-free to match the base tile.
+  grass: [
+    { ramp: [P.grassDark, P.grassMid, P.grassLight, P.meadowWash] },                              // lush meadow
+    { tint: { fill: P.sandWash, op: 0.16 }, ramp: [P.grassDryDark, P.grassMid, P.grassDry, P.grassLight] }, // dry late-summer (warmer)
+    { tint: { fill: P.foliageDeep, op: 0.12 }, ramp: [P.grassDark, P.grassMoss, P.grassMid, P.mossInk] },   // damp mossy (cooler/greener)
+  ],
+  stone: [
+    { ramp: [P.stoneDark, P.stoneMid, P.stoneLight, P.rockDeep] },                                // cool slate
+    { tint: { fill: P.stoneWarm, op: 0.18 }, ramp: [P.stoneWarmDark, P.stoneMid, P.stoneWarm, P.stoneWarmLit] }, // warm sandstone
+    { tint: { fill: P.murkDeep, op: 0.12 }, ramp: [P.stoneDark, P.stoneMoss, P.stoneMid, P.mossInk] },  // mossy cavern
+  ],
+  plaza: [
+    { ramp: [P.plazaDark, P.plazaMid, P.plazaLight, P.plazaSandLit] },                            // warm parquet
+    { tint: { fill: P.rock, op: 0.1 }, ramp: [P.plazaDark, P.plazaGrey, P.plazaMid, P.plazaGreyLit] },  // cool grey cobble
+    { tint: { fill: P.plazaSand, op: 0.2 }, ramp: [P.plazaMid, P.plazaSand, P.plazaLight, P.plazaSandLit] }, // dusty sandy lot (lighter)
+  ],
+}
+
+const THEME_GROUND: { theme: ThemeTag; tint: string; tintOp: number; mottles: string[] }[] = [
+  { theme: 'desert', tint: P.sand, tintOp: 0.4, mottles: [P.dirtPath, P.sandWash, P.sand] },
+  { theme: 'swamp', tint: P.murkDeep, tintOp: 0.55, mottles: [P.murkDeep, P.mossInk, P.murk] },
   // snow BEFORE mountain: a snowy mountain map reads snow-first
-  { theme: 'snow', tint: P.snowShade, tintOp: 0.45, mottles: [P.stoneLight, P.stoneDark] },
-  { theme: 'cave', tint: P.ink, tintOp: 0.28, mottles: [P.stoneDark, P.mossInk] },
-  { theme: 'jungle', tint: P.foliageDeep, tintOp: 0.35, mottles: [P.mossBase, P.foliageDeep] },
-  { theme: 'volcanic', tint: P.emberDeep, tintOp: 0.2, mottles: [P.stoneDark, P.bloodDry] },
-  { theme: 'mountain', tint: P.snowShade, tintOp: 0.25, mottles: [P.stoneLight, P.stoneDark] },
-  { theme: 'haunted', tint: P.stoneDark, tintOp: 0.3, mottles: [P.stoneDark, P.mossInk] },
+  { theme: 'snow', tint: P.snowShade, tintOp: 0.45, mottles: [P.stoneDark, P.stoneMid, P.stoneLight] },
+  { theme: 'cave', tint: P.ink, tintOp: 0.28, mottles: [P.stoneDark, P.stoneMoss, P.mossInk] },
+  { theme: 'jungle', tint: P.foliageDeep, tintOp: 0.35, mottles: [P.foliageDeep, P.mossBase, P.mossInk] },
+  { theme: 'volcanic', tint: P.emberDeep, tintOp: 0.2, mottles: [P.stoneDark, P.stoneWarmDark, P.bloodDry] },
+  { theme: 'mountain', tint: P.snowShade, tintOp: 0.25, mottles: [P.stoneDark, P.stoneMid, P.stoneLight] },
+  { theme: 'haunted', tint: P.stoneDark, tintOp: 0.3, mottles: [P.stoneDark, P.stoneMoss, P.mossInk] },
 ]
 function themeGround(themes: readonly string[]): (typeof THEME_GROUND)[number] | null {
   if (themes.includes('city')) return null
   return THEME_GROUND.find((t) => themes.includes(t.theme)) ?? null
+}
+
+// The active look for a build: a matching theme wins (its tint + ramp); else the
+// biome's own looks, indexed by a seed hash so a location's ground is stable but
+// varies field-to-field.
+function groundLook(biome: Biome, themes: readonly string[], seed: number): GroundLook {
+  const themed = themeGround(themes)
+  if (themed) return { tint: { fill: themed.tint, op: themed.tintOp }, ramp: themed.mottles }
+  const looks = BIOME_LOOKS[biome]
+  return looks[Math.floor(hash01(seed + 131) * looks.length) % looks.length]
 }
 
 // ── Model builder (pure, exported for tests) ────────────────────────────────
@@ -348,21 +380,24 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
 
   // theme ground look: a matching theme tints the whole field + swaps mottle
   // shades (spec regionTags first, else the legacy trait-derived themes).
-  const themed = themeGround((spec?.semantic.regionTags ?? p.themes ?? []) as string[])
-  const tint: TerrainModel['tint'] = themed ? { fill: themed.tint, opacity: themed.tintOp } : null
+  const look = groundLook(p.biome, (spec?.semantic.regionTags ?? p.themes ?? []) as string[], seed)
+  const tint: TerrainModel['tint'] = look.tint ? { fill: look.tint.fill, opacity: look.tint.op } : null
 
   // floor mottling: a few large soft blobs in near-tile shades, under everything.
+  // Each blob samples the look's ramp with a triangular bias (average of two
+  // hashes → mid-tones common, dark/light extremes rare) so the ground drifts.
   const mottleCount = Math.max(6, Math.min(48, Math.round((cols * rows) / 60)))
   const mottles: TerrainModel['mottles'] = []
-  const mottleShades = themed?.mottles ?? MOTTLE_SHADES[p.biome]
+  const ramp = look.ramp
   for (let i = 0; i < mottleCount; i++) {
     const s = seed + 7000 + i * 227
     const cx = hash01(s) * cols
     const cy = hash01(s + 13) * rows
     const rad = 1.4 + hash01(s + 29) * 2.8
+    const t = (hash01(s + 57) + hash01(s + 91)) / 2
     mottles.push({
       d: blobPath(roughCircle(cx, cy, rad, 8, s + 41)),
-      fill: mottleShades[hash01(s + 57) < 0.55 ? 0 : 1],
+      fill: ramp[Math.min(ramp.length - 1, Math.floor(t * ramp.length))],
     })
   }
 
@@ -529,7 +564,7 @@ export function terrainSvg(p: TerrainProps): string {
   const m = buildTerrainModel(p)
   const parts: string[] = []
   if (m.tint) parts.push(`<rect x='0' y='0' width='${p.cols}' height='${p.rows}' fill='${m.tint.fill}' fill-opacity='${m.tint.opacity}'/>`)
-  for (const x of m.mottles) parts.push(`<path d='${x.d}' fill='${x.fill}' fill-opacity='0.5'/>`)
+  for (const x of m.mottles) parts.push(`<path d='${x.d}' fill='${x.fill}' fill-opacity='0.58'/>`)
   // §mapgen surface washes above the mottles, below everything discrete. The
   // water band gets a pale shoreline FOAM stroke; path/dirt bands get a dark
   // worn VERGE stroke — both are the paper "cut edge" read for transitions.

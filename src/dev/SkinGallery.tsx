@@ -265,21 +265,23 @@ function SkinBlock({ skin }: { skin: BattleSkin }) {
       )}
 
       {terrain && (
-        <Section title="organic terrain (per biome: mottling · props · wall/cliff blobs · rim) + hero light">
-          {BIOMES.map((b, i) => {
-            const g = arena.grounds?.[b]
-            return (
-              <div key={b} className="flex flex-col items-center gap-1">
-                <div
-                  className="w-56 h-56 rounded border border-neutral-800 relative overflow-hidden"
-                  style={{ ...arena.surface, ...(g ? { backgroundImage: g.image, backgroundSize: `${g.cellsPerTile * 14}px` } : null) }}
-                >
-                  {terrain({ biome: b, cols: 16, rows: 16, barriers: TERRAIN_SAMPLE, seed: 7 + i * 1000, rim: true })}
+        <Section title="organic terrain (per biome: 3 seeds → distinct ground looks + tonal drift · props · wall/cliff blobs · rim) + hero light">
+          {BIOMES.flatMap((b, i) =>
+            [17, 42, 88].map((sd, j) => {
+              const g = arena.grounds?.[b]
+              return (
+                <div key={`${b}-${sd}`} className="flex flex-col items-center gap-1">
+                  <div
+                    className="w-56 h-56 rounded border border-neutral-800 relative overflow-hidden"
+                    style={{ ...arena.surface, ...(g ? { backgroundImage: g.image, backgroundSize: `${g.cellsPerTile * 14}px` } : null) }}
+                  >
+                    {terrain({ biome: b, cols: 16, rows: 16, barriers: TERRAIN_SAMPLE, seed: sd + i * 1000 + j * 7, rim: true })}
+                  </div>
+                  <span className="text-[9px] text-neutral-500">{b} · seed {sd}</span>
                 </div>
-                <span className="text-[9px] text-neutral-500">{b}</span>
-              </div>
-            )
-          })}
+              )
+            }),
+          )}
           {arena.heroLight && (['field', 'city'] as const).map((k) => (
             <div key={k} className="flex flex-col items-center gap-1">
               <div className="w-28 h-56 rounded border border-neutral-800 relative" style={arena.surface}>

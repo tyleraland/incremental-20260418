@@ -147,8 +147,9 @@ pair's sync (pinned by `Props.test.ts`). Props with fine registered detail
   enforces the body contract (winding, budgets, paints) — if it passes, the body
   composes correctly at every LOD.
 - **Biome:** extend `Biome` + `biomeForLocation` in `appearance.ts`, add a
-  ground tile in `skins.tsx`, mottle shades in `terrain.tsx`
-  (`MOTTLE_SHADES`), and a prop set in `props.ts`.
+  ground tile in `skins.tsx`, ground looks in `terrain.tsx` (`BIOME_LOOKS` — one
+  or more named looks, each a dark→light mottle `ramp` + optional tint; a
+  location picks one by seed), and a prop set in `props.ts`.
 - **City building material / ground:** add a `BUILDING_LOOKS` entry in
   `buildings.ts` (roof lit/shade + wall + texture; `roofed:false` = a ruin) and,
   if it's a walkable surface, a wash + optional paving texture in `terrain.tsx`'s
