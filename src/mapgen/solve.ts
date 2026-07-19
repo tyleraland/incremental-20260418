@@ -17,7 +17,8 @@
 // over spec-level data only (collision + semantic planes) — no store, engine,
 // or recipe knowledge.
 
-import type { CollisionRect, Lock, Poi, Pt } from './types'
+import type { CollisionRect, Lock, NavEdge, NavNode, Poi, Pt } from './types'
+import { routeOver } from './graph'
 
 // Matches the engine's UNIT_PAD feel: a cell is blocked if its centre sits
 // inside a pad-inflated rect. Coarse (cell-resolution) on purpose — this layer
@@ -76,7 +77,13 @@ export interface LockFlowInput {
   cols: number
   rows: number
   collision: readonly CollisionRect[]
-  semantic: { pois: readonly Poi[]; locks: readonly Lock[] }
+  // nav is optional so mid-pipeline drafts and stub graphs still solve; when
+  // present, planLockFlow can route the fetch chain over it
+  semantic: {
+    pois: readonly Poi[]
+    locks: readonly Lock[]
+    nav?: { nodes: readonly NavNode[]; edges: readonly NavEdge[] }
+  }
 }
 
 export interface LockFlow {
@@ -122,4 +129,70 @@ export function solveLockFlow(input: LockFlowInput): LockFlow {
     openable: locks.filter((l) => opened.has(l.id)).map((l) => l.id),
     blocked: locks.filter((l) => l.kind === 'key' && !opened.has(l.id)).map((l) => l.id),
   }
+}
+
+// ── plan emission — the planning/routing seam ────────────────────────────────
+// One objective step per openable key lock, in acquisition order: "fetch the
+// key at keyAt, open the gate at gateAt, loot prizeAt". Positions come from
+// the POIs; keyNode/gateNode anchor them onto the nav graph; route is the
+// entry→key→gate node path via routeOver, walked with the keys the PREVIOUS
+// steps already acquired (so a chained step legally crosses the lock the step
+// before it opened). Blocked locks emit no step. This is what the phase-6
+// planners consume — the store's fetch loop, the objective-channel AI, the
+// engine's waypoint team plans — instead of re-deriving the fixpoint.
+
+export interface LockFlowStep {
+  lockId: string
+  keyAt: Pt
+  gateAt?: Pt
+  prizeAt?: Pt
+  keyNode?: string
+  gateNode?: string
+  route?: string[]   // undefined when the graph can't anchor or route it (stub navs)
+}
+
+// Nearest nav anchor to a point: a node whose `area` contains it wins, else
+// nearest anchor; ties break to array order (deterministic — spec order).
+function nearestNode(nodes: readonly NavNode[], p: Pt): NavNode | undefined {
+  let best: NavNode | undefined
+  let bestD = Infinity
+  let bestContained = false
+  for (const n of nodes) {
+    const a = n.area
+    const contains = !!a && p.x >= a.x && p.x < a.x + a.w && p.y >= a.y && p.y < a.y + a.h
+    if (bestContained && !contains) continue
+    const d = (n.at.x - p.x) ** 2 + (n.at.y - p.y) ** 2
+    if ((contains && !bestContained) || d < bestD) { best = n; bestD = d; bestContained = bestContained || contains }
+  }
+  return best
+}
+
+export function planLockFlow(input: LockFlowInput): LockFlow & { steps: LockFlowStep[] } {
+  const flow = solveLockFlow(input)
+  const { pois, locks } = input.semantic
+  const nodes = input.semantic.nav?.nodes ?? []
+  const edges = [...(input.semantic.nav?.edges ?? [])]
+  const spawn = pois.find((p) => p.kind === 'spawn')
+  const entry = spawn && nearestNode(nodes, spawn.at)
+  const held = new Set(locks.filter((l) => l.open).map((l) => l.id))
+  const steps: LockFlowStep[] = []
+  for (const id of flow.order) {
+    const lock = locks.find((l) => l.id === id)!
+    const keyPoi = pois.find((p) => p.kind === 'key' && p.tags.includes(`opens:${id}`))!
+    const prize = pois.find((p) => p.kind === 'vault' && p.tags.includes(`locked:${id}`))
+    const keyNode = nearestNode(nodes, keyPoi.at)
+    const gateNode = lock.at && nearestNode(nodes, lock.at)
+    let route: string[] | undefined
+    if (entry && keyNode && gateNode) {
+      const fetchLeg = routeOver(edges, entry.id, keyNode.id, held)
+      const openLeg = routeOver(edges, keyNode.id, gateNode.id, new Set([...held, id]))
+      if (fetchLeg && openLeg) route = [...fetchLeg, ...openLeg.slice(1)]
+    }
+    held.add(id)
+    steps.push({
+      lockId: id, keyAt: keyPoi.at, gateAt: lock.at, prizeAt: prize?.at,
+      keyNode: keyNode?.id, gateNode: gateNode?.id, route,
+    })
+  }
+  return { ...flow, steps }
 }

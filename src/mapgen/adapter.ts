@@ -9,9 +9,19 @@ import type { GenParams, GenResult, MapSpec, ProficiencyTag, ThemeTag } from './
 import { THEME_TAGS } from './types'
 import { generateMap } from './pipeline'
 import { RECIPE_REGISTRY } from './recipes'
+import { planLockFlow, type LockFlowStep } from './solve'
 
 export function specBarriers(spec: MapSpec): Barrier[] {
   return spec.collision.map(({ x, y, w, h, kind }) => ({ x, y, w, h, kind }))
+}
+
+// Phase-6 seam for the objective-channel AI: the baked spec's key-fetch plan
+// as plain serializable steps ({x,y} points + string ids — nothing engine- or
+// store-typed). Consumed by NOTHING yet; the store's fetch loop and the
+// engine's waypoint team plans will map steps onto objectives instead of
+// re-deriving the fixpoint (src/mapgen/CLAUDE.md → phase 4 §0 planning AI).
+export function specObjectives(spec: MapSpec): LockFlowStep[] {
+  return planLockFlow(spec).steps
 }
 
 // Track D consumption seam: "how remote is this cell?" — the store paces its

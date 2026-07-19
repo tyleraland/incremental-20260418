@@ -6,8 +6,8 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  generateMap, solveLockFlow, validate, normalizeParams,
-  type CollisionRect, type Lock, type MapSpec, type Poi,
+  generateMap, solveLockFlow, planLockFlow, routeOver, specObjectives, validate, normalizeParams,
+  type CollisionRect, type Lock, type MapSpec, type NavEdge, type NavNode, type Poi,
 } from '@/mapgen'
 import { DUNGEON_RECIPE } from '@/mapgen/recipes/dungeon'
 
@@ -107,6 +107,52 @@ describe('key-flow validation rule', () => {
   })
 })
 
+// ── the planning/routing seams: routeOver + planLockFlow ─────────────────────
+describe('planning/routing seams', () => {
+  const E = (a: string, b: string, lockId?: string): NavEdge => ({ a, b, kind: 'corridor', ...(lockId ? { lockId } : {}) })
+  const N = (id: string, x: number, y: number): NavNode => ({ id, at: { x, y } })
+
+  it('routeOver: a closed lock blocks the short way; opening it restores it', () => {
+    const edges = [E('n0', 'n1'), E('n1', 'n2'), E('n0', 'n2', 'K-A')]
+    expect(routeOver(edges, 'n0', 'n2')).toEqual(['n0', 'n1', 'n2'])
+    expect(routeOver(edges, 'n0', 'n2', new Set(['K-A']))).toEqual(['n0', 'n2'])
+    expect(routeOver([E('n0', 'n1', 'K-A')], 'n0', 'n1')).toBeNull()
+    expect(routeOver(edges, 'n0', 'n0')).toEqual(['n0'])
+  })
+
+  it('planLockFlow: chain steps in dependency order, each leg routed with the keys so far', () => {
+    // nav mirrors the 2-link geometry: mid hub, east key room, both pockets
+    // hang off mid behind their locks
+    const spec = makeSpec([...POCKET_A, ...POCKET_B], [
+      prizeA, prizeB,
+      key('K-A', { x: 30, y: 30 }),
+      key('K-B', { x: 2, y: 2 }, ['locked:K-A']),
+    ], [keyLock('K-A'), keyLock('K-B')])
+    spec.semantic.nav = {
+      nodes: [N('n-mid', 20, 20), N('n-east', 30, 30), N('n-pa', 2, 2), N('n-pb', 38, 2)],
+      edges: [E('n-mid', 'n-east'), E('n-mid', 'n-pa', 'K-A'), E('n-mid', 'n-pb', 'K-B')],
+    }
+    const plan = planLockFlow(spec)
+    expect(plan.order).toEqual(['K-A', 'K-B'])       // solver shape rides along
+    expect(plan.steps.map((s) => s.lockId)).toEqual(['K-A', 'K-B'])
+    const [a, b] = plan.steps
+    // step 1: fetch the east key, open pocket A's gate — the K-A edge is
+    // traversable on the gate leg because THIS step opens it
+    expect(a).toMatchObject({ keyAt: { x: 30, y: 30 }, keyNode: 'n-east', gateNode: 'n-pa', prizeAt: prizeA.at })
+    expect(a.route).toEqual(['n-mid', 'n-east', 'n-mid', 'n-pa'])
+    // step 2: the chained key sits in pocket A, legal now that K-A is held
+    expect(b).toMatchObject({ keyNode: 'n-pa', gateNode: 'n-pb', prizeAt: prizeB.at })
+    expect(b.route).toEqual(['n-mid', 'n-pa', 'n-mid', 'n-pb'])
+  })
+
+  it('a blocked lock emits no step; stub navs still emit unrouted steps', () => {
+    const dead = makeSpec(POCKET_A, [prizeA, key('K-A', { x: 2, y: 3 }, ['locked:K-A'])], [keyLock('K-A')])
+    expect(planLockFlow(dead).steps).toEqual([])
+    const stub = makeSpec(POCKET_A, [prizeA, key('K-A', { x: 30, y: 30 })], [keyLock('K-A')])
+    expect(planLockFlow(stub).steps).toMatchObject([{ lockId: 'K-A', keyAt: { x: 30, y: 30 }, route: undefined }])
+  })
+})
+
 // ── the dungeon keyfetch pass, end-to-end through the pipeline ───────────────
 describe('dungeon keyfetch (variant-at-deploy key locks)', () => {
   // Deterministically find first-roll floors where keyfetch fired closed.
@@ -158,6 +204,20 @@ describe('dungeon keyfetch (variant-at-deploy key locks)', () => {
     expect(open.spec.collision).toEqual(g.closed.spec.collision.filter((c) => c.lockId !== g.lock.id))
     // a key for some OTHER lock changes nothing, byte for byte
     expect(bake(g.seed, ['lock-key-99']).spec).toEqual(g.closed.spec)
+  })
+
+  it('specObjectives: the baked floor yields a routed, deterministic fetch plan', () => {
+    const g = found[0]
+    const steps = specObjectives(g.closed.spec)
+    const step = steps.find((s) => s.lockId === g.lock.id)
+    expect(step, `seed ${g.seed}: no plan step for ${g.lock.id}`).toBeDefined()
+    // anchored onto the authored room graph and routable from the entry —
+    // the fetch leg crosses only the ungated subgraph the key was placed on
+    expect(step!.keyNode).toBeDefined()
+    expect(step!.gateNode).toBeDefined()
+    expect(step!.route, `seed ${g.seed}: unroutable plan`).toBeDefined()
+    expect(step!.route![step!.route!.length - 1]).toBe(step!.gateNode)
+    expect(JSON.stringify(specObjectives(g.closed.spec))).toBe(JSON.stringify(steps))
   })
 
   it('variants are byte-deterministic per (seed, heldKeys)', () => {

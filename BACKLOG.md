@@ -325,7 +325,9 @@ Deferred phases (each independently shippable):
   key logistics (tracking picked-up keys, feeding `GenParams.heldKeys` at
   deploy — the bake side ships: key locks, `key` POIs, `solveLockFlow`), and
   planning AI (the autobattler routes the party through
-  fetch-key-then-open-door).
+  fetch-key-then-open-door; its consumption seam ships — `planLockFlow`
+  objective steps, `routeOver`, `specObjectives` — the planner reads ordered
+  routed steps rather than re-deriving the fixpoint).
 - **Phase 5 — inter-map coherence.** The `city` recipe + naming pass shipped;
   still open: **inter-map adjacency/depth gradients** as first-class;
   **NPC/merchant placement reading the semantic plane** (today they're
