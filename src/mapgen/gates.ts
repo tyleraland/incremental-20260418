@@ -55,8 +55,10 @@ export function placeProficiencyLock(
     const look = site.look ?? GATE_LOOKS[tag]!
     const half = site.sealHalf ?? 2.25
     // a fat plug over the pinch — oversized so any pinch narrower than the
-    // plug is sealed regardless of heading; the excess melts into the render
-    addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material })
+    // plug is sealed regardless of heading; the excess melts into the render.
+    // lockId marks the plug as THIS lock's seal geometry (solve.ts removes it
+    // when reasoning about openable locks; the engine adapter drops the field).
+    addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material, lockId: id })
   }
   draft.semantic.locks.push({ id, kind: 'proficiency', tag, at, open, gates: [`${id}-prize`] })
   return { id, open }
@@ -90,8 +92,49 @@ export function placeShortcutLock(
     const half = site.sealHalf ?? 2.25
     // same fat-plug pattern as placeProficiencyLock: oversized so any pinch
     // narrower than the plug is sealed regardless of heading
-    addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material })
+    addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material, lockId: id })
   }
   draft.semantic.locks.push({ id, kind: 'proficiency', tag, at, open, gates: [] })
+  return { id, open }
+}
+
+// The default key-lock dressing: bars (§J "target it, can't reach it") — the
+// party can SEE the vault through the portcullis; the key raises it.
+export const KEY_LOOK: GateLook = { kind: 'cliff', material: 'bars' }
+
+export interface KeyLockSite {
+  at: Pt              // the pinch (mirrored by the 'gate' POI; a closed seal centers here)
+  prizeAt: Pt         // what the lock guards (a 'vault' POI, tagged `locked:<id>`)
+  keyAt: Pt           // where the key sits (a 'key' POI, tagged `opens:<id>`) — caller proves it reachable
+  look?: GateLook     // seal dressing override (defaults to KEY_LOOK)
+  sealHalf?: number   // half-extent of the square seal plug (default 2.25 — swallows a ≤3-wide pinch)
+}
+
+// A KEY lock (§D key logistics): the prize opens when the party HOLDS the key
+// — resolved against params.heldKeys at bake, exactly like the proficiency
+// kit. The key itself is a 'key' POI the caller places on the provably
+// ungated subgraph (solve.ts's fixpoint + the validator's `key-flow` rule
+// prove acquirability, chains included). Id is the key-lock ordinal: placement
+// is kit/key-invariant (as-if-closed), so the ordinal never shifts between
+// variants and a key id found in a closed bake resolves any re-bake.
+// Caller wires the edge (`edge.lockId = id`) — the lock doesn't know its graph.
+export function placeKeyLock(
+  draft: MapDraft,
+  site: KeyLockSite,
+): { id: string; open: boolean } {
+  const { at, prizeAt, keyAt } = site
+  const id = `lock-key-${draft.semantic.locks.filter((l) => l.kind === 'key').length}`
+  const open = draft.params.heldKeys.includes(id)
+  addPoi(draft, { id: `${id}-prize`, kind: 'vault', at: prizeAt, tags: ['prize', `locked:${id}`] })
+  addPoi(draft, { id: `${id}-gate`, kind: 'gate', at, tags: open ? ['key', 'open'] : ['key'] })
+  addPoi(draft, { id: `${id}-key`, kind: 'key', at: keyAt, tags: [`opens:${id}`] })
+  if (!open) {
+    const look = site.look ?? KEY_LOOK
+    const half = site.sealHalf ?? 2.25
+    // same fat-plug pattern as the proficiency locks; lockId makes the seal
+    // geometry first-class for the solver
+    addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material, lockId: id })
+  }
+  draft.semantic.locks.push({ id, kind: 'key', at, open, gates: [`${id}-prize`] })
   return { id, open }
 }

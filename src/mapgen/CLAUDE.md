@@ -66,11 +66,12 @@ it liked (reviewed in the lab); roguelike = seeds drawn per run.
 | `fields.ts` | value-noise fBm; `makeFields` → the shared FieldBundle |
 | `draft.ts` | MapDraft + plane helpers (`paint`/`addBarrier`/`addPoi`/`isPlaceable`), `bake`; `draft.scratch` = the derived-planes tier (walk masks, distance transforms — produced by one pass, consumed by later ones, never baked) |
 | `graph.ts` | the shared nav-graph layer: ops (`bfsDepth`, `nodeDegrees`) + `deriveRegions` — the DERIVED producer (walk mask → border-aware clearance BFS → erode by pinch width → region components → one `crossing` edge per contiguous pinch, `doorAt` at min clearance; also returns the per-cell `claims` plane) + the track-D flow pair: `flowField` (cell BFS distance over a walk mask, RNG-free) and `digestIntensity` (→ `NavNode.intensity` = anchor-cell distance ÷ map max, rounded to 3 decimals, in [0,1]; disconnected anchor → 0, neutral not maximal, so an off-map pocket can't become the hottest spawn zone). KIT-INVARIANT: recipes feed it the AS-IF-OPEN mask (pre-gate-plugs), so every kit variant publishes identical values |
-| `gates.ts` | recipe-agnostic lock-and-key: `placeProficiencyLock` (prize + gate POIs + tag-themed seal plug, resolved against the party kit) and `placeShortcutLock` (`gates: []` — locks a ROUTE, not a prize), `GATE_LOOKS`/`GATE_TAGS` |
+| `gates.ts` | recipe-agnostic lock-and-key: `placeProficiencyLock` (prize + gate POIs + tag-themed seal plug, resolved against the party kit), `placeShortcutLock` (`gates: []` — locks a ROUTE, not a prize), and `placeKeyLock` (prize + gate + `key` POI, resolved against `params.heldKeys`; seal = bars, `KEY_LOOK`; id = key-lock ordinal, stable across variants because placement is kit/key-invariant). Plugs carry `CollisionRect.lockId` so lock geometry is first-class (solver/validator; the adapter drops it). `GATE_LOOKS`/`GATE_TAGS` |
+| `solve.ts` | the solvability layer (the L5 flow seam): the shared occupancy model (`occupancyGrid` + `floodOpen` — validate.ts floods the same reality, re-exporting `occupancyGrid`) and `solveLockFlow` — RNG-free fixpoint over spec-level data (flood from spawn with closed plugs, collect reached `key` POIs, remove their plugs by `lockId`, re-flood) → `{order, openable, blocked}`. Chains resolve; circles/self-seals report blocked. Future consumers: multi-link placement, discovery, planning AI, cross-map manifest |
 | `pipeline.ts` | `generateMap(recipe, params)`: pass runner, per-pass streams, skipPasses, bake→validate→reroll |
-| `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / intensity (every published `NavNode.intensity` finite and in [0,1]) / graph-truthful (every unlocked/open nav edge connects its endpoints' flood components — anchors in substantial components speak for themselves exactly; only buried/tiny-pocket anchors get a ±4 envelope; `doorAt` open; closed-locked edges exempt) / water-coherence. Exports `occupancyGrid` (the shared PAD-inflated rasterizer recipes reuse) |
+| `validate.ts` | the coherence harness: bounds / vocab / barrier-budget / spawn+apron / reachable (flood-fill) / intensity (every published `NavNode.intensity` finite and in [0,1]) / graph-truthful (every unlocked/open nav edge connects its endpoints' flood components — anchors in substantial components speak for themselves exactly; only buried/tiny-pocket anchors get a ±4 envelope; `doorAt` open; closed-locked edges exempt) / **key-flow** (every closed `key` lock provably openable per `solveLockFlow` — a missing key, a key behind its own gate, or a circular chain fails the bake) / water-coherence. Re-exports `occupancyGrid` (the shared PAD-inflated rasterizer, hosted in solve.ts) |
 | `recipes/field.ts` | the field-first overworld recipe: surface → hydrology (lake+ford) → **river** (P2: descending edge-to-edge channel in a lane beside the spawn apron, 2-wide punched fords — the pinches that become `crossing` edges — 35% dress one as a `road` bridge; explicit `RIVER_DIALS` allotment with `outcropReserve` headroom) → outcrops (`OUTCROP_DIALS`) → **regions** (no-RNG: rasterizes collision → scratch `walk`/`regions` planes → `deriveRegions` publishes real nav nodes+edges, depth rooted at the spawn region) → **flow** (track D, no-RNG: `flowField` on the pre-gates scratch `walk` mask from the spawn → scratch `'flow'` plane + `digestIntensity` onto the nodes — the field's cell-remoteness depth notion, kit-invariant because no plug exists yet) → **gates** (P3: kit-invariant route lock on a redundant crossing + vault lock on natural pockets, `GATE_DIALS`; skipped when `params.gates` is false — the adapter's live default) → semantic (links POIs onto region nodes; falls back to POI stubs when regions is skipped) → **desire-paths** (RNG-free L7 dressing: BFS the UNGATED nav subgraph spawn→portals→landmark, realize each leg on the pre-gates scratch `walk` mask through each edge's `doorAt`, paint `dirt` width 1–2 by the roughness field — zero rect cost, kit-invariant; skips trivial 1-region/no-portal graphs) → scatter (props keep off the trail via the `desire-paths` scratch mask) |
-| `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → **flow** (same track-D digest as the field, on `plan.walk` — entry reads 0, the deep end ~1; complements graph-hop `depth`) → **cycle-as-primitive skeleton** (entry→goal via two axis-split arcs — a real cycle by construction at ≥3 rooms — leaves tree-attached, optional chord for a second loop) → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects) → rewrite steps (the `shortcut` pass: a proficiency plug on a mid-arc cycle edge — closed forces the long way around; every rewrite decision is KIT-INVARIANT: budgets count as-if-all-locks-closed so an open kit only ever removes seal geometry): lab/encounter only until the pather perf pass |
+| `recipes/dungeon.ts` | the graph-first, donjon-flavored dungeon: scattered polymorph rooms (closet→hall size table, L/T composites, cave-notch erosion) → **flow** (same track-D digest as the field, on `plan.walk` — entry reads 0, the deep end ~1; complements graph-hop `depth`) → **cycle-as-primitive skeleton** (entry→goal via two axis-split arcs — a real cycle by construction at ≥3 rooms — leaves tree-attached, optional chord for a second loop) → errant door-to-door corridors + dead-end stubs → **maximal-rect cover** of the solid mask (free-form floor, rects-forever collision; ~30–60 rects) → rewrite steps (the `shortcut` pass: a proficiency plug on a mid-arc cycle edge — closed forces the long way around; the `keyfetch` pass: ~0.5 chance, key-locks a SECOND seal-tight dead-end and drops its `key` POI in the deepest room of the proven-ungated subgraph — the doorAt vetted open + clear of other plugs so the OPEN variant survives graph-truthful; every rewrite decision is KIT/KEY-INVARIANT: budgets count as-if-all-locks-closed so an open kit or held key only ever removes seal geometry): lab/encounter only until the pather perf pass |
 | `recipes/city.ts` | the road-first town: plaza + jittered gate roads + cross-street loops (nav skeleton FIRST) → paving (ground → road/stone) → street-fronting building rects (road-distance transform: every house ≥2 cells off pavement, ≤4 from a street) → yard/market scatter → plaza landmark. Generates the STAGE for a city (NPCs/spawns stay store-owned); **live on `prontera-city`** (`data/locations.ts`) — under a tighter budget it just starves to fewer houses. Publishes NO `intensity` (settled: peaceful town, junction nodes — nothing to pace; revisit if cities host combat) |
 | `naming.ts` | the §M premise pass shared by every recipe: theme-conditioned place name + ONE-line premise, written LAST so it reads what the bake actually grew (ford / sealed door / lair depth / road count). Scaffold, never prose; describes the map, never steers it |
 | `stamps.ts` | `STAMP_REGISTRY` — authored MapSpec fragments placed by constraint (§I): pillar-vault, shrine, barred-cell (its vault is `optional`-tagged — the §J pocket and phase 4's lock-and-key test case) |
@@ -159,7 +160,8 @@ spend ~52 of it at 200² — still under the bench's 64-rect plateau region).
    rooms, errant corridors, dead-end stubs, the `shortcut` rewrite step
    (route-locking a mid-arc cycle edge, kit-invariant), stamp registry, lair
    + depth gradient, optional-POI reachability exemption. Left for later:
-   more rewrite steps (key-fetch chains need phase-6 items), 1-wide labyrinth
+   more rewrite steps (multi-link key chains — single-link `keyfetch`
+   shipped; the solver already handles chains), 1-wide labyrinth
    corridors (needs sub-cell pathing care), symmetric layouts, a cavern
    recipe (erosion-first), remove-deadends knob, live dungeon location
    (needs the pather pass).
@@ -193,8 +195,8 @@ iteration.
 
 ### How it works (one paragraph)
 
-A `Lock` (semantic plane) names what opens it — today only `kind:
-'proficiency'` is placed. The deploying party's tags
+A `Lock` (semantic plane) names what opens it — `kind: 'proficiency'` and
+`kind: 'key'` are placed today. The deploying party's tags
 (`src/lib/proficiencies.ts` → `partyProficiencyTags`, class-based today) flow
 in as `GenParams.proficiencies`; the dungeon's `gates` pass claims a dead-end
 room, drops a prize POI tagged `locked:<id>`, a `gate` POI at the door pinch,
@@ -202,7 +204,10 @@ and — only if the party LACKS the tag — a sealing plug whose material follow
 the tag (might=rubble, arcane=rune-sealed cut-stone, perception=bare rock
 "hidden door", mobility=see-across chasm). **Variant-at-deploy, resolved once
 at battle stand-up** — no dynamic barriers, no engine change; same seed ×
-different party = a different playable map.
+different party = a different playable map. Key locks (`placeKeyLock`, the
+dungeon's `keyfetch` pass) resolve identically against `GenParams.heldKeys`
+and add a `key` POI on the ungated subgraph — the fetch detour is baked, the
+pickup play-flow is not (phase 6).
 
 ### What the validator GUARANTEES (don't re-litigate by eye)
 
@@ -210,7 +215,9 @@ different party = a different playable map.
 - open ⇒ every gated POI reachable (the kit actually paid off);
 - the gate site is approachable (the party can walk up and see the door);
 - spawn/portal/lair are never gated (never gate the critical path);
-- variants are byte-deterministic per (seed, sorted kit).
+- every closed key lock is solvable (`key-flow` rule ← `solveLockFlow`: the
+  key is acquirable without passing its own lock; chains fixpoint, circles fail);
+- variants are byte-deterministic per (seed, sorted kit, sorted heldKeys).
 
 ### What ONLY human play can judge (the open iteration)
 
@@ -221,9 +228,11 @@ different party = a different playable map.
    - **Discovery**: clues on the map the party must notice before a gate is
      even known (a perception sweep near the hidden door, a legible rune) —
      plausibly a function of INT/knowledge stats and time spent, not a boolean.
-   - **Key logistics**: items found on THIS map (or bought/quested elsewhere)
-     that unlock specific locks — find-key-A-behind-puzzle-B chains, which is
-     where lock-and-key becomes actual sequencing instead of a doorman check.
+   - **Key logistics**: the BAKE side exists (key locks, `key` POIs, the
+     `heldKeys` param seam, `solveLockFlow` proving chains) — what's missing is
+     the STORE side: tracking found keys, the pickup play-flow, feeding
+     `heldKeys` at deploy. Multi-link chains are solver-supported but no pass
+     places them yet (recipe v1 is single-link).
    - **Planning AI**: the autobattler must route the party THROUGH the chain —
      "fetch the key from the east room, then open the rune door" — which needs
      the §E objective-channel AI (AI targets non-combatant objectives; an
@@ -255,14 +264,19 @@ different party = a different playable map.
    today's geography; synthetic-tested). **Live locations bake with gates OFF
    until they opt in via `mapGen.gates: true`** (adapter default — this
    phase-4 feel iteration is exactly why). `GATE_DIALS` in field.ts.
-6. **'key' and 'switch' lock kinds** — reserved shapes; need item plumbing /
-   phase-6 interactables.
+6. **'key' lock kind — PLACED/VALIDATED/VISUALIZED** (`placeKeyLock`, the
+   dungeon `keyfetch` pass, the `key-flow` rule, the lab's 🗝 + held-keys
+   toggle); store-side pickup is phase 6. Fire rate is low (~4%/floor — the
+   `gates` pass usually claims the lone dead-end): a feel knob, tune with
+   frequency (point 1). **'switch'** stays a reserved shape (needs phase-6
+   interactables).
 
 ### How to iterate (the loop)
 
-`?mapgen=1` → recipe `dungeon` → toggle **party kit** tags → the SAME seed
-re-bakes with its gate open/closed (lock readout inline; validation panel
-shows the `locks` rule both ways). Add a gate archetype = one `GATE_LOOKS`
+`?mapgen=1` → recipe `dungeon` → toggle **party kit** tags (or a **held key**
+— key locks list per-bake checkboxes) → the SAME seed re-bakes with its gate
+open/closed (lock readout inline; validation panel shows the `locks` and
+`key-flow` rules both ways). Add a gate archetype = one `GATE_LOOKS`
 entry (+ a material vocab entry if needed); add a tag source = extend
 `getProficiencyTags` (extension points documented in the file); add a lock
 kind = extend the `Lock` union + teach `validate.ts` its openability.

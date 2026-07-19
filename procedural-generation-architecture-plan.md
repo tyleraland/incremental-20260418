@@ -31,7 +31,7 @@ collision plane.**
 | L2 | **Substrate** — `FieldBundle` noise fields (elevation/moisture/roughness); the source of intra-map coherence. | `fields.ts` | shipped |
 | L3 | **Production** — THE DIVERGENCE LAYER, one per recipe family: overworld = geography-first (surface bands, hydrology, ridges, outcrops); dungeon = graph-first (rooms → cycles → carve); city = road-first (skeleton → pave → buildings). All philosophy differences are quarantined here. | `recipes/*` | shipped (upgrades tracked below) |
 | L4 | **Nav/region graph** — THE CONVERGENCE LAYER: one shared model (`NavNode`/`NavEdge`), two producers — *authored* (dungeon, city: plan publishes it, geometry realizes it) and *derived* (overworld: segment passable space into regions; pinches become edges). Shared ops in `graph.ts`. | `graph.ts` + producers | authored ✅ · derived ✅ (P1: `deriveRegions`; field publishes real graphs) |
-| L5 | **Gating** — recipe-agnostic lock-and-key over graph edges (`gates.ts`): a `Lock` names what opens it, resolves against the party kit (and later, carried keys / world manifest). Dungeon doors and overworld fords are the same mechanism wearing different materials. | `gates.ts` | shipped (dungeon + overworld — P3: a mobility ford and a might bridge are the same placeShortcutLock call; live locations opt in via `mapGen.gates`) |
+| L5 | **Gating** — recipe-agnostic lock-and-key over graph edges (`gates.ts`): a `Lock` names what opens it, resolves against the party kit / held keys (and later, the world manifest). Dungeon doors and overworld fords are the same mechanism wearing different materials. | `gates.ts`, `solve.ts` | shipped (dungeon + overworld — P3; key locks resolve against `heldKeys`, and `solve.ts` is the solvability layer: a fixpoint solver proving key flow, gated by the `key-flow` rule) |
 | L6 | **Derived planes** — the computed-fields tier: named intermediate products one pass produces and later passes consume (`draft.scratch`): walk masks, road-distance transforms, the `'flow'` distance-to-spawn plane (track D — digested to `NavNode.intensity`); tension budget, sightline masks tomorrow. Never baked; the spec only carries digested summaries (`NavNode.depth`/`intensity`). | `draft.ts` scratch | shipped (masks + flow/intensity); sightlines = track F |
 | L7 | **Dressing** — stamps/vaults, scatter, paths/desire-paths, decor. Reads L2–L6, adds no connectivity. | `stamps.ts`, recipe passes | shipped |
 | L8 | **Semantic annotation** — POIs, tactical profile, naming/premise. Describes, never steers. | `profile.ts`, `naming.ts` | shipped |
@@ -93,7 +93,7 @@ every vocabulary a seam exposes.
 | **Validation rule (L9)** | `validate.ts` · `rule(id, ok, detail)` | named + machine-checkable; ships with a crafted violation+fix pair in `validate.test.ts`; conditional-reachability rules read the graph/locks | add a coherence GUARANTEE (fuzz gates and the lab surface it by name) |
 | **Recipe** | `recipes/index.ts` · `RECIPE_REGISTRY` | compose passes; the bake/validate/reroll tail is free; recipe defaults fill only unset params | add a map FAMILY (a cavern recipe, an arena recipe) — a new L3 philosophy quarantined to its own passes |
 | **Game boundary** | `adapter.ts` · `MapGenSource`/`MapGenOpts`; `Location.mapGen` | the ONLY cross-boundary file; pins live `maxBarriers` (72) + live gate policy (`gates: false` default); mapgen imports no game types | connect a Location to a recipe, or thread a new deploy-time input (kit, gates flag) into generation |
-| **Cross-map (L0)** | `types.ts` · `GenParams.manifest` (`ManifestToken`), `Lock.kind: 'key'` | typed + normalized, consumed by NOTHING yet; mirrors how `proficiencies` flows in | plant a cross-map seed (track G's world director) without reshaping `GenParams` |
+| **Cross-map (L0)** | `types.ts` · `GenParams.manifest` (`ManifestToken`), `Lock.kind: 'key'` | manifest typed + normalized, consumed by NOTHING yet; `Lock.kind: 'key'` is live single-map (`placeKeyLock`/`heldKeys`/`solve.ts`); mirrors how `proficiencies` flows in | plant a cross-map seed (track G's world director) without reshaping `GenParams` |
 | **Review dials** | `recipes/*` · `RIVER_DIALS`/`SCATTER_DIALS`/`GATE_DIALS` | ALL of a pass's human-tunable numbers in one commented block, first-guess values called out | retune feel (density, frequency, allotment) without hunting constants through the pass body |
 | **Vocabularies** | `types.ts` const arrays | small + fixed (locked decision 6): barrier/surface materials, scatter/POI kinds, proficiency/theme tags; a material also maps its collision kind in `validate.ts` `MATERIAL_KIND` and gets a lab debug color | add a content KIND — grow one entry at a time, never per-feature |
 
@@ -149,9 +149,10 @@ substrate into a computed-fields tier.
    scratch — the spec stays small.
 5. **Cross-map is a seam, not a build.** `GenParams.manifest` carries opaque
    planted tokens (typed now, consumed by nothing); `Lock.kind: 'key'` is the
-   reserved shape it will bind to. The Phase-0 world director that computes
-   manifests (plant key on map A for lock on map B, solvability-ordered) is
-   track G — after single-map key logistics exist (phase-6 interactables).
+   shape it binds to (live single-map via `placeKeyLock` + `heldKeys` +
+   `solve.ts`). The Phase-0 world director that computes manifests (plant key
+   on map A for lock on map B, solvability-ordered) is track G — after
+   store-side key logistics exist (phase-6 pickup play-flow).
    Mirrors how `proficiencies` already flows in, so the plumbing is proven.
 6. **Technique verdicts** (research packet §4):
    - **Flow-field / distance-to-goal** — ✅ adopted as an L6 derived plane
@@ -215,7 +216,8 @@ All of it lands as L3 production + L4 derivation + existing L5/L7 machinery:
 - **E. Real cyclic dungeon generation** ✅ *(core shipped as P4)*:
   cycle-as-primitive skeleton + the shortcut-lock rewrite step replacing
   MST+2-spares; a pure L3/L4-producer swap — L5–L9 untouched by
-  construction. Key-fetch rewrite steps await phase-6 item plumbing.
+  construction. Single-link key-fetch shipped (`keyfetch` + `solve.ts`);
+  multi-link chains await a chain-placing pass (solver already resolves them).
 - **F. Tactical legibility as a target**: sightline-ribbon pass +
   `tacticalTargets` scoring/validation. Pairs with the consuming AI tactics
   (BACKLOG → AI & coordination) — ship feature and consumer together (⭐10).

@@ -55,10 +55,12 @@ export interface MapGenSource {
 // from the location's traits (§G: one tag, coherent content everywhere), and
 // portal cells become keep-clear boxes + portal POIs the validator must reach.
 // `opts.proficiencies` is the deploying party's kit at battle stand-up — the
-// §F composition-gate input. Variants resolve ONCE, when the battle is created;
-// heroes joining a live battle later do NOT re-resolve gates (locked decision
-// for now — see src/mapgen/CLAUDE.md → phase 4 open questions).
-export interface MapGenOpts { proficiencies?: ProficiencyTag[] }
+// §F composition-gate input. `opts.heldKeys` is its §D twin: lock ids whose
+// keys the party holds (the store passes nothing yet — pickup is phase 6).
+// Variants resolve ONCE, when the battle is created; heroes joining a live
+// battle later do NOT re-resolve gates (locked decision for now — see
+// src/mapgen/CLAUDE.md → phase 4 open questions).
+export interface MapGenOpts { proficiencies?: ProficiencyTag[]; heldKeys?: string[] }
 
 export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): GenResult {
   const cfg = loc.mapGen
@@ -87,6 +89,7 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),
     proficiencies: opts.proficiencies,
+    heldKeys: opts.heldKeys,
     // Phase-4 policy: gates need human feel iteration BEFORE a live location
     // adopts them (src/mapgen/CLAUDE.md). Live maps therefore default OFF; a
     // location opts in deliberately with mapGen.gates: true. The lib/lab
@@ -102,7 +105,8 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
 const LOCATION_CACHE = new Map<string, GenResult>()
 export function generateForLocationCached(loc: MapGenSource, opts: MapGenOpts = {}): GenResult {
   const kit = [...new Set(opts.proficiencies ?? [])].sort().join(',')
-  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}|${kit}|g${loc.mapGen?.gates ? 1 : 0}`
+  const keys = [...new Set(opts.heldKeys ?? [])].sort().join(',')
+  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}|${kit}|k${keys}|g${loc.mapGen?.gates ? 1 : 0}`
   const hit = LOCATION_CACHE.get(key)
   if (hit) return hit
   const res = generateForLocation(loc, opts)

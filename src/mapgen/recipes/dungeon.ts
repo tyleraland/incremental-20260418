@@ -29,7 +29,8 @@ import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
 import { hashString } from '../rng'
 import { bfsDepth, digestIntensity, flowField, nodeDegrees } from '../graph'
-import { GATE_TAGS, placeProficiencyLock, placeShortcutLock } from '../gates'
+import { GATE_TAGS, placeKeyLock, placeProficiencyLock, placeShortcutLock } from '../gates'
+import { occupancyGrid } from '../validate'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
 import { STAMP_REGISTRY, placeStamp, stampBarrierCost, type StampDef } from '../stamps'
@@ -692,6 +693,116 @@ const shortcutPass = {
   },
 }
 
+// ── keyfetch: the key-lock rewrite step — a fetch detour (§D key logistics) ──
+// With ~0.5 chance, key-locks a SECOND seal-tight dead-end room (never the one
+// `gates` claimed — a POI-bearing room is excluded) and drops the key POI in a
+// deep room on the provably ungated subgraph: the party detours for the key
+// before the vault opens. Resolution reads params.heldKeys (the deploy seam —
+// the store passes nothing yet; pickup play-flow is phase 6). Single link only
+// in the recipe v1; solve.ts resolves chains when a future step places them.
+//
+// KIT/KEY-INVARIANT like `shortcut`: candidates, floods, and budgets treat
+// every placed lock as closed, so the same seed picks the same fetch for every
+// kit/key set and a held key only ever REMOVES the plug.
+const keyfetchPass = {
+  id: 'keyfetch',
+  run({ draft, params, rng, note }: PassCtx) {
+    const plan = getPlan(draft)
+    if (!plan) { note('no layout plan — skipped'); return }
+    const r = rng('place')
+    if (!r.chance(0.5)) { note('keyfetch skipped (coin)'); return }
+    // as-if-all-closed rect count: each OPEN lock omitted exactly one plug
+    const openLocks = draft.semantic.locks.filter((l) => l.open).length
+    if (draft.collision.length + openLocks >= params.maxBarriers) { note('no barrier budget left — keyfetch skipped'); return }
+    const nodes = draft.semantic.nav.nodes
+    const edges = draft.semantic.nav.edges
+    const degree = nodeDegrees(edges)
+    const entry = nodes.find((n) => (n.depth ?? 0) === 0)
+    const lair = [...nodes].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0))[0]
+    const hasPoiInside = (a: NonNullable<(typeof nodes)[number]['area']>) =>
+      draft.semantic.pois.some((p) => p.at.x > a.x && p.at.x < a.x + a.w && p.at.y > a.y && p.at.y < a.y + a.h)
+    // same candidate shape as `gates`: seal-tight dead-ends off the critical
+    // path, unclaimed (no POIs inside, edge unlocked), roomy enough to survive
+    // the 4.5-cell plug. Extra vets the vault gate doesn't need — a key lock's
+    // OPEN variant must survive graph-truthful (the edge stops being exempt),
+    // so the doorAt CELL must be open on the as-if-open occupancy model
+    // (non-plug collision), clear of every other lock's as-if-closed plug
+    // footprint, and our own plug must not bury another lock's gate cell.
+    // All reads are kit/key-invariant (geometry + lock sites, never `open`).
+    const { size } = params
+    const cellOf = (p: Pt) => Math.floor(p.y) * size + Math.floor(p.x)
+    const occ = occupancyGrid(draft.collision.filter((c) => !c.lockId), size, size)
+    const floodHalf = 2.25 + 0.45   // plug half-extent + the validator's PAD
+    const allPlugs = draft.semantic.locks.filter((l) => l.at).map((l) => l.at!)
+    const clearOfOtherPlugs = (at: Pt) => allPlugs.every((q) => {
+      const cx = Math.floor(at.x) + 0.5, cy = Math.floor(at.y) + 0.5    // our doorAt cell vs their plug
+      const qx = Math.floor(q.x) + 0.5, qy = Math.floor(q.y) + 0.5      // their gate cell vs our plug
+      return !(Math.abs(cx - q.x) < floodHalf && Math.abs(cy - q.y) < floodHalf) &&
+             !(Math.abs(qx - at.x) < floodHalf && Math.abs(qy - at.y) < floodHalf)
+    })
+    const cands = nodes
+      .filter((n) =>
+        degree.get(n.id) === 1 && n.id !== entry?.id && n.id !== lair?.id &&
+        n.area && !hasPoiInside(n.area) &&
+        Math.min(n.area.w, n.area.h) >= 5)
+      .map((n) => ({ n, edge: edges.find((e) => (e.a === n.id || e.b === n.id) && e.doorAt && !e.lockId && !occ[cellOf(e.doorAt)] && clearOfOtherPlugs(e.doorAt)) }))
+      .filter((c): c is { n: (typeof nodes)[number]; edge: (typeof edges)[number] } => !!c.edge)
+    if (!cands.length) { note('no gateable dead-end — keyfetch skipped'); return }
+
+    // ONE flood proves both directions: from the spawn on the walk mask with
+    // EVERY lock's plug (as-if-closed) plus this candidate's blocked — the
+    // prize must be unreached (seal-tight) and the key room must come from the
+    // reached set (the ungated subgraph). floodHalf matches the validator's
+    // PAD-inflated footprint, same rationale as `shortcut`.
+    const spawnPoi = draft.semantic.pois.find((p) => p.kind === 'spawn')!
+    const reachedWith = (at: Pt): Uint8Array | null => {
+      const plugs = [...allPlugs, at]
+      const passable = (x: number, y: number) =>
+        plan.walk[y * size + x] === 1 && !plugs.some((p) => Math.abs(x + 0.5 - p.x) < floodHalf && Math.abs(y + 0.5 - p.y) < floodHalf)
+      const start = Math.floor(spawnPoi.at.y) * size + Math.floor(spawnPoi.at.x)
+      if (!passable(start % size, Math.floor(start / size))) return null
+      const seen = new Uint8Array(size * size)
+      const stack = [start]
+      seen[start] = 1
+      while (stack.length) {
+        const i = stack.pop()!
+        const x = i % size, y = (i / size) | 0
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = x + dx, ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue
+          const j = ny * size + nx
+          if (!seen[j] && passable(nx, ny)) { seen[j] = 1; stack.push(j) }
+        }
+      }
+      return seen
+    }
+
+    const start = r.int(cands.length)
+    let choice: (typeof cands)[number] | null = null
+    let seen: Uint8Array | null = null
+    for (let i = 0; i < cands.length; i++) {
+      const probe = cands[(start + i) % cands.length]
+      const s = reachedWith(probe.edge.doorAt!)
+      if (s && !s[cellOf(probe.n.at)]) { choice = probe; seen = s; break }
+    }
+    if (!choice || !seen) { note(`${cands.length} dead-end candidate(s), none seal-tight — keyfetch skipped`); return }
+    const { n: vault, edge } = choice
+    const reached = seen
+    // key room: the deepest reachable unclaimed room (stable sort keeps room
+    // order on depth ties) — never the vault, the entry (spawn POI inside), or
+    // the lair-designate (the semantic pass claims it later)
+    const keyRoom = nodes
+      .filter((n) => n.id !== vault.id && n.id !== lair?.id &&
+        n.area && !hasPoiInside(n.area) && reached[cellOf(n.at)])
+      .sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0))[0]
+    if (!keyRoom) { note('no reachable key room on the ungated subgraph — keyfetch skipped'); return }
+    const at = edge.doorAt!
+    const { id, open } = placeKeyLock(draft, { at, prizeAt: vault.at, keyAt: keyRoom.at })
+    edge.lockId = id
+    note(`key gate ${open ? 'OPEN (held key)' : 'sealed'} on ${vault.id} at ${at.x},${at.y}; key in ${keyRoom.id} (d${keyRoom.depth})`)
+  },
+}
+
 // ── scatter: debris thickens with depth (§G gradient made visible) ───────────
 const scatterPass = {
   id: 'scatter',
@@ -730,12 +841,12 @@ const semanticPass = {
 export const DUNGEON_RECIPE: RecipeDef = {
   id: 'dungeon',
   name: 'Dungeon Floor',
-  description: 'Graph-first, donjon-flavored dungeon: scattered polymorph rooms → cycle-first skeleton (entry→goal twin arcs + leaf fringe) → errant corridors + dead-end stubs → maximal-rect wall cover → shortcut-lock rewrite → stamps → depth-graded debris → lair.',
-  // gates + shortcut BEFORE stamps: locks are structure (they claim a
-  // dead-end / a cycle edge and its door), stamps are dressing (they skip
-  // rooms that already have POIs). gates before shortcut: the dead-end vault
-  // keeps budget priority; the rewrite step only fires if budget remains.
-  passes: [layoutPass, flowPass, carvePass, floorPass, gatesPass, shortcutPass, stampsPass, scatterPass, semanticPass, premisePass],
+  description: 'Graph-first, donjon-flavored dungeon: scattered polymorph rooms → cycle-first skeleton (entry→goal twin arcs + leaf fringe) → errant corridors + dead-end stubs → maximal-rect wall cover → shortcut-lock + key-fetch rewrites → stamps → depth-graded debris → lair.',
+  // gates + shortcut + keyfetch BEFORE stamps: locks are structure (they claim
+  // a dead-end / a cycle edge and its door), stamps are dressing (they skip
+  // rooms that already have POIs). gates first: the dead-end vault keeps
+  // budget priority; the rewrite steps only fire if budget remains.
+  passes: [layoutPass, flowPass, carvePass, floorPass, gatesPass, shortcutPass, keyfetchPass, stampsPass, scatterPass, semanticPass, premisePass],
   // Free-form floors cost more rects (~30–60) than the old lattice. The P5
   // moderate-envelope re-bench (2026-07, map-perf-envelope.test.ts) adopted 72
   // as the live pathing bound, so a dungeon bake is perf-viable on a live

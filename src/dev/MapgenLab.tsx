@@ -236,7 +236,25 @@ function drawSpec(canvas: HTMLCanvasElement | null, result: GenResult, px: numbe
   // ── semantic POIs (top) ──────────────────────────────────────────────────
   if (t.semantic) {
     g.globalAlpha = af('semantic')
+    const lockAt = new Map(spec.semantic.locks.filter((l) => l.at).map((l) => [l.id, l.at!]))
     for (const p of spec.semantic.pois) {
+      // a key POI links to its gate: faint dashed line keyAt → lock.at + 🗝
+      if (p.kind === 'key') {
+        const at = lockAt.get(p.tags.find((tg) => tg.startsWith('opens:'))?.slice(6) ?? '')
+        if (at) {
+          g.strokeStyle = POI_COLOR.key
+          g.lineWidth = 1
+          g.setLineDash([2, 4])
+          g.globalAlpha = 0.45 * af('semantic')
+          g.beginPath(); g.moveTo(p.at.x * px, Y(p.at.y)); g.lineTo(at.x * px, Y(at.y)); g.stroke()
+          g.setLineDash([])
+          g.globalAlpha = af('semantic')
+        }
+        g.font = `${Math.max(10, px * 2.4)}px monospace`
+        g.fillStyle = POI_COLOR.key
+        g.fillText('🗝', p.at.x * px - px * 0.8, Y(p.at.y) + px * 0.8)
+        continue
+      }
       g.strokeStyle = g.fillStyle = POI_COLOR[p.kind] ?? '#fff'
       g.lineWidth = 2
       g.beginPath()
@@ -264,6 +282,7 @@ interface Preset {
   size: number
   themes: ThemeTag[]
   profs?: ProficiencyTag[]
+  heldKeys?: string[]
   gates?: boolean
   pois?: GenParams['pois']
   overlays: OverlayKey[]
@@ -290,6 +309,10 @@ const SHOWCASE: Preset[] = [
   // 11-node cycle + a mid-arc shortcut lock + a vault — "The Underbarrow".
   { label: 'Cyclic dungeon', blurb: 'a cycle-first floor with a mid-arc shortcut lock (long way when sealed)',
     recipe: 'dungeon', seed: 8, size: 56, themes: ['dungeon'], gates: true, profs: [], overlays: ['graph'] },
+  // "The Grimvault": a bars-sealed key vault (lock-key-0, 🗝 in a d2 room) PLUS
+  // a might vault on the same floor — toggle held keys / kit to open each.
+  { label: 'Key fetch', blurb: 'a dead-end vault sealed behind bars; its 🗝 waits in a deep room — toggle held keys to open it',
+    recipe: 'dungeon', seed: 65, size: 56, themes: ['dungeon'], gates: true, profs: [], heldKeys: [], overlays: ['graph', 'semantic'] },
   // road-first town skeleton → street-fronting buildings — "prontera"-flavored.
   { label: 'Living city', blurb: 'road-first: plaza + gate roads + cross-streets, buildings fronting the pavement',
     recipe: 'city', seed: 3, size: 50, themes: ['city'], gates: false, overlays: ['graph'] },
@@ -339,13 +362,13 @@ const STAGES: Record<string, Stage[]> = {
     { label: 'Gates + Secrets', throughPass: 'gates', owned: ['graph', 'semantic'], dim: ['surface', 'collision', 'regions'], controls: ['gates'], kit: true, blurb: 'route/vault locks on derived edges (dashed) — toggle party kit above to open/close them' },
     { label: 'Dressing', throughPass: 'premise', owned: ['paths', 'scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['semantic', 'desire-paths', 'scatter-fill', 'scatter-clumps', 'scatter-edges'], blurb: 'desire-path trails + scatter + POIs + the name/premise line' },
   ],
-  // passes: layout → flow → carve → floor → gates → shortcut → stamps →
-  //         scatter → semantic → premise
+  // passes: layout → flow → carve → floor → gates → shortcut → keyfetch →
+  //         stamps → scatter → semantic → premise
   dungeon: [
     { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
     { label: 'Layout', throughPass: 'flow', owned: ['graph', 'flow'], dim: [], controls: ['layout', 'flow'], blurb: 'scattered polymorph rooms + the cycle-first skeleton (nav graph) + intensity' },
     { label: 'Carve', throughPass: 'floor', owned: ['collision', 'surface'], dim: ['graph'], controls: ['carve', 'floor'], blurb: 'maximal-rect wall cover + stone floor, over the dim room skeleton' },
-    { label: 'Gates + Secrets', throughPass: 'shortcut', owned: ['graph', 'semantic'], dim: ['surface', 'collision'], controls: ['gates', 'shortcut'], kit: true, blurb: 'dead-end vault lock + mid-arc shortcut lock — toggle party kit above to open/close them' },
+    { label: 'Gates + Secrets', throughPass: 'keyfetch', owned: ['graph', 'semantic'], dim: ['surface', 'collision'], controls: ['gates', 'shortcut', 'keyfetch'], kit: true, blurb: 'dead-end vault + mid-arc shortcut + key-fetch locks — toggle party kit / held keys above to open/close them' },
     { label: 'Dressing', throughPass: 'premise', owned: ['scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['stamps', 'scatter', 'semantic'], blurb: 'authored stamps + depth-graded debris + lair + the name/premise line' },
   ],
   // passes: roads → pave → blocks → scatter → semantic → premise
@@ -414,6 +437,10 @@ export default function MapgenLab() {
   // watch the SAME seed re-bake with its gate open — the review loop for lock
   // tuning (contact sheet + focused map both re-resolve).
   const [profs, setProfs] = useState<ProficiencyTag[]>([])
+  // §D key logistics: lock ids the simulated party holds keys for. Toggling one
+  // re-bakes the same seed with its key lock OPEN (the seal vanishes) — the
+  // key-side twin of the party-kit toggle.
+  const [heldKeys, setHeldKeys] = useState<string[]>([])
   // gates master switch + externally-owned portals (driven by showcase presets).
   const [gates, setGates] = useState(true)
   const [pois, setPois] = useState<GenParams['pois']>([])
@@ -430,7 +457,7 @@ export default function MapgenLab() {
   const stages = stagesFor(recipeId)
   const stage = stages[Math.min(tab, stages.length - 1)]
   const isFinal = stage.throughPass === null
-  const params = { recipe: recipeId, size, themes, proficiencies: profs, gates, pois, onFail: 'accept' as const }
+  const params = { recipe: recipeId, size, themes, proficiencies: profs, heldKeys, gates, pois, onFail: 'accept' as const }
 
   // Dev guard: warn once per recipe if a stage names a pass the recipe lacks.
   // useEffect (not useMemo) so the console.warn side effect fires exactly once
@@ -450,7 +477,7 @@ export default function MapgenLab() {
   const sheet = useMemo(
     () => Array.from({ length: 9 }, (_, i) => generateMap(recipe, { ...params, seed: baseSeed + i })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [recipeId, size, themes, baseSeed, profs, gates, pois],
+    [recipeId, size, themes, baseSeed, profs, heldKeys, gates, pois],
   )
   const focused = useMemo(() => {
     const t0 = performance.now()
@@ -460,7 +487,7 @@ export default function MapgenLab() {
     const r = generateMap(recipe, { ...params, seed: focus, skipPasses: effectiveSkips, debug: true })
     return { r, ms: performance.now() - t0 }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipeId, size, themes, focus, skipsKey, profs, gates, pois])
+  }, [recipeId, size, themes, focus, skipsKey, profs, heldKeys, gates, pois])
 
   const applyPreset = (p: Preset) => {
     setRecipeId(p.recipe)
@@ -469,6 +496,7 @@ export default function MapgenLab() {
     setBaseSeed(p.seed)
     setFocus(p.seed)
     setProfs(p.profs ?? [])
+    setHeldKeys(p.heldKeys ?? [])
     setGates(p.gates ?? true)
     setPois(p.pois ?? [])
     setManualSkips([])
@@ -564,8 +592,24 @@ export default function MapgenLab() {
           </label>
         ))}
         {focused.r.spec.semantic.locks.length > 0 && (
-          <span className="text-stone-400">| locks: {focused.r.spec.semantic.locks.map((l) => `${l.tag} ${l.open ? '🔓' : '🔒'}`).join(' · ')}</span>
+          <span className="text-stone-400">| locks: {focused.r.spec.semantic.locks.map((l) => `${l.tag ?? l.kind} ${l.open ? '🔓' : '🔒'}`).join(' · ')}</span>
         )}
+        {/* held-keys toggles: one checkbox per key lock the focused bake placed
+            (union with anything already held, so a box can always be unchecked) */}
+        {(() => {
+          const ids = [...new Set([...focused.r.spec.semantic.locks.filter((l) => l.kind === 'key').map((l) => l.id), ...heldKeys])].sort()
+          return ids.length > 0 && (
+            <>
+              <span className="text-stone-400">| held keys:</span>
+              {ids.map((id) => (
+                <label key={id} className={heldKeys.includes(id) ? 'text-cyan-400' : 'text-stone-500'}>
+                  <input type="checkbox" checked={heldKeys.includes(id)} onChange={(e) =>
+                    setHeldKeys(e.target.checked ? [...heldKeys, id] : heldKeys.filter((k) => k !== id))} /> 🗝{id}
+                </label>
+              ))}
+            </>
+          )
+        })()}
       </div>
 
       {/* ── layer tab bar ── */}

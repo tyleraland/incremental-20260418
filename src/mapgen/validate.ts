@@ -14,39 +14,17 @@
 import type { MapSpec, RuleResult, ValidationReport } from './types'
 import { BARRIER_MATERIALS, SURFACE_MATERIALS } from './types'
 import type { NormParams } from './draft'
+import { floodOpen, occupancyGrid, solveLockFlow } from './solve'
 
-// Matches the engine's UNIT_PAD feel: a cell is blocked if its centre sits
-// inside a pad-inflated rect. Coarse (cell-resolution) on purpose — the
-// validator answers "is the map traversable", not "is this pixel free".
-const PAD = 0.45
+// The shared occupancy/flood machinery lives in solve.ts (the solver floods
+// the same PAD-inflated model); re-exported here so derived-plane producers
+// keep importing "the validator's pathing reality" from the validator.
+export { occupancyGrid } from './solve'
 
 // kind each material must ride on — the §B "one collision, many paints" table.
 const MATERIAL_KIND: Record<string, 'wall' | 'cliff'> = {
   'rock': 'wall', 'cut-stone': 'wall', 'wood': 'wall', 'rubble': 'wall',
   'hedge': 'cliff', 'deep-water': 'cliff', 'ravine': 'cliff', 'bars': 'cliff',
-}
-
-// Exported so producers of DERIVED planes (the field recipe's 'walk' scratch
-// mask feeding deriveRegions) rasterize the exact same pathing reality the
-// validator floods — one occupancy model, never two.
-export function occupancyGrid(
-  collision: readonly { x: number; y: number; w: number; h: number }[],
-  cols: number, rows: number,
-): Uint8Array {
-  const g = new Uint8Array(cols * rows)
-  for (const r of collision) {
-    const x0 = Math.max(0, Math.floor(r.x - PAD)), x1 = Math.min(cols - 1, Math.ceil(r.x + r.w + PAD))
-    const y0 = Math.max(0, Math.floor(r.y - PAD)), y1 = Math.min(rows - 1, Math.ceil(r.y + r.h + PAD))
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const cx = x + 0.5, cy = y + 0.5
-        if (cx > r.x - PAD && cx < r.x + r.w + PAD && cy > r.y - PAD && cy < r.y + r.h + PAD) {
-          g[y * cols + x] = 1
-        }
-      }
-    }
-  }
-  return g
 }
 
 function occupancy(spec: MapSpec): Uint8Array {
@@ -76,29 +54,6 @@ function components(blocked: Uint8Array, cols: number, rows: number): Int32Array
     }
   }
   return comp
-}
-
-// Flood-fill of open cells from `start`; returns the visited mask (0/1).
-function flood(spec: MapSpec, blocked: Uint8Array, start: { x: number; y: number }): Uint8Array {
-  const { cols, rows } = spec
-  const seen = new Uint8Array(cols * rows)
-  const sx = Math.min(cols - 1, Math.max(0, Math.floor(start.x)))
-  const sy = Math.min(rows - 1, Math.max(0, Math.floor(start.y)))
-  const s0 = sy * cols + sx
-  if (blocked[s0]) return seen
-  const stack = [s0]
-  seen[s0] = 1
-  while (stack.length) {
-    const i = stack.pop()!
-    const x = i % cols, y = (i / cols) | 0
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const nx = x + dx, ny = y + dy
-      if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue
-      const j = ny * cols + nx
-      if (!blocked[j] && !seen[j]) { seen[j] = 1; stack.push(j) }
-    }
-  }
-  return seen
 }
 
 export function validate(spec: MapSpec, params: NormParams): ValidationReport {
@@ -157,7 +112,7 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
       // its plug; the locks rule below owns their semantics (approachability)
       p.kind === 'gate' ||
       p.tags.some((t) => t.startsWith('locked:') && lockById.get(t.slice(7))?.open === false)
-    const seen = flood(spec, blocked, spawn.at)
+    const seen = floodOpen(blocked, spec.cols, spec.rows, spawn.at)
     const reachableAt = (p: { x: number; y: number }) => {
       const xi = Math.min(spec.cols - 1, Math.max(0, Math.floor(p.x)))
       const yi = Math.min(spec.rows - 1, Math.max(0, Math.floor(p.y)))
@@ -207,6 +162,32 @@ export function validate(spec: MapSpec, params: NormParams): ValidationReport {
       rule('locks', problems.length === 0,
         problems.length === 0
           ? spec.semantic.locks.map((l) => `${l.id} ${l.open ? 'open' : 'closed'}`).join(', ')
+          : problems.join('; '))
+    }
+
+    // key-flow — §D key logistics: every closed 'key' lock must be provably
+    // openable per the fixpoint solver (solve.ts): its key POI acquirable
+    // without passing the lock itself. A missing key, a key sealed behind its
+    // own gate, or a circular chain is a deadlocked bake. (The key POI itself
+    // carries no `locked:` tag on the single-link recipes, so the `reachable`
+    // rule already demands it on the ungated subgraph; chains tag chained keys
+    // and lean on this rule for the fixpoint proof.)
+    const keyLocks = spec.semantic.locks.filter((l) => l.kind === 'key')
+    if (keyLocks.length) {
+      const flow = solveLockFlow(spec)
+      const deadlocked = new Set(flow.blocked)
+      const problems: string[] = []
+      for (const l of keyLocks) {
+        if (l.open) continue
+        if (!spec.semantic.pois.some((p) => p.kind === 'key' && p.tags.includes(`opens:${l.id}`))) {
+          problems.push(`${l.id}: no key POI (opens:${l.id})`)
+        } else if (deadlocked.has(l.id)) {
+          problems.push(`${l.id}: deadlocked — key unreachable without opening the lock itself`)
+        }
+      }
+      rule('key-flow', problems.length === 0,
+        problems.length === 0
+          ? `${keyLocks.length} key lock(s) solvable${flow.order.length ? ` (order: ${flow.order.join(' → ')})` : ''}`
           : problems.join('; '))
     }
   }

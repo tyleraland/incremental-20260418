@@ -42,6 +42,11 @@ export type BarrierMaterial = (typeof BARRIER_MATERIALS)[number]
 export interface CollisionRect extends Rect {
   kind: CollisionKind
   material: BarrierMaterial
+  // A lock's seal plug — set by gates.ts so lock geometry is first-class: the
+  // solvability layer (solve.ts) and validator identify a plug by its lock id
+  // instead of inferring positionally. The engine adapter drops it (specBarriers
+  // destructures the bare rect), so the engine never sees locks.
+  lockId?: string
 }
 
 // ── Surface plane (consumer: render; engine reads nothing here today) ────────
@@ -164,8 +169,9 @@ export interface NavEdge {
 // bakes CLOSED (sealed + its prizes exempt from reachability). Same seed ×
 // different party = a different playable map, with NO dynamic barriers and no
 // engine change — the replayability engine, resolved once per battle stand-up.
-// 'key' (carried item) and 'switch' (interactable) kinds are reserved shapes;
-// they need phase-6 machinery.
+// 'key' locks resolve the same way against GenParams.heldKeys (the deploy-time
+// seam; store-side pickup is phase 6) — solve.ts proves each bake's key flow
+// solvable. 'switch' (interactable) stays a reserved shape.
 export const PROFICIENCY_TAGS = [
   'perception', 'disarm', 'might', 'mobility', 'arcane', 'holy', 'light', 'lore',
 ] as const
@@ -259,6 +265,12 @@ export interface GenParams {
   // Lock docs above). Empty/absent = every lock bakes closed — also what the
   // lab's contact sheet and the fuzz gates review by default.
   proficiencies?: ProficiencyTag[]
+  // §D key logistics: lock ids the deploying party already holds keys for. A
+  // matching 'key' lock bakes OPEN (plug omitted) — the same variant-at-deploy
+  // resolution as `proficiencies`. Ids are stable per seed (placement is
+  // key-invariant), so keys found in a closed bake resolve future re-bakes.
+  // Store passes nothing yet (pickup play-flow is phase 6).
+  heldKeys?: string[]
   // L0 world-directives seam — see ManifestToken. RESERVED: typed and carried
   // through normalization so the director (track G) slots in like
   // `proficiencies` did, but no pass consumes it yet.

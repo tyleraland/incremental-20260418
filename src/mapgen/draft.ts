@@ -23,6 +23,7 @@ export interface NormParams {
   keepClear: Rect[]
   pois: { kind: PoiKind; at: Pt; id?: string; tags?: string[] }[]
   proficiencies: ProficiencyTag[]
+  heldKeys: string[]
   manifest: ManifestToken[]
   gates: boolean
   skipPasses: string[]
@@ -45,6 +46,8 @@ export function normalizeParams(p: GenParams): NormParams {
     // sorted + deduped so the same kit always keys the same variant (cache keys,
     // determinism tests, and reroll chains all read this)
     proficiencies: [...new Set(p.proficiencies ?? [])].sort(),
+    // same discipline as the kit: sorted + deduped keys key the same variant
+    heldKeys: [...new Set(p.heldKeys ?? [])].sort(),
     manifest: p.manifest ?? [],
     gates: p.gates ?? true,
     skipPasses: p.skipPasses ?? [],
@@ -119,7 +122,9 @@ export function addBarrier(d: MapDraft, r: CollisionRect): void {
   const w = Math.min(d.cols - x, r.w - (x - r.x))
   const h = Math.min(d.rows - y, r.h - (y - r.y))
   if (w < 0.5 || h < 0.5) return
-  d.collision.push({ x: r2(x), y: r2(y), w: r2(w), h: r2(h), kind: r.kind, material: r.material })
+  const rect: CollisionRect = { x: r2(x), y: r2(y), w: r2(w), h: r2(h), kind: r.kind, material: r.material }
+  if (r.lockId !== undefined) rect.lockId = r.lockId   // conditional: no undefined-keyed noise in baked specs
+  d.collision.push(rect)
 }
 
 export function addPoi(d: MapDraft, poi: Omit<Poi, 'tags'> & { tags?: string[] }): void {
