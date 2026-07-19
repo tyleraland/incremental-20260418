@@ -24,6 +24,26 @@ import { ALPINE_FLORA } from '@/render/flora/alpine'
 import { ARCANE_FLORA } from '@/render/flora/arcane'
 import { VOLCANIC_FLORA } from '@/render/flora/volcanic'
 
+// ── Wave-2 setpiece groups (one file per builder; src/render/setpieces/*) ─────
+// Same contract as the flora groups above: each module exports a PropDef[] with
+// FULL inline placement meta, flowing into TERRAIN_PROPS + listAssets with no
+// edits here. Runtime helpers come from setpieces/kit.ts (a shim over
+// flora/kit.ts), so this graph stays acyclic. Bucketed by where their closest
+// existing analogues live: dungeon/mountain/arcane → stone, city/interior →
+// plaza, nature/farm/water/lore → grass.
+import { TRAPS } from '@/render/setpieces/traps'
+import { LOOT } from '@/render/setpieces/loot'
+import { MINING } from '@/render/setpieces/mining'
+import { RITUAL } from '@/render/setpieces/ritual'
+import { SPAWNERS } from '@/render/setpieces/spawners'
+import { ARTISAN } from '@/render/setpieces/artisan'
+import { TOWN } from '@/render/setpieces/town'
+import { FURNITURE } from '@/render/setpieces/furniture'
+import { FORAGING } from '@/render/setpieces/foraging'
+import { FARM } from '@/render/setpieces/farm'
+import { FISHING } from '@/render/setpieces/fishing'
+import { LORE } from '@/render/setpieces/lore'
+
 // ── Prop assets as data ──────────────────────────────────────────────────────
 //
 // The paper language's scatter-prop registry (asset-pipeline step 3 — see
@@ -137,7 +157,21 @@ export interface PropDef {
 
 export type PropPass = 'solid' | 'walkable' | 'overhang'
 export type PropLayer = 'ground' | 'wall' | 'ceiling' | 'water-surface' | 'canopy'
-export type GameplayTag = 'destructible' | 'harvestable' | 'lootable' | 'flammable' | 'climbable' | 'cover'
+export type GameplayTag =
+  // ── wave-1 affordances ──
+  | 'destructible' | 'harvestable' | 'lootable' | 'flammable' | 'climbable' | 'cover'
+  // ── wave-2 setpiece verbs (render/setpieces/*; declarative-only labels) ──
+  // Spec verbs map 1:1 onto these EXCEPT synonyms folded onto the wave-1 tags:
+  //   spec `harvest`→'harvestable', `loot`/`lootable`→'lootable',
+  //   `destruct`→'destructible'. Everything else is its own distinct tag so a
+  //   future interaction layer can switch on the exact affordance.
+  | 'trigger' | 'fall' | 'damage' | 'barrier' | 'hazard' | 'snare' | 'lock' | 'ambush' // traps/hazards
+  | 'dig' | 'pan' | 'mine' | 'descend'                                                 // mining/foraging dig
+  | 'spawn' | 'squish'                                                                 // spawners
+  | 'forage' | 'gather' | 'plantable'                                                  // foraging/farm
+  | 'use' | 'smelt' | 'craft' | 'process' | 'brew' | 'cook'                            // artisan machines
+  | 'read' | 'quest' | 'trade' | 'sit' | 'search' | 'rest' | 'save' | 'warp'          // town interactions
+  | 'ritual' | 'drink' | 'restore' | 'offer' | 'spread' | 'curse' | 'warm' | 'fish'    // ritual/lore/fishing
 
 // Placement archetype — how a prop wants to be laid down (read by mapgen phases).
 export type PropRole = 'field' | 'cluster' | 'edge' | 'understory' | 'accent'
@@ -2423,6 +2457,8 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     // ── flora catalog (nature/farm/orchard groups) ──
     ...CROPS_A, ...CROPS_B, ...FRUIT_TREES, ...BERRIES, ...VINES,
     ...DESERT_FLORA, ...WETLAND_FLORA, ...JUNGLE_FLORA, ...FOREST_FLORA,
+    // ── wave-2 setpieces (nature/farm/water/lore groups) ──
+    ...FORAGING, ...FARM, ...FISHING, ...LORE,
   ]),
   stone: withVariants([
     { id: 'rubble', size: 1, paths: [
@@ -2918,6 +2954,8 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     ] },
     // ── flora catalog (alpine/arcane/volcanic groups) ──
     ...ALPINE_FLORA, ...ARCANE_FLORA, ...VOLCANIC_FLORA,
+    // ── wave-2 setpieces (dungeon/mountain/arcane groups) ──
+    ...TRAPS, ...LOOT, ...MINING, ...RITUAL, ...SPAWNERS,
   ]),
   plaza: withVariants([
     { id: 'crate', size: 1, paths: [
@@ -3033,5 +3071,7 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       ...cutout(POTDEBRIS_SHARDS, 'woodDeep', 'woodLight'),
       { d: POTDEBRIS_SPRIG, fill: 'foliage' },
     ] },
+    // ── wave-2 setpieces (city/interior groups) ──
+    ...ARTISAN, ...TOWN, ...FURNITURE,
   ]),
 }
