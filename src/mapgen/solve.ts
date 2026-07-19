@@ -96,6 +96,7 @@ export function solveLockFlow(input: LockFlowInput): LockFlow {
   const order: string[] = []
   const keyPois = input.semantic.pois.filter((p) => p.kind === 'key')
   const lockOf = (p: Poi) => p.tags.find((t) => t.startsWith('opens:'))?.slice(6)
+  const lockIds = new Set(locks.map((l) => l.id))
   const spawn = input.semantic.pois.find((p) => p.kind === 'spawn')
   if (spawn && keyPois.length) {
     for (let progress = true; progress; ) {
@@ -104,7 +105,9 @@ export function solveLockFlow(input: LockFlowInput): LockFlow {
       const seen = floodOpen(blocked, cols, rows, spawn.at)
       for (const p of keyPois) {
         const id = lockOf(p)
-        if (!id || opened.has(id)) continue
+        // a dangling opens:<id> naming no lock is inert — it must not enter
+        // `order` or burn a re-flood round
+        if (!id || !lockIds.has(id) || opened.has(id)) continue
         const xi = Math.min(cols - 1, Math.max(0, Math.floor(p.at.x)))
         const yi = Math.min(rows - 1, Math.max(0, Math.floor(p.at.y)))
         if (!seen[yi * cols + xi]) continue

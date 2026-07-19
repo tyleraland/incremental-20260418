@@ -111,7 +111,7 @@ describe('key-flow validation rule', () => {
 describe('dungeon keyfetch (variant-at-deploy key locks)', () => {
   // Deterministically find first-roll floors where keyfetch fired closed.
   // attempts === 1 for the same reason as the other lock suites: reroll chains
-  // diverge between variants. ~5/120 at size 56 (the coin is 0.5 but the
+  // diverge between variants. ~4/110 at size 56 (the coin is 0.5 but the
   // `gates` pass usually claims the lone dead-end — a phase-4 feel knob).
   const bake = (seed: number, heldKeys?: string[]) =>
     generateMap(DUNGEON_RECIPE, { recipe: 'dungeon', seed, size: 56, themes: ['dungeon'], heldKeys })

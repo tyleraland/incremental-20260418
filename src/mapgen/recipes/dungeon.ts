@@ -29,7 +29,7 @@ import type { PassCtx, RecipeDef } from '../pipeline'
 import { addBarrier, addPoi, isPlaceable, paint } from '../draft'
 import { hashString } from '../rng'
 import { bfsDepth, digestIntensity, flowField, nodeDegrees } from '../graph'
-import { GATE_TAGS, placeKeyLock, placeProficiencyLock, placeShortcutLock } from '../gates'
+import { GATE_TAGS, SEAL_HALF, placeKeyLock, placeProficiencyLock, placeShortcutLock } from '../gates'
 import { occupancyGrid } from '../validate'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
@@ -732,7 +732,7 @@ const keyfetchPass = {
     const { size } = params
     const cellOf = (p: Pt) => Math.floor(p.y) * size + Math.floor(p.x)
     const occ = occupancyGrid(draft.collision.filter((c) => !c.lockId), size, size)
-    const floodHalf = 2.25 + 0.45   // plug half-extent + the validator's PAD
+    const floodHalf = SEAL_HALF + 0.45   // plug half-extent + the validator's PAD
     const allPlugs = draft.semantic.locks.filter((l) => l.at).map((l) => l.at!)
     const clearOfOtherPlugs = (at: Pt) => allPlugs.every((q) => {
       const cx = Math.floor(at.x) + 0.5, cy = Math.floor(at.y) + 0.5    // our doorAt cell vs their plug

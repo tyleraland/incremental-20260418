@@ -30,12 +30,17 @@ export const GATE_LOOKS: Partial<Record<ProficiencyTag, GateLook>> = {
 }
 export const GATE_TAGS = Object.keys(GATE_LOOKS) as ProficiencyTag[]
 
+// Default half-extent of the square seal plug — swallows a ≤3-wide pinch.
+// Exported so recipe vetting (keyfetch's plug-footprint checks) shares one
+// source of truth with the placers below.
+export const SEAL_HALF = 2.25
+
 export interface ProficiencyLockSite {
   tag: ProficiencyTag
   at: Pt              // the pinch (mirrored by the 'gate' POI; a closed seal centers here)
   prizeAt: Pt         // what the lock guards (a 'vault' POI, tagged `locked:<id>`)
   look?: GateLook     // seal dressing override (defaults to GATE_LOOKS[tag])
-  sealHalf?: number   // half-extent of the square seal plug (default 2.25 — swallows a ≤3-wide pinch)
+  sealHalf?: number   // half-extent of the square seal plug (default SEAL_HALF — swallows a ≤3-wide pinch)
 }
 
 // Resolve against the deploying party's kit (params.proficiencies) and emit.
@@ -53,7 +58,7 @@ export function placeProficiencyLock(
   addPoi(draft, { id: `${id}-gate`, kind: 'gate', at, tags: open ? [tag, 'open'] : [tag] })
   if (!open) {
     const look = site.look ?? GATE_LOOKS[tag]!
-    const half = site.sealHalf ?? 2.25
+    const half = site.sealHalf ?? SEAL_HALF
     // a fat plug over the pinch — oversized so any pinch narrower than the
     // plug is sealed regardless of heading; the excess melts into the render.
     // lockId marks the plug as THIS lock's seal geometry (solve.ts removes it
@@ -68,7 +73,7 @@ export interface ShortcutLockSite {
   tag: ProficiencyTag
   at: Pt              // the pinch (mirrored by the 'gate' POI; a closed seal centers here)
   look?: GateLook     // seal dressing override (defaults to GATE_LOOKS[tag])
-  sealHalf?: number   // half-extent of the square seal plug (default 2.25 — swallows a ≤3-wide pinch)
+  sealHalf?: number   // half-extent of the square seal plug (default SEAL_HALF — swallows a ≤3-wide pinch)
 }
 
 // A ROUTE lock, not a prize lock — the cycle-rewrite shortcut (architecture
@@ -89,7 +94,7 @@ export function placeShortcutLock(
   addPoi(draft, { id: `${id}-gate`, kind: 'gate', at, tags: open ? [tag, 'open'] : [tag] })
   if (!open) {
     const look = site.look ?? GATE_LOOKS[tag]!
-    const half = site.sealHalf ?? 2.25
+    const half = site.sealHalf ?? SEAL_HALF
     // same fat-plug pattern as placeProficiencyLock: oversized so any pinch
     // narrower than the plug is sealed regardless of heading
     addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material, lockId: id })
@@ -107,16 +112,18 @@ export interface KeyLockSite {
   prizeAt: Pt         // what the lock guards (a 'vault' POI, tagged `locked:<id>`)
   keyAt: Pt           // where the key sits (a 'key' POI, tagged `opens:<id>`) — caller proves it reachable
   look?: GateLook     // seal dressing override (defaults to KEY_LOOK)
-  sealHalf?: number   // half-extent of the square seal plug (default 2.25 — swallows a ≤3-wide pinch)
+  sealHalf?: number   // half-extent of the square seal plug (default SEAL_HALF — swallows a ≤3-wide pinch)
 }
 
 // A KEY lock (§D key logistics): the prize opens when the party HOLDS the key
 // — resolved against params.heldKeys at bake, exactly like the proficiency
 // kit. The key itself is a 'key' POI the caller places on the provably
 // ungated subgraph (solve.ts's fixpoint + the validator's `key-flow` rule
-// prove acquirability, chains included). Id is the key-lock ordinal: placement
-// is kit/key-invariant (as-if-closed), so the ordinal never shifts between
-// variants and a key id found in a closed bake resolves any re-bake.
+// prove acquirability, chains included). Id is the key-lock ordinal — stable
+// PER ATTEMPT because placement is kit/key-invariant (as-if-closed). Reroll
+// chains can still diverge between variants (one variant failing validation
+// re-seeds while the other passes attempt 1) — the same caveat every lock
+// resolution carries (see locks.test.ts's attempts===1 notes).
 // Caller wires the edge (`edge.lockId = id`) — the lock doesn't know its graph.
 export function placeKeyLock(
   draft: MapDraft,
@@ -130,7 +137,7 @@ export function placeKeyLock(
   addPoi(draft, { id: `${id}-key`, kind: 'key', at: keyAt, tags: [`opens:${id}`] })
   if (!open) {
     const look = site.look ?? KEY_LOOK
-    const half = site.sealHalf ?? 2.25
+    const half = site.sealHalf ?? SEAL_HALF
     // same fat-plug pattern as the proficiency locks; lockId makes the seal
     // geometry first-class for the solver
     addBarrier(draft, { x: at.x - half, y: at.y - half, w: half * 2, h: half * 2, kind: look.kind, material: look.material, lockId: id })
