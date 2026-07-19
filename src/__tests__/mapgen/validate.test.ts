@@ -182,6 +182,27 @@ describe('mapgen validate', () => {
     expect(skipped.detail).toBe('no intensities published')
   })
 
+  it('key-flow: a key sealed behind its own lock is a deadlock; a free key passes', () => {
+    // pocket sealed by a lockId-carrying plug (the seal IS the lock geometry)
+    const pocket: CollisionRect[] = [
+      wall(0, 5, 6, 1.2),
+      { x: 5, y: 0, w: 1.2, h: 6, kind: 'wall', material: 'cut-stone', lockId: 'K1' },
+    ]
+    const lockPois = (keyAt: { x: number; y: number }): Poi[] => [
+      { id: 'spawn', kind: 'spawn', at: { x: SIZE / 2, y: SIZE / 2 }, tags: [] },
+      { id: 'prize', kind: 'vault', at: { x: 2, y: 2 }, tags: ['prize', 'locked:K1'] },
+      { id: 'key', kind: 'key', at: keyAt, tags: ['opens:K1', ...(keyAt.x < 6 ? ['locked:K1'] : [])] },
+    ]
+    // violation: the key sits inside the pocket its own lock seals
+    const dead = makeSpec(pocket, lockPois({ x: 2, y: 3 }))
+    dead.semantic.locks = [{ id: 'K1', kind: 'key', at: { x: 5.5, y: 3 }, open: false, gates: ['prize'] }]
+    expect(ruleOf(dead, 'key-flow').ok).toBe(false)
+    // fix: same lock, key out on open ground
+    const fixed = makeSpec(pocket, lockPois({ x: 30, y: 30 }))
+    fixed.semantic.locks = [{ id: 'K1', kind: 'key', at: { x: 5.5, y: 3 }, open: false, gates: ['prize'] }]
+    expect(ruleOf(fixed, 'key-flow').ok).toBe(true)
+  })
+
   it('water-coherence: deep cells need covering rects; water rects need water under them', () => {
     const deep = SURFACE_MATERIALS.indexOf('deep-water')
     const uncovered = makeSpec()

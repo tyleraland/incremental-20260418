@@ -292,6 +292,37 @@ export function digestIntensity(
   return { unreachable }
 }
 
+// Lock-aware routing (the L4→L5 seam the planning AI asks): shortest node-id
+// path treating a lockId-carrying edge as impassable unless its lock is in
+// `open`. BFS in edge-insertion order — deterministic. Null = unreachable
+// with that key ring; the caller widens `open` (a fetched key, an open kit)
+// and asks again.
+export interface RouteEdgeLike extends GraphEdgeLike { lockId?: string }
+export function routeOver(
+  edges: RouteEdgeLike[], from: string, to: string, open: ReadonlySet<string> = new Set(),
+): string[] | null {
+  const adj = new Map<string, string[]>()
+  for (const e of edges) {
+    if (e.lockId && !open.has(e.lockId)) continue
+    adj.set(e.a, [...(adj.get(e.a) ?? []), e.b])
+    adj.set(e.b, [...(adj.get(e.b) ?? []), e.a])
+  }
+  const parent = new Map<string, string | null>([[from, null]])
+  const queue = [from]
+  while (queue.length) {
+    const id = queue.shift()!
+    if (id === to) {
+      const path: string[] = []
+      for (let n: string | null = id; n !== null; n = parent.get(n) ?? null) path.unshift(n)
+      return path
+    }
+    for (const n of adj.get(id) ?? []) {
+      if (!parent.has(n)) { parent.set(n, id); queue.push(n) }
+    }
+  }
+  return null
+}
+
 // Edge count per node id. Degree 1 = a dead end (gate/vault candidate);
 // high degree = a hub (landmark/stamp candidate).
 export function nodeDegrees(edges: GraphEdgeLike[]): Map<string, number> {

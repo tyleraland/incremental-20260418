@@ -185,11 +185,12 @@ deferred content phases.
   scored by validator/reroll (the ASP idea without the solver). Ship paired
   with consuming AI tactics (see AI & coordination).
 - **Track G — world director (Phase-0).** Computes `GenParams.manifest`
-  plants across the location graph (cross-map lock/key solvability). The L0
-  seam is typed and plumbed; gated behind single-map key logistics (phase 6).
-- **More dungeon rewrite steps (track E tail).** Key-fetch chains, extra
-  cycles, secret shortcuts — the cycle-as-primitive skeleton + shortcut-lock
-  rewrite shipped as the first step; key-fetch needs phase-6 item plumbing.
+  plants across the location graph (cross-map lock/key solvability —
+  `solveLockFlow` is the single-map building block). The L0 seam is typed and
+  plumbed; gated behind store-side key logistics (phase 6).
+- **More dungeon rewrite steps (track E tail).** Multi-link key chains
+  (solver-ready — a chain-placing pass tags chained keys `locked:<id>` and
+  leans on `key-flow`), extra cycles, secret shortcuts.
 
 ### Tech debt & polish — discrete chunks (each independently pickable)
 
@@ -313,15 +314,20 @@ Deferred phases (each independently shippable):
 - **Phase 4 — lock-and-key + proficiency gates.** Foundation is in (enriched
   `Lock` model, the dungeon `gates` pass, proficiency tags) but feel needs
   human iteration — the handoff list lives in `src/mapgen/CLAUDE.md` → phase
-  4: gate frequency & placement feel, store-side rewards (familiarity/xp/loot
-  multipliers off the `prize` POI tags), surfacing in Reports/event log
-  ("Shae's perception found a hidden door"), party-change re-resolve
-  semantics, field-recipe gates, 'key'/'switch' lock kinds (phase 6).
-  **Biggest unbuilt piece — puzzle-SOLVING as a play flow:** today's gates are
-  a static have-the-tag check; the intended system is discovery (clues
-  noticed as a function of INT/knowledge + time), key logistics (items found
-  on-map unlocking other locks — real sequencing chains), and planning AI
-  (the autobattler routes the party through fetch-key-then-open-door).
+  4: gate frequency & placement feel (key-fetch fires ~4%/floor — squeezed by
+  the vault gate claiming the lone dead-end), store-side rewards
+  (familiarity/xp/loot multipliers off the `prize` POI tags), surfacing in
+  Reports/event log ("Shae's perception found a hidden door"), party-change
+  re-resolve semantics, the 'switch' lock kind (phase 6).
+  **Biggest unbuilt piece — puzzle-SOLVING as a play flow:** gates resolve as
+  static checks (proficiency tag / held key at bake); the intended system is
+  discovery (clues noticed as a function of INT/knowledge + time), store-side
+  key logistics (tracking picked-up keys, feeding `GenParams.heldKeys` at
+  deploy — the bake side ships: key locks, `key` POIs, `solveLockFlow`), and
+  planning AI (the autobattler routes the party through
+  fetch-key-then-open-door; its consumption seam ships — `planLockFlow`
+  objective steps, `routeOver`, `specObjectives` — the planner reads ordered
+  routed steps rather than re-deriving the fixpoint).
 - **Phase 5 — inter-map coherence.** The `city` recipe + naming pass shipped;
   still open: **inter-map adjacency/depth gradients** as first-class;
   **NPC/merchant placement reading the semantic plane** (today they're
