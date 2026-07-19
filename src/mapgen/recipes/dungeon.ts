@@ -72,6 +72,25 @@ const getPlan = (draft: PassCtx['draft']) => draft.scratch.get('plan') as Plan |
 const idx = (size: number, x: number, y: number) => y * size + x
 const center = (r: Rect): Pt => ({ x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) })
 
+// ── DUNGEON_LOCK_DIALS — the structure/lock review knobs (phase-4 feel) ──────
+// The one place the dungeon's loop-and-lock frequency is tuned (same
+// one-commented-block discipline as field.ts's RIVER/GATE dials). Values are
+// the shipped first guesses; the phase-4 handoff (src/mapgen/CLAUDE.md) says
+// frequency/placement need human play, so this is where that iteration lands —
+// bump a coin in the lab and re-bake the same seed. Changing any value shifts
+// which floors grow which structure (baked output moves), so re-pin the
+// determinism sweeps in recipe-dungeon.test.ts / keyflow.test.ts after a tune.
+export const DUNGEON_LOCK_DIALS = {
+  loopChance: 0.4,       // layout: coin for the optional CHORD — the second loop.
+                         //   → 1 makes reliably braided (multi-loop) floors; the
+                         //   chord is the extra cycle a future multi-lock pass gates.
+  shortcutChance: 0.5,   // shortcut pass: coin to route-lock one mid-arc cycle edge
+  keyfetchChance: 0.5,   // keyfetch pass: coin to key-lock a second dead-end vault
+  minGateRoomDim: 5,     // a lockable dead-end's min room dimension — smaller rooms
+                         //   get swallowed whole by the ~4.5-cell seal plug (both
+                         //   the gates and keyfetch candidate filters read this)
+}
+
 function carveRect(walk: Uint8Array, size: number, r: Rect) {
   const x0 = Math.max(MARGIN, Math.floor(r.x)), x1 = Math.min(size - MARGIN, Math.ceil(r.x + r.w))
   const y0 = Math.max(MARGIN, Math.floor(r.y)), y1 = Math.min(size - MARGIN, Math.ceil(r.y + r.h))
@@ -228,7 +247,7 @@ const layoutPass = {
       // loop, picked among the closest pairs so it stays a lane, not a
       // map-crossing highway
       const cycleIdx = [0, ...arcA.map((q) => q.i), goalIdx, ...arcB.map((q) => q.i)]
-      if ((arcA.length || arcB.length) && g.chance(0.4)) {
+      if ((arcA.length || arcB.length) && g.chance(DUNGEON_LOCK_DIALS.loopChance)) {
         const linked = new Set(edges.map((e) => `${e.a}|${e.b}`))
         const pairs: { a: number; b: number; d: number }[] = []
         for (let p = 0; p < cycleIdx.length; p++) {
@@ -550,7 +569,7 @@ const gatesPass = {
         n.area && !hasPoiInside(n.area) &&
         // closets get swallowed whole by the 4.5-cell seal plug (prize AND
         // approach vanish into it) — gate rooms with some depth behind the door
-        Math.min(n.area.w, n.area.h) >= 5)
+        Math.min(n.area.w, n.area.h) >= DUNGEON_LOCK_DIALS.minGateRoomDim)
       .map((n) => ({ n, edge: edges.find((e) => (e.a === n.id || e.b === n.id) && e.doorAt) }))
       .filter((c): c is { n: (typeof nodes)[number]; edge: (typeof edges)[number] } => !!c.edge)
     if (!cands.length) { note('no gateable dead-end — no locks this floor'); return }
@@ -623,7 +642,7 @@ const shortcutPass = {
     const plan = getPlan(draft)
     if (!plan) { note('no layout plan — skipped'); return }
     const r = rng('place')
-    if (!r.chance(0.5)) { note('rewrite skipped (coin)'); return }
+    if (!r.chance(DUNGEON_LOCK_DIALS.shortcutChance)) { note('rewrite skipped (coin)'); return }
     // as-if-all-closed rect count: each OPEN lock omitted exactly one plug
     const openLocks = draft.semantic.locks.filter((l) => l.open).length
     if (draft.collision.length + openLocks >= params.maxBarriers) { note('no barrier budget left — shortcut skipped'); return }
@@ -710,7 +729,7 @@ const keyfetchPass = {
     const plan = getPlan(draft)
     if (!plan) { note('no layout plan — skipped'); return }
     const r = rng('place')
-    if (!r.chance(0.5)) { note('keyfetch skipped (coin)'); return }
+    if (!r.chance(DUNGEON_LOCK_DIALS.keyfetchChance)) { note('keyfetch skipped (coin)'); return }
     // as-if-all-closed rect count: each OPEN lock omitted exactly one plug
     const openLocks = draft.semantic.locks.filter((l) => l.open).length
     if (draft.collision.length + openLocks >= params.maxBarriers) { note('no barrier budget left — keyfetch skipped'); return }
@@ -744,7 +763,7 @@ const keyfetchPass = {
       .filter((n) =>
         degree.get(n.id) === 1 && n.id !== entry?.id && n.id !== lair?.id &&
         n.area && !hasPoiInside(n.area) &&
-        Math.min(n.area.w, n.area.h) >= 5)
+        Math.min(n.area.w, n.area.h) >= DUNGEON_LOCK_DIALS.minGateRoomDim)
       .map((n) => ({ n, edge: edges.find((e) => (e.a === n.id || e.b === n.id) && e.doorAt && !e.lockId && !occ[cellOf(e.doorAt)] && clearOfOtherPlugs(e.doorAt)) }))
       .filter((c): c is { n: (typeof nodes)[number]; edge: (typeof edges)[number] } => !!c.edge)
     if (!cands.length) { note('no gateable dead-end — keyfetch skipped'); return }

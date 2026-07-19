@@ -217,7 +217,9 @@ describe('dungeon keyfetch (variant-at-deploy key locks)', () => {
     expect(step!.gateNode).toBeDefined()
     expect(step!.route, `seed ${g.seed}: unroutable plan`).toBeDefined()
     expect(step!.route![step!.route!.length - 1]).toBe(step!.gateNode)
-    expect(JSON.stringify(specObjectives(g.closed.spec))).toBe(JSON.stringify(steps))
+    // determinism THROUGH the bake: an independent re-bake of the same seed
+    // yields the identical plan (not just a repeated call on one spec object)
+    expect(JSON.stringify(specObjectives(bake(g.seed).spec))).toBe(JSON.stringify(steps))
   })
 
   it('variants are byte-deterministic per (seed, heldKeys)', () => {
