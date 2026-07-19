@@ -44,6 +44,24 @@ import { FARM } from '@/render/setpieces/farm'
 import { FISHING } from '@/render/setpieces/fishing'
 import { LORE } from '@/render/setpieces/lore'
 
+// ── Wave-3 town/village groups (one file per builder; src/render/town/*) ──────
+// Same contract as the flora + setpiece groups: each module exports a PropDef[]
+// with FULL inline placement meta, flowing into TERRAIN_PROPS + listAssets with
+// no edits here. Runtime helpers come from town/kit.ts (a shim over flora/kit),
+// so the graph stays acyclic. Bucketed by where their closest analogues live:
+// city/village fixtures → plaza; farm/working-life + graveyard + hag hovel →
+// grass; the witch's ritual kit → stone (mirrors wave-2 ritual). The 13 'set'
+// rows (houses/church/mills/tavern/hagshack) are SCATTER_SETS prefabs the
+// orchestrator wires post-build once every member prop exists (see digest WAVE 3).
+import { STRUCTURES } from '@/render/town/structures'
+import { STREETS } from '@/render/town/streets'
+import { MARKET } from '@/render/town/market'
+import { WORKING } from '@/render/town/working'
+import { TAVERN } from '@/render/town/tavern'
+import { FAITH } from '@/render/town/faith'
+import { HAG_SHACK } from '@/render/town/hag-shack'
+import { HAG_WITCHERY } from '@/render/town/hag-witchery'
+
 // ── Prop assets as data ──────────────────────────────────────────────────────
 //
 // The paper language's scatter-prop registry (asset-pipeline step 3 — see
@@ -172,6 +190,12 @@ export type GameplayTag =
   | 'use' | 'smelt' | 'craft' | 'process' | 'brew' | 'cook'                            // artisan machines
   | 'read' | 'quest' | 'trade' | 'sit' | 'search' | 'rest' | 'save' | 'warp'          // town interactions
   | 'ritual' | 'drink' | 'restore' | 'offer' | 'spread' | 'curse' | 'warm' | 'fish'    // ritual/lore/fishing
+  // ── wave-3 town/village verbs (render/town/*; declarative-only labels) ──
+  // Same convention: 1:1 with the spec's verb column EXCEPT synonyms folded onto
+  // existing tags (spec `harvest`→'harvestable', `loot`→'lootable', `gather`/
+  // `craft`/`brew`/`use`/`trade`/`sit`/`quest`/`read`/`search`/`forage`/`trigger`
+  // already exist above; `barrier` reuses the wave-2 trap tag). New distinct ones:
+  | 'enter' | 'open' | 'draw' | 'pray' | 'scry' | 'climb'                              // doors/gates/wells/faith/scrying/towers
 
 // Placement archetype — how a prop wants to be laid down (read by mapgen phases).
 export type PropRole = 'field' | 'cluster' | 'edge' | 'understory' | 'accent'
@@ -308,6 +332,9 @@ export const SCATTER_SETS: ScatterSetDef[] = [
   { id: 'graveyard', themes: ['haunted', 'plains', 'forest'], spread: 5, members: [
     { prop: 'gravestone', n: [3, 6] }, { prop: 'deadtree', n: [1, 1] }, { prop: 'wisp', n: [0, 2] }, { prop: 'fencerun', n: [0, 3] },
   ] },
+  { id: 'abandonedcamp', themes: ['plains', 'forest', 'mountain'], spread: 4, members: [
+    { prop: 'tent', n: [1, 1] }, { prop: 'campcold', n: [1, 1] }, { prop: 'bedroll', n: [1, 2] }, { prop: 'sack', n: [0, 2] },
+  ] },
   { id: 'ruin', themes: ['ruins', 'dungeon', 'desert'], spread: 5, members: [
     { prop: 'pillar', n: [1, 3] }, { prop: 'rubble', n: [2, 4] }, { prop: 'bricks', n: [1, 2] }, { prop: 'moss', n: [0, 2] }, { prop: 'chest', n: [0, 1] },
   ] },
@@ -397,7 +424,7 @@ const PROP_META: Record<string, PropPlacement> = {
   sack:     { kinds: ['rock', 'stump'], weight: 0.8, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.25 },
   wheel:    { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'free', near: ['wall'], pass: 'walkable', footprint: 0.25, maxPerChunk: 1 },
   pot:      { kinds: ['bush', 'flower'], weight: 0.7, themes: ['city'], role: 'field', rotate: 'upright', near: ['wall', 'path'], pass: 'solid', footprint: 0.25, gameplay: ['destructible'] },
-  signpost: { kinds: ['tree'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.25, tall: true, maxPerChunk: 1 },
+  signpost: { kinds: ['tree'], weight: 0.4, themes: ['city'], role: 'accent', rotate: 'upright', near: ['path'], pass: 'solid', footprint: 0.25, tall: true, maxPerChunk: 1, gameplay: ['read'] },
   coil:     { kinds: ['reed', 'rock'], weight: 0.5, themes: ['city'], role: 'field', rotate: 'free', near: ['wall'], pass: 'walkable', footprint: 0.15 },
   conifer:  { kinds: ['tree'], weight: 0.4, themes: ['city', 'mountain', 'forest'], role: 'cluster', rotate: 'upright', near: ['path'], pass: 'overhang', footprint: 0.45, tall: true, themeWeight: { mountain: 0.5, forest: 0.45, city: 0.2 } },
   cobbles:  { kinds: ['rock', 'stump'], weight: 0.9, themes: ['city'], role: 'edge', rotate: 'upright', near: ['path'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
@@ -436,7 +463,7 @@ const PROP_META: Record<string, PropPlacement> = {
   steppingstone: { kinds: ['rock'], weight: 0.4, themes: ['water', 'beach'], role: 'edge', rotate: 'free', near: ['water', 'path'], pass: 'walkable', footprint: 0.25 },
   driftwood:     { kinds: ['stump'], weight: 0.5, themes: ['beach', 'water'], role: 'field', rotate: 'free', near: ['water'], pass: 'solid', footprint: 0.3, gameplay: ['flammable'] },
   rowboat:       { kinds: ['stump'], weight: 0.15, themes: ['water', 'beach'], role: 'accent', rotate: 'upright', near: ['water'], pass: 'solid', footprint: 0.6, maxPerChunk: 1 },
-  fishnet:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['water', 'beach', 'city'], role: 'edge', rotate: 'flat', near: ['water'], pass: 'walkable', footprint: 0.2 },
+  fishnet:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['water', 'beach', 'city'], role: 'edge', rotate: 'flat', near: ['water'], pass: 'walkable', footprint: 0.2, gameplay: ['fish'] },
   ripple:        { kinds: ['reed'], weight: 0.8, themes: ['water'], role: 'field', rotate: 'flat', near: ['water'], clusterWith: ['lilypad'], layer: 'water-surface', anim: true, pass: 'walkable', footprint: 0.1, scaleJitter: [0.85, 1.15] },
   mudbank:       { kinds: ['bush', 'flower'], weight: 0.5, themes: ['water', 'swamp'], role: 'field', rotate: 'flat', near: ['water'], pass: 'walkable', footprint: 0.2, themeWeight: { swamp: 0.55, water: 0.35 } },
   // ── swamp + cross-biome structures ──
@@ -463,15 +490,15 @@ const PROP_META: Record<string, PropPlacement> = {
   puddle:     { kinds: ['flower', 'rock'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1 },
   bloodstain: { kinds: ['flower'], weight: 0.35, themes: ['dungeon', 'haunted'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1 },
   statue:     { kinds: ['tree', 'stump'], weight: 0.2, themes: ['dungeon', 'ruins', 'city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.5, tall: true, themeWeight: { ruins: 0.25, dungeon: 0.2, city: 0.15 }, maxPerChunk: 1 },
-  altar:      { kinds: ['stump', 'rock'], weight: 0.2, themes: ['dungeon', 'haunted', 'arcane'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.5, maxPerChunk: 1 },
+  altar:      { kinds: ['stump', 'rock'], weight: 0.2, themes: ['dungeon', 'haunted', 'arcane'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.5, maxPerChunk: 1, gameplay: ['ritual'] },
   chest:      { kinds: ['stump', 'rock'], weight: 0.15, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.3, gameplay: ['lootable'], maxPerChunk: 1 },
-  spiketrap:  { kinds: ['rock', 'stump'], weight: 0.2, themes: ['dungeon'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.2 },
+  spiketrap:  { kinds: ['rock', 'stump'], weight: 0.2, themes: ['dungeon'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.2, gameplay: ['trigger', 'damage'], tags: ['trap'] },
   cask:       { kinds: ['stump', 'rock'], weight: 0.5, themes: ['dungeon', 'ruins'], role: 'field', rotate: 'upright', near: ['wall'], clusterWith: ['urn'], pass: 'solid', footprint: 0.3, gameplay: ['destructible'] },
   // ── mountain / high country ──
   pine:        { kinds: ['tree'], weight: 0.6, themes: ['mountain', 'forest'], role: 'cluster', rotate: 'upright', clusterWith: ['snag', 'snowpatch'], pass: 'overhang', footprint: 0.45, tall: true, themeWeight: { mountain: 0.65, forest: 0.5 } },
   snag:        { kinds: ['tree'], weight: 0.25, themes: ['mountain', 'haunted'], role: 'accent', rotate: 'upright', near: ['rock'], pass: 'solid', footprint: 0.3, tall: true, themeWeight: { mountain: 0.3, haunted: 0.2 }, gameplay: ['flammable'], maxPerChunk: 1 },
   snowpatch:   { kinds: ['flower', 'bush'], weight: 0.7, themes: ['mountain'], role: 'field', rotate: 'flat', clusterWith: ['pine'], pass: 'walkable', footprint: 0.15, scaleJitter: [0.85, 1.15] },
-  orevein:     { kinds: ['rock'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['wall', 'rock'], pass: 'solid', footprint: 0.35, gameplay: ['harvestable'], maxPerChunk: 2 },
+  orevein:     { kinds: ['rock'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['wall', 'rock'], pass: 'solid', footprint: 0.35, gameplay: ['harvestable', 'mine'], maxPerChunk: 2 },
   minecart:    { kinds: ['stump', 'rock'], weight: 0.2, themes: ['mountain'], role: 'accent', rotate: 'upright', near: ['path', 'wall'], clusterWith: ['beamframe'], pass: 'solid', footprint: 0.45, maxPerChunk: 1 },
   beamframe:   { kinds: ['tree', 'stump'], weight: 0.35, themes: ['mountain', 'dungeon'], role: 'field', rotate: 'free', near: ['wall'], pass: 'solid', footprint: 0.4, themeWeight: { mountain: 0.4, dungeon: 0.25 } },
   cairn:       { kinds: ['rock', 'stump'], weight: 0.3, themes: ['mountain'], role: 'accent', rotate: 'free', near: ['path'], pass: 'solid', footprint: 0.3, maxPerChunk: 2 },
@@ -524,7 +551,7 @@ const PROP_META: Record<string, PropPlacement> = {
   portcullis:   { kinds: ['stump', 'tree'], weight: 0.2, themes: ['dungeon', 'ruins', 'city'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.55, maxPerChunk: 2, tags: ['interactable'] },
   brokengate:   { kinds: ['stump', 'rock'], weight: 0.25, themes: ['ruins', 'dungeon', 'haunted'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.5, maxPerChunk: 2 },
   cavemouth:    { kinds: ['rock', 'tree'], weight: 0.2, themes: ['mountain', 'cave', 'forest'], role: 'accent', rotate: 'upright', near: ['wall', 'rock'], pass: 'solid', footprint: 0.7, maxPerChunk: 1, tags: ['portal'] },
-  mineentrance: { kinds: ['stump', 'tree'], weight: 0.15, themes: ['mountain', 'cave'], role: 'accent', rotate: 'upright', near: ['wall'], clusterWith: ['minecart', 'beamframe'], pass: 'solid', footprint: 0.6, maxPerChunk: 1, tags: ['portal'] },
+  mineentrance: { kinds: ['stump', 'tree'], weight: 0.15, themes: ['mountain', 'cave'], role: 'accent', rotate: 'upright', near: ['wall'], clusterWith: ['minecart', 'beamframe'], pass: 'solid', footprint: 0.6, maxPerChunk: 1, tags: ['portal'], gameplay: ['descend'] },
   stairdown:    { kinds: ['rock', 'stump'], weight: 0.15, themes: ['dungeon', 'ruins', 'cave'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.5, maxPerChunk: 1, tags: ['portal'] },
   ladder:       { kinds: ['stump'], weight: 0.15, themes: ['dungeon', 'cave', 'city'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.35, maxPerChunk: 1, tags: ['portal'], gameplay: ['climbable'] },
   cellarhatch:  { kinds: ['stump', 'rock'], weight: 0.15, themes: ['city', 'plains'], role: 'accent', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.45, maxPerChunk: 1, tags: ['portal'] },
@@ -546,7 +573,7 @@ const PROP_META: Record<string, PropPlacement> = {
   beehive:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['forest'], role: 'accent', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.15, layer: 'canopy', maxPerChunk: 2, gameplay: ['destructible'] },
   toadstoolring: { kinds: ['flower', 'bush'], weight: 0.3, themes: ['forest', 'haunted', 'arcane'], role: 'understory', rotate: 'upright', pass: 'walkable', footprint: 0.4, maxPerChunk: 2, tags: ['ring', 'fae'] },
   quicksand:     { kinds: ['rock', 'flower'], weight: 0.3, themes: ['desert'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.4, maxPerChunk: 2 },
-  digspot:       { kinds: ['flower', 'rock'], weight: 0.3, themes: ['desert', 'beach'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.25, gameplay: ['lootable'] },
+  digspot:       { kinds: ['flower', 'rock'], weight: 0.3, themes: ['desert', 'beach', 'plains', 'forest'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.25, gameplay: ['lootable', 'dig'] },
   // ── shore & beach fills ──
   pier:       { kinds: ['stump'], weight: 0.2, themes: ['water', 'beach', 'city'], role: 'accent', rotate: 'upright', near: ['water'], clusterWith: ['rowboat', 'fishnet'], pass: 'walkable', footprint: 0.5, maxPerChunk: 1 },
   buoy:       { kinds: ['reed'], weight: 0.3, themes: ['water'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.12, layer: 'water-surface' },
@@ -556,12 +583,12 @@ const PROP_META: Record<string, PropPlacement> = {
   coral:      { kinds: ['rock', 'bush'], weight: 0.35, themes: ['beach'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2 },
   sandcastle: { kinds: ['stump', 'rock'], weight: 0.15, themes: ['beach'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.25, maxPerChunk: 1, gameplay: ['destructible'] },
   // ── city & dungeon furniture ──
-  marketstall: { kinds: ['stump', 'tree'], weight: 0.3, themes: ['city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.6, maxPerChunk: 3, clusterWith: ['crate', 'sack', 'barrel'] },
-  bench:       { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'field', rotate: 'upright', near: ['path', 'wall'], pass: 'solid', footprint: 0.35 },
+  marketstall: { kinds: ['stump', 'tree'], weight: 0.3, themes: ['city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.6, maxPerChunk: 3, clusterWith: ['crate', 'sack', 'barrel'], gameplay: ['trade'] },
+  bench:       { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'field', rotate: 'upright', near: ['path', 'wall'], pass: 'solid', footprint: 0.35, gameplay: ['sit'] },
   awning:      { kinds: ['flower', 'bush'], weight: 0.3, themes: ['city'], role: 'edge', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.2, layer: 'wall' },
   hanglantern: { kinds: ['flower'], weight: 0.3, themes: ['city'], role: 'field', rotate: 'upright', pass: 'walkable', footprint: 0.1, layer: 'canopy', light: { color: 'lampGlow', radius: 2 } },
   sarcophagus: { kinds: ['stump', 'rock'], weight: 0.2, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.55, maxPerChunk: 2, gameplay: ['lootable'] },
-  bookshelf:   { kinds: ['stump', 'tree'], weight: 0.3, themes: ['dungeon', 'city'], role: 'field', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.45, gameplay: ['flammable'] },
+  bookshelf:   { kinds: ['stump', 'tree'], weight: 0.3, themes: ['dungeon', 'city'], role: 'field', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.45, gameplay: ['flammable', 'read'] },
   weaponrack:  { kinds: ['stump', 'tree'], weight: 0.25, themes: ['dungeon', 'city'], role: 'field', rotate: 'upright', near: ['wall'], pass: 'solid', footprint: 0.4, gameplay: ['lootable'] },
   hoard:       { kinds: ['rock', 'flower'], weight: 0.15, themes: ['dungeon', 'ruins'], role: 'accent', rotate: 'free', pass: 'walkable', footprint: 0.35, maxPerChunk: 1, gameplay: ['lootable'], light: { color: 'bannerGold', radius: 1 } },
   floorrunes:  { kinds: ['flower'], weight: 0.3, themes: ['dungeon', 'arcane', 'ruins'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.3 },
@@ -570,6 +597,10 @@ const PROP_META: Record<string, PropPlacement> = {
   braziercold: { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.3 },
   cratedebris: { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.3 },
   potdebris:   { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.25 },
+  // wave-2 defer-lane state pairs (digspot/hoard/sarcophagus companions)
+  digspot_dug:  { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.25 },
+  hoard_looted: { kinds: [], tags: ['interactable'], pass: 'walkable', footprint: 0.35 },
+  sarcoph_open: { kinds: [], tags: ['interactable'], pass: 'solid', footprint: 0.55 },
   // decor-ring assets: placed by the plaza landmark ring, not scatter (no
   // placement tags needed — empty kinds keeps them off the scatter placer)
   lamppost: { kinds: [] },
@@ -1688,6 +1719,9 @@ const DIGSPOT_CRUMBS =
   'M0.35 -0.32A0.035 0.035 0 1 0 0.42 -0.32A0.035 0.035 0 1 0 0.35 -0.32Z' +
   'M-0.1 -0.48A0.04 0.04 0 1 0 -0.02 -0.48A0.04 0.04 0 1 0 -0.1 -0.48Z'
 const DIGSPOT_XMARK = 'M-0.12 -0.02L0.12 0.18M0.12 -0.02L-0.12 0.18'
+// digspot_dug (state pair): the marked spot dug open — an emptied dark pit where
+// the X was; the mounds and flung crumbs stay so it reads as the same spot.
+const DIGSPOT_HOLE = 'M-0.18 0.06A0.18 0.12 0 1 0 0.18 0.06A0.18 0.12 0 1 0 -0.18 0.06Z'
 
 // ── shore & beach fills props ─────────────────────────────────────────────────────
 // PIER: four wide contiguous deck planks (wider than plankwalk's) running the
@@ -1832,6 +1866,10 @@ const SARCOPHAGUS_BODY = 'M-0.42 -0.6L0.42 -0.6L0.5 -0.1L0.32 0.6L-0.32 0.6L-0.5
 // carved-figure hint: shoulder lens + head ring, same read as the `statue` prop's STATUE_FIGURE/stoneBase pairing
 const SARCOPHAGUS_FIGURE = 'M-0.3 -0.28A0.26 0.14 0 1 0 0.22 -0.28A0.26 0.14 0 1 0 -0.3 -0.28Z' + ringPath(0.11, -0.04, -0.5)
 const SARCOPHAGUS_CHIP = 'M-0.48 -0.18L-0.28 -0.08L-0.44 0.02Z'
+// sarcoph_open (state pair): same coffin body, the carved lid slid off up-left
+// (SARCOPH_LID) revealing a dark inset cavity (SARCOPH_CAVITY).
+const SARCOPH_CAVITY = 'M-0.32 -0.46L0.32 -0.46L0.39 -0.08L0.25 0.46L-0.25 0.46L-0.39 -0.08Z'
+const SARCOPH_LID = 'M-0.52 -0.8L0.3 -0.84L0.4 -0.56L-0.44 -0.5Z'
 
 // ── bookshelf (stone) ──
 const BOOKSHELF_FRAME = rectD(-0.55, -0.5, 1.1, 1.0)
@@ -1862,6 +1900,10 @@ const hoardCoinsD = (seed: number, n: number): string => {
 const HOARD_COINS = hoardCoinsD(hashString('hoard'), 16)
 const HOARD_GEM = 'M0.07 -0.23L0.23 -0.23L0.29 -0.07L0.15 0.13L0.01 -0.07Z'
 const HOARD_GLINT = ringPath(0.045, -0.2, 0.05)
+// hoard_looted (state pair): same mound, treasure scooped out — a dark hollow
+// (HOARD_SCOOP) with only a few stray coins (HOARD_STRAY) left behind.
+const HOARD_SCOOP = 'M-0.3 0A0.32 0.22 0 1 0 0.34 0A0.32 0.22 0 1 0 -0.3 0Z'
+const HOARD_STRAY = hoardCoinsD(hashString('hoardlooted'), 3)
 
 // ── floorrunes (stone) ──
 // deterministic tick arc (pure trig, like starPath) — n ticks from angle a0 to a1 at radius r, length len
@@ -2396,6 +2438,13 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: DIGSPOT_CRUMBS, fill: 'sand', opacity: 0.85 },
       { d: DIGSPOT_XMARK, stroke: 'woodDeep', sw: 0.05, opacity: 0.5 },
     ] },
+    // dug-open state pair: same mounds + flung crumbs, the X dig-marker replaced
+    // by an emptied dark pit.
+    { id: 'digspot_dug', size: 0.85, wonk: 0.035, paths: [
+      { d: DIGSPOT_MOUNDS, fill: 'dirtPath' },
+      { d: DIGSPOT_HOLE, fill: 'ink' },
+      { d: DIGSPOT_CRUMBS, fill: 'sand', opacity: 0.85 },
+    ] },
     // ── shore & beach fills (grass) ──
 
     // PIER: wide contiguous deck run + seam ink lines + two post dots at the far
@@ -2459,6 +2508,8 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     ...DESERT_FLORA, ...WETLAND_FLORA, ...JUNGLE_FLORA, ...FOREST_FLORA,
     // ── wave-2 setpieces (nature/farm/water/lore groups) ──
     ...FORAGING, ...FARM, ...FISHING, ...LORE,
+    // ── wave-3 town/village (working-life · graveyard · hag hovel groups) ──
+    ...WORKING, ...FAITH, ...HAG_SHACK,
   ]),
   stone: withVariants([
     { id: 'rubble', size: 1, paths: [
@@ -2917,6 +2968,13 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: SARCOPHAGUS_FIGURE, fill: 'stoneBase' },
       { d: SARCOPHAGUS_CHIP, fill: 'stoneDark' },
     ] },
+    // opened state pair: same coffin body, the carved lid slid off up-left over a
+    // dark exposed cavity.
+    { id: 'sarcoph_open', size: 1.05, wonk: 0.03, paths: [
+      ...cutout(SARCOPHAGUS_BODY, 'rockDeep', 'rock'),
+      { d: SARCOPH_CAVITY, fill: 'ink' },
+      ...cutout(SARCOPH_LID, 'rockDeep', 'stoneBase'),
+    ] },
     { id: 'bookshelf', size: 1, wonk: 0.03, paths: [
       { d: BOOKSHELF_FRAME, fill: 'woodDeep' },
       { d: BOOKSHELF_ROWS, stroke: 'ink', sw: 0.04, opacity: 0.7 },
@@ -2934,6 +2992,13 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
       { d: HOARD_COINS, fill: 'bannerGold' },
       { d: HOARD_GEM, fill: 'bannerBlue' },
       { d: HOARD_GLINT, fill: 'cream' },
+    ] },
+    // looted state pair: same mound, treasure scooped out — a dark hollow and a
+    // few stray coins remain.
+    { id: 'hoard_looted', size: 0.85, wonk: 0.03, paths: [
+      { d: HOARD_BASE, fill: 'woodDeep' },
+      { d: HOARD_SCOOP, fill: 'ink', opacity: 0.5 },
+      { d: HOARD_STRAY, fill: 'bannerGold', opacity: 0.6 },
     ] },
     { id: 'floorrunes', size: 1, wonk: 0.03, paths: [
       { d: FLOORRUNES_TICKS, stroke: 'mortarInk', sw: 0.05, opacity: 0.55 },
@@ -2956,6 +3021,8 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     ...ALPINE_FLORA, ...ARCANE_FLORA, ...VOLCANIC_FLORA,
     // ── wave-2 setpieces (dungeon/mountain/arcane groups) ──
     ...TRAPS, ...LOOT, ...MINING, ...RITUAL, ...SPAWNERS,
+    // ── wave-3 town/village (witch's ritual kit — mirrors wave-2 ritual) ──
+    ...HAG_WITCHERY,
   ]),
   plaza: withVariants([
     { id: 'crate', size: 1, paths: [
@@ -3073,5 +3140,7 @@ export const TERRAIN_PROPS: Record<Biome, PropDef[]> = {
     ] },
     // ── wave-2 setpieces (city/interior groups) ──
     ...ARTISAN, ...TOWN, ...FURNITURE,
+    // ── wave-3 town/village (city/village fixtures groups) ──
+    ...STRUCTURES, ...STREETS, ...MARKET, ...TAVERN,
   ]),
 }
