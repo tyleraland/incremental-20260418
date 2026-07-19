@@ -146,7 +146,7 @@ export const FARM: PropDef[] = [
       { d: WT_SHEEN, stroke: 'waterHi', sw: 0.04, opacity: 0.5 },
       { d: WT_SEAMS, stroke: 'ink', sw: 0.04, opacity: 0.5 },
     ],
-    kinds: ['stump', 'rock'], themes: ['farm'], role: 'field', weight: 0.45,
+    kinds: ['stump', 'rock'], themes: ['farm', 'village'], role: 'field', weight: 0.45,
     rotate: 'upright', pass: 'solid', footprint: 0.35, gameplay: ['use'], tags: ['farm'],
   },
   // FEED TROUGH: the same trough form heaped with golden feed instead of water,

@@ -335,6 +335,46 @@ export const SCATTER_SETS: ScatterSetDef[] = [
   { id: 'abandonedcamp', themes: ['plains', 'forest', 'mountain'], spread: 4, members: [
     { prop: 'tent', n: [1, 1] }, { prop: 'campcold', n: [1, 1] }, { prop: 'bedroll', n: [1, 2] }, { prop: 'sack', n: [0, 2] },
   ] },
+  // wave-3 building prefabs (digest §W3.5): part-props composed into structures
+  { id: 'house_timber', themes: ['city', 'village'], spread: 3, members: [
+    { prop: 'housewall', n: [1, 1] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'door_arched', n: [1, 1] }, { prop: 'shutters', n: [1, 2] }, { prop: 'chimneypot', n: [0, 1] }, { prop: 'jetty_upper', n: [0, 1] }, { prop: 'innsign', n: [0, 1] },
+  ] },
+  { id: 'house_thatch', themes: ['village', 'farm'], spread: 3, members: [
+    { prop: 'housewall', n: [1, 1] }, { prop: 'roofthatch', n: [1, 1] }, { prop: 'door_arched', n: [1, 1] }, { prop: 'shutters', n: [1, 2] }, { prop: 'chimneypot', n: [0, 1] },
+  ] },
+  { id: 'cottage', themes: ['village', 'farm'], spread: 3, members: [
+    { prop: 'housewall', n: [1, 1] }, { prop: 'roofthatch', n: [1, 1] }, { prop: 'door_arched', n: [1, 1] }, { prop: 'shutters', n: [1, 1] }, { prop: 'woodpile', n: [0, 1] },
+  ] },
+  { id: 'shopfront', themes: ['city', 'village'], spread: 3, members: [
+    { prop: 'housewall', n: [1, 1] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'door_arched', n: [1, 1] }, { prop: 'shopsign', n: [1, 1] }, { prop: 'shutters', n: [1, 2] }, { prop: 'cloth_awning', n: [0, 1] }, { prop: 'crateburlap', n: [0, 2] },
+  ] },
+  { id: 'townhall', themes: ['city'], spread: 4, members: [
+    { prop: 'housewall', n: [1, 2] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'door_arched', n: [1, 1] }, { prop: 'shutters', n: [2, 3] }, { prop: 'statue', n: [0, 1] }, { prop: 'marketcross', n: [0, 1] },
+  ] },
+  { id: 'church', themes: ['city', 'village'], spread: 4, members: [
+    { prop: 'housewall', n: [1, 1] }, { prop: 'steeple', n: [1, 1] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'door_arched', n: [1, 1] }, { prop: 'gravecross', n: [0, 2] }, { prop: 'lychgate', n: [0, 1] },
+  ] },
+  { id: 'chapel_ruin', themes: ['ruins', 'village'], spread: 4, members: [
+    { prop: 'steeple', n: [0, 1] }, { prop: 'rubble', n: [2, 4] }, { prop: 'bricks', n: [1, 2] }, { prop: 'moss', n: [0, 2] }, { prop: 'gravecross', n: [1, 3] }, { prop: 'tombslab', n: [0, 1] },
+  ] },
+  { id: 'watchtower', themes: ['city', 'ruins'], spread: 3, members: [
+    { prop: 'towerbody', n: [1, 1] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'townwall', n: [0, 2] }, { prop: 'towngate', n: [0, 1] },
+  ] },
+  { id: 'mill_water', themes: ['village', 'river'], spread: 4, members: [
+    { prop: 'millbody', n: [1, 1] }, { prop: 'waterwheel', n: [1, 1] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'sack', n: [0, 2] }, { prop: 'handcart', n: [0, 1] },
+  ] },
+  { id: 'mill_wind', themes: ['village', 'plains'], spread: 4, members: [
+    { prop: 'millbody', n: [1, 1] }, { prop: 'windmillsails', n: [1, 1] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'sack', n: [0, 2] }, { prop: 'hay_wain', n: [0, 1] },
+  ] },
+  { id: 'dovecote', themes: ['village', 'farm'], spread: 2, members: [
+    { prop: 'dovecotebody', n: [1, 1] }, { prop: 'roofgable', n: [0, 1] },
+  ] },
+  { id: 'tavern', themes: ['city', 'village'], spread: 3, members: [
+    { prop: 'housewall', n: [1, 1] }, { prop: 'roofgable', n: [1, 1] }, { prop: 'door_arched', n: [1, 1] }, { prop: 'innsign', n: [1, 1] }, { prop: 'keg', n: [1, 2] }, { prop: 'bench', n: [0, 2] }, { prop: 'hitchingpost', n: [0, 1] },
+  ] },
+  { id: 'hagshack', themes: ['swamp', 'haunted', 'forest'], spread: 3, members: [
+    { prop: 'shackwall', n: [1, 1] }, { prop: 'saggingroof', n: [1, 1] }, { prop: 'crookedchimney', n: [1, 1] }, { prop: 'ricketyporch', n: [0, 1] }, { prop: 'bonefence', n: [0, 2] }, { prop: 'wardpost', n: [0, 2] }, { prop: 'crookedsign', n: [0, 1] }, { prop: 'cauldron_big', n: [0, 1] },
+  ] },
   { id: 'ruin', themes: ['ruins', 'dungeon', 'desert'], spread: 5, members: [
     { prop: 'pillar', n: [1, 3] }, { prop: 'rubble', n: [2, 4] }, { prop: 'bricks', n: [1, 2] }, { prop: 'moss', n: [0, 2] }, { prop: 'chest', n: [0, 1] },
   ] },
@@ -449,7 +489,7 @@ const PROP_META: Record<string, PropPlacement> = {
   potsherds:  { kinds: ['rock', 'flower'], weight: 0.5, themes: ['desert', 'ruins'], role: 'field', rotate: 'free', clusterWith: ['obelisk'], pass: 'walkable', footprint: 0.15 },
   // ── plains / farmland ──
   haybale:   { kinds: ['stump', 'rock'], weight: 0.4, themes: ['plains'], role: 'field', rotate: 'free', clusterWith: ['fencerun', 'wheat'], pass: 'solid', footprint: 0.45, gameplay: ['cover', 'flammable'] },
-  fencerun:  { kinds: ['tree', 'stump'], weight: 0.5, themes: ['plains'], role: 'edge', rotate: 'upright', near: ['path'], clusterWith: ['haybale'], pass: 'solid', footprint: 0.5 },
+  fencerun:  { kinds: ['tree', 'stump'], weight: 0.5, themes: ['plains', 'village', 'farm'], role: 'edge', rotate: 'upright', near: ['path'], clusterWith: ['haybale'], pass: 'solid', footprint: 0.5 },
   wheat:     { kinds: ['reed', 'bush'], weight: 0.9, themes: ['plains'], role: 'field', rotate: 'upright', clusterWith: ['tuft', 'grassclump'], pass: 'walkable', footprint: 0.15, anim: true, scaleJitter: [0.85, 1.15] },
   scarecrow: { kinds: ['tree'], weight: 0.2, themes: ['plains'], role: 'accent', rotate: 'upright', clusterWith: ['wheat'], pass: 'solid', footprint: 0.25, tall: true, maxPerChunk: 1 },
   burrow:    { kinds: ['rock', 'flower'], weight: 0.4, themes: ['plains'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.2 },
@@ -475,7 +515,7 @@ const PROP_META: Record<string, PropPlacement> = {
   wisp:       { kinds: ['flower'], weight: 0.2, themes: ['swamp', 'haunted'], role: 'accent', rotate: 'free', pass: 'walkable', footprint: 0.1, light: { color: 'glowFungus', radius: 2 }, anim: true, maxPerChunk: 2 },
   plankwalk:  { kinds: ['stump', 'rock'], weight: 0.4, themes: ['swamp'], role: 'edge', rotate: 'upright', near: ['path', 'water'], pass: 'walkable', footprint: 0.2 },
   gaspocket:  { kinds: ['flower'], weight: 0.5, themes: ['swamp'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.1, anim: true },
-  well:       { kinds: ['rock', 'stump'], weight: 0.2, themes: ['plains', 'forest', 'city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.55, maxPerChunk: 1 },
+  well:       { kinds: ['rock', 'stump'], weight: 0.2, themes: ['plains', 'forest', 'city', 'village', 'farm'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.55, maxPerChunk: 1, gameplay: ['draw', 'gather'] },
   // weight 0.12: a random grave can appear on a sunny starter field (it keeps
   // the cross-biome themes), but rarely — headline frequency is haunted work.
   gravestone: { kinds: ['rock', 'stump'], weight: 0.12, themes: ['haunted', 'plains', 'forest'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.3, themeWeight: { haunted: 0.5, plains: 0.06, forest: 0.06 }, maxPerChunk: 2 },
@@ -570,7 +610,7 @@ const PROP_META: Record<string, PropPlacement> = {
   exoticbloom: { kinds: ['flower'], weight: 0.4, themes: ['jungle'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.2, maxPerChunk: 3 },
   // ── forest & desert fills ──
   bramble:       { kinds: ['bush'], weight: 0.5, themes: ['forest', 'haunted'], role: 'field', rotate: 'free', pass: 'solid', footprint: 0.3, gameplay: ['flammable'] },
-  beehive:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['forest'], role: 'accent', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.15, layer: 'canopy', maxPerChunk: 2, gameplay: ['destructible'] },
+  beehive:       { kinds: ['flower', 'bush'], weight: 0.25, themes: ['forest', 'village', 'farm'], role: 'accent', rotate: 'upright', near: ['tree'], pass: 'walkable', footprint: 0.15, layer: 'canopy', maxPerChunk: 2, gameplay: ['destructible', 'harvestable'] },
   toadstoolring: { kinds: ['flower', 'bush'], weight: 0.3, themes: ['forest', 'haunted', 'arcane'], role: 'understory', rotate: 'upright', pass: 'walkable', footprint: 0.4, maxPerChunk: 2, tags: ['ring', 'fae'] },
   quicksand:     { kinds: ['rock', 'flower'], weight: 0.3, themes: ['desert'], role: 'field', rotate: 'flat', pass: 'walkable', footprint: 0.4, maxPerChunk: 2 },
   digspot:       { kinds: ['flower', 'rock'], weight: 0.3, themes: ['desert', 'beach', 'plains', 'forest'], role: 'field', rotate: 'free', pass: 'walkable', footprint: 0.25, gameplay: ['lootable', 'dig'] },
@@ -584,7 +624,7 @@ const PROP_META: Record<string, PropPlacement> = {
   sandcastle: { kinds: ['stump', 'rock'], weight: 0.15, themes: ['beach'], role: 'accent', rotate: 'upright', pass: 'walkable', footprint: 0.25, maxPerChunk: 1, gameplay: ['destructible'] },
   // ── city & dungeon furniture ──
   marketstall: { kinds: ['stump', 'tree'], weight: 0.3, themes: ['city'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.6, maxPerChunk: 3, clusterWith: ['crate', 'sack', 'barrel'], gameplay: ['trade'] },
-  bench:       { kinds: ['stump'], weight: 0.4, themes: ['city'], role: 'field', rotate: 'upright', near: ['path', 'wall'], pass: 'solid', footprint: 0.35, gameplay: ['sit'] },
+  bench:       { kinds: ['stump'], weight: 0.4, themes: ['city', 'village'], role: 'field', rotate: 'upright', near: ['path', 'wall'], pass: 'solid', footprint: 0.35, gameplay: ['sit'] },
   awning:      { kinds: ['flower', 'bush'], weight: 0.3, themes: ['city'], role: 'edge', rotate: 'upright', near: ['wall'], pass: 'walkable', footprint: 0.2, layer: 'wall' },
   hanglantern: { kinds: ['flower'], weight: 0.3, themes: ['city'], role: 'field', rotate: 'upright', pass: 'walkable', footprint: 0.1, layer: 'canopy', light: { color: 'lampGlow', radius: 2 } },
   sarcophagus: { kinds: ['stump', 'rock'], weight: 0.2, themes: ['dungeon', 'ruins', 'haunted'], role: 'accent', rotate: 'upright', pass: 'solid', footprint: 0.55, maxPerChunk: 2, gameplay: ['lootable'] },

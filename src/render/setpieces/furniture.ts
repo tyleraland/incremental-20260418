@@ -74,7 +74,7 @@ export const FURNITURE: PropDef[] = [
     ...cutout(TABLE_TOP, 'woodDeep', 'wood'),
     { d: TABLE_SEAMS, stroke: 'ink', sw: 0.045, opacity: 0.4 },
   ],
-    kinds: ['stump'], themes: ['city', 'dungeon', 'farm'], role: 'field',
+    kinds: ['stump'], themes: ['city', 'village', 'dungeon', 'farm'], role: 'field',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.4,
     near: ['wall'], clusterWith: ['chair'], tags: ['furniture'] },
   // ROUND table (second style): a disc top, a rim seam, a turned centre knot.
@@ -84,7 +84,7 @@ export const FURNITURE: PropDef[] = [
     { d: ring(0.48), stroke: 'ink', sw: 0.04, opacity: 0.35 },
     { d: ring(0.1), fill: 'woodLight' },
   ],
-    kinds: ['stump'], themes: ['city', 'dungeon', 'farm'], role: 'field',
+    kinds: ['stump'], themes: ['city', 'village', 'dungeon', 'farm'], role: 'field',
     rotate: 'upright', weight: 0.4, pass: 'solid', footprint: 0.45,
     near: ['wall'], clusterWith: ['chair'], tags: ['furniture'] },
   // CHAIR: a seat square with a back rail at the head, plank grain.

@@ -122,7 +122,7 @@ export const TOWN: PropDef[] = [
       { d: BULLETIN_NOTICES, fill: 'cream' },
       { d: BULLETIN_PINS, fill: 'fruitRed' },
     ],
-    kinds: ['tree', 'stump'], themes: ['city', 'farm'], role: 'edge',
+    kinds: ['tree', 'stump'], themes: ['city', 'village', 'farm'], role: 'edge',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.25,
     gameplay: ['read', 'quest'], tags: ['social'],
   },

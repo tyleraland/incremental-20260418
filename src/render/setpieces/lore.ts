@@ -55,6 +55,13 @@ const SCORCH_OUT = blobPath(roughCircle(0, 0, 0.6, 8, hashString('scorchout')))
 const SCORCH_IN = blobPath(roughCircle(0, 0, 0.36, 7, hashString('scorchin')))
 const SCORCH_FLECKS = scatterDots(hashString('scorchflecks'), 5, 1.1, 0.04, 0.08)
 
+// ── bonepile: a heaped tangle of long bones topped by a skull (grim remains) ──
+const BONEPILE_HEAP = blobPath(roughCircle(0, 0.18, 0.52, 9, hashString('bonepile-heap')))
+const BONEPILE_BONES = 'M-0.46 0.36L0.08 0.04M-0.3 0.46L0.4 0.16M-0.44 0.14L0.32 0.4M0.02 0.5L0.46 0.18'
+const BONEPILE_KNOBS = ring(0.05, -0.46, 0.36) + ring(0.05, 0.08, 0.04) + ring(0.05, 0.4, 0.16) + ring(0.05, 0.32, 0.4) + ring(0.05, -0.44, 0.14)
+const BONEPILE_SKULL = ring(0.16, -0.06, -0.24)
+const BONEPILE_SOCKETS = ring(0.04, -0.12, -0.26) + ring(0.04, 0.0, -0.26)
+
 export const LORE: PropDef[] = [
   // sprawled SKELETON — skull, ribcage, splayed limbs. field lore, examinable.
   {
@@ -129,6 +136,23 @@ export const LORE: PropDef[] = [
     kinds: ['flower'], themes: ['plains', 'volcanic', 'ruins'], role: 'field',
     rotate: 'flat', weight: 0.5, pass: 'walkable', footprint: 0.3,
     tags: ['lore', 'flat'],
+  },
+  // BONEPILE — a heaped tangle of long bones topped by a skull. field lore,
+  // lootable. Themes carry swamp + haunted so the hag-witchery group can defer to
+  // it (digest W3.6: witchery `bonepile` → this wave-2 lore base).
+  {
+    id: 'bonepile', size: 1, wonk: 0.035,
+    paths: [
+      { d: ring(0.5, 0, 0.16), fill: 'shadow', opacity: 0.2 },
+      ...cutout(BONEPILE_HEAP, 'rockDeep', 'rock'),
+      { d: BONEPILE_BONES, stroke: 'cream', sw: 0.06, opacity: 0.92 },
+      { d: BONEPILE_KNOBS, fill: 'cream' },
+      ...cutout(BONEPILE_SKULL, 'rockDeep', 'cream'),
+      { d: BONEPILE_SOCKETS, fill: 'ink' },
+    ],
+    kinds: ['rock', 'stump'], themes: ['dungeon', 'haunted', 'swamp'], role: 'field',
+    rotate: 'free', weight: 0.35, pass: 'solid', footprint: 0.35,
+    tags: ['lore', 'grim'], gameplay: ['lootable'],
   },
   // NOTE: `bedroll` (the abandonedcamp SCATTER_SET member) is authored by the
   // furniture group (setpieces/furniture.ts) — a complete camp bedroll with the

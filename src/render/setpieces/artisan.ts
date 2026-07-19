@@ -119,7 +119,7 @@ export const ARTISAN: PropDef[] = [
       { d: FORGE_BED, fill: 'emberDeep' },
       { d: FORGE_COALS, fill: 'ember' },
     ],
-    kinds: ['rock', 'stump'], themes: ['city', 'mountain', 'volcanic'], role: 'accent', rotate: 'upright',
+    kinds: ['rock', 'stump'], themes: ['city', 'village', 'mountain', 'volcanic'], role: 'accent', rotate: 'upright',
     weight: 0.22, pass: 'solid', footprint: 0.4, layer: 'ground', maxPerChunk: 2,
     tags: ['workstation', 'light', 'glow'], gameplay: ['use', 'craft'],
     light: { color: 'ember', radius: 1.8 } },
@@ -139,7 +139,7 @@ export const ARTISAN: PropDef[] = [
       ...cutout(ANVIL_BODY, 'rockDeep', 'steel'),
       { d: ANVIL_WAIST, stroke: 'ink', sw: 0.05, opacity: 0.5 },
     ],
-    kinds: ['rock', 'stump'], themes: ['city', 'dungeon'], role: 'field', rotate: 'upright',
+    kinds: ['rock', 'stump'], themes: ['city', 'village', 'dungeon'], role: 'field', rotate: 'upright',
     weight: 0.4, pass: 'solid', footprint: 0.32, layer: 'ground',
     tags: ['workstation'], gameplay: ['use', 'craft'] },
 
@@ -170,7 +170,7 @@ export const ARTISAN: PropDef[] = [
       { d: ring(0.1), fill: 'woodDeep' },
       { d: KEG_SPIGOT, fill: 'woodLight' },
     ],
-    kinds: ['stump'], themes: ['city', 'farm'], role: 'field', rotate: 'free',
+    kinds: ['stump'], themes: ['city', 'village', 'farm'], role: 'field', rotate: 'free',
     weight: 0.5, pass: 'solid', footprint: 0.3, layer: 'ground',
     tags: ['workstation'], gameplay: ['use', 'process'] },
   // keg_full — same keg brimming with amber ale + froth
