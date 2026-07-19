@@ -241,6 +241,11 @@ export const THEME_TAGS = [
   // flora-catalog additions (props.ts flora/*): cultivated + cold biomes the
   // existing tags didn't name. 'mtn' in specs = 'mountain'; 'water' already here.
   'farm', 'orchard', 'tundra',
+  // wave-3 town/village additions (props.ts town/*): the settlement biome the
+  // 'city' tag didn't cover (rural hamlets/farm villages) + the watercourse tag
+  // the water-mill needs. 'city' stays the walled-town tag; 'village' is smaller/
+  // rural; 'river' names a flowing-water setting distinct from still 'water'.
+  'village', 'river',
 ] as const
 export type ThemeTag = (typeof THEME_TAGS)[number]
 
