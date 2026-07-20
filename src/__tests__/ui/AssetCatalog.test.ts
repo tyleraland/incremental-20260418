@@ -70,6 +70,38 @@ describe('scatter reachability (no authored prop goes dark on generated maps)', 
         expect(def.layer, `${biome}/${def.id} lost layer`).toBe(parent.layer)
         expect(def.themeWeight, `${biome}/${def.id} lost themeWeight`).toEqual(parent.themeWeight)
         expect(def.scaleJitter, `${biome}/${def.id} lost scaleJitter`).toEqual(parent.scaleJitter)
+        expect(def.anchor, `${biome}/${def.id} lost anchor`).toEqual(parent.anchor)
+        expect(def.sim, `${biome}/${def.id} lost sim`).toEqual(parent.sim)
+      }
+    }
+  })
+
+  // Part-3 schema wellformedness: the hard-constraint + simulation seams are
+  // declarative, but dangling references and impossible combinations are bugs
+  // TODAY (a statePair that names a missing prop can never flip; an orient
+  // without an anchor has nothing to face).
+  it('part-3 constraint/sim tags are well-formed', () => {
+    const ids = new Set(BIOMES.flatMap((b) => TERRAIN_PROPS[b].map((d) => d.id)))
+    for (const biome of BIOMES) {
+      for (const def of TERRAIN_PROPS[biome]) {
+        if (def.id.includes('~')) continue
+        if (def.orient) {
+          expect(
+            (def.anchor?.length ?? 0) > 0 || !!def.series,
+            `${biome}/${def.id} declares 'orient' but no 'anchor'/'series' to orient against`,
+          ).toBe(true)
+        }
+        if (def.series) {
+          const [lo, hi] = def.series.spacing
+          expect(lo > 0 && lo <= hi, `${biome}/${def.id} series spacing [${lo},${hi}] is invalid`).toBe(true)
+        }
+        if (def.sim?.statePair) {
+          expect(ids.has(def.sim.statePair), `${biome}/${def.id} sim.statePair '${def.sim.statePair}' does not exist`).toBe(true)
+        }
+        if (def.sim?.disguisesAs) {
+          expect(ids.has(def.sim.disguisesAs), `${biome}/${def.id} sim.disguisesAs '${def.sim.disguisesAs}' does not exist`).toBe(true)
+          expect(def.sim.encounter, `${biome}/${def.id} disguisesAs without encounter:'ambush'`).toBe('ambush')
+        }
       }
     }
   })

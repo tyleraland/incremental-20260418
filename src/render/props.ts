@@ -171,6 +171,92 @@ export interface PropDef {
   // tall upright (tree/pillar/post): y-sort anchor at the base + occluder flag
   // so bodies render behind it correctly later. Declarative.
   tall?: boolean
+  // ── Part-3: HARD placement constraints + simulation seams ──────────────────
+  // All declarative today. Where near/avoid are soft HINTS a placer may weigh,
+  // `anchor` is a LEGALITY constraint: every listed anchor must be satisfiable
+  // at the placement site or the placement is invalid (a validator can reject
+  // it). Values are queryable from existing planes — water/water-edge/path from
+  // the surface plane, wall/corner from collision, entrance from the semantic
+  // plane's building/gate sites, boundary from the map rim. A buoy is
+  // anchor:['water']; a reed anchor:['water-edge']; a cobweb
+  // anchor:['corner']; a door anchor:['entrance'].
+  anchor?: AnchorTag[]
+  // Facing rule applied AT an anchor (requires `anchor`): 'face-open' = rotate
+  // to face away from the anchoring feature into walkable space (a wall torch
+  // lights the room — the player sees its face, per the camera orientation) ·
+  // 'along' = align with the feature's direction (a fence segment follows its
+  // run, a shoreline reed leans with the bank). Overrides `rotate` at anchored
+  // sites.
+  orient?: 'face-open' | 'along'
+  // Spaced LINE placement: the prop repeats along a linear feature (torches
+  // every few cells down a corridor wall, streetlamps along a road, fenceposts
+  // along a field edge). `spacing` = world-cell gap [min,max]; the placer walks
+  // the feature and stamps a series. Implies the corresponding anchor.
+  series?: { along: 'wall' | 'path' | 'water-edge' | 'boundary'; spacing: [number, number] }
+  // Coherent-connection seam for props that form continuous linear/areal runs
+  // and must JOIN neighbours of the same family to read as one feature (fence
+  // runs, town walls, hedgerows, cliff lips): 'run' = open polyline with
+  // ends/corners/straights picked autotile-style · 'network' = branching runs
+  // (roads, walls with junctions). The variant vocabulary (end/corner/T pieces)
+  // lands with the autotile pass — tagging now marks which props need it.
+  join?: 'run' | 'network'
+  // Gameplay-SIMULATION seams — "this prop could DO something" metadata for the
+  // future interaction layer. Where `gameplay` names the affordance verb, `sim`
+  // declares the systemic wiring: state flips, lock-and-key roles, pickups,
+  // resource nodes, monster-traps, and lore/mystery placeholders.
+  sim?: PropSim
+}
+
+// HARD placement anchors (legality, not preference — see PropDef.anchor).
+export type AnchorTag =
+  | 'water'       // fully on the water plane (buoy, lilypad, panspot)
+  | 'water-edge'  // touching a water/land boundary (reeds, dock, tidepool)
+  | 'wall'        // against a collision wall face (torchbracket, wallbanner)
+  | 'corner'      // in a concave collision corner (cobweb, spidernest)
+  | 'path'        // on a road/path surface cell (courtyard decal)
+  | 'path-edge'   // beside a road/path (streetlamp, signpost, hitchingpost)
+  | 'entrance'    // at a semantic building/gate site (door_arched, towngate)
+  | 'boundary'    // at the map rim (mineentrance, cavein)
+
+// The simulation seam bundle (PropDef.sim). Every field is optional and
+// declarative — nothing consumes them yet; they exist so procgen + the
+// interaction layer can get smart WITHOUT a catalog re-tag. Conventions:
+export interface PropSim {
+  // Companion prop id this flips to when used/triggered/spent — formalizes the
+  // state-pair id convention (chest→'chestopen', streetlamp→'streetlamp_lit')
+  // as machine-readable data so an interaction layer can swap the visual and a
+  // validator can check the pair exists.
+  statePair?: string
+  // Lock-and-key wiring, reusing mapgen §D's Lock abstraction (types.ts POI
+  // 'gate' + Lock.gates): this prop can physically BE a lock element.
+  // 'gate' = the sealed thing itself (door, portcullis, rune door) ·
+  // 'switch' = a remote actuator whose effect may be FAR away (lever,
+  // pressureplate) · 'key' = a carryable unlocker (key, sigil, rune) ·
+  // 'target' = geometry a switch changes (a wall that opens, a bridge).
+  linkRole?: 'gate' | 'switch' | 'key' | 'target'
+  // Picked up on interaction and REMOVED from the field (coin, gem, key,
+  // spellbook). The map state changes; pairs with statePair when a husk stays.
+  collect?: boolean
+  // Resource NODE: repeated-interaction yield (ore, berries, fishing spots).
+  // The respawn policy is the seam for a future harvesting/economy loop —
+  // 'never' = one-shot vein, 'slow' = seasons/days, 'fast' = within a visit.
+  resource?: { respawn: 'never' | 'slow' | 'fast' }
+  // Monster-trap/encounter seam: 'ambush' = looks harmless, IS a monster
+  // (mimicchest) · 'spawner' = emits monsters until destroyed (spawner,
+  // spidernest, wasphive) · 'trigger' = disturbing it starts an encounter or
+  // trap (witcheffigy, cursedidol, beartrap).
+  encounter?: 'ambush' | 'spawner' | 'trigger'
+  // The innocuous prop an 'ambush' disguises as (mimicchest→'chest'): placers
+  // seed believable fakes among real ones; the id must exist in the registry.
+  disguisesAs?: string
+  // MAY carry a hidden effect — or none at all (runeglyph, summoncircle,
+  // standingstones, saltcircle). A generation pass can bind a real effect
+  // (buff/curse/teleport/nothing) per instance; the ambiguity is the feature.
+  mystery?: boolean
+  // Placement MAY carry history/secret significance for a future lore pass
+  // (gravestone, battledebris, skeleton, shipwreck): the pass can attach a
+  // name, date, story fragment, or quest hook to tagged instances.
+  lore?: boolean
 }
 
 export type PropPass = 'solid' | 'walkable' | 'overhang'
@@ -211,6 +297,7 @@ export type PropPlacement = Pick<
   PropDef,
   | 'kinds' | 'playerSelectable' | 'tags' | 'weight' | 'themes' | 'role' | 'near' | 'avoid' | 'rotate' | 'clusterWith'
   | 'pass' | 'footprint' | 'layer' | 'themeWeight' | 'patch' | 'maxPerChunk' | 'gameplay' | 'light' | 'anim' | 'scaleJitter' | 'tall'
+  | 'anchor' | 'orient' | 'series' | 'join' | 'sim'
 >
 
 // ── Pure placement helpers (deterministic; also used by terrain.tsx) ─────────
@@ -308,6 +395,11 @@ export function variants(def: PropDef, n: number, amp = def.wonk ?? 0.07): PropD
     anim: def.anim,
     scaleJitter: def.scaleJitter,
     tall: def.tall,
+    anchor: def.anchor,
+    orient: def.orient,
+    series: def.series,
+    join: def.join,
+    sim: def.sim,
   }))
 }
 
@@ -323,6 +415,15 @@ export interface ScatterSetDef {
   themes: ThemeTag[]
   spread: number
   members: { prop: string; n: [number, number] }[]
+  // Internal STRUCTURE of the scene (default 'organic' = loose blue-noise
+  // scatter): 'rows' = planted lines with even in-row spacing (an orchard, a
+  // crop field — heterogeneous members alternate/border) · 'ring' = members on
+  // a circle (standing stones, the plaza decor ring) · 'line' = one open run
+  // (market stalls along a street). Declarative until the set-stamping pass.
+  arrangement?: 'organic' | 'rows' | 'ring' | 'line'
+  // The whole SCENE may carry history/secret significance (graveyard,
+  // abandonedcamp, shipwreck site) — same seam as PropSim.lore, at set scope.
+  lore?: boolean
 }
 
 export const SCATTER_SETS: ScatterSetDef[] = [

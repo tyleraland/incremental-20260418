@@ -110,6 +110,22 @@ canopy: { kinds: ['tree'], weight: 0.2, themes: ['forest','plains'],
           role: 'cluster', rotate: 'upright', clusterWith: ['fern','leaves','mushroom'] },
 ```
 
+A third declarative tier (the "Part-3" schema — field docs in `props.ts`)
+covers HARD constraints + simulation seams, all declarative until their
+consuming passes land (backlogged): `anchor` (placement LEGALITY — a buoy
+must be on water, a cobweb in a corner, a door at an entrance; vs the soft
+`near`/`avoid` hints), `orient` (`face-open` wall fixtures / `along` edges),
+`series` (spaced line placement: torches down a wall, lamps along a road),
+`join` (`run`/`network` — fences/walls/cliff lips that must connect
+coherently, autotile seam), and `sim` (`PropSim`: `statePair` formalizing the
+state-companion convention, `linkRole` gate/switch/key/target reusing mapgen
+§D's Lock vocabulary, `collect`, `resource.respawn`, `encounter`
+ambush/spawner/trigger + `disguisesAs` (mimicchest→chest), `mystery`, `lore`).
+`ScatterSetDef` gains `arrangement` (organic/rows/ring/line — orchard rows,
+standing-stone rings) + set-scope `lore`. Wellformedness (dangling
+`statePair`/`disguisesAs`, orient-without-anchor) is gated by
+`AssetCatalog.test`.
+
 Beyond the phase-1 tags, `PropDef` carries a second declarative tier (the
 "Part-2" schema — see the field docs in `props.ts`): `pass`/`footprint`
 (REQUIRED on scatterable props — passability + reserve radius, gated by
