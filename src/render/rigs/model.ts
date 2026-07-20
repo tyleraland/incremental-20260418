@@ -12,6 +12,8 @@ export function createRigDraft(template: RigTemplate): RigDraft {
     poseOffsets: {},
     partStyles: {},
     partColors: {},
+    hornNodes: [],
+    modelScale: 1,
   }
 }
 
@@ -58,6 +60,27 @@ export function resolveRigPose(template: RigTemplate, draft: RigDraft, pose: Rig
   }
 
   source.forEach((joint) => visit(joint))
+
+  const hornById = new Map(draft.hornNodes.map((node) => [node.id, node]))
+  const visitHorn = (id: string, visiting = new Set<string>()): RigJoint | undefined => {
+    if (resolved[id]) return resolved[id]
+    const node = hornById.get(id)
+    if (!node || visiting.has(id)) return undefined
+    visiting.add(id)
+    const parent = resolved[node.parent] ?? visitHorn(node.parent, visiting)
+    visiting.delete(id)
+    if (!parent) return undefined
+    resolved[id] = {
+      id: node.id,
+      label: node.label,
+      parent: node.parent,
+      x: parent.x + node.offset.x,
+      y: parent.y + node.offset.y,
+      z: parent.z + node.offset.z,
+    }
+    return resolved[id]
+  }
+  draft.hornNodes.forEach((node) => visitHorn(node.id))
   return resolved
 }
 
