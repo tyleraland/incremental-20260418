@@ -190,6 +190,49 @@ deferred content phases.
 - **More dungeon rewrite steps (track E tail).** Key-fetch chains, extra
   cycles, secret shortcuts — the cycle-as-primitive skeleton + shortcut-lock
   rewrite shipped as the first step; key-fetch needs phase-6 item plumbing.
+- **Track H — part-3 prop constraints & simulation seams (consumers).** The
+  declarative schema shipped (`props.ts` Part-3: `anchor`/`orient`/`series`/
+  `join`/`sim`, `ScatterSetDef.arrangement`/`lore`; catalog tagged; gated by
+  `AssetCatalog.test`). Each consumer below is an independently pickable
+  build — until it lands, its tags are inert-but-reviewable data:
+  - **Anchor-aware placement + validation.** Teach the scatter placer (both
+    paths) to satisfy `anchor[]` from the existing planes — water/water-edge/
+    path from surface, wall/corner from collision, entrance from semantic
+    sites, boundary from the rim — and add a validator rule rejecting illegal
+    placements (a buoy on grass is a bug the schema can now name). Legacy
+    no-spec maps: skip hard-anchored props they can't satisfy (the existing
+    `water-surface`-skip generalized).
+  - **Series placer.** Walk a linear feature (wall face, road, shoreline) and
+    stamp `series` props at seeded spacing — torches down a corridor,
+    streetlamps along an avenue, fenceposts on a field edge. Pairs with
+    `orient: 'face-open'` (face into walkable space, per camera orientation)
+    and `'along'` (align with the feature).
+  - **Set arrangement stamper.** `arrangement: 'rows' | 'ring' | 'line'` for
+    SCATTER_SETS — planted orchard rows (heterogeneous members alternating),
+    standing-stone rings, market lines. Today all sets stamp organic.
+  - **Autotile joins.** `join: 'run' | 'network'` props (fences, town walls,
+    hedgerows, roads) need end/corner/straight/T variant vocabulary picked
+    Wang-tile style so runs read as ONE feature; same machinery should give
+    cliff lips/edges coherent connection (the cliff-texture seam).
+  - **Interaction layer (sim.\*).** Consume `statePair` (flip base↔companion
+    visual on use — the ids are now machine-readable), `collect` (remove from
+    field into inventory), `resource.respawn` (never/slow/fast node
+    regeneration feeding the harvesting/economy loop).
+  - **Lock-and-key binding.** Bind `sim.linkRole` props onto mapgen §D Locks:
+    a `gate` prop renders at the Lock's gate POI, a `switch` prop at its
+    actuator site (effect possibly FAR away), `key` props become carryable
+    unlockers (phase-6 item plumbing), `target` geometry toggles. This is the
+    lever-opens-remote-door seam; the mapgen Lock abstraction already exists.
+  - **Encounter binding.** `sim.encounter` → engine spawns: `ambush` props
+    (mimicchest) seeded among real `disguisesAs` instances and swapping to a
+    monster on interaction; `spawner` props emitting waves until destroyed;
+    `trigger` props arming trap/encounter effects.
+  - **Lore/mystery binding pass.** A generation pass that ATTACHES meaning to
+    `sim.lore`/`sim.mystery`/set-`lore` instances — a gravestone gets a name/
+    date/story fragment, a runeglyph gets a real effect (buff/curse/teleport)
+    or deliberately nothing, a graveyard/abandonedcamp gets a shared history
+    hook. Placeholder by design: the tags reserve the seam so the lore system
+    can land without a catalog re-tag.
 
 ### Tech debt & polish — discrete chunks (each independently pickable)
 
