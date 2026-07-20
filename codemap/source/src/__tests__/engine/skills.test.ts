@@ -1,0 +1,388 @@
+// Combat skill casting (spec §4): instant casts, channeled casts + disruption,
+// radius AoE, heals/buffs, stun, and the "equip = learn to use it" adapter path.
+import { describe, it, expect } from 'vitest'
+import {
+  createBattle, advanceRound, buildEngineSkill, buildStatus, COMBAT_SKILLS,
+  unitToEngineInput, skillActiveCap, type BattleState,
+} from '@/engine'
+import { getDerivedStats } from '@/lib/stats'
+import { eu } from './helpers'
+import { makeUnit } from '../helpers'
+
+const find = (b: BattleState, id: string) => b.combatants.find((c) => c.id === id)!
+const hasEvent = (b: BattleState, pred: (e: BattleState['events'][number]) => boolean) => b.events.some(pred)
+
+describe('catalog', () => {
+  it('scales power with level and keeps ids aligned with the game', () => {
+    expect(buildEngineSkill('fire-bolt', 1)!.damageFormula).toBe('int * 1.00')
+    expect(buildEngineSkill('fire-bolt', 3)!.damageFormula).toBe('int * 1.40')
+    // The four bolts are a symmetric elemental set — same range/channel/cooldown
+    // and damage, differing only in element, so selection is purely by matchup.
+    for (const id of ['fire-bolt', 'frost-bolt', 'lightning-bolt', 'earth-bolt']) {
+      const s = buildEngineSkill(id, 3)!
+      expect([s.range, s.channelTime, s.cooldown, s.damageFormula]).toEqual([6, 3, buildEngineSkill('fire-bolt', 3)!.cooldown, 'int * 1.40'])
+    }
+    expect(buildEngineSkill('earth-bolt', 1)!.element).toBe('earth')           // completes the bolt wheel
+    expect(buildEngineSkill('hammer-fall', 1)!.statusApplied).toBe('stunned')
+    expect(buildEngineSkill('arrow-shower', 1)!.knockback).toBeGreaterThan(0)
+    expect(buildEngineSkill('firewall', 1)!.wall?.maxBumps).toBeGreaterThan(0)
+    expect(buildEngineSkill('poison', 1)!.statusApplied).toBe('poisoned')
+    expect(buildEngineSkill('ankle-snare', 1)!.statusApplied).toBe('rooted')
+    expect(buildEngineSkill('back-stab', 1)!.stealthBonus).toBeGreaterThan(1)
+    expect(buildEngineSkill('cloak', 1)!.statusApplied).toBe('stealthed')
+    expect(buildEngineSkill('freeze', 1)!.statusApplied).toBe('frozen')
+    expect(buildEngineSkill('sight', 1)!.removesStatusId).toBe('stealthed')
+    expect(buildEngineSkill('dispel', 1)!.dispelCategory).toBe('buff')
+    expect(buildEngineSkill('nope', 1)).toBeNull()
+  })
+})
+
+describe('instant casts', () => {
+  it('Fire Bolt damages an enemy in range', () => {
+    const fb = { ...buildEngineSkill('fire-bolt', 1)!, channelTime: 0 }   // instant for the assertion
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 5, skills: [fb] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, maxHp: 100, hp: 100 })],
+    })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // already in spell range
+    advanceRound(b)
+    expect(hasEvent(b, (e) => e.type === 'skill_use' && e.skillId === 'fire-bolt' && (e.value ?? 0) > 0)).toBe(true)
+    expect(find(b, 'foe').hp).toBeLessThan(100)
+  })
+
+  it('Heal restores the most-injured ally', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'cleric', int: 20, skills: [buildEngineSkill('heal', 1)!] }), eu({ id: 'ally', hp: 10, maxHp: 100 })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', str: 0 })],
+    })
+    advanceRound(b)
+    expect(find(b, 'ally').hp).toBeGreaterThan(10)
+    expect(hasEvent(b, (e) => e.type === 'heal' && e.targetId === 'ally')).toBe(true)
+  })
+
+  it('Boost Agility buffs the caster (SPD up)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'hero', skills: [buildEngineSkill('boost-agility', 1)!] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', str: 0 })],
+    })
+    advanceRound(b)
+    expect(find(b, 'hero').statuses.some((s) => s.id === 'agi-up')).toBe(true)
+  })
+})
+
+describe('channeled casts', () => {
+  it('Lightning Bolt resolves a few rounds after it starts', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, maxHp: 300, hp: 300, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, maxHp: 300, hp: 300, meleeRange: 1.2 })],
+    })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 11 }   // in spell range, won't reach melee
+    advanceRound(b)   // start the channel
+    expect(hasEvent(b, (e) => e.type === 'cast_start' && e.skillId === 'lightning-bolt')).toBe(true)
+    // tick the channel down (channelTime+1 turns total from start to resolve)
+    const channelLen = buildEngineSkill('lightning-bolt', 1)!.channelTime
+    for (let i = 0; i < channelLen; i++) advanceRound(b)
+    expect(hasEvent(b, (e) => e.type === 'skill_use' && e.skillId === 'lightning-bolt' && (e.value ?? 0) > 0)).toBe(true)
+  })
+
+  it('a hit during the cast disrupts it (no resolve)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, spd: 1, maxHp: 999, hp: 999, skills: [buildEngineSkill('lightning-bolt', 1)!] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', str: 20, spd: 100, meleeRange: 6, maxHp: 999, hp: 999 })],
+    })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 10 }   // foe already in striking reach
+    advanceRound(b)   // mage starts channel; fast foe is already striking it
+    advanceRound(b)   // foe (acts first) hits the channeling mage → interrupt
+    expect(hasEvent(b, (e) => e.type === 'interrupt' && e.targetId === 'mage')).toBe(true)
+    expect(hasEvent(b, (e) => e.type === 'skill_use' && e.skillId === 'lightning-bolt' && (e.value ?? 0) > 0)).toBe(false)
+  })
+})
+
+describe('area + control', () => {
+  it('Hammer Fall hits a cluster and stuns them', () => {
+    const hf = { ...buildEngineSkill('hammer-fall', 1)!, range: 99 }   // skip the walk-in for the assertion
+    const b = createBattle({
+      playerUnits: [eu({ id: 'hero', str: 30, skills: [hf] })],
+      enemyUnits: [
+        eu({ id: 'e0', team: 'enemy', def: 0, maxHp: 100, hp: 100 }),
+        eu({ id: 'e1', team: 'enemy', def: 0, maxHp: 100, hp: 100 }),
+      ],
+    })
+    advanceRound(b)
+    for (const id of ['e0', 'e1']) {
+      expect(find(b, id).hp).toBeLessThan(100)
+      expect(find(b, id).statuses.some((s) => s.id === 'stunned')).toBe(true)
+    }
+  })
+
+  it('Sanctuary heals all nearby allies', () => {
+    const b = createBattle({
+      playerUnits: [
+        eu({ id: 'cleric', int: 20, skills: [buildEngineSkill('aoe-heal', 1)!] }),
+        eu({ id: 'a1', hp: 10, maxHp: 100 }),
+        eu({ id: 'a2', hp: 20, maxHp: 100 }),
+      ],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', str: 0 })],
+    })
+    advanceRound(b)
+    expect(find(b, 'a1').hp).toBeGreaterThan(10)
+    expect(find(b, 'a2').hp).toBeGreaterThan(20)
+  })
+
+  it('a stunned unit loses its turn, and the stun is consumed', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'hero', str: 20, meleeRange: 10 })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', str: 5, meleeRange: 10, maxHp: 100, hp: 100 })],
+    })
+    find(b, 'hero').statuses.push(buildStatus('stunned', 'foe')!)
+    advanceRound(b)
+    expect(hasEvent(b, (e) => e.type === 'melee_attack' && e.sourceId === 'hero')).toBe(false)
+    expect(find(b, 'hero').statuses.some((s) => s.id === 'stunned')).toBe(false)
+  })
+})
+
+describe('phase 2: spatial', () => {
+  it('poison deals damage over time', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', str: 0 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 100, hp: 100, meleeRange: 1.2 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('poisoned', 'p')!)
+    advanceRound(b)
+    expect(find(b, 'e').hp).toBeLessThan(100)
+    expect(hasEvent(b, (e) => e.type === 'dot' && e.targetId === 'e')).toBe(true)
+  })
+
+  it('Arrow Shower damages and knocks an enemy back', () => {
+    const as = { ...buildEngineSkill('arrow-shower', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', str: 20, skills: [as] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 100, hp: 100 })],
+    })
+    const beforeY = find(b, 'e').pos.y
+    advanceRound(b)
+    expect(find(b, 'e').pos.y).toBeGreaterThan(beforeY)   // shoved toward its own edge
+    expect(find(b, 'e').hp).toBeLessThan(100)
+    expect(hasEvent(b, (e) => e.type === 'knockback' && e.targetId === 'e')).toBe(true)
+  })
+
+  it('Firewall raises a wall that bounces and burns a foe trying to cross it', () => {
+    const fw = { ...buildEngineSkill('firewall', 1)!, range: 99, channelTime: 0 }   // instant for the assertion
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', rangedRange: 6, skills: [fw] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 400, hp: 400, meleeRange: 1.2, moveSpeed: 1.2 })],
+    })
+    find(b, 'p').pos = { x: 7.5, y: 4 }
+    find(b, 'e').pos = { x: 7.5, y: 9 }     // due north, charging the caster
+    advanceRound(b)
+    expect(b.firewalls).toHaveLength(1)     // a wall went up between them
+    const hp = find(b, 'e').hp
+    // The foe keeps trying to close and bounces off the flame, taking burn damage.
+    let bumped = false
+    for (let i = 0; i < 8; i++) {
+      advanceRound(b)
+      if (hasEvent(b, (ev) => ev.type === 'dot' && ev.targetId === 'e')) bumped = true
+    }
+    expect(bumped).toBe(true)
+    expect(find(b, 'e').hp).toBeLessThan(hp)
+  })
+
+  it('Agility is capped at one active buff on the team at a time', () => {
+    // Instant, no-cooldown Agility so we could otherwise stack it on every ally —
+    // the team-wide cap (statusMaxActive: 1) must keep at most one buff up.
+    const agi = { ...buildEngineSkill('boost-agility', 1)!, cooldown: 0, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'c', int: 10, skills: [agi] }), eu({ id: 'a1' }), eu({ id: 'a2' })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 999, hp: 999, meleeRange: 1.2 })],
+    })
+    let maxBuffed = 0
+    for (let i = 0; i < 12; i++) {
+      advanceRound(b)
+      const buffed = b.combatants.filter((u) => u.team === 'player' && u.statuses.some((s) => s.id === 'agi-up')).length
+      maxBuffed = Math.max(maxBuffed, buffed)
+    }
+    expect(maxBuffed).toBe(1)   // never two Agility buffs up at once
+  })
+
+  it('skillActiveCap reports active/max for capped skills (and null otherwise)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', skills: [buildEngineSkill('firewall', 1)!, buildEngineSkill('boost-agility', 1)!, buildEngineSkill('fire-bolt', 1)!] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 1.2 })],
+    })
+    const mage = find(b, 'mage')
+    const cap = (id: string) => skillActiveCap(b, mage, mage.skills.find((s) => s.id === id)!)
+    expect(cap('firewall')).toEqual({ active: 0, max: 2 })
+    expect(cap('boost-agility')).toEqual({ active: 0, max: 1 })
+    expect(cap('fire-bolt')).toBeNull()   // uncapped skill
+    // raise a wall + apply the buff, then the counts reflect it
+    b.firewalls.push({ id: 'w', sourceId: 'mage', blockTeam: 'enemy', pos: { x: 7, y: 7 }, normal: { x: 0, y: 1 }, half: 1.5, fireDamage: 5, maxBumps: 5, roundsLeft: 9, bumps: {} })
+    mage.statuses.push(buildStatus('agi-up', 'mage')!)
+    expect(cap('firewall')).toEqual({ active: 1, max: 2 })
+    expect(cap('boost-agility')).toEqual({ active: 1, max: 1 })
+  })
+
+  it('Ankle Snare roots the target without moving the caster', () => {
+    const snare = { ...buildEngineSkill('ankle-snare', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', skills: [snare] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 100, hp: 100, meleeRange: 1.2 })],
+    })
+    // Start the caster well clear of the target so it has no reason to close
+    // distance via the default movement; we want to verify the cast itself
+    // doesn't trigger any backwards step.
+    find(b, 'p').pos = { x: 2.5, y: 2 }
+    find(b, 'e').pos = { x: 2.5, y: 8 }
+    const startPos = { ...find(b, 'p').pos }
+    advanceRound(b)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'rooted')).toBe(true)
+    // Caster didn't fall back from the cast — Ankle Snare is no longer a
+    // self-retreat skill.
+    expect(find(b, 'p').pos.y).toBeGreaterThanOrEqual(startPos.y)
+  })
+
+  it('a rooted unit cannot move', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', meleeRange: 1.2 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', meleeRange: 1.2 })],
+    })
+    find(b, 'p').statuses.push(buildStatus('rooted', 'x')!)
+    advanceRound(b)
+    expect(hasEvent(b, (e) => e.type === 'move' && e.sourceId === 'p')).toBe(false)
+  })
+})
+
+describe('phase 3: combos & stealth', () => {
+  // Freeze turns the target's armor to water; on the 4-element wheel that makes
+  // WIND the amplifier (wind 1.5× vs water), so Lightning Bolt (wind) is the nuke.
+  const windValue = (frozen: boolean): number => {
+    const lb = { ...buildEngineSkill('lightning-bolt', 1)!, channelTime: 0 }   // wind, instant for the assertion
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, rangedRange: 6, skills: [lb] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, str: 0, magicDef: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
+    })
+    find(b, 'mage').pos = { x: 2.5, y: 6 }; find(b, 'foe').pos = { x: 2.5, y: 9 }   // in spell range
+    if (frozen) find(b, 'foe').statuses.push(buildStatus('frozen', 'x')!)
+    advanceRound(b)
+    return b.events.find((e) => e.type === 'skill_use' && e.skillId === 'lightning-bolt' && e.targetId === 'foe')!.value!
+  }
+
+  it('Freeze amplifies the next Wind hit (freeze → water armor → wind nuke combo)', () => {
+    expect(windValue(true)).toBeGreaterThan(windValue(false))
+  })
+
+  it('Freeze applies the frozen status', () => {
+    const fz = { ...buildEngineSkill('freeze', 1)!, range: 99, channelTime: 0 }   // instant for the assertion
+    const b = createBattle({
+      playerUnits: [eu({ id: 'mage', int: 20, skills: [fz] })],
+      enemyUnits: [eu({ id: 'foe', team: 'enemy', def: 0, maxHp: 500, hp: 500, meleeRange: 1.2 })],
+    })
+    advanceRound(b)
+    expect(find(b, 'foe').statuses.some((s) => s.id === 'frozen')).toBe(true)
+  })
+
+  it('a frozen unit loses its turn but stays (unlike a consumed stun)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', str: 20, meleeRange: 99, maxHp: 500, hp: 500 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 20, meleeRange: 99, maxHp: 500, hp: 500 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('frozen', 'x')!)
+    advanceRound(b)
+    expect(hasEvent(b, (ev) => ev.type === 'melee_attack' && ev.sourceId === 'e')).toBe(false)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'frozen')).toBe(true)
+  })
+
+  it('a stealthed unit cannot be targeted by enemies', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', maxHp: 500, hp: 500 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 20, meleeRange: 99 })],
+    })
+    find(b, 'r').statuses.push(buildStatus('stealthed', 'r')!)
+    advanceRound(b)
+    expect(hasEvent(b, (ev) => ev.targetId === 'r' && (ev.type === 'melee_attack' || ev.type === 'ranged_attack'))).toBe(false)
+    expect(find(b, 'e').lockedTargetId).toBeNull()
+  })
+
+  it('Cloak hides the caster when a foe is in sight but >6 away (ambush window)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', skills: [buildEngineSkill('cloak', 1)!], moveSpeed: 0 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0, moveSpeed: 0 })],
+    })
+    find(b, 'r').pos = { x: 7, y: 2 }
+    find(b, 'e').pos = { x: 7, y: 13 }   // distance 11 > 6, in sight (∞ vision in encounters)
+    advanceRound(b)
+    expect(find(b, 'r').statuses.some((s) => s.id === 'stealthed')).toBe(true)
+  })
+
+  it('Cloak will not fire while a foe is within 6 (engaged / too close to slip away)', () => {
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', skills: [buildEngineSkill('cloak', 1)!], moveSpeed: 0 })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', str: 0, moveSpeed: 0 })],
+    })
+    find(b, 'r').pos = { x: 7, y: 7 }
+    find(b, 'e').pos = { x: 7, y: 11 }   // distance 4 ≤ 6
+    advanceRound(b)
+    expect(find(b, 'r').statuses.some((s) => s.id === 'stealthed')).toBe(false)
+  })
+
+  const backstabValue = (stealthed: boolean): number => {
+    const bs = { ...buildEngineSkill('back-stab', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', str: 20, skills: [bs] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
+    })
+    if (stealthed) find(b, 'r').statuses.push(buildStatus('stealthed', 'r')!)
+    advanceRound(b)
+    return b.events.find((ev) => ev.type === 'skill_use' && ev.skillId === 'back-stab')!.value!
+  }
+
+  it('Back Stab hits far harder from stealth and reveals the attacker', () => {
+    expect(backstabValue(true)).toBeGreaterThan(backstabValue(false) * 2)
+    const bs = { ...buildEngineSkill('back-stab', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'r', str: 20, skills: [bs] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', def: 0, maxHp: 999, hp: 999, meleeRange: 1.2 })],
+    })
+    find(b, 'r').statuses.push(buildStatus('stealthed', 'r')!)
+    advanceRound(b)
+    expect(find(b, 'r').statuses.some((s) => s.id === 'stealthed')).toBe(false)
+  })
+
+  it('Sight reveals hidden enemies', () => {
+    const st = { ...buildEngineSkill('sight', 1)!, range: 99, aoeRadius: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', skills: [st] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 500, hp: 500, meleeRange: 1.2 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('stealthed', 'e')!)
+    advanceRound(b)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'stealthed')).toBe(false)
+  })
+
+  it('Dispel strips an enemy buff', () => {
+    const dp = { ...buildEngineSkill('dispel', 1)!, range: 99 }
+    const b = createBattle({
+      playerUnits: [eu({ id: 'p', skills: [dp] })],
+      enemyUnits: [eu({ id: 'e', team: 'enemy', maxHp: 500, hp: 500, meleeRange: 1.2 })],
+    })
+    find(b, 'e').statuses.push(buildStatus('agi-up', 'e')!)
+    advanceRound(b)
+    expect(find(b, 'e').statuses.some((s) => s.id === 'agi-up')).toBe(false)
+  })
+})
+
+describe('equip = learn to use it (adapter)', () => {
+  it('maps action-bar skills into engine skills at their learned level', () => {
+    const unit = makeUnit({
+      learnedSkills: { 'fire-bolt': 2 },
+      actionSlots: [
+        { kind: 'skill', id: 'fire-bolt' },
+        { kind: 'item', id: 'eq-knife' },   // items are ignored
+        { kind: 'skill', id: 'not-a-combat-skill' },
+        null, null, null,
+      ],
+    })
+    const e = unitToEngineInput(unit, getDerivedStats(unit, []), 'player')
+    expect(e.skills.map((s) => s.id)).toEqual(['fire-bolt'])
+    expect(e.skills[0].damageFormula).toBe(COMBAT_SKILLS['fire-bolt'](2).damageFormula)
+  })
+})

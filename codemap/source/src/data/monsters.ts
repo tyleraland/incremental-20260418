@@ -1,0 +1,114 @@
+import type { MonsterDef } from '@/types'
+export const DROP_ITEMS: Record<string, string> = {
+  'drop-wolf-pelt':     'Wolf Pelt',     'drop-wolf-fang':     'Wolf Fang',
+  'drop-spirit-dust':   'Spirit Dust',   'drop-emerald-leaf':  'Emerald Leaf',
+  'drop-iron-dagger':   'Iron Dagger',   'drop-coin-pouch':    'Coin Pouch',
+  'drop-harpy-feather': 'Harpy Feather', 'drop-talon':         'Talon',
+  'drop-shadow-essence':'Shadow Essence','drop-dark-pelt':     'Dark Pelt',
+  'drop-slime-gel':     'Slime Gel',     'drop-dark-core':     'Dark Core',
+  'drop-frog-leg':      'Frog Leg',      'drop-sticky-tongue': 'Sticky Tongue',
+  'drop-serpent-scale': 'Serpent Scale', 'drop-venom-sac':     'Venom Sac',
+  'drop-crab-shell':    'Crab Shell',    'drop-crab-claw':     'Crab Claw',
+  'drop-stone-shard':   'Stone Shard',   'drop-golem-core':    'Golem Core',
+  'drop-ectoplasm':     'Ectoplasm',     'drop-ancient-coin':  'Ancient Coin',
+  'drop-bat-wing':      'Bat Wing',      'drop-bat-fang':      'Bat Fang',
+  'drop-plate-scrap':   'Plate Scrap',   'drop-haunted-iron':  'Haunted Iron',
+  'drop-hornet-stinger':'Hornet Stinger','drop-hornet-wing':   'Hornet Wing',
+  'drop-nightshade-berry':'Nightshade Berry','drop-toxic-spore':'Toxic Spore',
+  'drop-larva':         'Larva',         'drop-chitin':        'Chitin',
+  'drop-bone-arrow':    'Bone Arrow',    'drop-skull-fragment':'Skull Fragment',
+  'drop-elite-mark':    'Elite Mark',    'drop-champions-seal':"Champion's Seal",
+  'drop-boar-hide':     'Boar Hide',     'drop-tusk':          'Tusk',
+  'drop-rat-wing':      'Rat Wing',      'drop-rat-fang':      'Rat Fang',
+  'drop-ember-gel':     'Ember Gel',     'drop-adder-scale':   'Adder Scale',
+  'drop-ember-fang':    'Ember Fang',    'drop-wraith-shroud': 'Wraith Shroud',
+  'drop-mutant-tail':   'Mutant Tail',   'drop-radiant-scale': 'Radiant Scale',
+  'drop-snail-shell':   'Snail Shell',
+}
+
+// moveSpeed: ft/s (divide by TICKS_PER_SECOND in tick loop for ft/tick)
+// attackRange: feet (melee default = 5)
+export const MONSTER_REGISTRY: Record<string, MonsterDef> = {
+  // §aggression: the basic Slime is now non-aggressive — it ignores heroes until
+  // struck, then turns and fights back (skittish).
+  'slime':         { id: 'slime',        name: 'Slime',         level: 1, health:  25, element: 'water',   size: 'small',  attackName: 'Slam',   stats: { attack: 1,  defense: [1,1],   magicAttack: 1,  magicDefense: [1,0],  attackSpeed: 10, accuracy: 6,  dodge: 2,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-slime-gel',      dropRate: 0.90, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }] },
+  'tough-slime':   { id: 'tough-slime',  name: 'Tough Slime',   level: 1, health: 200, element: 'water',   size: 'small',  attackName: 'Slam',   stats: { attack: 1,  defense: [18,18], magicAttack: 1,  magicDefense: [2,1],  attackSpeed: 10, accuracy: 6,  dodge: 2,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-slime-gel',      dropRate: 0.95, quantityMin: 2, quantityMax: 4 }] },
+  // A slow shelled grazer (the 'snail' body family's first live monster):
+  // non-aggressive until struck, then hunkers behind heavy shell defense.
+  'snail':         { id: 'snail',        name: 'Snail',         level: 2, health:  60, element: 'earth',   size: 'small',  attackName: 'Shell Bash', stats: { attack: 4, defense: [9,9],  magicAttack: 1,  magicDefense: [3,2],  attackSpeed: 5,  accuracy: 7,  dodge: 1,  moveSpeed: 1.5, attackRange: 5  }, drops: [{ itemId: 'drop-snail-shell',    dropRate: 0.80, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }] },
+  'wolf':          { id: 'wolf',         name: 'Wolf',          level: 2, health:  40, element: 'neutral', size: 'medium', attackName: 'Bite',   stats: { attack: 8,  defense: [2,2],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 14, accuracy: 10, dodge: 8,  moveSpeed: 7.5, attackRange: 5  }, drops: [{ itemId: 'drop-wolf-pelt',     dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-wolf-fang',     dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
+  'forest-sprite': { id: 'forest-sprite',name: 'Forest Sprite', level: 3, health:  35, element: 'neutral', size: 'small',  attackName: 'Claws',  stats: { attack: 5,  defense: [2,1],   magicAttack: 12, magicDefense: [6,4],  attackSpeed: 16, accuracy: 12, dodge: 14, moveSpeed: 6,   attackRange: 5  }, drops: [{ itemId: 'drop-spirit-dust',    dropRate: 0.50, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-emerald-leaf',  dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },
+  'poacher':       { id: 'poacher',      name: 'Poacher',       level: 4, health:  60, element: 'neutral', size: 'medium', attackName: 'Sword',  stats: { attack: 14, defense: [5,3],   magicAttack: 2,  magicDefense: [2,2],  attackSpeed: 10, accuracy: 16, dodge: 6,  moveSpeed: 5,   attackRange: 15 }, drops: [{ itemId: 'drop-coin-pouch',     dropRate: 0.60, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-iron-dagger',   dropRate: 0.40, quantityMin: 1, quantityMax: 1 }] },
+  'harpy':         { id: 'harpy',        name: 'Harpy',         level: 4, health:  55, element: 'wind',    size: 'medium', attackName: 'Claws',  stats: { attack: 12, defense: [3,2],   magicAttack: 8,  magicDefense: [3,3],  attackSpeed: 18, accuracy: 14, dodge: 16, moveSpeed: 10,  attackRange: 5  }, drops: [{ itemId: 'drop-harpy-feather',  dropRate: 0.65, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-talon',         dropRate: 0.35, quantityMin: 1, quantityMax: 2 }] },
+  'shadow-wolf':   { id: 'shadow-wolf',  name: 'Shadow Wolf',   level: 5, health:  75, element: 'neutral', size: 'medium', attackName: 'Bite',   stats: { attack: 16, defense: [4,3],   magicAttack: 6,  magicDefense: [4,4],  attackSpeed: 18, accuracy: 14, dodge: 12, moveSpeed: 10,  attackRange: 5  }, drops: [{ itemId: 'drop-dark-pelt',      dropRate: 0.55, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-shadow-essence',dropRate: 0.40, quantityMin: 1, quantityMax: 1 }] },
+  // §aggression — a passive herd animal: non-aggressive until struck, then the
+  // whole herd is called in (pack-tactics) and it bolts when badly hurt (flee).
+  'wild-boar':     { id: 'wild-boar',    name: 'Wild Boar',     level: 3, health:  70, element: 'earth',   size: 'medium', attackName: 'Gore',   stats: { attack: 13, defense: [6,4],   magicAttack: 1,  magicDefense: [2,2],  attackSpeed: 11, accuracy: 11, dodge: 6,  moveSpeed: 8,   attackRange: 5  }, drops: [{ itemId: 'drop-boar-hide',      dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-tusk',          dropRate: 0.35, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }, { id: 'pack-tactics', rank: 1 }, { id: 'flee', rank: 1 }] },
+  // §aggression — an aggressive hunting pack: roams as a group (pack-hunter) and
+  // aggros together on sight (pack-tactics).
+  'dire-wolf':     { id: 'dire-wolf',    name: 'Dire Wolf',     level: 5, health:  65, element: 'neutral', size: 'medium', attackName: 'Bite',   stats: { attack: 15, defense: [4,3],   magicAttack: 1,  magicDefense: [2,2],  attackSpeed: 16, accuracy: 14, dodge: 12, moveSpeed: 9,   attackRange: 5  }, drops: [{ itemId: 'drop-wolf-pelt',      dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-wolf-fang',     dropRate: 0.45, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'pack-hunter', rank: 1 }, { id: 'pack-tactics', rank: 1 }] },
+  'dark-slime':    { id: 'dark-slime',   name: 'Dark Slime',    level: 3, health:  50, element: 'neutral', size: 'small',  attackName: 'Slam',   stats: { attack: 6,  defense: [5,5],   magicAttack: 4,  magicDefense: [6,6],  attackSpeed: 6,  accuracy: 8,  dodge: 4,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-slime-gel',      dropRate: 0.80, quantityMin: 1, quantityMax: 4 }, { itemId: 'drop-dark-core',     dropRate: 0.15, quantityMin: 1, quantityMax: 1 }] },
+  'giant-frog':    { id: 'giant-frog',   name: 'Giant Frog',    level: 2, health:  35, element: 'water',   size: 'medium', attackName: 'Bite',   stats: { attack: 7,  defense: [3,3],   magicAttack: 2,  magicDefense: [2,2],  attackSpeed: 8,  accuracy: 9,  dodge: 10, moveSpeed: 5,   attackRange: 20 }, drops: [{ itemId: 'drop-frog-leg',       dropRate: 0.75, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-sticky-tongue', dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
+  'river-serpent': { id: 'river-serpent',name: 'River Serpent', level: 5, health:  80, element: 'water',   size: 'large',  attackName: 'Bite',   stats: { attack: 15, defense: [5,4],   magicAttack: 4,  magicDefense: [3,4],  attackSpeed: 12, accuracy: 13, dodge: 11, moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-serpent-scale',  dropRate: 0.50, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-venom-sac',     dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },
+  'rock-crab':     { id: 'rock-crab',    name: 'Rock Crab',     level: 3, health:  55, element: 'earth',   size: 'small',  attackName: 'Claws',  stats: { attack: 10, defense: [7,7],   magicAttack: 1,  magicDefense: [3,3],  attackSpeed: 6,  accuracy: 10, dodge: 4,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-crab-shell',     dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-crab-claw',     dropRate: 0.45, quantityMin: 1, quantityMax: 2 }] },
+  'stone-golem':   { id: 'stone-golem',  name: 'Stone Golem',   level: 7, health: 120, element: 'earth',   size: 'large',  attackName: 'Fist',   stats: { attack: 22, defense: [12,12], magicAttack: 3,  magicDefense: [5,5],  attackSpeed: 6,  accuracy: 12, dodge: 3,  moveSpeed: 2,   attackRange: 5  }, drops: [{ itemId: 'drop-stone-shard',    dropRate: 0.85, quantityMin: 1, quantityMax: 4 }, { itemId: 'drop-golem-core',    dropRate: 0.10, quantityMin: 1, quantityMax: 1 }] },
+  'ruins-specter': { id: 'ruins-specter',name: 'Ruins Specter', level: 6, health:  90, element: 'neutral', size: 'medium', attackName: 'Claws',  stats: { attack: 8,  defense: [2,2],   magicAttack: 20, magicDefense: [9,9],  attackSpeed: 10, accuracy: 16, dodge: 12, moveSpeed: 4,   attackRange: 35 }, drops: [{ itemId: 'drop-ectoplasm',      dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ancient-coin',  dropRate: 0.20, quantityMin: 1, quantityMax: 3 }] },
+  'bat':           { id: 'bat',          name: 'Bat',           level: 2, health:  25, element: 'undead',  size: 'small',  attackName: 'Bite',   stats: { attack: 2,  defense: [1,1],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 22, accuracy: 22, dodge: 14, moveSpeed: 15,  attackRange: 5  }, drops: [{ itemId: 'drop-bat-wing',       dropRate: 0.65, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-bat-fang',      dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
+  // Animated Armor — a dumb-tank: slime-slow, hard to hit, hard to dent, but
+  // only swings a middling sword. Accuracy is mediocre and dodge is bottom of
+  // the table (it's a slab of metal). Lives on Geffen Dungeon Floor 3.
+  'animated-armor':{ id: 'animated-armor',name: 'Animated Armor',level: 4, health: 1300, element: 'neutral', size: 'medium', attackName: 'Slam',   stats: { attack: 10, defense: [40,60], magicAttack: 1,  magicDefense: [6,6],  attackSpeed: 5,  accuracy: 8,  dodge: 1,  moveSpeed: 2.5, attackRange: 5  }, drops: [{ itemId: 'drop-plate-scrap',     dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-haunted-iron',  dropRate: 0.20, quantityMin: 1, quantityMax: 1 }] },
+  // Hornet — glass cannon pest. Fast move + fast sting, but folds to one solid hit.
+  'hornet':        { id: 'hornet',       name: 'Hornet',         level: 2, health:  18, element: 'poison',  size: 'small',  attackName: 'Sting',  stats: { attack: 3,  defense: [1,1],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 24, accuracy: 18, dodge: 18, moveSpeed: 16,  attackRange: 5  }, drops: [{ itemId: 'drop-hornet-stinger',  dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-hornet-wing',   dropRate: 0.45, quantityMin: 1, quantityMax: 2 }] },
+  // Centipede — a quick chitin crawler from the egg-sac nests. Fragile, but much
+  // faster than the sacs it skitters around.
+  'centipede':     { id: 'centipede',    name: 'Centipede',      level: 2, health:  32, element: 'poison',  size: 'small',  attackName: 'Mandibles', stats: { attack: 7,  defense: [3,2],   magicAttack: 1,  magicDefense: [1,1],  attackSpeed: 18, accuracy: 13, dodge: 12, moveSpeed: 8,   attackRange: 5  }, drops: [{ itemId: 'drop-chitin',          dropRate: 0.70, quantityMin: 1, quantityMax: 2 }] },
+  // Living Nightshade — rooted plant; spits spores at 20 ft (4 spaces). Can't dodge.
+  'living-nightshade':{ id: 'living-nightshade',name: 'Living Nightshade',level: 3, health: 50, element: 'poison',  size: 'small',  attackName: 'Spores', stats: { attack: 10, defense: [2,1],   magicAttack: 8,  magicDefense: [4,3],  attackSpeed: 12, accuracy: 12, dodge: 2,  moveSpeed: 0,   attackRange: 20 }, drops: [{ itemId: 'drop-nightshade-berry',dropRate: 0.55, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-toxic-spore',   dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
+  // Egg Sac — inert hazard. Doesn't attack, doesn't move; just sits there absorbing hits.
+  'egg-sac':       { id: 'egg-sac',      name: 'Egg Sac',        level: 1, health:  55, element: 'neutral', size: 'medium', attackName: 'Burst',  stats: { attack: 0,  defense: [1,0],   magicAttack: 0,  magicDefense: [1,0],  attackSpeed: 0,  accuracy: 0,  dodge: 0,  moveSpeed: 0,   attackRange: 5  }, drops: [{ itemId: 'drop-larva',           dropRate: 0.80, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-chitin',        dropRate: 0.40, quantityMin: 1, quantityMax: 2 }] },
+  // Rat Fly — a darting flying vermin. Glass cannon: low HP, twitchy dodge, fast
+  // flyer. Runs the Swoop tactic — hovers out of reach, then dives in fast to bite
+  // and peels straight back out (hit-and-run). Lives in the Sky Aerie.
+  'rat-fly':       { id: 'rat-fly',      name: 'Rat Fly',        level: 3, health:  28, element: 'wind',    size: 'small',  attackName: 'Dive Bite', stats: { attack: 9, defense: [2,1], magicAttack: 1, magicDefense: [2,1], attackSpeed: 16, accuracy: 16, dodge: 20, moveSpeed: 14, attackRange: 5 }, drops: [{ itemId: 'drop-rat-wing', dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-rat-fang', dropRate: 0.35, quantityMin: 1, quantityMax: 1 }], tactics: [{ id: 'swoop', rank: 1 }] },
+  // Skeleton Archer — slow-firing ranged undead. 35 ft bow shot, modest HP, brittle.
+  'skeleton-archer':{ id: 'skeleton-archer',name: 'Skeleton Archer',level: 4, health: 50, element: 'undead',  size: 'medium', attackName: 'Arrow',  stats: { attack: 14, defense: [3,2],   magicAttack: 1,  magicDefense: [2,2],  attackSpeed: 6,  accuracy: 14, dodge: 4,  moveSpeed: 3,   attackRange: 35 }, drops: [{ itemId: 'drop-bone-arrow',      dropRate: 0.70, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-skull-fragment',dropRate: 0.30, quantityMin: 1, quantityMax: 1 }] },
+  // ── New-element fauna (Elemental Frontier) ──────────────────────────────────
+  // Fill out the elements the bestiary was missing (fire / ghost / radiant).
+  // Fire Slime — the slime template in a different element: a slow, feeble ooze
+  // that smolders instead of slamming. Non-aggressive (skittish): it mills about
+  // on its own and won't strike first, but retaliates once struck. moveSpeed kept
+  // high enough (5) that its wandering actually reads on screen.
+  'fire-slime':    { id: 'fire-slime',   name: 'Fire Slime',    level: 2, health:  30, element: 'fire',    size: 'small',  attackName: 'Smolder',stats: { attack: 2,  defense: [1,1],   magicAttack: 3,  magicDefense: [1,0],  attackSpeed: 8,  accuracy: 6,  dodge: 2,  moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-ember-gel',     dropRate: 0.90, quantityMin: 1, quantityMax: 2 }], tactics: [{ id: 'skittish', rank: 1 }] },
+  // Adderwalla — a fast fire-snake. Non-aggressive (skittish): it slithers the
+  // dunes and won't make the first move, but once you draw blood it darts in and
+  // strikes like a whip. Fast and hard-hitting, but only medium HP.
+  'adderwalla':    { id: 'adderwalla',   name: 'Adderwalla',    level: 5, health:  70, element: 'fire',    size: 'medium', attackName: 'Lash',   stats: { attack: 22, defense: [4,3],   magicAttack: 3,  magicDefense: [3,2],  attackSpeed: 18, accuracy: 16, dodge: 15, moveSpeed: 12,  attackRange: 5  }, drops: [{ itemId: 'drop-adder-scale',   dropRate: 0.65, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-ember-fang',    dropRate: 0.35, quantityMin: 1, quantityMax: 1 }], tactics: [{ id: 'skittish', rank: 1 }] },
+  // Wraith — a balanced ghost: medium attack, HP, defense, and a drifting
+  // medium pace. A straightforward bruiser whose ghost armor is the wrinkle.
+  'wraith':        { id: 'wraith',       name: 'Wraith',        level: 6, health:  85, element: 'ghost',   size: 'medium', attackName: 'Touch',  stats: { attack: 14, defense: [6,5],   magicAttack: 9,  magicDefense: [6,5],  attackSpeed: 12, accuracy: 13, dodge: 10, moveSpeed: 7,   attackRange: 5  }, drops: [{ itemId: 'drop-ectoplasm',     dropRate: 0.60, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-wraith-shroud',  dropRate: 0.25, quantityMin: 1, quantityMax: 1 }] },
+  // Mutant Lizard — a frail radiant beast that opens with Consecration, a
+  // hallowed aura it carries that chips every nearby hero each round (and tears
+  // into undead/ghost). Weak on its own; nasty in a pack or beside tankier kin.
+  // Its Bite is *slow* (low attackSpeed ⇒ a longer basic-attack interval): the
+  // threat is the aura, not the melee, so it shouldn't out-DPS a hero up close.
+  'mutant-lizard': { id: 'mutant-lizard',name: 'Mutant Lizard', level: 4, health:  45, element: 'radiant', size: 'small',  attackName: 'Bite',   stats: { attack: 8,  defense: [3,2],   magicAttack: 10, magicDefense: [4,3],  attackSpeed: 4,  accuracy: 11, dodge: 6,  moveSpeed: 5,   attackRange: 5  }, drops: [{ itemId: 'drop-mutant-tail',   dropRate: 0.70, quantityMin: 1, quantityMax: 2 }, { itemId: 'drop-radiant-scale',  dropRate: 0.30, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'consecration', level: 3 }] },
+
+  // Stone Sentinel — a §threat-model showcase enemy: a slow, mobile slab with
+  // huge HP/DEF but a feeble Slam. It out-lives everything and chases whoever it's
+  // angriest at — so it naturally drifts toward a high-DPS kiter unless a tank
+  // holds its aggro (Defensive Stance threat + Taunt). Low damage so the demo can
+  // run long enough to watch aggro wobble. Lives in the Threat Trial.
+  'stone-sentinel':{ id: 'stone-sentinel',name: 'Stone Sentinel', level: 5, health: 260, element: 'earth',   size: 'large',  attackName: 'Slam',   stats: { attack: 7,  defense: [28,12], magicAttack: 1,  magicDefense: [10,6], attackSpeed: 6,  accuracy: 10, dodge: 1,  moveSpeed: 4,   attackRange: 5  }, drops: [{ itemId: 'drop-stone-shard',    dropRate: 0.85, quantityMin: 1, quantityMax: 3 }, { itemId: 'drop-golem-core',    dropRate: 0.08, quantityMin: 1, quantityMax: 1 }] },
+
+  // ── Elite Four ─────────────────────────────────────────────────────────────
+  // Human encounters that carry skill + tactic kits instead of equipment. They
+  // mirror the hero classes (Fighter / Rogue / Cleric / Ranger) and run the
+  // same engine behavior heroes do, just with stats baked into the monster def.
+  'elite-fighter': { id: 'elite-fighter', name: 'Garrick the Stalwart', level: 6, health: 180, element: 'neutral', size: 'medium', attackName: 'Sword', stats: { attack: 22, defense: [12,12], magicAttack: 2,  magicDefense: [4,4], attackSpeed: 10, accuracy: 12, dodge: 4,  moveSpeed: 10, attackRange: 5  }, drops: [{ itemId: 'drop-elite-mark', dropRate: 0.50, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'bash', level: 3 }, { id: 'hammer-fall', level: 2 }, { id: 'boost-agility', level: 2 }, { id: 'last-stand', level: 2 }], tactics: [{ id: 'opportunist', rank: 1 }, { id: 'charger', rank: 1 }, { id: 'tank-buster', rank: 1 }] },
+  // §coordination M4: Vesper brings the Assassinate directive to her side —
+  // the Elite Four's kill order flips to the squishiest hero (healers first).
+  'elite-rogue':   { id: 'elite-rogue',   name: 'Vesper the Veiled',    level: 6, health: 120, element: 'neutral', size: 'medium', attackName: 'Dagger',stats: { attack: 18, defense: [4,3],   magicAttack: 4,  magicDefense: [4,4], attackSpeed: 18, accuracy: 18, dodge: 18, moveSpeed: 11, attackRange: 5  }, drops: [{ itemId: 'drop-elite-mark', dropRate: 0.50, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'cloak', level: 1 }, { id: 'back-stab', level: 3 }, { id: 'arrow-shower', level: 2 }, { id: 'poison', level: 2 }], tactics: [{ id: 'focus-casters', rank: 1 }, { id: 'opportunist', rank: 1 }, { id: 'retreater', rank: 1 }, { id: 'flanker', rank: 1 }], directive: 'assassinate' },
+  'elite-cleric':  { id: 'elite-cleric',  name: 'Calista the Radiant',  level: 6, health: 130, element: 'neutral', size: 'medium', attackName: 'Rod',   stats: { attack: 6,  defense: [5,4],   magicAttack: 20, magicDefense: [8,6], attackSpeed: 12, accuracy: 12, dodge: 8,  moveSpeed: 10, attackRange: 20 }, drops: [{ itemId: 'drop-elite-mark', dropRate: 0.50, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'heal', level: 3 }, { id: 'aoe-heal', level: 2 }, { id: 'boost-agility', level: 2 }], tactics: [{ id: 'retreater', rank: 1 }, { id: 'kiter', rank: 1 }], dodgePeriod: 7 },
+  'elite-ranger':  { id: 'elite-ranger',  name: 'Lirien the Swift',     level: 6, health: 110, element: 'neutral', size: 'medium', attackName: 'Arrow', stats: { attack: 16, defense: [5,3],   magicAttack: 4,  magicDefense: [3,3], attackSpeed: 18, accuracy: 18, dodge: 16, moveSpeed: 12, attackRange: 35 }, drops: [{ itemId: 'drop-champions-seal', dropRate: 0.20, quantityMin: 1, quantityMax: 1 }, { itemId: 'drop-elite-mark', dropRate: 0.60, quantityMin: 1, quantityMax: 1 }], skills: [{ id: 'arrow-shower', level: 3 }, { id: 'ankle-snare', level: 2 }], tactics: [{ id: 'focus-casters', rank: 1 }, { id: 'opportunist', rank: 1 }, { id: 'retreater', rank: 1 }, { id: 'kiter', rank: 1 }] },
+}
