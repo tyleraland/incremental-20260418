@@ -56,6 +56,7 @@ export const CROPS_B: PropDef[] = [
     kinds: ['reed'], themes: ['farm', 'city'], role: 'edge', rotate: 'upright',
     weight: 0.5, pass: 'solid', footprint: 0.32, layer: 'wall', tall: true,
     tags: ['row', 'trellis'], gameplay: ['harvestable'], clusterWith: ['grapevine'],
+    sim: { statePair: 'grapevine_bare', resource: { respawn: 'slow' } },
   },
   { id: 'grapevine_bare', size: 1.1, wonk: 0.04,
     paths: [
@@ -76,6 +77,7 @@ export const CROPS_B: PropDef[] = [
     kinds: ['reed'], themes: ['farm'], role: 'field', rotate: 'upright',
     weight: 0.6, pass: 'solid', footprint: 0.26, layer: 'ground', tall: true,
     tags: ['row'], gameplay: ['harvestable'], clusterWith: ['beanpole'],
+    sim: { statePair: 'beanpole_bare', resource: { respawn: 'slow' } },
   },
   { id: 'beanpole_bare', size: 1.1, wonk: 0.05,
     paths: [
@@ -95,6 +97,7 @@ export const CROPS_B: PropDef[] = [
     kinds: ['flower'], themes: ['farm'], role: 'field', rotate: 'upright',
     weight: 0.7, pass: 'walkable', footprint: 0.18, layer: 'ground',
     tags: ['row', 'root'], gameplay: ['harvestable'], clusterWith: ['carrottop'],
+    sim: { statePair: 'carrot_hole', resource: { respawn: 'slow' } },
   },
   { id: 'carrot_hole', size: 0.9,
     paths: [
@@ -116,6 +119,7 @@ export const CROPS_B: PropDef[] = [
     kinds: ['reed'], themes: ['farm'], role: 'edge', rotate: 'upright',
     weight: 0.4, pass: 'solid', footprint: 0.28, layer: 'wall', tall: true,
     tags: ['row', 'trellis'], gameplay: ['harvestable'], clusterWith: ['hops'],
+    sim: { statePair: 'hops_bare', resource: { respawn: 'slow' } },
   },
   { id: 'hops_bare', size: 1.1, wonk: 0.05,
     paths: [

@@ -92,6 +92,7 @@ export const FARM: PropDef[] = [
     ],
     kinds: ['rock'], themes: ['farm'], role: 'field', weight: 0.5,
     pass: 'walkable', footprint: 0.3, gameplay: ['plantable'], tags: ['farm', 'flat'],
+    sim: { statePair: 'tilledsoil_watered' },
   },
   // TILLED SOIL (watered): the same plot soaked dark, furrows inked deep, a wet
   // sheen catching the light. State pair with `tilledsoil`.
@@ -173,6 +174,7 @@ export const FARM: PropDef[] = [
     ],
     kinds: ['stump', 'bush'], themes: ['farm'], role: 'field', weight: 0.4,
     rotate: 'free', pass: 'solid', footprint: 0.25, gameplay: ['gather'], tags: ['farm'],
+    sim: { resource: { respawn: 'slow' }, statePair: 'eggnest_empty' },
   },
   // EGG NEST (empty): the same straw ring and dark hollow, eggs gathered. State
   // pair with `eggnest`.
@@ -211,6 +213,7 @@ export const FARM: PropDef[] = [
     kinds: ['bush', 'tree'], themes: ['farm'], role: 'accent', weight: 0.2,
     rotate: 'upright', pass: 'solid', footprint: 0.45, tall: true, maxPerChunk: 1,
     gameplay: ['harvestable'], tags: ['farm', 'rare'],
+    sim: { resource: { respawn: 'slow' }, statePair: 'giantcrop_cut' },
   },
   // GIANT CROP (harvested): the gourd cut away, leaving a low leaf clump and the
   // pale sliced core at the stem. State pair with `giantcrop`.

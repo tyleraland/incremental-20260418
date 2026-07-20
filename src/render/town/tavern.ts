@@ -69,7 +69,7 @@ export const TAVERN: PropDef[] = [
     ],
     kinds: ['tree', 'stump'], themes: ['city', 'village', 'farm'], role: 'field',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.3, layer: 'ground',
-    tags: ['field', 'post'],
+    tags: ['field', 'post'], anchor: ['path-edge'],
   },
 
   // wall torch bracket (unlit)
@@ -84,6 +84,8 @@ export const TAVERN: PropDef[] = [
     kinds: ['tree', 'flower'], themes: ['city', 'village', 'dungeon'], role: 'edge',
     rotate: 'upright', weight: 0.35, pass: 'walkable', footprint: 0.14, layer: 'wall',
     tags: ['light'],
+    anchor: ['wall'], orient: 'face-open', series: { along: 'wall', spacing: [3, 6] },
+    sim: { statePair: 'torchbracket_lit' },
   },
   // torchbracket_lit — state pair: same haft + collar, flame head over an ember halo.
   {
@@ -115,6 +117,8 @@ export const TAVERN: PropDef[] = [
     kinds: ['rock', 'flower'], themes: ['city', 'village'], role: 'edge',
     rotate: 'upright', weight: 0.35, pass: 'walkable', footprint: 0.14, layer: 'wall',
     tags: ['light'],
+    anchor: ['wall'], orient: 'face-open', series: { along: 'wall', spacing: [3, 6] },
+    sim: { statePair: 'lanternhook_lit' },
   },
   // lanternhook_lit — state pair: same frame, glass lit warm over a lampGlow halo.
   {

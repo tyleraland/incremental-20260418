@@ -115,6 +115,7 @@ export const STRUCTURES: PropDef[] = [
     kinds: ['tree', 'flower'], themes: ['city', 'village'], role: 'edge', rotate: 'upright',
     weight: 0.3, pass: 'walkable', footprint: 0.2, layer: 'wall',
     gameplay: ['read'], tags: ['tudor', 'sign'],
+    anchor: ['wall'], orient: 'face-open',
   },
   // SHOP SIGN: a shorter bracket + small square shingle with a painted
   // merchant-coin symbol — distinct compact silhouette from the inn's tall board.
@@ -132,6 +133,7 @@ export const STRUCTURES: PropDef[] = [
     kinds: ['tree', 'flower'], themes: ['city', 'village'], role: 'edge', rotate: 'upright',
     weight: 0.3, pass: 'walkable', footprint: 0.2, layer: 'wall',
     gameplay: ['read'], tags: ['sign'],
+    anchor: ['wall'], orient: 'face-open',
   },
 
   // ── doorway (wall-edge) + open state ───────────────────────────────────────
@@ -148,6 +150,7 @@ export const STRUCTURES: PropDef[] = [
     kinds: ['stump', 'rock'], themes: ['city', 'village'], role: 'edge', rotate: 'upright',
     weight: 0.4, pass: 'walkable', footprint: 0.2, layer: 'wall',
     gameplay: ['enter', 'open'], tags: ['building'],
+    anchor: ['entrance'], sim: { linkRole: 'gate', statePair: 'door_open' },
   },
   // door swung open: same stone surround, dark void where the leaf was, one
   // plank leaf hinged to the left.
@@ -176,6 +179,7 @@ export const STRUCTURES: PropDef[] = [
     kinds: ['stump'], themes: ['city', 'village'], role: 'edge', rotate: 'upright',
     weight: 0.4, pass: 'walkable', footprint: 0.2, layer: 'wall',
     gameplay: ['open'], tags: ['tudor', 'window'],
+    anchor: ['wall'], orient: 'face-open', sim: { statePair: 'shutters_open' },
   },
   // shutters open: same plaster surround, dark glazing with a mullion cross,
   // leaves folded to the edges.
@@ -203,7 +207,7 @@ export const STRUCTURES: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['city', 'village'], role: 'accent', rotate: 'upright',
     weight: 0.3, pass: 'walkable', footprint: 0.25, layer: 'ground',
-    tags: ['tudor', 'roof'],
+    tags: ['tudor', 'roof'], sim: { statePair: 'chimneypot_smoke' },
   },
   // chimney smoking: same stack + pots with a drifting smoke plume (anim).
   {
@@ -275,7 +279,7 @@ export const STRUCTURES: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['city'], role: 'field', rotate: 'flat',
     weight: 0.5, pass: 'walkable', footprint: 0.6, layer: 'ground',
-    tags: ['cobble', 'flat'],
+    tags: ['cobble', 'flat'], anchor: ['path'],
   },
 
   // ── invented set-base structures (full scatter meta) ───────────────────────

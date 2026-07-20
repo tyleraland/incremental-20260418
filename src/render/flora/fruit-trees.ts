@@ -76,6 +76,7 @@ export const FRUIT_TREES: PropDef[] = [
     kinds: ['tree'], themes: ['orchard', 'plains', 'forest'], role: 'cluster', rotate: 'upright',
     weight: 0.4, pass: 'overhang', footprint: 0.5, tall: true, layer: 'canopy',
     tags: ['fruit', 'broadleaf'], gameplay: ['harvestable'], clusterWith: ['appletree'],
+    sim: { statePair: 'appletree_bare', resource: { respawn: 'slow' } },
   },
   {
     id: 'appletree_bare', size: 1.2, wonk: 0.04,
@@ -99,6 +100,7 @@ export const FRUIT_TREES: PropDef[] = [
     kinds: ['tree'], themes: ['orchard', 'plains'], role: 'cluster', rotate: 'upright',
     weight: 0.35, pass: 'overhang', footprint: 0.48, tall: true, layer: 'canopy',
     tags: ['fruit', 'bloom', 'broadleaf'], gameplay: ['harvestable'], clusterWith: ['cherrytree'],
+    sim: { statePair: 'cherrytree_bare', resource: { respawn: 'slow' } },
   },
   {
     id: 'cherrytree_bare', size: 1.15, wonk: 0.04,
@@ -121,6 +123,7 @@ export const FRUIT_TREES: PropDef[] = [
     kinds: ['tree'], themes: ['orchard', 'beach'], role: 'cluster', rotate: 'upright',
     weight: 0.3, pass: 'overhang', footprint: 0.48, tall: true, layer: 'canopy',
     tags: ['fruit', 'broadleaf'], gameplay: ['harvestable'], clusterWith: ['citrustree'],
+    sim: { statePair: 'citrustree_bare', resource: { respawn: 'slow' } },
   },
   {
     id: 'citrustree_bare', size: 1.1, wonk: 0.04,
@@ -144,6 +147,7 @@ export const FRUIT_TREES: PropDef[] = [
     kinds: ['tree'], themes: ['jungle', 'beach'], role: 'cluster', rotate: 'upright',
     weight: 0.3, pass: 'overhang', footprint: 0.48, tall: true, layer: 'canopy',
     tags: ['fruit', 'broadleaf'], gameplay: ['harvestable'], clusterWith: ['bananatree'],
+    sim: { statePair: 'bananatree_bare', resource: { respawn: 'slow' } },
   },
   {
     id: 'bananatree_bare', size: 1.15, wonk: 0.05,
@@ -168,6 +172,7 @@ export const FRUIT_TREES: PropDef[] = [
     kinds: ['tree'], themes: ['desert', 'beach'], role: 'accent', rotate: 'upright',
     weight: 0.3, pass: 'overhang', footprint: 0.5, tall: true, layer: 'canopy',
     tags: ['fruit', 'broadleaf'], gameplay: ['harvestable'], clusterWith: ['coconutpalm'],
+    sim: { statePair: 'coconutpalm_bare', resource: { respawn: 'slow' } },
   },
   {
     id: 'coconutpalm_bare', size: 1.2, wonk: 0.05,
@@ -191,6 +196,7 @@ export const FRUIT_TREES: PropDef[] = [
     kinds: ['tree'], themes: ['desert', 'plains', 'ruins'], role: 'accent', rotate: 'upright',
     weight: 0.3, pass: 'overhang', footprint: 0.42, tall: true, layer: 'canopy',
     tags: ['fruit', 'broadleaf'], gameplay: ['harvestable'], clusterWith: ['olivetree'],
+    sim: { statePair: 'olivetree_bare', resource: { respawn: 'slow' } },
   },
   {
     id: 'olivetree_bare', size: 1.0, wonk: 0.04,
@@ -214,6 +220,7 @@ export const FRUIT_TREES: PropDef[] = [
     kinds: ['tree'], themes: ['orchard', 'plains'], role: 'cluster', rotate: 'upright',
     weight: 0.3, pass: 'overhang', footprint: 0.46, tall: true, layer: 'canopy',
     tags: ['fruit', 'broadleaf'], gameplay: ['harvestable'], clusterWith: ['peartree'],
+    sim: { statePair: 'peartree_bare', resource: { respawn: 'slow' } },
   },
   {
     id: 'peartree_bare', size: 1.15, wonk: 0.04,

@@ -59,6 +59,7 @@ export const CROPS_A: PropDef[] = [
     kinds: ['reed'], themes: ['farm', 'plains'], role: 'field', rotate: 'upright',
     weight: 0.9, pass: 'solid', footprint: 0.3, layer: 'ground', tall: true,
     tags: ['row'], gameplay: ['harvestable'], clusterWith: ['cornstalk'],
+    sim: { statePair: 'cornstub', resource: { respawn: 'slow' } },
   },
   { id: 'cornstub', size: 1.15, wonk: 0.05,
     paths: [
@@ -79,6 +80,7 @@ export const CROPS_A: PropDef[] = [
     kinds: ['bush'], themes: ['farm', 'plains', 'haunted'], role: 'field', rotate: 'free',
     weight: 0.6, pass: 'solid', footprint: 0.38, layer: 'ground',
     tags: ['row', 'vine'], gameplay: ['harvestable'], clusterWith: ['pumpkin'],
+    sim: { statePair: 'pumpkin_cut', resource: { respawn: 'slow' } },
   },
   { id: 'pumpkin_cut', size: 1,
     paths: [
@@ -99,6 +101,7 @@ export const CROPS_A: PropDef[] = [
     kinds: ['flower'], themes: ['farm', 'plains'], role: 'field', rotate: 'upright',
     weight: 0.6, pass: 'solid', footprint: 0.26, layer: 'ground', tall: true,
     tags: ['row', 'helio'], gameplay: ['harvestable'], clusterWith: ['sunflower'],
+    sim: { statePair: 'sunflower_bare', resource: { respawn: 'slow' } },
   },
   { id: 'sunflower_bare', size: 1.1, wonk: 0.04,
     paths: [
@@ -119,6 +122,7 @@ export const CROPS_A: PropDef[] = [
     kinds: ['bush'], themes: ['farm'], role: 'field', rotate: 'upright',
     weight: 0.7, pass: 'solid', footprint: 0.32, layer: 'ground',
     tags: ['row'], gameplay: ['harvestable'], clusterWith: ['cabbage'],
+    sim: { statePair: 'cabbage_cut', resource: { respawn: 'slow' } },
   },
   { id: 'cabbage_cut', size: 0.95, wonk: 0.04,
     paths: [
@@ -138,6 +142,7 @@ export const CROPS_A: PropDef[] = [
     kinds: ['reed', 'bush'], themes: ['farm'], role: 'field', rotate: 'upright',
     weight: 0.6, pass: 'solid', footprint: 0.36, layer: 'ground', tall: true,
     tags: ['row', 'trellis'], gameplay: ['harvestable'], clusterWith: ['tomato'],
+    sim: { statePair: 'tomato_bare', resource: { respawn: 'slow' } },
   },
   { id: 'tomato_bare', size: 1.1, wonk: 0.04,
     paths: [

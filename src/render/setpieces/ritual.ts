@@ -106,6 +106,7 @@ export const RITUAL: PropDef[] = [
     rotate: 'flat', weight: 0.2, pass: 'walkable', footprint: 0.42, maxPerChunk: 2,
     tags: ['glow', 'anim', 'flat'], gameplay: ['trigger', 'ritual'],
     light: { color: 'arcaneGlow', radius: 2 }, anim: true,
+    sim: { mystery: true, statePair: 'circle_spent' },
   },
   // circle_spent (state): the ring burnt out — faded inscription, ashen star,
   // scorch scatter in the middle, no glow.
@@ -132,6 +133,7 @@ export const RITUAL: PropDef[] = [
     rotate: 'flat', weight: 0.5, pass: 'walkable', footprint: 0.22,
     tags: ['glow', 'flat'], gameplay: ['trigger'],
     light: { color: 'arcaneGlow', radius: 1.4 },
+    sim: { mystery: true, statePair: 'glyph_spent' },
   },
   // glyph_spent (state): the same ring + sigil gone inert (grey, unlit).
   {
@@ -154,6 +156,7 @@ export const RITUAL: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['arcane', 'plains', 'tundra'], role: 'accent',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.46, tall: true,
     maxPerChunk: 2, tags: ['menhir'], gameplay: ['ritual'],
+    sim: { mystery: true },
   },
 
   // MANA FONT: round stone basin with glowing mana welling in the recess, halo
@@ -172,6 +175,7 @@ export const RITUAL: PropDef[] = [
     rotate: 'free', weight: 0.2, pass: 'solid', footprint: 0.4, maxPerChunk: 2,
     tags: ['glow', 'light', 'anim'], gameplay: ['drink', 'restore'],
     light: { color: 'arcaneGlow', radius: 2 }, anim: true,
+    sim: { mystery: true, statePair: 'font_dry' },
   },
   // font_dry (state): the same basin drained — dark empty recess, hairline
   // cracks, no glow.
@@ -201,6 +205,7 @@ export const RITUAL: PropDef[] = [
     rotate: 'flat', weight: 0.2, pass: 'walkable', footprint: 0.46, maxPerChunk: 2,
     tags: ['glow', 'light', 'flat'], gameplay: ['warp'],
     light: { color: 'arcaneGlow', radius: 2 },
+    sim: { statePair: 'pad_dormant' },
   },
   // pad_dormant (state): the same disc gone dark — inked ring, dead core, no glow.
   {
@@ -229,6 +234,7 @@ export const RITUAL: PropDef[] = [
     kinds: ['tree', 'stump'], themes: ['haunted', 'ruins', 'jungle'], role: 'accent',
     rotate: 'upright', weight: 0.22, pass: 'solid', footprint: 0.38, tall: true,
     maxPerChunk: 2, tags: ['ominous'], gameplay: ['trigger', 'curse'],
+    sim: { encounter: 'trigger', statePair: 'idol_broken' },
   },
   // idol_broken (state): the idol shattered — a cracked lower stub, face gone,
   // a fracture running up. Walk over the rubble.
@@ -254,6 +260,7 @@ export const RITUAL: PropDef[] = [
     kinds: ['rock', 'flower'], themes: ['arcane', 'ruins', 'city'], role: 'field',
     rotate: 'free', weight: 0.45, pass: 'solid', footprint: 0.3,
     tags: ['light'], gameplay: ['offer'],
+    sim: { mystery: true, statePair: 'bowl_lit' },
   },
   // bowl_lit (state): the same bowl kindled — a votive flame in the recess and a
   // warm halo beneath.

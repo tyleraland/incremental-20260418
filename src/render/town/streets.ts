@@ -170,7 +170,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['city', 'village'], role: 'edge', rotate: 'flat',
     weight: 0.5, pass: 'walkable', footprint: 0.55, layer: 'ground',
-    tags: ['flat', 'path'],
+    tags: ['flat', 'path'], anchor: ['path'], orient: 'along', join: 'network',
   },
   // DIRT LANE: a browner packed-earth strip with twin wheel ruts + loose pebbles.
   {
@@ -182,7 +182,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['rock'], themes: ['village', 'farm'], role: 'edge', rotate: 'flat',
     weight: 0.5, pass: 'walkable', footprint: 0.55, layer: 'ground',
-    tags: ['flat', 'path'],
+    tags: ['flat', 'path'], anchor: ['path'], orient: 'along', join: 'run',
   },
 
   // ── gate (barrier) + open state ──────────────────────────────────────────
@@ -203,6 +203,7 @@ export const STREETS: PropDef[] = [
     kinds: ['stump', 'tree'], themes: ['city'], role: 'accent', rotate: 'upright',
     weight: 0.2, pass: 'solid', footprint: 0.55, layer: 'ground', tall: true, maxPerChunk: 1,
     gameplay: ['barrier', 'open'], tags: ['structure'],
+    anchor: ['entrance'], sim: { linkRole: 'gate', statePair: 'gate_open' },
   },
   // gate open: same piers + crenellation, dark gateway void, both leaves folded
   // back flat against the pier inner faces.
@@ -231,7 +232,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['city'], role: 'edge', rotate: 'upright',
     weight: 0.5, pass: 'solid', footprint: 0.5, layer: 'ground',
-    gameplay: ['barrier'], tags: ['structure'],
+    gameplay: ['barrier'], tags: ['structure'], join: 'network',
   },
 
   // ── fences (edge) ────────────────────────────────────────────────────────
@@ -247,7 +248,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['reed', 'stump'], themes: ['village', 'farm'], role: 'edge', rotate: 'upright',
     weight: 0.5, pass: 'solid', footprint: 0.28, layer: 'ground',
-    tags: ['fence', 'wattle'],
+    tags: ['fence', 'wattle'], join: 'run',
   },
   // LOW STONE WALL: a lumpy dry-stone run of stacked field stones with lit caps
   // and division seams — the pasture boundary.
@@ -260,7 +261,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['village', 'farm'], role: 'edge', rotate: 'upright',
     weight: 0.5, pass: 'solid', footprint: 0.3, layer: 'ground',
-    tags: ['fence'],
+    tags: ['fence'], join: 'run',
   },
 
   // ── archway (accent) ─────────────────────────────────────────────────────
@@ -278,7 +279,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['city', 'ruins'], role: 'accent', rotate: 'upright',
     weight: 0.2, pass: 'solid', footprint: 0.5, layer: 'ground', tall: true, maxPerChunk: 1,
-    tags: ['structure'],
+    tags: ['structure'], anchor: ['entrance'],
   },
 
   // ── footbridge (edge) ────────────────────────────────────────────────────
@@ -327,7 +328,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['tree', 'stump'], themes: ['city', 'haunted'], role: 'accent', rotate: 'upright',
     weight: 0.2, pass: 'solid', footprint: 0.4, layer: 'ground', tall: true, maxPerChunk: 1,
-    tags: ['grim', 'lore'],
+    tags: ['grim', 'lore'], sim: { lore: true },
   },
   // MARKET CROSS: a stepped octagonal stone plinth rising to a central shaft
   // topped by a cross finial — the market-square meeting landmark.
@@ -342,7 +343,7 @@ export const STREETS: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['city', 'village'], role: 'accent', rotate: 'upright',
     weight: 0.2, pass: 'solid', footprint: 0.45, layer: 'ground', maxPerChunk: 1,
-    tags: ['social', 'landmark'],
+    tags: ['social', 'landmark'], sim: { lore: true },
   },
 
   // ── invented set-base member (watchtower set) ────────────────────────────

@@ -85,6 +85,7 @@ export const LOOT: PropDef[] = [
     kinds: ['stump', 'rock'], themes: ['dungeon', 'city', 'ruins'], role: 'field',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.3, maxPerChunk: 2,
     tags: ['treasure', 'locked'], gameplay: ['lootable', 'lock'],
+    sim: { statePair: 'strongbox_open' },
   },
   {
     id: 'strongbox_open', size: 0.78, wonk: 0.03,
@@ -112,6 +113,7 @@ export const LOOT: PropDef[] = [
     kinds: ['stump', 'rock'], themes: ['dungeon', 'arcane'], role: 'accent',
     rotate: 'upright', weight: 0.15, pass: 'solid', footprint: 0.32, maxPerChunk: 1,
     tags: ['treasure', 'enemy', 'hidden'], gameplay: ['ambush'],
+    sim: { encounter: 'ambush', disguisesAs: 'chest', statePair: 'mimicchest_wake' },
   },
   {
     id: 'mimicchest_wake', size: 0.85, wonk: 0.03,
@@ -138,6 +140,7 @@ export const LOOT: PropDef[] = [
     kinds: ['rock', 'flower'], themes: ['desert', 'plains', 'beach'], role: 'field',
     rotate: 'free', weight: 0.2, pass: 'walkable', footprint: 0.3, maxPerChunk: 2,
     tags: ['treasure', 'hidden'], gameplay: ['dig', 'lootable'],
+    sim: { resource: { respawn: 'never' }, statePair: 'cache_dug' },
   },
   {
     id: 'cache_dug', size: 1.0, wonk: 0.04,
@@ -161,5 +164,6 @@ export const LOOT: PropDef[] = [
     kinds: ['reed', 'rock'], themes: ['water', 'mountain'], role: 'field',
     rotate: 'free', weight: 0.3, pass: 'walkable', footprint: 0.28,
     layer: 'water-surface', tags: ['on-water', 'ore'], gameplay: ['pan', 'lootable'],
+    anchor: ['water'], sim: { resource: { respawn: 'fast' } },
   },
 ]

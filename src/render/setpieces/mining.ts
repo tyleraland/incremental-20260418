@@ -85,6 +85,7 @@ export const MINING: PropDef[] = [
     kinds: ['rock'], themes: ['mountain', 'cave', 'dungeon'], role: 'field', rotate: 'free',
     weight: 0.5, near: ['wall', 'rock'], pass: 'solid', footprint: 0.35,
     tags: ['ore'], gameplay: ['mine', 'harvestable'],
+    sim: { resource: { respawn: 'never' }, statePair: 'orenode_spent' },
   },
   // ORE NODE (mined out): same boulder, nuggets struck out to dark pits.
   {
@@ -108,6 +109,7 @@ export const MINING: PropDef[] = [
     kinds: ['rock'], themes: ['cave', 'mountain', 'dungeon'], role: 'field', rotate: 'upright',
     weight: 0.4, near: ['wall', 'rock'], pass: 'solid', footprint: 0.35, maxPerChunk: 3,
     tags: ['ore', 'glow'], gameplay: ['mine', 'harvestable'], light: { color: 'arcaneGlow', radius: 2 },
+    sim: { resource: { respawn: 'never' }, statePair: 'gemcluster_spent' },
   },
   // GEM CLUSTER (mined out): rock mound with the shards broken to dark stubs, no glow.
   {
@@ -130,6 +132,7 @@ export const MINING: PropDef[] = [
     kinds: ['rock'], themes: ['cave', 'mountain'], role: 'accent', rotate: 'free',
     weight: 0.25, near: ['wall', 'rock'], pass: 'solid', footprint: 0.3, maxPerChunk: 2,
     tags: ['ore'], gameplay: ['mine', 'harvestable'],
+    sim: { resource: { respawn: 'never' }, statePair: 'geode_cracked' },
   },
   // GEODE (cracked): same shell split to a dark hollow lined with pale crystal.
   {
@@ -157,6 +160,7 @@ export const MINING: PropDef[] = [
     kinds: ['rock'], themes: ['plains', 'volcanic', 'tundra'], role: 'accent', rotate: 'free',
     weight: 0.2, pass: 'solid', footprint: 0.3, maxPerChunk: 1,
     tags: ['ore', 'glow'], gameplay: ['mine', 'harvestable'], light: { color: 'ember', radius: 2 },
+    sim: { resource: { respawn: 'never' }, statePair: 'meteorite_mined' },
   },
   // METEORITE (mined): the molten core dug to a cold crater, cracks gone dark, no glow.
   {
@@ -180,6 +184,7 @@ export const MINING: PropDef[] = [
     kinds: ['bush', 'flower'], themes: ['cave', 'swamp'], role: 'field', rotate: 'upright',
     weight: 0.45, pass: 'walkable', footprint: 0.25, clusterWith: ['mushroomcolony'],
     tags: ['fungus', 'glow'], gameplay: ['harvestable'], light: { color: 'glowFungus', radius: 1.5 },
+    sim: { resource: { respawn: 'slow' }, statePair: 'colony_picked' },
   },
   // MUSHROOM COLONY (picked): caps gone, only the stem stubs remain, no glow.
   {
@@ -201,7 +206,7 @@ export const MINING: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['cave', 'dungeon', 'mountain'], role: 'accent', rotate: 'upright',
     weight: 0.2, near: ['wall'], pass: 'solid', footprint: 0.4, maxPerChunk: 1,
-    tags: ['portal'], gameplay: ['descend'],
+    tags: ['portal'], gameplay: ['descend'], anchor: ['boundary'],
   },
 
   // SLIME: a gooey round green blob with a shine + eye pair — the spawner enemy.
@@ -216,5 +221,6 @@ export const MINING: PropDef[] = [
     kinds: ['bush'], themes: ['cave', 'swamp', 'dungeon'], role: 'field', rotate: 'upright',
     weight: 0.4, pass: 'solid', footprint: 0.3, maxPerChunk: 3,
     tags: ['enemy', 'anim'], gameplay: ['spawn', 'squish'], anim: true,
+    sim: { encounter: 'spawner' },
   },
 ]

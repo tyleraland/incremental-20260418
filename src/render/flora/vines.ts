@@ -118,7 +118,7 @@ export const VINES: PropDef[] = [
     kinds: ['bush'], themes: ['ruins', 'forest', 'city'], role: 'edge', rotate: 'flat',
     weight: 0.7, pass: 'walkable', footprint: 0.2, layer: 'wall',
     near: ['wall'], clusterWith: ['ivy'], tags: ['vine', 'climb', 'cover'],
-    gameplay: ['climbable', 'cover'],
+    gameplay: ['climbable', 'cover'], anchor: ['wall'], orient: 'face-open',
   },
   // KUDZU — smothering overgrowth blanket: one broad mound + trifoliate leaf
   // trios + two escaping tendrils.
@@ -134,7 +134,7 @@ export const VINES: PropDef[] = [
     kinds: ['bush'], themes: ['ruins', 'swamp', 'haunted'], role: 'field', rotate: 'flat',
     weight: 0.5, pass: 'walkable', footprint: 0.3, layer: 'wall',
     near: ['wall'], clusterWith: ['kudzu'], tags: ['vine', 'overgrow', 'cover'],
-    gameplay: ['cover'],
+    gameplay: ['cover'], anchor: ['wall'], orient: 'face-open',
   },
   // WISTERIA — hanging mauve racemes dropping from thin cords; a bloom drape.
   {
@@ -160,6 +160,6 @@ export const VINES: PropDef[] = [
     kinds: ['reed', 'bush'], themes: ['ruins', 'haunted'], role: 'edge', rotate: 'flat',
     weight: 0.4, pass: 'solid', footprint: 0.28, layer: 'wall',
     near: ['wall'], clusterWith: ['thorncreeper'], tags: ['vine', 'climb', 'solid', 'spiny'],
-    gameplay: ['climbable'],
+    gameplay: ['climbable'], anchor: ['wall'], orient: 'face-open',
   },
 ]

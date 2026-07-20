@@ -65,7 +65,8 @@ export const FISHING: PropDef[] = [
     kinds: ['stump', 'rock'], themes: ['water', 'beach', 'swamp'], role: 'field',
     rotate: 'free', weight: 0.3, layer: 'water-surface', pass: 'walkable',
     footprint: 0.25, near: ['water'], tags: ['fish', 'on-water', 'water-surface'],
-    gameplay: ['use', 'gather'],
+    gameplay: ['use', 'gather'], anchor: ['water'],
+    sim: { resource: { respawn: 'fast' }, statePair: 'crabpot_full' },
   },
   // CRAB POT (full state): same cage + lattice + float, the funnel now holds a
   // caught crab. State pair with `crabpot` (kinds:[] exempts the reach gate).
@@ -94,7 +95,8 @@ export const FISHING: PropDef[] = [
     kinds: ['stump'], themes: ['water', 'beach', 'swamp'], role: 'edge',
     rotate: 'free', weight: 0.2, layer: 'water-surface', pass: 'walkable',
     footprint: 0.4, near: ['water'], tags: ['fish', 'on-water', 'water-surface'],
-    gameplay: ['fish'],
+    gameplay: ['fish'], anchor: ['water-edge'], orient: 'along',
+    sim: { resource: { respawn: 'fast' } },
   },
   // TACKLE BOX: rounded case + carry handle + brass latch + red lure signature.
   {

@@ -68,6 +68,7 @@ export const TRAPS: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['dungeon', 'ruins'], role: 'field',
     rotate: 'free', weight: 0.35, pass: 'walkable', footprint: 0.3,
     tags: ['trap', 'hidden'], gameplay: ['trigger'],
+    sim: { encounter: 'trigger', linkRole: 'switch', statePair: 'plate_sprung' },
   },
   // PRESSURE PLATE (sprung): same socket, the inner plate pressed flush and dark,
   // seam gapped open. State pair with `pressureplate`.
@@ -93,6 +94,7 @@ export const TRAPS: PropDef[] = [
     kinds: ['rock'], themes: ['dungeon', 'ruins', 'forest'], role: 'field',
     rotate: 'free', weight: 0.3, pass: 'walkable', footprint: 0.4,
     tags: ['trap', 'hidden'], gameplay: ['trigger', 'fall'],
+    sim: { encounter: 'trigger', statePair: 'pit_open' },
   },
   // PIT (open): the lid gone — a yawning shaft, stone rim over a darkening throat.
   // State pair with `pittrap`.
@@ -120,6 +122,7 @@ export const TRAPS: PropDef[] = [
     rotate: 'free', weight: 0.3, pass: 'solid', footprint: 0.2,
     tags: ['trap', 'anim', 'light', 'glow'], gameplay: ['damage'],
     light: { color: 'ember', radius: 1.5 }, anim: true,
+    sim: { encounter: 'trigger', statePair: 'jet_off' },
   },
   // FIRE JET (dormant): the same nozzle, flame out, a cold dark bore. State pair
   // with `firejet`.
@@ -145,6 +148,7 @@ export const TRAPS: PropDef[] = [
     kinds: ['flower', 'rock'], themes: ['dungeon', 'swamp', 'ruins'], role: 'field',
     rotate: 'free', weight: 0.4, pass: 'walkable', footprint: 0.25,
     tags: ['trap', 'anim'], gameplay: ['damage'], anim: true,
+    sim: { encounter: 'trigger' },
   },
 
   // BEAR TRAP (armed): open steel jaws splayed flat, teeth ringing a dark maw
@@ -160,6 +164,7 @@ export const TRAPS: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['forest', 'plains'], role: 'field',
     rotate: 'free', weight: 0.3, pass: 'walkable', footprint: 0.3,
     tags: ['trap'], gameplay: ['trigger', 'damage'],
+    sim: { encounter: 'trigger', statePair: 'beartrap_sprung' },
   },
   // BEAR TRAP (sprung): jaws snapped shut, teeth interlocked over a seam. State
   // pair with `beartrap`.
@@ -185,6 +190,7 @@ export const TRAPS: PropDef[] = [
     kinds: ['rock'], themes: ['dungeon', 'mountain'], role: 'accent',
     rotate: 'free', weight: 0.2, pass: 'solid', footprint: 0.5,
     tags: ['trap', 'anim'], gameplay: ['trigger', 'damage'], anim: true,
+    sim: { encounter: 'trigger' },
   },
 
   // DART WALL: a wall-mounted stone plaque pierced by a row of bore holes, steel
@@ -199,6 +205,7 @@ export const TRAPS: PropDef[] = [
     kinds: ['rock'], themes: ['dungeon', 'ruins'], role: 'edge',
     rotate: 'flat', weight: 0.5, pass: 'walkable', footprint: 0.2,
     layer: 'wall', tags: ['trap', 'wall-edge'], gameplay: ['damage'],
+    anchor: ['wall'], orient: 'face-open', sim: { encounter: 'trigger' },
   },
 
   // CAVE-IN: a heap of collapsed rubble blocking the passage, faceted into a few
@@ -212,7 +219,7 @@ export const TRAPS: PropDef[] = [
     ],
     kinds: ['rock'], themes: ['dungeon', 'mountain', 'cave'], role: 'accent',
     rotate: 'free', weight: 0.2, pass: 'solid', footprint: 0.55,
-    gameplay: ['barrier', 'destructible'],
+    gameplay: ['barrier', 'destructible'], anchor: ['boundary'],
   },
 
   // TAR PIT: a glossy black pool sunk in a stained apron, dull bubbles welling.

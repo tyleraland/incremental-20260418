@@ -65,6 +65,7 @@ export const FORAGING: PropDef[] = [
     kinds: ['bush'], themes: ['forest', 'plains'], role: 'cluster', rotate: 'upright',
     weight: 0.45, pass: 'solid', footprint: 0.34, tags: ['forage', 'seasonal'],
     gameplay: ['forage', 'harvestable'], clusterWith: ['wildberry'],
+    sim: { resource: { respawn: 'slow' }, statePair: 'wildberry_bare' },
   },
   // picked-clean state pair: same silhouette, no berries + two pinch notches.
   {
@@ -80,6 +81,7 @@ export const FORAGING: PropDef[] = [
     kinds: ['flower', 'bush'], themes: ['forest', 'cave', 'swamp'], role: 'understory', rotate: 'upright',
     weight: 0.4, pass: 'walkable', footprint: 0.2, tags: ['forage', 'fungus'],
     gameplay: ['forage', 'harvestable'], clusterWith: ['foragemush'],
+    sim: { resource: { respawn: 'slow' }, statePair: 'foragemush_bare' },
   },
   // picked state pair: caps gone, just three low cut stem stubs.
   {
@@ -99,6 +101,7 @@ export const FORAGING: PropDef[] = [
     kinds: ['flower'], themes: ['plains', 'forest'], role: 'field', rotate: 'upright',
     weight: 0.5, pass: 'walkable', footprint: 0.15, tags: ['forage', 'seasonal'],
     gameplay: ['forage', 'harvestable'], clusterWith: ['wildleek'],
+    sim: { resource: { respawn: 'slow' }, statePair: 'wildleek_bare' },
   },
   // pulled state pair: bulb gone (dark hole) + short cut blade stubs.
   {
@@ -116,7 +119,7 @@ export const FORAGING: PropDef[] = [
     paths: [...cutout(SHELL_D, 'sandLit', 'cream'), { d: SHELL_RIDGES, stroke: 'ink', sw: 0.025, opacity: 0.4 }],
     kinds: ['rock'], themes: ['beach', 'water'], role: 'field', rotate: 'flat', layer: 'ground',
     weight: 0.5, pass: 'walkable', footprint: 0.12, tags: ['forage', 'flat'],
-    gameplay: ['forage'],
+    gameplay: ['forage'], sim: { collect: true },
   },
 
   // DRIFTWOOD forage — bleached weathered log, end-bore, grain, a draped kelp strand.
@@ -130,7 +133,7 @@ export const FORAGING: PropDef[] = [
     ],
     kinds: ['stump'], themes: ['beach', 'water'], role: 'field', rotate: 'free', layer: 'ground',
     weight: 0.4, pass: 'solid', footprint: 0.3, tags: ['forage'],
-    gameplay: ['forage'],
+    gameplay: ['forage'], anchor: ['water-edge'], orient: 'along', sim: { collect: true },
   },
 
   // WILDFLOWER BED — low two-tone leaf mat spread with mixed blossom + gold blooms.
@@ -145,6 +148,7 @@ export const FORAGING: PropDef[] = [
     kinds: ['flower'], themes: ['plains', 'forest', 'mountain'], role: 'cluster', rotate: 'upright',
     weight: 0.45, pass: 'walkable', footprint: 0.22, tags: ['forage', 'seasonal'],
     gameplay: ['forage'], clusterWith: ['wildflowerbed'],
+    sim: { resource: { respawn: 'slow' } },
   },
 
   // HAZEL BUSH — leafy shrub hung with six pale-scarred hazelnuts.
@@ -158,6 +162,7 @@ export const FORAGING: PropDef[] = [
     kinds: ['bush'], themes: ['forest'], role: 'cluster', rotate: 'upright',
     weight: 0.4, pass: 'solid', footprint: 0.34, tags: ['forage', 'seasonal'],
     gameplay: ['forage', 'harvestable'], clusterWith: ['hazelbush'],
+    sim: { resource: { respawn: 'slow' }, statePair: 'hazelbush_bare' },
   },
   // stripped state pair: same shrub, nuts gone.
   {

@@ -148,7 +148,8 @@ export const FURNITURE: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['city', 'mountain', 'farm'], role: 'accent',
     rotate: 'upright', weight: 0.25, pass: 'solid', footprint: 0.5,
     near: ['wall'], gameplay: ['warm', 'cook'],
-    light: { color: 'ember', radius: 2 }, anim: true, tags: ['light', 'anim'] },
+    light: { color: 'ember', radius: 2 }, anim: true, tags: ['light', 'anim'],
+    sim: { statePair: 'hearth_cold' } },
   // HEARTH (cold): the SAME surround + firebox, embers out — a char core and
   // cold logs instead of the flame. State pair with `hearth`.
   { id: 'hearth_cold', size: 1, wonk: 0.03, paths: [
@@ -169,7 +170,8 @@ export const FURNITURE: PropDef[] = [
   ],
     kinds: ['tree', 'flower'], themes: ['city', 'dungeon', 'ruins'], role: 'edge',
     rotate: 'flat', layer: 'wall', weight: 0.4, pass: 'walkable', footprint: 0.3,
-    near: ['wall'], tags: ['cloth', 'wall-edge'] },
+    near: ['wall'], tags: ['cloth', 'wall-edge'],
+    anchor: ['wall'], orient: 'face-open', sim: { statePair: 'wallbanner_torn' } },
   // WALLBANNER (torn): the SAME bar, a ragged faded shorter cloth, fray ticks, no
   // emblem. State pair with `wallbanner`.
   { id: 'wallbanner_torn', size: 1, wonk: 0.045, paths: [
@@ -203,7 +205,7 @@ export const FURNITURE: PropDef[] = [
   ],
     kinds: ['rock', 'stump'], themes: ['city', 'dungeon'], role: 'field',
     rotate: 'free', weight: 0.45, pass: 'solid', footprint: 0.25,
-    near: ['wall'], tags: ['light'] },
+    near: ['wall'], tags: ['light'], sim: { statePair: 'floorlamp_lit' } },
   // FLOORLAMP (lit): the SAME shade, a warm lampGlow halo under it and a glowing
   // finial — light declared. State pair with `floorlamp`.
   { id: 'floorlamp_lit', size: 0.8, wonk: 0.03, paths: [

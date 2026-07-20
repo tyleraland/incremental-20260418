@@ -130,7 +130,7 @@ export const MARKET: PropDef[] = [
     ],
     kinds: ['tree', 'stump'], themes: ['city', 'village'], role: 'edge',
     rotate: 'upright', weight: 0.3, pass: 'solid', footprint: 0.3,
-    layer: 'wall', tags: ['grim', 'trade'],
+    layer: 'wall', tags: ['grim', 'trade'], anchor: ['wall'], orient: 'face-open',
   },
   {
     id: 'bakerycart', size: 1.05, wonk: 0.03,

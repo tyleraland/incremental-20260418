@@ -301,7 +301,7 @@ export const WORKING: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['village', 'river'], role: 'accent', rotate: 'upright',
     weight: 0.2, pass: 'solid', footprint: 0.5, tall: true, maxPerChunk: 1,
-    anim: true, tags: ['structure', 'anim'],
+    anim: true, tags: ['structure', 'anim'], sim: { statePair: 'waterwheel_turning' },
   },
   // WATER WHEEL (turning): the same wheel mid-spin — spokes swung a half-step,
   // motion arcs streaking the rim, splash kicked higher. State pair.
@@ -331,7 +331,7 @@ export const WORKING: PropDef[] = [
     ],
     kinds: ['tree', 'stump'], themes: ['village', 'plains'], role: 'accent', rotate: 'upright',
     weight: 0.2, pass: 'solid', footprint: 0.5, tall: true, maxPerChunk: 1,
-    anim: true, tags: ['structure', 'anim'],
+    anim: true, tags: ['structure', 'anim'], sim: { statePair: 'windmillsails_turning' },
   },
   // WINDMILL SAILS (turning): the cross swung a half-step with motion arcs
   // trailing the blade tips. State pair.

@@ -85,6 +85,7 @@ export const JUNGLE_FLORA: PropDef[] = [
     kinds: ['reed'], themes: ['jungle', 'city'], role: 'cluster', rotate: 'upright',
     weight: 0.6, pass: 'solid', footprint: 0.3, layer: 'ground', tall: true,
     tags: ['pole'], gameplay: ['harvestable'], clusterWith: ['bamboo'],
+    sim: { statePair: 'bamboo_cut', resource: { respawn: 'slow' } },
   },
   // BAMBOO_CUT — harvested state: same culms chopped to diagonal stubs, hollow tops.
   {
@@ -131,6 +132,8 @@ export const JUNGLE_FLORA: PropDef[] = [
     kinds: ['flower'], themes: ['jungle', 'arcane'], role: 'understory', rotate: 'free',
     weight: 0.3, pass: 'walkable', footprint: 0.18, layer: 'wall',
     tags: ['epiphyte'], gameplay: ['harvestable'], clusterWith: ['orchid'],
+    anchor: ['wall'], orient: 'face-open',
+    sim: { statePair: 'orchid_bare', resource: { respawn: 'slow' } },
   },
   // ORCHID_BARE — harvested state: same pads + roots, blooms plucked to nubs.
   {

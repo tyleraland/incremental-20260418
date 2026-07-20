@@ -202,7 +202,7 @@ export const HAG_WITCHERY: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['swamp', 'haunted', 'arcane'], role: 'accent',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.4, maxPerChunk: 2,
     gameplay: ['use', 'brew'], light: { color: 'ember', radius: 2 }, anim: true,
-    tags: ['workstation', 'light', 'anim'],
+    tags: ['workstation', 'light', 'anim'], sim: { statePair: 'cauldron_big_bubbling' },
   },
   // cauldron_big_bubbling (state): the same pot with a bubbling green brew in the
   // mouth and steam glowing above.
@@ -250,7 +250,7 @@ export const HAG_WITCHERY: PropDef[] = [
     ],
     kinds: ['flower', 'stump'], themes: ['swamp', 'haunted', 'arcane'], role: 'edge',
     rotate: 'upright', weight: 0.35, pass: 'walkable', footprint: 0.22, layer: 'wall',
-    tags: ['ominous', 'ward'],
+    tags: ['ominous', 'ward'], anchor: ['wall'], orient: 'face-open',
   },
 
   // POTIONSHELF: a cabinet of colored potion vials — search it. Furniture accent.
@@ -268,7 +268,7 @@ export const HAG_WITCHERY: PropDef[] = [
     ],
     kinds: ['stump', 'flower'], themes: ['haunted', 'arcane'], role: 'accent',
     rotate: 'upright', weight: 0.25, pass: 'solid', footprint: 0.35, maxPerChunk: 2,
-    gameplay: ['search'], tags: ['furniture'],
+    gameplay: ['search'], tags: ['furniture'], sim: { statePair: 'potionshelf_ransacked' },
   },
   // potionshelf_ransacked (state): the same cabinet ransacked — a sagging shelf,
   // shattered glass, a spilled stain, no vials.
@@ -313,7 +313,7 @@ export const HAG_WITCHERY: PropDef[] = [
     ],
     kinds: ['stump', 'tree'], themes: ['swamp', 'haunted'], role: 'accent',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.35, tall: true,
-    maxPerChunk: 2, tags: ['ominous', 'grim'],
+    maxPerChunk: 2, tags: ['ominous', 'grim'], sim: { statePair: 'crowcage_open' },
   },
   // crowcage_open (state): the cage door swung open, the occupant gone — a stray
   // feather left below.
@@ -347,6 +347,7 @@ export const HAG_WITCHERY: PropDef[] = [
     rotate: 'upright', weight: 0.4, pass: 'solid', footprint: 0.3,
     gameplay: ['forage'], light: { color: 'glowFungus', radius: 1.6 },
     tags: ['forage', 'fungus', 'glow'], clusterWith: ['mushroomgarden'],
+    sim: { resource: { respawn: 'slow' }, statePair: 'mushroomgarden_picked' },
   },
   // mushroomgarden_picked (state): the caps harvested — cut stubs on the same
   // mound, no glow.
@@ -373,6 +374,7 @@ export const HAG_WITCHERY: PropDef[] = [
     kinds: ['flower', 'bush'], themes: ['swamp', 'haunted', 'arcane'], role: 'cluster',
     rotate: 'upright', weight: 0.45, pass: 'solid', footprint: 0.3,
     gameplay: ['forage'], tags: ['fungus', 'fae'], clusterWith: ['toadstoolbed'],
+    sim: { resource: { respawn: 'slow' } },
   },
 
   // SCRYINGPOOL: a stone basin of dark water reflecting arcane light — scry it. A
@@ -391,7 +393,7 @@ export const HAG_WITCHERY: PropDef[] = [
     kinds: ['flower', 'rock'], themes: ['swamp', 'haunted', 'arcane'], role: 'accent',
     rotate: 'free', weight: 0.2, pass: 'solid', footprint: 0.4, layer: 'ground',
     maxPerChunk: 2, gameplay: ['scry'], light: { color: 'arcaneGlow', radius: 2 },
-    anim: true, tags: ['water-surface', 'glow', 'anim'],
+    anim: true, tags: ['water-surface', 'glow', 'anim'], sim: { mystery: true },
   },
 
   // WITCHEFFIGY: a bound straw figure on a stake with a stitched face — trigger it.
@@ -411,6 +413,7 @@ export const HAG_WITCHERY: PropDef[] = [
     kinds: ['tree', 'stump'], themes: ['swamp', 'haunted'], role: 'accent',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.38, tall: true,
     maxPerChunk: 2, gameplay: ['trigger'], tags: ['ominous', 'ritual'],
+    sim: { encounter: 'trigger', statePair: 'witcheffigy_burned' },
   },
   // witcheffigy_burned (state): the effigy set alight — charred straw, embers and
   // a warm halo.
@@ -438,7 +441,7 @@ export const HAG_WITCHERY: PropDef[] = [
     ],
     kinds: ['flower'], themes: ['haunted', 'arcane'], role: 'field',
     rotate: 'flat', weight: 0.4, pass: 'walkable', footprint: 0.35, layer: 'ground',
-    maxPerChunk: 3, tags: ['ward', 'flat'],
+    maxPerChunk: 3, tags: ['ward', 'flat'], sim: { mystery: true, statePair: 'saltcircle_broken' },
   },
   // saltcircle_broken (state): the ring smeared and broken — an open arc, salt
   // scattered, the sigil gone inert.
@@ -467,7 +470,7 @@ export const HAG_WITCHERY: PropDef[] = [
     ],
     kinds: ['tree', 'stump'], themes: ['swamp', 'haunted', 'jungle'], role: 'accent',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.38, tall: true,
-    maxPerChunk: 2, tags: ['ominous', 'ward'],
+    maxPerChunk: 2, tags: ['ominous', 'ward'], sim: { mystery: true },
   },
 
   // SPELLBOOK: an open grimoire glowing with arcane runes — read or loot it. Lore
@@ -484,6 +487,7 @@ export const HAG_WITCHERY: PropDef[] = [
     kinds: ['stump', 'flower'], themes: ['haunted', 'arcane'], role: 'field',
     rotate: 'free', weight: 0.3, pass: 'walkable', footprint: 0.28,
     gameplay: ['read', 'lootable', 'search'], tags: ['lore', 'arcane'],
+    sim: { collect: true, statePair: 'spellbook_taken' },
   },
   // spellbook_taken (state): the book closed and inert — a clasped leather cover,
   // no pages, no glow.
@@ -508,7 +512,7 @@ export const HAG_WITCHERY: PropDef[] = [
     ],
     kinds: ['rock', 'flower'], themes: ['haunted', 'arcane'], role: 'field',
     rotate: 'free', weight: 0.4, pass: 'solid', footprint: 0.28,
-    tags: ['light', 'anim'],
+    tags: ['light', 'anim'], sim: { statePair: 'candlecluster_lit' },
   },
   // candlecluster_lit (state): the candles kindled — flames on every wick and a
   // warm halo beneath.

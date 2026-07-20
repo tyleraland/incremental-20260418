@@ -98,7 +98,7 @@ export const ARTISAN: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['city', 'mountain'], role: 'field', rotate: 'upright',
     weight: 0.35, pass: 'solid', footprint: 0.42, layer: 'ground', maxPerChunk: 2,
     tags: ['workstation', 'light', 'glow'], gameplay: ['use', 'smelt'],
-    light: { color: 'ember', radius: 1.6 } },
+    light: { color: 'ember', radius: 1.6 }, sim: { statePair: 'furnace_lit' } },
   // furnace_lit — same block, fully fired: brighter mouth + white-hot core
   { id: 'furnace_lit', size: 1.05, wonk: 0.03, paths: [
       { d: glowHalo(0.54, 0, 0.16), fill: 'ember', opacity: 0.42 },
@@ -122,7 +122,7 @@ export const ARTISAN: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['city', 'village', 'mountain', 'volcanic'], role: 'accent', rotate: 'upright',
     weight: 0.22, pass: 'solid', footprint: 0.4, layer: 'ground', maxPerChunk: 2,
     tags: ['workstation', 'light', 'glow'], gameplay: ['use', 'craft'],
-    light: { color: 'ember', radius: 1.8 } },
+    light: { color: 'ember', radius: 1.8 }, sim: { statePair: 'forge_cold' } },
   // forge_cold — banked hearth: dead coals, no glow, a pale ash fleck
   { id: 'forge_cold', size: 1, wonk: 0.035, paths: [
       { d: FORGE_BELLOWS, fill: 'woodDeep' },
@@ -152,7 +152,7 @@ export const ARTISAN: PropDef[] = [
     ],
     kinds: ['stump', 'rock'], themes: ['city', 'farm'], role: 'field', rotate: 'free',
     weight: 0.5, pass: 'solid', footprint: 0.28, layer: 'ground',
-    tags: ['workstation'], gameplay: ['use', 'process'] },
+    tags: ['workstation'], gameplay: ['use', 'process'], sim: { statePair: 'jar_full' } },
   // jar_full — same jar brimming with red preserves
   { id: 'jar_full', size: 0.85, wonk: 0.03, paths: [
       ...cutout(JAR_BODY, 'woodDeep', 'woodLight'),
@@ -172,7 +172,7 @@ export const ARTISAN: PropDef[] = [
     ],
     kinds: ['stump'], themes: ['city', 'village', 'farm'], role: 'field', rotate: 'free',
     weight: 0.5, pass: 'solid', footprint: 0.3, layer: 'ground',
-    tags: ['workstation'], gameplay: ['use', 'process'] },
+    tags: ['workstation'], gameplay: ['use', 'process'], sim: { statePair: 'keg_full' } },
   // keg_full — same keg brimming with amber ale + froth
   { id: 'keg_full', size: 0.9, wonk: 0.03, paths: [
       ...cutout(KEG_BODY, 'woodDeep', 'wood'),
@@ -218,7 +218,7 @@ export const ARTISAN: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['swamp', 'haunted', 'city'], role: 'field', rotate: 'free',
     weight: 0.4, pass: 'solid', footprint: 0.38, layer: 'ground', maxPerChunk: 2,
     tags: ['workstation', 'light', 'glow', 'anim'], gameplay: ['use', 'brew'],
-    light: { color: 'glowFungus', radius: 1.5 }, anim: true },
+    light: { color: 'glowFungus', radius: 1.5 }, anim: true, sim: { statePair: 'cauldron_bubbling' } },
   // cauldron_bubbling — same pot boiling over: bright brew + frothing bubbles
   { id: 'cauldron_bubbling', size: 0.95, wonk: 0.035, paths: [
       { d: glowHalo(0.5), fill: 'glowFungus', opacity: 0.42 },
@@ -254,7 +254,7 @@ export const ARTISAN: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['forest', 'city'], role: 'field', rotate: 'free',
     weight: 0.4, pass: 'solid', footprint: 0.42, layer: 'ground', maxPerChunk: 2,
     tags: ['workstation', 'light', 'glow'], gameplay: ['use', 'process'],
-    light: { color: 'ember', radius: 1.4 } },
+    light: { color: 'ember', radius: 1.4 }, sim: { statePair: 'kiln_lit' } },
   // kiln_lit — same dome burning down: bright vent + white-hot heart
   { id: 'kiln_lit', size: 1.05, wonk: 0.04, paths: [
       { d: glowHalo(0.46), fill: 'ember', opacity: 0.4 },
@@ -277,7 +277,7 @@ export const ARTISAN: PropDef[] = [
     ],
     kinds: ['stump'], themes: ['farm', 'forest', 'plains'], role: 'field', rotate: 'upright',
     weight: 0.45, pass: 'solid', footprint: 0.3, layer: 'ground',
-    tags: ['workstation'], gameplay: ['harvestable', 'forage'] },
+    tags: ['workstation'], gameplay: ['harvestable', 'forage'], sim: { resource: { respawn: 'slow' } } },
 
   // ── TAP TREE (maple tapper — harvestable, no state) ──
   { id: 'taptree', size: 1.15, wonk: 0.05, paths: [
@@ -291,5 +291,5 @@ export const ARTISAN: PropDef[] = [
     ],
     kinds: ['tree'], themes: ['forest', 'farm'], role: 'accent', rotate: 'upright',
     weight: 0.22, pass: 'solid', footprint: 0.5, layer: 'ground', tall: true, maxPerChunk: 2,
-    tags: ['workstation'], gameplay: ['harvestable'] },
+    tags: ['workstation'], gameplay: ['harvestable'], sim: { resource: { respawn: 'slow' } } },
 ]

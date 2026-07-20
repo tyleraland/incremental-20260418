@@ -91,7 +91,7 @@ export const FAITH: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['village', 'haunted'], role: 'cluster',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.2,
-    clusterWith: ['gravecross', 'gravestone_var'], tags: ['grim'],
+    clusterWith: ['gravecross', 'gravestone_var'], tags: ['grim'], sim: { lore: true },
   },
   {
     id: 'gravestone_var', size: 0.85, wonk: 0.03,
@@ -103,7 +103,7 @@ export const FAITH: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['village', 'haunted'], role: 'cluster',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.22,
-    clusterWith: ['gravestone_var', 'gravecross'], tags: ['grim'],
+    clusterWith: ['gravestone_var', 'gravecross'], tags: ['grim'], sim: { lore: true },
   },
   {
     id: 'lychgate', size: 1.15, wonk: 0.03,
@@ -116,7 +116,7 @@ export const FAITH: PropDef[] = [
     ],
     kinds: ['stump', 'tree'], themes: ['village', 'haunted'], role: 'accent',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.5, tall: true,
-    tags: ['structure', 'holy'],
+    tags: ['structure', 'holy'], anchor: ['entrance'],
   },
   {
     id: 'shrine_wayside', size: 0.95, wonk: 0.03,
@@ -127,7 +127,7 @@ export const FAITH: PropDef[] = [
     ],
     kinds: ['rock', 'flower'], themes: ['village', 'plains', 'mountain'],
     role: 'accent', rotate: 'upright', weight: 0.25, pass: 'solid', footprint: 0.3,
-    gameplay: ['pray'], tags: ['holy', 'social'],
+    gameplay: ['pray'], tags: ['holy', 'social'], sim: { mystery: true },
   },
   {
     id: 'tombslab', size: 1.1, wonk: 0.03,
@@ -139,7 +139,7 @@ export const FAITH: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['village', 'ruins', 'haunted'],
     role: 'accent', rotate: 'upright', weight: 0.3, pass: 'solid', footprint: 0.4,
-    gameplay: ['search'], tags: ['grim', 'lore'],
+    gameplay: ['search'], tags: ['grim', 'lore'], sim: { lore: true, statePair: 'tombslab_ajar' },
   },
   // state pair — same ledger stone, lid slid ajar over an exposed grave void.
   {

@@ -77,6 +77,7 @@ export const VOLCANIC_FLORA: PropDef[] = [
     weight: 0.4, pass: 'walkable', footprint: 0.15, layer: 'ground',
     gameplay: ['harvestable'], light: { color: 'ember', radius: 1.5 }, anim: true,
     tags: ['glow'], maxPerChunk: 4,
+    sim: { statePair: 'firelily_spent', resource: { respawn: 'slow' } },
   },
   // FIRELILY_SPENT: harvested state — same stem + strap leaves, bloom snipped off
   // (no crown, no throat, no glow); a small cut nub caps the stem.

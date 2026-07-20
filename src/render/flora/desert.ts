@@ -113,6 +113,7 @@ export const DESERT_FLORA: PropDef[] = [
     kinds: ['flower'], themes: ['desert'], role: 'field', rotate: 'upright',
     weight: 0.4, layer: 'ground', pass: 'walkable', footprint: 0.15,
     tags: ['ephemeral'], gameplay: ['harvestable'], clusterWith: ['desertbloom'],
+    sim: { statePair: 'desertbloom_bare', resource: { respawn: 'slow' } },
   },
   // DESERT BLOOM (spent) — state pair: same stem + leaves, flower gone, a green
   // seed capsule left where the bloom was.

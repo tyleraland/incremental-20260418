@@ -77,6 +77,7 @@ export const LORE: PropDef[] = [
     kinds: ['flower', 'rock'], themes: ['dungeon', 'desert', 'haunted'], role: 'field',
     rotate: 'upright', weight: 0.4, pass: 'walkable', footprint: 0.3,
     tags: ['lore', 'grim'], gameplay: ['search'],
+    sim: { lore: true },
   },
   // BATTLEDEBRIS — a cracked shield, snapped sword + spear, a helm. field, lootable.
   {
@@ -94,6 +95,7 @@ export const LORE: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['plains', 'ruins'], role: 'field',
     rotate: 'free', weight: 0.4, pass: 'walkable', footprint: 0.35,
     tags: ['lore'], gameplay: ['lootable'],
+    sim: { lore: true },
   },
   // BROKENCART — an overturned plank bed, one spoked wheel, a smashed wheel. accent.
   {
@@ -110,6 +112,7 @@ export const LORE: PropDef[] = [
     kinds: ['stump', 'rock'], themes: ['plains', 'forest', 'ruins'], role: 'accent',
     rotate: 'free', weight: 0.25, pass: 'solid', footprint: 0.45,
     tags: ['lore'], gameplay: ['search'],
+    sim: { lore: true },
   },
   // SHIPWRECK — a beached broken hull, exposed ribs, an open hold, a mast stub. accent.
   {
@@ -124,6 +127,7 @@ export const LORE: PropDef[] = [
     kinds: ['stump', 'tree'], themes: ['beach', 'water', 'swamp'], role: 'accent',
     rotate: 'free', weight: 0.22, pass: 'solid', footprint: 0.55,
     tags: ['lore'], gameplay: ['search', 'lootable'],
+    sim: { lore: true },
   },
   // SCORCHMARK — a flat burnt decal (charred fringe, scorched core, ember flecks). field.
   {
@@ -136,6 +140,7 @@ export const LORE: PropDef[] = [
     kinds: ['flower'], themes: ['plains', 'volcanic', 'ruins'], role: 'field',
     rotate: 'flat', weight: 0.5, pass: 'walkable', footprint: 0.3,
     tags: ['lore', 'flat'],
+    sim: { lore: true },
   },
   // BONEPILE — a heaped tangle of long bones topped by a skull. field lore,
   // lootable. Themes carry swamp + haunted so the hag-witchery group can defer to
@@ -153,6 +158,7 @@ export const LORE: PropDef[] = [
     kinds: ['rock', 'stump'], themes: ['dungeon', 'haunted', 'swamp'], role: 'field',
     rotate: 'free', weight: 0.35, pass: 'solid', footprint: 0.35,
     tags: ['lore', 'grim'], gameplay: ['lootable'],
+    sim: { lore: true },
   },
   // NOTE: `bedroll` (the abandonedcamp SCATTER_SET member) is authored by the
   // furniture group (setpieces/furniture.ts) — a complete camp bedroll with the

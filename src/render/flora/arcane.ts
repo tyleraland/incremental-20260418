@@ -74,6 +74,7 @@ export const ARCANE_FLORA: PropDef[] = [
     weight: 0.3, pass: 'solid', footprint: 0.3, layer: 'ground',
     tags: ['glow', 'crystal'], gameplay: ['harvestable'], clusterWith: ['crystalbloom'],
     light: { color: 'arcaneGlow', radius: 2 }, maxPerChunk: 3,
+    sim: { statePair: 'crystalbloom_spent', resource: { respawn: 'slow' } },
   },
   // crystalbloom_spent — same rock base, shards snapped to stumps, glow gone.
   {
@@ -112,6 +113,7 @@ export const ARCANE_FLORA: PropDef[] = [
     weight: 0.3, pass: 'walkable', footprint: 0.2, layer: 'ground',
     anim: true, tags: ['glow', 'pulse'], gameplay: ['harvestable'], clusterWith: ['manaflower'],
     light: { color: 'arcaneGlow', radius: 2 }, maxPerChunk: 3,
+    sim: { statePair: 'manaflower_spent', resource: { respawn: 'slow' } },
   },
   // manaflower_spent — same stem + leaves, bloom closed to a seed nub, no glow.
   {

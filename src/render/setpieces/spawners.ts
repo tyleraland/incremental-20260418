@@ -70,7 +70,7 @@ export const SPAWNERS: PropDef[] = [
     kinds: ['rock'], themes: ['dungeon', 'haunted', 'cave'], role: 'accent', rotate: 'free',
     weight: 0.2, pass: 'solid', footprint: 0.45, layer: 'ground',
     tags: ['enemy', 'glow'], gameplay: ['spawn'], light: { color: 'arcaneGlow', radius: 2 },
-    maxPerChunk: 2,
+    maxPerChunk: 2, sim: { encounter: 'spawner', statePair: 'spawner_dead' },
   },
   // SPAWNER (dead): same maw + pit, glow snuffed to a cold cracked core.
   {
@@ -95,6 +95,7 @@ export const SPAWNERS: PropDef[] = [
     kinds: ['flower', 'rock'], themes: ['cave', 'swamp', 'desert'], role: 'field', rotate: 'free',
     weight: 0.5, pass: 'solid', footprint: 0.3, layer: 'ground',
     tags: ['enemy'], gameplay: ['spawn', 'destructible'],
+    sim: { encounter: 'spawner', statePair: 'clutch_hatched' },
   },
   // EGG CLUTCH (hatched): same nest, eggs dulled to empty shells with dark mouths.
   {
@@ -120,6 +121,7 @@ export const SPAWNERS: PropDef[] = [
     kinds: ['flower', 'bush'], themes: ['cave', 'forest', 'dungeon'], role: 'edge', rotate: 'free',
     weight: 0.5, pass: 'solid', footprint: 0.35, layer: 'ground',
     tags: ['enemy', 'web'], gameplay: ['spawn'],
+    anchor: ['corner'], sim: { encounter: 'spawner', statePair: 'nest_cleared' },
   },
   // SPIDER NEST (cleared): the sac gone, only torn silk strands left.
   {
@@ -144,6 +146,7 @@ export const SPAWNERS: PropDef[] = [
     kinds: ['bush'], themes: ['forest', 'jungle'], role: 'accent', rotate: 'upright',
     weight: 0.2, pass: 'solid', footprint: 0.35, layer: 'ground',
     tags: ['enemy'], gameplay: ['spawn', 'destructible'],
+    sim: { encounter: 'spawner' },
   },
 
   // BLIGHT: a spreading corruption patch, sickly glowFungus spores welling through
@@ -159,6 +162,7 @@ export const SPAWNERS: PropDef[] = [
     weight: 0.5, pass: 'walkable', footprint: 0.3, layer: 'ground',
     tags: ['corrupt', 'glow', 'anim'], gameplay: ['spread', 'hazard'],
     light: { color: 'glowFungus', radius: 2 }, anim: true,
+    sim: { statePair: 'blight_cleansed' },
   },
   // BLIGHT (cleansed): same footprint scoured to bleached earth with moss recovery.
   {

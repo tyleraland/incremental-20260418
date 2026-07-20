@@ -71,6 +71,7 @@ export const FOREST_FLORA: PropDef[] = [
     kinds: ['flower', 'bush'], themes: ['forest', 'swamp'], role: 'understory',
     rotate: 'upright', weight: 0.5, pass: 'walkable', footprint: 0.15, layer: 'ground',
     tags: ['spiral', 'root'], gameplay: ['harvestable'], clusterWith: ['fiddlehead'],
+    sim: { statePair: 'fiddlehead_bare', resource: { respawn: 'slow' } },
   },
   // fiddlehead_bare — cut stalks, coil picked (state pair)
   {
@@ -103,6 +104,8 @@ export const FOREST_FLORA: PropDef[] = [
     kinds: ['bush'], themes: ['forest', 'swamp'], role: 'understory',
     rotate: 'upright', weight: 0.5, pass: 'walkable', footprint: 0.25, layer: 'wall',
     tags: ['fungus'], gameplay: ['harvestable'], clusterWith: ['shelffungus'],
+    anchor: ['wall'], orient: 'face-open',
+    sim: { statePair: 'shelffungus_bare', resource: { respawn: 'slow' } },
   },
   // shelffungus_bare — brackets cut, wall scar nubs remain (state pair)
   {

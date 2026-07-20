@@ -40,6 +40,7 @@ export const WETLAND_FLORA: PropDef[] = [
     kinds: ['reed'], themes: ['swamp', 'water'], role: 'edge', rotate: 'upright',
     weight: 0.7, pass: 'walkable', footprint: 0.18, layer: 'water-surface',
     near: ['water'], clusterWith: ['cattail'], tags: ['wetland', 'reed'],
+    anchor: ['water-edge'], orient: 'along',
   },
 
   // PITCHER PLANT — carnivorous understory. Signature: the trumpet tubes + mouths.
@@ -67,6 +68,7 @@ export const WETLAND_FLORA: PropDef[] = [
     kinds: ['reed'], themes: ['swamp', 'water', 'desert'], role: 'edge', rotate: 'upright',
     weight: 0.5, pass: 'walkable', footprint: 0.2, layer: 'water-surface',
     near: ['water'], clusterWith: ['papyrus'], tags: ['wetland', 'reed'],
+    anchor: ['water-edge'], orient: 'along',
   },
 
   // MANGROVE — accent tree on the water surface. Signature: arching stilt roots.
@@ -81,5 +83,6 @@ export const WETLAND_FLORA: PropDef[] = [
     kinds: ['tree'], themes: ['swamp', 'beach'], role: 'accent', rotate: 'upright',
     weight: 0.3, pass: 'overhang', footprint: 0.45, layer: 'water-surface',
     near: ['water'], tall: true, clusterWith: ['mangrove'], tags: ['stilt'],
+    anchor: ['water-edge'],
   },
 ]

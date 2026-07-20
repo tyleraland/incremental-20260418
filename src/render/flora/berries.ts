@@ -47,6 +47,7 @@ export const BERRIES: PropDef[] = [
     kinds: ['bush'], themes: ['forest', 'plains', 'mountain'], role: 'cluster',
     rotate: 'upright', weight: 0.5, layer: 'ground', pass: 'solid', footprint: 0.35,
     tags: ['fruit'], gameplay: ['harvestable'], clusterWith: ['blueberry'],
+    sim: { statePair: 'blueberry_bare', resource: { respawn: 'slow' } },
   },
   // BLUEBERRY_BARE — state pair: same silhouette, berries plucked; two faint
   // foliageDeep nub ticks stand in for the picked-clean gaps.
@@ -82,7 +83,7 @@ export const BERRIES: PropDef[] = [
     ],
     kinds: ['bush'], themes: ['plains', 'farm', 'city'], role: 'edge',
     rotate: 'upright', weight: 0.6, layer: 'ground', pass: 'solid', footprint: 0.4,
-    tags: ['fence', 'row'], clusterWith: ['hedgerow'],
+    tags: ['fence', 'row'], clusterWith: ['hedgerow'], join: 'run',
   },
 
   // GOOSEBERRY — broad low mound with pale tileMoss berries (larger/greener than
@@ -96,6 +97,7 @@ export const BERRIES: PropDef[] = [
     kinds: ['bush'], themes: ['forest', 'plains'], role: 'cluster',
     rotate: 'upright', weight: 0.4, layer: 'ground', pass: 'solid', footprint: 0.3,
     tags: ['fruit'], gameplay: ['harvestable'], clusterWith: ['gooseberry'],
+    sim: { statePair: 'gooseberry_bare', resource: { respawn: 'slow' } },
   },
   // GOOSEBERRY_BARE — state pair: same mound, berries gone; faint pick ticks.
   {

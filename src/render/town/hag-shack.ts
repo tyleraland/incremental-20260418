@@ -111,7 +111,7 @@ export const HAG_SHACK: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['swamp', 'haunted'], role: 'accent',
     rotate: 'upright', weight: 0.25, pass: 'walkable', footprint: 0.25, layer: 'ground', tall: true,
-    tags: ['ominous', 'roof'],
+    tags: ['ominous', 'roof'], sim: { statePair: 'crookedchimney_smoke' },
   },
   // chimney smoking: the same crooked stack with a drifting soot plume (anim).
   {
@@ -160,7 +160,7 @@ export const HAG_SHACK: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['swamp', 'haunted'], role: 'edge',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.3, layer: 'ground',
-    tags: ['fence', 'grim'],
+    tags: ['fence', 'grim'], join: 'run',
   },
 
   // ── ward post (yard field prop) ─────────────────────────────────────────────
@@ -177,7 +177,7 @@ export const HAG_SHACK: PropDef[] = [
     ],
     kinds: ['tree', 'stump'], themes: ['swamp', 'haunted', 'arcane'], role: 'field',
     rotate: 'upright', weight: 0.35, pass: 'solid', footprint: 0.2, layer: 'ground', tall: true,
-    tags: ['ominous', 'ward'],
+    tags: ['ominous', 'ward'], sim: { mystery: true },
   },
 
   // ── crooked sign (wall-edge, read) ──────────────────────────────────────────
@@ -194,7 +194,7 @@ export const HAG_SHACK: PropDef[] = [
     ],
     kinds: ['tree'], themes: ['swamp', 'haunted'], role: 'edge',
     rotate: 'upright', weight: 0.3, pass: 'walkable', footprint: 0.2, layer: 'wall', tall: true,
-    gameplay: ['read'], tags: ['ominous', 'sign'],
+    gameplay: ['read'], tags: ['ominous', 'sign'], anchor: ['wall'], orient: 'face-open',
   },
 
   // ── rickety porch (structure accent) ────────────────────────────────────────

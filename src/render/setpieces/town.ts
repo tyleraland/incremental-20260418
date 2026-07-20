@@ -98,7 +98,8 @@ export const TOWN: PropDef[] = [
     ],
     kinds: ['stump', 'rock'], themes: ['city', 'farm', 'plains'], role: 'field',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.2,
-    gameplay: ['read'], tags: ['social'],
+    gameplay: ['read'], tags: ['social'], anchor: ['path-edge'],
+    sim: { statePair: 'mailbox_flag' },
   },
   // MAILBOX_FLAG — state pair: same box, flag RAISED (mail waiting).
   {
@@ -124,7 +125,7 @@ export const TOWN: PropDef[] = [
     ],
     kinds: ['tree', 'stump'], themes: ['city', 'village', 'farm'], role: 'edge',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.25,
-    gameplay: ['read', 'quest'], tags: ['social'],
+    gameplay: ['read', 'quest'], tags: ['social'], anchor: ['path-edge'],
   },
   // FESTIVAL STALL — counter under a festive canopy strung with bunting flags.
   {
@@ -167,7 +168,7 @@ export const TOWN: PropDef[] = [
     ],
     kinds: ['stump', 'rock'], themes: ['city'], role: 'field',
     rotate: 'upright', weight: 0.5, pass: 'solid', footprint: 0.2,
-    gameplay: ['search'], tags: ['social'],
+    gameplay: ['search'], tags: ['social'], anchor: ['path-edge'],
   },
   // STREET LAMP — iron post + lantern, UNLIT (base state).
   {
@@ -181,7 +182,8 @@ export const TOWN: PropDef[] = [
     ],
     kinds: ['rock', 'stump'], themes: ['city'], role: 'accent',
     rotate: 'upright', weight: 0.2, pass: 'solid', footprint: 0.18,
-    tall: true, tags: ['light'],
+    tall: true, tags: ['light'], anchor: ['path-edge'],
+    series: { along: 'path', spacing: [4, 7] }, sim: { statePair: 'streetlamp_lit' },
   },
   // STREETLAMP_LIT — state pair: lantern glass glowing + warm halo.
   {
