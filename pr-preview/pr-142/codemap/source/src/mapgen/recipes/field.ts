@@ -10,7 +10,7 @@
 // Dungeon (graph-first) and city (road-first) are sibling recipes over this
 // same pipeline; they share the bake/validate tail unchanged.
 
-import type { ProficiencyTag, ScatterIntent, ScatterKind, SurfaceMaterial } from '../types'
+import type { BarrierMaterial, MapgenTuning, ProficiencyTag, ScatterIntent, ScatterKind, SurfaceMaterial, ThemeTag } from '../types'
 import type { PassCtx, RecipeDef } from '../pipeline'
 import type { Rng } from '../rng'
 import { addBarrier, addPoi, isPlaceable, matAt, paint } from '../draft'
@@ -20,17 +20,207 @@ import { occupancyGrid } from '../validate'
 import { tacticalProfile } from '../profile'
 import { premisePass } from '../naming'
 
+// ── THEME_PROFILES — every theme tag's generation levers, as data (§G) ───────
+// One table drives the surface palette, the hydrology invitations, the outcrop
+// mass, and the scatter character — so EVERY tag moves geometry (not just
+// naming) and combinations compose without per-theme branches in the passes:
+//   · palette   — surface base + threshold bands (evaluated in order, later
+//     band wins; `dial` marks the band the meadow/barren tuning dials move).
+//     A theme without a palette inherits the plains look (forest is hedges +
+//     lush scatter, not a recolor). When SEVERAL selected themes carry a
+//     palette, the map ZONES by normalized elevation in params.themes order —
+//     the first theme takes the low ground. Palettes may paint shallow-water
+//     (walkable, coherence-safe) but never deep-water: deep surface cells must
+//     be covered by deep-water rects (the water-coherence rule), and only
+//     hydrology/river build those.
+//   · lake / river — which water passes the theme invites (the gates the old
+//     `includes('water')` special cases hardcoded). Hydrology stays water|beach.
+//   · outcrops — density multiplier, wall material, the forest hedge coin.
+//   · scatter  — density multiplier, kind remaps (how "no flowers" is said),
+//     clump-count multiplier / forced clump kind (orchards).
+// Combination semantics: features UNION (each theme's flags fire
+// independently); multipliers MULTIPLY; material/coin/remap overrides merge
+// first-wins in params.themes order.
+// Byte-compat: plains / forest / desert / water / beach-geometry reproduce the
+// pre-profile branches exactly — same thresholds, same RNG draw order.
+interface PaletteBand {
+  mat: SurfaceMaterial
+  above?: number              // fires when the field value > threshold…
+  below?: number              // …or < threshold (exactly one of the two)
+  field?: 'elevation' | 'roughness'   // sampling field; default moisture
+  dial?: 'meadow' | 'barren'  // which tuning threshold overrides this band
+}
+interface ThemePalette {
+  base: SurfaceMaterial
+  bands: PaletteBand[]
+  stripes?: { mat: SurfaceMaterial; period: number; width: number }  // furrow columns (farm)
+}
+export interface ThemeProfile {
+  palette?: ThemePalette
+  lake?: boolean
+  river?: boolean
+  outcrops?: { mult?: number; wallMaterial?: BarrierMaterial; hedgeChance?: number }
+  scatter?: {
+    mult?: number
+    remap?: Partial<Record<ScatterKind, ScatterKind>>
+    clumpCountMult?: number
+    clumpKind?: ScatterKind
+  }
+}
+
+const PLAINS_PALETTE: ThemePalette = {
+  base: 'grass',
+  bands: [
+    { mat: 'meadow', above: 0.68, dial: 'meadow' },
+    { mat: 'dirt', below: 0.3, dial: 'barren' },
+  ],
+}
+const plainsPlus = (extra: PaletteBand[]): ThemePalette =>
+  ({ base: PLAINS_PALETTE.base, bands: [...PLAINS_PALETTE.bands, ...extra] })
+
+export const THEME_PROFILES: Partial<Record<ThemeTag, ThemeProfile>> = {
+  plains: { palette: PLAINS_PALETTE },
+  water: { lake: true, river: true },
+  // a beach is coastline, not a valley: lake + dune fringe, no river
+  beach: { lake: true, palette: { base: 'grass', bands: [{ mat: 'meadow', above: 0.68, dial: 'meadow' }, { mat: 'sand', below: 0.38, dial: 'barren' }] } },
+  river: { river: true },
+  forest: { outcrops: { hedgeChance: 0.35 }, scatter: { mult: 1.6 } },
+  desert: {
+    palette: { base: 'sand', bands: [{ mat: 'dirt', below: 0.42, dial: 'barren' }] },
+    scatter: { mult: 0.4 },
+  },
+  volcanic: {
+    palette: { base: 'ash', bands: [{ mat: 'lava', above: 0.78, dial: 'meadow' }, { mat: 'gravel', below: 0.3, dial: 'barren' }] },
+    outcrops: { mult: 1.3 },
+    scatter: { mult: 0.5, remap: { flower: 'rock', tree: 'stump' } },
+  },
+  snow: {
+    palette: { base: 'snow', bands: [{ mat: 'dirt', below: 0.3, dial: 'barren' }] },
+    scatter: { mult: 0.6, remap: { flower: 'rock' } },
+  },
+  tundra: {
+    palette: { base: 'gravel', bands: [{ mat: 'snow', above: 0.6, dial: 'meadow' }, { mat: 'dirt', below: 0.25, dial: 'barren' }] },
+    scatter: { mult: 0.4, remap: { flower: 'bush', tree: 'bush' } },
+  },
+  swamp: {
+    palette: { base: 'grass', bands: [{ mat: 'dirt', below: 0.3, dial: 'barren' }, { mat: 'bog', above: 0.55, dial: 'meadow' }, { mat: 'shallow-water', above: 0.82 }] },
+    scatter: { mult: 1.2, remap: { flower: 'reed' } },
+  },
+  jungle: {
+    palette: { base: 'grass', bands: [{ mat: 'meadow', above: 0.45, dial: 'meadow' }, { mat: 'dirt', below: 0.15, dial: 'barren' }] },
+    scatter: { mult: 1.9, remap: { flower: 'bush' } },
+  },
+  mountain: {
+    palette: plainsPlus([{ mat: 'gravel', above: 0.7, field: 'elevation' }]),
+    outcrops: { mult: 1.8 },
+  },
+  ruins: {
+    palette: plainsPlus([{ mat: 'stone-floor', above: 0.62, field: 'roughness' }]),
+    outcrops: { wallMaterial: 'rubble' },
+  },
+  haunted: {
+    palette: { base: 'dirt', bands: [{ mat: 'ash', below: 0.3, dial: 'barren' }] },
+    scatter: { mult: 0.8, remap: { flower: 'stump' } },
+  },
+  arcane: {
+    palette: plainsPlus([{ mat: 'stone-floor', above: 0.72, field: 'roughness' }]),
+    scatter: { remap: { bush: 'flower' } },
+  },
+  farm: {
+    palette: { base: 'grass', bands: [{ mat: 'meadow', above: 0.55, dial: 'meadow' }], stripes: { mat: 'dirt', period: 7, width: 2 } },
+    scatter: { remap: { tree: 'bush' } },
+  },
+  // mult 1.15: the clump cap saturates on lush seeds, so the count multiplier
+  // alone can bake plains-identical — the density bump keeps the tag a lever
+  orchard: { scatter: { mult: 1.15, clumpCountMult: 1.8, clumpKind: 'tree' } },
+  cave: {
+    palette: { base: 'dirt', bands: [{ mat: 'gravel', above: 0.55, field: 'roughness' }] },
+    outcrops: { mult: 1.5 },
+  },
+  village: { outcrops: { wallMaterial: 'wood' }, scatter: { mult: 0.9 } },
+  city: { palette: plainsPlus([{ mat: 'stone-floor', above: 0.7, field: 'roughness' }]) },
+  dungeon: { palette: plainsPlus([{ mat: 'stone-floor', above: 0.7, field: 'roughness' }]) },
+}
+
+// outcrop levers across the selected themes: mults multiply, overrides first-win
+function outcropProfile(themes: readonly ThemeTag[]): { mult: number; hedgeChance: number; wallMaterial: BarrierMaterial } {
+  let mult = 1, hedgeChance = 0
+  let wallMaterial: BarrierMaterial = 'rock'
+  for (const t of themes) {
+    const o = THEME_PROFILES[t]?.outcrops
+    if (!o) continue
+    mult *= o.mult ?? 1
+    if (hedgeChance === 0 && o.hedgeChance !== undefined) hedgeChance = o.hedgeChance
+    if (wallMaterial === 'rock' && o.wallMaterial) wallMaterial = o.wallMaterial
+  }
+  return { mult, hedgeChance, wallMaterial }
+}
+
+// scatter levers across the selected themes: same merge rules as outcrops
+interface ScatterProfile {
+  mult: number
+  clumpCountMult: number
+  clumpKind: ScatterKind | null
+  rm: (k: ScatterKind) => ScatterKind
+}
+function scatterProfile(themes: readonly ThemeTag[]): ScatterProfile {
+  let mult = 1, clumpCountMult = 1
+  let clumpKind: ScatterKind | null = null
+  const remap: Partial<Record<ScatterKind, ScatterKind>> = {}
+  for (const t of themes) {
+    const s = THEME_PROFILES[t]?.scatter
+    if (!s) continue
+    mult *= s.mult ?? 1
+    clumpCountMult *= s.clumpCountMult ?? 1
+    if (!clumpKind && s.clumpKind) clumpKind = s.clumpKind
+    for (const [k, v] of Object.entries(s.remap ?? {})) {
+      if (!(k in remap)) remap[k as ScatterKind] = v as ScatterKind
+    }
+  }
+  return { mult, clumpCountMult, clumpKind, rm: (k) => remap[k] ?? k }
+}
+
 // ── surface: fields → material bands (§A layer 3) ────────────────────────────
+// Palette(s) come from THEME_PROFILES; the meadow/barren tuning dials move each
+// palette's dial-tagged band. Draws no RNG.
 const surfacePass = {
   id: 'surface',
   run({ draft, params, fields }: PassCtx) {
-    const desert = params.themes.includes('desert')
+    const tn = params.tuning
+    const pals = params.themes.map((t) => THEME_PROFILES[t]?.palette)
+      .filter((p): p is ThemePalette => !!p)
+    const active = pals.length ? pals : [PLAINS_PALETTE]
+    // Multi-palette zoning: normalize elevation over the grid so every theme
+    // gets a real share of cells regardless of the seed's elevation range;
+    // themes order = low → high ground.
+    let zoneOf: ((x: number, y: number) => ThemePalette) | null = null
+    if (active.length > 1) {
+      let lo = Infinity, hi = -Infinity
+      for (let y = 0; y < draft.rows; y++) {
+        for (let x = 0; x < draft.cols; x++) {
+          const e = fields.elevation(x + 0.5, y + 0.5)
+          if (e < lo) lo = e
+          if (e > hi) hi = e
+        }
+      }
+      const span = Math.max(1e-9, hi - lo)
+      zoneOf = (x, y) => active[Math.min(active.length - 1,
+        Math.floor(((fields.elevation(x + 0.5, y + 0.5) - lo) / span) * active.length))]
+    }
     for (let y = 0; y < draft.rows; y++) {
       for (let x = 0; x < draft.cols; x++) {
         const m = fields.moisture(x + 0.5, y + 0.5)
-        let mat: SurfaceMaterial = desert ? 'sand' : 'grass'
-        if (!desert && m > 0.68) mat = 'meadow'
-        if (m < (desert ? 0.42 : 0.3)) mat = 'dirt'
+        const pal = zoneOf ? zoneOf(x, y) : active[0]
+        let mat = pal.base
+        for (const b of pal.bands) {
+          const v = b.field === 'elevation' ? fields.elevation(x + 0.5, y + 0.5)
+            : b.field === 'roughness' ? fields.roughness(x + 0.5, y + 0.5) : m
+          const thr = b.dial === 'meadow' ? tn.meadowThreshold ?? (b.above ?? b.below)!
+            : b.dial === 'barren' ? tn.barrenThreshold ?? (b.above ?? b.below)!
+            : (b.above ?? b.below)!
+          if (b.above !== undefined ? v > thr : v < thr) mat = b.mat
+        }
+        if (pal.stripes && x % pal.stripes.period < pal.stripes.width) mat = pal.stripes.mat
         paint(draft, x, y, mat)
       }
     }
@@ -45,7 +235,7 @@ const surfacePass = {
 const hydrologyPass = {
   id: 'hydrology',
   run({ draft, params, fields, rng, note }: PassCtx) {
-    if (!params.themes.some((t) => t === 'water' || t === 'beach')) return
+    if (!params.themes.some((t) => THEME_PROFILES[t]?.lake)) return
     const { size, spawnApron } = params
     const c = size / 2
     const r = Math.min(26, Math.max(6, size * 0.16))
@@ -178,9 +368,10 @@ export const RIVER_DIALS = {
 }
 
 // ── river: hydrology v2 — the descending edge-to-edge channel (P2, track C) ──
-// Trigger: theme 'water' only (a water map gets lake AND river; 'beach' alone
-// keeps its lake/shore but no river — a beach is coastline, not a valley) and
-// size ≥ minSize (small skirmish fields stay river-less).
+// Trigger: a river-inviting theme ('water' or 'river' per THEME_PROFILES — a
+// water map gets lake AND river; 'beach' alone keeps its lake/shore but no
+// river, a beach is coastline, not a valley) and size ≥ minSize (small
+// skirmish fields stay river-less).
 //
 // Shape: a monotone polyline along the FLOW axis (the axis with the stronger
 // edge-to-edge elevation gradient), source = the higher edge. Cross-axis
@@ -196,19 +387,26 @@ export const RIVER_DIALS = {
 const riverPass = {
   id: 'river',
   run({ draft, params, fields, rng, note }: PassCtx) {
-    if (!params.themes.includes('water')) return
+    if (!params.themes.some((t) => THEME_PROFILES[t]?.river)) return
     const { size } = params
     const D = RIVER_DIALS
     if (size < D.minSize) { note(`map ${size} < ${D.minSize} — too small for a river, skipped`); return }
+    // tuning dials (computation only — stream names/draw order stay fixed)
+    const tn = params.tuning
+    const widthScale = tn.riverWidthScale ?? 1
+    const deepHalf = D.deepHalf * widthScale
+    const shallowRim = D.shallowRim * widthScale
+    const sandRim = D.sandRim * widthScale
+    const fordCount = tn.riverFordCount ?? D.fordCount
 
     // ── budget allotment (decision 3: explicit per-pass allotment) ──────────
     // The reserve keeps the river from winning the whole race under a tight
     // cap: outcrops run after and must still be able to fire.
     const remaining = params.maxBarriers - draft.collision.length
     const allot = Math.min(D.maxRects, remaining - D.outcropReserve)
-    const nSeg = Math.min(Math.ceil(size / D.segRows), allot - D.fordCount)
+    const nSeg = Math.min(Math.ceil(size / D.segRows), allot - fordCount)
     if (nSeg < D.minSegments) {
-      note(`no barrier budget for a coherent river (${remaining} rect(s) left, need ≥ ${D.minSegments + D.fordCount}) — skipped`)
+      note(`no barrier budget for a coherent river (${remaining} rect(s) left, need ≥ ${D.minSegments + fordCount}) — skipped`)
       return
     }
 
@@ -260,7 +458,7 @@ const riverPass = {
     // Knots within the box's (inflated) flow-range are pushed outside its
     // cross-range; both bracketing knots of any affected row get pushed to the
     // SAME side (nearest viable), so the interpolated course clears it too.
-    const rim = D.deepHalf + D.shallowRim + D.sandRim + 2
+    const rim = deepHalf + shallowRim + sandRim + 2
     const avoidBoxes = (a: number, b: number): number | null => {
       for (const box of params.keepClear) {
         const f0 = (vert ? box.y : box.x) - 2 * H, f1 = (vert ? box.y + box.h : box.x + box.w) + 2 * H
@@ -315,7 +513,7 @@ const riverPass = {
     fordable.sort((p, q) => p.e - q.e || p.a - q.a)
     const fords: number[] = []
     for (const c of fordable) {
-      if (fords.length >= D.fordCount) break
+      if (fords.length >= fordCount) break
       if (fords.every((f) => Math.abs(f - c.a) >= size * D.fordMinSpacing)) fords.push(c.a)
     }
     if (!fords.length) { note('no viable ford reach — river skipped (a fordless river would sever the map)'); return }
@@ -323,14 +521,14 @@ const riverPass = {
     // bridge dressing: one ford may wear 'road' instead of shallow-water — the
     // same walkable gap as a plank crossing; the regions pass doesn't care.
     const br = rng('bridge')
-    const bridgeAt = br.chance(D.bridgeChance) ? fords[br.int(fords.length)] : -1
+    const bridgeAt = br.chance(tn.riverBridgeChance ?? D.bridgeChance) ? fords[br.int(fords.length)] : -1
 
     // ── paint the channel (lake's discipline: deep core, shallow rim, sand) ──
     // Wetness ordering: deep paints over anything (it gets covered), shallow
     // never downgrades deep, sand never downgrades water — so the river can
     // cross the lake without poking holes in either feature's coherence.
-    const wetHalf = D.deepHalf + D.shallowRim
-    const sandHalf = wetHalf + D.sandRim
+    const wetHalf = deepHalf + shallowRim
+    const sandHalf = wetHalf + sandRim
     const inFord = (a: number) => fords.some((f) => a >= f && a < f + D.fordRows)
     // deep span per flow-row (cross-cell min/max) — what the cover rects wrap
     const spanMin = new Int32Array(size).fill(-1)
@@ -346,7 +544,7 @@ const riverPass = {
         const cur = matAt(draft, p.x, p.y)
         if (d < wetHalf && ford) {
           paint(draft, p.x, p.y, fordMat)
-        } else if (d < D.deepHalf) {
+        } else if (d < deepHalf) {
           paint(draft, p.x, p.y, 'deep-water')
           if (spanMin[a] < 0 || bi < spanMin[a]) spanMin[a] = bi
           if (bi > spanMax[a]) spanMax[a] = bi
@@ -416,10 +614,13 @@ const outcropsPass = {
     // allotment discipline as RIVER_DIALS.outcropReserve. Unconditional, so
     // budgets never depend on whether a gate later fires (kit-invariance).
     const budget = params.maxBarriers - draft.collision.length
+    // theme density multiplier (THEME_PROFILES) × the outcropDensity dial; the
+    // budget clamp still rules under a tight cap, exactly as before
+    const prof = outcropProfile(params.themes)
+    const density = prof.mult * (params.tuning.outcropDensity ?? 1)
     const target = Math.min(budget - GATE_DIALS.gateReserve,
-      Math.max(OUTCROP_DIALS.minTarget, Math.round(size / OUTCROP_DIALS.targetDivisor)))
+      Math.max(OUTCROP_DIALS.minTarget, Math.round((size / OUTCROP_DIALS.targetDivisor) * density)))
     if (target <= 0) { note('no barrier budget left after hydrology'); return }
-    const forest = params.themes.includes('forest')
     const r = rng('sites')
     const baseline = draft.collision.length
     let placed = 0
@@ -433,10 +634,13 @@ const outcropsPass = {
       const w = 2 + r.next() * 3, h = 2 + r.next() * 3
       if (!isPlaceable(draft, { x: x + w / 2, y: y + h / 2 }, Math.max(w, h) / 2 + 1)) continue
       const elev = fields.elevation(x, y)
-      // Material follows the substrate: high rough ground = rock wall; low
-      // ground cracks into a see-across ravine; forests grow hedges instead.
-      const kind = elev < 0.38 ? ('cliff' as const) : forest && r.chance(0.35) ? ('cliff' as const) : ('wall' as const)
-      const material = kind === 'wall' ? ('rock' as const) : elev < 0.38 ? ('ravine' as const) : ('hedge' as const)
+      // Material follows the substrate: high rough ground = a wall in the
+      // theme's material (rock by default; wood fences in villages, rubble in
+      // ruins); low ground cracks into a see-across ravine; the hedge coin
+      // (forest) grows hedges instead.
+      const kind = elev < 0.38 ? ('cliff' as const)
+        : prof.hedgeChance > 0 && r.chance(prof.hedgeChance) ? ('cliff' as const) : ('wall' as const)
+      const material: BarrierMaterial = kind === 'wall' ? prof.wallMaterial : elev < 0.38 ? 'ravine' : 'hedge'
       addBarrier(draft, { x, y, w, h, kind, material })
       // A second offset rect ~half the time makes an L/T mass — breaks the
       // lone-box read and manufactures corners (cover) for free. It hugs the
@@ -669,7 +873,7 @@ const gatesPass = {
 
     // ── 1. route lock: gate ONE redundant crossing (the flagship) ────────────
     const r = rng('route')
-    if (!r.chance(GATE_DIALS.routeChance)) {
+    if (!r.chance(params.tuning.routeChance ?? GATE_DIALS.routeChance)) {
       note('route gate skipped (coin)')
     } else if (draft.collision.length + openLocks() + 1 > params.maxBarriers) {
       note('route gate skipped (no as-if-closed barrier budget)')
@@ -892,15 +1096,16 @@ const desirePathsPass = {
       return path.reverse()
     }
 
-    // trample: paint dry ground only (grass/meadow/sand/dirt — never water,
-    // road, or anything under a rect: those cells aren't on the walk mask).
+    // trample: paint dry ground only (grass/meadow/sand/dirt + the themed dry
+    // bands snow/ash/gravel — never water, road, lava, bog, stone, or anything
+    // under a rect: those cells aren't on the walk mask).
+    const DRY: SurfaceMaterial[] = ['grass', 'meadow', 'sand', 'dirt', 'snow', 'ash', 'gravel']
     const mask = new Uint8Array(cols * rows)
     let painted = 0
     const paintCell = (i: number) => {
       if (mask[i]) return
       const x = i % cols, y = (i / cols) | 0
-      const m = matAt(draft, x, y)
-      if (m !== 'grass' && m !== 'meadow' && m !== 'sand' && m !== 'dirt') return
+      if (!DRY.includes(matAt(draft, x, y))) return
       paint(draft, x, y, 'dirt')
       mask[i] = 1
       painted++
@@ -994,9 +1199,9 @@ const SCATTER_DIALS = {
   skirtRockChance: 0.28,// fraction of skirt props that are pebble/shard 'rock' debris (the rest are grass 'flower')
   skirtBudget: 0.5,     // fraction of the EDGE cap reserved for skirts before reeds fill the rest — so a long
                         //   shoreline can't starve the outcrop verges (and few walls leave the surplus for reeds)
-  // ── theme density + shared cap ──
-  forestMult: 1.6,      // scatter density multiplier under the 'forest' theme (lush)
-  desertMult: 0.4,      // ...under 'desert' (sparse)
+  // ── accents (the reserved 'accent' intent, phase 3) ──
+  accentMax: 4,         // hero-prop budget: one by the landmark + a few region anchors
+  // ── shared cap (per-theme density mults live in THEME_PROFILES.scatter) ──
   maxItems: 96,         // BASELINE total-item cap (× theme mult) — keeps a big map from exploding
   fillShare: 0.6,       // fraction of the cap scatter-fill may spend (clumps get the rest + slack)
   clumpShare: 0.55,     // fraction of the cap scatter-clumps may spend (fill + clump ≤ ~1.15× cap, bounded)
@@ -1006,30 +1211,31 @@ const SCATTER_DIALS = {
 const r2 = (v: number) => Math.round(v * 100) / 100
 
 // Total-item cap near today's ~96×mult so a large map can't explode.
-function scatterCap(size: number, mult: number): number {
-  return Math.round(Math.min(SCATTER_DIALS.maxItems, Math.max(8, (size * size) / 45)) * mult)
+function scatterCap(size: number, mult: number, tn: Partial<MapgenTuning>): number {
+  return Math.round(Math.min(tn.maxScatterItems ?? SCATTER_DIALS.maxItems, Math.max(8, (size * size) / 45)) * mult)
 }
 
-function themeMult(themes: readonly string[]): number {
-  return themes.includes('forest') ? SCATTER_DIALS.forestMult : themes.includes('desert') ? SCATTER_DIALS.desertMult : 1
-}
-
-// Kind from the substrate — the phase-1 surface-material + moisture logic, kept.
-function kindFor(draft: PassCtx['draft'], x: number, y: number, m: number, r: Rng): ScatterKind {
+// Kind from the substrate — the phase-1 surface-material + moisture logic plus
+// the themed bands, then the theme profile's remap (how "no flowers" is said).
+function kindFor(draft: PassCtx['draft'], x: number, y: number, m: number, r: Rng, rm: ScatterProfile['rm']): ScatterKind {
   const mat = matAt(draft, x, y)
-  if (mat === 'sand') return nearWater(draft, x, y) ? 'reed' : 'rock'
-  if (mat === 'dirt') return r.chance(0.6) ? 'rock' : 'stump'
-  return m > 0.55 ? 'tree' : r.chance(0.5) ? 'bush' : 'flower'
+  if (mat === 'sand') return rm(nearWater(draft, x, y) ? 'reed' : 'rock')
+  if (mat === 'dirt' || mat === 'ash' || mat === 'stone-floor') return rm(r.chance(0.6) ? 'rock' : 'stump')
+  if (mat === 'gravel') return rm('rock')
+  if (mat === 'snow') return rm(m > 0.55 ? 'tree' : 'rock')
+  if (mat === 'bog') return rm(r.chance(0.6) ? 'reed' : 'bush')
+  return rm(m > 0.55 ? 'tree' : r.chance(0.5) ? 'bush' : 'flower')
 }
 
 // Water cells are never placeable for scatter (fillers or clump members) —
 // nor is 'road' (only the river's bridge strips paint it in this recipe; a
-// tree sprouting mid-plank reads wrong and clutters the choke) — nor a
+// tree sprouting mid-plank reads wrong and clutters the choke) — nor 'lava'
+// (a volcanic hazard pool; a bush growing in it reads wrong) — nor a
 // desire-path trail cell (the scratch mask): a prop standing mid-trail would
 // bury the one pass whose whole job is staying readable.
 function scatterBlocked(draft: PassCtx['draft'], x: number, y: number): boolean {
   const mat = matAt(draft, x, y)
-  if (mat === 'deep-water' || mat === 'shallow-water' || mat === 'road') return true
+  if (mat === 'deep-water' || mat === 'shallow-water' || mat === 'road' || mat === 'lava') return true
   const paths = draft.scratch.get('desire-paths') as Uint8Array | undefined
   if (!paths) return false
   const xi = Math.min(draft.cols - 1, Math.max(0, Math.floor(x)))
@@ -1054,8 +1260,10 @@ const scatterFillPass = {
   id: 'scatter-fill',
   run({ draft, params, fields, rng, note }: PassCtx) {
     const { size, spawnApron } = params
-    const mult = themeMult(params.themes)
-    const cap = Math.round(scatterCap(size, mult) * SCATTER_DIALS.fillShare)
+    const prof = scatterProfile(params.themes)
+    const tn = params.tuning
+    const dens = tn.scatterDensity ?? 1
+    const cap = Math.round(scatterCap(size, prof.mult, tn) * SCATTER_DIALS.fillShare)
     const r = rng('fill')
     const spacing = SCATTER_DIALS.fillSpacing
     const cols = Math.ceil(size / spacing)
@@ -1070,7 +1278,7 @@ const scatterFillPass = {
         if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
         if (!isPlaceable(draft, { x, y }, 0.5) || scatterBlocked(draft, x, y)) continue
         const m = fields.moisture(x, y)
-        let w = SCATTER_DIALS.baseDensity * mult *
+        let w = SCATTER_DIALS.baseDensity * dens * prof.mult *
           (1 - SCATTER_DIALS.moistureBias + SCATTER_DIALS.moistureBias * m)
         const dist = Math.hypot(x - cx, y - cy)
         if (dist < spawnApron * 2) {
@@ -1088,7 +1296,7 @@ const scatterFillPass = {
     for (const cell of cand) {
       if (placed >= cap) break
       if (!r.chance(Math.min(1, cell.w * scale))) continue
-      pushScatter(draft, cell.x, cell.y, kindFor(draft, cell.x, cell.y, cell.m, r), r, 'field')
+      pushScatter(draft, cell.x, cell.y, kindFor(draft, cell.x, cell.y, cell.m, r, prof.rm), r, 'field')
       placed++
     }
     note(`scatter-fill: ${placed} fillers of ${cand.length} candidates (cap ${cap})`)
@@ -1102,10 +1310,12 @@ const scatterClumpsPass = {
   id: 'scatter-clumps',
   run({ draft, params, fields, rng, note }: PassCtx) {
     const { size } = params
-    const mult = themeMult(params.themes)
-    const cap = Math.round(scatterCap(size, mult) * SCATTER_DIALS.clumpShare)
+    const prof = scatterProfile(params.themes)
+    const tn = params.tuning
+    const dens = tn.scatterDensity ?? 1
+    const cap = Math.round(scatterCap(size, prof.mult, tn) * SCATTER_DIALS.clumpShare)
     const areaScale = (size * size) / (96 * 96)
-    const count = Math.max(1, Math.round(SCATTER_DIALS.clumpCount * areaScale * mult))
+    const count = Math.max(1, Math.round((tn.clumpCount ?? SCATTER_DIALS.clumpCount) * areaScale * prof.mult * prof.clumpCountMult))
     const r = rng('clumps')
     const radius = SCATTER_DIALS.clumpRadius
     let placed = 0
@@ -1123,10 +1333,11 @@ const scatterClumpsPass = {
       }
       if (!center) continue
       clumps++
-      // moist → tree grove; drier grass → flower bed.
-      const clumpKind: ScatterKind = center.m > 0.5 ? 'tree' : 'flower'
+      // moist → tree grove; drier grass → flower bed; a theme may force the
+      // kind (orchard rows) — remapped like every vegetation pick.
+      const clumpKind: ScatterKind = prof.rm(prof.clumpKind ?? (center.m > 0.5 ? 'tree' : 'flower'))
       // radial BURST with centre-weighted falloff.
-      const bursts = Math.round(radius * radius * SCATTER_DIALS.clumpDensity)
+      const bursts = Math.round(radius * radius * SCATTER_DIALS.clumpDensity * dens)
       for (let i = 0; i < bursts && placed < cap; i++) {
         const ang = r.next() * Math.PI * 2
         const rr = Math.pow(r.next(), SCATTER_DIALS.clumpFalloff) * radius
@@ -1143,9 +1354,9 @@ const scatterClumpsPass = {
         const x = center.x + Math.cos(ang) * rr, y = center.y + Math.sin(ang) * rr
         if (x < 1 || y < 1 || x > size - 1 || y > size - 1) continue
         if (!isPlaceable(draft, { x, y }, 0.4) || scatterBlocked(draft, x, y)) continue
-        const uk: ScatterKind = clumpKind === 'tree'
+        const uk: ScatterKind = prof.rm(clumpKind === 'tree'
           ? (r.chance(0.5) ? 'bush' : 'flower')
-          : (r.chance(0.6) ? 'flower' : 'bush')
+          : (r.chance(0.6) ? 'flower' : 'bush'))
         pushScatter(draft, x, y, uk, r, 'understory')
         placed++
       }
@@ -1172,14 +1383,18 @@ const scatterClumpsPass = {
 //      occasional pebble (`rock`) at the base. NOT `bush`/`reed` — in the grass
 //      biome those resolve to `reeds` (edge role, near-water), which reads wrong
 //      at a dry rock base; `flower`/`rock` give the intended dry verge/debris.
-// One rng stream ('edges'); shares the item cap via `edgeShare` so fill+clump+
-// edge stay bounded near `scatterCap`.
+// Plus a THIRD, non-boundary section: ≤ accentMax `intent: 'accent'` hero props
+// by the landmark/region anchors (its own 'accent' stream — see the section).
+// The edge features share one rng stream ('edges') and the item cap via
+// `edgeShare` so fill+clump+edge stay bounded near `scatterCap`.
 const scatterEdgesPass = {
   id: 'scatter-edges',
   run({ draft, params, rng, note }: PassCtx) {
     const { size } = params
-    const mult = themeMult(params.themes)
-    const cap = Math.round(scatterCap(size, mult) * SCATTER_DIALS.edgeShare)
+    const prof = scatterProfile(params.themes)
+    const tn = params.tuning
+    const dens = tn.scatterDensity ?? 1
+    const cap = Math.round(scatterCap(size, prof.mult, tn) * SCATTER_DIALS.edgeShare)
     const r = rng('edges')
     let placed = 0
 
@@ -1195,7 +1410,7 @@ const scatterEdgesPass = {
     for (const rect of walls) {
       if (placed >= skirtCap) break
       const perim = 2 * (rect.w + rect.h)
-      const samples = Math.max(3, Math.round(perim * SCATTER_DIALS.skirtDensity))
+      const samples = Math.round(Math.max(3, Math.round(perim * SCATTER_DIALS.skirtDensity)) * dens)
       for (let i = 0; i < samples && placed < skirtCap; i++) {
         // Walk the perimeter; project the boundary point outward along its normal.
         let t = (i / samples) * perim
@@ -1208,7 +1423,7 @@ const scatterEdgesPass = {
         if (px < 1 || py < 1 || px > size - 1 || py > size - 1) continue
         if (scatterBlocked(draft, px, py)) continue
         if (!isPlaceable(draft, { x: px, y: py }, 0.2)) continue
-        const kind: ScatterKind = r.chance(SCATTER_DIALS.skirtRockChance) ? 'rock' : 'flower'
+        const kind: ScatterKind = prof.rm(r.chance(SCATTER_DIALS.skirtRockChance) ? 'rock' : 'flower')
         pushScatter(draft, px, py, kind, r, 'edge')
         skirts++; placed++
       }
@@ -1243,14 +1458,44 @@ const scatterEdgesPass = {
         if (!isPlaceable(draft, { x: px, y: py }, 0.5)) continue
         const key = Math.floor(py / spacing) * spCols + Math.floor(px / spacing)
         if (taken.has(key)) continue
-        if (!r.chance(SCATTER_DIALS.shoreDensity)) continue
+        if (!r.chance(SCATTER_DIALS.shoreDensity * dens)) continue
         taken.add(key)
         pushScatter(draft, px, py, 'reed', r, 'edge')
         reeds++; placed++
       }
     }
 
-    note(`scatter-edges: ${reeds} shore reeds, ${skirts} skirt props (cap ${cap})`)
+    // ── 3. accents: a handful of hero props (`intent: 'accent'`) ────────────
+    // The reserved phase-3 intent, now emitted: one prop by the landmark plus
+    // one per region anchor, ≤ accentMax total — render resolves accent-role
+    // archetypes (wells / shrines / boulders) from (kind, intent). Own stream;
+    // isPlaceable + scatterBlocked keep them off the apron, keep-clear boxes,
+    // rects, water, and the desire-path trail. Their budget rides the edge cap
+    // (its own reserved sliver, NOT `placed` — skirts/reeds legitimately spend
+    // the whole share on watery seeds), so a maxScatterItems dial of 0 still
+    // silences them.
+    const ra = rng('accent')
+    const accentBudget = Math.min(SCATTER_DIALS.accentMax, cap)
+    const sites: Pt2[] = []
+    const lm = draft.semantic.pois.find((p) => p.kind === 'landmark')
+    if (lm) sites.push(lm.at)
+    for (const nd of draft.semantic.nav.nodes) {
+      if (sites.length >= accentBudget) break
+      if (nd.poiId !== 'spawn') sites.push(nd.at)
+    }
+    let accents = 0
+    for (const s of sites.slice(0, accentBudget)) {
+      for (let t = 0; t < 6; t++) {   // a few jittered tries per site
+        const px = s.x + ra.range(-3.5, 3.5), py = s.y + ra.range(-3.5, 3.5)
+        if (px < 1 || py < 1 || px > size - 1 || py > size - 1) continue
+        if (scatterBlocked(draft, px, py) || !isPlaceable(draft, { x: px, y: py }, 0.6)) continue
+        pushScatter(draft, px, py, 'rock', ra, 'accent')
+        accents++
+        break
+      }
+    }
+
+    note(`scatter-edges: ${reeds} shore reeds, ${skirts} skirt props, ${accents} accent(s) (cap ${cap})`)
     if (placed >= cap) note(`scatter-edges capped at ${cap}`)
   },
 }

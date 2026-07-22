@@ -6,7 +6,7 @@
 // than by validator alone — the validator then guards the cross-plane rules.
 
 import type {
-  CollisionRect, GenParams, ManifestToken, MapSpec, Poi, PoiKind, ProficiencyTag, Pt, Rect,
+  CollisionRect, GenParams, ManifestToken, MapgenTuning, MapSpec, Poi, PoiKind, ProficiencyTag, Pt, Rect,
   SurfaceMaterial, SurfacePlane, ThemeTag,
 } from './types'
 import { SURFACE_MATERIALS } from './types'
@@ -18,6 +18,9 @@ export interface NormParams {
   seed: number
   size: number
   themes: ThemeTag[]
+  // Numeric dial overrides, kept PARTIAL: each pass reads its dial with `??`
+  // fallback to its *_DIALS default, so `{}` bakes byte-identical to absent.
+  tuning: Partial<MapgenTuning>
   maxBarriers: number
   spawnApron: number
   keepClear: Rect[]
@@ -37,6 +40,7 @@ export function normalizeParams(p: GenParams): NormParams {
     seed: (typeof p.seed === 'string' ? hashString(p.seed) : p.seed) >>> 0,
     size,
     themes: p.themes,
+    tuning: p.tuning ?? {},
     maxBarriers: p.maxBarriers ?? 24,
     // Matches the store's spawn apron feel: an uncluttered form-up knot.
     spawnApron: p.spawnApron ?? Math.max(6, size * 0.14),
