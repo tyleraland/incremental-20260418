@@ -695,12 +695,18 @@ const shortcutPass = {
 // ── scatter: debris thickens with depth (§G gradient made visible) ───────────
 const scatterPass = {
   id: 'scatter',
-  run({ draft, rng }: PassCtx) {
+  run({ draft, params, rng }: PassCtx) {
     const r = rng('place')
+    // tuning dials: scatterDensity scales each room's debris; an EXPLICIT
+    // maxScatterItems caps the total (no cap by default — the room-count-driven
+    // total predates the dial). Computation only; the stream stays 'place'.
+    const dens = params.tuning.scatterDensity ?? 1
+    const maxItems = params.tuning.maxScatterItems
     for (const n of draft.semantic.nav.nodes) {
       if (!n.area) continue
-      const count = 2 + (n.depth ?? 0) + r.int(3)
+      const count = Math.round((2 + (n.depth ?? 0) + r.int(3)) * dens)
       for (let k = 0, guard = 0; k < count && guard < count * 6; guard++) {
+        if (maxItems !== undefined && draft.scatter.length >= maxItems) return
         const x = n.area.x + 1 + r.next() * (n.area.w - 2)
         const y = n.area.y + 1 + r.next() * (n.area.h - 2)
         if (!isPlaceable(draft, { x, y }, 0.5)) continue

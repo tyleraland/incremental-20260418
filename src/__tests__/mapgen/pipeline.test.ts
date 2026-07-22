@@ -51,8 +51,9 @@ describe('mapgen pipeline', () => {
     const full = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept' })
     const noEdges = generateMap(FIELD_RECIPE, { ...PARAMS, onFail: 'accept', skipPasses: ['scatter-edges'] })
     // fill ('field') + clump ('cluster'/'understory') items must be untouched —
-    // edges draws only from its own stream and only appends.
-    const nonEdge = (s: typeof full.spec.scatter) => s.filter((it) => it.intent !== 'edge')
+    // edges draws only from its own streams and only appends. The pass owns
+    // BOTH 'edge' and 'accent' items, so exclude both from the comparison.
+    const nonEdge = (s: typeof full.spec.scatter) => s.filter((it) => it.intent !== 'edge' && it.intent !== 'accent')
     expect(nonEdge(noEdges.spec.scatter)).toEqual(nonEdge(full.spec.scatter))
     // edges genuinely added 'edge' items in the full bake (this seed grows a lake)
     expect(full.spec.scatter.some((it) => it.intent === 'edge')).toBe(true)
