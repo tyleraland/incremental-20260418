@@ -1,10 +1,17 @@
 // Dev-only mapgen lab (`?mapgen=1`): the human-validation surface for the
 // procedural map generator (src/mapgen). Optimized for THROUGHPUT of eyeballs:
-// a 3×3 seed contact sheet (nine maps per glance, like ?gallery=1 reviews the
-// whole visual language in one screenshot), a focused view with per-plane
-// toggles and per-pass skips (the layer inspector — stream-isolated RNG means
-// toggling a pass changes ONLY that layer), and the validation report + pass
-// notes beside the picture so a human never has to guess why a map is wrong.
+// staged layer tabs in BAKE ORDER (Surface → … → Final Map LAST), each tab
+// carrying the knobs for the decision it owns (themes on Surface, river/outcrop
+// dials on Geography, gates + party kit on Gates + Secrets, scatter dials + the
+// themed prop pool on Dressing), a 3×3 seed contact sheet on the Final tab
+// (nine maps per glance, like ?gallery=1 reviews the whole visual language in
+// one screenshot), per-pass skips (the layer inspector — stream-isolated RNG
+// means toggling a pass changes ONLY that layer), and the validation report +
+// pass notes beside the picture so a human never has to guess why a map is
+// wrong. Tuning sliders enter `params.tuning` only once MOVED (per-dial reset
+// forgets them) — an untouched lab bakes byte-identical to no tuning at all.
+// The Final tab's "▶ Play this map" seeds the current bake into a real battle
+// (seedMapgenLabBattle) under a full-screen BattleView overlay.
 //
 // The focused view surfaces not just the four BAKED MapSpec planes but the
 // DERIVED L4/L6 structure the generator computes and normally discards: the
@@ -20,12 +27,19 @@
 // Renders the MapSpec directly to <canvas> as a DEBUG view — this is not the
 // paper skin and never will be; terrain.tsx consuming MapSpec is its own phase.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import {
   generateMap, RECIPE_REGISTRY, SURFACE_MATERIALS, THEME_TAGS, PROFICIENCY_TAGS,
-  type GenParams, type GenResult, type ProficiencyTag, type ThemeTag,
+  type GenParams, type GenResult, type MapgenTuning, type ProficiencyTag, type ThemeTag,
 } from '@/mapgen'
 import { themesMissingEdge, themesWithoutThemedProps } from '@/render/coverage'
+import { TERRAIN_PROPS, matchesThemes, type PropDef } from '@/render/props'
+import { propMarkup } from '@/render/terrain'
+import { biomeForLocation } from '@/render/appearance'
+import { useGameStore } from '@/stores/useGameStore'
+import { BattleView } from '@/components/BattleView'
+import { TICKS_PER_SECOND } from '@/lib/time'
+import { MAPGEN_LAB_SIM_LOC, seedMapgenLabBattle, type MapgenLabBattleOpts } from './mapgenLabBattle'
 
 const SURFACE_COLOR: Record<string, string> = {
   'grass': '#7aa85c', 'meadow': '#8fbf6a', 'dirt': '#a58a5e', 'sand': '#d9c489',
@@ -306,16 +320,18 @@ function presetToggles(overlays: OverlayKey[]): Toggles {
 }
 
 // ── staged layer tabs ────────────────────────────────────────────────────────
-// The lab is one tab per meaningful STAGE (not per pass): tab 0 is the Final Map
-// (every pass, all planes full brightness — the deliverable); each later tab
-// bakes the recipe THROUGH `throughPass` (auto-skipping every pass strictly
-// after it, so the spec+scratch is exactly the cumulative content up to that
-// stage — stream isolation makes the omission byte-clean), then renders the
-// earlier layers DIMMED (`dim`) with this stage's `owned` structure at full
-// alpha on top. You watch the map accrete stage by stage. `controls` are the
-// pass-skip checkboxes surfaced on that tab — toggling one composes (union) with
-// the auto-skip, so a player can drop `river` on Geography and every downstream
-// tab rebakes without it. `throughPass: null` marks the Final tab.
+// The lab is one tab per meaningful STAGE (not per pass), ordered like the bake:
+// each layer tab bakes the recipe THROUGH `throughPass` (auto-skipping every
+// pass strictly after it, so the spec+scratch is exactly the cumulative content
+// up to that stage — stream isolation makes the omission byte-clean), then
+// renders the earlier layers DIMMED (`dim`) with this stage's `owned` structure
+// at full alpha on top. You watch the map accrete stage by stage; the LAST tab
+// is the Final Map (every pass, all planes full brightness — the deliverable).
+// `controls` are the pass-skip checkboxes surfaced on that tab — toggling one
+// composes (union) with the auto-skip, so a player can drop `river` on Geography
+// and every downstream tab rebakes without it. `throughPass: null` marks the
+// Final tab. Each tab also carries the KNOBS for the decision it owns (themes,
+// tuning dials, gates/kit — see the per-tab controls in the component).
 interface Stage {
   label: string
   throughPass: string | null
@@ -333,28 +349,28 @@ const STAGES: Record<string, Stage[]> = {
   // passes: surface → hydrology → river → outcrops → regions → flow → gates →
   //         semantic → desire-paths → scatter-fill/clumps/edges → premise
   field: [
-    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
     { label: 'Surface', throughPass: 'surface', owned: ['surface'], dim: [], controls: ['surface'], blurb: 'material bands from themes + the moisture field' },
     { label: 'Geography', throughPass: 'outcrops', owned: ['collision'], dim: ['surface'], controls: ['hydrology', 'river', 'outcrops'], blurb: 'lake/ford + river/crossings + outcrops (the barrier rects) over the dim surface' },
     { label: 'Nav Graph + Flow', throughPass: 'flow', owned: ['graph', 'regions', 'flow'], dim: ['surface', 'collision'], controls: ['regions', 'flow'], blurb: 'derived regions + nav graph + flow/intensity heat over the dim geography' },
-    { label: 'Gates + Secrets', throughPass: 'gates', owned: ['graph', 'semantic'], dim: ['surface', 'collision', 'regions'], controls: ['gates'], kit: true, blurb: 'route/vault locks on derived edges (dashed) — toggle party kit above to open/close them' },
+    { label: 'Gates + Secrets', throughPass: 'gates', owned: ['graph', 'semantic'], dim: ['surface', 'collision', 'regions'], controls: ['gates'], kit: true, blurb: 'route/vault locks on derived edges (dashed) — toggle the party kit to open/close them' },
     { label: 'Dressing', throughPass: 'premise', owned: ['paths', 'scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['semantic', 'desire-paths', 'scatter-fill', 'scatter-clumps', 'scatter-edges'], blurb: 'desire-path trails + scatter + POIs + the name/premise line' },
+    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
   ],
   // passes: layout → flow → carve → floor → gates → shortcut → stamps →
   //         scatter → semantic → premise
   dungeon: [
-    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
     { label: 'Layout', throughPass: 'flow', owned: ['graph', 'flow'], dim: [], controls: ['layout', 'flow'], blurb: 'scattered polymorph rooms + the cycle-first skeleton (nav graph) + intensity' },
     { label: 'Carve', throughPass: 'floor', owned: ['collision', 'surface'], dim: ['graph'], controls: ['carve', 'floor'], blurb: 'maximal-rect wall cover + stone floor, over the dim room skeleton' },
-    { label: 'Gates + Secrets', throughPass: 'shortcut', owned: ['graph', 'semantic'], dim: ['surface', 'collision'], controls: ['gates', 'shortcut'], kit: true, blurb: 'dead-end vault lock + mid-arc shortcut lock — toggle party kit above to open/close them' },
+    { label: 'Gates + Secrets', throughPass: 'shortcut', owned: ['graph', 'semantic'], dim: ['surface', 'collision'], controls: ['gates', 'shortcut'], kit: true, blurb: 'dead-end vault lock + mid-arc shortcut lock — toggle the party kit to open/close them' },
     { label: 'Dressing', throughPass: 'premise', owned: ['scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['stamps', 'scatter', 'semantic'], blurb: 'authored stamps + depth-graded debris + lair + the name/premise line' },
+    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
   ],
   // passes: roads → pave → blocks → scatter → semantic → premise
   city: [
-    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
     { label: 'Roads', throughPass: 'roads', owned: ['graph'], dim: [], controls: ['roads'], blurb: 'plaza + gate roads + cross-street loops — the nav skeleton, laid FIRST' },
     { label: 'Buildings', throughPass: 'blocks', owned: ['collision', 'surface'], dim: ['graph'], controls: ['pave', 'blocks'], blurb: 'paving + street-fronting building rects over the dim road skeleton' },
     { label: 'Dressing', throughPass: 'premise', owned: ['scatter', 'semantic'], dim: ['surface', 'collision'], controls: ['scatter', 'semantic'], blurb: 'yard/market scatter + plaza landmark + the name/premise line' },
+    { label: 'Final Map', throughPass: null, owned: [], dim: [], controls: [], blurb: 'every pass — the deliverable' },
   ],
 }
 
@@ -390,6 +406,218 @@ function togglesFor(keys: OverlayKey[]): Toggles {
   return t
 }
 
+// ── tuning dials (sliders complementing the seed) ────────────────────────────
+// One spec per MapgenTuning key: range, step, and the recipe-default shown in
+// the label. A dial enters `tuning` (and therefore params.tuning) only once
+// MOVED — untouched dials stay ABSENT, which matters: themed palettes carry
+// their own dial-tagged band values (e.g. desert barren 0.42), so sending the
+// interface default explicitly is NOT identity. ↺ resets (deletes the key).
+interface DialSpec {
+  key: keyof MapgenTuning
+  min: number
+  max: number
+  step: number
+  def: number      // the *_DIALS default, shown in the label
+  int?: boolean
+}
+const DIAL_SPECS: Record<keyof MapgenTuning, DialSpec> = {
+  meadowThreshold: { key: 'meadowThreshold', min: 0.4, max: 0.95, step: 0.01, def: 0.68 },
+  barrenThreshold: { key: 'barrenThreshold', min: 0, max: 0.6, step: 0.01, def: 0.3 },
+  outcropDensity: { key: 'outcropDensity', min: 0, max: 3, step: 0.05, def: 1 },
+  riverWidthScale: { key: 'riverWidthScale', min: 0.5, max: 2, step: 0.05, def: 1 },
+  riverFordCount: { key: 'riverFordCount', min: 0, max: 5, step: 1, def: 2, int: true },
+  riverBridgeChance: { key: 'riverBridgeChance', min: 0, max: 1, step: 0.05, def: 0.35 },
+  routeChance: { key: 'routeChance', min: 0, max: 1, step: 0.05, def: 0.6 },
+  scatterDensity: { key: 'scatterDensity', min: 0, max: 2.5, step: 0.05, def: 1 },
+  clumpCount: { key: 'clumpCount', min: 0, max: 12, step: 1, def: 5, int: true },
+  maxScatterItems: { key: 'maxScatterItems', min: 0, max: 256, step: 4, def: 96, int: true },
+}
+
+// Which tuning dials each tab surfaces, per recipe — ONLY dials that recipe's
+// passes actually read (dungeon/city scatter honors scatterDensity +
+// maxScatterItems; routeChance/clumpCount are field-only), so no dead sliders.
+const TAB_DIALS: Record<string, Record<string, (keyof MapgenTuning)[]>> = {
+  field: {
+    Surface: ['meadowThreshold', 'barrenThreshold'],
+    Geography: ['outcropDensity', 'riverWidthScale', 'riverFordCount', 'riverBridgeChance'],
+    'Gates + Secrets': ['routeChance'],
+    Dressing: ['scatterDensity', 'clumpCount', 'maxScatterItems'],
+  },
+  dungeon: { Dressing: ['scatterDensity', 'maxScatterItems'] },
+  city: { Dressing: ['scatterDensity', 'maxScatterItems'] },
+}
+
+const fmtNum = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(2))
+
+// Shared slider row: range input + numeric readout + default-in-label + ↺ reset
+// (shown only once touched). Used by the tuning dials AND the GenParams-level
+// sliders (maxBarriers / spawnApron), which own their untouched=null state.
+function SliderRow({ label, min, max, step, def, value, touched, onSet, onReset }: {
+  label: string; min: number; max: number; step: number; def: number
+  value: number; touched: boolean
+  onSet(v: number): void; onReset(): void
+}) {
+  return (
+    <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+      <span className={touched ? 'text-amber-400' : 'text-stone-500'}>{label}</span>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => onSet(+e.target.value)}
+        className="w-28 accent-amber-500"
+        style={{ touchAction: 'none' }}
+      />
+      <span className={`tabular-nums ${touched ? 'text-amber-300' : 'text-stone-400'}`}>{fmtNum(value)}</span>
+      <span className="text-stone-600">(d={fmtNum(def)})</span>
+      {touched && (
+        <button onClick={onReset} title="reset to default (dial leaves params.tuning)"
+          className="px-1 rounded border border-stone-600 text-stone-400 hover:text-stone-200">↺</button>
+      )}
+    </label>
+  )
+}
+
+// ── themed prop pool (Dressing tab) ──────────────────────────────────────────
+// The actual prop ARCHETYPES generation could pick for the current themes:
+// biome bucket derived the way the battle seeder does (theme words are the
+// trait words — volcanic sits on stone via 'mountain', city reads plaza), then
+// TERRAIN_PROPS[biome] filtered by matchesThemes — the same helper the render's
+// scatter pick uses. Archetypes only (seeded ~variants hidden); grouped by
+// mapgen ScatterKind; capped with a "+N more" count. SkinGallery's SVG-cell
+// pattern; propMarkup is the one PropDef→svg translation.
+const POOL_KIND_ORDER = ['tree', 'bush', 'rock', 'stump', 'flower', 'reed'] as const
+const POOL_CAP = 24
+
+function PropPool({ themes }: { themes: ThemeTag[] }) {
+  const { biome, groups, total } = useMemo(() => {
+    const traits: string[] = themes.includes('volcanic') ? [...themes, 'mountain'] : [...themes]
+    const b = biomeForLocation({ traits })
+    const pool = TERRAIN_PROPS[b].filter((d) => !d.id.includes('~') && d.kinds?.length && matchesThemes(d, themes))
+    const byKind = new Map<string, PropDef[]>()
+    for (const d of pool) {
+      const k = d.kinds![0]
+      if (!byKind.has(k)) byKind.set(k, [])
+      byKind.get(k)!.push(d)
+    }
+    const g = POOL_KIND_ORDER.filter((k) => byKind.has(k)).map((k) => ({ kind: k, defs: byKind.get(k)! }))
+    return { biome: b, groups: g, total: pool.length }
+  }, [themes])
+
+  let budget = POOL_CAP
+  return (
+    <div className="mb-1">
+      <div className="text-[11px] text-stone-500 mb-1">
+        themed prop pool — archetypes scatter can pick for these themes (biome bucket: <b className="text-stone-400">{biome}</b>; each multiplies into seeded ~variants)
+      </div>
+      <div className="flex flex-wrap gap-2 items-end">
+        {groups.map(({ kind, defs }) => {
+          if (budget <= 0) return null
+          const shown = defs.slice(0, budget)
+          budget -= shown.length
+          return (
+            <div key={kind}>
+              <div className="text-[9px] text-stone-500 mb-0.5">{kind} · {defs.length}</div>
+              <div className="flex flex-wrap gap-1">
+                {shown.map((def) => (
+                  <div key={def.id} title={def.id}
+                    className="w-9 h-9 rounded border border-stone-700 bg-stone-800 flex items-center justify-center">
+                    <svg viewBox="-1.1 -1.1 2.2 2.2" className="w-8 h-8" aria-hidden
+                      dangerouslySetInnerHTML={{ __html: propMarkup(def) }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+        {total > POOL_CAP && <span className="text-[10px] text-stone-500 pb-1">+{total - POOL_CAP} more</span>}
+        {total === 0 && <span className="text-[10px] text-stone-500">no themed archetypes — scatter falls back cross-theme (see coverage box)</span>}
+      </div>
+    </div>
+  )
+}
+
+// ── ▶ Play this map (Final tab) ──────────────────────────────────────────────
+// Full-screen battle overlay on the CURRENT lab bake: seedMapgenLabBattle
+// stands the store scene up (save-safe — App runs ?mapgen under noPersist),
+// this overlay owns the paused tick loop (App's is disabled), and close tears
+// the synthetic battle down so re-opening re-seeds fresh. Exact precedent:
+// MonsterLab's BattleSim (~:730) — same interval cadence and structure.
+function PlayBattleOverlay({ opts, skipsActive, apronOverridden, onClose }: {
+  opts: MapgenLabBattleOpts
+  skipsActive: boolean
+  apronOverridden: boolean
+  onClose(): void
+}) {
+  const paused = useGameStore((s) => s.paused)
+  const live = useGameStore((s) => {
+    const b = s.battles[MAPGEN_LAB_SIM_LOC]
+    if (!b) return { heroes: 0, foes: 0, round: 0 }
+    return {
+      heroes: b.combatants.filter((c) => c.team === 'player' && c.alive).length,
+      foes: b.combatants.filter((c) => c.team === 'enemy' && c.alive).length,
+      round: b.round,
+    }
+  })
+
+  // Seed once on mount, then own the tick loop (gated on !paused). Starts
+  // RUNNING — the button said "play".
+  useEffect(() => {
+    seedMapgenLabBattle(opts)
+    useGameStore.setState({ paused: false })
+    const id = setInterval(() => {
+      const s = useGameStore.getState()
+      if (!s.paused) s.tick()
+    }, 1000 / TICKS_PER_SECOND)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const close = () => {
+    useGameStore.getState().exitBattleView()
+    // Drop the synthetic battle + location so the next ▶ re-seeds fresh.
+    useGameStore.setState((s) => {
+      const battles = { ...s.battles }
+      delete battles[MAPGEN_LAB_SIM_LOC]
+      return { battles, paused: true, locations: s.locations.filter((l) => l.id !== MAPGEN_LAB_SIM_LOC) }
+    })
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[150] flex flex-col bg-stone-950 text-stone-200">
+      <div className="flex-1 min-h-0 flex flex-col">
+        <BattleView locationId={MAPGEN_LAB_SIM_LOC} />
+      </div>
+      <div className="absolute top-2 right-2 z-[160] w-64 max-w-[85vw] rounded-xl border border-stone-600 bg-stone-900/95 backdrop-blur shadow-2xl p-3 space-y-2 font-mono text-xs">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold">▶ mapgen battle</span>
+          <button onClick={close} title="Back to the lab"
+            className="ml-auto w-7 h-7 flex items-center justify-center rounded-md border border-stone-600 text-stone-400 hover:text-stone-100">✕</button>
+        </div>
+        <button
+          onClick={() => useGameStore.getState().togglePause()}
+          className={['w-full h-8 rounded-lg border text-sm font-medium', paused ? 'border-green-600/60 bg-green-600/15 text-green-400' : 'border-amber-500/60 bg-amber-500/15 text-amber-400'].join(' ')}
+        >{paused ? '▶ Resume' : '⏸ Pause'}</button>
+        <div className="text-[11px] text-stone-400 tabular-nums">
+          <span className="text-blue-300">{live.heroes} heroes</span> · <span className="text-red-300">{live.foes} foes</span> · round {live.round}
+        </div>
+        <div className="text-[10px] text-stone-500">
+          gate locks resolve against the DEPLOYED party's real proficiencies at stand-up — not the lab's kit toggles.
+        </div>
+        {skipsActive && (
+          <div className="text-[10px] text-amber-400/80">
+            manual pass-skips don't carry — the battle plays the FULL bake.
+          </div>
+        )}
+        {apronOverridden && (
+          <div className="text-[10px] text-amber-400/80">
+            spawn-apron override doesn't carry into the battle seam (default apron).
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Thumb({ result, px, onClick, active }: { result: GenResult; px: number; onClick(): void; active: boolean }) {
   return (
     <button onClick={onClick} className="relative block" style={{ outline: active ? '3px solid #f59e0b' : '1px solid #44403c' }}>
@@ -418,7 +646,17 @@ export default function MapgenLab() {
   // gates master switch + externally-owned portals (driven by showcase presets).
   const [gates, setGates] = useState(true)
   const [pois, setPois] = useState<GenParams['pois']>([])
-  // The active layer tab (index into this recipe's stage table); 0 = Final Map.
+  // Tuning dials: ONLY moved dials live here (touched = key present), so
+  // params.tuning stays identity until a slider actually moves. ↺ deletes.
+  const [tuning, setTuning] = useState<Partial<MapgenTuning>>({})
+  // GenParams-level sliders: null = untouched → the recipe/lib default applies
+  // (field 24 / dungeon 72 / city 40 barriers; apron max(6, size*0.14)).
+  const [maxBarriers, setMaxBarriers] = useState<number | null>(null)
+  const [spawnApron, setSpawnApron] = useState<number | null>(null)
+  // ▶ Play this map: the seeder config snapshotted at click; non-null = overlay up.
+  const [playCfg, setPlayCfg] = useState<MapgenLabBattleOpts | null>(null)
+  // The active layer tab (index into this recipe's stage table); 0 = the FIRST
+  // layer stage (Surface/Layout/Roads); the LAST index is the Final Map.
   const [tab, setTab] = useState(0)
   // Final-tab plane toggles (editable there only — layer tabs derive their
   // overlays from the stage). Presets seed this to open on illustrative layers.
@@ -431,7 +669,33 @@ export default function MapgenLab() {
   const stages = stagesFor(recipeId)
   const stage = stages[Math.min(tab, stages.length - 1)]
   const isFinal = stage.throughPass === null
-  const params = { recipe: recipeId, size, themes, proficiencies: profs, gates, pois, onFail: 'accept' as const }
+
+  // Slider drags re-bake live but DEFERRED: readouts track the pointer, the
+  // bakes (9-thumb sheet + focused map) lag a frame behind under load.
+  const dTuning = useDeferredValue(tuning)
+  const dMaxBarriers = useDeferredValue(maxBarriers)
+  const dSpawnApron = useDeferredValue(spawnApron)
+  const tuningKey = JSON.stringify(dTuning)
+  const params = {
+    recipe: recipeId, size, themes, proficiencies: profs, gates, pois,
+    tuning: dTuning,
+    ...(dMaxBarriers != null ? { maxBarriers: dMaxBarriers } : {}),
+    ...(dSpawnApron != null ? { spawnApron: dSpawnApron } : {}),
+    onFail: 'accept' as const,
+  }
+
+  // Effective values behind the null=untouched sliders (also what ▶ Play pins,
+  // so preview == battle — the adapter would otherwise pin live maps to 72).
+  const defMaxBarriers = recipe.defaults?.maxBarriers ?? 24
+  const defSpawnApron = recipe.defaults?.spawnApron ?? Math.max(6, size * 0.14)
+  const effMaxBarriers = maxBarriers ?? defMaxBarriers
+
+  const setDial = (k: keyof MapgenTuning, v: number) => setTuning((t) => ({ ...t, [k]: v }))
+  const resetDial = (k: keyof MapgenTuning) => setTuning((t) => {
+    const rest = { ...t }
+    delete rest[k]
+    return rest
+  })
 
   // Dev guard: warn once per recipe if a stage names a pass the recipe lacks.
   // useEffect (not useMemo) so the console.warn side effect fires exactly once
@@ -451,7 +715,7 @@ export default function MapgenLab() {
   const sheet = useMemo(
     () => Array.from({ length: 9 }, (_, i) => generateMap(recipe, { ...params, seed: baseSeed + i })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [recipeId, size, themes, baseSeed, profs, gates, pois],
+    [recipeId, size, themes, baseSeed, profs, gates, pois, tuningKey, dMaxBarriers, dSpawnApron],
   )
   const focused = useMemo(() => {
     const t0 = performance.now()
@@ -461,7 +725,7 @@ export default function MapgenLab() {
     const r = generateMap(recipe, { ...params, seed: focus, skipPasses: effectiveSkips, debug: true })
     return { r, ms: performance.now() - t0 }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recipeId, size, themes, focus, skipsKey, profs, gates, pois])
+  }, [recipeId, size, themes, focus, skipsKey, profs, gates, pois, tuningKey, dMaxBarriers, dSpawnApron])
 
   const applyPreset = (p: Preset) => {
     setRecipeId(p.recipe)
@@ -473,17 +737,26 @@ export default function MapgenLab() {
     setGates(p.gates ?? true)
     setPois(p.pois ?? [])
     setManualSkips([])
+    setTuning({})          // presets are curated on recipe defaults — dials reset
+    setMaxBarriers(null)
+    setSpawnApron(null)
     setFinalToggles(presetToggles(p.overlays))
-    setTab(0)   // presets jump to the Final Map, opened on their illustrative overlays
+    // Presets jump to the Final Map (the LAST tab), opened on their overlays.
+    setTab(stagesFor(p.recipe).length - 1)
   }
 
   const switchRecipe = (id: string) => {
     setRecipeId(id)
-    const ds = RECIPE_REGISTRY[id].defaults?.size
-    if (ds) setSize(ds)
+    const d = RECIPE_REGISTRY[id].defaults
+    if (d?.size) setSize(d.size)
+    // Themes are per-recipe decisions (dungeon wants ['dungeon'], city ['city']).
+    setThemes(d?.themes ?? ['plains', 'water'])
     setPois([])
     setManualSkips([])
-    setTab(0)
+    setTuning({})
+    setMaxBarriers(null)
+    setSpawnApron(null)
+    setTab(0)   // land on the recipe's FIRST layer stage
   }
 
   // Render toggles + dim set for the focused canvas: Final = user's plane
@@ -525,7 +798,7 @@ export default function MapgenLab() {
   return (
     <div className="min-h-full bg-stone-900 text-stone-200 p-4 font-mono text-sm overflow-auto">
       <h1 className="text-lg mb-1">mapgen lab</h1>
-      <p className="text-stone-400 text-xs mb-2">staged layer tabs: tab 1 is the final map · each later tab bakes THROUGH that stage and draws earlier layers dim with this stage's structure bright · per-tab pass-skip checkboxes influence every downstream tab · report + pass notes at right</p>
+      <p className="text-stone-400 text-xs mb-2">staged layer tabs in bake order — each tab bakes THROUGH its stage (earlier layers dim, this stage bright) and carries the knobs for the decision it owns; the LAST tab is the final map + seed contact sheet + ▶ play · per-tab pass-skip checkboxes influence every downstream tab · report + pass notes at right</p>
 
       <div className="flex flex-wrap gap-2 items-center mb-3">
         <span className="text-stone-500">showcase:</span>
@@ -537,36 +810,14 @@ export default function MapgenLab() {
         ))}
       </div>
 
-      {/* ── persistent TOP BAR: the cross-cutting params, visible on every tab ── */}
+      {/* ── slim persistent TOP BAR: the cross-cutting basics only ── */}
       <div className="flex flex-wrap gap-3 items-center mb-3">
         <label>recipe <select className="bg-stone-800 px-1" value={recipeId} onChange={(e) => switchRecipe(e.target.value)}>
           {Object.keys(RECIPE_REGISTRY).map((id) => <option key={id}>{id}</option>)}
         </select></label>
         <label>size <input className="bg-stone-800 w-16 px-1" type="number" value={size} onChange={(e) => setSize(Math.max(12, +e.target.value || 12))} /></label>
         <label>seeds <input className="bg-stone-800 w-16 px-1" type="number" value={baseSeed} onChange={(e) => { setBaseSeed(+e.target.value || 0); setFocus(+e.target.value || 0) }} /></label>
-        <label className={gates ? 'text-cyan-400' : 'text-stone-500'}>
-          <input type="checkbox" checked={gates} onChange={(e) => setGates(e.target.checked)} /> gates
-        </label>
         {pois && pois.length > 0 && <span className="text-purple-400">| {pois.length} portal(s)</span>}
-        <span>themes:</span>
-        {THEME_TAGS.map((tag) => (
-          <label key={tag} className={themes.includes(tag) ? 'text-amber-400' : 'text-stone-500'}>
-            <input type="checkbox" checked={themes.includes(tag)} onChange={(e) =>
-              setThemes(e.target.checked ? [...themes, tag] : themes.filter((t) => t !== tag))} /> {tag}
-          </label>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-3 items-center mb-3 text-xs">
-        <span className="text-stone-400">party kit (composition gates — toggle to re-resolve locks):</span>
-        {PROFICIENCY_TAGS.map((tag) => (
-          <label key={tag} className={profs.includes(tag) ? 'text-cyan-400' : 'text-stone-500'}>
-            <input type="checkbox" checked={profs.includes(tag)} onChange={(e) =>
-              setProfs(e.target.checked ? [...profs, tag] : profs.filter((t) => t !== tag))} /> {tag}
-          </label>
-        ))}
-        {focused.r.spec.semantic.locks.length > 0 && (
-          <span className="text-stone-400">| locks: {focused.r.spec.semantic.locks.map((l) => `${l.tag} ${l.open ? '🔓' : '🔒'}`).join(' · ')}</span>
-        )}
       </div>
 
       {/* ── layer tab bar ── */}
@@ -597,6 +848,93 @@ export default function MapgenLab() {
         <div>
           {/* per-tab CONTROLS */}
           <div className="text-xs text-stone-400 mb-1">{stage.blurb}</div>
+
+          {/* ── per-tab KNOBS: the decisions this stage owns ── */}
+          {tab === 0 && (
+            // The biome decision lives on the FIRST stage (Surface/Layout/Roads).
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-1.5 text-xs items-center">
+              <span className="text-stone-500">themes:</span>
+              {THEME_TAGS.map((tag) => (
+                <label key={tag} className={themes.includes(tag) ? 'text-amber-400' : 'text-stone-500'}>
+                  <input type="checkbox" checked={themes.includes(tag)} onChange={(e) =>
+                    setThemes(e.target.checked ? [...themes, tag] : themes.filter((t) => t !== tag))} /> {tag}
+                </label>
+              ))}
+            </div>
+          )}
+          {stage.kit && (
+            // Gates + Secrets owns the composition-gate levers: master switch +
+            // the simulated party kit + the lock readout (same-seed re-resolve).
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mb-1.5 text-xs items-center">
+              <label className={gates ? 'text-cyan-400' : 'text-stone-500'}>
+                <input type="checkbox" checked={gates} onChange={(e) => setGates(e.target.checked)} /> gates
+              </label>
+              <span className="text-stone-500">| party kit:</span>
+              {PROFICIENCY_TAGS.map((tag) => (
+                <label key={tag} className={profs.includes(tag) ? 'text-cyan-400' : 'text-stone-500'}>
+                  <input type="checkbox" checked={profs.includes(tag)} onChange={(e) =>
+                    setProfs(e.target.checked ? [...profs, tag] : profs.filter((t) => t !== tag))} /> {tag}
+                </label>
+              ))}
+              {focused.r.spec.semantic.locks.length > 0 && (
+                <span className="text-stone-400">| locks: {focused.r.spec.semantic.locks.map((l) => `${l.tag} ${l.open ? '🔓' : '🔒'}`).join(' · ')}</span>
+              )}
+            </div>
+          )}
+          {(TAB_DIALS[recipeId]?.[stage.label] ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-1.5 items-center">
+              {(TAB_DIALS[recipeId]?.[stage.label] ?? []).map((k) => {
+                const s = DIAL_SPECS[k]
+                return (
+                  <SliderRow key={k} label={k} min={s.min} max={s.max} step={s.step} def={s.def}
+                    value={tuning[k] ?? s.def} touched={tuning[k] !== undefined}
+                    onSet={(v) => setDial(k, s.int ? Math.round(v) : v)} onReset={() => resetDial(k)} />
+                )
+              })}
+            </div>
+          )}
+          {recipeId === 'field' && stage.label === 'Surface' && (
+            <div className="text-[10px] text-stone-500 mb-1.5">
+              untouched dials use each palette band's own baked threshold (themed bands pin their own values — e.g. desert barren 0.42), so d= is the plains default, not always the live value.
+            </div>
+          )}
+          {((recipeId === 'field' && stage.label === 'Geography') ||
+            (recipeId === 'dungeon' && stage.label === 'Carve') ||
+            (recipeId === 'city' && stage.label === 'Buildings')) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 mb-1.5 items-center">
+              <SliderRow label="maxBarriers" min={8} max={96} step={1} def={defMaxBarriers}
+                value={effMaxBarriers} touched={maxBarriers !== null}
+                onSet={(v) => setMaxBarriers(Math.round(v))} onReset={() => setMaxBarriers(null)} />
+              {recipeId === 'field' && stage.label === 'Geography' && (
+                <SliderRow label="spawnApron" min={2} max={40} step={0.5} def={Math.round(defSpawnApron * 2) / 2}
+                  value={spawnApron ?? Math.round(defSpawnApron * 2) / 2} touched={spawnApron !== null}
+                  onSet={(v) => setSpawnApron(v)} onReset={() => setSpawnApron(null)} />
+              )}
+            </div>
+          )}
+          {stage.label === 'Nav Graph + Flow' && (
+            <div className="text-[10px] text-stone-500 mb-1.5">derived layer — no knobs: regions/nav/flow are computed from the geography above (shape it there).</div>
+          )}
+          {stage.label === 'Dressing' && <PropPool themes={mapThemes} />}
+          {isFinal && (
+            <div className="flex flex-wrap gap-3 mb-1.5 items-center">
+              <button
+                onClick={() => setPlayCfg({
+                  recipe: recipeId, seed: focus, size, themes, gates,
+                  // Always pin the lab's effective budget so preview == battle
+                  // (the adapter would pin live maps to 72 otherwise).
+                  maxBarriers: effMaxBarriers,
+                  tuning,   // touched dials only, by construction
+                })}
+                className="px-4 py-1.5 rounded-lg border border-green-600/70 bg-green-600/15 text-green-400 text-sm font-medium hover:bg-green-600/25">
+                ▶ Play this map
+              </button>
+              {manualSkips.length > 0 && (
+                <span className="text-[10px] text-amber-400/80">manual skips ({manualSkips.join(', ')}) don't carry — the battle plays the full bake</span>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3 mb-1 text-xs items-center">
             {isFinal ? (
               // Final tab keeps the editable plane toggles.
@@ -626,7 +964,7 @@ export default function MapgenLab() {
             <div className="text-[11px] text-stone-500 mb-1">
               <span className="text-amber-400/90">bright</span> = this stage ({stage.owned.join(', ') || '—'}) ·
               {' '}<span className="text-stone-400">dim</span> = accreted ({stage.dim.join(', ') || '—'})
-              {stage.kit && ' · toggle party kit above to open/close the locks'}
+              {stage.kit && ' · toggle the party kit above to open/close the locks'}
               {recipeId === 'field' && stage.owned.includes('semantic') && ' · field places the spawn/landmark POIs in the semantic pass, so they first appear here'}
             </div>
           )}
@@ -678,6 +1016,15 @@ export default function MapgenLab() {
           </ul>
         </div>
       </div>
+
+      {playCfg && (
+        <PlayBattleOverlay
+          opts={playCfg}
+          skipsActive={manualSkips.length > 0}
+          apronOverridden={spawnApron !== null}
+          onClose={() => setPlayCfg(null)}
+        />
+      )}
     </div>
   )
 }
