@@ -278,6 +278,11 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
         .join('')
     }
     const meadow = mi('meadow'), sand = mi('sand'), shallow = mi('shallow-water'), deep = mi('deep-water')
+    // Theme-palette bands (2026-07 vocab additions): plain organic washes, no
+    // special handling — they are walkable ground everywhere else (water masks,
+    // scatter, collision all ignore them). Lava gets the verge (dark crust
+    // edge) so a pool's rim reads cut, not soft.
+    const ash = mi('ash'), lava = mi('lava'), snow = mi('snow'), bog = mi('bog'), gravel = mi('gravel')
     // A city's ground reads as paved streets + a flagstone plaza + grass yards
     // and packed-dirt lots between the buildings — gated on the city recipe so a
     // field/dungeon spec is byte-identical to before (road/stone-floor never
@@ -300,6 +305,13 @@ export function buildTerrainModel(p: TerrainProps): TerrainModel {
       // the desire-path trails — softer than the city's packed lots, with a
       // worn verge stroke so the path-to-grass edge reads (the road-edge ask).
       { want: (v) => v === dirt, fill: P.dirtPath, opacity: isCity ? 0.6 : 0.35, amp: 0.22, verge: true },
+      // theme-palette bands (ash/snow/bog/gravel drift; lava is the hot hazard
+      // band and paints bright + crust-edged). Under the waters, like the rest.
+      { want: (v) => v === ash, fill: P.ashWash, opacity: 0.5, amp: NAT },
+      { want: (v) => v === snow, fill: P.snow, opacity: 0.4, amp: NAT },
+      { want: (v) => v === bog, fill: P.murk, opacity: 0.55, amp: NAT },
+      { want: (v) => v === gravel, fill: P.rockDeep, opacity: 0.5, amp: NAT },
+      { want: (v) => v === lava, fill: P.lavaWash, opacity: 0.85, amp: NAT, verge: true },
       { want: (v) => v === shallow || v === deep, fill: P.waterShallow, opacity: 0.85, amp: NAT, shore: true },
       { want: (v) => v === deep, fill: P.waterDeep, opacity: 0.9, amp: NAT },
     ]

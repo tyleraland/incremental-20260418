@@ -49,11 +49,16 @@ export const PAPER_PALETTE = {
 
   // §mapgen surface plane (terrain.tsx spec consumption): material washes laid
   // over the biome ground. Values sit near the mottle shades — large soft
-  // regions, not features — except the two waters, which must READ as water.
+  // regions, not features — except the two waters, which must READ as water,
+  // and lava, which must read HOT (the theme-band exception: a hazard band,
+  // not ground drift). Snow/bog/gravel washes reuse the wilderness roles
+  // (snow / murk / rockDeep) rather than minting near-duplicates.
   meadowWash:   '#2c3d1c',
   sandWash:     '#4f472e',
   waterShallow: '#2b5666',
   waterDeep:    '#183848',
+  ashWash:      '#45423c',   // volcanic/haunted ash ground (warm dead grey)
+  lavaWash:     '#b34a1e',   // molten pools — deliberately bright (must read hot)
 
   // prop materials
   foliage:     '#33441f',

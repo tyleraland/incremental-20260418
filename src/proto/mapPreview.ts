@@ -56,6 +56,12 @@ const WASH_RGB: Partial<Record<SurfaceMaterial, RGB>> = {
   'deep-water':    [36, 78, 102],   // lake/sea (waterDeep)
   'stone-floor':   [96, 100, 110],  // dungeon flags
   road:            [166, 154, 128], // cobbled street (roadPave)
+  // theme-palette bands (mapgen 2026-07 vocab additions)
+  ash:             [92, 88, 80],    // volcanic/haunted ash ground (ashWash, lifted)
+  lava:            [214, 92, 38],   // molten pools (lavaWash, hot + lifted)
+  snow:            [206, 220, 224], // snow cover (snow role, near-white)
+  bog:             [72, 92, 76],    // swamp murk band (murk, lifted)
+  gravel:          [110, 118, 128], // scree/talus (rockDeep, lifted)
 }
 
 const BARRIER_RGB: Record<BarrierMaterial, RGB> = {

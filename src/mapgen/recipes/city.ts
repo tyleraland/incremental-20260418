@@ -225,6 +225,11 @@ const scatterPass = {
     const { size } = params
     const r = rng('place')
     const c: Pt = { x: size / 2, y: size / 2 }
+    // tuning dials: scatterDensity scales the ring + yard targets; an EXPLICIT
+    // maxScatterItems caps the total (no cap by default). Computation only.
+    const dens = params.tuning.scatterDensity ?? 1
+    const maxItems = params.tuning.maxScatterItems
+    const atCap = () => maxItems !== undefined && draft.scatter.length >= maxItems
     const push = (kind: 'tree' | 'bush' | 'flower' | 'rock' | 'stump', x: number, y: number, s: number) =>
       draft.scatter.push({
         kind, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100,
@@ -233,8 +238,8 @@ const scatterPass = {
 
     // Plaza rim ring: stalls-and-planters read (flowers/bushes), just outside
     // the spawn apron so the form-up knot stays clean.
-    const ring = 6 + r.int(5)
-    for (let i = 0, guard = 0; i < ring && guard < ring * 5; guard++) {
+    const ring = Math.round((6 + r.int(5)) * dens)
+    for (let i = 0, guard = 0; i < ring && guard < ring * 5 && !atCap(); guard++) {
       const ang = r.range(0, Math.PI * 2)
       const rad = r.range(params.spawnApron + 0.8, params.spawnApron + 2.5)
       const x = c.x + Math.cos(ang) * rad, y = c.y + Math.sin(ang) * rad
@@ -244,9 +249,9 @@ const scatterPass = {
     }
 
     // Yards + backlots: greenery grows where the pavement doesn't reach.
-    const yardTarget = Math.round((size * size) / 140)
+    const yardTarget = Math.round(((size * size) / 140) * dens)
     let yards = 0
-    for (let guard = 0; yards < yardTarget && guard < yardTarget * 6; guard++) {
+    for (let guard = 0; yards < yardTarget && guard < yardTarget * 6 && !atCap(); guard++) {
       const x = r.range(MARGIN + 1, size - MARGIN - 1), y = r.range(MARGIN + 1, size - MARGIN - 1)
       const d = plan.dist[Math.floor(y) * size + Math.floor(x)]
       if (d < 3) continue

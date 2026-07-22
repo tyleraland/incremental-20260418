@@ -17,7 +17,9 @@ import type { ThemeTag } from './types'
 
 // Name fragments conditioned on theme (§G: one tag, coherent content across
 // systems). Prefix pools union across the map's themes; suffix follows recipe.
-const THEME_PREFIXES: Partial<Record<ThemeTag, string[]>> = {
+// Exported for the coverage gate (theme-profiles.test.ts): every THEME_TAG
+// must name itself.
+export const THEME_PREFIXES: Partial<Record<ThemeTag, string[]>> = {
   plains: ['Mill', 'Wold', 'Fallow', 'Bray'],
   forest: ['Oak', 'Thorn', 'Alder', 'Fern'],
   beach: ['Salt', 'Gull', 'Shell', 'Tide'],
@@ -30,26 +32,38 @@ const THEME_PREFIXES: Partial<Record<ThemeTag, string[]>> = {
   haunted: ['Wraith', 'Pale', 'Mourn', 'Dusk'],
   volcanic: ['Ash', 'Ember', 'Cinder', 'Slag'],
   arcane: ['Rune', 'Star', 'Ley', 'Glimmer'],
+  swamp: ['Mire', 'Sedge', 'Toad', 'Murk'],
+  snow: ['Frost', 'Rime', 'Sleet', 'Winter'],
+  cave: ['Echo', 'Gloam', 'Drip', 'Delve'],
+  jungle: ['Vine', 'Moss', 'Fever', 'Tangle'],
+  farm: ['Barley', 'Furrow', 'Hay', 'Harrow'],
+  orchard: ['Apple', 'Bough', 'Cider', 'Blossom'],
+  tundra: ['Lichen', 'Hoar', 'Elk', 'Sere'],
+  village: ['Thatch', 'Byre', 'Wain', 'Tithe'],
+  river: ['Ford', 'Eddy', 'Weir', 'Brook'],
 }
 const PLAIN_PREFIXES = ['Green', 'Stone', 'High', 'Marsh']
 
 const FIELD_ADJ = ['quiet', 'wind-worn', 'half-wild', 'sun-dazed', 'mist-hung', 'old']
-const FIELD_LANDFORM: Partial<Record<ThemeTag, string>> = {
+export const FIELD_LANDFORM: Partial<Record<ThemeTag, string>> = {
   forest: 'wood', beach: 'strand', mountain: 'high moor', desert: 'waste',
   water: 'fen', ruins: 'field of toppled stones', haunted: 'pale heath',
   volcanic: 'cinder flat', arcane: 'ley field',
+  swamp: 'mire', snow: 'snowfield', jungle: 'jungle floor', tundra: 'frozen barren',
+  farm: 'patch of worked fields', orchard: 'stand of orchard rows',
+  village: 'common green', river: 'riverland', cave: 'sunken ground',
 }
 
 const DUNGEON_ADJ = ['long-plundered', 'half-collapsed', 'airless', 'root-choked', 'echoing', 'frost-bitten']
 const DUNGEON_TYPE: Partial<Record<ThemeTag, string>> = {
   ruins: 'undercroft', haunted: 'barrow', volcanic: 'slag mine',
-  arcane: 'sanctum', mountain: 'galleries',
+  arcane: 'sanctum', mountain: 'galleries', cave: 'cavern', snow: 'ice-bound galleries',
 }
 
 const CITY_ADJ = ['bustling', 'sleepy', 'prosperous', 'ramshackle', 'pious', 'stubborn']
 const CITY_TRADE: Partial<Record<ThemeTag, string>> = {
   beach: 'fisher', water: 'fisher', forest: 'timber', mountain: 'mining',
-  desert: 'caravan', arcane: 'scrivener',
+  desert: 'caravan', arcane: 'scrivener', farm: 'grain', river: 'ferry',
 }
 
 const themed = <T,>(themes: ThemeTag[], table: Partial<Record<ThemeTag, T>>): T | null => {
