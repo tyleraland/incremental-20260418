@@ -1,14 +1,25 @@
 import { HORSE_PART_PAINTS } from '@/render/paperRig/horse'
 import type { CompiledPaperRigView, PaperRigSpec, PaperRigVec3 } from '@/render/paperRig/types'
 
-const ELEVATION_DEG = 60
+const PAPER_RIG_ELEVATION_DEG = 60
 export const PAPER_RIG_HEADINGS = [0, 45, 90, 135, 180, 225, 270, 315] as const
 
 const add = (a: PaperRigVec3, b: PaperRigVec3): PaperRigVec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 const dot = (a: PaperRigVec3, b: PaperRigVec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const n = (value: number) => Number(value.toFixed(3))
 
-function worldJoints(spec: PaperRigSpec): Record<string, PaperRigVec3> {
+// The camera basis, shared with the facet compiler so both stylizers project
+// through the identical orthographic 60°-elevation view.
+export function paperRigBasis(elevationDeg = PAPER_RIG_ELEVATION_DEG): { right: PaperRigVec3; up: PaperRigVec3; forward: PaperRigVec3 } {
+  const e = elevationDeg * Math.PI / 180
+  return {
+    right: [0, 1, 0],
+    up: [Math.sin(e), 0, Math.cos(e)],
+    forward: [Math.cos(e), 0, -Math.sin(e)],
+  }
+}
+
+export function worldJoints(spec: PaperRigSpec): Record<string, PaperRigVec3> {
   const out: Record<string, PaperRigVec3> = {}
   const pending = new Map(spec.joints.map((joint) => [joint.id, joint]))
   const visit = (id: string, visiting = new Set<string>()): PaperRigVec3 => {
@@ -25,7 +36,7 @@ function worldJoints(spec: PaperRigSpec): Record<string, PaperRigVec3> {
   return out
 }
 
-function rotateHeading(point: PaperRigVec3, headingDeg: number): PaperRigVec3 {
+export function rotateHeading(point: PaperRigVec3, headingDeg: number): PaperRigVec3 {
   const a = headingDeg * Math.PI / 180
   const c = Math.cos(a)
   const s = Math.sin(a)
@@ -57,12 +68,7 @@ function ellipsePath(cx: number, cy: number, rx: number, ry: number) {
 }
 
 export function compilePaperRigView(spec: PaperRigSpec, headingDeg: number): CompiledPaperRigView {
-  const e = ELEVATION_DEG * Math.PI / 180
-  const basis = {
-    right: [0, 1, 0] as PaperRigVec3,
-    up: [Math.sin(e), 0, Math.cos(e)] as PaperRigVec3,
-    forward: [Math.cos(e), 0, -Math.sin(e)] as PaperRigVec3,
-  }
+  const basis = paperRigBasis()
   const world = worldJoints(spec)
   const projected = Object.fromEntries(Object.entries(world).map(([id, point]) => {
     const p = rotateHeading(point, headingDeg)
@@ -96,7 +102,7 @@ export function compilePaperRigView(spec: PaperRigSpec, headingDeg: number): Com
       if (!p || part.size.length < 2) throw new Error(`Missing ellipse data for ${part.id}`)
       d = ellipsePath(p.x, p.y, part.size[0] * spec.tokenScale / 2, part.size[1] * spec.tokenScale / 2)
     }
-    return { id: part.id, d, paint: paintById.get(part.id)! }
+    return { id: part.id, d, paint: paintById.get(part.id)!, role: part.role as 'body' | 'accent' }
   })
   return {
     headingDeg,
