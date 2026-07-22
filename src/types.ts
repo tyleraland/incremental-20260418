@@ -6,6 +6,10 @@ export type TraitCategory =
 
 import type { Element } from '@/lib/elements'
 export type { Element } from '@/lib/elements'
+// Type-only mapgen imports for Location.mapGen below. One-directional: mapgen is
+// a leaf (it never imports game types — its adapter reads a structural
+// MapGenSource), so pulling its vocab INTO the game types creates no cycle.
+import type { MapgenTuning, ThemeTag } from '@/mapgen'
 
 export interface Trait {
   id: string
@@ -175,9 +179,21 @@ export interface Location {
   // its open-world battle's barriers + arena size then come from the generated
   // MapSpec instead of testScenarioId/openWorldBarriers. Seed defaults to the
   // location id (save = seed; the id is already persisted), themes project from
-  // `traits`. No live location sets this yet — the ?mapgen=1 lab is the review
-  // surface; flipping a location on is a one-line change here.
-  mapGen?: { recipe: string; seed?: number | string }
+  // `traits` unless pinned explicitly. The optional fields let a location pin
+  // the FULL generation config the ?mapgen=1 lab previews (themes / gates /
+  // maxBarriers / tuning / onFail), so a lab-reviewed bake replays exactly;
+  // absent fields keep the adapter's live defaults (adapter.ts:
+  // themes-from-traits, gates off, maxBarriers 72, recipe-default dials,
+  // reroll-on-invalid).
+  mapGen?: {
+    recipe: string
+    seed?: number | string
+    themes?: ThemeTag[]
+    gates?: boolean
+    maxBarriers?: number
+    tuning?: Partial<MapgenTuning>
+    onFail?: 'reroll' | 'accept' | 'throw'
+  }
 }
 
 export interface Portal {

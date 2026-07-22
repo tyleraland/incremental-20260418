@@ -5,7 +5,7 @@
 // a later phase — deliberately NOT stubbed here so the seam stays honest.
 
 import type { Barrier } from '@/engine'
-import type { GenParams, GenResult, MapSpec, ProficiencyTag, ThemeTag } from './types'
+import type { GenParams, GenResult, MapgenTuning, MapSpec, ProficiencyTag, ThemeTag } from './types'
 import { THEME_TAGS } from './types'
 import { generateMap } from './pipeline'
 import { RECIPE_REGISTRY } from './recipes'
@@ -41,13 +41,23 @@ export function intensityAt(spec: MapSpec, x: number, y: number): number {
 }
 
 // The Location fields the generator reads — kept structural so mapgen never
-// imports game types (leaf module; same discipline as the engine).
+// imports game types (leaf module; same discipline as the engine). `mapGen`
+// mirrors Location.mapGen (src/types.ts): the optional fields pin the full
+// lab-previewed config; absent fields fall to the live defaults below.
 export interface MapGenSource {
   id: string
   traits: string[]
   openWorldSize?: number
   portals?: { at: [number, number] }[]
-  mapGen?: { recipe: string; themes?: ThemeTag[]; seed?: number | string; gates?: boolean }
+  mapGen?: {
+    recipe: string
+    themes?: ThemeTag[]
+    seed?: number | string
+    gates?: boolean
+    maxBarriers?: number
+    tuning?: Partial<MapgenTuning>
+    onFail?: 'reroll' | 'accept' | 'throw'
+  }
 }
 
 // Location → GenParams → GenResult. Deterministic per location: seed defaults
@@ -82,8 +92,13 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
     // a special cap. NOTE: this is a GenParam — recipes spend by explicit
     // per-pass allotments; the field dials were retuned to spend the
     // envelope (2026-07: mirror-vale ~28 rects, ~52 at 200²; prontera-city
-    // stays at 9 — band pinned in recipe-field.test.ts).
-    maxBarriers: 72,
+    // stays at 9 — band pinned in recipe-field.test.ts). A location (or the
+    // lab's battle seeder) may pin its own budget via mapGen.maxBarriers.
+    maxBarriers: cfg.maxBarriers ?? 72,
+    // Lab-pinnable numeric dials + validation policy: absent = the recipe's
+    // built-in defaults / the reroll policy live maps rely on.
+    tuning: cfg.tuning,
+    onFail: cfg.onFail,
     keepClear: portals.map((p) => ({ x: p.at[0] - 1.5, y: p.at[1] - 1.5, w: 3, h: 3 })),
     pois: portals.map((p, i) => ({ kind: 'portal' as const, at: { x: p.at[0], y: p.at[1] }, id: `portal-${i}` })),
     proficiencies: opts.proficiencies,
@@ -98,11 +113,20 @@ export function generateForLocation(loc: MapGenSource, opts: MapGenOpts = {}): G
 
 // Session cache: generation is pure and a location's params are static data, so
 // a result never invalidates. Lets render-path callers (BattleView per tick,
-// the terrain memo) treat "the location's spec" as a cheap lookup.
+// the terrain memo) treat "the location's spec" as a cheap lookup. The key
+// covers every mapGen field generateForLocation reads (id/recipe/seed/size/kit/
+// gates plus the lab-pinnable themes/maxBarriers/tuning/onFail), so two configs
+// differing only in a dial never collide. Tuning keys are sorted — two
+// semantically-equal literals hash alike regardless of authoring order.
 const LOCATION_CACHE = new Map<string, GenResult>()
 export function generateForLocationCached(loc: MapGenSource, opts: MapGenOpts = {}): GenResult {
+  const cfg = loc.mapGen
   const kit = [...new Set(opts.proficiencies ?? [])].sort().join(',')
-  const key = `${loc.id}|${loc.mapGen?.recipe}|${String(loc.mapGen?.seed ?? '')}|${loc.openWorldSize ?? 0}|${kit}|g${loc.mapGen?.gates ? 1 : 0}`
+  const tuning = cfg?.tuning
+    ? JSON.stringify(Object.fromEntries(Object.entries(cfg.tuning).sort(([a], [b]) => (a < b ? -1 : 1))))
+    : ''
+  const pinned = `${cfg?.themes?.join(',') ?? ''}|${cfg?.maxBarriers ?? ''}|${tuning}|${cfg?.onFail ?? ''}`
+  const key = `${loc.id}|${cfg?.recipe}|${String(cfg?.seed ?? '')}|${loc.openWorldSize ?? 0}|${kit}|g${cfg?.gates ? 1 : 0}|${pinned}`
   const hit = LOCATION_CACHE.get(key)
   if (hit) return hit
   const res = generateForLocation(loc, opts)

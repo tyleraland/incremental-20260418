@@ -30,6 +30,7 @@ import { themesMissingEdge, themesWithoutThemedProps } from '@/render/coverage'
 const SURFACE_COLOR: Record<string, string> = {
   'grass': '#7aa85c', 'meadow': '#8fbf6a', 'dirt': '#a58a5e', 'sand': '#d9c489',
   'shallow-water': '#7ec8d8', 'deep-water': '#3a7fa8', 'stone-floor': '#9a9a94', 'road': '#c9b68e',
+  'ash': '#8f8a80', 'lava': '#e0562e', 'snow': '#eef2f5', 'bog': '#66795a', 'gravel': '#b0a793',
 }
 const BARRIER_COLOR: Record<string, string> = {
   'rock': '#5d5344', 'cut-stone': '#6e675c', 'wood': '#7d5f3c', 'rubble': '#6f6555',

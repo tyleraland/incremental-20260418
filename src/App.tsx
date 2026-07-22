@@ -134,7 +134,12 @@ function App() {
   // so the simulator can copy the real roster into the fight.
   const monsterLabMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('monsterlab')
   const horseRigPerfMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('rigperf')
-  const noPersist = perfMode || sandboxMode || monsterLabMode || horseRigPerfMode
+  // The Mapgen Lab (?mapgen=1) can seed a synthetic battle into the store
+  // (seedMapgenLabBattle — same seeder family as the Battle Sandbox). Same
+  // reasoning as ?monsterlab: no-persist so the synthetic scene can never be
+  // autosaved over a real save; the save still LOADS (below).
+  const mapgenLabMode = typeof window !== 'undefined' && devToolsEnabled() && new URLSearchParams(window.location.search).has('mapgen')
+  const noPersist = perfMode || sandboxMode || monsterLabMode || horseRigPerfMode || mapgenLabMode
 
   // Perf mode renders BattleView directly — no shell chrome, camera controls,
   // or roster rail to confound the measurement.

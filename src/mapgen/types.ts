@@ -59,6 +59,14 @@ export const SURFACE_MATERIALS = [
   'deep-water',      // visual twin of the deep-water collision rects covering it
   'stone-floor',
   'road',            // reserved for the city/dungeon recipes' nav skeleton
+  // Theme-palette bands (2026-07): appended so themed field bakes can paint a
+  // biome instead of borrowing the plains palette. Append-only — grid indices
+  // are stable.
+  'ash',             // volcanic/haunted ground
+  'lava',            // volcanic pools — visual hazard band, walkable today
+  'snow',            // snow/tundra cover
+  'bog',             // swamp murk band
+  'gravel',          // scree/talus — mountain/tundra/cave sparse band
 ] as const
 export type SurfaceMaterial = (typeof SURFACE_MATERIALS)[number]
 
@@ -249,10 +257,29 @@ export const THEME_TAGS = [
 ] as const
 export type ThemeTag = (typeof THEME_TAGS)[number]
 
+// ── Tuning dials (per-bake numeric knobs; ?mapgen=1 sliders ride these) ──────
+// Every field optional at the GenParams seam; an omitted dial falls back to the
+// recipe's built-in default (the *_DIALS constants), so `tuning: {}` bakes
+// byte-identical to no tuning at all. Dials shift COMPUTATION only — never RNG
+// stream derivation — so determinism per (seed, params) holds.
+export interface MapgenTuning {
+  meadowThreshold: number     // surface: moisture above this reads lush (default 0.68)
+  barrenThreshold: number     // surface: moisture below this reads barren (default 0.3)
+  outcropDensity: number      // geography: outcrop mass multiplier (default 1)
+  riverWidthScale: number     // geography: scales deep/shallow/sand channel widths (default 1)
+  riverFordCount: number      // geography: fords punched through the river (default 2)
+  riverBridgeChance: number   // geography: chance a ford dresses as a road bridge (default 0.35)
+  routeChance: number         // gates: chance of the route lock (default 0.6)
+  scatterDensity: number      // dressing: global scatter density multiplier (default 1)
+  clumpCount: number          // dressing: grove/bed cluster centres (default 5)
+  maxScatterItems: number     // dressing: total scatter item cap (default 96)
+}
+
 export interface GenParams {
   recipe: string
   seed: number | string       // string → hashString; save = this, never the spec
   size: number                // square arena side, world units
+  tuning?: Partial<MapgenTuning>  // numeric dial overrides; absent = recipe defaults
   themes: ThemeTag[]
   // Pather budget: open-world routing cost grows with BARRIER COUNT, not map
   // area. The live envelope is 72 (P5 re-bench; the adapter pins it, the
