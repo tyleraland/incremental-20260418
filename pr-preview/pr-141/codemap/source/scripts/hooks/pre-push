@@ -1,0 +1,10 @@
+#!/bin/sh
+# Codemap Timeline: auto-classify new commits with haiku (`claude -p`) and append
+# to tools/codemap/commit-tags.json so they render on the Timeline lens. The tip
+# commit lands in the NEXT push (one behind is fine). Non-blocking; the appended
+# file is left for you to commit. Skip entirely with SKIP_CODEMAP_CLASSIFY=1.
+[ -n "$SKIP_CODEMAP_CLASSIFY" ] && exit 0
+if command -v node >/dev/null 2>&1 && [ -f tools/codemap/classify-commits.mjs ]; then
+  node tools/codemap/classify-commits.mjs --auto 2>&1 || true
+fi
+exit 0
