@@ -1,0 +1,269 @@
+{
+  "_comment": "Authored half of the hybrid feature layer. A feature's MODULE SET is the union of (a) source modules whose basename matches one of its matched test files - the project already names specs after the module under test - and (b) authored `entries` (exact module paths or path globs) for modules with no same-named spec, or to override. Test claiming is first-match-wins in THIS order, so list narrow features before broad ones; `entries` do not claim, so avoid assigning one module to two features. Any spec left unclaimed rolls into an auto 'Unmapped: <area>' feature. Deliberately-unowned modules (useGameStore.ts, types.ts) are cross-cutting hubs, not a feature. Globs: * = one path segment, ** = any.",
+  "features": [
+    {
+      "id": "consumables",
+      "name": "Consumables / packs",
+      "layer": "engine",
+      "description": "Heroes carry a pack and use items mid-fight under player use-rules; pack restocks from the stash in town. CONSUMABLE_REGISTRY graded potions; engine decrements counts in-snapshot.",
+      "tests": ["src/__tests__/engine/consumables.test.ts", "src/__tests__/store/consumables-pack.test.ts"],
+      "entries": ["src/data/consumables.ts"]
+    },
+    {
+      "id": "tactics",
+      "name": "Tactics system",
+      "layer": "engine",
+      "description": "The player's combat lever: per-channel tactic priority (movement/targeting/action/reaction/passive), per-unit + party loadouts, skill-as-tactic injection and attack re-ranking.",
+      "tests": [
+        "src/__tests__/engine/tactics.test.ts",
+        "src/__tests__/engine/tactics-casting.test.ts",
+        "src/__tests__/engine/movement-tactics.test.ts",
+        "src/__tests__/engine/move-orders.test.ts",
+        "src/__tests__/engine/aoe-preference.test.ts",
+        "src/__tests__/engine/exploit-weakness.test.ts",
+        "src/__tests__/engine/action-policy.test.ts",
+        "src/__tests__/store/tactics-loadout.test.ts",
+        "src/__tests__/store/action-slots.test.ts",
+        "src/__tests__/ui/TacticsTab.test.tsx"
+      ]
+    },
+    {
+      "id": "skills",
+      "name": "Skills & abilities",
+      "layer": "engine",
+      "description": "Skill definitions and their combat effects: nukes, DoTs, ground zones, buffs, summons, status effects. Only skills change numbers; tactics are pure behaviour.",
+      "tests": [
+        "src/__tests__/engine/skills.test.ts",
+        "src/__tests__/engine/fireball.test.ts",
+        "src/__tests__/engine/firewall.test.ts",
+        "src/__tests__/engine/chain-bless.test.ts",
+        "src/__tests__/engine/consecration.test.ts",
+        "src/__tests__/engine/lightning-storm.test.ts",
+        "src/__tests__/engine/molasses.test.ts",
+        "src/__tests__/engine/cloak.test.ts",
+        "src/__tests__/engine/invisibility.test.ts",
+        "src/__tests__/engine/summon-skeletons.test.ts"
+      ],
+      "entries": ["src/data/skills.ts", "src/engine/status.ts"]
+    },
+    {
+      "id": "movement-pathing",
+      "name": "Movement & pathing",
+      "layer": "engine",
+      "description": "Barriers/terrain, line-of-sight, kiting, separation, wander/lurk-and-hop, town milling, healer positioning - the spatial movement layer.",
+      "tests": [
+        "src/__tests__/engine/barriers.test.ts",
+        "src/__tests__/engine/movement-obstacles.test.ts",
+        "src/__tests__/engine/los-kiting.test.ts",
+        "src/__tests__/engine/moat-kiting.test.ts",
+        "src/__tests__/engine/healer-positioning.test.ts",
+        "src/__tests__/engine/wander-jitter.test.ts",
+        "src/__tests__/engine/town-wander.test.ts",
+        "src/__tests__/engine/facing.test.ts"
+      ]
+    },
+    {
+      "id": "threat-targeting",
+      "name": "Threat & targeting",
+      "layer": "engine",
+      "description": "WoW-style aggro: hard taunt > targeting tactics > threat fallback (threat-distance with hysteresis). Threat from damage and healing.",
+      "tests": [
+        "src/__tests__/engine/threat.test.ts",
+        "src/__tests__/engine/aggression.test.ts",
+        "src/__tests__/engine/blackboard.test.ts",
+        "src/__tests__/engine/relink.test.ts"
+      ],
+      "entries": ["src/engine/behavior.ts"]
+    },
+    {
+      "id": "open-world",
+      "name": "Open-world combat",
+      "layer": "engine",
+      "description": "Persistent open-world fields: fog-of-war vision, spawn trickle/cap, hero join/leave reconcile, neutral town NPCs, off-screen crediting.",
+      "tests": [
+        "src/__tests__/engine/open-world.test.ts",
+        "src/__tests__/engine/open-world-hunt.test.ts",
+        "src/__tests__/engine/fog-of-war-tactics.test.ts",
+        "src/__tests__/engine/neutral-npc.test.ts",
+        "src/__tests__/store/open-world.test.ts",
+        "src/__tests__/store/openworld-pace.test.ts",
+        "src/__tests__/store/spawn-control.test.ts"
+      ],
+      "entries": ["src/data/npcs.ts"]
+    },
+    {
+      "id": "snapshots",
+      "name": "Battle snapshots",
+      "layer": "engine",
+      "description": "Deterministic serialize/replay of a live BattleState as a BSNAP token, with an integrity guard. Engine changes must keep replays byte-identical.",
+      "tests": ["src/__tests__/engine/snapshot.test.ts", "src/__tests__/engine/timescale.test.ts"]
+    },
+    {
+      "id": "combat-engine",
+      "name": "Combat engine (core)",
+      "layer": "engine",
+      "description": "The pure, RNG-free spatial sim: round loop, grid, spatial hash, vision cache, damage/element matrix, adapter from game units to engine inputs. Tested as a black box through the @/engine barrel.",
+      "tests": ["src/__tests__/engine/**", "src/__tests__/store/combat-engine.test.ts", "src/__tests__/combatTally.test.ts"],
+      "entries": ["src/engine/index.ts", "src/engine/arena.ts", "src/engine/constants.ts", "src/engine/types.ts", "src/data/monsters.ts", "src/lib/combatTally.ts", "src/lib/elements.ts"]
+    },
+    {
+      "id": "combat-ui",
+      "name": "Combat view (UI)",
+      "layer": "components",
+      "description": "BattleView as a mode of the Map tab: compositor-transform token motion, LOD, cast labels, FX, offscreen markers, roster carousel + camera follow, combat reports.",
+      "tests": [
+        "src/__tests__/ui/BattleFx.test.tsx",
+        "src/__tests__/ui/CastLabels.test.tsx",
+        "src/__tests__/ui/CombatPreview.test.tsx",
+        "src/__tests__/ui/Lod.test.tsx",
+        "src/__tests__/ui/OffscreenMarkers.test.tsx",
+        "src/__tests__/ui/UnitRect.test.tsx",
+        "src/__tests__/store/wave.test.ts",
+        "src/__tests__/store/tick-cadence.test.ts",
+        "src/__tests__/store/companion.test.ts"
+      ],
+      "entries": [
+        "src/components/BattleView.tsx",
+        "src/components/RosterCarousel.tsx",
+        "src/components/MonsterCodex.tsx",
+        "src/components/TallyBreakdown.tsx",
+        "src/components/BattleUnitSheet.tsx",
+        "src/components/UnitRect.tsx",
+        "src/render/appearance.ts",
+        "src/lib/combatReport.ts",
+        "src/pages/Reports.tsx"
+      ]
+    },
+    {
+      "id": "save-state",
+      "name": "Save & state",
+      "layer": "save",
+      "description": "Versioned slice codecs in a v1:<base64> envelope, per-mode save slots, export/import round-trip, battles persisted as BSNAP tokens.",
+      "tests": ["src/__tests__/save/**"],
+      "entries": ["src/save/**", "src/lib/save.ts"]
+    },
+    {
+      "id": "offline",
+      "name": "Offline progression",
+      "layer": "lib",
+      "description": "catchUp extrapolates rewards from realized rates (warm/cold/sampled) without re-simulating combat; OfflineSummary modal on long absences.",
+      "tests": ["src/__tests__/store/offline.test.ts"],
+      "entries": [
+        "src/lib/offline.ts",
+        "src/lib/sampling.ts",
+        "src/lib/time.ts",
+        "src/components/OfflineSummary.tsx",
+        "src/components/SamplingDebug.tsx",
+        "src/pages/Time.tsx"
+      ]
+    },
+    {
+      "id": "leveling-stats",
+      "name": "Stats, leveling & health",
+      "layer": "lib",
+      "description": "Derived stats at render, level-proportional exp split (anti power-leveling), integer health/KO/recovery/resting, traits, per-unit stat tracking, roster pages.",
+      "tests": [
+        "src/__tests__/store/levelup.test.ts",
+        "src/__tests__/store/stats.test.ts",
+        "src/__tests__/store/unit-stats.test.ts",
+        "src/__tests__/store/health.test.ts",
+        "src/__tests__/store/party-classes.test.ts",
+        "src/__tests__/store/elements.test.ts",
+        "src/__tests__/ui/UnitsPage.test.tsx"
+      ],
+      "entries": [
+        "src/lib/stats.ts",
+        "src/lib/names.ts",
+        "src/data/units.ts",
+        "src/data/traits.ts",
+        "src/pages/Units.tsx",
+        "src/pages/Guild.tsx",
+        "src/components/UnitReportSheet.tsx",
+        "src/components/TraitBubble.tsx"
+      ]
+    },
+    {
+      "id": "equipment-crafting",
+      "name": "Equipment & crafting",
+      "layer": "data",
+      "description": "Equip slots (main/off/sideboard/armor/accessory), recipe crafting from learnedRecipes, cards/sockets. NOTE: no dedicated specs - the crafting loop is a known disconnected gap (see BACKLOG).",
+      "tests": [],
+      "entries": [
+        "src/data/equipment.ts",
+        "src/data/recipes.ts",
+        "src/data/cards.ts",
+        "src/components/ItemCodex.tsx",
+        "src/pages/Inventory.tsx"
+      ]
+    },
+    {
+      "id": "map-locations",
+      "name": "Map & locations",
+      "layer": "stores",
+      "description": "Pannable overworld, regions/dungeons, travel graph, location familiarity, scenarios. Overworld = open-world locations only.",
+      "tests": [
+        "src/__tests__/store/map-nav.test.ts",
+        "src/__tests__/store/travel.test.ts",
+        "src/__tests__/store/world-map.test.ts",
+        "src/__tests__/store/scenarios.test.ts",
+        "src/__tests__/lib/travelGraph.test.ts"
+      ],
+      "entries": ["src/data/locations.ts", "src/data/scenarios.ts", "src/pages/Map.tsx"]
+    },
+    {
+      "id": "progression-unlocks",
+      "name": "Feature unfolding (curated/sandbox)",
+      "layer": "lib",
+      "description": "Sandbox vs curated modes: gating data + predicates in unlocks.ts, class-change quests, per-mode save slots, fresh-game seeds.",
+      "tests": [
+        "src/__tests__/store/progression-mode.test.ts",
+        "src/__tests__/store/class-change-quests.test.ts",
+        "src/__tests__/store/reset.test.ts",
+        "src/__tests__/lib/unlocks.test.ts"
+      ]
+    },
+    {
+      "id": "logistics",
+      "name": "Logistics & expeditions (proto)",
+      "layer": "proto",
+      "description": "The split-screen Tactician shell (now the default UI): expeditions, carry/economy, merchant resupply, quest journal, pack bridge between proto and the game store.",
+      "tests": [
+        "src/__tests__/store/logistics-fixes.test.ts",
+        "src/__tests__/store/logistics-pack-bridge.test.ts",
+        "src/__tests__/store/merchant-resupply.test.ts",
+        "src/__tests__/store/expedition-carry-full.test.ts",
+        "src/__tests__/proto/supplies.test.ts"
+      ],
+      "entries": ["src/proto/**", "src/data/merchants.ts"]
+    },
+    {
+      "id": "mapgen",
+      "name": "Procedural map generation",
+      "layer": "mapgen",
+      "description": "Seeded, deterministic map generation: recipes (city/dungeon/field), stamps, naming, profiles, validation, and the adapter into engine battle terrain.",
+      "tests": ["src/__tests__/mapgen/**"],
+      "entries": ["src/mapgen/**", "src/dev/MapgenLab.tsx"]
+    },
+    {
+      "id": "city-graphics",
+      "name": "City & terrain rendering",
+      "layer": "render",
+      "description": "The hand-inked battlemap look: procedural buildings, props, palette, creature skins, and terrain baked to a raster canvas for smooth pan/zoom.",
+      "tests": ["src/__tests__/ui/Terrain.test.tsx"],
+      "entries": [
+        "src/render/authoring.ts", "src/render/buildings.ts", "src/render/cadence.ts",
+        "src/render/inked.ts", "src/render/palette.ts", "src/render/props.ts",
+        "src/render/skins.tsx", "src/render/terrain.tsx",
+        "src/dev/SkinGallery.tsx", "src/dev/AssetWorkshop.tsx"
+      ]
+    },
+    {
+      "id": "perf",
+      "name": "Performance harness",
+      "layer": "dev",
+      "description": "Heavy open-world perf seed (?perf=1) and its e2e fps signal.",
+      "tests": ["src/__tests__/dev/perfSeed.test.ts"],
+      "entries": ["src/dev/perfSeed.ts"]
+    }
+  ]
+}

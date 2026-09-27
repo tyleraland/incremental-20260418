@@ -1,0 +1,16 @@
+{
+  "name": "codemap",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Deterministic static analyzer + visualizer for the game codebase. Isolated from the game: its deps never enter the game bundle.",
+  "scripts": {
+    "analyze": "node analyze.mjs",
+    "build": "node analyze.mjs"
+  },
+  "devDependencies": {
+    "cytoscape": "^3.30.2",
+    "marked": "^14.1.4",
+    "ts-morph": "^23.0.0"
+  }
+}
