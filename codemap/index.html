@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Codemap</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script src="./cytoscape.min.js"></script>
+  <script src="./marked.umd.js"></script>
+</head>
+<body>
+  <header>
+    <button id="menu" aria-label="Toggle controls">☰</button>
+    <div class="brand">
+      <strong>Codemap</strong>
+      <span id="meta" class="muted"></span>
+    </div>
+    <nav id="views"></nav>
+    <div id="headline" class="stats muted"></div>
+  </header>
+
+  <main>
+    <aside id="sidebar"></aside>
+    <section id="stage">
+      <div id="cy" hidden></div>
+      <div id="panel" hidden></div>
+      <div id="hint" class="hint muted"></div>
+    </section>
+    <aside id="detail"><div class="detail-empty muted">Select something for details.</div></aside>
+    <div id="scrim"></div>
+  </main>
+
+  <div id="error" hidden></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

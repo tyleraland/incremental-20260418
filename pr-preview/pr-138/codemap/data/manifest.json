@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-07-16T01:07:52.430Z",
+  "gitHash": "f836c6c",
+  "repo": "incremental-20260418",
+  "headline": {
+    "codeFiles": 171,
+    "codeLoc": 41478,
+    "edges": 1070,
+    "features": 23,
+    "deadModules": 0,
+    "cycles": 1,
+    "trackedFiles": 444,
+    "bytes": 5491712,
+    "commits": 930,
+    "authors": 2,
+    "over10": 156,
+    "coverage": null,
+    "deadExports": 93,
+    "smells": 18
+  },
+  "datasets": [
+    {
+      "id": "modules",
+      "file": "data/modules.json"
+    },
+    {
+      "id": "git",
+      "file": "data/git.json"
+    },
+    {
+      "id": "complexity",
+      "file": "data/complexity.json"
+    },
+    {
+      "id": "coverage",
+      "file": "data/coverage.json"
+    },
+    {
+      "id": "smells",
+      "file": "data/smells.json"
+    },
+    {
+      "id": "timeline",
+      "file": "data/timeline.json"
+    },
+    {
+      "id": "filesystem",
+      "file": "data/filesystem.json"
+    }
+  ]
+}
