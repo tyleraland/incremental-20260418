@@ -1,0 +1,217 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    @apply h-full;
+  }
+  html {
+    @apply bg-game-bg text-game-text antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-game-primary hover:bg-indigo-500 text-white rounded-lg
+    font-medium transition-colors duration-150 cursor-pointer select-none;
+  }
+}
+
+@layer utilities {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  /* Hide the scrollbar but keep scrolling (roster carousel, matrix). */
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}
+
+/* Combatant "appearing" pop when a wave spawns. */
+@keyframes chip-spawn {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  60%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.animate-chip-spawn { animation: chip-spawn 0.35s ease-out; }
+
+/* Combat juice: plain floating label — rises straight up and fades (rally / aggro
+   / tactic chatter). */
+@keyframes dmg-float {
+  0%   { opacity: 1; transform: translate(-50%, -50%); }
+  100% { opacity: 0; transform: translate(-50%, -190%); }
+}
+.animate-dmg-float { animation: dmg-float 0.6s ease-out forwards; }
+
+/* Damage number: a parabolic "lob" — popped up and to the right like it's been
+   thrown, arcing to an apex (~30%) then *falling* back down along its arc and
+   drifting right, fading out late (held visible through most of the fall, then
+   fades over the last third) so it lingers and lands rather than vanishing mid-air.
+   Scale pops then settles (never below ~0.9, so it stays readable per RPG
+   damage-number lore). The -50% base keeps it centred on the struck unit. */
+@keyframes dmg-arc {
+  0%   { opacity: 0; transform: translate(-50%, -50%)  scale(0.70); }
+  10%  { opacity: 1; transform: translate(-46%, -125%) scale(1.22); }
+  30%  { opacity: 1; transform: translate(-34%, -185%) scale(1.05); }
+  65%  { opacity: 1; transform: translate(-16%, -110%) scale(0.98); }
+  100% { opacity: 0; transform: translate(-4%,  -45%)  scale(0.9); }
+}
+.animate-dmg-arc { animation: dmg-arc 1.35s ease-out forwards; }
+
+/* Heal number: a calmer counterpart — floats gently straight up, a touch slower,
+   no arc, so it reads as a relief rather than an impact. */
+@keyframes heal-float {
+  0%   { opacity: 0; transform: translate(-50%, -50%)  scale(0.85); }
+  15%  { opacity: 1; transform: translate(-50%, -75%)  scale(1.05); }
+  100% { opacity: 0; transform: translate(-50%, -165%) scale(1.0); }
+}
+.animate-heal-float { animation: heal-float 0.95s ease-out forwards; }
+
+/* A hit ring that flashes out from the struck combatant. */
+@keyframes hit-flash {
+  0%   { opacity: 0.85; transform: translate(-50%, -50%) scale(0.5); }
+  100% { opacity: 0;    transform: translate(-50%, -50%) scale(1.7); }
+}
+.animate-hit-flash { animation: hit-flash 0.45s ease-out forwards; }
+
+/* One-shot melee lunge: the attacker's token nudges toward its target (the
+   direction rides in --lunge-x/--lunge-y, set per attack) and settles back.
+   Compositor-only (transform). Two IDENTICAL keyframe sets: back-to-back
+   attacks restart the animation by alternating animation-name on round parity
+   — a class swap, so the memo'd token body is never remounted. */
+@keyframes lunge-a {
+  0%   { transform: translate(0, 0); }
+  35%  { transform: translate(var(--lunge-x, 0), var(--lunge-y, 0)); }
+  100% { transform: translate(0, 0); }
+}
+@keyframes lunge-b {
+  0%   { transform: translate(0, 0); }
+  35%  { transform: translate(var(--lunge-x, 0), var(--lunge-y, 0)); }
+  100% { transform: translate(0, 0); }
+}
+.animate-lunge-a { animation: lunge-a 0.3s ease-out; }
+.animate-lunge-b { animation: lunge-b 0.3s ease-out; }
+
+/* Continuous idle: a RESTING token stays subtly alive instead of frozen.
+   'breathe' swells a body plate through three authored poses (rest → inhale →
+   exhale undershoot); 'sway' drifts a part (antennae, fronds) a few degrees.
+   The chip wrapper carries `animate-idle` (added by BattleChip only while the
+   token is at detail LOD, alive, still and not casting — so a dense far-LOD mob,
+   whose merged body has no data-idle nodes anyway, animates nothing); it runs
+   the body's `[data-idle]` DESCENDANTS — the same seam as data-atk/data-walk,
+   so the memo'd body never re-renders. Per-token phase/tempo ride in
+   --idle-delay/--idle-dur (seeded off the unit id in BattleChip) so a nest
+   doesn't pulse in lockstep. transform-box:fill-box centers the scale/sway on
+   the part's own box at any facing. Declared BEFORE the walk/atk rules so those
+   win when a part is tagged for both and the token acts mid-breath. */
+@keyframes idle-breathe { 0%, 100% { transform: scale(1) } 42% { transform: scale(1.055) } 72% { transform: scale(0.985) } }
+@keyframes idle-sway    { 0%, 100% { transform: rotate(0deg) } 42% { transform: rotate(3.5deg) } 72% { transform: rotate(-1.6deg) } }
+.animate-idle [data-idle] { transform-box: fill-box; transform-origin: center; }
+.animate-idle [data-idle="breathe"] { animation: idle-breathe var(--idle-dur, 2.6s) ease-in-out var(--idle-delay, 0s) infinite; }
+.animate-idle [data-idle="sway"]    { animation: idle-sway    var(--idle-dur, 2.6s) ease-in-out var(--idle-delay, 0s) infinite; }
+
+/* Optional walk cycle: a foot/leg/arm shuffles a little WHILE the token moves.
+   The chip wrapper carries `animate-walk` (added by BattleChip when c.moving);
+   it animates the body's `[data-walk]` DESCENDANTS (a transform-less <g>, screen
+   space — so a tiny translate reads as a jiggle at any heading). Phases 1/2 are
+   opposite so alternating feet step out of sync. Subtle (≈1.6 SVG user units)
+   and infinite, but naturally LOD-bounded: the far-LOD merge has no accent parts,
+   so a dense mob animates nothing. Declared BEFORE the atk rules so a jab wins if
+   a leg is tagged both and the token attacks mid-stride. */
+@keyframes walk-step-1 { 0%, 100% { transform: translate(0, 0) } 50% { transform: translate(0.9px, -2.6px) } }
+@keyframes walk-step-2 { 0%, 100% { transform: translate(0, 0) } 50% { transform: translate(-0.9px, 2.6px) } }
+.animate-walk [data-walk="1"] { animation: walk-step-1 0.42s ease-in-out infinite; }
+.animate-walk [data-walk="2"] { animation: walk-step-2 0.42s ease-in-out infinite; }
+
+/* Part-level melee jab: the attacker's HEAD group snaps toward the target and
+   settles; TRAILING parts (the tail) lag the opposite way — so the token reads
+   as lunging with its body, not sliding as a rigid disc. Sword/dagger weapons
+   use the same seam but rotate around the hand for a small slash. Direction rides in
+   --atk-x/--atk-y (SVG user units, set per attack on the chip wrapper); the
+   classes select on the wrapper and animate `[data-atk]` DESCENDANTS inside the
+   memo'd token svg (the body never re-renders — its data-atk tags are static).
+   Two identical a/b sets so back-to-back attacks retrigger on a class swap. */
+@keyframes atk-jab-a   { 0% { transform: none } 40% { transform: translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: none } }
+@keyframes atk-jab-b   { 0% { transform: none } 40% { transform: translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: none } }
+@keyframes atk-trail-a { 0% { transform: none } 45% { transform: translate(calc(var(--atk-x, 0) * -0.55), calc(var(--atk-y, 0) * -0.55)) } 100% { transform: none } }
+@keyframes atk-trail-b { 0% { transform: none } 45% { transform: translate(calc(var(--atk-x, 0) * -0.55), calc(var(--atk-y, 0) * -0.55)) } 100% { transform: none } }
+@keyframes atk-swing-a { 0% { transform: rotate(-18deg) translate(calc(var(--atk-x, 0) * -0.25), calc(var(--atk-y, 0) * -0.25)) } 42% { transform: rotate(28deg) translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: rotate(0deg) translate(0, 0) } }
+@keyframes atk-swing-b { 0% { transform: rotate(-18deg) translate(calc(var(--atk-x, 0) * -0.25), calc(var(--atk-y, 0) * -0.25)) } 42% { transform: rotate(28deg) translate(var(--atk-x, 0), var(--atk-y, 0)) } 100% { transform: rotate(0deg) translate(0, 0) } }
+@keyframes atk-swing-down-a { 0% { transform: rotate(8deg) } 42% { transform: rotate(-48deg) translate(0, 9px) } 100% { transform: rotate(0deg) } }
+@keyframes atk-swing-down-b { 0% { transform: rotate(8deg) } 42% { transform: rotate(-48deg) translate(0, 9px) } 100% { transform: rotate(0deg) } }
+.animate-atk-a [data-atk="jab"]   { animation: atk-jab-a   0.3s ease-out; }
+.animate-atk-b [data-atk="jab"]   { animation: atk-jab-b   0.3s ease-out; }
+.animate-atk-a [data-atk="trail"] { animation: atk-trail-a 0.3s ease-out; }
+.animate-atk-b [data-atk="trail"] { animation: atk-trail-b 0.3s ease-out; }
+.animate-atk-a [data-atk="swing"],
+.animate-atk-b [data-atk="swing"] { transform-box: fill-box; transform-origin: 35% 50%; }
+.animate-atk-a [data-atk="swing"] { animation: atk-swing-a 0.3s ease-out; }
+.animate-atk-b [data-atk="swing"] { animation: atk-swing-b 0.3s ease-out; }
+.animate-atk-a [data-atk="swingDown"],
+.animate-atk-b [data-atk="swingDown"] { transform-box: fill-box; transform-origin: 65% 18%; }
+.animate-atk-a [data-atk="swingDown"] { animation: atk-swing-down-a 0.3s ease-out; }
+.animate-atk-b [data-atk="swingDown"] { animation: atk-swing-down-b 0.3s ease-out; }
+
+/* Hit recoil: a struck token jerks back along the blow (--hit-x/--hit-y, % of
+   the token box) with a brief squash, then settles. A whole-token wrapper
+   animation (compositor-only), so it composes with an in-flight lunge and never
+   touches the memo'd body. Two a/b sets to retrigger on consecutive hits. */
+@keyframes hit-recoil-a { 0% { transform: none } 30% { transform: translate(var(--hit-x, 0), var(--hit-y, 0)) } 100% { transform: none } }
+@keyframes hit-recoil-b { 0% { transform: none } 30% { transform: translate(var(--hit-x, 0), var(--hit-y, 0)) } 100% { transform: none } }
+.animate-hit-a { animation: hit-recoil-a 0.24s ease-out; }
+.animate-hit-b { animation: hit-recoil-b 0.24s ease-out; }
+[data-hit="show"] { opacity: 0; }
+.animate-hit-a [data-hit="hide"],
+.animate-hit-b [data-hit="hide"] { opacity: 0; }
+.animate-hit-a [data-hit="show"],
+.animate-hit-b [data-hit="show"] { opacity: 1; }
+
+/* Attack arc line fades shortly after the strike lands. */
+@keyframes line-fade {
+  from { opacity: 0.7; }
+  to   { opacity: 0; }
+}
+.animate-line-fade { animation: line-fade 0.45s ease-out forwards; }
+
+/* Lingering cast label: pops in, holds for the cast, then fades over the last
+   ~0.6s of its ~3s life. */
+@keyframes cast-label {
+  0%   { opacity: 0; transform: translateY(3px) scale(0.9); }
+  6%   { opacity: 1; transform: translateY(0)   scale(1); }
+  80%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-cast-label { animation: cast-label 3s ease-out forwards; }
+
+/* ── Ambient terrain FX (experimental; WaterFX in terrain.tsx, AmbientFX in
+   BattleView). Transform/opacity only (compositor contract), few elements,
+   infinite loops — each particle is one promoted layer, so counts stay capped
+   (3 water regions × 2 rings; 6 ambient particles). */
+@keyframes water-ripple {
+  0%   { transform: scale(0.18); opacity: 0; }
+  12%  { opacity: 0.45; }
+  70%  { transform: scale(1); opacity: 0; }
+  100% { transform: scale(1); opacity: 0; }
+}
+.animate-water-ripple { animation: water-ripple 3.4s linear infinite; }
+
+/* Falling leaf/snow particle: drifts down-right across most of the arena with
+   a slow tumble, fading in/out at the ends. vh/vw ≈ arena scale (the arena is
+   a viewport-fit square); overflow-hidden clips any overshoot. */
+@keyframes ambient-fall {
+  0%   { transform: translate3d(0, -4vh, 0) rotate(0deg); opacity: 0; }
+  8%   { opacity: 0.7; }
+  78%  { opacity: 0.55; }
+  100% { transform: translate3d(5vw, 74vh, 0) rotate(280deg); opacity: 0; }
+}
+.animate-ambient-fall { animation: ambient-fall 12s linear infinite; }
+
+/* Rising bog/haunt mote: slow upward drift with a slight sway, dim. */
+@keyframes ambient-drift {
+  0%   { transform: translate3d(0, 0, 0); opacity: 0; }
+  22%  { opacity: 0.4; }
+  60%  { transform: translate3d(2.5vw, -18vh, 0); opacity: 0.3; }
+  100% { transform: translate3d(-1vw, -34vh, 0); opacity: 0; }
+}
+.animate-ambient-drift { animation: ambient-drift 9s linear infinite; }
