@@ -1,0 +1,358 @@
+# Movement ↔ action coupling — the combat plan seam
+
+Design doc for the recurring class of unit-AI problems where the movement layer
+needs to know what the action layer will actually do (and vice versa):
+
+- kite at the range of the skill you'll *actually cast*, not your longest range;
+- "should I stand at spot A to cast X, or spot B to cast Y?";
+- "this route runs through a ring of stationary ranged monsters — eat the
+  damage, or kill a few first?";
+- Blink: one capability that is both an escape (combat movement) and a bridge
+  (opens routes across un-walkable gaps).
+
+The backlog has rediscovered this twice independently ("Robust range selection"
+and "positioning for a unit's preferred-range attack rather than its longest",
+BACKLOG.md §Combat-AI). This doc names the root cause, lays out the target
+architecture, and slices it into shippable milestones. No code lands with this
+doc — it is the foundation the milestones build on.
+
+## 1. The problem, precisely
+
+Today the two layers guess at each other through *proxies*:
+
+**Movement guesses what action will do.** `castRange` / `kiteDistanceFor`
+(`src/engine/spatial.ts`) answer "where should I stand?" from *raw skill
+ranges* — the longest single-target attack range, cooldown-filtered. The kiter
+(`kiteToward`, `src/engine/engine.ts`), the caster's default hold
+(`executeMovement`'s `reach = castRange(self)`), and Wary Caster all anchor on
+it. But the action channel may pick a *different* skill: `estimateDamageVs`
+re-ranks attacks per target (element matrix, magic vs physical mitigation,
+cycle amortization), the channeled-AoE gate can veto the long cast, cooldowns
+shift which option is live. A unit can park at the range of a skill it will
+never cast, out of range of the one it wants.
+
+**Action assumes movement already happened.** `selectSkillTarget` and every
+gate in `makeSkillTactic` (`src/engine/skills.ts`) evaluate only at
+`self.pos`, *after* movement executed. There is no way to ask "if I stood at
+P, what would I cast, at whom, for how much?" — so no movement decision can be
+scored by its action payoff.
+
+That's the chicken-and-egg loop: position → best attack → preferred range →
+position. Each patch that half-closes it becomes a special case:
+
+- `kiteToward`'s `aimOutOfRange` branch — parked at the nearest-threat gap
+  while the *locked* target sits out of range; patched with a "close straight
+  on the aim" special case.
+- `channeledAoeWorthIt` / `canFinishChannel` — position-conditional action
+  gates, but only ever consulted at the current position.
+- `firewallThreat` — its own bespoke "castable from here?" geometry.
+- Storm Caller — its own cluster-value scan, blind to whether the caster can
+  actually reach a firing spot for the cluster it picked.
+
+These are four partial re-implementations of the same question. The recurring
+kite edge-cases (anchor on the wrong range, walls/cliffs breaking LoS,
+stranding in a corner) are all symptoms of movement not being able to *ask*.
+
+## 2. What the codebase already does right
+
+The design below is not imported from outside — it generalizes patterns the
+engine already uses locally:
+
+- **`escapeHeading`** samples 16 candidate directions, scores each
+  (clearance + reach − dead-end + away-bias + cohesion + stickiness), commits
+  the winner, and remembers it (`escapeDir`, serialized with a legacy default)
+  for hysteresis. That *is* propose–evaluate–commit; it's just private to the
+  kite retreat.
+- **`reorderAttacksForTarget` + `exploitMargin`** is a scored choice with a
+  switch margin at the action layer.
+- **`avoidOrPlowPoint`** (travel-avoid watchdog) is route-threat judgment v0:
+  steer around enemy reach, detect no-progress, escalate to plowing.
+- **`estimateDamageVs`** is already the single scoring hook the backlog says
+  to extend ("more scorers").
+
+The foundation is: extract that pattern, make **position a parameter** of the
+action evaluation, and share one scorer — instead of a fifth, sixth, seventh
+local copy.
+
+## 3. Target architecture
+
+Three pure, deterministic pieces, all engine-internal (`src/engine/`), no RNG,
+id/index tiebreaks everywhere, inputs never mutated.
+
+### 3.1 The action forecast (the seam itself)
+
+```ts
+// plan.ts (new) — "if I stood at `at`, what would I do?"
+export interface ActionForecast {
+  // Best action available from `at` on the current gates, or null (nothing castable).
+  option: { skill: EngineSkill | null; targetId: string } | null   // skill null = basic attack
+  score: number        // estimateDamageVs, amortized — same scorer the action channel uses
+  range: number        // range the chosen option needs (its anchor for movement)
+  losClear: boolean    // sightline from `at` to the option's target
+  finishable: boolean  // canFinishChannel evaluated from `at`
+}
+export function forecastAction(state: BattleState, self: Combatant, at: Vec2): ActionForecast
+```
+
+The critical property is **no drift**: the forecast must run the *same* gates
+the real action channel runs (cooldowns, active caps, cluster gate, cloak/
+shield-wall/last-stand gates, `selectSkillTarget`'s range/LoS/redundancy
+filters). That's achieved mechanically, not by discipline: the existing
+functions get an optional `at: Vec2 = self.pos` parameter
+(`selectSkillTarget`, `canFinishChannel`, `channeledAoeWorthIt`,
+`inRange`-style checks), and the live action channel becomes literally
+`forecastAction(state, self, self.pos)`. One code path, two callers.
+
+Known limits of the shipped forecast (deliberate scope, tracked in the
+progress log): it sees only single-target **attack** options + the basic
+attack — every `type: 'aoe'` skill is invisible (so Storm Caller keeps its
+bespoke cluster scan and `exposureAt` scores AoE-armed enemies by their basic
+attack; the BACKLOG "AoE spread value" scorer is the fix for both). It also
+doesn't model the action channel's *priority stack* above skills — consumable
+tactics, Burst/Chain — nor `reorderAttacksForTarget`'s 15% switch hysteresis,
+so in the near-tie band the live channel and the forecast can pick different
+skills of ~equal value. Chain additionally runs its own partial cast gate
+instead of `skillCastTarget` — a pre-existing drift instance to fold in.
+
+Notes:
+
+- Forecasting at a hypothetical `at` must not consult per-position caches
+  keyed on `self.pos` — the vision cache (`spatial.ts`) already keys on the
+  querier's live position, so hypothetical positions bypass it by
+  construction. Enemy *visibility* for a hypothetical position uses the same
+  `visionRange` distance check, recomputed.
+- Non-attack value (heal/buff/zone utility) initially scores 0, exactly as
+  `estimateDamageVs` does today. Extending the scorer extends every consumer
+  at once — that's the point of the seam.
+
+### 3.2 Candidate-position scoring (propose–evaluate–commit)
+
+The chicken-and-egg loop is broken by **not iterating**: enumerate a small,
+deterministic candidate set of positions, score the *joint* (position, action)
+pair, commit the winner.
+
+```ts
+export interface MoveCandidate {
+  pos: Vec2
+  kind: 'hold' | 'kiteBack' | 'close' | 'corner' | 'flank' | 'blink'   // provenance, for trace/debug
+}
+export function scoreCandidate(state: BattleState, self: Combatant, c: MoveCandidate): number
+//   + forecastAction(state, self, c.pos).score          — offense enabled there
+//   − exposure(state, self, c.pos) · EXPOSURE_W         — §3.3
+//   − strandingPenalty(...)                             — unreachable / cut off from party
+//   + stickiness bonus for last round's committed kind  — hysteresis (the escapeDir lesson)
+```
+
+Movement *tactics* stop hand-computing ranges and instead **propose
+candidates**: the kiter proposes {hold, arc-back points, the corner point from
+`steerAround`}; the default caster hold proposes {hold, close-to-forecast-
+range}; a blink owner adds teleport landings. The shared evaluator picks.
+Candidate counts stay small (≤ ~8) and ordering is fixed, so replays are 1:1.
+
+This is deliberately a *discrete candidate* evaluator, not an influence-map
+or A* planner. `escapeHeading` proves the shape is enough, and it keeps the
+per-turn budget flat.
+
+### 3.3 The exposure query (what routes and kites both need)
+
+```ts
+// "How much punishment does standing at `p` invite from the enemy team?"
+export function exposure(state: BattleState, self: Combatant, p: Vec2): number
+// Σ over visible enemies e:  estimateDamageVs(e, self, bestOf(e)) gated by
+//   reach: distance(p, e.pos) ≤ attackRange(e) + moveSpeedOf(e)·H  (H = small horizon)
+//   and LoS for ranged e (sightlineClear).
+```
+
+This is the value judgment in the gauntlet example, and the missing term in
+kite scoring ("backing off *into* another enemy's reach"). Stationary ranged
+monsters get `moveSpeedOf(e) = 0`, so their threat is a crisp disc + LoS —
+exactly the ring the router must price.
+
+## 4. The three motivating problems, solved in this framework
+
+**Kite robustness / skill-x-vs-y positioning.** The kiter's `desiredRange`
+becomes `forecastAction(...).range` — the range of the option it will actually
+cast (M1). Where two skills imply different spots, both spots enter the
+candidate set and the joint score decides (M2): standing at 6 to channel
+Frost Bolt vs closing to 1.2 for Bash against a magic-immune foe is one
+`scoreCandidate` comparison, not a special case. Cliffs/LoS/stranding stop
+being kiteToward branches — they're the `losClear`, `exposure`, and
+`strandingPenalty` terms applied uniformly to every candidate.
+
+**The gauntlet (ring of stationary ranged monsters).** Route-level version of
+the same trade. `avoidOrPlowPoint` already steers a marching unit around enemy
+reach and escalates to plowing on no-progress. M3 replaces "no-progress
+watchdog" with priced choice: sample the corridor (the `steerAround` polyline
+toward `moveOrder`), integrate `exposure` along it → expected HP cost of
+running the gauntlet; compare against an HP budget (fraction of current HP,
+modulated by `moveEngage`). Over budget → the third option the watchdog can't
+express today: **clear-first** — drop the march, fight the cheapest arc of the
+ring (fewest kills that open an under-budget corridor), then resume the order.
+The store/logistics layer sees this only as "the move order takes longer";
+if no corridor can be brought under budget, the order reports blocked and the
+logistics layer (`routeUnitTo`) can reroute — same seam it uses today.
+
+**Blink.** Modeled as a *movement capability* on the combatant, not a
+special-cased skill:
+
+```ts
+// Combatant (serialized; adapter fills it from the skill/equipment kit)
+moveAbilities?: { kind: 'teleport'; range: number; cooldownRounds: number; needsLoS: boolean }[]
+```
+
+Three integration points, in increasing scope:
+1. **Escape** — blink landings join the escape/kite candidate set (score
+   already handles "is the far side better": exposure drops, forecast may
+   still fire). Spending it is an *option scored against walking*, so the AI
+   naturally saves it when walking is fine — plus a reserve margin so the
+   escape only wins when it beats walking clearly (don't waste the cooldown).
+2. **Pathing** — `steerAround`/`canReach` (`barriers.ts`) grow an optional
+   capability argument that adds teleport edges to the visibility graph:
+   node pairs ≤ range apart, crossing cliff-kind barriers (which block walk
+   but not sight/blink), wall-crossing only if `!needsLoS`. That's "cross the
+   moat": `canReach` becomes per-unit, which also feeds reachability-aware
+   threat/hunt (`pickHuntTarget` already calls `canReach`).
+3. **Overworld logistics** — `routeBetween` (`src/lib/travelGraph.ts`) already
+   takes a weight hook; capability-gated *edges* (a river-crossing connection
+   marked `requires: 'teleport'`) make some routes exist only for blink
+   owners. This is store-side data, cleanly separate from the engine.
+
+In-combat, the *cast* of Blink is an action-channel skill whose resolution
+repositions the unit — the movement planner requests it by scoring a blink
+candidate best, and the action channel executes it (same relationship as
+Firewall: the skill tactic owns placement). That keeps "one action per turn"
+accounting honest: blinking competes with casting, which is exactly the
+interesting decision.
+
+## 4.5 Levers (§levers): tuning knobs, the posture dial, and future priorities
+
+The plan layer's numbers are now split into three deliberate tiers
+(`src/engine/tuning.ts` is the single home for the first two):
+
+**Tier 1 — dev knobs to review against real gameplay** (marked ⏱ in
+tuning.ts): `GAP_W` (ring pull), `KITE_DEAD_BAND` (hold band — one constant
+shared by the scorer and kiteToward so they can't drift), `TRAVEL_CLEAR_EXIT`
+(clear-first hysteresis width), `BLINK_WALK_MIN` (cornered threshold), and
+the posture rows themselves. Chosen analytically, not by play — the watch
+list for a browser-tuning pass, alongside the pre-existing kite/threat knobs
+(`kiteDistanceFor`'s +0.5 safety pad, `THREAT_WEIGHT`/`PULL_FRACTION`,
+charger/flanker leashes).
+
+**Tier 2 — the posture dial (player-facing, shipped).** `Unit.posture:
+'bold' | 'steady' | 'wary'` (default steady ≡ pre-posture behavior; absent on
+legacy saves/snapshots). One tap in the Tactician lens; live combatants pick
+it up through `relinkCombatant`. A posture is a named ROW of policy weights
+every plan-layer scorer reads via `postureOf`:
+
+| column         | bold | steady | wary | read by                      |
+|----------------|------|--------|------|------------------------------|
+| `exposureW`    | 0    | 0.05   | 0.2  | `scoreCandidate` (kite/hold) |
+| `travelBudget` | 0.5  | 0.35   | 0.2  | `corridorAffordable` (M3)    |
+| `blinkGain`    | 3    | 2      | 1.5  | `tryBlinkEscape` (M4)        |
+
+Three coarse stances a player can reason about, not sliders — and the dial
+is the *id*, not the weights, so re-tuning a row re-tunes every unit (and
+every live save) standing on it.
+
+**Tier 3 — where multiple high-level priorities plug in later.** A future
+consideration (objective pressure while escorting, loot greed, formation
+cohesion, mana thrift) is a new COLUMN with a value per posture — not a new
+mechanism. Two extension paths, in preference order: (1) more columns read by
+existing scorers (cheap, composable — the pattern shipped here); (2) when a
+priority needs *its own* channel of behavior rather than a weight, it's a
+tactic (the existing player lever) whose movement/action fn reads the
+blackboard, like Kiter/Charger today. Party-scope posture (a shared stance
+the party tactics inject, unit dial overriding) is the natural next lever
+once party-level priorities exist. What we deliberately do NOT build: free
+numeric sliders per unit (untunable content, unreadable saves) or per-tactic
+weight editing.
+
+## 5. Constraints (non-negotiable, from the engine's invariants)
+
+- **Determinism.** No RNG; fixed candidate enumeration order; id/index
+  tiebreaks; hysteresis via committed fields with explicit switch margins
+  (the `PULL_FRACTION` / `exploitMargin` / `escapeDir` pattern). Any
+  cross-round plan memory (committed candidate kind, blink-reserve state)
+  must be serialized in `snapshot.ts` with a legacy default, like `escapeDir`.
+- **Snapshot fidelity.** A reloaded BSNAP advanced N rounds must match the
+  live battle. Behavior *changes* are allowed per milestone (tests updated
+  deliberately); what must never break is serialize→replay 1:1.
+- **Budget.** Candidate sets stay ≤ ~8; corridor (re-)pricing is gated to
+  decision rounds (`isDecisionRound`) so the heavy-field `decisionInterval`
+  throttle bounds it; off-screen battles already skip full sim
+  (`creditOffscreen`). Still open (progress log §tech debt): the kiter's
+  per-round hold-vs-close scoring is NOT decision-round-gated, and no
+  per-turn forecast memoization exists yet — acceptable at current battle
+  sizes, required before the 50-combatant replay soak.
+- **Purity.** `plan.ts` is a leaf like `spatial.ts` — grid/types/damage/skills
+  imports only, no store, no time, never mutates inputs.
+- **Debuggability first.** Every commit records why: the chosen candidate
+  (kind + forecast note) goes into `lastResolution`/`pushTrace` like
+  `exploitNote` does today, and `bsnap -i`'s `inspectLine` grows
+  `plan: kiteBack@(x,y) → frost-bolt r6 exp3.2` so "why won't it move/fight"
+  reports stay one command away.
+
+## 6. Milestones (each independently shippable)
+
+**M0 — parameterize position (mechanical, byte-identical).**
+Add `at: Vec2 = self.pos` to `selectSkillTarget`, `canFinishChannel`,
+`channeledAoeWorthIt`, and the range/LoS checks they use. No caller passes a
+hypothetical position yet. Pure refactor; snapshot fixtures and the full suite
+must pass unchanged.
+
+**M1 — the plan anchor: kite/hold at the range of the attack you'll use.**
+✅ Shipped as `plan.ts` → `preferredAttackVs`/`preferredRangeVs` — the
+forecast's `.range` leg (target-aware, `estimateDamageVs`-scored,
+cooldown/caster-filtered like `castRange`, ties prefer longer reach; nothing
+scores → `castRange` fallback so support units keep their utility standoff).
+Anchors: the kiter and Wary Caster (`desiredRange`), the caster default hold,
+and `kiteToward`'s shoot-on-the-lock range. `forecastAction(state, self, at)`
+— the castable-NOW shape — lands with its first consumer in M2 rather than as
+a dead export. Kills the "parked at the wrong range" class; `kiteToward`'s
+`aimOutOfRange` patch stays but now closes to the preferred range, fully
+subsumed when M2's candidate scoring lands. Tests: `plan.test.ts` (element
+flip, cooldown flip, Bash-vs-bolt anchors melee vs a magic-immune foe,
+amortization, healer fallback, kiter wiring); `los-kiting` / `moat-kiting` /
+`molasses` stayed green (uniform-range kits are unaffected by design).
+
+**M2 — candidate scoring for the kite/hold family.**
+✅ Shipped: `forecastAction(state, self, at)` — the castable-NOW answer,
+running the action channel's own gates via the shared `skillCastTarget`
+extraction (one code path, no drift) — plus `MoveCandidate` +
+`scoreCandidate` (forecast score − dead-banded ring drift − small exposure
+tiebreak). `kiteToward`'s sweet-spot / `aimOutOfRange` / straight-close /
+corner-route special cases collapsed into one scored hold-vs-close choice
+positioned against the AIM (lock, else nearest threat); the wall-blocked
+corner-route and the tooClose retreat (escapeHeading hysteresis + blink)
+remain dedicated branches. Kite suites stayed green untouched; the
+sweet-spot's old "LoS to the *nearest* enemy" requirement — which dragged a
+kiter into corner-routing toward a walled-off foe it wasn't even shooting —
+is fixed and pinned in `candidates.test.ts`. Default-hold candidates and
+`escapeHeading`-as-proposer deferred (see progress log).
+
+**M3 — priced routes (the gauntlet).**
+✅ Shipped: `exposureAt` + `corridorExposure` in `plan.ts` (per-round threat
+discs → expected HP cost of the plow line); `avoidOrPlowPoint` escalation is
+now avoid → plow (corridor ≤ `TRAVEL_HP_BUDGET`, 35% of current HP) →
+clear-first (over budget: the march yields movement to the combat AI until
+the wall is fought down; hysteresis via the serialized `travelClearing`
+flag). Store-visible only as order latency. "Report blocked" (reroute signal
+to logistics) still open — see the progress log. Tests:
+`route-pricing.test.ts`.
+
+**M4 — movement capabilities (Blink).**
+✅ Shipped (all three seams, one PR): `moveAbilities`/`moveAbilityCds` on the
+combatant (snapshot-borne, adapter maps an equipped `blink`); cornered-escape
+teleport in the kite/disengage retreats (`tryBlinkEscape` — fires only when
+walking fails to open the threat gap); capability-aware
+`steerAround`/`canReach` via the optional `caps` param (teleport edges in the
+vis-graph Dijkstra; caps omitted ⇒ byte-identical); `Location.gatedConnections`
++ `routeBetween(..., abilities)` for capability-only overworld routes. Blink
+as an action-channel cast (competing with spells for the turn) deliberately
+deferred — see the progress log. Tests: `blink.test.ts`, `travelGraph.test.ts`.
+
+Deliberately **not** building: per-turn A*/influence maps, minimax over enemy
+responses, a generic utility-AI framework. If deeper lookahead is ever wanted,
+the engine's determinism already offers it cheaply — clone + `advanceRound` a
+few rounds for the top-2 candidates — but that's a future experiment behind
+the same seam, not part of this foundation.
