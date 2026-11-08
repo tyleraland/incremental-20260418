@@ -1,0 +1,765 @@
+# Tactical coordination — the team plan seam
+
+Design doc for the multi-agent coordination layer: how a party stops being six
+independent units that happen to share a waypoint and becomes a *team* — one
+that converges fire, pulls instead of over-pulling, holds a chokepoint, keeps
+formation, guards its carry, escorts a traveler, baits an ambush, and decides
+kite-vs-hold from its own composition. Companion to
+`movement-action-coupling.md` (the *unit* plan seam); this doc is the *team*
+half. No code lands with this doc — it is the foundation the milestones build
+on.
+
+BACKLOG.md calls this "the biggest open chunk" (§AI & coordination). The items
+there — Team blackboard extensions, Smart-party baseline, Strategies as
+bundles, Team-plan (joint) scoring, kite-vs-hold from party comp, Puller /
+Hold the Line / Bodyguard, Gather-and-guard, en-route hunting — are all
+expressions of the same missing thing. This doc names it and slices it.
+
+## 1. The problem, precisely
+
+`BattleState.plans` exists and is the right substrate: a per-team blackboard,
+recomputed on decision rounds by a pluggable `Planner`, serialized in
+snapshots, inspectable in the Debug tab. But today's `TeamPlan` is four
+fields — `waypoint`, `focusTargetId`, `threat`, `huntTargetId` — and the
+`defaultPlanner` that fills them answers only one question: *where should the
+group drift, and who looks most killable?* Everything downstream is a unit
+deciding alone:
+
+- **Fire doesn't converge by default.** `focusTargetId` is computed every
+  round but only *opt-in* tactics read it (Opportunist, Finish Them,
+  Focus Fire). The default targeting fallback (`selectTarget`,
+  `behavior.ts`) is pure per-unit threat−distance; six heroes routinely
+  split across six slimes.
+- **Nothing decides whether to fight at all.** The hunt commits to the
+  nearest visible foe with no notion of what hitting it will *pull* —
+  `rallyPack` chains aggro through same-named kin, and the planner never
+  prices that chain. Over-pulling is undetectable, so it's unavoidable.
+- **"Hold" has nowhere to stand.** There is no anchor: the waypoint is the
+  fight's centroid, which moves as the fight moves. Chokepoints, ambush
+  spots, and formation lines can't be expressed, so they can't be held.
+- **Roles don't exist.** Who tanks, who pulls, who peels for the carry, who
+  screens the traveler — no field on any type can say it. Guardian
+  hard-codes "squishiest ally"; Charger/Flanker leashes are cohesion by
+  panic-return, not by plan.
+- **Team intent can't reach unit scoring.** `scoreCandidate` (plan.ts)
+  prices forecast − ring drift − exposure. A candidate that abandons the
+  line, strands the healer, or walks into the sleeping camp next door
+  scores the same as one that doesn't.
+- **The store can't declare purpose.** A battle has no objective field —
+  "you are escorting Lyra across this map" or "hold this gap" cannot be
+  said, so the chaperone/escort behaviors have no hook to hang on.
+- `HERD_BIAS = 4` (barriers.ts) fudges "route the same way" with a global
+  left-side corner tax — a pather constant impersonating a team decision.
+
+## 2. What the codebase already does right
+
+The design below extends shipped patterns; nothing is imported from outside:
+
+- **The blackboard is real and serialized.** `TeamPlan` rides BSNAP
+  (`snapshot.ts` → `plans`), so cross-round *commitment* — the thing plans
+  need most — is already snapshot-safe. New fields are optional with legacy
+  defaults, the same discipline as `escapeDir`/`travelClearing`.
+- **The planner is pluggable and throttled.** `Planner` is a
+  `(state, team) => TeamPlan` function slot, refreshed only on decision
+  rounds (`decisionInterval`). A richer default planner is a drop-in.
+- **The scorers exist.** `estimateDamageVs`, `preferredAttackVs`,
+  `forecastAction`, `exposureAt`, `corridorExposure` — every quantity a
+  team appraisal needs is already a pure, memoized, deterministic function.
+- **The read-side vocabulary exists.** `MovementResult` (`toPoint`,
+  `desiredRange`, `hold`, `clearLock`) can express every assignment this doc
+  defines; `teamFocus` shows the read pattern; Charger/Flanker leashes and
+  `cohesionVec` are formation instincts awaiting a shared reference point.
+- **The tuning seam exists.** `POSTURES` (`tuning.ts`) is explicitly "a new
+  consideration is a new COLUMN"; team-conformance weights are columns, not
+  a mechanism.
+- **The enemy side already coordinates crudely.** `rallyPack`, pack-hunter
+  waypoint roaming, and the hunt commitment are the monster half of the same
+  machinery — one planner serves both teams today and keeps doing so.
+
+## 3. Target architecture
+
+Five pieces. The first three are engine-internal (`src/engine/`, pure,
+RNG-free, id-tiebroken); the last two are the levers — one for the player,
+one for the host/store.
+
+### 3.1 TeamPlan v2 — engagement, assignments, anchor
+
+```ts
+// All new fields optional: absent ⇒ pre-coordination behavior, so legacy
+// snapshots and the shipped planner stay byte-identical until each milestone
+// deliberately turns a field on.
+export type Stance = 'hold' | 'kite' | 'collapse'
+
+export interface Engagement {
+  targetIds: string[]       // the committed pull-set — what we EXPECT to fight
+  primaryId: string | null  // current kill target (ordered focus)
+  anchor: Vec2 | null       // where the line stands (choke / ambush / ring spot)
+  stance: Stance            // how the line fights (from party comp, §4)
+  sinceRound: number        // commitment age — abandon predicates read this
+}
+
+export type Assignment =
+  | { role: 'engage' }                            // default: fight the engagement
+  | { role: 'anchor' }                            // stand the line on the anchor
+  | { role: 'pull'; targetId: string; to: Vec2 }  // tag one foe, drag it to `to`
+  | { role: 'guard'; allyId: string }             // peel/bodyguard the protectee
+  | { role: 'escort'; allyId: string }            // screen a transiting unit
+  | { role: 'work'; point: Vec2 }                 // do a job there (forage/mine/pickup); party screens
+  | { role: 'rove'; targetId: string | null }     // jungler: farm own camps apart from the party (§3.8)
+  | { role: 'hold' }                              // reserve: stay put, don't chase
+
+export interface TeamPlan {
+  waypoint: Vec2 | null
+  focusTargetId: string | null
+  threat: Record<string, number>
+  huntTargetId?: string | null
+  // v2 ↓
+  engagement?: Engagement | null
+  assignments?: Record<string, Assignment>   // combatantId → role this plan
+  avoidTargetIds?: string[]  // do-NOT-aggro list (the backlog's disableTargetId)
+  corridor?: Vec2 | null     // shared route corner — the HERD_BIAS replacement
+}
+```
+
+Design rules:
+
+- **The plan is advisory except where a unit has nothing better.** Equipped
+  tactics keep their priority — a player's Kiter still kites; the plan fills
+  the *default* layer (today's close-and-hold / wander) and feeds a
+  conformance term into `scoreCandidate`. Player levers always outrank the
+  planner; the planner outranks the vacuum.
+- **Commitment lives in the plan, not the units.** `Engagement` persists
+  across decision rounds (the previous plan seeds the next, exactly like
+  `huntTargetId` today) and is dropped only by explicit abandon predicates:
+  primary dead and pull-set empty, target unseen past `HUNT_RETAIN_MULT`,
+  or losing the mutual-TTK race past the exit bar — which is also how party
+  HP collapse and over-pull growth are felt (RTD shrinks as party HP falls;
+  a re-anchored or cap-truncated pull set raises RTK), so no separate HP
+  floor exists. That is the backlog's "strategy commitment": pursue, notice
+  failure, switch. A drop *for losing* (not "won"/"unseen") also publishes a
+  short-lived `rout` — the OTHER piece of cross-round plan memory — so the
+  break-off is visible behavior (members flee to their own edge, drop locks)
+  and not just `engagement === null`; it holds until the party is safe or finds
+  a fresh affordable fight (§3.4).
+
+**What the blackboard is — and isn't:**
+
+- **Derived, ephemeral state.** The plan is recomputed from battle state on
+  decision rounds and is never player-authored: viewable (Plan panel), not
+  configurable. Player-authored inputs stay exactly where they are today —
+  unit tactics + posture, `partyTactics`, plus the one directive slot
+  (§3.5). Those are the few party knobs; the blackboard is what the AI
+  *derived* from them.
+- **Serialized for replay fidelity only.** `engagement` is the one piece of
+  cross-round *memory* (the commitment), so a mid-fight BSNAP must carry it
+  to replay 1:1 — that's a determinism requirement, not persistence of
+  configuration. Everything else in the plan could be dropped and
+  recomputed.
+- **Scope = the battle = the location.** `plans` lives on one BattleState;
+  "the team" is exactly the units fighting on that map, which is what makes
+  shared planning physically plausible. The blackboard never spans maps —
+  cross-location coordination (the chaperone) is the *store's* job, spoken
+  through objectives (§3.6).
+- **Co-location honesty.** The plan is built from what members
+  *collectively* see (fog rules unchanged), and assignments assume the
+  cluster can act together. A straggler far from the plan's centroid
+  (beyond the Charger/Flanker-leash scale) gets no special assignment and
+  falls back to individual behavior until it rejoins — the party plans as a
+  group because it *is* one. A rover (§3.8) is detached *by plan*, so the
+  straggler rule never demotes it. (Refinement, not v0: v0's "same battle ⇒
+  same plan" is already approximately this, since stragglers fail the range
+  checks their assignments imply.)
+
+### 3.2 The planner pipeline
+
+`defaultPlanner` stays one exported `Planner` but becomes a composition of
+pure stages, each independently testable:
+
+```
+sense    → members, visible enemy set, engaged set          (exists today)
+appraise → cluster visible enemies into CAMPS (proximity/rally-linked
+           groups); price each camp: pullSetOf + Σ threatProfile
+decide   → hold or refresh the Engagement (hysteresis + abandon predicates);
+           choose stance (kite/hold/collapse), anchor, and kill order
+assign   → jobs per member from declared intent + kit (§capabilities below)
+publish  → TeamPlan (waypoint/focus/avoid/corridor derived from the above)
+```
+
+**No role taxonomy — capabilities and declared intent.** The planner never
+stores "tank/carry/support" anywhere; a role enum would just be memoized
+answers under a label, knowledge the blackboard doesn't need to encode.
+When `assign` needs a body for a job it asks two kinds of question, in
+order:
+
+1. **Declared intent — equipped tactics ARE the role config.** A unit
+   carrying Guardian has said "I peel" — it's the guard. Kiter/Wary Caster
+   marks a ranged-line unit; Charger/Flanker marks a diver; the future
+   Puller tactic pins the puller. The planner routes assignments *toward*
+   units whose tactics already volunteer and never assigns against an
+   equipped tactic (the player lever wins twice: it outranks plan defaults
+   at execution, and it steers who gets which job at assignment).
+2. **Kit capability — pure queries at the point of use**, when no tactic
+   volunteers: aggro-holder = best `threatMult`·def·hp; protectee ("the
+   carry") = top sustained `estimateDamageVs`; puller = longest
+   `preferredRangeVs` reach at ≥ party-median speed; healer = has a heal
+   skill; **fragility outlier** = a member whose effective toughness
+   (maxHp × mitigation) falls well below the party median — *relative*,
+   so "one member much squishier than the rest" is detected on any comp.
+   Every party-internal query is relative (top / median / outlier), never
+   an absolute stat bar: the comp's tank is whoever tanks best *here*, at
+   level 2 or level 90. Id-tiebroken; inputs are the kit, fixed for the
+   battle, so the answers precompute per combatant (§5) — no new player
+   config, no save impact.
+
+Assignments (this plan's *jobs*) are the blackboard output; capabilities
+stay derivable. The one aggregate the planner does compute is the party's
+range/mobility profile for the stance decision — a per-decision-round fold
+over the same precomputed capabilities. When a fragility outlier exists,
+`assign` issues a **standing guard by default** (staffed by a Guardian
+volunteer, else an idle line unit — never by stripping an equipped intent),
+and the outlier's own anchor slot goes to the formation rear (§3.4); the
+Protect directive forces and aims the same machinery, it doesn't introduce
+it.
+
+**Acumen — smart members make a smart party.** `sense` computes a team
+acumen score, **additive** over living members' effective INT — every
+scholar contributes, buffs/debuffs move it, and deaths are felt
+immediately. Planner features gate on it through a plain thresholds table
+(`tuning.ts`, the POSTURES philosophy — a new gate is a table row, not a
+mechanism), **modular** in that each feature checks its own gate
+independently:
+
+| planner feature | gate |
+|---|---|
+| focus convergence, kill order (M1) | always on — the baseline never degrades |
+| pull prediction + avoid list (M2) | `ACUMEN.pull` |
+| stance choice / kite line (M3) | `ACUMEN.stance` |
+| ambush anchors, cloak timing (M4) | `ACUMEN.ambush` |
+| rollout compare (M6) | `ACUMEN.rollout` |
+
+Gates only ever *add* intelligence above the shipped baseline — a
+low-acumen party plays like today's engine, never worse. The payoffs are
+diegetic and free: an all-brawn party genuinely over-pulls where a party
+carrying one scholar pulls singles; killing the enemy shaman drops the
+pack's acumen mid-round and its coordination visibly collapses — the
+backlog's "kill the leader and the pack scatters," implemented as
+arithmetic; curated progression can literally level a party into tactics.
+Deterministic (recomputed from live state each decision round, no memory),
+and it composes with directives cleanly: a directive *requests* a behavior,
+acumen bounds how well the planner executes it. Acumen is the planner's one
+deliberate *absolute* (smarts is diegetic, not relative to the opponent —
+see the ratios rule, §6); if stat inflation across the level curve opens
+every gate for everyone, the fix is threshold tuning or diminishing returns
+on the sum, not converting it to a ratio.
+
+**Budget.** Everything runs once per team per decision round; §5 has the
+cost model. Headline: while an engagement holds, `appraise` is skipped
+entirely — commitment is the fast path, not just the anti-thrash.
+
+### 3.3 The pull model — `pullSetOf`
+
+The single new predictive primitive:
+
+```ts
+// Who joins the fight if we hit `seed`? Transitive closure over the enemy
+// team's OWN aggro rules: kin that rallyPack would rouse (same name, within
+// visionRange of a set member) plus anything whose visionRange covers the
+// expected fight point. Deterministic BFS, capped, id-ordered.
+export function pullSetOf(state: BattleState, seed: Combatant, at: Vec2): Combatant[]
+```
+
+The no-drift rule from `forecastAction` applies: the membership test must be
+the *same code* `rallyPack` and target-acquisition actually run (extract the
+predicates, two callers) — a prediction that diverges from the real aggro
+rules is worse than none. Camp price = Σ over the pull set of the plan's
+existing `threat` record — the planner already computes that per enemy every
+decision round, so pricing is a few adds, not a new scoring pass
+(`threatProfile`-grade per-member matchup pricing is an upgrade only if the
+coarse price misjudges in play).
+
+**The engage test is a ratio, not a threshold — the mutual-TTK race.**
+Rounds-to-kill = camp effective HP ÷ the party's sustained output, scored
+in the party→camp direction so enemy DEF, elements, and magic-vs-physical
+mitigation all count (`estimateDamageVs` is matchup-relative by
+construction). Rounds-to-die = party effective HP ÷ the camp's output the
+other direction. Engage when `RTK < RTD × pullMargin` (a POSTURES column —
+wary demands a comfortable win, bold takes a near coin-flip). Both sides
+are O(pull set) adds over precomputed capabilities. Dimensionally honest
+(rounds vs rounds) and **scale-invariant**: the same planner judges a
+level-2 field and a level-90 dungeon because power is always measured
+against *this* opponent in realized stats, never absolute numbers. Level
+itself never appears — the engine deliberately doesn't see it (the store
+resolves level into stats), and a matchup-scored stat comparison is
+strictly more informative than any level proxy; DEF isn't a proxy either,
+it's directly inside the scorer. (Level stays a fine store/UI signal —
+danger badges, spawn bands — just not a planner input.) Then:
+
+- **Engage-or-not**: cheapest affordable camp wins the engagement; nothing
+  affordable → the party keeps roaming (or clears the cheapest arc first —
+  the corridor logic already knows this move as clear-first).
+- **avoidTargetIds**: enemies adjacent to (but outside) the committed pull
+  set are published as do-not-aggro. `selectTarget` and opportunistic reads
+  filter them (hard taunt still wins; a foe that provokes *itself* onto the
+  party leaves the list automatically because it enters the fight).
+- **Kill order**: `primaryId` walks the committed pull set by a target
+  policy. Default **dangerous-first, killable-weighted**: highest plan
+  `threat` divided by a cheap time-to-kill proxy (hp ÷ party sustained
+  damage), so the party burns down the scariest thing it can actually kill
+  fast, then mops up. The `threat` record is the *single* definition of
+  "dangerous" — today `str+int`, upgradeable in place (healer/summoner tags
+  for the Decapitate idea, realized-damage feedback) without touching any
+  consumer; "however that's identified" is exactly this one field.
+  Directives flip the policy: `wounded-first` (Finish Them synergy),
+  `squishy-first` (Assassinate).
+- **Pull assignment**: when the affordable slice of a camp is smaller than
+  the whole (a fringe monster whose own pull set is just itself), the
+  puller tags it and retreats to the anchor: `{ role: 'pull', targetId,
+  to: anchor }` — movement = walk to reach, fire once, walk back; the line
+  holds. That is intelligent pulling, and with an anchor placed behind a
+  LoS break it is lure-and-ambush v0 for free (`exposureAt` already prices
+  the wall).
+
+### 3.4 The read side — executing an assignment
+
+Three small, uniform hooks; no new channels, no new engine framework:
+
+- **Targeting.** `selectTarget` grows two plan terms: a `FOCUS_WEIGHT` bonus
+  for `engagement.primaryId` (converging fire becomes the *default*, with
+  the existing PULL_FRACTION hysteresis intact so tanks still hold aggro and
+  switches don't thrash) and the `avoidTargetIds` filter. Focus Fire / 
+  Finish Them remain as the stronger, unconditional versions of the same
+  read.
+- **Movement.** One plan-execution step in `executeMovement`'s default path
+  (after equipped tactics, before close-and-hold): `anchor`/`hold` →
+  `toPoint` at the anchor slot (fanned per unit like `offsetWaypoint`, so a
+  line forms, not a pile — and slots are ordered by fragility, tough in
+  front, the outlier at the rear, so formation itself protects the squishy);
+  `pull` → the tag-and-drag two-phase above;
+  `guard`/`escort` → `guardPoint(protectee, threat)` (Guardian's math,
+  aimed by the plan instead of "squishiest"). Stance reads: `kite` sets the
+  non-kiter default to `desiredRange = preferredRangeVs` *with* back-off
+  (today's opt-in kiter behavior, chosen by the team), `hold` pins to the
+  anchor, `collapse` is today's close-and-hold. A published `rout` (§3.1) reads
+  at the TOP of this default path: drop the lock and, while a foe is within
+  `ROUT_SAFE_RADIUS`, run the shared Retreater `breakOff` toward the party edge
+  (past that the fled camp's avoid-list entry holds the disengage without a
+  sprint) — the abandon-for-losing execution, below any equipped movement tactic
+  (the player lever still closes).
+- **Candidate scoring.** `scoreCandidate` gains a conformance term:
+  `− cohesionW · excessDistToAnchor(cand)` (dead-banded, like the ring
+  term). `cohesionW` is a new POSTURES column — bold drifts, wary sticks.
+  This is the backlog's "team-plan (joint) scoring" in its cheapest honest
+  form: units still score their own candidates, *conditioned on* the plan.
+- **Routing.** The planner publishes `corridor` — the first `steerAround`
+  corner from the party centroid to the waypoint. Units bias their own
+  side-pick toward it; `HERD_BIAS` drops to a residual tiebreak (or dies).
+  Same-way routing becomes a decision made once, not a global left tax.
+
+### 3.5 Directives — the player's party-scope lever
+
+The backlog's "Strategies = multi-channel tactic bundles" unified with the
+planner: a small registry where one entry is *data the planner reads* plus
+optional injected tactics.
+
+```ts
+export interface DirectiveDef {
+  id: string; name: string; description: string
+  stanceBias?: Stance          // fight this way when viable
+  anchorPolicy?: 'choke' | 'ambush' | 'ground' | 'none'
+  pullDiscipline?: 'strict' | 'loose'   // scale pullMargin
+  targetPolicy?: 'dangerous' | 'wounded' | 'squishy'   // kill-order bias
+  protect?: 'carry' | 'weakest'         // standing guard assignment (capability query, §3.2)
+  tactics?: TacticRef[]        // party-scope tactic injections (existing seam)
+}
+export const DIRECTIVE_REGISTRY: Record<string, DirectiveDef>
+```
+
+Launch set (small, legible, each mapping to a scenario the sim can already
+stage): **Skirmish** (default — everything above at its inferred defaults),
+**Hold the Line** (anchor at the best gap, strict pulls), **Pull to Camp**
+(puller mandatory, ambush anchor), **Protect** (standing guard on the
+carry), **Assassinate** (primary = squishiest/healer via the existing
+Assassinate pick, flankers dive with it — the ambush combo orchestrator
+holds Cloak until Back Stab range because the *plan* times the dive, closing
+the backlog's "needs an orchestrator" gap). One active directive per party
+(a slot beside `partyTactics`, persisted the same way, adapter-injected into
+the setup). Monsters get directives too where dispositions want them — pack
+roles (leader/follower) are a monster directive, not new machinery.
+
+### 3.6 Objectives — the host's seam (escort / chaperone / hold)
+
+The store can finally *say why the team is here*:
+
+```ts
+export type TeamObjective =
+  | { kind: 'hunt' }                       // default — today's behavior
+  | { kind: 'escort'; unitId: string }     // screen this combatant's transit
+  | { kind: 'hold'; point: Vec2 }          // own this ground
+  | { kind: 'clear' }                      // kill everything affordable, in order
+// BattleState.objectives?: Partial<Record<Team, TeamObjective>>
+// set via setTeamObjective(state, team, obj) — serialized like plans.
+```
+
+The planner consumes the objective in `decide`: escort pins the anchor to a
+moving slot ahead of the protectee's route and staffs `escort` assignments;
+hold pins the anchor and forbids engagement drift past leash; clear iterates
+camps cheapest-first. **Chaperone wiring** is then store-side only: when
+`handleTravel` routes unit U through a location where a party is hunting,
+the store sets `{ kind: 'escort', unitId: U }` on that battle and clears it
+when U exits — the hunting party escorts the traveler through their map with
+zero new engine modes. Gather-and-guard later rides the same seam (a
+`guard`-flavored objective around a node). En-route hunting is the inverse
+(the *traveler's* own budget question) and stays with the travel/corridor
+logic — not this seam.
+
+**Secondary objectives — foraging and friends.** Node work (forage / mine /
+ground-loot pickup) is a `work` assignment plus anchor discipline: while a
+work assignment is live, the anchor pins near the work site and the
+roam/hunt re-pick is **suppressed** — the party waits and screens instead of
+drifting to the next camp. Release predicates end the wait: job done, or the
+local situation loses the TTK race (recall the worker, fight or withdraw,
+resume after). The authority split is the usual one: the *store* owns nodes,
+yields, and progress ticks (like loot/spawn RNG — never the engine); an
+objective (`{ kind: 'work', point }`) or a directive flag says the party
+cares; acumen and stance decide how carefully they screen. The backlog's
+Gather-and-guard and ground-drop loot pickup both ride this one assignment
+shape, and en-route foraging during travel is the store's travel loop
+inserting a work objective at a waypoint — the same seam as the chaperone.
+
+Team-vs-team arena fights need nothing extra: both teams already run the
+planner symmetrically, so 5v5 with two directives *is* the LoL-style fight —
+tanks anchor, carries fire from stance range, guards peel divers, pullers
+bait. A `?scenario` showcase + tests make it a first-class fixture rather
+than a hope.
+
+### 3.7 Imperfect information — the intel mask
+
+Today every scorer reads true stats: the party is omniscient, knowing a
+monster's elemental weakness and dodge rhythm before ever landing a hit.
+The anticipated feature — details learned over time — slots in without
+touching the planner at all, because estimates already flow through one
+choke point:
+
+- **Knowledge is progression, so the store owns it.** A persisted
+  per-species intel slice (codex-adjacent: a new `*Codec`): which fields
+  are revealed — armor element, `dodgePeriod`, skill kit… The engine never
+  learns; it *emits* what happened (damage events already carry `eff` and
+  `element`), and the store observes realized multipliers and dodges and
+  marks fields revealed. Same authority split as loot RNG.
+- **The adapter masks.** `EngineUnitInput.intel?` on each *enemy* input —
+  what the opposing team currently knows about it. Serialized on the
+  combatant like any stat, so a snapshot replays 1:1 *with the knowledge
+  the party had at serialization time*.
+- **One choke point.** `estimateDamageVs`/`threatProfile` read the target
+  through a `knownView(target)` wrapper: unrevealed fields fall back to
+  priors (neutral element, no dodge, generic kit). Every consumer — kill
+  order, TTK race, kite anchors, exposure, camp pricing — becomes honestly
+  uncertain with zero changes of its own. Damage *resolution* keeps true
+  stats: reality doesn't care what you know.
+- The consequences are diegetic and free: the first fight against a new
+  species genuinely misjudges (may over-pull — drama, not a bug); plans
+  visibly sharpen as the codex fills; a deliberate probe behavior (vary
+  attack elements to learn faster) is a future acumen-gated refinement,
+  not core.
+
+### 3.8 Roving — the jungler
+
+`{ role: 'rove' }`: a deliberately detached member farms its own camps in
+the same battle while the party works theirs — the backlog's "scattered
+hunt," given a body.
+
+- **Eligibility** follows §3.2's two questions: declared intent (an
+  equippable **Jungler** tactic volunteers, and forces it regardless of
+  acumen) or capability — the candidate passes the solo mutual-TTK race
+  against a camp. "Extra survivability" is not a stat check; it's the same
+  §3.3 ratio run for a party of one.
+- **The rover's target rides in its assignment** (its own micro-engagement)
+  — the party's single `engagement` stays the party's. No multi-engagement
+  machinery; the plan stays one blob plus detachments.
+- **Still a teammate.** Rejoin predicates return it to normal assignment:
+  the party engages above a danger threshold, the rover's own race flips,
+  no solo-affordable camps remain, or a share cadence fires (swing by the
+  anchor every N rounds so party-wide buffs/heals land — "comes around").
+  All plan-level, deterministic, hysteresis via the assignment persisting
+  like the engagement does.
+- Acumen-gated when planner-chosen (a coordinated split is smart-party
+  behavior); the straggler rule never demotes a rover (§3.1).
+
+## 4. The motivating behaviors, solved in this framework
+
+| behavior | mechanism |
+|---|---|
+| Converging fire by default | `FOCUS_WEIGHT` on `engagement.primaryId` in `selectTarget` (hysteresis kept) |
+| Don't over-pull | `pullSetOf` + the mutual-TTK race vs `pullMargin`; `avoidTargetIds` filter |
+| Intelligent pulling | `pull` assignment: tag → drag to anchor; line holds |
+| Lure & ambush | ambush `anchorPolicy`: anchor behind a LoS break (`exposureAt` prices it); Assassinate directive times the cloak/dive |
+| Hold a chokepoint | `hold` objective / Hold-the-Line directive → anchor at a barrier gap; `anchor` assignments + conformance term |
+| Formation / cohesion | anchor slots (offset fan) + `cohesionW` column in `scoreCandidate` |
+| Kite-vs-hold from comp | `decide`'s stance: party preferred-range & speed profile vs camp reach → `kite`/`hold`/`collapse` |
+| Support & carry | capability query picks the protectee (top sustained `estimateDamageVs`); standing `guard` under Protect; healer positions off the anchor, not the centroid |
+| Protect the squishy outlier | relative fragility query flags it → default standing `guard` + rear formation slot; Protect directive pins the same machinery |
+| Kill the dangerous first | default kill-order policy: plan `threat` ÷ TTK proxy over the committed pull set; `threat` is the one pluggable definition of danger |
+| Smart members, smart party | additive effective-INT → team acumen; planner features gate on a thresholds table; enemy acumen drops when the shaman dies |
+| Forage without wandering off | `work` assignment pins the anchor — the party waits and screens; release predicates recall the worker when the job's done or the TTK race flips |
+| Unknown monster stats | intel mask: store learns from damage events, adapter masks, `knownView` in the one scorer choke point — plans honestly uncertain, resolution stays true |
+| Jungler | `rove` assignment: solo TTK race gates eligibility, target rides the assignment, rejoin predicates keep it a teammate |
+| Chaperone a traveler | `escort` objective set by the store's travel loop |
+| Team-vs-team arena | symmetric planners + directives; showcase scenario pins it |
+| Same-way routing | plan `corridor` replaces the `HERD_BIAS` left tax |
+
+## 5. Performance model — why this stays cheap
+
+Target: planner cost ≪ one unit's turn, nothing new inside per-unit turns
+beyond O(1) plan reads. (On-device profiling puts the whole engine at ~1% of
+wall clock at 15v34 — the constraint is discipline, not headroom; render owns
+the budget.) The tools are the ones the engine already uses:
+
+- **Commitment is the fast path.** Hysteresis isn't just anti-thrash: while
+  an engagement holds, `decide` runs only the abandon predicates (a handful
+  of distance/HP checks) and `appraise` — the only wide stage — is skipped
+  entirely. Full camp appraisal runs when the party is uncommitted (roaming)
+  or a commitment just broke: rare events, not per-round work.
+- **Per-battle precompute** (the `VIS_CACHE` pattern, keyed on the barriers
+  array identity): chokepoint/gap candidates for anchor picks — barriers are
+  static per battle, so this bakes once; the vis-graph corners it reads are
+  already cached.
+- **Per-combatant precompute**: the §3.2 capability answers read only
+  skills/base kit, fixed for the battle → computed at `makeCombatant` /
+  deserialize, derived-not-serialized (rebuilt on load, like `tactics`).
+- **Bounded per-decision-round work**: camps cluster only *visible* enemies
+  via the round-start `SpatialHash` (O(E·local) neighbor queries, no O(E²)
+  scan); `pullSetOf` BFS is capped (`PULL_SET_CAP`); camp pricing sums the
+  already-computed `threat` record; assignments are O(members) over
+  precomputed capabilities.
+- **Per-round memo discipline**: anything ever priced per (enemy, member)
+  reuses the `threatMemo` pattern (plan.ts) — generation-bumped, cleared per
+  round, active only under the ambient spatial hash, and
+  recomputation-transparent so replays stay byte-identical.
+- **O(1) read side**: plan lookups per turn; the avoid list is a few ids
+  (linear scan is fine); `scoreCandidate`'s conformance term is one distance.
+- **Existing throttles compose**: `decisionInterval` already gates planner
+  cadence on heavy fields; off-screen battles never run any of this
+  (`creditOffscreen`); encounters are 15×15 with tiny enemy counts.
+
+Worst-case sketch (open world, 6 heroes, ~12 visible of 40 monsters, on an
+*uncommitted* decision round): clustering ≈ 12 local-hash queries, pull BFS
+≤ ~144 distance checks, pricing 12 adds, assignment 6 capability reads —
+order of one `steerAround` call, on the rare round it runs at all.
+
+## 6. Constraints (non-negotiable, from the engine's invariants)
+
+- **Determinism.** No RNG anywhere in the planner; camps, pull sets,
+  assignments, and anchors enumerate in fixed order with id tiebreaks;
+  commitment hysteresis via serialized fields + named margins (the
+  `PULL_FRACTION` / `HUNT_RETAIN_MULT` pattern).
+- **Snapshot fidelity.** All new `TeamPlan` fields and `objectives` are
+  optional and serialized; legacy tokens read as absent ⇒ shipped behavior.
+  Serialize→replay must stay 1:1 at every milestone; behavior changes are
+  deliberate, test-updated events.
+- **No-drift predictions.** `pullSetOf` shares the aggro predicates with
+  `rallyPack`/acquisition; stance math reads `preferredAttackVs`/
+  `threatProfile` — never parallel re-implementations.
+- **Budget.** Planner-only cost, once per team per decision round, with the
+  §5 memo/precompute/commitment-skip discipline. Nothing new in per-unit
+  turns except O(1) plan reads and one extra `scoreCandidate` term.
+- **Ratios, not absolutes.** No planner comparison hardcodes an absolute
+  stat scale: party-internal picks are relative (top / median / outlier),
+  enemy appraisal is the mutual-TTK race (§3.3), and level is never an
+  input (realized stats already encode it, matchup-aware). One tuning stays
+  valid across the whole level curve. Acumen thresholds are the single
+  flagged exception (§3.2) — absolute on purpose.
+- **Purity.** Planner stages live beside `plan.ts` (a `teamplan.ts` leaf):
+  grid/types/damage/skills/spatial imports only — no store, no time.
+- **Player lever wins.** Equipped tactics outrank plan defaults; a directive
+  is the player *choosing* a planner emphasis, never the planner overriding
+  a tactic.
+- **Legibility over machinery.** No GOAP/HTN/behavior trees, no influence
+  maps, no per-unit message passing, no generic utility framework. Plans
+  are plain data a player could read off the Debug panel. If deeper search
+  is ever wanted, the engine's determinism already offers clone +
+  `advanceRound` rollouts behind `decide` — an experiment, not foundation.
+- **Debuggability first.** The Plan panel and `bsnap -i` grow the new
+  fields (`assign: pull(wolf-3)→(12,8) · stance hold · camp 4/7 cost 38 of
+  52`); every engagement change pushes a trace line on why (abandon
+  predicate or new camp). Extend `inspectLine`, don't hand-roll dumps.
+
+## 7. Work map — where every proposal lives
+
+The delegation guide: each feature named in this doc, classified by
+*mechanism* so slices of work are unambiguous. Mechanisms: **blackboard
+type** (types.ts + snapshot.ts), **planner stage** (the new `teamplan.ts`
+leaf beside plan.ts), **scorer** (plan.ts / damage.ts), **execution hook**
+(behavior.ts / engine.ts read-side), **tactic** (a TACTIC_REGISTRY entry),
+**directive** (the new registry + party slot), **engine API** (exported
+host-facing fn), **store module** (useGameStore / lib / codecs), **UI**
+(proto shell).
+
+| Feature | Mechanism | Touches | Slice |
+|---|---|---|---|
+| TeamPlan v2 fields + `objectives` | blackboard type | types, snapshot, Plan panel, `bsnap -i` | M0 |
+| Acumen score + `ACUMEN` table | planner stage + tuning data | teamplan.ts, tuning.ts | M0 (gates ship with their features) |
+| Capability precompute (incl. fragility outlier) | derived combatant fields | makeCombatant / adapter | M0 |
+| Focus convergence | execution hook | selectTarget | M1 |
+| Kill order (dangerous-first) | planner stage (decide) | teamplan.ts | M1 |
+| Avoid list (no over-aggro) | planner stage + execution hook | teamplan.ts, selectTarget | M1 |
+| Camps + `pullSetOf` + TTK race | planner stage (appraise) | teamplan.ts + predicate extraction from rallyPack | M2 |
+| Puller | tactic + assignment execution | TACTIC_REGISTRY, executeMovement | M2 |
+| Jungler / `rove` | planner stage (assign) + optional tactic | teamplan.ts, executeMovement, TACTIC_REGISTRY | M2.5 |
+| Anchor, stance, formation slots | planner stage (decide) + execution + scorer term | teamplan.ts, executeMovement, scoreCandidate, tuning columns | M3 |
+| `corridor` (HERD_BIAS retirement) | planner stage + pathing read | teamplan.ts, steerAround call sites | M3 |
+| Fragility standing guard + rear slots | planner stage (assign) | teamplan.ts (Guardian tactic unchanged) | M3 |
+| Directives registry + slot + picker | directive + store module + UI | new registry, worldCodec-adjacent slot, adapter injection, TacticianLens | M4 |
+| Ambush / assassinate timing | directive + planner stage | teamplan.ts | M4 |
+| Objectives API (escort / hold / work) | engine API + planner branches | setTeamObjective, snapshot, teamplan.ts | M5 |
+| Chaperone wiring | store module | travel loop in useGameStore | M5 |
+| Work release predicates (nodes later) | planner stage (+ future store nodes) | teamplan.ts | M5 (dormant) |
+| **Intel mask (imperfect info)** | store module + adapter + scorer | knowledge codec + event learning, adapter `intel`, `knownView` in damage.ts | independent — any time after M0 |
+| Rollout compare | planner experiment | teamplan.ts | M6 |
+
+**Parallelization.** M0 lands first and alone (its gate is byte-identical
+replays). After it, four tracks can run concurrently:
+
+1. **Planner ladder** — M1 → M2 → M2.5 → M3, sequential (each consumes the
+   previous stage's outputs); the critical path.
+2. **Intel module** — store codec + event learning + adapter mask +
+   `knownView`; touches no planner code, merges any time.
+3. **Directive scaffolding** — registry, persisted party slot, adapter
+   injection, lens picker; buildable against M0 types, its planner
+   *consumption* (M4) waits on M3.
+4. **Objectives API + chaperone store wiring** — engine API + travel-loop
+   detection against M0 types; the escort/hold planner branches wait on
+   M3's anchor execution.
+
+Every slice carries its own tests; snapshot-fixture regeneration is a
+deliberate, reviewed event per behavior-changing slice, never a side
+effect.
+
+## 8. Milestones (each independently shippable)
+
+**M0 — TeamPlan v2 plumbing (byte-identical).** ✅ Shipped. Types +
+`objectives` serialization, posture columns, `ACUMEN` table (calibrated:
+fresh 6-hero roster ≈75 summed effective INT), `teamAcumen`/
+`computeCapability`, Plan-panel + `bsnap -i` surfaces. Token byte-identity
+pinned (`teamplan-m0.test.ts`); legacy `-i` output diffed identical.
+
+**M1 — smart-party targeting baseline.** ✅ Shipped. Kill order =
+`threat/TTK` with `PRIMARY_SWITCH_MARGIN` hysteresis over a
+`PRIMARY_SCORE_FLOOR` (the PULL_FLOOR pattern — review-found zero-score
+thrash fix); `FOCUS_WEIGHT` in `selectTarget` converges idle units but
+never outbids accrued threat (tank keeps aggro, pinned symmetric).
+Convergence is strongest pre-contact by design — real threat wins once
+damage flows (⏱ feel-tune `FOCUS_WEIGHT` if it reads cosmetic in play).
+Tests: `m1-targeting.test.ts`.
+
+**M2 — pull model + engagement commitment.** ✅ Shipped. `pullSetOf` rides
+predicates extracted from `rallyPack` (`callsPack`/`packRouses`/
+`passiveAcquires` — no-drift pinned by a predict-then-fight test); mutual-
+TTK race vs posture-mean `pullMargin`, `ENGAGE_EXIT` asymmetric abandon,
+over-pull re-anchor, committed fast path (§5 — appraise skipped while
+held). Cap-filled pull sets read as **unaffordable** (truncated predictions
+undercount — review fix). `ACUMEN.pull` re-read every decision round. Pull
+assignment + Puller tactic share one tag-and-drag. **Abandon-for-losing now
+executes** (M1–M3 follow-up): the drop publishes `TeamPlan.rout`
+(`{from, sinceRound, campIds}`, serialized only when set) which
+`executeMovement`'s default layer runs as the shared Retreater `breakOff` (flee
+to own edge + drop lock, avoid-list every visible foe), holding while any fled
+`campIds` member stays alive-and-visible — NOT by distance, since undecayed
+`Combatant.threat` makes a fled camp read `alreadyFighting` forever and distance
+alone re-baited the march-back (review fix); it clears on the camp dying / out
+of sight / re-pricing affordable. Active `breakOff` is `ROUT_SAFE_RADIUS`-gated
+(stop sprinting once the gap is open). "Won"/"unseen" drops never rout, the
+ordinary decline still fights a self-provoked unaffordable foe, and the
+entry-vs-exit asymmetry forbids engage↔rout thrash. Tests: `m2-pull.test.ts`,
+`disengage.test.ts`.
+
+**M2.5 — rove (the jungler).** `rove` assignment: solo-TTK eligibility,
+micro-engagement in the assignment, rejoin predicates + share cadence, the
+equippable Jungler tactic, acumen gate. Tests: rover clears a side camp the
+party never visits; rejoins on a big party engagement; never picked when no
+camp is solo-affordable; straggler rule leaves it alone.
+
+**M3 — anchor, stance, formation.** ✅ Shipped. Stance decided at commit
+(`ACUMEN.stance`-gated; kite = outrange+outrun by capability medians, hold
+= vis-graph-corner anchor near the commit centroid, else collapse) and held
+for the engagement's life; fragility-ordered two-rank slots (outlier rear);
+standing guard ungated in every branch (guardPoint shared with Guardian);
+`cohesionW` anchor-drift term in `scoreCandidate`; planner `corridor`
+routes waypoint travel the same way — **HERD_BIAS survives as the residual
+encounter tiebreak** (combat-approach `moveToward` never consults the
+corridor; retirement probed, no clear win). Known follow-ups in BACKLOG:
+corridor hysteresis, Guardian-vs-plan protectee unification, stance refresh
+on primary handoff, `ACUMEN.stance` dormancy at fresh-roster INT. Tests:
+`m3-formation.test.ts` (incl. the M2-review deferred regressions).
+
+**M4 — directives.** ✅ Shipped. `DIRECTIVE_REGISTRY` (`engine/directives.ts`,
+the TACTIC_REGISTRY pattern) with the launch five; `BattleState.directives`
+(id per team, serialized like `objectives` — legacy/skirmish tokens stay
+byte-identical, pinned) + `setTeamDirective`; injected `tactics` ride the
+partyTactics seam (`withDirectiveTactics` at createBattle/addCombatant/
+relink). Planner consumption: `pullDiscipline` scales `pullMargin`
+(`DIRECTIVE_PULL_*`), `targetPolicy` swaps the kill-order score (wounded =
+hp-fraction weighting; squishy = healer-first ÷ toughness — ungated like the
+M1 baseline), `protect` forces+aims the standing guard (`protecteeOf`),
+`stanceBias`/`anchorPolicy` request in `decideStanceAnchor` (ambush = the
+nearest LoS-BLOCKED vis-graph corner, `ACUMEN.ambush`-gated) and an ACHIEVED
+ambush (hold stance on a LoS-blocked anchor — re-derived from serialized
+fields, review fix) makes the pull mandatory (`directivePullAssignment` drags
+the primary to the anchor; below the gates the directive degrades to shipped
+behavior). Ambush timing: `cloakStalk` + a takeTurn action-hold — a cloaked
+striker keeps Cloak until its stealth opener reaches the plan's primary
+(`ACUMEN.ambush`; closes the backlog's orchestrator gap; approach still rides
+Cloak's inherited Ambusher). Player lever wins twice (review fix): a hard
+taunt or a fired targeting tactic disengages the stalk entirely
+(`evalTargeting` reports the lever, the stalk claims only the default lock
+layer), which is also why the Focus Fire injection lives on Hold the Line,
+not Assassinate. Party slot `partyDirective`
+(worldCodec, default skirmish), curated gating by best-hero level
+(`DIRECTIVE_UNLOCK_LEVEL`, `unlocks.ts`), picker in PartyDoctrine; monster
+seam = `MonsterDef.directive` (Elite Rogue carries Assassinate; first carrier
+wins). Debug: Plan-panel row + `bsnap -i` `directive=`. Tests:
+`m4-directives.test.ts` (incl. the both-sided 5v5 arena), `directives.test.ts`
+(store/save/unlocks).
+
+**M5 — objectives + chaperone.** `setTeamObjective`, escort/hold planner
+branches, store wiring in the travel loop (set on transit-through-hunt,
+clear on exit). The `work` objective/assignment shape lands here too —
+anchor-pinning + release predicates tested with a stub job, dormant until
+resource nodes exist. Tests: traveler crossing a hunted map gets screened
+(guards interpose on threats near the route); hold objective refuses drift;
+party holds position while a member works, recalls it when the race flips.
+
+**M6 — (experiment) joint rollout.** Only if M1–M5 leave visible dumb:
+`decide` compares its top-2 engagements by cloning + `advanceRound`-ing a
+few rounds (RNG-free ⇒ one rollout is a verdict), behind the same planner
+signature. Explicitly not foundation.
+
+**Independent — the intel mask (§3.7).** ✅ Shipped. Off the ladder (any
+time after M0). Store owns knowledge: `speciesIntel` (per-monster revealed
+fields — armor/dodge/kit) persisted via `intelCodec`, learned by
+`intelRevealsFrom` reading each round's damage events (`eff`/`element` ⇒
+armor, a `dodge` event ⇒ dodge, `skill_use`/`cast_start` ⇒ kit) — pure
+observation, no engine/battle mutation (bugwatch rule), accrues in BOTH
+modes. Adapter masks: `EngineUnitInput.intel?` stamped on enemy inputs and
+serialized on the combatant (`Combatant.intel`, only when set ⇒ legacy
+tokens stay byte-identical), the store's `syncBattleIntel` sweep keeps it in
+step with the codex via `setCombatantIntel` — CURATED mode only, sandbox
+stays omniscient. One choke point: `knownView(target)` (damage.ts) — a
+prototype view whose UNREVEALED fields fall back to priors (neutral armor,
+no dodge, bare kit); `intel` absent OR fully-revealed ⇒ returns the real
+combatant (omniscient fast path). Read by `estimateDamageVs`, `threatProfile`
+(plan.ts), and the masked `knownCapability` (derived beside `capability`,
+never serialized) which `teamplan.ts`'s `appraised` prices camps/kill-order
+through. Resolution keeps true stats. UI: `?` for unrevealed enemy fields in
+`BattleUnitSheet` Stats tab. Tests: `intel-mask.test.ts` (engine byte-identity
++ first-contact sharpening + snapshot-carried knowledge), `intel.test.ts`
+(store learning + codec round-trip/legacy-default).
+
+## 9. Deliberately not building
+
+Per-unit negotiation/auction protocols; a blackboard *write* API for tactics
+(tactics stay read-only consumers — one writer, the planner); asymmetric
+enemy AI machinery (monsters use the same planner + directives); formation
+editors, role pickers, or any per-unit team-config UI (intent is read from
+equipped tactics, capabilities from the kit; directives are the one coarse
+party lever, same philosophy as postures-not-sliders); any lookahead beyond
+M6's bounded experiment.

@@ -1,0 +1,86 @@
+name: Orphan check
+
+# Advisory dead-code scan (knip: unused files/exports/dependencies), posted as
+# a sticky PR comment. NOT a merge gate — knip.json exempts the known-noisy
+# spots (tools/codemap, e2e, the scripts/*.mjs CLI entries), but curated
+# public-API barrels (src/engine/index.ts, src/save/index.ts) and any other
+# false positive are expected; a human triages the comment, this workflow
+# never fails the build.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: orphans-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  orphans:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: Run knip
+        id: knip
+        run: |
+          set +e
+          OUTPUT="$(npx knip --reporter compact 2>&1)"
+          set -e
+          # Cap to keep well under GitHub's comment size limit.
+          OUTPUT="$(echo "$OUTPUT" | head -c 60000)"
+          {
+            echo "output<<KNIP_EOF"
+            echo "$OUTPUT"
+            echo "KNIP_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post or update the sticky comment
+        uses: actions/github-script@v7
+        env:
+          KNIP_OUTPUT: ${{ steps.knip.outputs.output }}
+        with:
+          script: |
+            const output = (process.env.KNIP_OUTPUT || '').trim()
+            const clean = output === '' || /^✂️|no unused/i.test(output)
+            const body = [
+              '<!-- orphan-check -->',
+              '### 🔍 Orphan check (knip, advisory — not a merge gate)',
+              '',
+              clean
+                ? 'No unused files/exports/dependencies detected.'
+                : 'Possible dead code found. Some of these are known-intentional (curated public-API barrels like `src/engine/index.ts` / `src/save/index.ts` list exports for future/external use, not just current internal callers) — triage, don\'t blindly delete.',
+              '',
+              clean ? '' : '```\n' + output + '\n```',
+              '',
+              '<sub>Config: `knip.json`. Run locally: `npm run knip`.</sub>',
+            ].join('\n')
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            })
+            const existing = comments.find((c) => c.body.includes('<!-- orphan-check -->'))
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              })
+            }

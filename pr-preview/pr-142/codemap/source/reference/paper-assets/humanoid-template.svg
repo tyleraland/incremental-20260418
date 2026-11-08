@@ -1,0 +1,138 @@
+<svg viewBox="-100 0 400 220" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Base styles for the character -->
+    <style>
+      .sprite-line {
+        stroke: #111111;
+        stroke-width: 5;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+      .skin { fill: #f0c9a8; }      <!-- Neutral peach/tan -->
+      .shirt { fill: #8ab6d6; }     <!-- Soft blue -->
+      .pants { fill: #5a6575; }     <!-- Dark slate -->
+      .dark { fill: #222222; }      <!-- Eyes/Details -->
+      
+      <!-- Styles for the diagram labels -->
+      .label-text {
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        font-weight: 700;
+        fill: #555555;
+      }
+      .label-line {
+        stroke: #999999;
+        stroke-width: 2;
+        stroke-dasharray: 4 4;
+        fill: none;
+      }
+      .label-dot {
+        fill: #999999;
+      }
+    </style>
+  </defs>
+
+  <!-- ========================================== -->
+  <!-- DIAGRAM LABELS & CALLOUTS                  -->
+  <!-- ========================================== -->
+  <g id="Diagram_Labels">
+    
+    <!-- LEFT SIDE LABELS (Anchored Right) -->
+    <text x="-15" y="49" text-anchor="end" class="label-text">Head</text>
+    <line x1="-10" y1="45" x2="52" y2="45" class="label-line" />
+    <circle cx="52" cy="45" r="3" class="label-dot" />
+
+    <text x="-15" y="66" text-anchor="end" class="label-text">Shoulder</text>
+    <line x1="-10" y1="62" x2="42" y2="62" class="label-line" />
+    <circle cx="42" cy="62" r="3" class="label-dot" />
+
+    <text x="-15" y="84" text-anchor="end" class="label-text">Bicep</text>
+    <line x1="-10" y1="80" x2="19" y2="80" class="label-line" />
+    <circle cx="19" cy="80" r="3" class="label-dot" />
+
+    <text x="-15" y="119" text-anchor="end" class="label-text">Forearm</text>
+    <line x1="-10" y1="115" x2="6" y2="115" class="label-line" />
+    <circle cx="6" cy="115" r="3" class="label-dot" />
+
+    <text x="-15" y="146" text-anchor="end" class="label-text">Hand</text>
+    <line x1="-10" y1="142" x2="3" y2="142" class="label-line" />
+    <circle cx="3" cy="142" r="3" class="label-dot" />
+
+    <!-- RIGHT SIDE LABELS (Anchored Left) -->
+    <text x="215" y="104" text-anchor="start" class="label-text">Torso / Chest</text>
+    <line x1="210" y1="100" x2="133" y2="100" class="label-line" />
+    <circle cx="133" cy="100" r="3" class="label-dot" />
+
+    <text x="215" y="142" text-anchor="start" class="label-text">Hips / Pelvis</text>
+    <line x1="210" y1="138" x2="122" y2="138" class="label-line" />
+    <circle cx="122" cy="138" r="3" class="label-dot" />
+
+    <text x="215" y="159" text-anchor="start" class="label-text">Leg / Foot</text>
+    <line x1="210" y1="155" x2="117" y2="155" class="label-line" />
+    <circle cx="117" cy="155" r="3" class="label-dot" />
+
+    <text x="215" y="174" text-anchor="start" class="label-text">Ground Shadow</text>
+    <line x1="210" y1="170" x2="145" y2="170" class="label-line" />
+    <circle cx="145" cy="170" r="3" class="label-dot" />
+
+  </g>
+
+
+  <!-- ========================================== -->
+  <!-- MODULAR CHARACTER BASE                     -->
+  <!-- ========================================== -->
+  <g id="Character_Base_Group">
+    
+    <!-- Layer 1: The Ground Shadow -->
+    <g id="Shadow_Group">
+      <ellipse cx="100" cy="170" rx="45" ry="12" fill="#000000" opacity="0.25" />
+    </g>
+
+    <!-- Layer 2: Feet & Legs -->
+    <g id="Legs_Group">
+      <path d="M 88,140 L 78,165 L 88,168 L 95,140 Z" class="sprite-line skin" />
+      <path d="M 112,140 L 122,165 L 112,168 L 105,140 Z" class="sprite-line skin" />
+    </g>
+
+    <!-- Layer 3: The Hips/Pelvis -->
+    <g id="Hips_Group">
+      <ellipse cx="100" cy="138" rx="22" ry="8" class="sprite-line pants" />
+    </g>
+
+    <!-- Layer 4: The Upper Torso/Shoulders -->
+    <g id="Torso_Group">
+      <path d="M 40,60 L 160,60 L 120,135 L 80,135 Z" class="sprite-line shirt" />
+    </g>
+
+    <!-- Layer 5: The Arms -->
+    <g id="Arms_Group">
+      
+      <!-- Left Arm Group -->
+      <g id="Arm_L_Group">
+        <ellipse cx="30" cy="80" rx="12" ry="22" transform="rotate(35 30 80)" class="sprite-line skin" />
+        <ellipse cx="15" cy="115" rx="10" ry="20" transform="rotate(15 15 115)" class="sprite-line skin" />
+        <circle cx="12" cy="142" r="9" class="sprite-line skin" />
+      </g>
+
+      <!-- Right Arm Group -->
+      <g id="Arm_R_Group">
+        <ellipse cx="170" cy="80" rx="12" ry="22" transform="rotate(-35 170 80)" class="sprite-line skin" />
+        <ellipse cx="185" cy="115" rx="10" ry="20" transform="rotate(-15 185 115)" class="sprite-line skin" />
+        <circle cx="188" cy="142" r="9" class="sprite-line skin" />
+      </g>
+
+    </g>
+
+    <!-- Layer 6: The Head -->
+    <g id="Head_Group">
+      <path d="M 55,30 C 55,-10 145,-10 145,30 C 145,60 125,75 100,75 C 75,75 55,60 55,30 Z" class="sprite-line skin" />
+      
+      <!-- Generic Humanoid Face -->
+      <g id="Face_Generic">
+        <circle cx="85" cy="45" r="4" class="dark" />
+        <circle cx="115" cy="45" r="4" class="dark" />
+      </g>
+    </g>
+
+  </g>
+</svg>

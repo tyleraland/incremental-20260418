@@ -1,0 +1,27 @@
+name: CI
+
+# Run the same gate the local pre-push hook runs (tsc + vitest), but on the server
+# so it can't be bypassed: PRs and pushes to main are checked regardless of whether
+# a contributor's local hook fired. Deploy (deploy.yml) only type-checks via the
+# build; this is what actually runs the test suite on GitHub.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per ref; cancel superseded runs on a branch to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc   # single source of truth for the Node version
+          cache: npm
+      - run: npm ci                    # reproducible install; fails loudly on lock drift
+      - run: npm run ci                # tsc --noEmit && vitest run
